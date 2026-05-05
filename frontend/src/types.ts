@@ -114,6 +114,8 @@ export type Message = {
   parent_message_id?: string | null;
   available_actions: AvailableAction[];
   created_at: string;
+  client_status?: 'pending' | 'failed';
+  client_error?: AppError;
 };
 
 export type AppError = {

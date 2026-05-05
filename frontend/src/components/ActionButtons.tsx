@@ -1,4 +1,4 @@
-import { Wand2 } from 'lucide-react';
+import { Loader2, Wand2 } from 'lucide-react';
 import { actionKey, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { AvailableAction } from '../types';
 
@@ -14,7 +14,7 @@ export function ActionButtons({ actions }: { actions: AvailableAction[] }) {
         const pending = pendingActionKey === key;
         return (
           <button key={key} onClick={() => void invokeAction(action)} disabled={Boolean(pendingActionKey)}>
-            <Wand2 size={14} />
+            {pending ? <Loader2 size={13} className="spin" /> : <Wand2 size={13} />}
             {pending ? 'Working...' : action.label}
           </button>
         );

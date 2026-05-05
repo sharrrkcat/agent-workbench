@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useMemo, useState } from 'react';
-import { Loader2, Send } from 'lucide-react';
+import { AtSign, Loader2, Paperclip, Send, Slash } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { CommandPalette } from './CommandPalette';
 
@@ -32,19 +32,34 @@ export function ChatInput() {
   }
 
   return (
-    <form className="chat-input" onSubmit={submit}>
-      <CommandPalette mode={mode} input={value} onPick={setValue} />
-      <textarea
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Type a message, @agent, @agent:action, or /command"
-        rows={3}
-      />
-      <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
-        {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
-        <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
-      </button>
+    <form className="composer-shell" onSubmit={submit}>
+      <div className="composer-card">
+        <CommandPalette mode={mode} input={value} onPick={setValue} />
+        <textarea
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Ask anything, use @agent or /command"
+          rows={2}
+        />
+        <div className="composer-toolbar">
+          <div className="composer-tools" aria-label="Composer tools">
+            <button type="button" title="Attachments coming later" disabled>
+              <Paperclip size={15} />
+            </button>
+            <button type="button" title="Mention an agent" onClick={() => setValue((current) => (current ? current : '@'))}>
+              <AtSign size={15} />
+            </button>
+            <button type="button" title="Use a command" onClick={() => setValue((current) => (current ? current : '/'))}>
+              <Slash size={15} />
+            </button>
+          </div>
+          <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
+            {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
+            <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
+          </button>
+        </div>
+      </div>
     </form>
   );
 }

@@ -103,7 +103,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       api.listMessages(session.session_id),
       api.listRuns(session.session_id),
     ]);
-    set({ currentSession: freshSession, messages, runs });
+    set({ currentSession: freshSession, messages: mergeTransientMessages(messages, get().messages, session.session_id), runs });
   },
 
   createSession: async () => {
@@ -215,16 +215,40 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   sendMessage: async (content: string) => {
     const session = get().currentSession;
     if (!session || !content.trim() || get().sending) return;
-    set({ sending: true, error: undefined, lastError: undefined });
+    const optimisticMessage = createOptimisticUserMessage(session, content);
+    set({
+      messages: [...get().messages, optimisticMessage],
+      sending: true,
+      error: undefined,
+      lastError: undefined,
+    });
     try {
       const result = await api.sendMessage(session.session_id, content);
       await get().refreshCurrent();
       if (!result.success) {
-        set(runtimeResultError(result.error, 'RUN_FAILED'));
+        const formatted = runtimeResultError(result.error, 'RUN_FAILED');
+        set({
+          error: undefined,
+          lastError: undefined,
+          messages: [
+            ...get().messages,
+            createInlineErrorMessage(session.session_id, formatted.lastError, optimisticMessage.message_id),
+          ],
+        });
       }
       set({ sending: false });
     } catch (error) {
-      set({ ...formatError(error, 'Message failed'), sending: false });
+      const formatted = formatError(error, 'Message failed');
+      set({
+        error: undefined,
+        lastError: undefined,
+        sending: false,
+        messages: get().messages.map((message) =>
+          message.message_id === optimisticMessage.message_id
+            ? { ...message, client_status: 'failed', client_error: formatted.lastError }
+            : message,
+        ),
+      });
     }
   },
 
@@ -242,14 +266,87 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       });
       await get().refreshCurrent();
       if (!result.success) {
-        set(runtimeResultError(result.error, 'ACTION_FAILED'));
+        const formatted = runtimeResultError(result.error, 'ACTION_FAILED');
+        set({
+          error: undefined,
+          lastError: undefined,
+          messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, action.source_message_id)],
+        });
       }
       set({ pendingActionKey: undefined });
     } catch (error) {
-      set({ ...formatError(error, 'Action failed'), pendingActionKey: undefined });
+      const formatted = formatError(error, 'Action failed');
+      set({
+        error: undefined,
+        lastError: undefined,
+        pendingActionKey: undefined,
+        messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, action.source_message_id)],
+      });
     }
   },
 }));
+
+function createOptimisticUserMessage(session: Session, content: string): Message {
+  return {
+    message_id: `optimistic-${newClientId()}`,
+    session_id: session.session_id,
+    role: 'user',
+    content,
+    agent_id: null,
+    command_name: null,
+    action_id: null,
+    run_id: null,
+    output_type: 'text',
+    parent_message_id: null,
+    available_actions: [],
+    created_at: new Date().toISOString(),
+    client_status: 'pending',
+  };
+}
+
+function createInlineErrorMessage(sessionId: string, error: AppError, parentMessageId?: string | null): Message {
+  return {
+    message_id: `error-${newClientId()}`,
+    session_id: sessionId,
+    role: 'system',
+    content: { code: error.code, message: error.message },
+    agent_id: null,
+    command_name: null,
+    action_id: null,
+    run_id: null,
+    output_type: 'error',
+    parent_message_id: parentMessageId || null,
+    available_actions: [],
+    created_at: new Date().toISOString(),
+    client_status: 'failed',
+    client_error: error,
+  };
+}
+
+function mergeTransientMessages(fetched: Message[], current: Message[], sessionId: string): Message[] {
+  const transient = current.filter(
+    (message) => message.session_id === sessionId && message.client_status && isTransientMessage(message),
+  );
+  if (!transient.length) return fetched;
+
+  const remaining = transient.filter((message) => {
+    if (message.role !== 'user') return true;
+    return !fetched.some((candidate) => candidate.role === 'user' && candidate.content === message.content);
+  });
+
+  return [...fetched, ...remaining];
+}
+
+function isTransientMessage(message: Message): boolean {
+  return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-');
+}
+
+function newClientId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function formatError(error: unknown, fallback: string): { error: string; lastError: AppError } {
   if (error instanceof ApiError) {
