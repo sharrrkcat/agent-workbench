@@ -1,4 +1,4 @@
-import { MessageSquarePlus } from 'lucide-react';
+import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function SessionSidebar() {
@@ -7,11 +7,18 @@ export function SessionSidebar() {
   return (
     <aside className="session-sidebar">
       <div className="sidebar-header">
-        <span>Sessions</span>
-        <button className="icon-button" onClick={() => void createSession()} title="Create session">
-          <MessageSquarePlus size={17} />
-        </button>
+        <div className="brand-mark">
+          <Sparkles size={17} />
+        </div>
+        <div>
+          <strong>Agent Workbench</strong>
+          <span>Local AI console</span>
+        </div>
       </div>
+      <button className="new-chat-button" onClick={() => void createSession()} type="button">
+        <MessageSquarePlus size={17} />
+        New Chat
+      </button>
       <div className="session-list">
         {sessions.map((session) => {
           const active = currentSession?.session_id === session.session_id;
@@ -27,6 +34,7 @@ export function SessionSidebar() {
           );
         })}
       </div>
+      <div className="sidebar-footer">Agents, commands, and local runs</div>
     </aside>
   );
 }

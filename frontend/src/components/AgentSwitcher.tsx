@@ -1,4 +1,4 @@
-import { Bot } from 'lucide-react';
+import { Bot, ChevronDown } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function AgentSwitcher() {
@@ -18,6 +18,7 @@ export function AgentSwitcher() {
           </option>
         ))}
       </select>
+      <ChevronDown size={15} className="agent-switcher-caret" />
     </label>
   );
 }

@@ -1,17 +1,17 @@
-import { useEffect } from 'react';
-import { AgentSwitcher } from './components/AgentSwitcher';
+import { useEffect, useState } from 'react';
 import { ChatInput } from './components/ChatInput';
+import { ChatHeader } from './components/ChatHeader';
 import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
-import { RunPanel } from './components/RunPanel';
 import { SessionSidebar } from './components/SessionSidebar';
-import { SettingsPanel } from './components/SettingsPanel';
+import { SettingsDrawer } from './components/SettingsDrawer';
 import { StatusBar } from './components/StatusBar';
 import { createWebSocketUrl } from './api/client';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 
 export default function App() {
   const { currentSession, initialize, refreshCurrent } = useWorkbenchStore();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     void initialize();
@@ -38,22 +38,13 @@ export default function App() {
     <div className="app-shell">
       <SessionSidebar />
       <main className="workspace">
-        <header className="topbar">
-          <div>
-            <h1>Agent Workbench</h1>
-            <p>Local sessions, callable agents, and slash commands.</p>
-          </div>
-          <AgentSwitcher />
-        </header>
+        <ChatHeader onOpenSettings={() => setSettingsOpen(true)} />
         <ErrorBanner />
         <ChatView />
         <ChatInput />
         <StatusBar />
       </main>
-      <aside className="right-rail">
-        <SettingsPanel />
-        <RunPanel />
-      </aside>
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
