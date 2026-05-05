@@ -4,7 +4,7 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { MessageBubble } from './MessageBubble';
 
 export function ChatView() {
-  const { messages, currentSession, createSession, loading, sendMessage, sending } = useWorkbenchStore();
+  const { messages, currentSession, createSession, loading, creatingSession, sendMessage, sending } = useWorkbenchStore();
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -20,8 +20,8 @@ export function ChatView() {
           </div>
           <h1>Start a local AI session</h1>
           <p>Create a session to talk to the default agent or call an agent/command directly.</p>
-          <button className="empty-primary" onClick={() => void createSession()} disabled={loading}>
-            New Chat
+          <button className="empty-primary" onClick={() => void createSession()} disabled={loading || creatingSession}>
+            {creatingSession ? 'Creating...' : 'New Chat'}
           </button>
         </div>
       </section>

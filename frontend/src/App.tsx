@@ -12,6 +12,7 @@ import { useWorkbenchStore } from './store/useWorkbenchStore';
 export default function App() {
   const { currentSession, initialize, refreshCurrent } = useWorkbenchStore();
   const [path, setPath] = useState(() => window.location.pathname);
+  const [wsUnavailable, setWsUnavailable] = useState(false);
 
   useEffect(() => {
     void initialize();
@@ -24,21 +25,38 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!currentSession) return;
+    if (!currentSession || wsUnavailable) return;
+    let opened = false;
     const socket = new WebSocket(createWebSocketUrl(currentSession.session_id));
-    socket.addEventListener('open', () => socket.send(JSON.stringify({ type: 'ping' })));
+    socket.addEventListener('open', () => {
+      opened = true;
+      socket.send(JSON.stringify({ type: 'ping' }));
+    });
     socket.addEventListener('message', (event) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type && payload.type !== 'pong') {
-          void refreshCurrent();
+          void refreshCurrent().catch(() => undefined);
         }
       } catch {
         // Ignore malformed development messages.
       }
     });
+    socket.addEventListener('error', () => {
+      if (!opened) {
+        setWsUnavailable(true);
+      }
+    });
     return () => socket.close();
-  }, [currentSession?.session_id, refreshCurrent]);
+  }, [currentSession?.session_id, refreshCurrent, wsUnavailable]);
+
+  useEffect(() => {
+    if (!currentSession || !wsUnavailable) return;
+    const timer = window.setInterval(() => {
+      void refreshCurrent().catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [currentSession?.session_id, refreshCurrent, wsUnavailable]);
 
   function navigate(nextPath: string) {
     window.history.pushState({}, '', nextPath);

@@ -2,7 +2,7 @@ import { MessageSquarePlus, MoreHorizontal, Sparkles } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function SessionSidebar() {
-  const { sessions, currentSession, createSession, selectSession } = useWorkbenchStore();
+  const { sessions, currentSession, createSession, creatingSession, selectSession } = useWorkbenchStore();
 
   return (
     <aside className="session-sidebar">
@@ -15,9 +15,9 @@ export function SessionSidebar() {
           <span>Local AI console</span>
         </div>
       </div>
-      <button className="new-chat-button" onClick={() => void createSession()} type="button">
+      <button className="new-chat-button" onClick={() => void createSession()} type="button" disabled={creatingSession}>
         <MessageSquarePlus size={17} />
-        New Chat
+        {creatingSession ? 'Creating...' : 'New Chat'}
       </button>
       <div className="session-list">
         {sessions.map((session) => {

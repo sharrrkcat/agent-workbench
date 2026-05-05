@@ -29,6 +29,7 @@ type WorkbenchState = {
   health?: HealthDetails;
   runEventLoading?: string;
   loading: boolean;
+  creatingSession: boolean;
   sending: boolean;
   savingConfigId?: string;
   testingLlm: boolean;
@@ -68,6 +69,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   runs: [],
   runEvents: {},
   loading: false,
+  creatingSession: false,
   sending: false,
   testingLlm: false,
 
@@ -107,8 +109,24 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   createSession: async () => {
-    const session = await api.createSession(`Session ${get().sessions.length + 1}`, get().currentSession?.default_agent_id || 'chat');
-    set({ sessions: [session, ...get().sessions], currentSession: session, messages: [], runs: [] });
+    if (get().creatingSession) return;
+    const defaultAgentId = chooseEnabledDefaultAgent(get().agents, get().currentSession?.default_agent_id);
+    if (!defaultAgentId) {
+      set({
+        error: 'NO_ENABLED_AGENT: Enable at least one agent before creating a session.',
+        lastError: { code: 'NO_ENABLED_AGENT', message: 'Enable at least one agent before creating a session.' },
+      });
+      return;
+    }
+
+    set({ creatingSession: true, error: undefined, lastError: undefined });
+    try {
+      const session = await api.createSession(`Session ${get().sessions.length + 1}`, defaultAgentId);
+      const sessions = await api.listSessions();
+      set({ sessions, currentSession: session, messages: [], runs: [], creatingSession: false });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to create session'), creatingSession: false });
+    }
   },
 
   selectSession: async (sessionId: string) => {
@@ -120,6 +138,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   updateDefaultAgent: async (agentId: string) => {
     const session = get().currentSession;
     if (!session) return;
+    const agent = get().agents.find((item) => item.id === agentId);
+    if (!agent?.enabled) {
+      set({
+        error: 'AGENT_DISABLED: Cannot select a disabled agent.',
+        lastError: { code: 'AGENT_DISABLED', message: 'Cannot select a disabled agent.' },
+      });
+      return;
+    }
     try {
       const updated = await api.updateSession(session.session_id, { default_agent_id: agentId });
       set({
@@ -339,6 +365,11 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
 
 function isTransientMessage(message: Message): boolean {
   return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-');
+}
+
+function chooseEnabledDefaultAgent(agents: Agent[], preferredAgentId?: string | null): string | undefined {
+  const preferred = agents.find((agent) => agent.id === preferredAgentId && agent.enabled);
+  return preferred?.id || agents.find((agent) => agent.enabled)?.id;
 }
 
 function newClientId(): string {

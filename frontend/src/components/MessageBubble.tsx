@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CircleAlert, Clock3, UserRound } from 'lucide-react';
+import { Bot, CircleAlert, Clock3 } from 'lucide-react';
 import type { Agent, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
@@ -20,16 +20,18 @@ export function MessageBubble({ message }: { message: Message }) {
   return (
     <article className={`message-row ${kind}`}>
       {!isUser ? <AgentAvatar agent={agent} commandName={message.command_name} /> : null}
-      <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
+      <div className="message-stack">
         <MessageHeader message={message} agent={agent} kind={kind} />
-        <MessageContent message={message} />
-        {message.client_status === 'pending' ? (
-          <div className="message-status">
-            <Clock3 size={13} />
-            Sending
-          </div>
-        ) : null}
-        <ActionButtons actions={message.available_actions} />
+        <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
+          <MessageContent message={message} />
+          {message.client_status === 'pending' ? (
+            <div className="message-status">
+              <Clock3 size={13} />
+              Sending
+            </div>
+          ) : null}
+          <ActionButtons actions={message.available_actions} />
+        </div>
       </div>
     </article>
   );
@@ -37,12 +39,11 @@ export function MessageBubble({ message }: { message: Message }) {
 
 function MessageHeader({ message, agent, kind }: { message: Message; agent?: Agent; kind: 'user' | 'agent' | 'command' }) {
   const name = kind === 'user' ? 'You' : message.command_name || agent?.name || message.agent_id || 'Assistant';
-  const action = message.action_id || (kind === 'agent' ? 'default' : '');
+  const action = message.action_id && message.action_id !== 'default' ? message.action_id : '';
 
   return (
     <div className="message-meta">
       <div className="message-title">
-        {kind === 'user' ? <UserRound size={14} /> : null}
         <span>{name}</span>
         {action ? <small>{action}</small> : null}
       </div>
