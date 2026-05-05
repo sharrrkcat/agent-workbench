@@ -373,6 +373,46 @@ def test_list_messages_shows_user_and_output_messages() -> None:
     assert roles == ["user", "assistant"]
 
 
+def test_list_messages_returns_markdown_content_as_plain_string() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    state.messages.add_message(
+        session_id=session["session_id"],
+        role="agent",
+        content="# Title\n\n## Summary",
+        agent_id="render_test",
+        output_type="markdown",
+    )
+
+    response = client.get(f"/api/sessions/{session['session_id']}/messages")
+
+    assert response.status_code == 200
+    message = response.json()[-1]
+    assert message["output_type"] == "markdown"
+    assert message["content"] == "# Title\n\n## Summary"
+
+
+def test_list_messages_returns_json_content_as_structured_object() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    state.messages.add_message(
+        session_id=session["session_id"],
+        role="agent",
+        content={"ok": True, "items": [1, 2]},
+        agent_id="render_test",
+        output_type="json",
+    )
+
+    response = client.get(f"/api/sessions/{session['session_id']}/messages")
+
+    assert response.status_code == 200
+    message = response.json()[-1]
+    assert message["output_type"] == "json"
+    assert message["content"] == {"ok": True, "items": [1, 2]}
+
+
 def test_action_api_invokes_translate_formal() -> None:
     client = make_client(response="hello")
     session = create_session(client)

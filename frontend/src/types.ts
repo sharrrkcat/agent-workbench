@@ -116,6 +116,12 @@ export type Message = {
   created_at: string;
 };
 
+export type AppError = {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+};
+
 export type Run = {
   run_id: string;
   session_id: string;
@@ -125,6 +131,7 @@ export type Run = {
   action_id?: string | null;
   current_step: string;
   error?: string | null;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };

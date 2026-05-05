@@ -103,6 +103,56 @@ await ctx.reply("markdown body", type="markdown")
 await ctx.reply("markdown body", output_type="markdown")
 ```
 
+## Output Rendering
+
+The frontend renders messages by `output_type`:
+
+- `text`: plain text with line breaks preserved.
+- `markdown`: Markdown rendered with headings, lists, tables, and code blocks. Raw HTML is not enabled.
+- `json`: objects and arrays are pretty-printed as JSON.
+
+Match content type to output type:
+
+```python
+await ctx.reply_text("plain text")
+await ctx.reply_markdown("# Title\n\n- item")
+await ctx.reply_json({"summary": "ok", "items": [1, 2]})
+```
+
+Avoid returning JSON as a Markdown string unless the user should read it as prose. Prefer `reply_json` when downstream UI or tools should inspect structured data.
+
+## LLM JSON Reliability
+
+Small local models often produce invalid JSON, comments around JSON, or Markdown fences with broken content. `ctx.llm.json(...)` is strict: it extracts a raw or fenced JSON object and calls `json.loads`. It does not repair invalid JSON.
+
+For complex Agents, use an explicit fallback path:
+
+```python
+import json
+
+
+async def run(ctx):
+    raw = await ctx.llm.text(
+        system="Return only a JSON object with keys summary and tasks.",
+        user=ctx.input.text,
+    )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        repaired = await ctx.llm.text(
+            system="Rewrite this as valid JSON only. No prose.",
+            user=raw,
+        )
+        try:
+            data = json.loads(repaired)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Model did not produce valid JSON: {exc}") from exc
+
+    await ctx.reply_json(data)
+```
+
+Use stricter prompts, smaller schemas, and clear errors when repair fails. Do not rely on LLM tool calling, MCP, or automatic tool choice.
+
 ## Capabilities
 
 Script Agents call internal Capabilities through `ctx.capability(...)`:
@@ -137,11 +187,52 @@ Run an Agent from the command line:
 
 ```powershell
 uv run python scripts/run_agent.py echo_script "hello"
+uv run python scripts/run_agent.py project_planner:json_only "plan a local release"
 uv run python scripts/run_agent.py meeting_digest "今天讨论了..."
 uv run python scripts/run_agent.py meeting_digest:json_only "今天讨论了..."
+uv run python scripts/run_agent.py echo_script "hello" --json
+uv run python scripts/run_agent.py echo_script "hello" --show-trace
 ```
 
 The command prints run id, run status, events, messages, and errors. It defaults to an in-memory runtime so quick Agent tests do not pollute local SQLite.
+
+## Debug Workflow
+
+1. Run manifest/import checks:
+
+```powershell
+uv run python scripts/check_agents.py
+```
+
+2. Run the Agent without opening the frontend:
+
+```powershell
+uv run python scripts/run_agent.py echo_script "hello"
+uv run python scripts/run_agent.py project_planner:json_only "plan a local release"
+```
+
+3. Use machine-readable output when comparing runs:
+
+```powershell
+uv run python scripts/run_agent.py echo_script "hello" --json
+```
+
+4. Use traceback output only when debugging local code:
+
+```powershell
+uv run python scripts/run_agent.py echo_script "hello" --show-trace
+```
+
+If an LLM model is missing, set `AGENT_WORKBENCH_LLM_MODEL`, save a model in Settings, or set the Agent manifest `model` field. The default CLI memory runtime may not read saved SQLite Settings; use `--use-sqlite` when testing persisted Settings.
+
+## Common Mistakes
+
+- Missing `default` action in `agent.yaml`.
+- Typo in `capabilities` such as `base_64` instead of `base64`.
+- LLM model not configured for an Agent that calls `ctx.llm`.
+- Invalid JSON from a small model passed directly to `reply_json`.
+- Mismatch between `output_type` and content, such as `output_type=json` with a prose string.
+- Using `ctx.reply(...)` with the wrong keyword; prefer `reply_text`, `reply_markdown`, and `reply_json`.
 
 ## Migration Note
 

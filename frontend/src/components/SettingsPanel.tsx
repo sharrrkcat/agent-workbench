@@ -48,7 +48,8 @@ function ConfigEditor({
   id: string;
   name: string;
 }) {
-  const { updateAgentConfig, updateCapabilityConfig, getResolvedLlmConfig, testLlmConnection, loading } = useWorkbenchStore();
+  const { updateAgentConfig, updateCapabilityConfig, getResolvedLlmConfig, testLlmConnection, savingConfigId, testingLlm } =
+    useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<FormValues>(() => initialValues(config));
   const [formError, setFormError] = useState('');
@@ -56,6 +57,7 @@ function ConfigEditor({
   const [resolvedLlm, setResolvedLlm] = useState<LlmResolvedConfig | null>(null);
   const fields = config.config_schema || [];
   const isLlm = kind === 'capability' && id === 'llm';
+  const isSaving = savingConfigId === `${kind}:${id}`;
 
   useEffect(() => {
     setEnabled(config.enabled);
@@ -122,12 +124,12 @@ function ConfigEditor({
 
       {formError ? <p>{formError}</p> : null}
       <div className="config-actions">
-        <button type="submit" disabled={loading}>
-          Save
+        <button type="submit" disabled={isSaving || testingLlm}>
+          {isSaving ? 'Saving...' : 'Save'}
         </button>
         {isLlm ? (
-          <button type="button" disabled={loading} onClick={() => void runTest()}>
-            Test connection
+          <button type="button" disabled={isSaving || testingLlm} onClick={() => void runTest()}>
+            {testingLlm ? 'Testing...' : 'Test connection'}
           </button>
         ) : null}
       </div>

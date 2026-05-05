@@ -134,7 +134,69 @@ def test_run_agent_script_runs_echo_script() -> None:
 
     assert result.returncode == 0
     assert "run status: done" in result.stdout
-    assert "agent [text]: aGVsbG8=" in result.stdout
+    assert "agent [text]:" in result.stdout
+    assert "aGVsbG8=" in result.stdout
+
+
+def test_run_agent_script_json_output_is_valid_json() -> None:
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "echo_script", "hello", "--json"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    payload = __import__("json").loads(result.stdout)
+
+    assert result.returncode == 0
+    assert payload["run"]["status"] == "DONE"
+    assert payload["messages"][-1]["content"] == "aGVsbG8="
+    assert payload["error"] is None
+
+
+def test_run_agent_script_markdown_message_has_no_extra_json_quotes() -> None:
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test", "hello"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "agent [markdown]:" in result.stdout
+    assert "# Render Test" in result.stdout
+    assert '"# Render Test' not in result.stdout
+
+
+def test_run_agent_script_json_message_pretty_prints() -> None:
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test:json", "hello"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "agent [json]:" in result.stdout
+    assert '{\n  "echo": "hello",\n  "items": [' in result.stdout
+
+
+def test_run_agent_missing_llm_model_hint_mentions_env_var(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_WORKBENCH_LLM_MODEL", raising=False)
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test:llm", "hello"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={key: value for key, value in __import__("os").environ.items() if key != "AGENT_WORKBENCH_LLM_MODEL"},
+    )
+
+    assert result.returncode != 0
+    assert "AGENT_WORKBENCH_LLM_MODEL" in result.stdout
 
 
 def test_run_agent_script_unknown_agent_fails_clearly() -> None:

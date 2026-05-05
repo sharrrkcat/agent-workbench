@@ -13,6 +13,13 @@ if str(ROOT) not in sys.path:
 from ai_workbench.api.deps import build_runtime_state
 
 
+LLM_MODEL_HINT = (
+    "LLM model is not selected. Set AGENT_WORKBENCH_LLM_MODEL, save an llm model in Settings, "
+    "or specify model in the Agent manifest. When using the default memory runtime, SQLite Settings may not be read; "
+    "use --use-sqlite to test saved Settings."
+)
+
+
 def parse_target(value: str) -> tuple[str, str]:
     if ":" not in value:
         return value, "default"
@@ -20,13 +27,20 @@ def parse_target(value: str) -> tuple[str, str]:
     return agent_id, action_id or "default"
 
 
-async def run_agent(target: str, text: str, use_memory: bool = True) -> int:
+async def run_agent(
+    target: str,
+    text: str,
+    use_memory: bool = True,
+    json_output: bool = False,
+    show_trace: bool = False,
+) -> int:
     agent_id, action_id = parse_target(target)
     state = build_runtime_state(root=ROOT, use_memory=use_memory)
     try:
         state.agents.get(agent_id)
     except KeyError:
-        print(f"[FAIL] Unknown agent: {agent_id}")
+        payload = {"run": None, "events": [], "messages": [], "error": f"Unknown agent: {agent_id}"}
+        _emit(payload, json_output=json_output, show_trace=show_trace)
         return 1
 
     session = state.sessions.create_session(default_agent_id=agent_id)
@@ -37,32 +51,18 @@ async def run_agent(target: str, text: str, use_memory: bool = True) -> int:
         input_text=text,
     )
 
-    print(f"run id: {result.run_id or '(none)'}")
-    if result.run_id:
-        run = state.runs.get_run(result.run_id)
-        print(f"run status: {run.status.value.lower()}")
-        if run.current_step:
-            print(f"current step: {run.current_step}")
-        if run.error:
-            print(f"run error: {run.error}")
-        events = _list_run_events(state, result.run_id)
-        if events:
-            print("events:")
-            for event in events:
-                print(f"- {event.type}: {event.payload}")
-    else:
-        print("run status: failed")
-
-    if result.error:
-        print(f"error: {result.error}")
-
+    run = state.runs.get_run(result.run_id) if result.run_id else None
+    events = _list_run_events(state, result.run_id) if result.run_id else []
     messages = state.messages.list_messages(session.session_id)
-    if messages:
-        print("messages:")
-        for message in messages:
-            content = _format_content(message.content)
-            print(f"- {message.role} [{message.output_type}]: {content}")
+    error = _developer_error(result.error)
 
+    payload = {
+        "run": _dump_model(run) if run else None,
+        "events": [_dump_model(event) for event in events],
+        "messages": [_dump_model(message) for message in messages],
+        "error": error,
+    }
+    _emit(payload, json_output=json_output, show_trace=show_trace)
     return 0 if result.success else 1
 
 
@@ -70,10 +70,78 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an Agent from the command line.")
     parser.add_argument("target", help="agent_id or agent_id:action_id")
     parser.add_argument("text", help="input text")
+    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    parser.add_argument("--show-trace", action="store_true", help="show traceback/debug metadata when present")
     parser.add_argument("--use-memory", action="store_true", default=True, help="use an in-memory runtime")
     parser.add_argument("--use-sqlite", action="store_true", help="use the configured SQLite database")
     args = parser.parse_args(argv)
-    return asyncio.run(run_agent(args.target, args.text, use_memory=not args.use_sqlite))
+    return asyncio.run(
+        run_agent(
+            args.target,
+            args.text,
+            use_memory=not args.use_sqlite,
+            json_output=args.json,
+            show_trace=args.show_trace,
+        )
+    )
+
+
+def _emit(payload: dict[str, Any], json_output: bool, show_trace: bool) -> None:
+    if json_output:
+        print(json.dumps(_payload_for_json(payload, show_trace=show_trace), ensure_ascii=False, indent=2))
+        return
+    _print_human(payload, show_trace=show_trace)
+
+
+def _print_human(payload: dict[str, Any], show_trace: bool) -> None:
+    run = payload.get("run")
+    print(f"run id: {run.get('run_id') if run else '(none)'}")
+    if run:
+        print(f"run status: {str(run.get('status', 'failed')).lower()}")
+        if run.get("current_step"):
+            print(f"current step: {run['current_step']}")
+        if run.get("error"):
+            print(f"run error: {_developer_error(run['error'])}")
+    else:
+        print("run status: failed")
+
+    if payload.get("error"):
+        print(f"error: {payload['error']}")
+
+    events = payload.get("events") or []
+    if events:
+        print("events:")
+        for event in events:
+            payload_text = json.dumps(event.get("payload", {}), ensure_ascii=False)
+            print(f"- {event.get('type')}: {payload_text}")
+
+    messages = payload.get("messages") or []
+    if messages:
+        print("messages:")
+        for message in messages:
+            print(f"- {message.get('role')} [{message.get('output_type')}]:")
+            print(_format_content(message.get("content"), message.get("output_type") or "text"))
+
+    if show_trace:
+        trace = _trace_from_payload(payload)
+        if trace:
+            print("traceback:")
+            print(trace)
+
+
+def _payload_for_json(payload: dict[str, Any], show_trace: bool) -> dict[str, Any]:
+    if show_trace:
+        return payload
+    run = payload.get("run")
+    if isinstance(run, dict):
+        metadata = dict(run.get("metadata") or {})
+        metadata.pop("traceback", None)
+        if isinstance(metadata.get("debug"), dict):
+            debug = dict(metadata["debug"])
+            debug.pop("traceback", None)
+            metadata["debug"] = debug
+        run = {**run, "metadata": metadata}
+    return {**payload, "run": run}
 
 
 def _list_run_events(state: Any, run_id: str) -> list[Any]:
@@ -82,10 +150,66 @@ def _list_run_events(state: Any, run_id: str) -> list[Any]:
     return [event for event in state.events.list_events() if event.run_id == run_id]
 
 
-def _format_content(content: Any) -> str:
+def _format_content(content: Any, output_type: str) -> str:
+    if output_type == "json":
+        parsed = _parse_json_like(content)
+        if isinstance(parsed, (dict, list)):
+            return json.dumps(parsed, ensure_ascii=False, indent=2)
+        return str(parsed)
     if isinstance(content, (dict, list)):
-        return json.dumps(content, ensure_ascii=False)
-    return str(content)
+        return json.dumps(content, ensure_ascii=False, indent=2)
+    if isinstance(content, str):
+        return _unwrap_json_string(content)
+    return "" if content is None else str(content)
+
+
+def _parse_json_like(content: Any) -> Any:
+    if not isinstance(content, str):
+        return content
+    unwrapped = _unwrap_json_string(content)
+    try:
+        return json.loads(unwrapped)
+    except json.JSONDecodeError:
+        return unwrapped
+
+
+def _unwrap_json_string(value: str) -> str:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return value
+    return parsed if isinstance(parsed, str) else value
+
+
+def _developer_error(error: Any) -> Any:
+    if not isinstance(error, str) or not error:
+        return error
+    if "LLM model is not selected" in error or "LLM model is required" in error or "LLM_MODEL_NOT_SELECTED" in error:
+        return f"{error}\n{LLM_MODEL_HINT}"
+    return error
+
+
+def _trace_from_payload(payload: dict[str, Any]) -> str:
+    run = payload.get("run") or {}
+    metadata = run.get("metadata") if isinstance(run, dict) else {}
+    if not isinstance(metadata, dict):
+        return ""
+    if isinstance(metadata.get("traceback"), str):
+        return metadata["traceback"]
+    debug = metadata.get("debug")
+    if isinstance(debug, dict) and isinstance(debug.get("traceback"), str):
+        return debug["traceback"]
+    return ""
+
+
+def _dump_model(value: Any) -> Any:
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if hasattr(value, "dict"):
+        return value.dict()
+    return value
 
 
 if __name__ == "__main__":

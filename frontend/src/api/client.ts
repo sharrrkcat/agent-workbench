@@ -16,6 +16,18 @@ import type {
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 export const API_BASE_URL = rawBaseUrl.replace(/\/$/, '');
 
+export class ApiError extends Error {
+  code: string;
+  details: Record<string, unknown>;
+
+  constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+    super(message);
+    this.name = code;
+    this.code = code;
+    this.details = details;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -26,10 +38,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = payload?.error?.message || `Request failed: ${response.status}`;
-    const error = new Error(message);
-    error.name = payload?.error?.code || 'HTTP_ERROR';
-    throw error;
+    const backendError = payload?.error;
+    const code = typeof backendError?.code === 'string' ? backendError.code : 'HTTP_ERROR';
+    const message = typeof backendError?.message === 'string' ? backendError.message : `Request failed: ${response.status}`;
+    const details = typeof backendError?.details === 'object' && backendError.details ? backendError.details : {};
+    throw new ApiError(code, message, details);
   }
   return payload as T;
 }

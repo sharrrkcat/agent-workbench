@@ -1,13 +1,13 @@
 import { FormEvent, KeyboardEvent, useMemo, useState } from 'react';
-import { Send } from 'lucide-react';
+import { Loader2, Send } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { CommandPalette } from './CommandPalette';
 
 export function ChatInput() {
   const [value, setValue] = useState('');
-  const { currentSession, sendMessage, loading } = useWorkbenchStore();
+  const { currentSession, sendMessage, sending } = useWorkbenchStore();
 
-  const canSend = Boolean(currentSession && value.trim() && !loading);
+  const canSend = Boolean(currentSession && value.trim() && !sending);
 
   const mode = useMemo(() => {
     if (value.startsWith('/')) return 'commands';
@@ -41,8 +41,9 @@ export function ChatInput() {
         placeholder="Type a message, @agent, @agent:action, or /command"
         rows={3}
       />
-      <button className="send-button" disabled={!canSend} title="Send">
-        <Send size={17} />
+      <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
+        {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
+        <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
       </button>
     </form>
   );

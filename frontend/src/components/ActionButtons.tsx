@@ -1,20 +1,24 @@
 import { Wand2 } from 'lucide-react';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { actionKey, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { AvailableAction } from '../types';
 
 export function ActionButtons({ actions }: { actions: AvailableAction[] }) {
   const invokeAction = useWorkbenchStore((state) => state.invokeAction);
-  const loading = useWorkbenchStore((state) => state.loading);
+  const pendingActionKey = useWorkbenchStore((state) => state.pendingActionKey);
   if (!actions.length) return null;
 
   return (
     <div className="action-buttons">
-      {actions.map((action) => (
-        <button key={`${action.source_message_id}-${action.action_id}`} onClick={() => void invokeAction(action)} disabled={loading}>
-          <Wand2 size={14} />
-          {action.label}
-        </button>
-      ))}
+      {actions.map((action) => {
+        const key = actionKey(action);
+        const pending = pendingActionKey === key;
+        return (
+          <button key={key} onClick={() => void invokeAction(action)} disabled={Boolean(pendingActionKey)}>
+            <Wand2 size={14} />
+            {pending ? 'Working...' : action.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

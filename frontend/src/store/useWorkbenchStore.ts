@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { api } from '../api/client';
+import { ApiError, api } from '../api/client';
 import type {
   Agent,
   AgentConfig,
+  AppError,
   AvailableAction,
   CapabilityConfig,
   Command,
@@ -28,7 +29,14 @@ type WorkbenchState = {
   health?: HealthDetails;
   runEventLoading?: string;
   loading: boolean;
+  sending: boolean;
+  savingConfigId?: string;
+  testingLlm: boolean;
+  pendingActionKey?: string;
   error?: string;
+  lastError?: AppError;
+  setError: (error: unknown, fallback: string) => void;
+  clearError: () => void;
   initialize: () => Promise<void>;
   refreshCurrent: () => Promise<void>;
   createSession: () => Promise<void>;
@@ -48,6 +56,8 @@ type WorkbenchState = {
   invokeAction: (action: AvailableAction) => Promise<void>;
 };
 
+export const actionKey = (action: AvailableAction) => `${action.source_message_id}-${action.agent_id}-${action.action_id}`;
+
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   agents: [],
   commands: [],
@@ -58,9 +68,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   runs: [],
   runEvents: {},
   loading: false,
+  sending: false,
+  testingLlm: false,
+
+  setError: (error, fallback) => set(formatError(error, fallback)),
+  clearError: () => set({ error: undefined, lastError: undefined }),
 
   initialize: async () => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, error: undefined, lastError: undefined });
     try {
       const [agents, commands, sessions, agentConfigs, capabilityConfigs] = await Promise.all([
         api.listAgents(),
@@ -76,7 +91,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       }
       await get().refreshHealth();
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to initialize', loading: false });
+      set({ ...formatError(error, 'Failed to initialize'), loading: false });
     }
   },
 
@@ -111,9 +126,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         currentSession: updated,
         sessions: get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item)),
         error: undefined,
+        lastError: undefined,
       });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update default agent' });
+      set(formatError(error, 'Failed to update default agent'));
     }
   },
 
@@ -128,24 +144,24 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   updateAgentConfig: async (agentId, patch) => {
-    set({ loading: true, error: undefined });
+    set({ savingConfigId: `agent:${agentId}`, error: undefined, lastError: undefined });
     try {
       await api.updateAgentConfig(agentId, patch);
       await get().refreshConfigs();
-      set({ loading: false });
+      set({ savingConfigId: undefined });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update agent config', loading: false });
+      set({ ...formatError(error, 'Failed to update agent config'), savingConfigId: undefined });
     }
   },
 
   updateCapabilityConfig: async (capabilityId, patch) => {
-    set({ loading: true, error: undefined });
+    set({ savingConfigId: `capability:${capabilityId}`, error: undefined, lastError: undefined });
     try {
       await api.updateCapabilityConfig(capabilityId, patch);
       await get().refreshConfigs();
-      set({ loading: false });
+      set({ savingConfigId: undefined });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update capability config', loading: false });
+      set({ ...formatError(error, 'Failed to update capability config'), savingConfigId: undefined });
     }
   },
 
@@ -153,21 +169,27 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     try {
       return await api.getResolvedLlmConfig();
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load LLM config status' });
+      set(formatError(error, 'Failed to load LLM config status'));
       return null;
     }
   },
 
   testLlmConnection: async () => {
-    set({ loading: true, error: undefined });
+    set({ testingLlm: true, error: undefined, lastError: undefined });
     try {
       const result = await api.testLlmConnection();
-      set({ loading: false });
+      if (!result.success) {
+        set({
+          lastError: { code: result.error_code || 'LLM_CONNECTION_FAILED', message: result.message },
+          error: `${result.error_code || 'LLM_CONNECTION_FAILED'}: ${result.message}`,
+        });
+      }
+      set({ testingLlm: false });
       return result;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'LLM test failed';
-      set({ error: message, loading: false });
-      return { success: false, message, base_url: '', error_code: 'LLM_CONNECTION_FAILED' };
+      const formatted = formatError(error, 'LLM test failed');
+      set({ ...formatted, testingLlm: false });
+      return { success: false, message: formatted.lastError.message, base_url: '', error_code: formatted.lastError.code };
     }
   },
 
@@ -176,48 +198,82 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const health = await api.getHealthDetails();
       set({ health });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load backend health' });
+      set(formatError(error, 'Failed to load backend health'));
     }
   },
 
   loadRunEvents: async (runId: string) => {
-    set({ runEventLoading: runId, error: undefined });
+    set({ runEventLoading: runId, error: undefined, lastError: undefined });
     try {
       const events = await api.listRunEvents(runId);
       set({ runEvents: { ...get().runEvents, [runId]: events }, runEventLoading: undefined });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load run timeline', runEventLoading: undefined });
+      set({ ...formatError(error, 'Failed to load run timeline'), runEventLoading: undefined });
     }
   },
 
   sendMessage: async (content: string) => {
     const session = get().currentSession;
-    if (!session || !content.trim()) return;
-    set({ loading: true, error: undefined });
+    if (!session || !content.trim() || get().sending) return;
+    set({ sending: true, error: undefined, lastError: undefined });
     try {
-      await api.sendMessage(session.session_id, content);
+      const result = await api.sendMessage(session.session_id, content);
       await get().refreshCurrent();
-      set({ loading: false });
+      if (!result.success) {
+        set(runtimeResultError(result.error, 'RUN_FAILED'));
+      }
+      set({ sending: false });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Message failed', loading: false });
+      set({ ...formatError(error, 'Message failed'), sending: false });
     }
   },
 
   invokeAction: async (action: AvailableAction) => {
     const session = get().currentSession;
     if (!session) return;
-    set({ loading: true, error: undefined });
+    const key = actionKey(action);
+    set({ pendingActionKey: key, error: undefined, lastError: undefined });
     try {
-      await api.invokeAction(session.session_id, {
+      const result = await api.invokeAction(session.session_id, {
         agent_id: action.agent_id,
         action_id: action.action_id,
         source_message_id: action.source_message_id,
         prefill: action.prefill,
       });
       await get().refreshCurrent();
-      set({ loading: false });
+      if (!result.success) {
+        set(runtimeResultError(result.error, 'ACTION_FAILED'));
+      }
+      set({ pendingActionKey: undefined });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Action failed', loading: false });
+      set({ ...formatError(error, 'Action failed'), pendingActionKey: undefined });
     }
   },
 }));
+
+function formatError(error: unknown, fallback: string): { error: string; lastError: AppError } {
+  if (error instanceof ApiError) {
+    return {
+      error: `${error.code}: ${error.message}`,
+      lastError: { code: error.code, message: error.message, details: error.details },
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      error: error.message,
+      lastError: { code: error.name || 'ERROR', message: error.message },
+    };
+  }
+  return {
+    error: fallback,
+    lastError: { code: 'ERROR', message: fallback },
+  };
+}
+
+function runtimeResultError(message: unknown, code: string): { error: string; lastError: AppError } {
+  const text = typeof message === 'string' && message ? message : 'Run failed.';
+  return {
+    error: `${code}: ${text}`,
+    lastError: { code, message: text },
+  };
+}
