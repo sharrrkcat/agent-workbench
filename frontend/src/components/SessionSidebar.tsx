@@ -1,4 +1,4 @@
-import { MessageSquarePlus, MoreHorizontal, Sparkles } from 'lucide-react';
+import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function SessionSidebar() {
@@ -29,13 +29,6 @@ export function SessionSidebar() {
               onClick={() => void selectSession(session.session_id)}
             >
               <span className="session-title">{session.title || `Session ${session.session_id.slice(0, 6)}`}</span>
-              <span className="session-meta">
-                <small>{session.default_agent_id}</small>
-                <small>{formatUpdatedAt(session.updated_at)}</small>
-              </span>
-              <span className="session-menu" aria-hidden="true">
-                <MoreHorizontal size={15} />
-              </span>
             </button>
           );
         })}
@@ -43,16 +36,4 @@ export function SessionSidebar() {
       <div className="sidebar-footer">Agents, commands, and local runs</div>
     </aside>
   );
-}
-
-function formatUpdatedAt(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'updated';
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.max(0, Math.round(diffMs / 60000));
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }

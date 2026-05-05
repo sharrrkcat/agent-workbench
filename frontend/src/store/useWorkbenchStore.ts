@@ -86,8 +86,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         api.listAgentConfigs(),
         api.listCapabilityConfigs(),
       ]);
-      const currentSession = sessions[0];
-      set({ agents, commands, sessions, currentSession, agentConfigs, capabilityConfigs, loading: false });
+      const sortedSessions = sortSessionsByRecent(sessions);
+      const currentSession = sortedSessions[0];
+      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, loading: false });
       if (currentSession) {
         await get().refreshCurrent();
       }
@@ -105,7 +106,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       api.listMessages(session.session_id),
       api.listRuns(session.session_id),
     ]);
-    set({ currentSession: freshSession, messages: mergeTransientMessages(messages, get().messages, session.session_id), runs });
+    set({
+      currentSession: freshSession,
+      sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === freshSession.session_id ? freshSession : item))),
+      messages: mergeTransientMessages(messages, get().messages, session.session_id),
+      runs,
+    });
   },
 
   createSession: async () => {
@@ -122,7 +128,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     set({ creatingSession: true, error: undefined, lastError: undefined });
     try {
       const session = await api.createSession(`Session ${get().sessions.length + 1}`, defaultAgentId);
-      const sessions = await api.listSessions();
+      const sessions = sortSessionsByRecent(await api.listSessions());
       set({ sessions, currentSession: session, messages: [], runs: [], creatingSession: false });
     } catch (error) {
       set({ ...formatError(error, 'Failed to create session'), creatingSession: false });
@@ -150,7 +156,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const updated = await api.updateSession(session.session_id, { default_agent_id: agentId });
       set({
         currentSession: updated,
-        sessions: get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item)),
+        sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
         error: undefined,
         lastError: undefined,
       });
@@ -370,6 +376,26 @@ function isTransientMessage(message: Message): boolean {
 function chooseEnabledDefaultAgent(agents: Agent[], preferredAgentId?: string | null): string | undefined {
   const preferred = agents.find((agent) => agent.id === preferredAgentId && agent.enabled);
   return preferred?.id || agents.find((agent) => agent.enabled)?.id;
+}
+
+function sortSessionsByRecent(sessions: Session[]): Session[] {
+  return sessions
+    .map((session, index) => ({ session, index }))
+    .sort((left, right) => {
+      const leftTime = sessionSortTime(left.session);
+      const rightTime = sessionSortTime(right.session);
+      if (leftTime !== rightTime) return rightTime - leftTime;
+      return left.index - right.index;
+    })
+    .map((item) => item.session);
+}
+
+function sessionSortTime(session: Session): number {
+  const updated = Date.parse(session.updated_at || '');
+  if (!Number.isNaN(updated)) return updated;
+  const created = Date.parse(session.created_at || '');
+  if (!Number.isNaN(created)) return created;
+  return 0;
 }
 
 function newClientId(): string {
