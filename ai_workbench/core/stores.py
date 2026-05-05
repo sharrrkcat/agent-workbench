@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
+from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 
 
@@ -166,6 +167,36 @@ class RunStore:
 
     def list_runs(self, session_id: str) -> List[RunSchema]:
         return [self._runs[run_id] for run_id in self._session_run_ids.get(session_id, [])]
+
+
+class RunEventStore:
+    def __init__(self) -> None:
+        self._events: Dict[str, RunEventSchema] = {}
+        self._run_event_ids: Dict[str, List[str]] = {}
+
+    def add_event(
+        self,
+        run_id: str,
+        session_id: str,
+        type: str,
+        message: str = "",
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> RunEventSchema:
+        event = RunEventSchema(
+            event_id=str(uuid4()),
+            run_id=run_id,
+            session_id=session_id,
+            type=type,
+            message=message,
+            payload=payload or {},
+            created_at=datetime.utcnow(),
+        )
+        self._events[event.event_id] = event
+        self._run_event_ids.setdefault(run_id, []).append(event.event_id)
+        return event
+
+    def list_events(self, run_id: str) -> List[RunEventSchema]:
+        return [self._events[event_id] for event_id in self._run_event_ids.get(run_id, [])]
 
 
 class ConfigStore:

@@ -1,6 +1,6 @@
 # Agent Workbench
 
-Technical Alpha for a lightweight personal AI workbench.
+v0.1.0-alpha Technical Alpha for a lightweight personal AI workbench.
 
 The app looks like a small chat client, but messages can route to callable Agents and slash Commands:
 
@@ -9,7 +9,7 @@ The app looks like a small chat client, but messages can route to callable Agent
 - `@translate:formal` invokes a specific Agent action.
 - `/base64 hello` invokes a global Command exposed by a Capability.
 
-Round 11 focuses on alpha polish: schema-aware configuration, API/UI secret masking, LLM connection diagnostics, SQLite persistence checks, and basic operator scripts.
+The current alpha focuses on local-first chat routing, schema-aware settings, LLM diagnostics, run timelines, health checks, SQLite persistence, and basic operator scripts.
 
 ## Quick Start
 
@@ -158,13 +158,44 @@ The reset script only deletes file-backed SQLite databases in safe project or te
 
 ## Diagnostics
 
+Health endpoints:
+
+```text
+GET /api/health
+GET /api/health/details
+```
+
+`/api/health` returns version, database status, and schema version. `/api/health/details` adds registry counts and a non-secret LLM config summary. It reports whether an API key is set, but never returns the plaintext key.
+
+Runs also have a lightweight event timeline:
+
+```text
+GET /api/runs/{run_id}/events
+```
+
+The timeline records events such as `run_started`, `run_step`, `action_invoked`, `message_done`, `run_done`, `run_failed`, and `run_cancelled`. The frontend Runs panel can expand a run to show this timeline.
+
+API errors use a structured shape:
+
+```json
+{
+  "error": {
+    "code": "RUN_NOT_FOUND",
+    "message": "Run not found: example",
+    "details": {}
+  }
+}
+```
+
+The frontend shows API failures in a visible error banner/status area instead of only logging them.
+
 Run:
 
 ```powershell
 uv run python scripts/check.py
 ```
 
-It checks Python version, manifest loading, Agent/Capability/Command registries, SQLite initialization, and `schema_version`.
+It checks Python version, manifest loading, Agent/Capability/Command registries, SQLite initialization, `schema_version`, `create_app(use_memory=True)`, health endpoints, registry counts, and that health details do not leak API key plaintext.
 
 ## Development Checks
 

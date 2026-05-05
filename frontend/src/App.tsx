@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AgentSwitcher } from './components/AgentSwitcher';
 import { ChatInput } from './components/ChatInput';
 import { ChatView } from './components/ChatView';
+import { ErrorBanner } from './components/ErrorBanner';
 import { RunPanel } from './components/RunPanel';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -44,6 +45,7 @@ export default function App() {
           </div>
           <AgentSwitcher />
         </header>
+        <ErrorBanner />
         <ChatView />
         <ChatInput />
         <StatusBar />

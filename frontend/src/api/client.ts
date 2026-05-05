@@ -7,6 +7,8 @@ import type {
   LlmTestResult,
   Message,
   Run,
+  RunEvent,
+  HealthDetails,
   RuntimeResponse,
   Session,
 } from '../types';
@@ -55,6 +57,7 @@ export const api = {
   getResolvedLlmConfig: () => request<LlmResolvedConfig>('/api/capability-configs/llm/resolved'),
   listLlmModels: () => request<{ success: boolean; models: { id: string }[] }>('/api/capability-configs/llm/models'),
   testLlmConnection: () => request<LlmTestResult>('/api/capability-configs/llm/test', { method: 'POST' }),
+  getHealthDetails: () => request<HealthDetails>('/api/health/details'),
   listSessions: () => request<Session[]>('/api/sessions'),
   createSession: (title = '', default_agent_id = 'chat') =>
     request<Session>('/api/sessions', {
@@ -82,6 +85,7 @@ export const api = {
       body: JSON.stringify({ input_text: '', prefill: {}, ...payload }),
     }),
   listRuns: (sessionId: string) => request<Run[]>(`/api/sessions/${sessionId}/runs`),
+  listRunEvents: (runId: string) => request<RunEvent[]>(`/api/runs/${runId}/events`),
 };
 
 export function createWebSocketUrl(sessionId: string): string {

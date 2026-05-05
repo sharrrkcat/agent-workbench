@@ -28,6 +28,32 @@ def test_create_app_returns_fastapi_app() -> None:
     assert app.title == "Agent Workbench"
 
 
+def test_health_returns_version_database_and_schema_version() -> None:
+    response = make_client().get("/api/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["version"] == "0.1.0-alpha"
+    assert payload["database"] == "ok"
+    assert payload["schema_version"] == "1"
+
+
+def test_health_details_returns_registry_counts_and_masks_llm_secret() -> None:
+    client = make_client()
+    client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "secret-token"}})
+
+    response = client.get("/api/health/details")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["registries"]["agents"] >= 3
+    assert payload["registries"]["capabilities"] >= 3
+    assert payload["registries"]["commands"] >= 2
+    assert payload["llm"]["api_key_set"] is True
+    assert "secret-token" not in str(payload)
+
+
 def test_list_agents_returns_builtin_agents() -> None:
     response = make_client().get("/api/agents")
 
@@ -275,6 +301,19 @@ def test_post_message_base64_executes_command() -> None:
     assert payload["messages"][-1]["content"] == "aGVsbG8="
 
 
+def test_command_run_events_include_started_and_done() -> None:
+    client = make_client()
+    session = create_session(client)
+    payload = post_message(client, session["session_id"], "/base64 hello")
+
+    response = client.get(f"/api/runs/{payload['run']['run_id']}/events")
+
+    assert response.status_code == 200
+    types = [event["type"] for event in response.json()]
+    assert "run_started" in types
+    assert "run_done" in types
+
+
 def test_post_message_plain_text_uses_default_agent_with_fake_llm() -> None:
     client = make_client(response="chat reply")
     session = create_session(client, default_agent_id="chat")
@@ -284,6 +323,31 @@ def test_post_message_plain_text_uses_default_agent_with_fake_llm() -> None:
     assert payload["success"] is True
     assert payload["data"] == "chat reply"
     assert payload["run"]["target_id"] == "chat"
+
+
+def test_prompt_run_events_include_message_done() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client, default_agent_id="chat")
+    payload = post_message(client, session["session_id"], "hello")
+
+    response = client.get(f"/api/runs/{payload['run']['run_id']}/events")
+
+    assert response.status_code == 200
+    assert "message_done" in [event["type"] for event in response.json()]
+
+
+def test_failed_prompt_run_events_include_run_failed() -> None:
+    client = make_client()
+    client.app.state.runtime_state.agent_runner.llm_runtime.fail = True
+    session = create_session(client, default_agent_id="chat")
+
+    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
+    run_id = response.json()["run"]["run_id"]
+    events = client.get(f"/api/runs/{run_id}/events").json()
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    assert "run_failed" in [event["type"] for event in events]
 
 
 def test_post_message_translate_uses_fake_llm() -> None:
@@ -370,6 +434,20 @@ def test_cancel_running_run_marks_cancelled() -> None:
     assert response.json()["run"]["status"] == "CANCELLED"
 
 
+def test_cancel_run_records_run_cancelled_event() -> None:
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    client = TestClient(app)
+    session = create_session(client)
+    run = app.state.runtime_state.runs.create_run(kind="agent", target_id="chat", session_id=session["session_id"])
+    app.state.runtime_state.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
+
+    client.post(f"/api/runs/{run.run_id}/cancel")
+    response = client.get(f"/api/runs/{run.run_id}/events")
+
+    assert response.status_code == 200
+    assert "run_cancelled" in [event["type"] for event in response.json()]
+
+
 def test_cancel_waiting_run_clears_session_waiting_run() -> None:
     app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
     client = TestClient(app)
@@ -403,6 +481,13 @@ def test_cancel_done_run_returns_not_cancelled() -> None:
 
 def test_cancel_missing_run_returns_structured_404() -> None:
     response = make_client().post("/api/runs/missing/cancel")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "RUN_NOT_FOUND"
+
+
+def test_missing_run_events_returns_structured_404() -> None:
+    response = make_client().get("/api/runs/missing/events")
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "RUN_NOT_FOUND"

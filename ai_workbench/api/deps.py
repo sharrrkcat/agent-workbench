@@ -12,12 +12,13 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
-from ai_workbench.core.stores import AgentConfigStore, CapabilityConfigStore, MessageStore, RunStore, SessionStore
+from ai_workbench.core.stores import AgentConfigStore, CapabilityConfigStore, MessageStore, RunEventStore, RunStore, SessionStore
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.db.stores import (
     SqlAgentConfigStore,
     SqlCapabilityConfigStore,
     SqlMessageStore,
+    SqlRunEventStore,
     SqlRunStore,
     SqlSessionStore,
 )
@@ -32,6 +33,7 @@ class RuntimeState:
     sessions: SessionStore
     messages: MessageStore
     runs: RunStore
+    run_events: Any
     events: EventBus
     router: Router
     command_runner: CommandRunner
@@ -67,6 +69,7 @@ def build_runtime_state(
         sessions = SessionStore()
         messages = MessageStore()
         runs = RunStore()
+        run_events = RunEventStore()
         agent_configs = AgentConfigStore()
         capability_configs = CapabilityConfigStore()
     else:
@@ -75,11 +78,12 @@ def build_runtime_state(
         sessions = SqlSessionStore(engine)
         messages = SqlMessageStore(engine)
         runs = SqlRunStore(engine)
+        run_events = SqlRunEventStore(engine)
         agent_configs = SqlAgentConfigStore(engine)
         capability_configs = SqlCapabilityConfigStore(engine)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
-    events = EventBus()
+    events = EventBus(run_event_store=run_events)
     router = Router(agent_registry=agents, command_registry=commands)
     command_runner = CommandRunner(
         command_registry=commands,
@@ -110,6 +114,7 @@ def build_runtime_state(
         sessions=sessions,
         messages=messages,
         runs=runs,
+        run_events=run_events,
         events=events,
         router=router,
         command_runner=command_runner,

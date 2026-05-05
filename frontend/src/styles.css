@@ -159,7 +159,7 @@ button {
 
 .workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
 }
 
@@ -399,12 +399,26 @@ button {
   background: #fffdf8;
 }
 
+.run-summary,
 .run-row > div {
   justify-content: space-between;
   gap: 8px;
 }
 
-.run-row span {
+.run-summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.run-row > span,
+.run-summary span {
   width: fit-content;
   padding: 3px 7px;
   border-radius: 6px;
@@ -427,6 +441,52 @@ button {
   margin: 0;
   color: #9f3f2e;
   font-size: 12px;
+}
+
+.run-timeline {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #d8d2c5;
+}
+
+.timeline-loading,
+.timeline-event {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 0.9fr) minmax(0, 1.2fr);
+  gap: 6px;
+  align-items: center;
+  color: #766f63;
+  font-size: 11px;
+}
+
+.timeline-loading {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.timeline-event time,
+.timeline-event strong,
+.timeline-event span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-event strong {
+  color: #60745b;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 20px;
+  border-bottom: 1px solid #e0b9ad;
+  background: #f8e8e3;
+  color: #9f3f2e;
+  font-size: 13px;
 }
 
 .settings-section {

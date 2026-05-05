@@ -8,12 +8,14 @@ from sqlmodel import select
 
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
+from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 from ai_workbench.db.models import (
     AgentConfigRecord,
     AppMetadataRecord,
     CapabilityConfigRecord,
     MessageRecord,
+    RunEventRecord,
     RunRecord,
     SessionRecord,
 )
@@ -276,6 +278,40 @@ class SqlRunStore:
         return interrupted
 
 
+class SqlRunEventStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def add_event(
+        self,
+        run_id: str,
+        session_id: str,
+        type: str,
+        message: str = "",
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> RunEventSchema:
+        record = RunEventRecord(
+            event_id=str(uuid4()),
+            run_id=run_id,
+            session_id=session_id,
+            type=type,
+            message=message,
+            payload_json=_dumps(payload or {}),
+        )
+        with DbSession(self.engine) as session:
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+        return _run_event_from_record(record)
+
+    def list_events(self, run_id: str) -> List[RunEventSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(
+                select(RunEventRecord).where(RunEventRecord.run_id == run_id).order_by(RunEventRecord.created_at)
+            ).all()
+            return [_run_event_from_record(record) for record in records]
+
+
 class SqlAgentConfigStore:
     def __init__(self, engine) -> None:
         self.engine = engine
@@ -410,6 +446,18 @@ def _run_from_record(record: RunRecord) -> RunSchema:
         metadata=_loads(record.metadata_json, {}),
         created_at=record.created_at,
         updated_at=record.updated_at,
+    )
+
+
+def _run_event_from_record(record: RunEventRecord) -> RunEventSchema:
+    return RunEventSchema(
+        event_id=record.event_id,
+        run_id=record.run_id,
+        session_id=record.session_id,
+        type=record.type,
+        message=record.message,
+        payload=_loads(record.payload_json, {}),
+        created_at=record.created_at,
     )
 
 

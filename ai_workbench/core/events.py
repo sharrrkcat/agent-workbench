@@ -17,9 +17,10 @@ class Event(BaseModel):
 
 
 class EventBus:
-    def __init__(self) -> None:
+    def __init__(self, run_event_store=None) -> None:
         self._events: List[Event] = []
         self._subscribers: List[asyncio.Queue] = []
+        self.run_event_store = run_event_store
 
     def emit(
         self,
@@ -37,6 +38,14 @@ class EventBus:
             payload=payload or {},
         )
         self._events.append(event)
+        if self.run_event_store is not None and event.run_id:
+            self.run_event_store.add_event(
+                run_id=event.run_id,
+                session_id=event.session_id,
+                type=event.type,
+                message=_event_message(event),
+                payload=event.payload,
+            )
         for queue in list(self._subscribers):
             queue.put_nowait(event)
         return event
@@ -52,3 +61,24 @@ class EventBus:
     def unsubscribe(self, queue: asyncio.Queue) -> None:
         if queue in self._subscribers:
             self._subscribers.remove(queue)
+
+
+def _event_message(event: Event) -> str:
+    if "error" in event.payload:
+        return str(event.payload["error"])
+    if "warning" in event.payload:
+        return str(event.payload["warning"])
+    if "step" in event.payload:
+        return str(event.payload["step"])
+    if event.message_id:
+        return f"Message {event.message_id}"
+    labels = {
+        "run_started": "Run started.",
+        "run_step": "Run step.",
+        "action_invoked": "Action invoked.",
+        "message_done": "Message completed.",
+        "run_done": "Run completed.",
+        "run_failed": "Run failed.",
+        "run_cancelled": "Run cancelled.",
+    }
+    return labels.get(event.type, "")

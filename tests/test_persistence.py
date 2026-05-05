@@ -10,6 +10,7 @@ from ai_workbench.db.models import (
     AppMetadataRecord,
     CapabilityConfigRecord,
     MessageRecord,
+    RunEventRecord,
     RunRecord,
     SessionRecord,
 )
@@ -17,6 +18,7 @@ from ai_workbench.db.stores import (
     SqlAgentConfigStore,
     SqlCapabilityConfigStore,
     SqlMessageStore,
+    SqlRunEventStore,
     SqlRunStore,
     SqlSessionStore,
 )
@@ -42,6 +44,7 @@ def test_sqlite_database_initialization_creates_tables(tmp_path: Path) -> None:
     assert SessionRecord.__tablename__ in tables
     assert MessageRecord.__tablename__ in tables
     assert RunRecord.__tablename__ in tables
+    assert RunEventRecord.__tablename__ in tables
     assert AgentConfigRecord.__tablename__ in tables
     assert CapabilityConfigRecord.__tablename__ in tables
     assert AppMetadataRecord.__tablename__ in tables
@@ -95,6 +98,21 @@ def test_sql_run_store_create_update_list_get(tmp_path: Path) -> None:
     assert done.status == RunStatus.DONE
     assert runs.get_run(run.run_id).current_step == "done"
     assert [item.run_id for item in runs.list_runs(session.session_id)] == [run.run_id]
+
+
+def test_sql_run_event_store_add_list(tmp_path: Path) -> None:
+    engine = make_engine(tmp_path)
+    sessions = SqlSessionStore(engine)
+    runs = SqlRunStore(engine)
+    events = SqlRunEventStore(engine)
+    session = sessions.create_session()
+    run = runs.create_run(kind="command", target_id="/base64", session_id=session.session_id)
+
+    event = events.add_event(run.run_id, session.session_id, "run_started", "Run started.", {"ok": True})
+
+    listed = events.list_events(run.run_id)
+    assert listed == [event]
+    assert listed[0].payload == {"ok": True}
 
 
 def test_sql_config_stores_save_and_read(tmp_path: Path) -> None:

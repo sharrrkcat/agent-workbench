@@ -25,6 +25,15 @@ def get_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
         raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
 
 
+@router.get("/api/runs/{run_id}/events")
+def list_run_events(run_id: str, state: RuntimeState = Depends(get_state)) -> list:
+    try:
+        state.runs.get_run(run_id)
+    except KeyError:
+        raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
+    return [event.model_dump() for event in state.run_events.list_events(run_id)]
+
+
 @router.post("/api/runs/{run_id}/cancel")
 def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:

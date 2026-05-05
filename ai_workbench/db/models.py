@@ -43,6 +43,16 @@ class RunRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class RunEventRecord(SQLModel, table=True):
+    event_id: str = Field(primary_key=True)
+    run_id: str = Field(index=True)
+    session_id: str = Field(index=True)
+    type: str
+    message: str = ""
+    payload_json: str = "{}"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class AgentConfigRecord(SQLModel, table=True):
     agent_id: str = Field(primary_key=True)
     enabled: bool = True

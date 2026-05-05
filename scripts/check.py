@@ -26,6 +26,7 @@ def main() -> int:
         checks.append(("Command registry", f"{len(commands.list())} commands registered"))
         checks.append(("Database initialization", check_database()))
         checks.append(("Schema version", check_schema_version()))
+        checks.append(("FastAPI app", check_app_health()))
     except Exception as exc:
         print(f"[FAIL] {exc}")
         return 1
@@ -79,6 +80,27 @@ def check_schema_version() -> str:
     if record.value != SCHEMA_VERSION:
         raise RuntimeError(f"schema_version mismatch: expected {SCHEMA_VERSION}, found {record.value}")
     return record.value
+
+
+def check_app_health() -> str:
+    from fastapi.testclient import TestClient
+
+    from ai_workbench.api.main import create_app
+
+    client = TestClient(create_app(use_memory=True))
+    health = client.get("/api/health")
+    if health.status_code != 200 or health.json().get("status") != "ok":
+        raise RuntimeError(f"/api/health failed: {health.text}")
+    details = client.get("/api/health/details")
+    if details.status_code != 200:
+        raise RuntimeError(f"/api/health/details failed: {details.text}")
+    payload = details.json()
+    registries = payload.get("registries", {})
+    if registries.get("agents", 0) < 1 or registries.get("capabilities", 0) < 1 or registries.get("commands", 0) < 1:
+        raise RuntimeError(f"registry counts are not healthy: {registries}")
+    if "api_key" in str(payload).lower() and "api_key_set" not in str(payload):
+        raise RuntimeError("/api/health/details leaked api key material")
+    return "health endpoints ok"
 
 
 if __name__ == "__main__":

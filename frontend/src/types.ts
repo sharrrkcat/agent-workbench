@@ -129,6 +129,32 @@ export type Run = {
   updated_at: string;
 };
 
+export type RunEvent = {
+  event_id: string;
+  run_id: string;
+  session_id: string;
+  type: string;
+  message: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type HealthDetails = {
+  status: 'ok' | 'degraded';
+  version: string;
+  database: { status: string; error?: string };
+  schema_version: string;
+  registries: { agents: number; capabilities: number; commands: number };
+  llm: {
+    status: string;
+    base_url?: string;
+    model?: string;
+    timeout?: number | null;
+    api_key_set?: boolean;
+    error?: string;
+  };
+};
+
 export type RuntimeResponse = {
   success: boolean;
   data: unknown;

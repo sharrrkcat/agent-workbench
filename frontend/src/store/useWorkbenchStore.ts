@@ -10,6 +10,8 @@ import type {
   LlmTestResult,
   Message,
   Run,
+  RunEvent,
+  HealthDetails,
   Session,
 } from '../types';
 
@@ -22,6 +24,9 @@ type WorkbenchState = {
   currentSession?: Session;
   messages: Message[];
   runs: Run[];
+  runEvents: Record<string, RunEvent[]>;
+  health?: HealthDetails;
+  runEventLoading?: string;
   loading: boolean;
   error?: string;
   initialize: () => Promise<void>;
@@ -37,6 +42,8 @@ type WorkbenchState = {
   ) => Promise<void>;
   getResolvedLlmConfig: () => Promise<LlmResolvedConfig | null>;
   testLlmConnection: () => Promise<LlmTestResult>;
+  refreshHealth: () => Promise<void>;
+  loadRunEvents: (runId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
 };
@@ -49,6 +56,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   sessions: [],
   messages: [],
   runs: [],
+  runEvents: {},
   loading: false,
 
   initialize: async () => {
@@ -66,6 +74,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       if (currentSession) {
         await get().refreshCurrent();
       }
+      await get().refreshHealth();
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to initialize', loading: false });
     }
@@ -159,6 +168,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'LLM test failed';
       set({ error: message, loading: false });
       return { success: false, message, base_url: '', error_code: 'LLM_CONNECTION_FAILED' };
+    }
+  },
+
+  refreshHealth: async () => {
+    try {
+      const health = await api.getHealthDetails();
+      set({ health });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load backend health' });
+    }
+  },
+
+  loadRunEvents: async (runId: string) => {
+    set({ runEventLoading: runId, error: undefined });
+    try {
+      const events = await api.listRunEvents(runId);
+      set({ runEvents: { ...get().runEvents, [runId]: events }, runEventLoading: undefined });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load run timeline', runEventLoading: undefined });
     }
   },
 
