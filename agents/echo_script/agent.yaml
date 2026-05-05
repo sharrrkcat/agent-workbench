@@ -1,0 +1,23 @@
+id: echo_script
+name: Echo Script Agent
+type: script
+description: Echo input through script runtime
+entry: agent.py
+
+actions:
+  - id: default
+    description: Echo input through script runtime
+
+capabilities:
+  - base64
+
+context_policy:
+  mode: current_message
+  max_messages: 1
+  max_chars: 4000
+
+model_lifecycle:
+  load: on_demand
+  unload: manual
+  unload_failure: warn
+

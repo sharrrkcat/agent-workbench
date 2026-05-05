@@ -1,0 +1,51 @@
+id: translate
+name: Translate Agent
+type: prompt
+description: Translate the current input
+avatar: ""
+
+actions:
+  - id: default
+    description: Translate current input
+  - id: formal
+    label: More formal
+    description: Rewrite the selected translation in a more formal tone
+    instruction: Rewrite the selected translation in a more formal tone.
+    context_policy:
+      mode: selected_message
+      include_original_user_message: true
+      include_last_agent_message: true
+  - id: casual
+    label: More casual
+    description: Rewrite the selected translation in a more casual tone
+    instruction: Rewrite the selected translation in a more casual tone.
+    context_policy:
+      mode: selected_message
+      include_original_user_message: true
+      include_last_agent_message: true
+  - id: retry
+    label: Retry
+    description: Retry based on the selected source message
+    instruction: Retry the translation based on the original source text.
+    context_policy:
+      mode: selected_message
+      include_original_user_message: true
+
+model:
+  provider: openai_compatible
+  base_url: http://localhost:1234/v1
+  model: qwen2.5-1.5b-instruct
+
+prompt: |
+  Translate the user input into natural, accurate English.
+  Output only the translation.
+
+context_policy:
+  mode: current_message
+  max_messages: 1
+  max_chars: 6000
+
+model_lifecycle:
+  load: on_demand
+  unload: after_run
+  unload_failure: warn

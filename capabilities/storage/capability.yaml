@@ -1,0 +1,9 @@
+id: storage
+name: Storage
+description: Minimal internal key/value storage capability placeholder.
+methods:
+  - id: get
+    description: Get a value by key.
+  - id: set
+    description: Set a value by key.
+commands: []

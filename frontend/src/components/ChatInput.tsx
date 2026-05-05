@@ -1,0 +1,49 @@
+import { FormEvent, KeyboardEvent, useMemo, useState } from 'react';
+import { Send } from 'lucide-react';
+import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { CommandPalette } from './CommandPalette';
+
+export function ChatInput() {
+  const [value, setValue] = useState('');
+  const { currentSession, sendMessage, loading } = useWorkbenchStore();
+
+  const canSend = Boolean(currentSession && value.trim() && !loading);
+
+  const mode = useMemo(() => {
+    if (value.startsWith('/')) return 'commands';
+    if (value.startsWith('@') && value.includes(':')) return 'actions';
+    if (value.startsWith('@')) return 'agents';
+    return 'none';
+  }, [value]);
+
+  function submit(event?: FormEvent) {
+    event?.preventDefault();
+    if (!canSend) return;
+    const content = value;
+    setValue('');
+    void sendMessage(content);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      submit();
+    }
+  }
+
+  return (
+    <form className="chat-input" onSubmit={submit}>
+      <CommandPalette mode={mode} input={value} onPick={setValue} />
+      <textarea
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="Message, @agent, @agent:action, or /command"
+        rows={3}
+      />
+      <button className="send-button" disabled={!canSend} title="Send">
+        <Send size={17} />
+      </button>
+    </form>
+  );
+}

@@ -1,0 +1,28 @@
+id: llm
+name: LLM Capability
+description: OpenAI-compatible local LLM runtime
+
+methods:
+  - id: generate
+    description: Generate text from a prompt
+    input_schema:
+      prompt:
+        type: string
+        required: true
+    output:
+      type: text
+
+  - id: chat
+    description: Generate text from chat messages
+    input_schema:
+      messages:
+        type: array
+        required: true
+    output:
+      type: text
+
+  - id: unload
+    description: Best-effort model unload
+    output:
+      type: object
+

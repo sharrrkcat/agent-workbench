@@ -1,0 +1,34 @@
+id: base64
+name: Base64 Capability
+description: Base64 encoding and decoding
+
+methods:
+  - id: encode
+    description: Encode text to Base64
+    input_schema:
+      text:
+        type: string
+        required: true
+    output:
+      type: text
+
+  - id: decode
+    description: Decode Base64 text
+    input_schema:
+      text:
+        type: string
+        required: true
+    output:
+      type: text
+
+commands:
+  - name: /base64
+    method: encode
+    description: Encode text to Base64
+    safe: true
+
+  - name: /base64-decode
+    method: decode
+    description: Decode Base64 text
+    safe: true
+
