@@ -1,8 +1,11 @@
 import importlib.util
 import inspect
+import json
+import re
+import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -77,12 +80,65 @@ class LLMProxy:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
 
-    async def generate(self, prompt: str, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
+    async def text(self, system: str, user: str, **options) -> str:
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        return await self.chat(messages=messages, **options)
+
+    async def json(self, system: str, user: str, **options) -> Dict[str, Any]:
+        content = await self.text(system=system, user=user, **options)
         try:
+            parsed = json.loads(_extract_json_text(content))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM response did not contain valid JSON: {exc.msg}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("LLM JSON response must be an object.")
+        return parsed
+
+    async def chat(self, messages: List[Dict[str, Any]], **options) -> str:
+        chat = getattr(self.llm_runtime, "chat", None)
+        model_config = options.pop("model_config", None) or self.default_model_config
+        if callable(chat):
+            data = chat(messages=messages, model_config=model_config, stream=options.pop("stream", False), **options)
+        else:
+            prompt = _messages_to_prompt(messages)
             generate = getattr(self.llm_runtime, "generate")
-            data = generate(prompt=prompt, model_config=model_config or self.default_model_config, stream=False)
-            if inspect.isawaitable(data):
-                data = await data
+            data = generate(prompt=prompt, model_config=model_config, stream=options.pop("stream", False), **options)
+        if inspect.isawaitable(data):
+            data = await data
+        return str(data)
+
+    async def generate(
+        self,
+        prompt: Optional[str] = None,
+        model_config: Optional[Dict[str, Any]] = None,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system: Optional[str] = None,
+        user: Optional[str] = None,
+        **options,
+    ) -> CapabilityCallResult:
+        try:
+            if messages is not None:
+                data = await self.chat(messages=messages, model_config=model_config, **options)
+            elif system is not None or user is not None:
+                data = await self.text(system=system or "", user=user or prompt or "", model_config=model_config, **options)
+            else:
+                generate = getattr(self.llm_runtime, "generate", None)
+                resolved_prompt = prompt if prompt is not None else options.pop("prompt", "")
+                if callable(generate):
+                    data = generate(
+                        prompt=resolved_prompt,
+                        model_config=model_config or self.default_model_config,
+                        stream=options.pop("stream", False),
+                        **options,
+                    )
+                    if inspect.isawaitable(data):
+                        data = await data
+                else:
+                    data = await self.chat(
+                        messages=[{"role": "user", "content": resolved_prompt}],
+                        model_config=model_config,
+                        **options,
+                    )
             return CapabilityCallResult(success=True, data=data)
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM generate failed.")
@@ -137,7 +193,8 @@ class AgentContext:
         self.parent_message_id = parent_message_id
         self.waiting = False
 
-    async def reply(self, content: Any, type: str = "text", actions=None):
+    async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None):
+        resolved_output_type = output_type or type
         message = self.message_store.add_message(
             session_id=self.session.session_id,
             role="agent",
@@ -145,7 +202,7 @@ class AgentContext:
             agent_id=self.agent.id,
             action_id=self.action_id,
             run_id=self.run_id,
-            output_type=type,
+            output_type=resolved_output_type,
             parent_message_id=self.parent_message_id,
             available_actions=actions or [],
             metadata={"success": True},
@@ -158,6 +215,15 @@ class AgentContext:
             payload={"available_actions": message.available_actions},
         )
         return message
+
+    async def reply_text(self, text: str, actions=None):
+        return await self.reply(text, output_type="text", actions=actions)
+
+    async def reply_markdown(self, markdown: str, actions=None):
+        return await self.reply(markdown, output_type="markdown", actions=actions)
+
+    async def reply_json(self, data: dict | list, actions=None):
+        return await self.reply(data, output_type="json", actions=actions)
 
     def step(self, name: str) -> ScriptStep:
         return ScriptStep(self, name)
@@ -318,5 +384,21 @@ def _load_module(path: Path, module_name: str) -> ModuleType:
     if spec is None or spec.loader is None:
         raise ValueError("could not load script module")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
     return module
+
+
+def _extract_json_text(content: str) -> str:
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return content.strip()
+
+
+def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:
+    return "\n\n".join(f"{message.get('role', 'user')}: {message.get('content', '')}" for message in messages)

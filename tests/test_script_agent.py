@@ -224,3 +224,158 @@ def test_script_agent_can_call_llm_generate(tmp_path: Path) -> None:
     assert result.success is True
     assert fixture.messages.list_messages(session.session_id)[-1].content == "generated"
 
+
+def test_script_agent_with_dataclass_and_future_annotations_loads(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "dataclass_script",
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\n"
+        "class Payload:\n"
+        "    text: str\n\n"
+        "async def run(ctx):\n"
+        "    payload: Payload = Payload(ctx.input.text)\n"
+        "    await ctx.reply_text(payload.text)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@dataclass_script hello"))
+
+    assert result.success is True
+    assert fixture.messages.list_messages(session.session_id)[-1].content == "hello"
+
+
+def test_ctx_llm_text_returns_string(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_text_script",
+        "async def run(ctx):\n"
+        "    text = await ctx.llm.text(system='You are terse.', user=ctx.input.text)\n"
+        "    await ctx.reply_text(text)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response="text reply"))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@llm_text_script hello"))
+
+    assert result.success is True
+    assert fixture.messages.list_messages(session.session_id)[-1].content == "text reply"
+    assert fixture.llm.calls[0]["messages"] == [
+        {"role": "system", "content": "You are terse."},
+        {"role": "user", "content": "hello"},
+    ]
+
+
+def test_ctx_llm_json_returns_dict(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_json_script",
+        "async def run(ctx):\n"
+        "    data = await ctx.llm.json(system='Return JSON.', user=ctx.input.text)\n"
+        "    await ctx.reply_json(data)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response='{\"ok\": true, \"value\": 7}'))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@llm_json_script hello"))
+
+    assert result.success is True
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    assert message.content == {"ok": True, "value": 7}
+    assert message.output_type == "json"
+
+
+def test_ctx_llm_json_extracts_fenced_json(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_fenced_json_script",
+        "async def run(ctx):\n"
+        "    data = await ctx.llm.json(system='Return JSON.', user=ctx.input.text)\n"
+        "    await ctx.reply_json(data)\n",
+    )
+    fixture = ScriptRuntimeFixture(
+        agents=registry,
+        llm=FakeLLMRuntime(response='```json\n{\"answer\": \"yes\"}\n```'),
+    )
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@llm_fenced_json_script hello"))
+
+    assert result.success is True
+    assert fixture.messages.list_messages(session.session_id)[-1].content == {"answer": "yes"}
+
+
+def test_ctx_llm_json_invalid_json_fails_clearly(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_bad_json_script",
+        "async def run(ctx):\n"
+        "    await ctx.llm.json(system='Return JSON.', user=ctx.input.text)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response="not json"))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@llm_bad_json_script hello"))
+
+    assert result.success is False
+    assert "LLM response did not contain valid JSON" in result.error
+
+
+def test_ctx_llm_generate_accepts_system_and_user(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_generate_system_script",
+        "async def run(ctx):\n"
+        "    generated = await ctx.llm.generate(system='System prompt.', user=ctx.input.text)\n"
+        "    await ctx.reply_text(generated.data)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response="generated system"))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@llm_generate_system_script hello"))
+
+    assert result.success is True
+    assert fixture.messages.list_messages(session.session_id)[-1].content == "generated system"
+
+
+def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "reply_helpers_script",
+        "async def run(ctx):\n"
+        "    await ctx.reply_text('plain')\n"
+        "    await ctx.reply_markdown('**bold**')\n"
+        "    await ctx.reply_json({'ok': True})\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@reply_helpers_script hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert [(message.content, message.output_type) for message in messages[-3:]] == [
+        ("plain", "text"),
+        ("**bold**", "markdown"),
+        ({"ok": True}, "json"),
+    ]
+
+
+def test_reply_accepts_type_and_output_type_compatibility(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "reply_compat_script",
+        "async def run(ctx):\n"
+        "    await ctx.reply('type markdown', type='markdown')\n"
+        "    await ctx.reply('output markdown', output_type='markdown')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@reply_compat_script hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert [message.output_type for message in messages[-2:]] == ["markdown", "markdown"]
