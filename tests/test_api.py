@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.config_schema import parse_config_schema
 from ai_workbench.core.schema.run import RunStatus
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
@@ -118,6 +119,31 @@ def test_patch_unknown_agent_config_returns_404() -> None:
     assert response.json()["error"]["code"] == "AGENT_CONFIG_NOT_FOUND"
 
 
+def test_patch_agent_config_rejects_unknown_user_config_field() -> None:
+    response = make_client().patch("/api/agent-configs/chat", json={"user_config": {"unknown": True}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "UNKNOWN_CONFIG_FIELD"
+
+
+def test_patch_agent_config_rejects_missing_required_field() -> None:
+    client = make_client()
+    state = client.app.state.runtime_state
+    chat = state.agents.get("chat")
+    state.agents._agents["chat"] = chat.model_copy(
+        update={
+            "config_schema": parse_config_schema(
+                [{"name": "token", "type": "string", "label": "Token", "required": True}]
+            )
+        }
+    )
+
+    response = client.patch("/api/agent-configs/chat", json={"user_config": {}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "MISSING_REQUIRED_CONFIG"
+
+
 def test_capability_config_api_lists_builtin_capabilities() -> None:
     response = make_client().get("/api/capability-configs")
 
@@ -152,6 +178,83 @@ def test_patch_unknown_capability_config_returns_404() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "CAPABILITY_CONFIG_NOT_FOUND"
+
+
+def test_patch_capability_config_rejects_unknown_user_config_field() -> None:
+    response = make_client().patch("/api/capability-configs/base64", json={"user_config": {"unknown": True}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "UNKNOWN_CONFIG_FIELD"
+
+
+def test_patch_capability_config_rejects_invalid_enum_option() -> None:
+    response = make_client().patch("/api/capability-configs/base64", json={"user_config": {"mode": "bad"}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_CONFIG_OPTION"
+
+
+def test_patch_capability_config_rejects_invalid_numeric_type() -> None:
+    response = make_client().patch("/api/capability-configs/llm", json={"user_config": {"timeout": "slow"}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_CONFIG_TYPE"
+
+
+def test_capability_config_masks_secret_values_and_preserves_mask_patch() -> None:
+    client = make_client()
+
+    response = client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "secret-token"}})
+    assert response.status_code == 200
+    assert response.json()["user_config"]["api_key"] == "********"
+
+    response = client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "********"}})
+    assert response.status_code == 200
+    assert response.json()["user_config"]["api_key"] == "********"
+
+    raw = client.app.state.runtime_state.capability_configs.get_config("llm")
+    assert raw["user_config"]["api_key"] == "secret-token"
+
+
+def test_capability_config_secret_new_value_updates_store() -> None:
+    client = make_client()
+
+    client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "old"}})
+    response = client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "new"}})
+
+    assert response.status_code == 200
+    assert client.app.state.runtime_state.capability_configs.get_config("llm")["user_config"]["api_key"] == "new"
+
+
+class FakeDiagnosticLLMRuntime(FakeLLMRuntime):
+    def __init__(self, fail: bool = False) -> None:
+        super().__init__()
+        self.fail = fail
+
+    def list_models(self, model_config=None):
+        if self.fail:
+            raise RuntimeError("offline")
+        return ["fake-model"]
+
+
+def test_llm_test_endpoint_success_path() -> None:
+    client = TestClient(create_app(llm_runtime=FakeDiagnosticLLMRuntime(), use_memory=True))
+
+    response = client.post("/api/capability-configs/llm/test")
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["models"] == ["fake-model"]
+
+
+def test_llm_test_endpoint_failure_path() -> None:
+    client = TestClient(create_app(llm_runtime=FakeDiagnosticLLMRuntime(fail=True), use_memory=True))
+
+    response = client.post("/api/capability-configs/llm/test")
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    assert response.json()["error_code"] == "LLM_CONNECTION_FAILED"
 
 
 def test_config_user_config_must_be_object() -> None:

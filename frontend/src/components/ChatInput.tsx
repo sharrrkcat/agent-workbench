@@ -38,7 +38,7 @@ export function ChatInput() {
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Message, @agent, @agent:action, or /command"
+        placeholder="Type a message, @agent, @agent:action, or /command"
         rows={3}
       />
       <button className="send-button" disabled={!canSend} title="Send">

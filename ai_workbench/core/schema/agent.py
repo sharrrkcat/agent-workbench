@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ai_workbench.core.config_schema import ConfigFieldSchema, parse_config_schema
 from ai_workbench.core.schema.action import ActionSchema
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
@@ -37,7 +38,7 @@ class AgentSchema(BaseModel):
     context_policy: ContextPolicy
     model_lifecycle: ModelLifecyclePolicy
     capabilities: List[str] = Field(default_factory=list)
-    config_schema: List[Dict[str, Any]] = Field(default_factory=list)
+    config_schema: List[ConfigFieldSchema] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -49,6 +50,9 @@ class AgentSchema(BaseModel):
                     "Agent manifests must not declare slash command alias fields; "
                     f"found: {', '.join(found)}. Commands belong in Capability manifests."
                 )
+            if "config_schema" in data:
+                data = dict(data)
+                data["config_schema"] = parse_config_schema(data.get("config_schema"))
         return data
 
     @model_validator(mode="after")
@@ -68,4 +72,3 @@ class AgentSchema(BaseModel):
             raise ValueError("script agents require an entry field")
 
         return self
-

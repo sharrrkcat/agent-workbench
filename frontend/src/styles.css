@@ -20,6 +20,7 @@ body {
 
 button,
 select,
+input,
 textarea {
   font: inherit;
 }
@@ -218,8 +219,27 @@ button {
   font-size: 14px;
 }
 
+.empty-state {
+  gap: 8px;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
 .empty-state code {
   color: #a45f43;
+}
+
+.empty-state button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #60745b;
+  border-radius: 7px;
+  background: #60745b;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .message {
@@ -275,6 +295,11 @@ button {
   color: #60745b;
   font-size: 12px;
   font-weight: 700;
+}
+
+.action-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .chat-input {
@@ -455,17 +480,80 @@ button {
   font-size: 11px;
 }
 
+.config-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.config-field {
+  display: grid;
+  gap: 4px;
+}
+
+.config-field span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #17211b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.config-field em {
+  color: #9f3f2e;
+  font-size: 10px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.config-field small {
+  color: #766f63;
+  font-size: 11px;
+}
+
+.config-row input[type="text"],
+.config-row input[type="password"],
+.config-row input[type="number"],
+.config-row select,
 .config-row textarea {
   width: 100%;
-  resize: vertical;
   border: 1px solid #d8d2c5;
   border-radius: 7px;
   padding: 8px;
   background: #f6f3ed;
   color: #17211b;
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.config-row textarea,
+.config-empty pre {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.config-empty {
+  display: grid;
+  gap: 6px;
+  color: #766f63;
+  font-size: 12px;
+}
+
+.config-empty pre {
+  margin: 0;
+  overflow: auto;
+  max-height: 120px;
+  padding: 8px;
+  border: 1px solid #d8d2c5;
+  border-radius: 7px;
+  background: #f6f3ed;
+}
+
+.config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .config-row button {
@@ -480,10 +568,24 @@ button {
   font-weight: 700;
 }
 
+.config-row button[type="button"] {
+  background: #fffdf8;
+  color: #60745b;
+}
+
+.config-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .config-row p {
   margin: 0;
   color: #9f3f2e;
   font-size: 12px;
+}
+
+.config-row p.config-success {
+  color: #60745b;
 }
 
 .status-bar {

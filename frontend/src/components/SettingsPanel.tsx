@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { AgentConfig, CapabilityConfig } from '../types';
+import type { AgentConfig, CapabilityConfig, ConfigFieldSchema, LlmTestResult } from '../types';
 
 type ConfigKind = 'agent' | 'capability';
+type FormValues = Record<string, unknown>;
 
 export function SettingsPanel() {
   const { agentConfigs, capabilityConfigs } = useWorkbenchStore();
@@ -47,36 +48,38 @@ function ConfigEditor({
   id: string;
   name: string;
 }) {
-  const { updateAgentConfig, updateCapabilityConfig, loading } = useWorkbenchStore();
+  const { updateAgentConfig, updateCapabilityConfig, testLlmConnection, loading } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
-  const [jsonText, setJsonText] = useState(formatConfig(config.user_config));
-  const [jsonError, setJsonError] = useState('');
+  const [values, setValues] = useState<FormValues>(() => initialValues(config));
+  const [formError, setFormError] = useState('');
+  const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
+  const fields = config.config_schema || [];
 
   useEffect(() => {
     setEnabled(config.enabled);
-    setJsonText(formatConfig(config.user_config));
-    setJsonError('');
-  }, [config.enabled, config.user_config]);
+    setValues(initialValues(config));
+    setFormError('');
+  }, [config]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    let parsed: unknown;
+    let userConfig: Record<string, unknown>;
     try {
-      parsed = JSON.parse(jsonText || '{}');
-    } catch {
-      setJsonError('JSON is invalid.');
+      userConfig = buildUserConfig(fields, values);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Config is invalid.');
       return;
     }
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-      setJsonError('user_config must be a JSON object.');
-      return;
-    }
-    setJsonError('');
+    setFormError('');
     if (kind === 'agent') {
-      await updateAgentConfig(id, { enabled, user_config: parsed as Record<string, unknown> });
+      await updateAgentConfig(id, { enabled, user_config: userConfig });
     } else {
-      await updateCapabilityConfig(id, { enabled, user_config: parsed as Record<string, unknown> });
+      await updateCapabilityConfig(id, { enabled, user_config: userConfig });
     }
+  }
+
+  async function runTest() {
+    setTestResult(await testLlmConnection());
   }
 
   return (
@@ -86,15 +89,141 @@ function ConfigEditor({
         <span>{name || id}</span>
         <small>{id}</small>
       </label>
-      <textarea value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={4} spellCheck={false} />
-      {jsonError ? <p>{jsonError}</p> : null}
-      <button type="submit" disabled={loading}>
-        Save
-      </button>
+
+      {fields.length === 0 ? (
+        <div className="config-empty">
+          <span>No configurable fields.</span>
+          <pre>{JSON.stringify(config.user_config || {}, null, 2)}</pre>
+        </div>
+      ) : (
+        <div className="config-fields">
+          {fields.map((field) => (
+            <ConfigFieldEditor
+              key={field.name}
+              field={field}
+              value={values[field.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
+            />
+          ))}
+        </div>
+      )}
+
+      {formError ? <p>{formError}</p> : null}
+      <div className="config-actions">
+        <button type="submit" disabled={loading}>
+          Save
+        </button>
+        {kind === 'capability' && id === 'llm' ? (
+          <button type="button" disabled={loading} onClick={() => void runTest()}>
+            Test connection
+          </button>
+        ) : null}
+      </div>
+      {testResult ? (
+        <p className={testResult.success ? 'config-success' : ''}>
+          {testResult.message}
+          {testResult.models?.length ? ` Models: ${testResult.models.join(', ')}` : ''}
+        </p>
+      ) : null}
     </form>
   );
 }
 
-function formatConfig(config: Record<string, unknown>) {
-  return JSON.stringify(config || {}, null, 2);
+function ConfigFieldEditor({
+  field,
+  value,
+  onChange,
+}: {
+  field: ConfigFieldSchema;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const label = field.label || field.name;
+  const id = `config-${field.name}`;
+  return (
+    <label className="config-field" htmlFor={id}>
+      <span>
+        {label}
+        {field.required ? <em>required</em> : null}
+      </span>
+      {renderInput(field, id, value, onChange)}
+      {field.description ? <small>{field.description}</small> : null}
+    </label>
+  );
+}
+
+function renderInput(field: ConfigFieldSchema, id: string, value: unknown, onChange: (value: unknown) => void) {
+  if (field.type === 'text') {
+    return <textarea id={id} rows={3} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />;
+  }
+  if (field.type === 'integer' || field.type === 'float') {
+    return <input id={id} type="number" value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />;
+  }
+  if (field.type === 'boolean') {
+    return <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />;
+  }
+  if (field.type === 'enum') {
+    return (
+      <select id={id} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Unset</option>
+        {field.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (field.type === 'json') {
+    return (
+      <textarea
+        id={id}
+        rows={4}
+        value={typeof value === 'string' ? value : JSON.stringify(value ?? {}, null, 2)}
+        onChange={(event) => onChange(event.target.value)}
+        spellCheck={false}
+      />
+    );
+  }
+  return (
+    <input
+      id={id}
+      type={field.secret ? 'password' : 'text'}
+      value={String(value ?? '')}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
+function initialValues(config: AgentConfig | CapabilityConfig): FormValues {
+  const source = config.user_config || {};
+  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, source[field.name] ?? '']));
+}
+
+function buildUserConfig(fields: ConfigFieldSchema[], values: FormValues): Record<string, unknown> {
+  const userConfig: Record<string, unknown> = {};
+  for (const field of fields) {
+    const value = values[field.name];
+    if (value === '' || value === undefined) {
+      continue;
+    }
+    if (field.type === 'integer') {
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed)) throw new Error(`${field.label || field.name} must be an integer.`);
+      userConfig[field.name] = parsed;
+    } else if (field.type === 'float') {
+      const parsed = Number(value);
+      if (Number.isNaN(parsed)) throw new Error(`${field.label || field.name} must be a number.`);
+      userConfig[field.name] = parsed;
+    } else if (field.type === 'json') {
+      if (typeof value === 'string') {
+        userConfig[field.name] = JSON.parse(value);
+      } else {
+        userConfig[field.name] = value;
+      }
+    } else {
+      userConfig[field.name] = value;
+    }
+  }
+  return userConfig;
 }

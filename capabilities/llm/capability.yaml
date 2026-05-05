@@ -2,6 +2,30 @@ id: llm
 name: LLM Capability
 description: OpenAI-compatible local LLM runtime
 
+config_schema:
+  - name: base_url
+    type: string
+    label: Base URL
+    default: http://localhost:1234/v1
+    description: OpenAI-compatible API base URL.
+  - name: api_key
+    type: string
+    label: API key
+    required: false
+    secret: true
+    description: Optional bearer token for local or compatible providers.
+  - name: model
+    type: string
+    label: Model
+    required: false
+    description: Optional default model for later unified LLM config.
+  - name: timeout
+    type: float
+    label: Timeout
+    default: 60
+    required: false
+    description: Request timeout in seconds.
+
 methods:
   - id: generate
     description: Generate text from a prompt
@@ -25,4 +49,3 @@ methods:
     description: Best-effort model unload
     output:
       type: object
-

@@ -1,4 +1,4 @@
-import type { Agent, AgentConfig, CapabilityConfig, Command, Message, Run, RuntimeResponse, Session } from '../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, LlmTestResult, Message, Run, RuntimeResponse, Session } from '../types';
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 export const API_BASE_URL = rawBaseUrl.replace(/\/$/, '');
@@ -41,6 +41,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+  testLlmConnection: () => request<LlmTestResult>('/api/capability-configs/llm/test', { method: 'POST' }),
   listSessions: () => request<Session[]>('/api/sessions'),
   createSession: (title = '', default_agent_id = 'chat') =>
     request<Session>('/api/sessions', {

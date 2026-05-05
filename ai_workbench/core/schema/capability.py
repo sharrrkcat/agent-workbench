@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ai_workbench.core.config_schema import ConfigFieldSchema, parse_config_schema
 from ai_workbench.core.schema.command import CommandSchema
 
 
@@ -26,6 +27,15 @@ class CapabilitySchema(BaseModel):
     description: str = ""
     methods: List[CapabilityMethodSchema]
     commands: List[CommandSchema] = Field(default_factory=list)
+    config_schema: List[ConfigFieldSchema] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_config_schema_fields(cls, data):
+        if isinstance(data, dict) and "config_schema" in data:
+            data = dict(data)
+            data["config_schema"] = parse_config_schema(data.get("config_schema"))
+        return data
 
     @model_validator(mode="after")
     def validate_capability(self) -> "CapabilitySchema":
@@ -46,4 +56,3 @@ class CapabilitySchema(BaseModel):
             )
 
         return self
-

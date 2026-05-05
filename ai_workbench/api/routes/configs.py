@@ -5,6 +5,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.core.config_schema import (
+    ConfigValidationError,
+    dump_config_schema,
+    mask_config,
+    merge_secret_patch,
+    resolve_config,
+    validate_user_config,
+)
 
 
 router = APIRouter(tags=["configs"])
@@ -39,8 +47,12 @@ def get_agent_config(agent_id: str, state: RuntimeState = Depends(get_state)) ->
 
 @router.patch("/api/agent-configs/{agent_id}")
 def update_agent_config(agent_id: str, payload: UpdateConfigRequest, state: RuntimeState = Depends(get_state)) -> dict:
-    _get_agent_or_404(state, agent_id)
-    state.agent_configs.set_config(agent_id, enabled=payload.enabled, user_config=payload.user_config)
+    agent = _get_agent_or_404(state, agent_id)
+    user_config = None
+    if payload.user_config is not None:
+        existing = state.agent_configs.get_config(agent_id)["user_config"]
+        user_config = _validate_config_patch(agent.config_schema, existing, payload.user_config)
+    state.agent_configs.set_config(agent_id, enabled=payload.enabled, user_config=user_config)
     return _serialize_agent_config(state, agent_id)
 
 
@@ -61,9 +73,47 @@ def update_capability_config(
     payload: UpdateConfigRequest,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
-    _get_capability_or_404(state, capability_id)
-    state.capability_configs.set_config(capability_id, enabled=payload.enabled, user_config=payload.user_config)
+    capability = _get_capability_or_404(state, capability_id)
+    user_config = None
+    if payload.user_config is not None:
+        existing = state.capability_configs.get_config(capability_id)["user_config"]
+        user_config = _validate_config_patch(capability.config_schema, existing, payload.user_config)
+    state.capability_configs.set_config(capability_id, enabled=payload.enabled, user_config=user_config)
     return _serialize_capability_config(state, capability_id)
+
+
+@router.post("/api/capability-configs/llm/test")
+def test_llm_connection(state: RuntimeState = Depends(get_state)) -> dict:
+    capability = _get_capability_or_404(state, "llm")
+    stored = state.capability_configs.get_config("llm")
+    try:
+        resolved = resolve_config(capability.config_schema, stored["user_config"])
+        runtime = state.runtimes.get_runtime("llm")
+        if hasattr(runtime, "list_models") and callable(runtime.list_models):
+            models = runtime.list_models(model_config=resolved)
+        elif hasattr(runtime, "test_connection") and callable(runtime.test_connection):
+            result = runtime.test_connection(model_config=resolved)
+            models = result.get("models", [])
+        else:
+            raise RuntimeError("LLM runtime does not support connection testing.")
+        return {
+            "success": True,
+            "message": "LLM service is reachable.",
+            "base_url": resolved.get("base_url", ""),
+            "models": models,
+        }
+    except Exception as exc:
+        base_url = ""
+        try:
+            base_url = resolve_config(capability.config_schema, stored["user_config"]).get("base_url", "")
+        except Exception:
+            base_url = stored.get("user_config", {}).get("base_url", "")
+        return {
+            "success": False,
+            "message": str(exc) or "LLM connection failed.",
+            "base_url": base_url,
+            "error_code": "LLM_CONNECTION_FAILED",
+        }
 
 
 def _get_agent_or_404(state: RuntimeState, agent_id: str):
@@ -83,8 +133,12 @@ def _get_capability_or_404(state: RuntimeState, capability_id: str):
 def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
     agent = state.agents.get(agent_id)
     config = state.agent_configs.get_config(agent_id)
+    masked_user_config = mask_config(agent.config_schema, config["user_config"])
     return {
         **config,
+        "user_config": masked_user_config,
+        "resolved_config": mask_config(agent.config_schema, _resolve_for_response(agent.config_schema, config["user_config"])),
+        "config_schema": dump_config_schema(agent.config_schema),
         "manifest_summary": {
             "id": agent.id,
             "name": agent.name,
@@ -98,8 +152,15 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
 def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dict:
     capability = state.capabilities.get(capability_id)
     config = state.capability_configs.get_config(capability_id)
+    masked_user_config = mask_config(capability.config_schema, config["user_config"])
     return {
         **config,
+        "user_config": masked_user_config,
+        "resolved_config": mask_config(
+            capability.config_schema,
+            _resolve_for_response(capability.config_schema, config["user_config"]),
+        ),
+        "config_schema": dump_config_schema(capability.config_schema),
         "manifest_summary": {
             "id": capability.id,
             "name": capability.name,
@@ -107,3 +168,20 @@ def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dic
             "commands": [command.model_dump() for command in capability.commands],
         },
     }
+
+
+def _validate_config_patch(schema, existing_config: Dict[str, Any], incoming_config: Dict[str, Any]) -> Dict[str, Any]:
+    merged = merge_secret_patch(schema, existing_config, incoming_config)
+    try:
+        validate_user_config(schema, merged)
+        resolve_config(schema, merged)
+    except ConfigValidationError as exc:
+        raise_error(400, exc.code, exc.message, {"field": exc.field})
+    return merged
+
+
+def _resolve_for_response(schema, user_config: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        return resolve_config(schema, user_config)
+    except ConfigValidationError:
+        return {}

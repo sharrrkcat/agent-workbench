@@ -2,6 +2,16 @@ id: base64
 name: Base64 Capability
 description: Base64 encoding and decoding
 
+config_schema:
+  - name: mode
+    type: enum
+    label: Mode
+    required: false
+    options:
+      - "on"
+      - "off"
+    description: Lightweight test setting for config validation.
+
 methods:
   - id: encode
     description: Encode text to Base64
@@ -31,4 +41,3 @@ commands:
     method: decode
     description: Decode Base64 text
     safe: true
-

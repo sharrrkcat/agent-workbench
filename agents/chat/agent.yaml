@@ -4,6 +4,13 @@ type: prompt
 description: Default chat agent
 avatar: ""
 
+config_schema:
+  - name: temperature
+    type: float
+    label: Temperature
+    required: false
+    description: Optional prompt-agent tuning placeholder for later runtime config.
+
 actions:
   - id: default
     description: Normal multi-turn chat
@@ -25,4 +32,3 @@ model_lifecycle:
   load: on_demand
   unload: never
   unload_failure: warn
-

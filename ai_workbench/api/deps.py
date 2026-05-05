@@ -57,7 +57,9 @@ def build_runtime_state(
 
     runtimes = CapabilityRuntimeRegistry()
     runtimes.load_from_directory(repo_root / "capabilities")
-    llm = llm_runtime if llm_runtime is not None else runtimes.get_runtime("llm")
+    if llm_runtime is not None:
+        runtimes.replace("llm", llm_runtime)
+    llm = runtimes.get_runtime("llm")
 
     agent_configs = None
     capability_configs = None

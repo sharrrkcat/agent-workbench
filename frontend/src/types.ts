@@ -35,10 +35,23 @@ export type ManifestSummary = {
   avatar?: string;
 };
 
+export type ConfigFieldSchema = {
+  name: string;
+  type: 'string' | 'text' | 'integer' | 'float' | 'boolean' | 'enum' | 'json';
+  label: string;
+  required: boolean;
+  default: unknown;
+  description: string;
+  options: string[];
+  secret: boolean;
+};
+
 export type AgentConfig = {
   agent_id: string;
   enabled: boolean;
   user_config: Record<string, unknown>;
+  resolved_config: Record<string, unknown>;
+  config_schema: ConfigFieldSchema[];
   manifest_summary: ManifestSummary;
   created_at: string;
   updated_at: string;
@@ -48,9 +61,19 @@ export type CapabilityConfig = {
   capability_id: string;
   enabled: boolean;
   user_config: Record<string, unknown>;
+  resolved_config: Record<string, unknown>;
+  config_schema: ConfigFieldSchema[];
   manifest_summary: ManifestSummary & { commands?: Command[] };
   created_at: string;
   updated_at: string;
+};
+
+export type LlmTestResult = {
+  success: boolean;
+  message: string;
+  base_url: string;
+  models?: string[];
+  error_code?: string;
 };
 
 export type Session = {

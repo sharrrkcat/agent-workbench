@@ -18,6 +18,9 @@ class CapabilityRuntimeRegistry:
             raise ValueError(f"duplicate capability runtime id: {capability_id}")
         self._runtimes[capability_id] = runtime
 
+    def replace(self, capability_id: str, runtime: Any) -> None:
+        self._runtimes[capability_id] = runtime
+
     def get_runtime(self, capability_id: str) -> Any:
         try:
             return self._runtimes[capability_id]

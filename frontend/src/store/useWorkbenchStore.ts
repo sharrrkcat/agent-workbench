@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
-import type { Agent, AgentConfig, AvailableAction, CapabilityConfig, Command, Message, Run, Session } from '../types';
+import type { Agent, AgentConfig, AvailableAction, CapabilityConfig, Command, LlmTestResult, Message, Run, Session } from '../types';
 
 type WorkbenchState = {
   agents: Agent[];
@@ -24,6 +24,7 @@ type WorkbenchState = {
     capabilityId: string,
     patch: Partial<Pick<CapabilityConfig, 'enabled' | 'user_config'>>,
   ) => Promise<void>;
+  testLlmConnection: () => Promise<LlmTestResult>;
   sendMessage: (content: string) => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
 };
@@ -48,14 +49,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         api.listAgentConfigs(),
         api.listCapabilityConfigs(),
       ]);
-      let currentSession = sessions[0];
-      let nextSessions = sessions;
-      if (!currentSession) {
-        currentSession = await api.createSession('First session', 'chat');
-        nextSessions = [currentSession];
+      const currentSession = sessions[0];
+      set({ agents, commands, sessions, currentSession, agentConfigs, capabilityConfigs, loading: false });
+      if (currentSession) {
+        await get().refreshCurrent();
       }
-      set({ agents, commands, sessions: nextSessions, currentSession, agentConfigs, capabilityConfigs, loading: false });
-      await get().refreshCurrent();
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to initialize', loading: false });
     }
@@ -127,6 +125,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ loading: false });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to update capability config', loading: false });
+    }
+  },
+
+  testLlmConnection: async () => {
+    set({ loading: true, error: undefined });
+    try {
+      const result = await api.testLlmConnection();
+      set({ loading: false });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'LLM test failed';
+      set({ error: message, loading: false });
+      return { success: false, message, base_url: '', error_code: 'LLM_CONNECTION_FAILED' };
     }
   },
 
