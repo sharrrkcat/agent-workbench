@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { AgentConfig, CapabilityConfig, ConfigFieldSchema, LlmTestResult } from '../types';
+import type { AgentConfig, CapabilityConfig, ConfigFieldSchema, LlmResolvedConfig, LlmTestResult } from '../types';
 
 type ConfigKind = 'agent' | 'capability';
 type FormValues = Record<string, unknown>;
@@ -48,18 +48,25 @@ function ConfigEditor({
   id: string;
   name: string;
 }) {
-  const { updateAgentConfig, updateCapabilityConfig, testLlmConnection, loading } = useWorkbenchStore();
+  const { updateAgentConfig, updateCapabilityConfig, getResolvedLlmConfig, testLlmConnection, loading } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<FormValues>(() => initialValues(config));
   const [formError, setFormError] = useState('');
   const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
+  const [resolvedLlm, setResolvedLlm] = useState<LlmResolvedConfig | null>(null);
   const fields = config.config_schema || [];
+  const isLlm = kind === 'capability' && id === 'llm';
 
   useEffect(() => {
     setEnabled(config.enabled);
     setValues(initialValues(config));
     setFormError('');
   }, [config]);
+
+  useEffect(() => {
+    if (!isLlm) return;
+    void getResolvedLlmConfig().then(setResolvedLlm);
+  }, [getResolvedLlmConfig, isLlm, config.updated_at]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -75,6 +82,9 @@ function ConfigEditor({
       await updateAgentConfig(id, { enabled, user_config: userConfig });
     } else {
       await updateCapabilityConfig(id, { enabled, user_config: userConfig });
+      if (isLlm) {
+        setResolvedLlm(await getResolvedLlmConfig());
+      }
     }
   }
 
@@ -89,6 +99,8 @@ function ConfigEditor({
         <span>{name || id}</span>
         <small>{id}</small>
       </label>
+
+      {isLlm && resolvedLlm ? <LlmStatus status={resolvedLlm} /> : null}
 
       {fields.length === 0 ? (
         <div className="config-empty">
@@ -113,12 +125,26 @@ function ConfigEditor({
         <button type="submit" disabled={loading}>
           Save
         </button>
-        {kind === 'capability' && id === 'llm' ? (
+        {isLlm ? (
           <button type="button" disabled={loading} onClick={() => void runTest()}>
             Test connection
           </button>
         ) : null}
       </div>
+      {isLlm && testResult?.models?.length ? (
+        <label className="config-field">
+          <span>Available models</span>
+          <select value={String(values.model ?? '')} onChange={(event) => setValues((current) => ({ ...current, model: event.target.value }))}>
+            <option value="">Select model</option>
+            {testResult.models.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+          <small>Choose a model, then Save to store it in the LLM capability config.</small>
+        </label>
+      ) : null}
       {testResult ? (
         <p className={testResult.success ? 'config-success' : ''}>
           {testResult.message}
@@ -126,6 +152,32 @@ function ConfigEditor({
         </p>
       ) : null}
     </form>
+  );
+}
+
+function LlmStatus({ status }: { status: LlmResolvedConfig }) {
+  return (
+    <div className="llm-status">
+      <span>Resolved LLM config</span>
+      <dl>
+        <div>
+          <dt>Base URL</dt>
+          <dd>{status.base_url || 'unset'}</dd>
+        </div>
+        <div>
+          <dt>Model</dt>
+          <dd>{status.model || 'unset'}</dd>
+        </div>
+        <div>
+          <dt>Timeout</dt>
+          <dd>{status.timeout ?? 'unset'}</dd>
+        </div>
+        <div>
+          <dt>API key</dt>
+          <dd>{status.api_key_set ? 'yes' : 'no'}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 

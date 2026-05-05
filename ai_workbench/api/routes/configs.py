@@ -13,6 +13,7 @@ from ai_workbench.core.config_schema import (
     resolve_config,
     validate_user_config,
 )
+from ai_workbench.core.llm_config import LLMConfigError, public_llm_config_status, resolve_llm_config
 
 
 router = APIRouter(tags=["configs"])
@@ -61,6 +62,27 @@ def list_capability_configs(state: RuntimeState = Depends(get_state)) -> list:
     return [_serialize_capability_config(state, capability.id) for capability in state.capabilities.list()]
 
 
+@router.get("/api/capability-configs/llm/resolved")
+def get_resolved_llm_config(state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        return public_llm_config_status(_resolve_llm_capability_config(state))
+    except LLMConfigError as exc:
+        raise_error(400, exc.code, exc.message)
+
+
+@router.get("/api/capability-configs/llm/models")
+def list_llm_models(state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        config = _resolve_llm_capability_config(state)
+        runtime = state.runtimes.get_runtime("llm")
+        models = _runtime_list_models(runtime, config.values)
+        return {"success": True, "models": [{"id": model_id} for model_id in models]}
+    except LLMConfigError as exc:
+        raise_error(400, exc.code, exc.message)
+    except Exception as exc:
+        raise_error(502, "LLM_MODEL_LIST_FAILED", _safe_llm_error(exc, "LLM model list failed."))
+
+
 @router.get("/api/capability-configs/{capability_id}")
 def get_capability_config(capability_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _get_capability_or_404(state, capability_id)
@@ -84,33 +106,32 @@ def update_capability_config(
 
 @router.post("/api/capability-configs/llm/test")
 def test_llm_connection(state: RuntimeState = Depends(get_state)) -> dict:
-    capability = _get_capability_or_404(state, "llm")
-    stored = state.capability_configs.get_config("llm")
     try:
-        resolved = resolve_config(capability.config_schema, stored["user_config"])
+        resolved = _resolve_llm_capability_config(state)
         runtime = state.runtimes.get_runtime("llm")
-        if hasattr(runtime, "list_models") and callable(runtime.list_models):
-            models = runtime.list_models(model_config=resolved)
-        elif hasattr(runtime, "test_connection") and callable(runtime.test_connection):
-            result = runtime.test_connection(model_config=resolved)
-            models = result.get("models", [])
-        else:
-            raise RuntimeError("LLM runtime does not support connection testing.")
+        models = _runtime_list_models(runtime, resolved.values)
         return {
             "success": True,
             "message": "LLM service is reachable.",
-            "base_url": resolved.get("base_url", ""),
+            "base_url": resolved.values.get("base_url", ""),
             "models": models,
+        }
+    except LLMConfigError as exc:
+        return {
+            "success": False,
+            "message": exc.message,
+            "base_url": "",
+            "error_code": exc.code,
         }
     except Exception as exc:
         base_url = ""
         try:
-            base_url = resolve_config(capability.config_schema, stored["user_config"]).get("base_url", "")
+            base_url = _resolve_llm_capability_config(state).values.get("base_url", "")
         except Exception:
-            base_url = stored.get("user_config", {}).get("base_url", "")
+            base_url = ""
         return {
             "success": False,
-            "message": str(exc) or "LLM connection failed.",
+            "message": _safe_llm_error(exc, "LLM connection failed."),
             "base_url": base_url,
             "error_code": "LLM_CONNECTION_FAILED",
         }
@@ -185,3 +206,27 @@ def _resolve_for_response(schema, user_config: Dict[str, Any]) -> Dict[str, Any]
         return resolve_config(schema, user_config)
     except ConfigValidationError:
         return {}
+
+
+def _resolve_llm_capability_config(state: RuntimeState):
+    capability = _get_capability_or_404(state, "llm")
+    stored = state.capability_configs.get_config("llm")
+    return resolve_llm_config(capability_schema=capability, capability_config=stored)
+
+
+def _runtime_list_models(runtime, model_config: Dict[str, Any]) -> list[str]:
+    if hasattr(runtime, "list_models") and callable(runtime.list_models):
+        models = runtime.list_models(model_config=model_config)
+    elif hasattr(runtime, "test_connection") and callable(runtime.test_connection):
+        result = runtime.test_connection(model_config=model_config)
+        models = result.get("models", [])
+    else:
+        raise RuntimeError("LLM runtime does not support model listing.")
+    if models and isinstance(models[0], dict):
+        return [item.get("id", "") for item in models if item.get("id")]
+    return [str(item) for item in models]
+
+
+def _safe_llm_error(exc: Exception, fallback: str) -> str:
+    message = str(exc) or fallback
+    return message.splitlines()[0]

@@ -7,8 +7,10 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
+from ai_workbench.core.llm_config import resolve_llm_config
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
@@ -71,13 +73,14 @@ class CapabilityProxy:
 
 
 class LLMProxy:
-    def __init__(self, llm_runtime: Any) -> None:
+    def __init__(self, llm_runtime: Any, default_model_config: Optional[Dict[str, Any]] = None) -> None:
         self.llm_runtime = llm_runtime
+        self.default_model_config = default_model_config or {}
 
     async def generate(self, prompt: str, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
         try:
             generate = getattr(self.llm_runtime, "generate")
-            data = generate(prompt=prompt, model_config=model_config or {}, stream=False)
+            data = generate(prompt=prompt, model_config=model_config or self.default_model_config, stream=False)
             if inspect.isawaitable(data):
                 data = await data
             return CapabilityCallResult(success=True, data=data)
@@ -87,7 +90,7 @@ class LLMProxy:
     async def unload(self, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
         try:
             unload = getattr(self.llm_runtime, "unload")
-            data = unload(model_config=model_config or {})
+            data = unload(model_config=model_config or self.default_model_config)
             if inspect.isawaitable(data):
                 data = await data
             return CapabilityCallResult(success=bool(data.get("success")), data=data, error=data.get("message"))
@@ -113,6 +116,7 @@ class AgentContext:
         event_bus: EventBus,
         runtime_registry: CapabilityRuntimeRegistry,
         llm_runtime: Any,
+        llm_model_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -129,7 +133,7 @@ class AgentContext:
         self.session_store = session_store
         self.event_bus = event_bus
         self.runtime_registry = runtime_registry
-        self.llm = LLMProxy(llm_runtime)
+        self.llm = LLMProxy(llm_runtime, default_model_config=llm_model_config)
         self.parent_message_id = parent_message_id
         self.waiting = False
 
@@ -189,6 +193,8 @@ class ScriptAgentRunner:
         event_bus: EventBus,
         runtime_registry: CapabilityRuntimeRegistry,
         llm_runtime: Any,
+        capability_registry: CapabilityRegistry = None,
+        capability_config_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -197,6 +203,8 @@ class ScriptAgentRunner:
         self.event_bus = event_bus
         self.runtime_registry = runtime_registry
         self.llm_runtime = llm_runtime
+        self.capability_registry = capability_registry
+        self.capability_config_store = capability_config_store
 
     async def run(
         self,
@@ -249,6 +257,7 @@ class ScriptAgentRunner:
             event_bus=self.event_bus,
             runtime_registry=self.runtime_registry,
             llm_runtime=self.llm_runtime,
+            llm_model_config=self._resolve_llm_model_config(agent),
         )
 
         try:
@@ -281,6 +290,22 @@ class ScriptAgentRunner:
         if not callable(run_callable) or not inspect.iscoroutinefunction(run_callable):
             raise ValueError("script entry must export async def run(ctx)")
         return run_callable
+
+    def _resolve_llm_model_config(self, agent: AgentSchema) -> Dict[str, Any]:
+        capability = None
+        capability_config = {}
+        if self.capability_registry is not None:
+            try:
+                capability = self.capability_registry.get("llm")
+            except KeyError:
+                capability = None
+        if self.capability_config_store is not None:
+            capability_config = self.capability_config_store.get_config("llm")
+        return resolve_llm_config(
+            agent_schema=agent,
+            capability_schema=capability,
+            capability_config=capability_config,
+        ).values
 
     def _fail(self, run_id: str, session_id: str, error: str) -> RunResult:
         failed_run = self.run_store.update_status(run_id, RunStatus.FAILED, current_step="failed", error=error)

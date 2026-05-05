@@ -1,8 +1,10 @@
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
+from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
@@ -20,6 +22,8 @@ class AgentRunner:
         session_store: SessionStore = None,
         runtime_registry: CapabilityRuntimeRegistry = None,
         agent_config_store=None,
+        capability_registry: CapabilityRegistry = None,
+        capability_config_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -30,6 +34,8 @@ class AgentRunner:
         self.session_store = session_store
         self.runtime_registry = runtime_registry
         self.agent_config_store = agent_config_store
+        self.capability_registry = capability_registry
+        self.capability_config_store = capability_config_store
         self.script_runner = None
         if session_store is not None and runtime_registry is not None:
             self.script_runner = ScriptAgentRunner(
@@ -40,6 +46,8 @@ class AgentRunner:
                 event_bus=event_bus,
                 runtime_registry=runtime_registry,
                 llm_runtime=llm_runtime,
+                capability_registry=capability_registry,
+                capability_config_store=capability_config_store,
             )
 
     async def run(
@@ -161,7 +169,23 @@ class AgentRunner:
         messages.extend(context.messages)
 
         try:
-            content = self.llm_runtime.chat(messages=messages, model_config=agent.model or {}, stream=False)
+            llm_config = self._resolve_llm_model_config(agent, action)
+            require_llm_model(llm_config)
+            content = self.llm_runtime.chat(messages=messages, model_config=llm_config.values, stream=False)
+        except LLMConfigError as exc:
+            failed_run = self.run_store.update_status(
+                run.run_id,
+                RunStatus.FAILED,
+                current_step="failed",
+                error=exc.message,
+            )
+            self.event_bus.emit(
+                "run_failed",
+                session_id=session_id,
+                run_id=failed_run.run_id,
+                payload={"error": exc.message, "error_code": exc.code},
+            )
+            return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
         except Exception as exc:
             error = str(exc) or "Prompt agent failed."
             failed_run = self.run_store.update_status(
@@ -215,13 +239,30 @@ class AgentRunner:
             payload={"available_actions": message.available_actions},
         )
 
-        lifecycle_result = self._apply_model_lifecycle(agent.model_lifecycle, agent.model or {}, done_run.run_id, session_id)
+        lifecycle_result = self._apply_model_lifecycle(agent.model_lifecycle, llm_config.values, done_run.run_id, session_id)
         if lifecycle_result:
             done_run = self.run_store.get_run(done_run.run_id)
             if done_run.status == RunStatus.FAILED:
                 return RunResult(success=False, run_id=done_run.run_id, data=content, error=done_run.error)
 
         return RunResult(success=True, run_id=done_run.run_id, data=content)
+
+    def _resolve_llm_model_config(self, agent, action):
+        capability = None
+        capability_config = {}
+        if self.capability_registry is not None:
+            try:
+                capability = self.capability_registry.get("llm")
+            except KeyError:
+                capability = None
+        if self.capability_config_store is not None:
+            capability_config = self.capability_config_store.get_config("llm")
+        return resolve_llm_config(
+            agent_schema=agent,
+            action_schema=action,
+            capability_schema=capability,
+            capability_config=capability_config,
+        )
 
     def _available_actions(self, agent, source_message_id: str):
         actions = []

@@ -540,6 +540,50 @@ button {
   font-size: 12px;
 }
 
+.llm-status {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #d8d2c5;
+  border-radius: 7px;
+  background: #f6f3ed;
+}
+
+.llm-status > span {
+  color: #60745b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.llm-status dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.llm-status div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.llm-status dt,
+.llm-status dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.llm-status dt {
+  color: #766f63;
+}
+
+.llm-status dd {
+  color: #17211b;
+}
+
 .config-empty pre {
   margin: 0;
   overflow: auto;

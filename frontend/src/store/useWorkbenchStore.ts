@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
-import type { Agent, AgentConfig, AvailableAction, CapabilityConfig, Command, LlmTestResult, Message, Run, Session } from '../types';
+import type {
+  Agent,
+  AgentConfig,
+  AvailableAction,
+  CapabilityConfig,
+  Command,
+  LlmResolvedConfig,
+  LlmTestResult,
+  Message,
+  Run,
+  Session,
+} from '../types';
 
 type WorkbenchState = {
   agents: Agent[];
@@ -24,6 +35,7 @@ type WorkbenchState = {
     capabilityId: string,
     patch: Partial<Pick<CapabilityConfig, 'enabled' | 'user_config'>>,
   ) => Promise<void>;
+  getResolvedLlmConfig: () => Promise<LlmResolvedConfig | null>;
   testLlmConnection: () => Promise<LlmTestResult>;
   sendMessage: (content: string) => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
@@ -125,6 +137,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ loading: false });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to update capability config', loading: false });
+    }
+  },
+
+  getResolvedLlmConfig: async () => {
+    try {
+      return await api.getResolvedLlmConfig();
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load LLM config status' });
+      return null;
     }
   },
 

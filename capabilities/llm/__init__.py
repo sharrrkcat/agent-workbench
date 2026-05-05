@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from ai_workbench.core.config_schema import MASKED_SECRET
+
 
 class CapabilityRuntime:
     def generate(
@@ -74,7 +76,9 @@ def _resolve_config(model_config: Dict[str, Any], require_model: bool = True) ->
     base_url = os.getenv("AGENT_WORKBENCH_LLM_BASE_URL") or model_config.get("base_url") or "http://localhost:1234/v1"
     model = os.getenv("AGENT_WORKBENCH_LLM_MODEL") or model_config.get("model")
     api_key = os.getenv("AGENT_WORKBENCH_LLM_API_KEY") or model_config.get("api_key") or ""
-    timeout = model_config.get("timeout") or 60
+    if api_key == MASKED_SECRET:
+        api_key = ""
+    timeout = os.getenv("AGENT_WORKBENCH_LLM_TIMEOUT") or model_config.get("timeout") or 60
 
     if require_model and not model:
         raise ValueError("LLM model is required by manifest or AGENT_WORKBENCH_LLM_MODEL.")

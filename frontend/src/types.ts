@@ -76,6 +76,14 @@ export type LlmTestResult = {
   error_code?: string;
 };
 
+export type LlmResolvedConfig = {
+  base_url: string;
+  model: string;
+  timeout?: number | null;
+  api_key_set: boolean;
+  sources?: Record<string, string>;
+};
+
 export type Session = {
   session_id: string;
   title: string;

@@ -98,6 +98,8 @@ def build_runtime_state(
         session_store=sessions,
         runtime_registry=runtimes,
         agent_config_store=agent_configs,
+        capability_registry=capabilities,
+        capability_config_store=capability_configs,
     )
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
     return RuntimeState(

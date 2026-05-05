@@ -14,4 +14,6 @@ Technical Alpha verification:
 - [ ] Disable `translate` in Settings and confirm `@translate 你好` returns a structured disabled error
 - [ ] Save `llm` capability config in Settings
 - [ ] Run `llm` Test connection
+- [ ] Select a returned LLM model and save it
+- [ ] Confirm resolved LLM status does not show API key plaintext
 - [ ] Restart backend and confirm session history is still present

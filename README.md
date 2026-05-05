@@ -56,9 +56,19 @@ AGENT_WORKBENCH_DATABASE_URL=sqlite:///./data/agent_workbench.db
 AGENT_WORKBENCH_LLM_BASE_URL=http://localhost:1234/v1
 AGENT_WORKBENCH_LLM_API_KEY=
 AGENT_WORKBENCH_LLM_MODEL=
+AGENT_WORKBENCH_LLM_TIMEOUT=60
 ```
 
-The LLM runtime still supports these environment variables. Round 11 also adds schema-aware `llm` CapabilityConfig fields for `base_url`, `api_key`, `model`, and `timeout`, so the Settings page can store local configuration for the next config-unification round.
+LLM config resolution now uses one shared path for Prompt Agents, Script Agent `ctx.llm.generate`, diagnostics, and model listing.
+
+Priority, highest first:
+
+- Explicit environment overrides: `AGENT_WORKBENCH_LLM_BASE_URL`, `AGENT_WORKBENCH_LLM_API_KEY`, `AGENT_WORKBENCH_LLM_MODEL`, `AGENT_WORKBENCH_LLM_TIMEOUT`
+- Agent manifest `model` fields
+- persisted `llm` CapabilityConfig from Settings
+- `llm` capability manifest defaults
+
+Environment variables intentionally win so local development and CI can temporarily override UI-saved settings without editing SQLite.
 
 ## Basic Usage
 
@@ -85,6 +95,8 @@ Set `AGENT_WORKBENCH_LLM_MODEL` in `.env`, or configure the `llm` capability in 
 
 In Settings, use the `llm` capability `Test connection` button. It calls `/api/capability-configs/llm/test`, checks `/models`, and returns a success or failure message with the configured base URL.
 
+After a successful test, available models are shown in the LLM settings area. Select one, then click Save to persist it as `CapabilityConfig.user_config.model`. Prompt Agents without their own manifest model use that saved model by default. Agents that declare a model in their manifest keep using the manifest model unless an environment override is present.
+
 ## Settings
 
 AgentConfig and CapabilityConfig now use manifest-declared `config_schema` fields. Unknown user config fields are rejected by the API.
@@ -101,9 +113,18 @@ Supported schema field types:
 
 If a manifest has no `config_schema`, Settings shows `No configurable fields` and does not allow arbitrary JSON edits.
 
+The `llm` Settings card also shows resolved non-secret status:
+
+- `base_url`
+- `model`
+- `timeout`
+- whether an API key is set
+
+The resolved status endpoint does not return API key plaintext.
+
 Secret fields render as password inputs. API responses return the fixed mask `********` for set secrets. Sending `********` back in a PATCH keeps the stored value unchanged. Sending an empty string clears the secret because empty strings are omitted from the saved form payload in the current UI; API callers can send `""` explicitly if they want to persist an empty value.
 
-Round 11 only masks secrets in API/UI responses. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
+Secret masking is API/UI masking only. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
 
 ## SQLite Data
 
