@@ -66,9 +66,9 @@ input:disabled {
   min-width: 0;
   min-height: 0;
   height: 100dvh;
-  padding: 14px;
+  padding: 12px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: #171717;
+  background: linear-gradient(180deg, #181818, #151515);
 }
 
 .sidebar-header {
@@ -77,7 +77,8 @@ input:disabled {
   gap: 10px;
   align-items: center;
   min-height: 42px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+  padding: 2px 4px;
 }
 
 .brand-mark,
@@ -131,8 +132,9 @@ input:disabled {
 
 .new-chat-button {
   width: 100%;
-  margin-bottom: 12px;
-  background: #2f2f2f;
+  margin-bottom: 10px;
+  background: linear-gradient(180deg, #343434, #2a2a2a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 24px rgba(0, 0, 0, 0.18);
 }
 
 .new-chat-button:hover,
@@ -148,33 +150,49 @@ input:disabled {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 2px 10px;
+  padding: 4px 2px 10px;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
 .session-row {
+  position: relative;
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  gap: 5px 8px;
   width: 100%;
-  min-height: 58px;
-  padding: 10px 12px;
+  min-height: 62px;
+  padding: 10px 8px 10px 12px;
   text-align: left;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 14px;
   background: transparent;
   color: #f5f5f5;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
 
 .session-row:hover {
-  background: #242424;
+  background: #222222;
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .session-row.active {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: #2f2f2f;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, #303030, #282828);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 16px 30px rgba(0, 0, 0, 0.16);
+}
+
+.session-row.active::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 999px;
+  background: #22a06b;
 }
 
 .session-row span,
@@ -184,6 +202,47 @@ input:disabled {
   white-space: nowrap;
   font-size: 14px;
   font-weight: 620;
+}
+
+.session-title {
+  align-self: end;
+  padding-left: 2px;
+}
+
+.session-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.session-meta small + small::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  vertical-align: middle;
+}
+
+.session-menu {
+  grid-row: span 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  align-self: center;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.42);
+  opacity: 0;
+}
+
+.session-row:hover .session-menu,
+.session-row.active .session-menu {
+  opacity: 1;
 }
 
 .session-row small,
@@ -199,7 +258,9 @@ input:disabled {
 }
 
 .sidebar-footer {
-  padding: 12px 4px 2px;
+  margin: 4px 2px 0;
+  padding: 11px 10px 3px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .workspace {
@@ -233,7 +294,7 @@ input:disabled {
 .action-buttons,
 .config-actions,
 .panel-title,
-.drawer-header,
+.settings-page-stats,
 .run-row > div {
   display: flex;
   align-items: center;
@@ -255,6 +316,38 @@ input:disabled {
 
 .topbar-actions {
   gap: 8px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 620;
+  text-transform: capitalize;
+}
+
+.status-pill > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.status-pill.ok > span {
+  background: #22a06b;
+  box-shadow: 0 0 0 4px rgba(34, 160, 107, 0.13);
+}
+
+.status-pill.warn > span {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
 }
 
 .agent-switcher {
@@ -296,6 +389,13 @@ input:disabled {
 .tool-button {
   padding: 0 13px;
   background: #2a2a2a;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.tool-button:active,
+.new-chat-button:active,
+.session-row:active {
+  transform: translateY(1px);
 }
 
 .icon-button,
@@ -320,11 +420,15 @@ input:disabled {
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  padding: 8px 20px;
-  border-bottom: 1px solid rgba(248, 113, 113, 0.24);
-  background: rgba(127, 29, 29, 0.3);
-  color: #fecaca;
+  margin: 10px auto 0;
+  width: min(920px, calc(100% - 28px));
+  padding: 9px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 14px;
+  background: rgba(127, 29, 29, 0.22);
+  color: rgba(254, 202, 202, 0.92);
   font-size: 13px;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.14);
 }
 
 .error-banner span {
@@ -820,74 +924,137 @@ input:disabled {
   font-size: 12px;
 }
 
-.settings-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  justify-content: flex-end;
-  padding: 14px;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(8px);
-  z-index: 20;
-}
-
-.settings-drawer {
-  display: flex;
-  flex-direction: column;
-  width: min(520px, 100%);
+.settings-page {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: 100%;
+  height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 22px;
-  background: #242424;
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+  background:
+    radial-gradient(circle at 24% -12%, rgba(117, 98, 255, 0.14), transparent 32%),
+    #212121;
+  color: #f5f5f5;
 }
 
-.drawer-header {
-  justify-content: space-between;
-  gap: 14px;
-  flex: 0 0 auto;
-  min-height: 64px;
-  padding: 14px 16px;
+.settings-page-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 108px;
+  padding: 18px 28px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(33, 33, 33, 0.9);
+  backdrop-filter: blur(14px);
 }
 
-.drawer-header strong,
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: #2a2a2a;
+  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.back-button:hover {
+  background: #343434;
+}
+
+.settings-heading {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+}
+
+.settings-heading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #5651f5, #22a06b);
+  color: #f5f5f5;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+}
+
+.settings-heading h1 {
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 24px;
+  font-weight: 760;
+  line-height: 1.16;
+}
+
+.settings-heading p {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+}
+
+.settings-page-stats {
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.settings-page-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .panel-title {
   color: #f5f5f5;
   font-size: 15px;
   font-weight: 720;
 }
 
-.drawer-header span {
-  display: block;
-  margin-top: 2px;
-  color: rgba(255, 255, 255, 0.56);
-  font-size: 12px;
-}
-
 .settings-panel {
-  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: min(1180px, 100%);
   min-height: 0;
   overflow-y: auto;
-  padding: 14px;
+  margin: 0 auto;
+  padding: 22px 28px 34px;
   background: transparent;
-}
-
-.settings-drawer .settings-panel > .panel-title {
-  display: none;
 }
 
 .panel-title {
   justify-content: flex-start;
   gap: 8px;
   height: 34px;
+  grid-column: 1 / -1;
 }
 
 .settings-section {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: rgba(47, 47, 47, 0.62);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
 }
 
 .settings-section:first-of-type {
@@ -895,8 +1062,8 @@ input:disabled {
 }
 
 .settings-section h2 {
-  margin: 4px 0 0;
-  color: rgba(255, 255, 255, 0.58);
+  margin: 0 0 2px;
+  color: rgba(255, 255, 255, 0.78);
   font-size: 12px;
   font-weight: 720;
   text-transform: uppercase;
@@ -908,8 +1075,8 @@ input:disabled {
   gap: 10px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  background: #2f2f2f;
+  border-radius: 15px;
+  background: rgba(31, 31, 31, 0.72);
 }
 
 .config-toggle {
@@ -1251,6 +1418,24 @@ input:disabled {
   .workspace {
     height: calc(100dvh - 160px);
   }
+
+  .settings-page-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 12px;
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .settings-page-stats {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .settings-panel {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
 }
 
 @media (max-width: 620px) {
@@ -1263,6 +1448,7 @@ input:disabled {
   .topbar-left,
   .topbar-actions {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .session-chip {
@@ -1270,7 +1456,7 @@ input:disabled {
   }
 
   .tool-button {
-    width: 100%;
+    flex: 1;
   }
 
   .chat-view {
@@ -1301,11 +1487,21 @@ input:disabled {
     right: 8px;
   }
 
-  .settings-overlay {
-    padding: 8px;
+  .status-pill {
+    flex: 0 0 auto;
   }
 
-  .settings-drawer {
-    border-radius: 18px;
+  .settings-heading {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .settings-heading-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 13px;
+  }
+
+  .settings-heading h1 {
+    font-size: 21px;
   }
 }

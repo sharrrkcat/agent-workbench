@@ -4,6 +4,8 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const currentSession = useWorkbenchStore((state) => state.currentSession);
+  const health = useWorkbenchStore((state) => state.health);
+  const backendStatus = health?.status || 'unknown';
 
   return (
     <header className="topbar">
@@ -14,6 +16,10 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
         </span>
       </div>
       <div className="topbar-actions">
+        <span className={`status-pill ${backendStatus === 'ok' ? 'ok' : backendStatus === 'degraded' ? 'warn' : ''}`}>
+          <span />
+          {backendStatus}
+        </span>
         <button className="tool-button" type="button" onClick={onOpenSettings} title="Open settings">
           <Settings size={17} />
           <span>Settings</span>

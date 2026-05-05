@@ -4,18 +4,24 @@ import { ChatHeader } from './components/ChatHeader';
 import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
 import { SessionSidebar } from './components/SessionSidebar';
-import { SettingsDrawer } from './components/SettingsDrawer';
+import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
 import { createWebSocketUrl } from './api/client';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 
 export default function App() {
   const { currentSession, initialize, refreshCurrent } = useWorkbenchStore();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [path, setPath] = useState(() => window.location.pathname);
 
   useEffect(() => {
     void initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    const onPopState = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     if (!currentSession) return;
@@ -34,17 +40,25 @@ export default function App() {
     return () => socket.close();
   }, [currentSession?.session_id, refreshCurrent]);
 
+  function navigate(nextPath: string) {
+    window.history.pushState({}, '', nextPath);
+    setPath(nextPath);
+  }
+
+  if (path === '/settings') {
+    return <SettingsPage onBack={() => navigate('/')} />;
+  }
+
   return (
     <div className="app-shell">
       <SessionSidebar />
       <main className="workspace">
-        <ChatHeader onOpenSettings={() => setSettingsOpen(true)} />
+        <ChatHeader onOpenSettings={() => navigate('/settings')} />
         <ErrorBanner />
         <ChatView />
         <ChatInput />
         <StatusBar />
       </main>
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

@@ -6,15 +6,17 @@ import type { AgentConfig, CapabilityConfig, ConfigFieldSchema, LlmResolvedConfi
 type ConfigKind = 'agent' | 'capability';
 type FormValues = Record<string, unknown>;
 
-export function SettingsPanel() {
+export function SettingsPanel({ showTitle = true }: { showTitle?: boolean }) {
   const { agentConfigs, capabilityConfigs } = useWorkbenchStore();
 
   return (
     <section className="settings-panel">
-      <div className="panel-title">
-        <Settings size={15} />
-        Settings
-      </div>
+      {showTitle ? (
+        <div className="panel-title">
+          <Settings size={15} />
+          Settings
+        </div>
+      ) : null}
       <div className="settings-section">
         <h2>Agents</h2>
         {agentConfigs.map((config) => (
