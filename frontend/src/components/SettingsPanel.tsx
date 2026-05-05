@@ -60,6 +60,7 @@ function ConfigEditor({
   const fields = config.config_schema || [];
   const isLlm = kind === 'capability' && id === 'llm';
   const isSaving = savingConfigId === `${kind}:${id}`;
+  const dirty = isDirty(config, enabled, fields, values);
 
   useEffect(() => {
     setEnabled(config.enabled);
@@ -97,64 +98,77 @@ function ConfigEditor({
   }
 
   return (
-    <form className="config-row" onSubmit={save}>
-      <label className="config-toggle">
-        <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
-        <span>{name || id}</span>
-        <small>{id}</small>
-      </label>
-
-      {isLlm && resolvedLlm ? <LlmStatus status={resolvedLlm} /> : null}
-
-      {fields.length === 0 ? (
-        <div className="config-empty">
-          <span>No configurable fields.</span>
-          <pre>{JSON.stringify(config.user_config || {}, null, 2)}</pre>
+    <form className={`config-row ${enabled ? '' : 'disabled'}`} onSubmit={save}>
+      <div className="config-card-header">
+        <div className="config-card-title">
+          <span>{name || id}</span>
+          <small>{id}</small>
+          {config.manifest_summary.description ? <p>{config.manifest_summary.description}</p> : null}
         </div>
-      ) : (
-        <div className="config-fields">
-          {fields.map((field) => (
-            <ConfigFieldEditor
-              key={field.name}
-              field={field}
-              value={values[field.name]}
-              onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
-            />
-          ))}
+        <div className="config-card-controls">
+          {dirty ? (
+            <button type="submit" disabled={isSaving || testingLlm}>
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
+          <label className="toggle-switch">
+            <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+            <span aria-hidden="true" />
+            <small>{enabled ? 'Enabled' : 'Disabled'}</small>
+          </label>
         </div>
-      )}
+      </div>
 
-      {formError ? <p>{formError}</p> : null}
-      <div className="config-actions">
-        <button type="submit" disabled={isSaving || testingLlm}>
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
-        {isLlm ? (
-          <button type="button" disabled={isSaving || testingLlm} onClick={() => void runTest()}>
-            {testingLlm ? 'Testing...' : 'Test connection'}
-          </button>
+      <div className="config-card-body">
+        {isLlm && resolvedLlm ? <LlmStatus status={resolvedLlm} /> : null}
+
+        {fields.length === 0 ? (
+          <div className="config-empty">
+            <span>No configurable fields.</span>
+            <pre>{JSON.stringify(config.user_config || {}, null, 2)}</pre>
+          </div>
+        ) : (
+          <div className="config-fields">
+            {fields.map((field) => (
+              <ConfigFieldEditor
+                key={field.name}
+                field={field}
+                value={values[field.name]}
+                onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
+              />
+            ))}
+          </div>
+        )}
+
+        {formError ? <p>{formError}</p> : null}
+        <div className="config-actions">
+          {isLlm ? (
+            <button type="button" disabled={isSaving || testingLlm} onClick={() => void runTest()}>
+              {testingLlm ? 'Testing...' : 'Test connection'}
+            </button>
+          ) : null}
+        </div>
+        {isLlm && testResult?.models?.length ? (
+          <label className="config-field">
+            <span>Available models</span>
+            <select value={String(values.model ?? '')} onChange={(event) => setValues((current) => ({ ...current, model: event.target.value }))}>
+              <option value="">Select model</option>
+              {testResult.models.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+            <small>Choose a model, then Save to store it in the LLM capability config.</small>
+          </label>
+        ) : null}
+        {testResult ? (
+          <p className={testResult.success ? 'config-success' : ''}>
+            {testResult.message}
+            {testResult.models?.length ? ` Models: ${testResult.models.join(', ')}` : ''}
+          </p>
         ) : null}
       </div>
-      {isLlm && testResult?.models?.length ? (
-        <label className="config-field">
-          <span>Available models</span>
-          <select value={String(values.model ?? '')} onChange={(event) => setValues((current) => ({ ...current, model: event.target.value }))}>
-            <option value="">Select model</option>
-            {testResult.models.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
-          <small>Choose a model, then Save to store it in the LLM capability config.</small>
-        </label>
-      ) : null}
-      {testResult ? (
-        <p className={testResult.success ? 'config-success' : ''}>
-          {testResult.message}
-          {testResult.models?.length ? ` Models: ${testResult.models.join(', ')}` : ''}
-        </p>
-      ) : null}
     </form>
   );
 }
@@ -282,4 +296,36 @@ function buildUserConfig(fields: ConfigFieldSchema[], values: FormValues): Recor
     }
   }
   return userConfig;
+}
+
+function isDirty(
+  config: AgentConfig | CapabilityConfig,
+  enabled: boolean,
+  fields: ConfigFieldSchema[],
+  values: FormValues,
+): boolean {
+  if (enabled !== config.enabled) return true;
+  try {
+    return stableConfigString(buildUserConfig(fields, values)) !== stableConfigString(config.user_config || {});
+  } catch {
+    return true;
+  }
+}
+
+function stableConfigString(value: Record<string, unknown>): string {
+  return JSON.stringify(sortObject(value));
+}
+
+function sortObject(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortObject);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, sortObject(item)]),
+    );
+  }
+  return value;
 }

@@ -46,13 +46,24 @@ class SessionStore:
         return updated
 
     def list_sessions(self) -> List[Session]:
-        return list(self._sessions.values())
+        return sorted(
+            self._sessions.values(),
+            key=lambda session: (session.updated_at, session.created_at),
+            reverse=True,
+        )
+
+    def touch_session(self, session_id: str) -> Session:
+        session = self.get_session(session_id)
+        updated = session.model_copy(update={"updated_at": datetime.utcnow()})
+        self._sessions[session_id] = updated
+        return updated
 
 
 class MessageStore:
-    def __init__(self) -> None:
+    def __init__(self, session_store: Optional[SessionStore] = None) -> None:
         self._messages: Dict[str, MessageSchema] = {}
         self._session_message_ids: Dict[str, List[str]] = {}
+        self._session_store = session_store
 
     def add_message(
         self,
@@ -84,6 +95,8 @@ class MessageStore:
         )
         self._messages[message.message_id] = message
         self._session_message_ids.setdefault(session_id, []).append(message.message_id)
+        if self._session_store is not None:
+            self._session_store.touch_session(session_id)
         return message
 
     def get_message(self, message_id: str) -> MessageSchema:
@@ -96,6 +109,8 @@ class MessageStore:
         if message.message_id not in self._messages:
             raise KeyError(f"unknown message id: {message.message_id}")
         self._messages[message.message_id] = message
+        if self._session_store is not None:
+            self._session_store.touch_session(message.session_id)
         return message
 
     def list_messages(self, session_id: str) -> List[MessageSchema]:

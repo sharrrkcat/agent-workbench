@@ -112,6 +112,7 @@ export type Message = {
   run_id?: string | null;
   output_type: string;
   parent_message_id?: string | null;
+  metadata?: Record<string, unknown>;
   available_actions: AvailableAction[];
   created_at: string;
   client_status?: 'pending' | 'failed';

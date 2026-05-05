@@ -342,11 +342,13 @@ def test_failed_prompt_run_events_include_run_failed() -> None:
     session = create_session(client, default_agent_id="chat")
 
     response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
-    run_id = response.json()["run"]["run_id"]
+    payload = response.json()
+    run_id = payload["run"]["run_id"]
     events = client.get(f"/api/runs/{run_id}/events").json()
 
     assert response.status_code == 200
-    assert response.json()["success"] is False
+    assert payload["success"] is False
+    assert payload["run"]["metadata"]["input_message_id"] == payload["messages"][0]["message_id"]
     assert "run_failed" in [event["type"] for event in events]
 
 

@@ -38,10 +38,12 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
     session = _get_session_or_404(state, session_id)
     before_ids = {message.message_id for message in state.messages.list_messages(session_id)}
 
+    input_message_id = ""
     if payload.content.startswith("/"):
-        state.messages.add_message(session_id=session_id, role="user", content=payload.content)
+        user_message = state.messages.add_message(session_id=session_id, role="user", content=payload.content)
+        input_message_id = user_message.message_id
 
-    result = await state.runtime.handle_input(session, payload.content)
+    result = await state.runtime.handle_input(session, payload.content, input_message_id=input_message_id)
     if not result.success and result.run_id:
         run = state.runs.get_run(result.run_id)
         if run.status == RunStatus.FAILED:

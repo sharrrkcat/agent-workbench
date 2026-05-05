@@ -12,12 +12,12 @@ class WorkbenchRuntime:
         self.command_runner = command_runner
         self.agent_runner = agent_runner
 
-    async def handle_input(self, session: Session, raw_input: str) -> RunResult:
+    async def handle_input(self, session: Session, raw_input: str, input_message_id: str = "") -> RunResult:
         route = self.router.route(session, raw_input)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message)
         if route.kind == RouteKind.COMMAND:
-            return await self.command_runner.run(route.target_id or "", route.args, route.session_id)
+            return await self.command_runner.run(route.target_id or "", route.args, route.session_id, input_message_id=input_message_id)
         if route.kind == RouteKind.AGENT:
             if self.agent_runner is None:
                 return RunResult(success=False, run_id="", error="Agent runner is not configured.")

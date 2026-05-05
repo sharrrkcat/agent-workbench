@@ -67,7 +67,7 @@ def build_runtime_state(
     capability_configs = None
     if use_memory:
         sessions = SessionStore()
-        messages = MessageStore()
+        messages = MessageStore(session_store=sessions)
         runs = RunStore()
         run_events = RunEventStore()
         agent_configs = AgentConfigStore()

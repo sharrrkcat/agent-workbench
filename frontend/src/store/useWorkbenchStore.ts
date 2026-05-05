@@ -106,10 +106,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       api.listMessages(session.session_id),
       api.listRuns(session.session_id),
     ]);
+    const sessions = await api.listSessions();
     set({
       currentSession: freshSession,
-      sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === freshSession.session_id ? freshSession : item))),
-      messages: mergeTransientMessages(messages, get().messages, session.session_id),
+      sessions: sortSessionsByRecent(sessions),
+      messages: buildTimeline(messages, runs, get().messages, session.session_id),
       runs,
     });
   },
@@ -258,15 +259,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const result = await api.sendMessage(session.session_id, content);
       await get().refreshCurrent();
       if (!result.success) {
-        const formatted = runtimeResultError(result.error, 'RUN_FAILED');
-        set({
-          error: undefined,
-          lastError: undefined,
-          messages: [
-            ...get().messages,
-            createInlineErrorMessage(session.session_id, formatted.lastError, optimisticMessage.message_id),
-          ],
-        });
+        set({ error: undefined, lastError: undefined });
       }
       set({ sending: false });
     } catch (error) {
@@ -298,12 +291,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       });
       await get().refreshCurrent();
       if (!result.success) {
-        const formatted = runtimeResultError(result.error, 'ACTION_FAILED');
-        set({
-          error: undefined,
-          lastError: undefined,
-          messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, action.source_message_id)],
-        });
+        set({ error: undefined, lastError: undefined });
       }
       set({ pendingActionKey: undefined });
     } catch (error) {
@@ -353,6 +341,60 @@ function createInlineErrorMessage(sessionId: string, error: AppError, parentMess
     client_status: 'failed',
     client_error: error,
   };
+}
+
+function buildTimeline(fetchedMessages: Message[], runs: Run[], current: Message[], sessionId: string): Message[] {
+  const messages = [...fetchedMessages, ...failedRunErrors(fetchedMessages, runs)];
+  return mergeTransientMessages(sortMessagesByCreatedAt(messages), current, sessionId);
+}
+
+function failedRunErrors(messages: Message[], runs: Run[]): Message[] {
+  const messageRunIds = new Set(messages.map((message) => message.run_id).filter(Boolean));
+  return runs
+    .filter((run) => run.status === 'FAILED' && run.error && !messageRunIds.has(run.run_id))
+    .map((run) => {
+      const parentMessageId = firstString(run.metadata, ['parent_message_id', 'input_message_id', 'source_message_id']);
+      return {
+        message_id: `run-error-${run.run_id}`,
+        session_id: run.session_id,
+        role: 'system',
+        content: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
+        agent_id: null,
+        command_name: null,
+        action_id: run.action_id,
+        run_id: run.run_id,
+        output_type: 'error',
+        parent_message_id: parentMessageId,
+        metadata: { synthetic: true, run_kind: run.kind, target_id: run.target_id },
+        available_actions: [],
+        created_at: run.updated_at || run.created_at,
+        client_status: 'failed',
+        client_error: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
+      } satisfies Message;
+    });
+}
+
+function sortMessagesByCreatedAt(messages: Message[]): Message[] {
+  return messages
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.message.created_at || '');
+      const rightTime = Date.parse(right.message.created_at || '');
+      const normalizedLeft = Number.isNaN(leftTime) ? 0 : leftTime;
+      const normalizedRight = Number.isNaN(rightTime) ? 0 : rightTime;
+      if (normalizedLeft !== normalizedRight) return normalizedLeft - normalizedRight;
+      return left.index - right.index;
+    })
+    .map((item) => item.message);
+}
+
+function firstString(source: Record<string, unknown> | undefined, keys: string[]): string | null {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
 }
 
 function mergeTransientMessages(fetched: Message[], current: Message[], sessionId: string): Message[] {

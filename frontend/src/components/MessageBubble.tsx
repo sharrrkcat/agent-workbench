@@ -8,7 +8,7 @@ import { ActionButtons } from './ActionButtons';
 export function MessageBubble({ message }: { message: Message }) {
   const agents = useWorkbenchStore((state) => state.agents);
 
-  if (message.output_type === 'error' || message.client_error) {
+  if (message.output_type === 'error' || message.client_error || message.metadata?.success === false) {
     return <InlineErrorBlock message={message} />;
   }
 
@@ -23,7 +23,7 @@ export function MessageBubble({ message }: { message: Message }) {
       <div className="message-stack">
         <MessageHeader message={message} agent={agent} kind={kind} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
-          <MessageContent message={message} />
+          <MessageContent message={message} kind={kind} />
           {message.client_status === 'pending' ? (
             <div className="message-status">
               <Clock3 size={13} />
@@ -79,8 +79,14 @@ function InlineErrorBlock({ message }: { message: Message }) {
   );
 }
 
-function MessageContent({ message }: { message: Message }) {
+function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'agent' | 'command' }) {
+  if (kind === 'user') {
+    return <PlainTextRenderer content={message.content} />;
+  }
   if (message.output_type === 'markdown') {
+    return <MarkdownRenderer content={message.content} />;
+  }
+  if (message.output_type === 'text' && kind === 'agent') {
     return <MarkdownRenderer content={message.content} />;
   }
   if (message.output_type === 'json') {
@@ -150,7 +156,7 @@ function normalizeError(message: Message): { code?: string; message?: string } {
       message: typeof content.message === 'string' ? content.message : undefined,
     };
   }
-  return { message: contentToText(message.content) };
+  return { code: message.run_id ? 'RUN_FAILED' : undefined, message: contentToText(message.content) };
 }
 
 function unwrapJsonString(value: string): string {

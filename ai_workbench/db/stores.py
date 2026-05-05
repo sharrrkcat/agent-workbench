@@ -102,7 +102,9 @@ class SqlSessionStore:
 
     def list_sessions(self) -> List[Session]:
         with DbSession(self.engine) as session:
-            records = session.exec(select(SessionRecord).order_by(SessionRecord.created_at)).all()
+            records = session.exec(
+                select(SessionRecord).order_by(SessionRecord.updated_at.desc(), SessionRecord.created_at.desc())
+            ).all()
             return [_session_from_record(record) for record in records]
 
 
@@ -140,6 +142,10 @@ class SqlMessageStore:
         )
         with DbSession(self.engine) as session:
             session.add(record)
+            session_record = session.get(SessionRecord, session_id)
+            if session_record is not None:
+                session_record.updated_at = datetime.utcnow()
+                session.add(session_record)
             session.commit()
             session.refresh(record)
         return _message_from_record(record)
@@ -166,6 +172,10 @@ class SqlMessageStore:
             record.available_actions_json = _dumps(message.available_actions)
             record.metadata_json = _dumps(message.metadata)
             session.add(record)
+            session_record = session.get(SessionRecord, message.session_id)
+            if session_record is not None:
+                session_record.updated_at = datetime.utcnow()
+                session.add(session_record)
             session.commit()
             session.refresh(record)
             return _message_from_record(record)

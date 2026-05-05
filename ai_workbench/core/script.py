@@ -297,7 +297,12 @@ class ScriptAgentRunner:
             target_id=agent.id,
             action_id=action_id,
             session_id=session_id,
-            metadata={"args": args, "source_message_id": source_message_id or None},
+            metadata={
+                "args": args,
+                "input_message_id": user_message.message_id,
+                "parent_message_id": parent_id or None,
+                "source_message_id": source_message_id or None,
+            },
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")

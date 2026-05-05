@@ -1176,42 +1176,117 @@ input:disabled {
 .config-row,
 .run-row {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 0;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 15px;
+  overflow: hidden;
   background: rgba(31, 31, 31, 0.72);
 }
 
-.config-toggle {
+.config-row.disabled {
+  opacity: 0.68;
+}
+
+.config-card-header {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: 4px 9px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
+  min-height: 64px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
 }
 
-.config-toggle input {
-  grid-row: span 2;
-  accent-color: #22a06b;
+.config-card-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
-.config-toggle span,
-.config-toggle small {
+.config-card-title span,
+.config-card-title small,
+.config-card-title p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.config-toggle span {
+.config-card-title span {
   color: #f5f5f5;
   font-size: 13px;
   font-weight: 700;
 }
 
-.config-toggle small,
+.config-card-title small,
 .config-field small {
   color: rgba(255, 255, 255, 0.52);
   font-size: 11px;
+}
+
+.config-card-title p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+}
+
+.config-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.config-card-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-switch > span {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.toggle-switch > span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.toggle-switch input:checked + span {
+  background: rgba(34, 160, 107, 0.3);
+  border-color: rgba(34, 160, 107, 0.45);
+}
+
+.toggle-switch input:checked + span::after {
+  transform: translateX(16px);
+  background: #86efac;
 }
 
 .config-fields {
@@ -1338,6 +1413,10 @@ input:disabled {
   color: #171717;
   font-size: 12px;
   font-weight: 700;
+}
+
+.config-card-controls > button {
+  justify-self: auto;
 }
 
 .config-row button[type="button"] {

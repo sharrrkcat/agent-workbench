@@ -84,6 +84,19 @@ def test_sql_message_store_add_list_get(tmp_path: Path) -> None:
     assert loaded.available_actions == [{"action_id": "retry"}]
     assert loaded.metadata == {"ok": True}
     assert [item.message_id for item in listed] == [message.message_id]
+    assert sessions.get_session(session.session_id).updated_at >= message.created_at
+
+
+def test_sql_session_store_lists_recently_updated_first(tmp_path: Path) -> None:
+    engine = make_engine(tmp_path)
+    sessions = SqlSessionStore(engine)
+    messages = SqlMessageStore(engine)
+    first = sessions.create_session(title="First")
+    second = sessions.create_session(title="Second")
+
+    messages.add_message(session_id=first.session_id, role="user", content="recent activity")
+
+    assert [item.session_id for item in sessions.list_sessions()] == [first.session_id, second.session_id]
 
 
 def test_sql_run_store_create_update_list_get(tmp_path: Path) -> None:

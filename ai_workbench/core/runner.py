@@ -118,7 +118,13 @@ class AgentRunner:
             target_id=agent_id,
             action_id=action_id,
             session_id=session_id,
-            metadata={"args": args, "source_message_id": source_message_id or None, "prefill": prefill or {}},
+            metadata={
+                "args": args,
+                "input_message_id": current_user_message_id or None,
+                "parent_message_id": parent_id or None,
+                "source_message_id": source_message_id or None,
+                "prefill": prefill or {},
+            },
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         if action_id != "default":
@@ -345,7 +351,7 @@ class CommandRunner:
         self.event_bus = event_bus
         self.capability_config_store = capability_config_store
 
-    async def run(self, command_name: str, args: str, session_id: str) -> CommandResult:
+    async def run(self, command_name: str, args: str, session_id: str, input_message_id: str = "") -> CommandResult:
         try:
             command = self.command_registry.get(command_name)
         except KeyError:
@@ -368,7 +374,7 @@ class CommandRunner:
             kind="command",
             target_id=command_name,
             session_id=session_id,
-            metadata={"args": args},
+            metadata={"args": args, "input_message_id": input_message_id or None, "parent_message_id": input_message_id or None},
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
