@@ -106,6 +106,7 @@ def build_runtime_state(
         message_store=messages,
         event_bus=events,
         capability_config_store=capability_configs,
+        capability_registry=capabilities,
     )
     agent_runner = AgentRunner(
         agent_registry=agents,

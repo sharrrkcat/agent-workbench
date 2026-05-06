@@ -304,11 +304,15 @@ function ImageRenderer({ image }: { image: ImagePayload | null }) {
   if (!image) {
     return <PlainTextRenderer content="" />;
   }
+  const url = safeImageUrl(image.url);
+  if (!url) {
+    return <PlainTextRenderer content={image.caption || image.alt || image.title || ''} />;
+  }
   return (
     <figure className="message-content image-content">
       {image.title ? <figcaption className="image-title">{image.title}</figcaption> : null}
-      <a href={image.url} target="_blank" rel="noreferrer">
-        <img src={image.url} alt={image.alt || image.title || image.caption || ''} loading="lazy" />
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt={image.alt || image.title || image.caption || ''} loading="lazy" />
       </a>
       {image.caption ? <figcaption className="image-caption">{image.caption}</figcaption> : null}
     </figure>
@@ -411,6 +415,13 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function safeImageUrl(value: string): string {
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')) return trimmed;
+  if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml|bmp);base64,[a-z0-9+/=\s]+$/i.test(trimmed)) return trimmed;
+  return '';
 }
 
 function extractReasoningContent(metadata: Record<string, unknown> | undefined): string {

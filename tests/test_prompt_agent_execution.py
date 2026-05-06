@@ -86,6 +86,7 @@ class PromptRuntimeFixture:
             run_store=self.runs,
             message_store=self.messages,
             event_bus=self.events,
+            capability_registry=capabilities,
         )
         self.agent_runner = AgentRunner(
             agent_registry=agents,

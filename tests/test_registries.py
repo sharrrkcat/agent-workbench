@@ -18,10 +18,17 @@ def test_command_registry_exposes_base64_commands() -> None:
 
     commands = CommandRegistry.from_capability_registry(capabilities)
 
-    assert {command.name for command in commands.list()} == {"/base64", "/base64-decode"}
+    assert {command.name for command in commands.list()} == {
+        "/base64",
+        "/base64-decode",
+        "/base64-image",
+        "/base64-to-image",
+    }
     assert commands.get("/base64").capability_id == "base64"
     assert commands.get("/base64").method == "encode"
     assert commands.get("/base64-decode").method == "decode"
+    assert commands.get("/base64-image").method == "decode_image"
+    assert commands.get("/base64-to-image").method == "decode_image"
 
 
 def test_duplicate_agent_id_fails() -> None:
@@ -57,4 +64,3 @@ def test_duplicate_command_name_fails() -> None:
 
     with pytest.raises(ValueError, match="duplicate command name: /same"):
         registry.register_capability(second)
-

@@ -9,11 +9,16 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.schema.capability import CapabilitySchema
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SVG_DATA_URL = (
+    "data:image/svg+xml;base64,"
+    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNjAiPjx0ZXh0IHg9IjgiIHk9IjM1Ij5vazwvdGV4dD48L3N2Zz4="
+)
 
 
 class RuntimeFixture:
@@ -40,8 +45,44 @@ class RuntimeFixture:
             run_store=self.runs,
             message_store=self.messages,
             event_bus=self.events,
+            capability_registry=capabilities,
         )
         self.runtime = WorkbenchRuntime(router=self.router, command_runner=self.command_runner)
+
+
+class RuntimeWithResult:
+    def __init__(self, result) -> None:
+        self.result = result
+
+    def make(self, text: str):
+        return self.result
+
+
+def command_fixture_from_manifest(manifest: dict, runtime) -> RuntimeFixture:
+    fixture = RuntimeFixture.__new__(RuntimeFixture)
+    agents = AgentRegistry()
+    agents.load_from_directory(ROOT / "agents")
+    capabilities = CapabilityRegistry()
+    capability = CapabilitySchema.model_validate(manifest)
+    capabilities.register(capability)
+    commands = CommandRegistry.from_capability_registry(capabilities)
+    runtimes = CapabilityRuntimeRegistry()
+    runtimes.register(capability.id, runtime)
+    fixture.sessions = SessionStore()
+    fixture.messages = MessageStore()
+    fixture.runs = RunStore()
+    fixture.events = EventBus()
+    fixture.router = Router(agent_registry=agents, command_registry=commands)
+    fixture.command_runner = CommandRunner(
+        command_registry=commands,
+        runtime_registry=runtimes,
+        run_store=fixture.runs,
+        message_store=fixture.messages,
+        event_bus=fixture.events,
+        capability_registry=capabilities,
+    )
+    fixture.runtime = WorkbenchRuntime(router=fixture.router, command_runner=fixture.command_runner)
+    return fixture
 
 
 def run(coro):
@@ -56,6 +97,7 @@ def test_base64_encode_executes_end_to_end() -> None:
 
     assert result.success is True
     assert result.data == "aGVsbG8="
+    assert result.output_type == "text"
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
 
 
@@ -67,7 +109,37 @@ def test_base64_decode_executes_end_to_end() -> None:
 
     assert result.success is True
     assert result.data == "hello"
+    assert result.output_type == "text"
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
+
+
+def test_base64_image_command_returns_image_output() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, f"/base64-image {SVG_DATA_URL}"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert result.output_type == "image"
+    assert result.data["url"].startswith("data:image/svg+xml;base64,")
+    assert set(result.data) == {"url", "alt", "title", "caption"}
+    assert messages[-1].role == "command"
+    assert messages[-1].command_name == "/base64-image"
+    assert messages[-1].output_type == "image"
+    assert messages[-1].content == result.data
+
+
+def test_base64_to_image_alias_returns_image_output() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, f"/base64-to-image {SVG_DATA_URL}"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert result.output_type == "image"
+    assert message.output_type == "image"
 
 
 def test_base64_decode_invalid_input_returns_failed_result_and_run() -> None:
@@ -124,6 +196,49 @@ def test_successful_command_writes_message_store() -> None:
     assert messages[0].output_type == "text"
 
 
+def test_declared_image_output_validation_failure_fails_run() -> None:
+    fixture = command_fixture_from_manifest(
+        {
+            "id": "bad_image",
+            "name": "Bad Image",
+            "methods": [{"id": "make", "output": {"type": "image"}}],
+            "commands": [{"name": "/bad-image", "method": "make"}],
+        },
+        runtime=RuntimeWithResult({"url": ""}),
+    )
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/bad-image ignored"))
+    failed_run = fixture.runs.get_run(result.run_id)
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is False
+    assert failed_run.status == RunStatus.FAILED
+    assert message.output_type == "text"
+    assert message.metadata["success"] is False
+
+
+def test_dict_command_without_image_shape_falls_back_to_json_output() -> None:
+    fixture = command_fixture_from_manifest(
+        {
+            "id": "dict_result",
+            "name": "Dict Result",
+            "methods": [{"id": "make"}],
+            "commands": [{"name": "/dict-result", "method": "make"}],
+        },
+        runtime=RuntimeWithResult({"ok": True, "items": [1, 2]}),
+    )
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/dict-result ignored"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert result.output_type == "json"
+    assert message.output_type == "json"
+    assert message.content == {"ok": True, "items": [1, 2]}
+
+
 def test_success_event_bus_records_started_and_done() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
@@ -173,4 +288,3 @@ def test_unknown_command_returns_structured_error_without_run() -> None:
     assert result.run_id == ""
     assert result.error == "Unknown command: /missing"
     assert fixture.runs.list_runs(session.session_id) == []
-

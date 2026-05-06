@@ -1,16 +1,24 @@
 from datetime import datetime
 from typing import Annotated, Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ImagePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    url: str
+    url: str = Field(min_length=1)
     alt: Optional[str] = None
     title: Optional[str] = None
     caption: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("image url is required")
+        return cleaned
 
 
 class ImageGalleryPayload(BaseModel):

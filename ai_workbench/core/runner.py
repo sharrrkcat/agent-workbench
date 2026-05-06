@@ -11,6 +11,7 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
+from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
@@ -870,6 +871,7 @@ class CommandRunner:
         message_store: MessageStore,
         event_bus: EventBus,
         capability_config_store=None,
+        capability_registry: CapabilityRegistry = None,
     ) -> None:
         self.command_registry = command_registry
         self.runtime_registry = runtime_registry
@@ -877,6 +879,7 @@ class CommandRunner:
         self.message_store = message_store
         self.event_bus = event_bus
         self.capability_config_store = capability_config_store
+        self.capability_registry = capability_registry
 
     async def run(self, command_name: str, args: str, session_id: str, input_message_id: str = "") -> CommandResult:
         try:
@@ -909,6 +912,8 @@ class CommandRunner:
         try:
             method = self.runtime_registry.get_method(command.capability_id, command.method)
             data = method(args)
+            output_type = self._normalize_output_type(command, data)
+            self._validate_output_payload(output_type, data)
         except Exception as exc:
             error = str(exc) or "Command failed."
             failed_run = self.run_store.update_status(
@@ -947,7 +952,7 @@ class CommandRunner:
             content=data,
             command_name=command_name,
             run_id=done_run.run_id,
-            output_type="text",
+            output_type=output_type,
             metadata={"success": True},
         )
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
@@ -957,4 +962,41 @@ class CommandRunner:
             run_id=done_run.run_id,
             message_id=message.message_id,
         )
-        return CommandResult(success=True, run_id=done_run.run_id, data=data)
+        return CommandResult(success=True, run_id=done_run.run_id, data=data, output_type=output_type)
+
+    def _normalize_output_type(self, command, data: Any) -> str:
+        declared = self._declared_output_type(command)
+        if declared:
+            return declared
+        if isinstance(data, dict):
+            if "url" in data:
+                return "image"
+            if "images" in data:
+                return "image_gallery"
+            if "blocks" in data:
+                return "rich_content"
+            return "json"
+        if isinstance(data, list):
+            return "json"
+        return "text"
+
+    def _declared_output_type(self, command) -> str:
+        if self.capability_registry is None:
+            return ""
+        try:
+            capability = self.capability_registry.get(command.capability_id)
+        except KeyError:
+            return ""
+        method = next((item for item in capability.methods if item.id == command.method), None)
+        if method is None or not isinstance(method.output, dict):
+            return ""
+        output_type = method.output.get("type")
+        return output_type.strip() if isinstance(output_type, str) and output_type.strip() else ""
+
+    def _validate_output_payload(self, output_type: str, data: Any) -> None:
+        if output_type == "image":
+            ImagePayload.model_validate(data)
+        elif output_type == "image_gallery":
+            ImageGalleryPayload.model_validate(data)
+        elif output_type == "rich_content":
+            RichContentPayload.model_validate(data)
