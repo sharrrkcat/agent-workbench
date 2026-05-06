@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, CircleAlert, Clock3 } from 'lucide-react';
@@ -81,7 +82,7 @@ function InlineErrorBlock({ message }: { message: Message }) {
 
 function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'agent' | 'command' }) {
   if (kind === 'user') {
-    return <PlainTextRenderer content={message.content} />;
+    return <UserPlainTextRenderer content={message.content} />;
   }
   if (message.output_type === 'markdown') {
     return <MarkdownRenderer content={message.content} />;
@@ -97,6 +98,27 @@ function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'a
 
 export function PlainTextRenderer({ content }: { content: unknown }) {
   return <div className="message-content plain-text">{contentToText(content)}</div>;
+}
+
+function UserPlainTextRenderer({ content }: { content: unknown }) {
+  const text = contentToText(content);
+  const collapsible = shouldCollapseUserMessage(text);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [text]);
+
+  return (
+    <div className="user-message-content">
+      <div className={`message-content plain-text ${collapsible && !expanded ? 'collapsed-user-content' : ''}`}>{text}</div>
+      {collapsible ? (
+        <button className="message-expand-button" type="button" onClick={() => setExpanded((current) => !current)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 export function MarkdownRenderer({ content }: { content: unknown }) {
@@ -166,6 +188,12 @@ function unwrapJsonString(value: string): string {
   } catch {
     return value;
   }
+}
+
+function shouldCollapseUserMessage(value: string): boolean {
+  if (value.length > 600) return true;
+  if (value.split(/\r\n|\r|\n/).length > 8) return true;
+  return value.split(/\s+/).some((token) => token.length > 160);
 }
 
 function initials(value: string): string {

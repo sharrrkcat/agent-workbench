@@ -733,6 +733,52 @@ input:disabled {
   font-family: inherit;
 }
 
+.user-message-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message.user .plain-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.collapsed-user-content {
+  position: relative;
+  max-height: 160px;
+  overflow: hidden;
+}
+
+.collapsed-user-content::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(48, 55, 53, 0), #303735);
+}
+
+.message-expand-button {
+  justify-self: start;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(134, 239, 172, 0.22);
+  border-radius: 999px;
+  background: rgba(34, 160, 107, 0.12);
+  color: #bbf7d0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.message-expand-button:hover {
+  background: rgba(34, 160, 107, 0.2);
+}
+
 .markdown-content {
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -1193,10 +1239,44 @@ input:disabled {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  min-height: 64px;
-  padding: 12px 14px;
+  min-height: 58px;
+  padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.035);
+}
+
+.config-row.collapsed .config-card-header {
+  border-bottom: 0;
+}
+
+.config-card-header.expandable {
+  cursor: pointer;
+}
+
+.config-card-header.expandable:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.config-card-summary {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.config-card-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #343434, #262626);
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 760;
 }
 
 .config-card-title {
@@ -1235,6 +1315,12 @@ input:disabled {
   display: flex;
   align-items: center;
   gap: 9px;
+}
+
+.config-card-chevron {
+  width: 31px;
+  min-height: 31px;
+  padding: 0;
 }
 
 .config-card-body {

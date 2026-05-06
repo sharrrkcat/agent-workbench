@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { Settings } from 'lucide-react';
+import { FormEvent, KeyboardEvent, MouseEvent, useEffect, useState } from 'react';
+import { Bot, Boxes, ChevronDown, ChevronRight, Settings } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { AgentConfig, CapabilityConfig, ConfigFieldSchema, LlmResolvedConfig, LlmTestResult } from '../types';
 
@@ -57,7 +57,9 @@ function ConfigEditor({
   const [formError, setFormError] = useState('');
   const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
   const [resolvedLlm, setResolvedLlm] = useState<LlmResolvedConfig | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const fields = config.config_schema || [];
+  const canExpand = fields.length > 0;
   const isLlm = kind === 'capability' && id === 'llm';
   const isSaving = savingConfigId === `${kind}:${id}`;
   const dirty = isDirty(config, enabled, fields, values);
@@ -97,48 +99,88 @@ function ConfigEditor({
     setTestResult(await testLlmConnection());
   }
 
+  function toggleExpanded() {
+    if (!canExpand) return;
+    setExpanded((current) => !current);
+  }
+
+  function onHeaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (!canExpand) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleExpanded();
+    }
+  }
+
+  function stopHeaderToggle(event: MouseEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  const avatar = config.manifest_summary.avatar?.trim();
+  const label = name || id;
+
   return (
-    <form className={`config-row ${enabled ? '' : 'disabled'}`} onSubmit={save}>
-      <div className="config-card-header">
-        <div className="config-card-title">
-          <span>{name || id}</span>
-          <small>{id}</small>
-          {config.manifest_summary.description ? <p>{config.manifest_summary.description}</p> : null}
+    <form className={`config-row ${enabled ? '' : 'disabled'} ${expanded ? 'expanded' : 'collapsed'}`} onSubmit={save}>
+      <div
+        className={`config-card-header ${canExpand ? 'expandable' : ''}`}
+        role={canExpand ? 'button' : undefined}
+        tabIndex={canExpand ? 0 : undefined}
+        aria-expanded={canExpand ? expanded : undefined}
+        onClick={toggleExpanded}
+        onKeyDown={onHeaderKeyDown}
+      >
+        <div className="config-card-summary">
+          <div className="config-card-avatar" aria-hidden="true">
+            {avatar || (kind === 'agent' ? initials(label) || <Bot size={16} /> : <Boxes size={16} />)}
+          </div>
+          <div className="config-card-title">
+            <span>{label}</span>
+            <small>{id}</small>
+            {config.manifest_summary.description ? <p>{config.manifest_summary.description}</p> : null}
+          </div>
         </div>
-        <div className="config-card-controls">
+        <div className="config-card-controls" onClick={stopHeaderToggle} onKeyDown={(event) => event.stopPropagation()}>
           {dirty ? (
-            <button type="submit" disabled={isSaving || testingLlm}>
+            <button type="submit" disabled={isSaving || testingLlm} onClick={stopHeaderToggle}>
               {isSaving ? 'Saving...' : 'Save'}
             </button>
           ) : null}
-          <label className="toggle-switch">
+          <label className="toggle-switch" onClick={stopHeaderToggle}>
             <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
             <span aria-hidden="true" />
             <small>{enabled ? 'Enabled' : 'Disabled'}</small>
           </label>
+          {canExpand ? (
+            <button
+              className="config-card-chevron"
+              type="button"
+              aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
+              aria-expanded={expanded}
+              onClick={(event) => {
+                stopHeaderToggle(event);
+                toggleExpanded();
+              }}
+            >
+              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+          ) : null}
         </div>
       </div>
 
+      {expanded && canExpand ? (
       <div className="config-card-body">
         {isLlm && resolvedLlm ? <LlmStatus status={resolvedLlm} /> : null}
 
-        {fields.length === 0 ? (
-          <div className="config-empty">
-            <span>No configurable fields.</span>
-            <pre>{JSON.stringify(config.user_config || {}, null, 2)}</pre>
-          </div>
-        ) : (
-          <div className="config-fields">
-            {fields.map((field) => (
-              <ConfigFieldEditor
-                key={field.name}
-                field={field}
-                value={values[field.name]}
-                onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
-              />
-            ))}
-          </div>
-        )}
+        <div className="config-fields">
+          {fields.map((field) => (
+            <ConfigFieldEditor
+              key={field.name}
+              field={field}
+              value={values[field.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
+            />
+          ))}
+        </div>
 
         {formError ? <p>{formError}</p> : null}
         <div className="config-actions">
@@ -169,6 +211,7 @@ function ConfigEditor({
           </p>
         ) : null}
       </div>
+      ) : null}
     </form>
   );
 }
@@ -328,4 +371,15 @@ function sortObject(value: unknown): unknown {
     );
   }
   return value;
+}
+
+function initials(value: string): string {
+  const words = value
+    .replace(/[/_-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join('');
 }
