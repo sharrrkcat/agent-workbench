@@ -167,7 +167,7 @@ Profile capability flags are available for display and future behavior:
 - Reasoning
 - Streaming
 
-These flags are currently used primarily for UI display and future feature preparation. Vision, Tools, Reasoning, and Streaming runtime behavior will be connected incrementally in later work. JSON mode is not shown as a user-configurable capability for now because provider support differs and there is no unified runtime behavior yet.
+`supports_streaming=true` enables visible streaming for Prompt Agent replies after the current LLM call resolves to that profile. `supports_streaming=false` keeps the normal full-response path. If no profile is resolved and the app is only using the LLM CapabilityConfig or environment fallback, streaming is off unless the resolved config explicitly contains `supports_streaming=true`. Vision, Tools, and Reasoning are still capability flags only; JSON mode is not shown as a user-configurable capability for now because provider support differs and there is no unified runtime behavior yet.
 
 Agent manifests can reference a profile by Profile key or id:
 
@@ -184,6 +184,10 @@ llm:
 `allow_session_override` defaults to `true`. If it is `false`, the session model selector does not override that Agent; the Agent keeps using its manifest profile/model or fallback. The Agent dropdown marks these Agents as locked.
 
 Agent replies store resolved model metadata in run metadata and assistant message metadata under `llm_resolution`. The Chat UI displays the model used for that specific reply, preferring profile name, then profile key, then model id. The API never returns plaintext API keys in this metadata.
+
+Prompt Agent replies also store `llm_metrics` in run and assistant message metadata. The Chat UI shows a compact line with output tokens, tokens per second, first-token latency for streaming responses, or total duration when first-token timing is unavailable. When a provider returns usage, those token counts are used. When usage is absent, completion tokens are estimated from output characters and displayed with a `~` prefix.
+
+Streaming replies can be stopped from the composer. Cancelling a streaming run interrupts the active task and may preserve the partial assistant message with `metadata.interrupted=true`; failed streaming runs do not silently retry as non-streaming because that would hide provider streaming errors. If WebSocket events are unavailable, sending still falls back to the final HTTP response and message refresh, so the completed message remains visible after the request finishes.
 
 The old manifest `model` field remains compatible:
 
@@ -331,5 +335,8 @@ The same guide covers frontend output rendering for `text`, `markdown`, and `jso
 - No external app integrations.
 - No function calling, MCP, or LLM automatic tool selection.
 - No file upload.
+- Script Agent visible streaming is not implemented yet; Script Agent LLM helpers still return final text.
+- Reasoning delta parsing is reserved in metadata, but the UI does not implement a full reasoning display.
+- WebSocket unavailable mode degrades to final HTTP refresh instead of live deltas.
 - No model pool, GPU scheduling, or advanced model lifecycle management.
-- Run cancellation is API-level state hardening; it does not kill every underlying Python task.
+- Non-streaming run cancellation is best effort; blocking provider calls may finish before the task observes cancellation.

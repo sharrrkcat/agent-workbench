@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Check, ChevronDown, Loader2, Paperclip, Send, Slash } from 'lucide-react';
+import { AtSign, Check, ChevronDown, Octagon, Paperclip, Send, Slash } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, CapabilityConfig, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
@@ -14,7 +14,7 @@ export function ChatInput() {
   const formRef = useRef<HTMLFormElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { agents, capabilityConfigs, currentSession, llmProfiles, sendMessage, sending, updateSessionLlmProfile } = useWorkbenchStore();
+  const { agents, capabilityConfigs, currentSession, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile } = useWorkbenchStore();
 
   const canSend = Boolean(currentSession && value.trim() && !sending);
 
@@ -224,9 +224,15 @@ export function ChatInput() {
                 </div>
               ) : null}
             </div>
-            <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
-              {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
-              <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
+            <button
+              className={`send-button ${sending ? 'stop' : ''}`}
+              type={sending ? 'button' : 'submit'}
+              disabled={sending ? !currentSession : !canSend}
+              title={sending ? 'Stop' : 'Send'}
+              onClick={sending ? () => void cancelActiveRun() : undefined}
+            >
+              {sending ? <Octagon size={17} /> : <Send size={17} />}
+              <span className="sr-only">{sending ? 'Stop' : 'Send'}</span>
             </button>
           </div>
         </div>

@@ -139,6 +139,10 @@ export const api = {
     }),
   listRuns: (sessionId: string) => request<Run[]>(`/api/sessions/${sessionId}/runs`),
   listRunEvents: (runId: string) => request<RunEvent[]>(`/api/runs/${runId}/events`),
+  cancelRun: (runId: string) =>
+    request<{ run: Run; cancelled: boolean; task_cancelled?: boolean; reason: string }>(`/api/runs/${runId}/cancel`, {
+      method: 'POST',
+    }),
 };
 
 export function createWebSocketUrl(sessionId: string): string {

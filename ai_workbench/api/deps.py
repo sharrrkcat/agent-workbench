@@ -10,7 +10,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
-from ai_workbench.core.runner import AgentRunner, CommandRunner
+from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.stores import (
     AgentConfigStore,
@@ -48,6 +48,7 @@ class RuntimeState:
     command_runner: CommandRunner
     agent_runner: AgentRunner
     runtime: WorkbenchRuntime
+    active_runs: ActiveRunRegistry
     agent_configs: Any = None
     capability_configs: Any = None
     llm_profiles: Any = None
@@ -96,6 +97,7 @@ def build_runtime_state(
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
     events = EventBus(run_event_store=run_events)
+    active_runs = ActiveRunRegistry()
     router = Router(agent_registry=agents, command_registry=commands)
     command_runner = CommandRunner(
         command_registry=commands,
@@ -117,6 +119,7 @@ def build_runtime_state(
         capability_registry=capabilities,
         capability_config_store=capability_configs,
         llm_profile_store=llm_profiles,
+        active_runs=active_runs,
     )
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
     return RuntimeState(
@@ -133,6 +136,7 @@ def build_runtime_state(
         command_runner=command_runner,
         agent_runner=agent_runner,
         runtime=runtime,
+        active_runs=active_runs,
         agent_configs=agent_configs,
         capability_configs=capability_configs,
         llm_profiles=llm_profiles,

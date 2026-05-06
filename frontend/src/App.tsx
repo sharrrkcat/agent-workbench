@@ -10,7 +10,7 @@ import { createWebSocketUrl } from './api/client';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 
 export default function App() {
-  const { currentSession, initialize, refreshCurrent } = useWorkbenchStore();
+  const { currentSession, initialize, refreshCurrent, applyRuntimeEvent } = useWorkbenchStore();
   const [path, setPath] = useState(() => window.location.pathname);
   const [wsUnavailable, setWsUnavailable] = useState(false);
 
@@ -28,15 +28,26 @@ export default function App() {
     if (!currentSession || wsUnavailable) return;
     let opened = false;
     const socket = new WebSocket(createWebSocketUrl(currentSession.session_id));
+    let closed = false;
+    function requestNextEvent() {
+      if (!closed && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'next_event' }));
+      }
+    }
     socket.addEventListener('open', () => {
       opened = true;
       socket.send(JSON.stringify({ type: 'ping' }));
+      requestNextEvent();
     });
     socket.addEventListener('message', (event) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type && payload.type !== 'pong') {
-          void refreshCurrent().catch(() => undefined);
+          applyRuntimeEvent(payload);
+          if (!['message_started', 'message_delta', 'run_metrics'].includes(payload.type)) {
+            void refreshCurrent().catch(() => undefined);
+          }
+          requestNextEvent();
         }
       } catch {
         // Ignore malformed development messages.
@@ -47,8 +58,11 @@ export default function App() {
         setWsUnavailable(true);
       }
     });
-    return () => socket.close();
-  }, [currentSession?.session_id, refreshCurrent, wsUnavailable]);
+    return () => {
+      closed = true;
+      socket.close();
+    };
+  }, [currentSession?.session_id, refreshCurrent, applyRuntimeEvent, wsUnavailable]);
 
   useEffect(() => {
     if (!currentSession || !wsUnavailable) return;

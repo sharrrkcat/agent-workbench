@@ -33,6 +33,7 @@ export function MessageBubble({ message }: { message: Message }) {
   const kind = isUser ? 'user' : isCommand ? 'command' : 'agent';
   const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
   const operationPending = pendingMessageActionId === message.message_id;
+  const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
 
   useEffect(() => {
     if (!editing) setEditValue(contentToText(message.content));
@@ -92,6 +93,12 @@ export function MessageBubble({ message }: { message: Message }) {
               Sending
             </div>
           ) : null}
+          {message.client_status === 'streaming' ? (
+            <div className="message-status">
+              <Clock3 size={13} />
+              Streaming
+            </div>
+          ) : null}
           <ActionButtons actions={message.available_actions} />
         </div>
         {!message.client_status && !editing ? (
@@ -115,6 +122,7 @@ export function MessageBubble({ message }: { message: Message }) {
                 <Trash2 size={13} />
               </button>
             ) : null}
+            {metricsLabel ? <span className="message-metrics">{metricsLabel}</span> : null}
           </div>
         ) : null}
       </div>
@@ -295,6 +303,42 @@ function extractResolutionLabel(value: unknown): string | undefined {
     if (typeof item === 'string' && item.trim()) return item.trim();
   }
   return undefined;
+}
+
+function formatMetrics(value: unknown, interrupted: boolean): string {
+  if (!value || typeof value !== 'object') return '';
+  const metrics = value as Record<string, unknown>;
+  const usageSource = typeof metrics.usage_source === 'string' ? metrics.usage_source : '';
+  const providerTokens = numberValue(metrics.completion_tokens);
+  const estimatedTokens = numberValue(metrics.estimated_completion_tokens);
+  const tokens = providerTokens ?? estimatedTokens;
+  const durationMs = numberValue(metrics.duration_ms);
+  const firstTokenMs = numberValue(metrics.time_to_first_token_ms);
+  const tokensPerSecond = numberValue(metrics.tokens_per_second);
+  const parts: string[] = [];
+  if (interrupted) parts.push('Stopped');
+  if (tokens !== undefined) {
+    const estimated = usageSource === 'estimated' || (providerTokens === undefined && estimatedTokens !== undefined);
+    parts.push(`${estimated ? '~' : ''}${tokens} tokens`);
+  }
+  if (tokensPerSecond !== undefined) {
+    parts.push(`${tokensPerSecond.toFixed(1)} tok/s`);
+  }
+  if (firstTokenMs !== undefined) {
+    parts.push(`${formatSeconds(firstTokenMs)} first token`);
+  } else if (durationMs !== undefined) {
+    parts.push(formatSeconds(durationMs));
+  }
+  return parts.join(' · ');
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return undefined;
+}
+
+function formatSeconds(ms: number): string {
+  return `${(ms / 1000).toFixed(ms < 1000 ? 1 : 1)}s`;
 }
 
 function truncateLabel(value: string): string {

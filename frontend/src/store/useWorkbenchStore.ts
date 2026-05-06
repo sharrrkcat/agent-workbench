@@ -14,6 +14,7 @@ import type {
   Run,
   RunEvent,
   HealthDetails,
+  RuntimeEvent,
   Session,
 } from '../types';
 
@@ -33,6 +34,7 @@ type WorkbenchState = {
   loading: boolean;
   creatingSession: boolean;
   sending: boolean;
+  activeRunId?: string;
   savingConfigId?: string;
   testingLlm: boolean;
   pendingActionKey?: string;
@@ -59,7 +61,9 @@ type WorkbenchState = {
   testLlmConnection: () => Promise<LlmTestResult>;
   refreshHealth: () => Promise<void>;
   loadRunEvents: (runId: string) => Promise<void>;
+  applyRuntimeEvent: (event: RuntimeEvent) => void;
   sendMessage: (content: string) => Promise<void>;
+  cancelActiveRun: () => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
@@ -373,7 +377,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       if (!result.success) {
         set({ error: undefined, lastError: undefined });
       }
-      set({ sending: false });
+      set({ sending: false, activeRunId: undefined });
     } catch (error) {
       const formatted = formatError(error, 'Message failed');
       set({
@@ -386,6 +390,77 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
             : message,
         ),
       });
+    }
+  },
+
+  applyRuntimeEvent: (event: RuntimeEvent) => {
+    const session = get().currentSession;
+    if (!session || event.session_id !== session.session_id) return;
+    if (event.type === 'run_started' && event.run_id) {
+      set({ activeRunId: event.run_id, sending: true });
+      return;
+    }
+    if (event.type === 'message_started' && event.run_id) {
+      const draft = createDraftAssistantMessage(session.session_id, event);
+      set({
+        activeRunId: event.run_id,
+        sending: true,
+        messages: upsertDraftMessage(get().messages, draft),
+      });
+      return;
+    }
+    if (event.type === 'message_delta' && event.run_id) {
+      const delta = typeof event.payload.delta === 'string' ? event.payload.delta : '';
+      const reasoningDelta = typeof event.payload.reasoning_delta === 'string' ? event.payload.reasoning_delta : '';
+      if (!delta && !reasoningDelta) return;
+      set({ messages: appendDraftDelta(get().messages, event, delta, reasoningDelta) });
+      return;
+    }
+    if (event.type === 'message_completed') {
+      const finalMessage = parseMessagePayload(event.payload.message);
+      if (finalMessage) {
+        set({ messages: replaceDraftWithFinal(get().messages, finalMessage, String(event.payload.draft_message_id || '')) });
+      }
+      return;
+    }
+    if (event.type === 'run_metrics') {
+      set({ messages: attachDraftMetrics(get().messages, event) });
+      return;
+    }
+    if (event.type === 'run_failed') {
+      const error = {
+        code: 'RUN_FAILED',
+        message: typeof event.payload.error === 'string' ? event.payload.error : 'Run failed.',
+      };
+      set({
+        sending: false,
+        activeRunId: undefined,
+        messages: removeDraftAndAppendError(get().messages, session.session_id, event.run_id || '', error),
+      });
+      return;
+    }
+    if (event.type === 'run_cancelled') {
+      set({
+        sending: false,
+        activeRunId: undefined,
+        messages: markDraftInterrupted(get().messages, event.run_id || ''),
+      });
+      return;
+    }
+    if (event.type === 'run_done') {
+      set({ sending: false, activeRunId: undefined });
+    }
+  },
+
+  cancelActiveRun: async () => {
+    const runId = get().activeRunId || runningRunId(get().runs);
+    if (!runId) return;
+    try {
+      await api.cancelRun(runId);
+      set({ sending: false, activeRunId: undefined, messages: markDraftInterrupted(get().messages, runId) });
+      await get().refreshCurrent();
+    } catch (error) {
+      set(formatError(error, 'Failed to stop generation'));
     }
   },
 
@@ -505,6 +580,29 @@ function createInlineErrorMessage(sessionId: string, error: AppError, parentMess
   };
 }
 
+function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Message {
+  const payload = event.payload || {};
+  return {
+    message_id: typeof event.message_id === 'string' && event.message_id ? event.message_id : `draft-${event.run_id || newClientId()}`,
+    session_id: sessionId,
+    role: 'assistant',
+    content: '',
+    agent_id: typeof payload.agent_id === 'string' ? payload.agent_id : null,
+    command_name: null,
+    action_id: 'default',
+    run_id: event.run_id || null,
+    output_type: 'text',
+    parent_message_id: null,
+    available_actions: [],
+    metadata: {
+      llm_resolution: isRecord(payload.llm_resolution) ? payload.llm_resolution : undefined,
+      streaming: true,
+    },
+    created_at: typeof payload.created_at === 'string' ? payload.created_at : event.created_at,
+    client_status: 'streaming',
+  };
+}
+
 function buildTimeline(fetchedMessages: Message[], runs: Run[], current: Message[], sessionId: string): Message[] {
   const messages = [...fetchedMessages, ...failedRunErrors(fetchedMessages, runs)];
   return mergeTransientMessages(sortMessagesByCreatedAt(messages), current, sessionId);
@@ -565,7 +663,9 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
   );
   if (!transient.length) return fetched;
 
+  const fetchedRunIds = new Set(fetched.map((message) => message.run_id).filter(Boolean));
   const remaining = transient.filter((message) => {
+    if (message.run_id && fetchedRunIds.has(message.run_id)) return false;
     if (message.role !== 'user') return true;
     return !fetched.some((candidate) => candidate.role === 'user' && candidate.content === message.content);
   });
@@ -574,7 +674,84 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
 }
 
 function isTransientMessage(message: Message): boolean {
-  return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-');
+  return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-') || message.message_id.startsWith('draft-');
+}
+
+function upsertDraftMessage(messages: Message[], draft: Message): Message[] {
+  if (messages.some((message) => message.message_id === draft.message_id || (draft.run_id && message.run_id === draft.run_id && message.role === 'assistant'))) {
+    return messages;
+  }
+  return [...messages, draft];
+}
+
+function appendDraftDelta(messages: Message[], event: RuntimeEvent, delta: string, reasoningDelta: string): Message[] {
+  return messages.map((message) => {
+    if (!isMatchingDraft(message, event.run_id || '', event.message_id || '')) return message;
+    const metadata = { ...(message.metadata || {}) };
+    if (reasoningDelta) {
+      metadata.reasoning_content = `${typeof metadata.reasoning_content === 'string' ? metadata.reasoning_content : ''}${reasoningDelta}`;
+    }
+    return { ...message, content: `${contentToDraftText(message.content)}${delta}`, metadata };
+  });
+}
+
+function attachDraftMetrics(messages: Message[], event: RuntimeEvent): Message[] {
+  const metrics = isRecord(event.payload.metrics) ? event.payload.metrics : undefined;
+  if (!metrics) return messages;
+  return messages.map((message) => {
+    if (!isMatchingDraft(message, event.run_id || '', event.message_id || '')) return message;
+    return { ...message, metadata: { ...(message.metadata || {}), llm_metrics: metrics } };
+  });
+}
+
+function replaceDraftWithFinal(messages: Message[], finalMessage: Message, draftMessageId: string): Message[] {
+  const withoutDuplicates = messages.filter((message) => {
+    if (message.message_id === finalMessage.message_id) return false;
+    if (draftMessageId && message.message_id === draftMessageId) return false;
+    if (message.message_id.startsWith('draft-') && message.run_id && message.run_id === finalMessage.run_id) return false;
+    return true;
+  });
+  return sortMessagesByCreatedAt([...withoutDuplicates, finalMessage]);
+}
+
+function removeDraftAndAppendError(messages: Message[], sessionId: string, runId: string, error: AppError): Message[] {
+  const kept = messages.filter((message) => !(message.message_id.startsWith('draft-') && message.run_id === runId && !contentToDraftText(message.content)));
+  return [...kept, createInlineErrorMessage(sessionId, error)];
+}
+
+function markDraftInterrupted(messages: Message[], runId: string): Message[] {
+  if (!runId) return messages;
+  return messages.map((message) => {
+    if (!(message.message_id.startsWith('draft-') && message.run_id === runId)) return message;
+    return {
+      ...message,
+      client_status: undefined,
+      metadata: { ...(message.metadata || {}), interrupted: true, streaming: false },
+    };
+  });
+}
+
+function isMatchingDraft(message: Message, runId: string, messageId: string): boolean {
+  if (!message.message_id.startsWith('draft-')) return false;
+  if (messageId && message.message_id === messageId) return true;
+  return Boolean(runId && message.run_id === runId);
+}
+
+function parseMessagePayload(value: unknown): Message | null {
+  if (!isRecord(value)) return null;
+  return value as Message;
+}
+
+function contentToDraftText(content: unknown): string {
+  return typeof content === 'string' ? content : content == null ? '' : String(content);
+}
+
+function runningRunId(runs: Run[]): string | undefined {
+  return [...runs].reverse().find((run) => run.status === 'RUNNING' || run.status === 'PENDING')?.run_id;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function chooseEnabledDefaultAgent(agents: Agent[], preferredAgentId?: string | null): string | undefined {

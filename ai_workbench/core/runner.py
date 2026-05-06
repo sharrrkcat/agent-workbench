@@ -1,3 +1,8 @@
+import asyncio
+import inspect
+from datetime import datetime
+from typing import Any, AsyncIterator
+
 from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
@@ -5,10 +10,29 @@ from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
+from ai_workbench.core.llm_stream import LLMStreamChunk, LLMMetricsRecorder
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+
+
+class ActiveRunRegistry:
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task] = {}
+
+    def register(self, run_id: str, task: asyncio.Task) -> None:
+        self._tasks[run_id] = task
+
+    def unregister(self, run_id: str) -> None:
+        self._tasks.pop(run_id, None)
+
+    def cancel(self, run_id: str) -> bool:
+        task = self._tasks.get(run_id)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
 
 class AgentRunner:
@@ -25,6 +49,7 @@ class AgentRunner:
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
         llm_profile_store=None,
+        active_runs: ActiveRunRegistry = None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -38,6 +63,7 @@ class AgentRunner:
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
         self.llm_profile_store = llm_profile_store
+        self.active_runs = active_runs or ActiveRunRegistry()
         self.script_runner = None
         if session_store is not None and runtime_registry is not None:
             self.script_runner = ScriptAgentRunner(
@@ -159,7 +185,39 @@ class AgentRunner:
                 },
             )
         self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            self.active_runs.register(run.run_id, current_task)
 
+        try:
+            return await self._run_prompt_agent(
+                agent=agent,
+                action=action,
+                action_id=action_id,
+                args=args,
+                session_id=session_id,
+                source_message_id=source_message_id,
+                parent_id=parent_id,
+                current_user_message_id=current_user_message_id,
+                prefill=prefill or {},
+                run=run,
+            )
+        finally:
+            self.active_runs.unregister(run.run_id)
+
+    async def _run_prompt_agent(
+        self,
+        agent,
+        action,
+        action_id: str,
+        args: str,
+        session_id: str,
+        source_message_id: str,
+        parent_id: str,
+        current_user_message_id: str,
+        prefill: dict,
+        run: RunSchema,
+    ) -> RunResult:
         context_policy = action.context_policy or agent.context_policy
         try:
             context = self.context_builder.build(
@@ -197,7 +255,24 @@ class AgentRunner:
             llm_config = self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
             self._record_llm_resolution(run.run_id, llm_config)
-            content = self.llm_runtime.chat(messages=messages, model_config=llm_config.values, stream=False)
+            if _streaming_enabled(llm_config):
+                return await self._run_prompt_agent_streaming(
+                    agent=agent,
+                    action_id=action_id,
+                    messages=messages,
+                    session_id=session_id,
+                    source_message_id=source_message_id,
+                    parent_id=parent_id,
+                    current_user_message_id=current_user_message_id,
+                    prefill=prefill,
+                    run=run,
+                    context_warnings=context.warnings,
+                    llm_config=llm_config,
+                )
+            metrics_recorder = LLMMetricsRecorder(streamed=False)
+            raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
+            content = _extract_content(raw_content)
+            llm_metrics = metrics_recorder.complete(content, _extract_usage(raw_content))
         except LLMConfigError as exc:
             failed_run = self.run_store.update_status(
                 run.run_id,
@@ -228,6 +303,11 @@ class AgentRunner:
             )
             return RunResult(success=False, run_id=failed_run.run_id, error=error)
 
+        if self._is_cancelled(run.run_id):
+            cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
+            self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
+            return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", data=None)
+
         original_user_message_id = self._find_original_user_message_id(source_message_id)
         source_user_message_id = current_user_message_id or original_user_message_id
         metadata = {
@@ -237,12 +317,14 @@ class AgentRunner:
             "source_user_message_id": source_user_message_id,
             "prefill": prefill or {},
             "llm_resolution": _public_llm_resolution(llm_config),
+            "llm_metrics": llm_metrics,
         }
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
             content=content,
-            agent_id=agent_id,
+            agent_id=agent.id,
             action_id=action_id,
             run_id=run.run_id,
             output_type="text",
@@ -261,6 +343,12 @@ class AgentRunner:
         )
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
+            "run_metrics",
+            session_id=session_id,
+            run_id=done_run.run_id,
+            payload={"metrics": llm_metrics},
+        )
+        self.event_bus.emit(
             "message_done",
             session_id=session_id,
             run_id=done_run.run_id,
@@ -275,6 +363,219 @@ class AgentRunner:
                 return RunResult(success=False, run_id=done_run.run_id, data=content, error=done_run.error)
 
         return RunResult(success=True, run_id=done_run.run_id, data=content)
+
+    async def _run_prompt_agent_streaming(
+        self,
+        agent,
+        action_id: str,
+        messages: list,
+        session_id: str,
+        source_message_id: str,
+        parent_id: str,
+        current_user_message_id: str,
+        prefill: dict,
+        run: RunSchema,
+        context_warnings: list,
+        llm_config,
+    ) -> RunResult:
+        draft_message_id = f"draft-{run.run_id}"
+        resolution = _public_llm_resolution(llm_config)
+        self.event_bus.emit(
+            "message_started",
+            session_id=session_id,
+            run_id=run.run_id,
+            message_id=draft_message_id,
+            payload={
+                "message_id": draft_message_id,
+                "role": "assistant",
+                "agent_id": agent.id,
+                "agent_name": agent.name,
+                "created_at": datetime.utcnow().isoformat(),
+                "llm_resolution": resolution,
+            },
+        )
+        metrics_recorder = LLMMetricsRecorder(streamed=True)
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        usage = None
+        try:
+            async for chunk in _call_chat_stream(self.llm_runtime, messages, llm_config.values):
+                normalized = _normalize_stream_chunk(chunk)
+                if normalized.usage:
+                    usage = normalized.usage
+                if normalized.reasoning_delta:
+                    metrics_recorder.mark_first_token()
+                    reasoning_parts.append(normalized.reasoning_delta)
+                    self.event_bus.emit(
+                        "message_delta",
+                        session_id=session_id,
+                        run_id=run.run_id,
+                        message_id=draft_message_id,
+                        payload={"delta": "", "reasoning_delta": normalized.reasoning_delta},
+                    )
+                if normalized.content_delta:
+                    metrics_recorder.mark_first_token()
+                    content_parts.append(normalized.content_delta)
+                    self.event_bus.emit(
+                        "message_delta",
+                        session_id=session_id,
+                        run_id=run.run_id,
+                        message_id=draft_message_id,
+                        payload={"delta": normalized.content_delta, "reasoning_delta": None},
+                    )
+        except asyncio.CancelledError:
+            content = "".join(content_parts)
+            llm_metrics = metrics_recorder.complete(content, usage)
+            message = None
+            if content:
+                message = self._persist_prompt_message(
+                    agent=agent,
+                    action_id=action_id,
+                    content=content,
+                    session_id=session_id,
+                    run_id=run.run_id,
+                    parent_id=parent_id,
+                    source_message_id=source_message_id,
+                    current_user_message_id=current_user_message_id,
+                    prefill=prefill,
+                    context_warnings=context_warnings,
+                    llm_config=llm_config,
+                    llm_metrics=llm_metrics,
+                    reasoning_content="".join(reasoning_parts),
+                    interrupted=True,
+                )
+                self.event_bus.emit(
+                    "message_completed",
+                    session_id=session_id,
+                    run_id=run.run_id,
+                    message_id=message.message_id,
+                    payload={"message": message.model_dump(mode="json"), "draft_message_id": draft_message_id},
+                )
+                self.event_bus.emit(
+                    "message_done",
+                    session_id=session_id,
+                    run_id=run.run_id,
+                    message_id=message.message_id,
+                    payload={"available_actions": message.available_actions},
+                )
+            cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
+            self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
+            self.event_bus.emit(
+                "run_metrics",
+                session_id=session_id,
+                run_id=run.run_id,
+                payload={"metrics": llm_metrics},
+            )
+            self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
+            return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", data=content)
+        except Exception as exc:
+            error = str(exc) or "Prompt agent failed."
+            failed_run = self.run_store.update_status(run.run_id, RunStatus.FAILED, current_step="failed", error=error)
+            self.event_bus.emit(
+                "run_failed",
+                session_id=session_id,
+                run_id=failed_run.run_id,
+                message_id=draft_message_id,
+                payload={"error": error},
+            )
+            return RunResult(success=False, run_id=failed_run.run_id, error=error)
+
+        content = "".join(content_parts)
+        llm_metrics = metrics_recorder.complete(content, usage)
+        message = self._persist_prompt_message(
+            agent=agent,
+            action_id=action_id,
+            content=content,
+            session_id=session_id,
+            run_id=run.run_id,
+            parent_id=parent_id,
+            source_message_id=source_message_id,
+            current_user_message_id=current_user_message_id,
+            prefill=prefill,
+            context_warnings=context_warnings,
+            llm_config=llm_config,
+            llm_metrics=llm_metrics,
+            reasoning_content="".join(reasoning_parts),
+        )
+        done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
+        self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
+        self.event_bus.emit(
+            "run_metrics",
+            session_id=session_id,
+            run_id=done_run.run_id,
+            payload={"metrics": llm_metrics},
+        )
+        self.event_bus.emit(
+            "message_completed",
+            session_id=session_id,
+            run_id=done_run.run_id,
+            message_id=message.message_id,
+            payload={"message": message.model_dump(mode="json"), "draft_message_id": draft_message_id},
+        )
+        self.event_bus.emit(
+            "message_done",
+            session_id=session_id,
+            run_id=done_run.run_id,
+            message_id=message.message_id,
+            payload={"available_actions": message.available_actions},
+        )
+        lifecycle_result = self._apply_model_lifecycle(agent.model_lifecycle, llm_config.values, done_run.run_id, session_id)
+        if lifecycle_result:
+            done_run = self.run_store.get_run(done_run.run_id)
+            if done_run.status == RunStatus.FAILED:
+                return RunResult(success=False, run_id=done_run.run_id, data=content, error=done_run.error)
+        return RunResult(success=True, run_id=done_run.run_id, data=content)
+
+    def _persist_prompt_message(
+        self,
+        agent,
+        action_id: str,
+        content: str,
+        session_id: str,
+        run_id: str,
+        parent_id: str,
+        source_message_id: str,
+        current_user_message_id: str,
+        prefill: dict,
+        context_warnings: list,
+        llm_config,
+        llm_metrics: dict,
+        reasoning_content: str = "",
+        interrupted: bool = False,
+    ):
+        original_user_message_id = self._find_original_user_message_id(source_message_id)
+        source_user_message_id = current_user_message_id or original_user_message_id
+        metadata = {
+            "success": True,
+            "context_warnings": context_warnings,
+            "original_user_message_id": original_user_message_id,
+            "source_user_message_id": source_user_message_id,
+            "prefill": prefill or {},
+            "llm_resolution": _public_llm_resolution(llm_config),
+            "llm_metrics": llm_metrics,
+        }
+        if reasoning_content:
+            metadata["reasoning_content"] = reasoning_content
+        if interrupted:
+            metadata["interrupted"] = True
+        message = self.message_store.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=content,
+            agent_id=agent.id,
+            action_id=action_id,
+            run_id=run_id,
+            output_type="text",
+            parent_message_id=parent_id or None,
+            available_actions=self._available_actions(agent, source_message_id=""),
+            metadata=metadata,
+        )
+        message_actions = self._available_actions(agent, source_message_id=message.message_id)
+        if message_actions:
+            message = message.model_copy(update={"available_actions": message_actions})
+            self.message_store.update_message(message)
+        return message
 
     def _resolve_llm_model_config(self, agent, action, session_id: str):
         capability = None
@@ -303,6 +604,19 @@ class AgentRunner:
         metadata = dict(run.metadata)
         metadata["llm_resolution"] = _public_llm_resolution(llm_config)
         self.run_store.update_metadata(run_id, metadata)
+
+    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["llm_resolution"] = _public_llm_resolution(llm_config)
+        metadata["llm_metrics"] = llm_metrics
+        self.run_store.update_metadata(run_id, metadata)
+
+    def _is_cancelled(self, run_id: str) -> bool:
+        try:
+            return self.run_store.get_run(run_id).status == RunStatus.CANCELLED
+        except KeyError:
+            return False
 
     def _available_actions(self, agent, source_message_id: str):
         actions = []
@@ -389,6 +703,77 @@ def _public_llm_resolution(llm_config) -> dict:
         "supports_streaming": bool(values.get("supports_streaming", False)),
         "supports_json_mode": bool(values.get("supports_json_mode", False)),
     }
+
+
+def _streaming_enabled(llm_config) -> bool:
+    values = getattr(llm_config, "values", {}) or {}
+    return values.get("supports_streaming") is True
+
+
+async def _call_chat_nonstream(llm_runtime: object, messages: list, model_config: dict) -> Any:
+    return await asyncio.to_thread(
+        llm_runtime.chat,
+        messages=messages,
+        model_config=model_config,
+        stream=False,
+    )
+
+
+async def _call_chat_stream(llm_runtime: object, messages: list, model_config: dict) -> AsyncIterator[Any]:
+    stream_method = getattr(llm_runtime, "chat_stream", None)
+    if callable(stream_method):
+        stream = stream_method(messages=messages, model_config=model_config)
+    else:
+        stream = llm_runtime.chat(messages=messages, model_config=model_config, stream=True)
+    if inspect.isawaitable(stream):
+        stream = await stream
+    if hasattr(stream, "__aiter__"):
+        async for chunk in stream:
+            yield chunk
+        return
+    iterator = iter(stream)
+    sentinel = object()
+    while True:
+        chunk = await asyncio.to_thread(next, iterator, sentinel)
+        if chunk is sentinel:
+            return
+        yield chunk
+
+
+def _normalize_stream_chunk(chunk: Any) -> LLMStreamChunk:
+    if isinstance(chunk, LLMStreamChunk):
+        return chunk
+    if isinstance(chunk, str):
+        return LLMStreamChunk(content_delta=chunk)
+    if isinstance(chunk, dict):
+        return LLMStreamChunk(
+            content_delta=chunk.get("content_delta") or chunk.get("delta"),
+            reasoning_delta=chunk.get("reasoning_delta"),
+            finish_reason=chunk.get("finish_reason"),
+            usage=chunk.get("usage") if isinstance(chunk.get("usage"), dict) else None,
+            raw=chunk.get("raw") if isinstance(chunk.get("raw"), dict) else chunk,
+        )
+    return LLMStreamChunk(content_delta=str(chunk) if chunk is not None else None)
+
+
+def _extract_usage(value: Any) -> dict | None:
+    if isinstance(value, dict) and isinstance(value.get("usage"), dict):
+        return value.get("usage")
+    return None
+
+
+def _extract_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        if isinstance(value.get("content"), str):
+            return value["content"]
+        choices = value.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                return message["content"]
+    return "" if value is None else str(value)
 
 
 class CommandRunner:

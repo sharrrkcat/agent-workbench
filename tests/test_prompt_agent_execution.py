@@ -9,8 +9,9 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+from ai_workbench.core.stores import LLMProfileStore, MessageStore, RunStore, SessionStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,25 @@ class FakeLLMRuntime:
         return self.unload_result
 
 
+class FakeStreamingLLMRuntime(FakeLLMRuntime):
+    def __init__(self, chunks=None, fail: bool = False) -> None:
+        super().__init__(response="nonstream", fail=fail)
+        self.chunks = chunks or ["hel", "lo"]
+        self.stream_started = asyncio.Event()
+        self.release_next = asyncio.Event()
+
+    async def chat_stream(self, messages, model_config=None):
+        self.calls.append({"messages": messages, "model_config": model_config or {}, "stream": True})
+        self.stream_started.set()
+        if self.fail:
+            raise RuntimeError("stream failed")
+        for chunk in self.chunks:
+            if chunk == "__WAIT__":
+                await self.release_next.wait()
+                continue
+            yield chunk
+
+
 class PromptRuntimeFixture:
     def __init__(self, llm=None) -> None:
         agents = AgentRegistry()
@@ -57,6 +77,7 @@ class PromptRuntimeFixture:
         self.messages = MessageStore()
         self.runs = RunStore()
         self.events = EventBus()
+        self.llm_profiles = LLMProfileStore()
         self.llm = llm or FakeLLMRuntime()
         self.router = Router(agent_registry=agents, command_registry=commands)
         self.command_runner = CommandRunner(
@@ -74,6 +95,8 @@ class PromptRuntimeFixture:
             llm_runtime=self.llm,
             session_store=self.sessions,
             runtime_registry=runtimes,
+            capability_registry=capabilities,
+            llm_profile_store=self.llm_profiles,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -237,3 +260,120 @@ def test_base64_still_executes_with_prompt_runtime_configured() -> None:
 
     assert result.success is True
     assert result.data == "aGVsbG8="
+
+
+def add_profile(fixture: PromptRuntimeFixture, supports_streaming: bool = True) -> LLMProfileSchema:
+    profile = LLMProfileSchema(
+        id=f"profile-{supports_streaming}",
+        alias=f"profile_{supports_streaming}",
+        name="Streaming profile" if supports_streaming else "Non-streaming profile",
+        base_url="http://localhost:1234/v1",
+        model_id="fake-model",
+        supports_streaming=supports_streaming,
+    )
+    fixture.llm_profiles.create(profile)
+    return profile
+
+
+def test_prompt_agent_uses_streaming_when_profile_supports_streaming() -> None:
+    llm = FakeStreamingLLMRuntime(chunks=["he", "llo", {"usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}])
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+    events = fixture.events.list_events()
+
+    assert result.success is True
+    assert result.data == "hello"
+    assert llm.calls[0]["stream"] is True
+    assert messages[-1].content == "hello"
+    assert messages[-1].metadata["llm_resolution"]["profile_id"] == profile.id
+    assert messages[-1].metadata["llm_metrics"]["usage_source"] == "provider"
+    assert messages[-1].metadata["llm_metrics"]["completion_tokens"] == 2
+    assert messages[-1].metadata["llm_metrics"]["time_to_first_token_ms"] is not None
+    assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == ["he", "llo"]
+    assert "message_completed" in [event.type for event in events]
+
+
+def test_prompt_agent_uses_non_streaming_when_profile_does_not_support_streaming() -> None:
+    llm = FakeLLMRuntime(response="complete")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is True
+    assert llm.calls[0]["stream"] is False
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    assert message.content == "complete"
+    assert message.metadata["llm_metrics"]["streamed"] is False
+    assert message.metadata["llm_metrics"]["usage_source"] == "estimated"
+
+
+def test_streaming_without_provider_usage_estimates_completion_tokens() -> None:
+    llm = FakeStreamingLLMRuntime(chunks=["abcd", "efgh"])
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.metadata["llm_metrics"]["usage_source"] == "estimated"
+    assert message.metadata["llm_metrics"]["estimated_completion_tokens"] == 2
+
+
+def test_streaming_failure_marks_run_failed() -> None:
+    llm = FakeStreamingLLMRuntime(fail=True)
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    prompt_run = fixture.runs.get_run(result.run_id)
+
+    assert result.success is False
+    assert prompt_run.status == RunStatus.FAILED
+    assert "run_failed" in [event.type for event in fixture.events.list_events()]
+
+
+def test_cancel_streaming_run_persists_partial_message() -> None:
+    async def scenario():
+        llm = FakeStreamingLLMRuntime(chunks=["part", "__WAIT__", " never"])
+        fixture = PromptRuntimeFixture(llm=llm)
+        profile = add_profile(fixture, supports_streaming=True)
+        session = fixture.sessions.create_session(default_agent_id="chat")
+        fixture.sessions.set_llm_profile(session.session_id, profile.id)
+        session = fixture.sessions.get_session(session.session_id)
+        task = asyncio.create_task(fixture.runtime.handle_input(session, "hello"))
+        await llm.stream_started.wait()
+        run_id = fixture.runs.list_runs(session.session_id)[0].run_id
+        for _ in range(20):
+            if any(event.type == "message_delta" for event in fixture.events.list_events()):
+                break
+            await asyncio.sleep(0)
+        assert fixture.agent_runner.active_runs.cancel(run_id) is True
+        result = await task
+        return fixture, result, run_id, session.session_id
+
+    fixture, result, run_id, session_id = run(scenario())
+    prompt_run = fixture.runs.get_run(run_id)
+    messages = fixture.messages.list_messages(session_id)
+
+    assert result.success is False
+    assert prompt_run.status == RunStatus.CANCELLED
+    assert messages[-1].content == "part"
+    assert messages[-1].metadata["interrupted"] is True
+    assert "run_cancelled" in [event.type for event in fixture.events.list_events()]

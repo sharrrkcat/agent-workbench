@@ -49,6 +49,11 @@ def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
             "reason": f"Run status {run.status.value} is not cancellable.",
         }
 
+    task_cancelled = False
+    active_runs = getattr(state, "active_runs", None)
+    if active_runs is not None:
+        task_cancelled = bool(active_runs.cancel(run_id))
+
     was_waiting = run.status == RunStatus.WAITING_FOR_USER
     run = state.runs.update_status(run_id, RunStatus.CANCELLED, current_step="cancelled")
     if was_waiting:
@@ -62,5 +67,6 @@ def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     return {
         "run": run.model_dump(),
         "cancelled": True,
-        "reason": "Run was marked cancelled.",
+        "task_cancelled": task_cancelled,
+        "reason": "Run was cancelled." if task_cancelled else "Run was marked cancelled.",
     }

@@ -223,7 +223,7 @@ export type Message = {
   metadata?: Record<string, unknown>;
   available_actions: AvailableAction[];
   created_at: string;
-  client_status?: 'pending' | 'failed';
+  client_status?: 'pending' | 'failed' | 'streaming';
   client_error?: AppError;
 };
 
@@ -253,6 +253,15 @@ export type RunEvent = {
   session_id: string;
   type: string;
   message: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type RuntimeEvent = {
+  type: string;
+  session_id: string;
+  run_id?: string | null;
+  message_id?: string | null;
   payload: Record<string, unknown>;
   created_at: string;
 };

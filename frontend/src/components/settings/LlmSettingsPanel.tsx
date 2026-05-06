@@ -534,7 +534,6 @@ export function LlmProfileDetail({
               <code>{String(draft.alias || 'profile_key')}</code>
               <span>{String(draft.provider || 'openai_compatible')}</span>
             </p>
-            <ModelCapabilityIcons capabilities={capabilitiesFromDraft(draft)} className="settings-capability-icons" />
           </div>
         </div>
         <div className="settings-detail-actions">
