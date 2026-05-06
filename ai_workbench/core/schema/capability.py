@@ -28,6 +28,7 @@ class CapabilitySchema(BaseModel):
     methods: List[CapabilityMethodSchema]
     commands: List[CommandSchema] = Field(default_factory=list)
     config_schema: List[ConfigFieldSchema] = Field(default_factory=list)
+    permissions: Dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod

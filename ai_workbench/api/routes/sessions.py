@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -103,8 +104,15 @@ def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) ->
 
     if session.waiting_run_id:
         state.sessions.set_waiting_run(session_id, None)
+    deleted_messages = state.messages.list_messages(session_id)
     state.run_events.delete_session(session_id)
     state.runs.delete_session(session_id)
     state.messages.delete_session(session_id)
+    for message in deleted_messages:
+        attachments = (message.metadata or {}).get("attachments")
+        if isinstance(attachments, list):
+            for attachment in attachments:
+                if isinstance(attachment, dict):
+                    delete_attachment_if_unreferenced(attachment, state.messages, session_id)
     state.sessions.delete_session(session_id)
     return {"deleted": True, "session_id": session_id}

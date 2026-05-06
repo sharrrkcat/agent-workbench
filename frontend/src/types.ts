@@ -97,13 +97,18 @@ export type AgentConfig = {
   updated_at: string;
 };
 
+export type CapabilityPermissionHints = {
+  filesystem?: { read?: boolean };
+  network?: { http?: boolean };
+};
+
 export type CapabilityConfig = {
   capability_id: string;
   enabled: boolean;
   user_config: Record<string, unknown>;
   resolved_config: Record<string, unknown>;
   config_schema: ConfigFieldSchema[];
-  manifest_summary: ManifestSummary & { commands?: Command[] };
+  manifest_summary: ManifestSummary & { commands?: Command[]; permissions?: CapabilityPermissionHints };
   created_at: string;
   updated_at: string;
 };
@@ -222,7 +227,9 @@ export type ImageAttachment = {
   mime_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'image/svg+xml';
   name: string;
   size: number;
-  data_url: string;
+  data_url?: string;
+  uri?: string;
+  created_at?: string;
   width?: number;
   height?: number;
 };

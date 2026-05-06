@@ -163,6 +163,9 @@ class MessageStore:
     def list_messages(self, session_id: str) -> List[MessageSchema]:
         return [self._messages[message_id] for message_id in self._session_message_ids.get(session_id, [])]
 
+    def list_all_messages(self) -> List[MessageSchema]:
+        return list(self._messages.values())
+
     def delete_session(self, session_id: str) -> None:
         message_ids = self._session_message_ids.pop(session_id, [])
         for message_id in message_ids:

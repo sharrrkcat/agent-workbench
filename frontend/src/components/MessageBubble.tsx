@@ -286,8 +286,8 @@ function AttachmentGallery({ attachments, onPreviewImage }: { attachments: Image
     <div className={`message-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
       {attachments.map((attachment) => (
         <figure className="message-attachment" key={attachment.id}>
-          <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachment.data_url, alt: attachment.name || 'Attached image', title: attachment.name })}>
-            <img src={attachment.data_url} alt={attachment.name || 'Attached image'} loading="lazy" />
+          <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachmentUrl(attachment), alt: attachment.name || 'Attached image', title: attachment.name })}>
+            <img src={attachmentUrl(attachment)} alt={attachment.name || 'Attached image'} loading="lazy" />
           </button>
         </figure>
       ))}
@@ -405,9 +405,13 @@ function isImageAttachment(value: unknown): value is ImageAttachment {
     typeof item.mime_type === 'string' &&
     typeof item.name === 'string' &&
     typeof item.size === 'number' &&
-    typeof item.data_url === 'string' &&
-    Boolean(safeImageUrl(item.data_url))
+    ((typeof item.data_url === 'string' && Boolean(safeImageUrl(item.data_url))) ||
+      (typeof item.uri === 'string' && Boolean(safeImageUrl(item.uri))))
   );
+}
+
+function attachmentUrl(attachment: ImageAttachment): string {
+  return safeImageUrl(attachment.uri || attachment.data_url || '');
 }
 
 function normalizeImagePayload(content: unknown): ImagePayload | null {

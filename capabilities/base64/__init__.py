@@ -3,6 +3,8 @@ import binascii
 import re
 from typing import Optional, Tuple
 
+from ai_workbench.core.attachments import read_attachment_as_data_url
+
 
 _DATA_URL_RE = re.compile(
     r"^data:(?P<mime>image/[a-zA-Z0-9.+-]+);base64,(?P<data>.*)$",
@@ -71,7 +73,7 @@ class CapabilityRuntime:
         images = [
             item
             for item in attachments or []
-            if isinstance(item, dict) and item.get("type") == "image" and isinstance(item.get("data_url"), str)
+            if isinstance(item, dict) and item.get("type") == "image" and (isinstance(item.get("data_url"), str) or isinstance(item.get("uri"), str))
         ]
         if not images:
             raise ValueError("No image attachment found.")
@@ -81,7 +83,7 @@ class CapabilityRuntime:
             raise ValueError(f"Image attachment index out of range. Available images: {len(images)}.")
 
         image = images[index - 1]
-        data_url = image["data_url"].strip()
+        data_url = read_attachment_as_data_url(image).strip()
         raw_base64 = data_url.split(",", 1)[1] if "," in data_url else data_url
         return {
             "mime_type": image.get("mime_type") or "",

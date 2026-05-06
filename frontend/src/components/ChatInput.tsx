@@ -346,8 +346,8 @@ function AttachmentPreview({
     <div className="composer-attachments">
       {attachments.map((attachment) => (
         <figure className="composer-attachment" key={attachment.id}>
-          <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: attachment.data_url, alt: attachment.name || 'Attached image', title: attachment.name })}>
-            <img src={attachment.data_url} alt={attachment.name || 'Attached image'} />
+          <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: attachment.data_url || '', alt: attachment.name || 'Attached image', title: attachment.name })}>
+            <img src={attachment.data_url || ''} alt={attachment.name || 'Attached image'} />
           </button>
           <button
             className="composer-attachment-remove"

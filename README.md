@@ -57,6 +57,8 @@ AGENT_WORKBENCH_LLM_BASE_URL=http://localhost:1234/v1
 AGENT_WORKBENCH_LLM_API_KEY=
 AGENT_WORKBENCH_LLM_MODEL=
 AGENT_WORKBENCH_LLM_TIMEOUT=60
+AGENT_WORKBENCH_ATTACHMENTS_DIR=./data/attachments
+AGENT_WORKBENCH_FILE_ALLOWED_DIRS=
 ```
 
 LLM config resolution now uses one shared path for Prompt Agents, Script Agent `ctx.llm.generate`, diagnostics, and model listing.
@@ -336,7 +338,7 @@ The development guides cover output rendering for `text`, `markdown`, `json`, `i
 
 User messages can include image attachments from the composer attachment button, drag-and-drop, or clipboard paste while the composer is focused.
 
-In this alpha, images are stored directly as data URLs in `message.metadata.attachments`:
+New image uploads are stored under `data/attachments/images` by default, or under `AGENT_WORKBENCH_ATTACHMENTS_DIR` when configured. Message metadata stores local references instead of full base64 data:
 
 ```json
 {
@@ -345,15 +347,16 @@ In this alpha, images are stored directly as data URLs in `message.metadata.atta
   "mime_type": "image/png",
   "name": "image.png",
   "size": 12345,
-  "data_url": "data:image/png;base64,...",
+  "uri": "local://attachments/<id>.png",
+  "created_at": "2026-05-06T12:00:00",
   "width": 800,
   "height": 600
 }
 ```
 
-Supported MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`. The current limits are 10 MB per image and 6 images per message.
+Existing legacy attachments with `data_url` remain supported for display and vision input. No thumbnail files are generated in this version; the UI uses the original image URL for compact previews. Supported MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`. The current limits are 10 MB per image and 6 images per message.
 
-Attached images render in the composer preview and in user message bubbles. Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; this uses the final resolved config after session profile overrides, Agent manifest settings, LLM Capability config, and environment fallback. When Vision is disabled, images remain visible in the user message but image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
+Attached images render in the composer preview and in user message bubbles. Local attachment URIs are served through `GET /api/attachments/{attachment_id}`, which only resolves files inside the attachment directory. Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; local images are read from disk and converted to `data:image/...;base64,...` for the provider call. When Vision is disabled, image files are not read and image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
 
 Vision input currently uses OpenAI-compatible content parts and sends only images attached to the current user message:
 
@@ -371,6 +374,25 @@ Historical image attachments are not resent in LLM context yet. They remain stor
 
 Use `/image-base64` or `/base64-encode-image` on a message with image attachments to return the selected attachment as JSON containing the data URL and raw base64. Pass a 1-based index to select another image, for example `/image-base64 2`. Use `/base64-image` or `/base64-to-image` to decode base64 back into a renderable image command output.
 
+Delete a message to remove any local attachment files that are no longer referenced by another message in that session. To scan SQLite metadata and remove orphan files, use:
+
+```powershell
+uv run python scripts/cleanup_attachments.py
+uv run python scripts/cleanup_attachments.py --apply
+```
+
+## File And HTTP Capabilities
+
+The `file` capability exposes `/read-file <path>` and `/read-image <path>`. It can read only files inside allowed directories. Defaults are `./data`, `./examples`, `./agents`, and `./capabilities`; add more with `AGENT_WORKBENCH_FILE_ALLOWED_DIRS` using the platform path separator. Text reads are UTF-8 only and limited to 1 MB. Image reads support PNG, JPEG, WebP, GIF, and SVG up to 10 MB, returning normal image output with a data URL.
+
+The `http` capability exposes `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It only uses GET, only allows `http://` and `https://`, follows redirects with a small limit, uses a 10 second timeout, and does not use private browser cookies. Text/page responses are limited to 1 MB and allowed content types are `text/plain`, `text/html`, and `application/json`. Image responses are limited to 10 MB and must return an image MIME type.
+
+Permission hints are declared in capability manifests and shown in Settings. They are documentation and operator warnings, not an authorization system.
+
+## Security Notes
+
+This is a local trusted-user alpha. File and HTTP capabilities are powerful: they can read allowed local files and make network GET requests. Script Agents are trusted local Python code and can call capabilities. There is no sandbox, no per-run approval, and no per-agent permission UI yet. Only install agents and capabilities you trust.
+
 ## Current Limitations
 
 - Technical Alpha, local-first only.
@@ -379,7 +401,8 @@ Use `/image-base64` or `/base64-encode-image` on a message with image attachment
 - No secret encryption.
 - No external app integrations.
 - No function calling, MCP, or LLM automatic tool selection.
-- Image input stores data URLs in SQLite metadata; there is no file-system attachment store, cloud upload, image editing, OCR, or historical image resend yet.
+- No attachment thumbnails, cloud upload, image editing, OCR, or historical image resend yet.
+- File and HTTP capabilities have lightweight allowlists and size limits, not a full sandbox or permission system.
 - Script Agent visible streaming is not implemented yet; Script Agent LLM helpers still return final text.
 - Thought display is intentionally read-only and collapsed by default; there is no composer-side reasoning toggle or reasoning effort control yet.
 - WebSocket unavailable mode degrades to final HTTP refresh instead of live deltas.

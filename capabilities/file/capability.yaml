@@ -1,0 +1,37 @@
+id: file
+name: File Capability
+description: Read local text and image files from configured allowed directories. This can access local files; it is not a sandbox.
+
+permissions:
+  filesystem:
+    read: true
+
+methods:
+  - id: read_text
+    description: Read a UTF-8 text file from an allowed local directory
+    input_schema:
+      path:
+        type: string
+        required: true
+    output:
+      type: markdown
+
+  - id: read_image
+    description: Read a local image file from an allowed local directory
+    input_schema:
+      path:
+        type: string
+        required: true
+    output:
+      type: image
+
+commands:
+  - name: /read-file
+    method: read_text
+    description: Read a UTF-8 text file from an allowed local directory
+    safe: true
+
+  - name: /read-image
+    method: read_image
+    description: Read a local image file from an allowed local directory
+    safe: true

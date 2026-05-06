@@ -257,6 +257,11 @@ class SqlMessageStore:
             ).all()
             return [_message_from_record(record) for record in records]
 
+    def list_all_messages(self) -> List[MessageSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(MessageRecord).order_by(MessageRecord.created_at)).all()
+            return [_message_from_record(record) for record in records]
+
     def delete_session(self, session_id: str) -> None:
         with DbSession(self.engine) as session:
             session.exec(delete(MessageRecord).where(MessageRecord.session_id == session_id))

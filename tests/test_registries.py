@@ -18,14 +18,14 @@ def test_command_registry_exposes_base64_commands() -> None:
 
     commands = CommandRegistry.from_capability_registry(capabilities)
 
-    assert {command.name for command in commands.list()} == {
+    assert {
         "/base64",
         "/base64-decode",
         "/base64-image",
         "/base64-to-image",
         "/image-base64",
         "/base64-encode-image",
-    }
+    }.issubset({command.name for command in commands.list()})
     assert commands.get("/base64").capability_id == "base64"
     assert commands.get("/base64").method == "encode"
     assert commands.get("/base64-decode").method == "decode"

@@ -1,0 +1,51 @@
+id: http
+name: HTTP Capability
+description: Fetch text, simple page content, and images over HTTP GET. This can access the network; it does not use private browser cookies.
+
+permissions:
+  network:
+    http: true
+
+methods:
+  - id: get_text
+    description: Fetch plain text, HTML, or JSON from an HTTP or HTTPS URL
+    input_schema:
+      url:
+        type: string
+        required: true
+    output:
+      type: text
+
+  - id: fetch_page
+    description: Fetch a web page and return lightweight text extracted from HTML
+    input_schema:
+      url:
+        type: string
+        required: true
+    output:
+      type: markdown
+
+  - id: fetch_image
+    description: Fetch an HTTP or HTTPS image and return it as an image output
+    input_schema:
+      url:
+        type: string
+        required: true
+    output:
+      type: image
+
+commands:
+  - name: /http-get
+    method: get_text
+    description: Fetch text, HTML, or JSON over HTTP GET
+    safe: true
+
+  - name: /fetch-page
+    method: fetch_page
+    description: Fetch a web page and return lightweight extracted text
+    safe: true
+
+  - name: /fetch-image
+    method: fetch_image
+    description: Fetch an image over HTTP GET
+    safe: true

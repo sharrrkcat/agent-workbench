@@ -145,15 +145,25 @@ export function CapabilityDetail({
 function OverviewTab({ config, commandCount }: { config: CapabilityConfig; commandCount: number }) {
   const summary = config.manifest_summary;
   const configFieldCount = config.config_schema?.length ?? 0;
+  const permissionHint = permissionHintText(summary.permissions);
   return (
     <div className="settings-detail-grid">
       <InfoRow label="Description" value={summary.description} wide />
+      {permissionHint ? <InfoRow label="Permission hint" value={permissionHint} wide /> : null}
       <InfoRow label="Version" value={(summary as { version?: string }).version} />
       <InfoRow label="Exposed commands" value={commandCount} />
       <InfoRow label="Config fields" value={configFieldCount} />
       <InfoRow label="Runtime" value={config.capability_id === 'llm' ? 'OpenAI-compatible LLM runtime' : 'Local Python capability'} />
     </div>
   );
+}
+
+function permissionHintText(permissions: CapabilityConfig['manifest_summary']['permissions']): string {
+  if (!permissions) return '';
+  const hints: string[] = [];
+  if (permissions.filesystem?.read) hints.push('Can read local files from configured allowed directories');
+  if (permissions.network?.http) hints.push('Can make HTTP GET requests without private browser cookies');
+  return hints.join('; ');
 }
 
 function CommandsTab({ commands, capabilityEnabled }: { commands: Command[]; capabilityEnabled: boolean }) {

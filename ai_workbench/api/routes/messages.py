@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.attachments import validate_image_attachments
+from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_image_attachments
 from ai_workbench.core.llm_config import LLMConfigError
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -101,7 +101,8 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
 @message_router.delete("/{message_id}")
 def delete_message(message_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        state.messages.delete_message(message_id)
+        deleted = state.messages.delete_message(message_id)
+        _cleanup_message_attachments(state, deleted)
     except KeyError:
         raise_error(404, "MESSAGE_NOT_FOUND", f"Message not found: {message_id}")
     except Exception as exc:
@@ -122,6 +123,7 @@ async def retry_message(message_id: str, state: RuntimeState = Depends(get_state
     try:
         deleted = state.messages.delete_messages_after(message.session_id, message.message_id, include_target=True)
         _cancel_runs_for_deleted_messages(state, deleted)
+        _cleanup_deleted_attachments(state, deleted)
         state.runtime.announce_model_change_if_needed(message.session_id)
         before_ids = {item.message_id for item in state.messages.list_messages(message.session_id)}
         result = await state.runtime.retry_assistant_message(session, message, source_user_message)
@@ -149,6 +151,7 @@ async def edit_message(message_id: str, payload: EditMessageRequest, state: Runt
         updated_message = state.messages.update_message(updated_message)
         deleted = state.messages.delete_messages_after(message.session_id, message.message_id, include_target=False)
         _cancel_runs_for_deleted_messages(state, deleted)
+        _cleanup_deleted_attachments(state, deleted)
         result = None
         before_ids = {item.message_id for item in state.messages.list_messages(message.session_id)}
         if payload.rerun:
@@ -247,6 +250,20 @@ def _cancel_runs_for_deleted_messages(state: RuntimeState, messages: list[Messag
     cancel_runs = getattr(state.runs, "cancel_runs", None)
     if callable(cancel_runs):
         cancel_runs(run_ids, reason="Messages were removed.")
+
+
+def _cleanup_deleted_attachments(state: RuntimeState, messages: list[MessageSchema]) -> None:
+    for message in messages:
+        _cleanup_message_attachments(state, message)
+
+
+def _cleanup_message_attachments(state: RuntimeState, message: MessageSchema) -> None:
+    attachments = (message.metadata or {}).get("attachments")
+    if not isinstance(attachments, list):
+        return
+    for attachment in attachments:
+        if isinstance(attachment, dict):
+            delete_attachment_if_unreferenced(attachment, state.messages, message.session_id)
 
 
 def _result_payload(state: RuntimeState, session_id: str, result, before_ids=None) -> dict:

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.attachments import ImageAttachment
+from ai_workbench.core.attachments import ImageAttachment, read_attachment_as_data_url
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
@@ -750,7 +750,7 @@ def _streaming_enabled(llm_config) -> bool:
 
 def _prepare_vision_messages(messages: list, message_store: MessageStore, current_user_message_id: str, llm_config) -> dict:
     supported = bool((getattr(llm_config, "values", {}) or {}).get("supports_vision", False))
-    attachments, warnings = _current_image_attachments(message_store, current_user_message_id)
+    attachments, warnings = _current_image_attachments(message_store, current_user_message_id, resolve_data=supported)
     valid_attachments = [item for item in attachments if item.get("valid")]
     images_attached = len(attachments)
     images_sent = len(valid_attachments) if supported else 0
@@ -775,6 +775,8 @@ def _prepare_vision_messages(messages: list, message_store: MessageStore, curren
     text = str(current.get("content") or "")
     if text == _generic_image_placeholder(images_attached):
         text = ""
+    if supported and images_attached and not valid_attachments and not text.strip():
+        raise ValueError("No readable image attachments were available for the vision model.")
     if supported and valid_attachments:
         content_parts: list[dict[str, Any]] = [{"type": "text", "text": text.strip() or "Please analyze the attached image."}]
         content_parts.extend(
@@ -787,7 +789,7 @@ def _prepare_vision_messages(messages: list, message_store: MessageStore, curren
     return {"messages": next_messages, "metadata": metadata, "warnings": warnings}
 
 
-def _current_image_attachments(message_store: MessageStore, current_user_message_id: str) -> tuple[list[dict[str, Any]], list[str]]:
+def _current_image_attachments(message_store: MessageStore, current_user_message_id: str, resolve_data: bool = True) -> tuple[list[dict[str, Any]], list[str]]:
     if not current_user_message_id:
         return [], []
     try:
@@ -805,9 +807,14 @@ def _current_image_attachments(message_store: MessageStore, current_user_message
             continue
         try:
             attachment = ImageAttachment.model_validate(raw_attachment)
-            if _vision_data_url_mime_type(attachment.data_url) != attachment.mime_type:
-                raise ValueError("Attachment MIME type does not match data_url MIME type.")
             data = attachment.model_dump(exclude_none=True)
+            if resolve_data:
+                data_url = read_attachment_as_data_url(data)
+                if _vision_data_url_mime_type(data_url) != attachment.mime_type:
+                    raise ValueError("Attachment MIME type does not match image data.")
+                data["data_url"] = data_url
+            else:
+                data.pop("data_url", None)
             data["valid"] = True
             attachments.append(data)
         except Exception as exc:

@@ -190,6 +190,7 @@ def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dic
             "name": capability.name,
             "description": capability.description,
             "commands": [command.model_dump() for command in capability.commands],
+            "permissions": capability.permissions,
         },
     }
 

@@ -786,7 +786,9 @@ def test_user_message_can_save_single_image_attachment() -> None:
     assert response.status_code == 200
     user_message = response.json()["messages"][0]
     assert user_message["role"] == "user"
-    assert user_message["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
+    attachment = user_message["metadata"]["attachments"][0]
+    assert attachment["uri"].startswith("local://attachments/")
+    assert "data_url" not in attachment
 
 
 def test_user_message_can_save_multiple_image_attachments() -> None:
@@ -844,7 +846,7 @@ def test_image_only_message_is_allowed_and_uses_llm_placeholder() -> None:
     assert response.status_code == 200
     user_message = response.json()["messages"][0]
     assert user_message["content"] == ""
-    assert user_message["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
+    assert user_message["metadata"]["attachments"][0]["uri"].startswith("local://attachments/")
     sent_text = "\n".join(message["content"] for message in llm.calls[-1]["messages"])
     assert "User attached 1 image, but the selected model does not support vision." in sent_text
     assert SVG_DATA_URL not in sent_text
@@ -862,7 +864,7 @@ def test_image_base64_api_reads_current_user_message_attachment() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
-    assert payload["messages"][0]["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
+    assert payload["messages"][0]["metadata"]["attachments"][0]["uri"].startswith("local://attachments/")
     assert payload["messages"][-1]["command_name"] == "/image-base64"
     assert payload["messages"][-1]["content"]["data_url"] == SVG_DATA_URL
 
