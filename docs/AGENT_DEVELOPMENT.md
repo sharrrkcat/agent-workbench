@@ -27,6 +27,18 @@ model_lifecycle:
 
 Prompt Agents do not declare slash commands. Commands belong to Capability manifests.
 
+## Agent Avatars
+
+Place image avatars in the Agent directory when possible:
+
+```text
+agents/my_agent/avatar.png
+```
+
+The backend checks these files first, in order: `avatar.png`, `avatar.jpg`, `avatar.jpeg`, `avatar.webp`, `avatar.svg`, `agent.png`, `agent.jpg`. A directory avatar overrides `avatar` in `agent.yaml`.
+
+If no directory avatar exists, `avatar` in `agent.yaml` supports emoji, `http`/`https` image URLs, local paths inside the Agent directory such as `./avatar.png` or `avatar.png`, and short text fallbacks. Local paths using `../` or absolute paths are ignored.
+
 ## Script Agents
 
 Script Agents are trusted local Python code. They are imported and run inside the backend process with no sandbox. Do not treat Script Agents as a boundary for untrusted code.

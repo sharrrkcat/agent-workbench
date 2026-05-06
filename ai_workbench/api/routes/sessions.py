@@ -71,3 +71,19 @@ def update_session(session_id: str, payload: UpdateSessionRequest, state: Runtim
         session = state.sessions.set_title(session_id, payload.title)
 
     return session.model_dump()
+
+
+@router.delete("/{session_id}")
+def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        session = state.sessions.get_session(session_id)
+    except KeyError:
+        raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
+
+    if session.waiting_run_id:
+        state.sessions.set_waiting_run(session_id, None)
+    state.run_events.delete_session(session_id)
+    state.runs.delete_session(session_id)
+    state.messages.delete_session(session_id)
+    state.sessions.delete_session(session_id)
+    return {"deleted": True, "session_id": session_id}

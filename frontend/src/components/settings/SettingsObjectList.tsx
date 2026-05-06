@@ -1,5 +1,6 @@
-import { Bot, Boxes, SlidersHorizontal } from 'lucide-react';
+import { Boxes, SlidersHorizontal } from 'lucide-react';
 import type { AgentConfig, CapabilityConfig } from '../../types';
+import { AgentAvatar } from '../AgentAvatar';
 import type { SettingsSection } from './SettingsNav';
 import { initials } from './configUtils';
 
@@ -96,10 +97,9 @@ function ObjectListHeader({ title, count }: { title: string; count: number }) {
 function AgentListItem({ config, active, onClick }: { config: AgentConfig; active: boolean; onClick: () => void }) {
   const summary = config.manifest_summary;
   const label = summary.name || config.agent_id;
-  const avatar = summary.avatar?.trim();
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${config.enabled ? '' : 'disabled'}`} onClick={onClick}>
-      <div className="settings-object-avatar">{avatar || initials(label) || <Bot size={16} />}</div>
+      <AgentAvatar agent={summary} label={label} className="settings-object-avatar" iconSize={16} />
       <div className="settings-object-copy">
         <strong>{label}</strong>
         <small>{config.agent_id}</small>

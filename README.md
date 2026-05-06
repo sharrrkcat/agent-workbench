@@ -83,6 +83,24 @@ hello
 
 Message action buttons use the same Agent action system as text calls.
 
+Sessions can be deleted from the sidebar. Deleting a session is a hard delete in this alpha: its messages, runs, and run events are removed from SQLite.
+
+## Agent Avatars
+
+Agent image avatars can live beside the Agent manifest. Directory avatars take priority over `agent.yaml`:
+
+```text
+agents/my_agent/avatar.png
+agents/my_agent/avatar.jpg
+agents/my_agent/avatar.jpeg
+agents/my_agent/avatar.webp
+agents/my_agent/avatar.svg
+agents/my_agent/agent.png
+agents/my_agent/agent.jpg
+```
+
+If no directory avatar exists, `avatar` in `agent.yaml` can be an emoji, an `http`/`https` image URL, a local path inside the Agent directory such as `./avatar.png`, or text such as `TA`. Local avatar paths must stay inside the Agent directory.
+
 ## Local LM Studio
 
 Start LM Studio or another OpenAI-compatible local service with an API endpoint like:

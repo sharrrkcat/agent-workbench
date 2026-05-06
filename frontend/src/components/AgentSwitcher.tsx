@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { AgentAvatar } from './AgentAvatar';
 
 export function AgentSwitcher() {
   const { agents, currentSession, updateDefaultAgent } = useWorkbenchStore();
@@ -42,7 +43,7 @@ export function AgentSwitcher() {
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <Bot size={16} />
+        <AgentAvatar agent={currentAgent} label={currentSession?.default_agent_id || 'AI'} className="agent-switcher-avatar" iconSize={14} />
         <span>{currentAgent?.name || currentSession?.default_agent_id || 'No agent'}</span>
         <ChevronDown size={15} className="agent-switcher-caret" />
       </button>
@@ -60,7 +61,7 @@ export function AgentSwitcher() {
                 disabled={!agent.enabled}
                 onClick={() => selectAgent(agent.id, agent.enabled)}
               >
-                <span className="agent-menu-avatar">{agent.avatar?.trim() || agent.name.slice(0, 1).toUpperCase()}</span>
+                <AgentAvatar agent={agent} className="agent-menu-avatar" iconSize={14} />
                 <span className="agent-menu-copy">
                   <strong>{agent.name}</strong>
                   <small>{agent.enabled ? agent.id : `${agent.id} · disabled`}</small>

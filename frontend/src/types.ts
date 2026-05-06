@@ -25,12 +25,16 @@ export type ModelLifecyclePolicy = {
   unload_failure: 'ignore' | 'warn' | 'fail';
 };
 
+export type AvatarType = 'image' | 'emoji' | 'text' | 'initials';
+
 export type Agent = {
   id: string;
   name: string;
   type: 'prompt' | 'script';
   description: string;
-  avatar: string;
+  avatar?: string | null;
+  avatar_type?: AvatarType;
+  avatar_url?: string | null;
   entry?: string | null;
   actions: AgentAction[];
   model?: Record<string, unknown> | null;
@@ -56,7 +60,9 @@ export type ManifestSummary = {
   name: string;
   type?: string;
   description: string;
-  avatar?: string;
+  avatar?: string | null;
+  avatar_type?: AvatarType;
+  avatar_url?: string | null;
 };
 
 export type ConfigFieldSchema = {
@@ -195,4 +201,9 @@ export type RuntimeResponse = {
   error?: string | null;
   run?: Run | null;
   messages: Message[];
+};
+
+export type DeleteSessionResponse = {
+  deleted: boolean;
+  session_id: string;
 };

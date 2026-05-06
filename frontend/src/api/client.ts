@@ -3,6 +3,7 @@ import type {
   AgentConfig,
   CapabilityConfig,
   Command,
+  DeleteSessionResponse,
   LlmResolvedConfig,
   LlmTestResult,
   Message,
@@ -82,6 +83,10 @@ export const api = {
     request<Session>(`/api/sessions/${sessionId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    }),
+  deleteSession: (sessionId: string) =>
+    request<DeleteSessionResponse>(`/api/sessions/${sessionId}`, {
+      method: 'DELETE',
     }),
   listMessages: (sessionId: string) => request<Message[]>(`/api/sessions/${sessionId}/messages`),
   sendMessage: (sessionId: string, content: string) =>

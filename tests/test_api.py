@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
+from pathlib import Path
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.config_schema import parse_config_schema
+from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.run import RunStatus
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
@@ -20,6 +22,32 @@ def post_message(client: TestClient, session_id: str, content: str) -> dict:
     response = client.post(f"/api/sessions/{session_id}/messages", json={"content": content})
     assert response.status_code == 200
     return response.json()
+
+
+def register_temp_agent(
+    client: TestClient,
+    tmp_path: Path,
+    agent_id: str,
+    avatar: str = "",
+    files: dict[str, bytes] | None = None,
+) -> None:
+    agent_dir = tmp_path / agent_id
+    agent_dir.mkdir()
+    for filename, content in (files or {}).items():
+        (agent_dir / filename).write_bytes(content)
+    agent = AgentSchema.model_validate(
+        {
+            "id": agent_id,
+            "name": agent_id.replace("_", " ").title(),
+            "type": "prompt",
+            "description": "Temporary test agent",
+            "avatar": avatar,
+            "actions": [{"id": "default", "description": "Default"}],
+            "context_policy": {"mode": "current_message"},
+            "model_lifecycle": {"load": "on_demand", "unload": "never", "unload_failure": "warn"},
+        }
+    )
+    client.app.state.runtime_state.agents.register(agent, agent_dir=agent_dir)
 
 
 def test_create_app_returns_fastapi_app() -> None:
@@ -60,6 +88,108 @@ def test_list_agents_returns_builtin_agents() -> None:
     assert response.status_code == 200
     assert {"chat", "translate", "echo_script"}.issubset({agent["id"] for agent in response.json()})
     assert all("enabled" in agent for agent in response.json())
+    assert all("avatar_type" in agent for agent in response.json())
+
+
+def test_agent_directory_avatar_png_takes_priority(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(client, tmp_path, "avatar_dir", avatar="TA", files={"avatar.png": b"png-avatar"})
+
+    response = client.get("/api/agents/avatar_dir")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["avatar"] is None
+    assert payload["avatar_type"] == "image"
+    assert payload["avatar_url"] == "/api/agents/avatar_dir/avatar"
+
+
+def test_agent_directory_avatar_overrides_manifest_avatar(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(client, tmp_path, "avatar_override", avatar="📝", files={"avatar.png": b"png-avatar"})
+
+    response = client.get("/api/agents/avatar_override")
+
+    assert response.status_code == 200
+    assert response.json()["avatar_type"] == "image"
+    assert response.json()["avatar"] is None
+
+
+def test_agent_avatar_prefers_avatar_png_before_agent_jpg(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(
+        client,
+        tmp_path,
+        "avatar_priority",
+        files={"avatar.png": b"png-avatar", "agent.jpg": b"jpg-avatar"},
+    )
+
+    response = client.get("/api/agents/avatar_priority/avatar")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.content == b"png-avatar"
+
+
+def test_agent_manifest_emoji_avatar_returns_emoji_type(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(client, tmp_path, "avatar_emoji", avatar="📝")
+
+    response = client.get("/api/agents/avatar_emoji")
+
+    assert response.status_code == 200
+    assert response.json()["avatar"] == "📝"
+    assert response.json()["avatar_type"] == "emoji"
+    assert response.json()["avatar_url"] is None
+
+
+def test_agent_manifest_http_avatar_returns_image_url(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(client, tmp_path, "avatar_url", avatar="https://example.com/avatar.png")
+
+    response = client.get("/api/agents/avatar_url")
+
+    assert response.status_code == 200
+    assert response.json()["avatar"] is None
+    assert response.json()["avatar_type"] == "image"
+    assert response.json()["avatar_url"] == "https://example.com/avatar.png"
+
+
+def test_agent_manifest_local_avatar_stays_inside_agent_directory(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(client, tmp_path, "avatar_local", avatar="./custom.webp", files={"custom.webp": b"webp-avatar"})
+
+    response = client.get("/api/agents/avatar_local")
+    avatar_response = client.get("/api/agents/avatar_local/avatar")
+
+    assert response.status_code == 200
+    assert response.json()["avatar_type"] == "image"
+    assert avatar_response.status_code == 200
+    assert avatar_response.headers["content-type"].startswith("image/webp")
+    assert avatar_response.content == b"webp-avatar"
+
+
+def test_agent_manifest_avatar_path_escape_falls_back_to_initials(tmp_path: Path) -> None:
+    client = make_client()
+    (tmp_path / "outside.png").write_bytes(b"outside")
+    register_temp_agent(client, tmp_path, "avatar_escape", avatar="../outside.png")
+
+    response = client.get("/api/agents/avatar_escape")
+
+    assert response.status_code == 200
+    assert response.json()["avatar"] is None
+    assert response.json()["avatar_type"] == "initials"
+    assert response.json()["avatar_url"] is None
+
+
+def test_agent_avatar_endpoint_returns_404_without_local_avatar(tmp_path: Path) -> None:
+    client = make_client()
+    register_temp_agent(client, tmp_path, "avatar_none", avatar="📝")
+
+    response = client.get("/api/agents/avatar_none/avatar")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "AGENT_AVATAR_NOT_FOUND"
 
 
 def test_list_commands_returns_base64_commands() -> None:
@@ -460,6 +590,58 @@ def test_list_session_runs() -> None:
 
     assert response.status_code == 200
     assert response.json()[0]["target_id"] == "/base64"
+
+
+def test_delete_session_removes_session_messages_and_runs() -> None:
+    client = make_client()
+    session = create_session(client)
+    post_message(client, session["session_id"], "/base64 hello")
+
+    response = client.delete(f"/api/sessions/{session['session_id']}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True, "session_id": session["session_id"]}
+    assert client.get(f"/api/sessions/{session['session_id']}").status_code == 404
+    assert client.get(f"/api/sessions/{session['session_id']}/messages").status_code == 404
+    assert client.get(f"/api/sessions/{session['session_id']}/runs").status_code == 404
+
+
+def test_delete_missing_session_returns_structured_404() -> None:
+    response = make_client().delete("/api/sessions/missing")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "SESSION_NOT_FOUND"
+
+
+def test_delete_waiting_session_clears_and_removes_waiting_run() -> None:
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    client = TestClient(app)
+    session = create_session(client)
+    run = app.state.runtime_state.runs.create_run(kind="agent", target_id="chat", session_id=session["session_id"])
+    app.state.runtime_state.runs.update_status(run.run_id, RunStatus.WAITING_FOR_USER, current_step="waiting")
+    app.state.runtime_state.sessions.set_waiting_run(session["session_id"], run.run_id)
+
+    response = client.delete(f"/api/sessions/{session['session_id']}")
+
+    assert response.status_code == 200
+    assert client.get(f"/api/sessions/{session['session_id']}").status_code == 404
+    assert client.get(f"/api/runs/{run.run_id}").status_code == 404
+
+
+def test_delete_session_does_not_affect_other_sessions() -> None:
+    client = make_client()
+    first = create_session(client)
+    second = create_session(client)
+    post_message(client, first["session_id"], "/base64 one")
+    post_message(client, second["session_id"], "/base64 two")
+
+    response = client.delete(f"/api/sessions/{first['session_id']}")
+
+    assert response.status_code == 200
+    assert client.get(f"/api/sessions/{first['session_id']}").status_code == 404
+    assert client.get(f"/api/sessions/{second['session_id']}").status_code == 200
+    messages = client.get(f"/api/sessions/{second['session_id']}/messages").json()
+    assert messages[-1]["content"] == "dHdv"
 
 
 def test_cancel_running_run_marks_cancelled() -> None:

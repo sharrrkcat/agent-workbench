@@ -42,6 +42,7 @@ type WorkbenchState = {
   refreshCurrent: () => Promise<void>;
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
   updateDefaultAgent: (agentId: string) => Promise<void>;
   refreshConfigs: () => Promise<void>;
   updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config'>>) => Promise<void>;
@@ -106,7 +107,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       api.listMessages(session.session_id),
       api.listRuns(session.session_id),
     ]);
+    if (get().currentSession?.session_id !== session.session_id) return;
     const sessions = await api.listSessions();
+    if (get().currentSession?.session_id !== session.session_id) return;
     set({
       currentSession: freshSession,
       sessions: sortSessionsByRecent(sessions),
@@ -140,6 +143,55 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const session = await api.getSession(sessionId);
     set({ currentSession: session });
     await get().refreshCurrent();
+  },
+
+  deleteSession: async (sessionId: string) => {
+    const existingSessions = get().sessions;
+    const deletingCurrent = get().currentSession?.session_id === sessionId;
+    const nextSession = deletingCurrent ? existingSessions.find((session) => session.session_id !== sessionId) : undefined;
+
+    try {
+      await api.deleteSession(sessionId);
+      if (deletingCurrent) {
+        set({ currentSession: nextSession, messages: [], runs: [], runEvents: {} });
+      }
+      const sessions = sortSessionsByRecent((await api.listSessions()).filter((session) => session.session_id !== sessionId));
+      if (!deletingCurrent) {
+        set({
+          sessions,
+          error: undefined,
+          lastError: undefined,
+        });
+        return;
+      }
+
+      if (!nextSession) {
+        set({
+          sessions,
+          currentSession: undefined,
+          messages: [],
+          runs: [],
+          runEvents: {},
+          error: undefined,
+          lastError: undefined,
+        });
+        return;
+      }
+
+      const freshNextSession = sessions.find((session) => session.session_id === nextSession.session_id) || nextSession;
+      set({
+        sessions,
+        currentSession: freshNextSession,
+        messages: [],
+        runs: [],
+        runEvents: {},
+        error: undefined,
+        lastError: undefined,
+      });
+      await get().refreshCurrent();
+    } catch (error) {
+      set(formatError(error, 'Failed to delete session'));
+    }
   },
 
   updateDefaultAgent: async (agentId: string) => {

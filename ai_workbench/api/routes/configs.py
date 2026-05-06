@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ai_workbench.api.avatar import resolve_avatar_for_response
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.config_schema import (
@@ -155,6 +156,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
     agent = state.agents.get(agent_id)
     config = state.agent_configs.get_config(agent_id)
     masked_user_config = mask_config(agent.config_schema, config["user_config"])
+    avatar = resolve_avatar_for_response(state, agent).public_dict()
     return {
         **config,
         "user_config": masked_user_config,
@@ -166,6 +168,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
             "type": agent.type,
             "description": agent.description,
             "avatar": agent.avatar,
+            **avatar,
         },
     }
 

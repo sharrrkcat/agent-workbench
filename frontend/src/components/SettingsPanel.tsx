@@ -1,7 +1,8 @@
 import { FormEvent, KeyboardEvent, MouseEvent, useEffect, useState } from 'react';
-import { Bot, Boxes, ChevronDown, ChevronRight, Settings } from 'lucide-react';
+import { Boxes, ChevronDown, ChevronRight, Settings } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { AgentConfig, CapabilityConfig, ConfigFieldSchema, LlmResolvedConfig, LlmTestResult } from '../types';
+import { AgentAvatar } from './AgentAvatar';
 
 type ConfigKind = 'agent' | 'capability';
 type FormValues = Record<string, unknown>;
@@ -116,7 +117,6 @@ function ConfigEditor({
     event.stopPropagation();
   }
 
-  const avatar = config.manifest_summary.avatar?.trim();
   const label = name || id;
 
   return (
@@ -130,9 +130,13 @@ function ConfigEditor({
         onKeyDown={onHeaderKeyDown}
       >
         <div className="config-card-summary">
-          <div className="config-card-avatar" aria-hidden="true">
-            {avatar || (kind === 'agent' ? initials(label) || <Bot size={16} /> : <Boxes size={16} />)}
-          </div>
+          {kind === 'agent' ? (
+            <AgentAvatar agent={config.manifest_summary} label={label} className="config-card-avatar" iconSize={16} />
+          ) : (
+            <div className="config-card-avatar" aria-hidden="true">
+              {initials(label) || <Boxes size={16} />}
+            </div>
+          )}
           <div className="config-card-title">
             <span>{label}</span>
             <small>{id}</small>

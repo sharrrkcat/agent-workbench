@@ -220,6 +220,25 @@ def test_command_messages_persist_across_app_instances(tmp_path: Path) -> None:
     assert runs[-1]["status"] == "DONE"
 
 
+def test_deleted_session_stays_deleted_across_app_instances(tmp_path: Path) -> None:
+    url = sqlite_url(tmp_path)
+    first = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
+    session = first.post("/api/sessions", json={"title": "Delete me", "default_agent_id": "chat"}).json()
+    response = first.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 hello"})
+    assert response.status_code == 200
+
+    delete_response = first.delete(f"/api/sessions/{session['session_id']}")
+    assert delete_response.status_code == 200
+
+    second = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
+    sessions = second.get("/api/sessions").json()
+
+    assert session["session_id"] not in {item["session_id"] for item in sessions}
+    assert second.get(f"/api/sessions/{session['session_id']}").status_code == 404
+    assert second.get(f"/api/sessions/{session['session_id']}/messages").status_code == 404
+    assert second.get(f"/api/sessions/{session['session_id']}/runs").status_code == 404
+
+
 def test_recovery_interrupts_running_runs(tmp_path: Path) -> None:
     url = sqlite_url(tmp_path)
     engine = make_engine(tmp_path)

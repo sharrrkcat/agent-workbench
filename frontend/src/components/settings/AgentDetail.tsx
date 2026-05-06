@@ -1,12 +1,13 @@
-import { Bot, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { Agent, AgentAction, AgentConfig, ContextPolicy, ModelLifecyclePolicy } from '../../types';
+import { AgentAvatar } from '../AgentAvatar';
 import { ConfigForm } from './ConfigForm';
 import { DetailTabs } from './DetailTabs';
 import { ManifestViewer } from './ManifestViewer';
 import { ToggleSwitch } from './ToggleSwitch';
-import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, type ConfigValues } from './configUtils';
+import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 
 const baseTabs = [
   { id: 'overview', label: 'Overview' },
@@ -37,7 +38,6 @@ export function AgentDetail({
   const dirty = isConfigDirty(config, enabled, values);
   const summary = config.manifest_summary;
   const name = summary.name || agent?.name || config.agent_id;
-  const avatar = summary.avatar?.trim() || agent?.avatar?.trim();
   const hasActions = Boolean(agent?.actions?.length);
   const hasConfigFields = Boolean(config.config_schema?.length);
   const hasRuntime = Boolean(agent?.context_policy || agent?.model_lifecycle || agent?.model || agent?.type === 'script');
@@ -87,7 +87,7 @@ export function AgentDetail({
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
         <div className="settings-detail-title">
-          <div className="settings-detail-avatar">{avatar || initials(name) || <Bot size={18} />}</div>
+          <AgentAvatar agent={agent || summary} label={name} className="settings-detail-avatar" iconSize={18} />
           <div>
             <h2>{name}</h2>
             <p>

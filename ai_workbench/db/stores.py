@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from sqlmodel import Session as DbSession
+from sqlmodel import delete
 from sqlmodel import select
 
 from ai_workbench.core.schema.message import MessageSchema
@@ -100,6 +101,14 @@ class SqlSessionStore:
                 session.add(record)
             session.commit()
 
+    def delete_session(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            record = session.get(SessionRecord, session_id)
+            if record is None:
+                raise KeyError(f"unknown session id: {session_id}")
+            session.delete(record)
+            session.commit()
+
     def list_sessions(self) -> List[Session]:
         with DbSession(self.engine) as session:
             records = session.exec(
@@ -187,6 +196,11 @@ class SqlMessageStore:
             ).all()
             return [_message_from_record(record) for record in records]
 
+    def delete_session(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            session.exec(delete(MessageRecord).where(MessageRecord.session_id == session_id))
+            session.commit()
+
     def find_latest_assistant_message(self, session_id: str, agent_id: Optional[str] = None) -> Optional[MessageSchema]:
         messages = self.list_messages(session_id)
         for message in reversed(messages):
@@ -271,6 +285,11 @@ class SqlRunStore:
             records = session.exec(select(RunRecord).where(RunRecord.session_id == session_id).order_by(RunRecord.created_at)).all()
             return [_run_from_record(record) for record in records]
 
+    def delete_session(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            session.exec(delete(RunRecord).where(RunRecord.session_id == session_id))
+            session.commit()
+
     def interrupt_unfinished_runs(self) -> List[str]:
         interrupted: List[str] = []
         with DbSession(self.engine) as session:
@@ -320,6 +339,11 @@ class SqlRunEventStore:
                 select(RunEventRecord).where(RunEventRecord.run_id == run_id).order_by(RunEventRecord.created_at)
             ).all()
             return [_run_event_from_record(record) for record in records]
+
+    def delete_session(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            session.exec(delete(RunEventRecord).where(RunEventRecord.session_id == session_id))
+            session.commit()
 
 
 class SqlAgentConfigStore:

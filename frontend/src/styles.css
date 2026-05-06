@@ -196,6 +196,46 @@ input:disabled {
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
 
+.session-select-button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.session-delete-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.58);
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.session-row:hover .session-delete-button,
+.session-delete-button:focus-visible {
+  opacity: 1;
+}
+
+.session-delete-button:hover {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: rgba(127, 29, 29, 0.24);
+  color: #fecaca;
+}
+
 .session-row:hover {
   background: #222222;
   border-color: rgba(255, 255, 255, 0.06);
@@ -366,6 +406,22 @@ input:disabled {
   font-weight: 650;
 }
 
+.agent-switcher-avatar {
+  display: inline-flex;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 11px;
+  font-weight: 760;
+}
+
 .agent-switcher-button span {
   min-width: 0;
   overflow: hidden;
@@ -426,6 +482,7 @@ input:disabled {
   justify-content: center;
   width: 28px;
   height: 28px;
+  overflow: hidden;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.08);
   font-size: 12px;
@@ -626,6 +683,7 @@ input:disabled {
   justify-content: center;
   width: 34px;
   height: 34px;
+  overflow: hidden;
   margin-top: 20px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 13px;
@@ -634,6 +692,17 @@ input:disabled {
   font-size: 12px;
   font-weight: 760;
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.14);
+}
+
+.agent-avatar img,
+.agent-switcher-avatar img,
+.agent-menu-avatar img,
+.config-card-avatar img,
+.settings-object-avatar img,
+.settings-detail-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .message-stack {
@@ -1281,6 +1350,7 @@ input:disabled {
   justify-content: center;
   width: 34px;
   height: 34px;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   background: linear-gradient(135deg, #343434, #262626);
@@ -1660,6 +1730,7 @@ input:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(135deg, #343434, #262626);
   color: rgba(255, 255, 255, 0.86);

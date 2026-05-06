@@ -1,8 +1,15 @@
-import { MessageSquarePlus, Sparkles } from 'lucide-react';
+import { MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function SessionSidebar() {
-  const { sessions, currentSession, createSession, creatingSession, selectSession } = useWorkbenchStore();
+  const { sessions, currentSession, createSession, creatingSession, selectSession, deleteSession } = useWorkbenchStore();
+
+  function confirmDelete(sessionId: string) {
+    const confirmed = window.confirm('Delete this session?\nThis will remove its messages and runs.');
+    if (confirmed) {
+      void deleteSession(sessionId);
+    }
+  }
 
   return (
     <aside className="session-sidebar">
@@ -23,13 +30,20 @@ export function SessionSidebar() {
         {sessions.map((session) => {
           const active = currentSession?.session_id === session.session_id;
           return (
-            <button
-              key={session.session_id}
-              className={`session-row ${active ? 'active' : ''}`}
-              onClick={() => void selectSession(session.session_id)}
-            >
-              <span className="session-title">{session.title || `Session ${session.session_id.slice(0, 6)}`}</span>
-            </button>
+            <div key={session.session_id} className={`session-row ${active ? 'active' : ''}`}>
+              <button className="session-select-button" type="button" onClick={() => void selectSession(session.session_id)}>
+                <span className="session-title">{session.title || `Session ${session.session_id.slice(0, 6)}`}</span>
+              </button>
+              <button
+                className="session-delete-button"
+                type="button"
+                title="Delete session"
+                aria-label={`Delete ${session.title || `Session ${session.session_id.slice(0, 6)}`}`}
+                onClick={() => confirmDelete(session.session_id)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           );
         })}
       </div>

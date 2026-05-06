@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CircleAlert, Clock3 } from 'lucide-react';
+import { CircleAlert, Clock3 } from 'lucide-react';
 import type { Agent, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
+import { AgentAvatar } from './AgentAvatar';
 
 export function MessageBubble({ message }: { message: Message }) {
   const agents = useWorkbenchStore((state) => state.agents);
@@ -20,7 +21,7 @@ export function MessageBubble({ message }: { message: Message }) {
 
   return (
     <article className={`message-row ${kind}`}>
-      {!isUser ? <AgentAvatar agent={agent} commandName={message.command_name} /> : null}
+      {!isUser ? <AgentAvatar agent={agent} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
         <MessageHeader message={message} agent={agent} kind={kind} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
@@ -49,17 +50,6 @@ function MessageHeader({ message, agent, kind }: { message: Message; agent?: Age
         {action ? <small>{action}</small> : null}
       </div>
       <time>{formatTime(message.created_at)}</time>
-    </div>
-  );
-}
-
-function AgentAvatar({ agent, commandName }: { agent?: Agent; commandName?: string | null }) {
-  const label = commandName || agent?.name || agent?.id || 'AI';
-  const avatar = agent?.avatar?.trim();
-
-  return (
-    <div className="agent-avatar" aria-hidden="true">
-      {avatar || initials(label) || <Bot size={16} />}
     </div>
   );
 }
@@ -194,17 +184,6 @@ function shouldCollapseUserMessage(value: string): boolean {
   if (value.length > 600) return true;
   if (value.split(/\r\n|\r|\n/).length > 8) return true;
   return value.split(/\s+/).some((token) => token.length > 160);
-}
-
-function initials(value: string): string {
-  const words = value
-    .replace(/[/_-]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
-  return words
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase())
-    .join('');
 }
 
 function formatTime(value: string): string {

@@ -45,6 +45,10 @@ class SessionStore:
         self._sessions[session_id] = updated
         return updated
 
+    def delete_session(self, session_id: str) -> None:
+        self.get_session(session_id)
+        del self._sessions[session_id]
+
     def list_sessions(self) -> List[Session]:
         return sorted(
             self._sessions.values(),
@@ -116,6 +120,11 @@ class MessageStore:
     def list_messages(self, session_id: str) -> List[MessageSchema]:
         return [self._messages[message_id] for message_id in self._session_message_ids.get(session_id, [])]
 
+    def delete_session(self, session_id: str) -> None:
+        message_ids = self._session_message_ids.pop(session_id, [])
+        for message_id in message_ids:
+            self._messages.pop(message_id, None)
+
     def find_latest_assistant_message(self, session_id: str, agent_id: Optional[str] = None) -> Optional[MessageSchema]:
         for message in reversed(self.list_messages(session_id)):
             if message.role != "assistant":
@@ -183,6 +192,11 @@ class RunStore:
     def list_runs(self, session_id: str) -> List[RunSchema]:
         return [self._runs[run_id] for run_id in self._session_run_ids.get(session_id, [])]
 
+    def delete_session(self, session_id: str) -> None:
+        run_ids = self._session_run_ids.pop(session_id, [])
+        for run_id in run_ids:
+            self._runs.pop(run_id, None)
+
 
 class RunEventStore:
     def __init__(self) -> None:
@@ -212,6 +226,19 @@ class RunEventStore:
 
     def list_events(self, run_id: str) -> List[RunEventSchema]:
         return [self._events[event_id] for event_id in self._run_event_ids.get(run_id, [])]
+
+    def delete_session(self, session_id: str) -> None:
+        deleted_event_ids = [
+            event_id
+            for event_id, event in self._events.items()
+            if event.session_id == session_id
+        ]
+        for event_id in deleted_event_ids:
+            event = self._events.pop(event_id, None)
+            if event is None:
+                continue
+            run_event_ids = self._run_event_ids.get(event.run_id, [])
+            self._run_event_ids[event.run_id] = [item for item in run_event_ids if item != event_id]
 
 
 class ConfigStore:
