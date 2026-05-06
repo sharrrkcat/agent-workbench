@@ -485,25 +485,34 @@ input:disabled {
 }
 
 .error-banner {
-  flex: 0 0 auto;
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  z-index: 1000;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  margin: 10px auto 0;
-  width: min(920px, calc(100% - 28px));
+  width: min(900px, calc(100% - 48px));
+  margin: 0;
   padding: 9px 12px;
-  border: 1px solid rgba(248, 113, 113, 0.2);
+  border: 1px solid rgba(248, 113, 113, 0.28);
   border-radius: 14px;
-  background: rgba(127, 29, 29, 0.22);
+  background: rgba(83, 22, 22, 0.92);
   color: rgba(254, 202, 202, 0.92);
   font-size: 13px;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
 }
 
 .error-banner span {
   min-width: 0;
   flex: 1;
+}
+
+.error-banner strong {
+  font-weight: 820;
 }
 
 .error-banner button {
@@ -1075,8 +1084,8 @@ input:disabled {
 }
 
 .settings-page {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100dvh;
   min-height: 0;
@@ -1088,6 +1097,7 @@ input:disabled {
 }
 
 .settings-page-header {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 18px;
@@ -1522,6 +1532,7 @@ input:disabled {
 
 .settings-console {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: minmax(180px, 220px) minmax(300px, 360px) minmax(0, 1fr);
   min-height: 0;
   height: 100%;
@@ -1532,6 +1543,7 @@ input:disabled {
 .settings-nav,
 .settings-object-list,
 .settings-detail-panel {
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -1541,6 +1553,7 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  overflow-y: auto;
   padding: 14px 10px;
   background: #1c1c1c;
 }
@@ -1606,6 +1619,7 @@ input:disabled {
 
 .settings-list-scroll {
   display: grid;
+  flex: 1 1 auto;
   align-content: start;
   gap: 4px;
   min-height: 0;
@@ -1698,13 +1712,17 @@ input:disabled {
 }
 
 .settings-detail-panel {
+  display: flex;
+  flex-direction: column;
   border-right: 0;
   background: #212121;
 }
 
 .settings-detail-form {
   display: grid;
+  flex: 1 1 auto;
   grid-template-rows: auto auto minmax(0, 1fr);
+  width: 100%;
   height: 100%;
   min-height: 0;
 }
@@ -2122,9 +2140,12 @@ input:disabled {
 .settings-placeholder {
   display: grid;
   gap: 12px;
+  align-content: start;
+  flex: 1 1 auto;
   max-width: 760px;
   margin: 18px;
   padding: 18px;
+  overflow-y: auto;
 }
 
 .settings-placeholder h2 {
