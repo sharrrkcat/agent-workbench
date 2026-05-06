@@ -8,7 +8,7 @@ import { ManifestViewer } from './ManifestViewer';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, type ConfigValues } from './configUtils';
 
-const tabs = [
+const baseTabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'actions', label: 'Actions' },
   { id: 'config', label: 'Config' },
@@ -38,6 +38,24 @@ export function AgentDetail({
   const summary = config.manifest_summary;
   const name = summary.name || agent?.name || config.agent_id;
   const avatar = summary.avatar?.trim() || agent?.avatar?.trim();
+  const hasActions = Boolean(agent?.actions?.length);
+  const hasConfigFields = Boolean(config.config_schema?.length);
+  const hasRuntime = Boolean(agent?.context_policy || agent?.model_lifecycle || agent?.model || agent?.type === 'script');
+  const manifest = useMemo(() => ({ agent, config }), [agent, config]);
+  const tabs = useMemo(
+    () =>
+      baseTabs.map((tab) => ({
+        ...tab,
+        enabled:
+          tab.id === 'overview' ||
+          (tab.id === 'actions' && hasActions) ||
+          (tab.id === 'config' && hasConfigFields) ||
+          (tab.id === 'runtime' && hasRuntime) ||
+          tab.id === 'manifest',
+      })),
+    [hasActions, hasConfigFields, hasRuntime],
+  );
+  const normalizedActiveTab = tabs.some((tab) => tab.id === activeTab && tab.enabled !== false) ? activeTab : 'overview';
 
   useEffect(() => {
     setEnabled(config.enabled);
@@ -49,6 +67,12 @@ export function AgentDetail({
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
 
+  useEffect(() => {
+    if (activeTab !== normalizedActiveTab) {
+      onTabChange(normalizedActiveTab);
+    }
+  }, [activeTab, normalizedActiveTab, onTabChange]);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     try {
@@ -58,8 +82,6 @@ export function AgentDetail({
       setLocalError(error instanceof Error ? error.message : 'Failed to save agent config.');
     }
   }
-
-  const manifest = useMemo(() => ({ agent, config }), [agent, config]);
 
   return (
     <form className="settings-detail-form" onSubmit={save}>
@@ -85,11 +107,11 @@ export function AgentDetail({
         </div>
       </header>
 
-      <DetailTabs tabs={tabs} activeTab={tabs.some((tab) => tab.id === activeTab) ? activeTab : 'overview'} onChange={onTabChange} />
+      <DetailTabs tabs={tabs} activeTab={normalizedActiveTab} onChange={onTabChange} />
       <div className="settings-detail-body">
         {localError ? <p className="settings-error-text">{localError}</p> : null}
-        {activeTab === 'actions' ? <ActionsTab actions={agent?.actions || []} /> : null}
-        {activeTab === 'config' ? (
+        {normalizedActiveTab === 'actions' ? <ActionsTab actions={agent?.actions || []} /> : null}
+        {normalizedActiveTab === 'config' ? (
           <ConfigForm
             fields={config.config_schema || []}
             values={values}
@@ -97,9 +119,9 @@ export function AgentDetail({
             emptyMessage="This agent has no configurable fields."
           />
         ) : null}
-        {activeTab === 'runtime' ? <RuntimeTab agent={agent} /> : null}
-        {activeTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
-        {activeTab === 'overview' || !tabs.some((tab) => tab.id === activeTab) ? <OverviewTab config={config} agent={agent} /> : null}
+        {normalizedActiveTab === 'runtime' ? <RuntimeTab agent={agent} /> : null}
+        {normalizedActiveTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
+        {normalizedActiveTab === 'overview' ? <OverviewTab config={config} agent={agent} /> : null}
       </div>
     </form>
   );
@@ -109,19 +131,15 @@ function OverviewTab({ config, agent }: { config: AgentConfig; agent?: Agent }) 
   const summary = config.manifest_summary;
   return (
     <div className="settings-detail-grid">
-      <InfoRow label="Name" value={summary.name || agent?.name || config.agent_id} />
-      <InfoRow label="ID" value={config.agent_id} />
+      <InfoRow label="Description" value={summary.description || agent?.description || 'No description.'} wide />
       <InfoRow label="Type" value={summary.type || agent?.type || 'agent'} />
-      <InfoRow label="Description" value={summary.description || agent?.description || 'No description.'} />
-      <InfoRow label="Avatar" value={summary.avatar || agent?.avatar || 'None'} />
-      {agent?.type === 'script' ? <InfoRow label="Entry" value={agent.entry || 'Unset'} /> : null}
-      <div className="settings-info-row wide">
+      <div className="settings-info-row">
         <span>Capabilities</span>
         <div className="settings-chip-row">
           {agent?.capabilities?.length ? (
             agent.capabilities.map((capability) => <span key={capability}>{capability}</span>)
           ) : (
-            <small>None declared</small>
+            <small>No declared capabilities</small>
           )}
         </div>
       </div>
@@ -229,9 +247,9 @@ function PolicyGrid({ policy }: { policy?: ContextPolicy | null }) {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: unknown }) {
+function InfoRow({ label, value, wide = false }: { label: string; value: unknown; wide?: boolean }) {
   return (
-    <div className="settings-info-row">
+    <div className={`settings-info-row ${wide ? 'wide' : ''}`}>
       <span>{label}</span>
       <strong>{displayValue(value)}</strong>
     </div>

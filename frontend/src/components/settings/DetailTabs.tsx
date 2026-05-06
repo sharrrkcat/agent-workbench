@@ -1,6 +1,7 @@
 export type DetailTab = {
   id: string;
   label: string;
+  enabled?: boolean;
 };
 
 export function DetailTabs({
@@ -20,8 +21,12 @@ export function DetailTabs({
           type="button"
           role="tab"
           aria-selected={activeTab === tab.id}
-          className={activeTab === tab.id ? 'active' : ''}
-          onClick={() => onChange(tab.id)}
+          aria-disabled={tab.enabled === false}
+          disabled={tab.enabled === false}
+          className={`${activeTab === tab.id ? 'active' : ''} ${tab.enabled === false ? 'disabled' : ''}`}
+          onClick={() => {
+            if (tab.enabled !== false) onChange(tab.id);
+          }}
         >
           {tab.label}
         </button>

@@ -69,7 +69,6 @@ export function SettingsObjectList({
           <div className="settings-object-copy">
             <strong>{llmConfig?.manifest_summary.name || 'LLM Runtime'}</strong>
             <small>{llmConfig?.capability_id || 'llm'}</small>
-            <p>{llmConfig?.manifest_summary.description || 'OpenAI-compatible local model connection.'}</p>
           </div>
           <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? 'Enabled' : 'Disabled'}</span>
         </button>
@@ -104,7 +103,6 @@ function AgentListItem({ config, active, onClick }: { config: AgentConfig; activ
       <div className="settings-object-copy">
         <strong>{label}</strong>
         <small>{config.agent_id}</small>
-        <p>{summary.description || 'No description.'}</p>
       </div>
       <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>
@@ -128,7 +126,6 @@ function CapabilityListItem({
       <div className="settings-object-copy">
         <strong>{label}</strong>
         <small>{config.capability_id}</small>
-        <p>{summary.description || 'No description.'}</p>
       </div>
       <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>

@@ -10,7 +10,7 @@ import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './Se
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, type ConfigValues } from './configUtils';
 
-const tabs = [
+const baseTabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'commands', label: 'Commands' },
   { id: 'config', label: 'Config' },
@@ -41,6 +41,27 @@ export function CapabilityDetail({
   const dirty = isConfigDirty(config, enabled, values);
   const summary = config.manifest_summary;
   const name = summary.name || config.capability_id;
+  const capabilityCommands = commands.filter((command) => command.capability_id === config.capability_id);
+  const manifestCommands = summary.commands || [];
+  const visibleCommands = capabilityCommands.length ? capabilityCommands : manifestCommands;
+  const hasCommands = Boolean(visibleCommands.length);
+  const hasConfigFields = Boolean(config.config_schema?.length);
+  const hasHealth = config.capability_id === 'llm';
+  const manifest = useMemo(() => ({ config, commands: visibleCommands }), [config, visibleCommands]);
+  const tabs = useMemo(
+    () =>
+      baseTabs.map((tab) => ({
+        ...tab,
+        enabled:
+          tab.id === 'overview' ||
+          (tab.id === 'commands' && hasCommands) ||
+          (tab.id === 'config' && hasConfigFields) ||
+          (tab.id === 'health' && hasHealth) ||
+          tab.id === 'manifest',
+      })),
+    [hasCommands, hasConfigFields, hasHealth],
+  );
+  const normalizedActiveTab = tabs.some((tab) => tab.id === activeTab && tab.enabled !== false) ? activeTab : 'overview';
 
   useEffect(() => {
     setEnabled(config.enabled);
@@ -53,6 +74,12 @@ export function CapabilityDetail({
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
 
+  useEffect(() => {
+    if (activeTab !== normalizedActiveTab) {
+      onTabChange(normalizedActiveTab);
+    }
+  }, [activeTab, normalizedActiveTab, onTabChange]);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     try {
@@ -62,11 +89,6 @@ export function CapabilityDetail({
       setLocalError(toSettingsError(error, 'Failed to save capability config.'));
     }
   }
-
-  const capabilityCommands = commands.filter((command) => command.capability_id === config.capability_id);
-  const manifestCommands = summary.commands || [];
-  const visibleCommands = capabilityCommands.length ? capabilityCommands : manifestCommands;
-  const manifest = useMemo(() => ({ config, commands: visibleCommands }), [config, visibleCommands]);
 
   return (
     <form className={`settings-detail-form ${enabled ? '' : 'disabled'}`} onSubmit={save}>
@@ -92,11 +114,11 @@ export function CapabilityDetail({
         </div>
       </header>
 
-      <DetailTabs tabs={tabs} activeTab={tabs.some((tab) => tab.id === activeTab) ? activeTab : 'overview'} onChange={onTabChange} />
+      <DetailTabs tabs={tabs} activeTab={normalizedActiveTab} onChange={onTabChange} />
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
-        {activeTab === 'commands' ? <CommandsTab commands={visibleCommands} capabilityEnabled={enabled} /> : null}
-        {activeTab === 'config' ? (
+        {normalizedActiveTab === 'commands' ? <CommandsTab commands={visibleCommands} capabilityEnabled={enabled} /> : null}
+        {normalizedActiveTab === 'config' ? (
           <ConfigForm
             fields={config.config_schema || []}
             values={values}
@@ -104,15 +126,15 @@ export function CapabilityDetail({
             emptyMessage="This capability has no configurable fields."
           />
         ) : null}
-        {activeTab === 'health' ? (
+        {normalizedActiveTab === 'health' ? (
           config.capability_id === 'llm' ? (
             <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} showConfig={false} onBusyChange={setHealthBusy} />
           ) : (
             <div className="settings-empty-state">No health checks available for this capability.</div>
           )
         ) : null}
-        {activeTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
-        {activeTab === 'overview' || !tabs.some((tab) => tab.id === activeTab) ? (
+        {normalizedActiveTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
+        {normalizedActiveTab === 'overview' ? (
           <OverviewTab config={config} commandCount={visibleCommands.length} />
         ) : null}
       </div>
@@ -125,14 +147,11 @@ function OverviewTab({ config, commandCount }: { config: CapabilityConfig; comma
   const configFieldCount = config.config_schema?.length ?? 0;
   return (
     <div className="settings-detail-grid">
-      <InfoRow label="Name" value={summary.name || config.capability_id} />
-      <InfoRow label="ID" value={config.capability_id} />
-      <InfoRow label="Description" value={summary.description} />
+      <InfoRow label="Description" value={summary.description} wide />
       <InfoRow label="Version" value={(summary as { version?: string }).version} />
-      <InfoRow label="Entry / runtime" value={config.capability_id === 'llm' ? 'OpenAI-compatible LLM runtime' : 'Local Python capability'} />
-      <InfoRow label="Enabled" value={config.enabled} />
       <InfoRow label="Exposed commands" value={commandCount} />
       <InfoRow label="Config fields" value={configFieldCount} />
+      <InfoRow label="Runtime" value={config.capability_id === 'llm' ? 'OpenAI-compatible LLM runtime' : 'Local Python capability'} />
     </div>
   );
 }
@@ -175,9 +194,9 @@ function CommandsTab({ commands, capabilityEnabled }: { commands: Command[]; cap
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: unknown }) {
+function InfoRow({ label, value, wide = false }: { label: string; value: unknown; wide?: boolean }) {
   return (
-    <div className="settings-info-row">
+    <div className={`settings-info-row ${wide ? 'wide' : ''}`}>
       <span>{label}</span>
       <strong>{displayValue(value)}</strong>
     </div>
