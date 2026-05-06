@@ -4,8 +4,9 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, CapabilityConfig, ImageAttachment, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
+import type { ImagePreview } from '../utils/images';
 
-export function ChatInput() {
+export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
   const [value, setValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
@@ -235,7 +236,7 @@ export function ChatInput() {
       <div className="composer-card">
         {dragActive ? <div className="composer-drag-overlay">Drop images to attach</div> : null}
         <CommandPalette mode={mode} token={activeToken?.token ?? ''} onPick={pickSuggestion} />
-        <AttachmentPreview attachments={attachments} onRemove={removeAttachment} />
+        <AttachmentPreview attachments={attachments} onRemove={removeAttachment} onPreviewImage={onPreviewImage} />
         <textarea
           ref={textareaRef}
           value={value}
@@ -331,14 +332,32 @@ export function ChatInput() {
   );
 }
 
-function AttachmentPreview({ attachments, onRemove }: { attachments: ImageAttachment[]; onRemove: (id: string) => void }) {
+function AttachmentPreview({
+  attachments,
+  onRemove,
+  onPreviewImage,
+}: {
+  attachments: ImageAttachment[];
+  onRemove: (id: string) => void;
+  onPreviewImage: (image: ImagePreview) => void;
+}) {
   if (!attachments.length) return null;
   return (
-    <div className={`composer-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
+    <div className="composer-attachments">
       {attachments.map((attachment) => (
         <figure className="composer-attachment" key={attachment.id}>
-          <img src={attachment.data_url} alt={attachment.name || 'Attached image'} />
-          <button type="button" onClick={() => onRemove(attachment.id)} title={`Remove ${attachment.name || 'image'}`}>
+          <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: attachment.data_url, alt: attachment.name || 'Attached image', title: attachment.name })}>
+            <img src={attachment.data_url} alt={attachment.name || 'Attached image'} />
+          </button>
+          <button
+            className="composer-attachment-remove"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(attachment.id);
+            }}
+            title={`Remove ${attachment.name || 'image'}`}
+          >
             <X size={14} />
           </button>
         </figure>

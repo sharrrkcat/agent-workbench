@@ -7,8 +7,9 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
 import { formatMessageTime } from '../utils/time';
+import { safeImageUrl, type ImagePreview } from '../utils/images';
 
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({ message, onPreviewImage }: { message: Message; onPreviewImage: (image: ImagePreview) => void }) {
   const agents = useWorkbenchStore((state) => state.agents);
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
   const retryMessage = useWorkbenchStore((state) => state.retryMessage);
@@ -88,7 +89,7 @@ export function MessageBubble({ message }: { message: Message }) {
           ) : (
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
-              <MessageContent message={message} kind={kind} />
+              <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} />
             </>
           )}
           {message.client_status === 'pending' ? (
@@ -229,9 +230,9 @@ function InlineErrorBlock({ message }: { message: Message }) {
   );
 }
 
-function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'agent' | 'command' }) {
+function MessageContent({ message, kind, onPreviewImage }: { message: Message; kind: 'user' | 'agent' | 'command'; onPreviewImage: (image: ImagePreview) => void }) {
   if (kind === 'user') {
-    return <UserMessageRenderer content={message.content} attachments={messageImageAttachments(message)} />;
+    return <UserMessageRenderer content={message.content} attachments={messageImageAttachments(message)} onPreviewImage={onPreviewImage} />;
   }
   if (message.output_type === 'markdown') {
     return <MarkdownRenderer content={message.content} />;
@@ -243,13 +244,13 @@ function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'a
     return <JsonRenderer content={message.content} />;
   }
   if (message.output_type === 'image') {
-    return <ImageRenderer image={normalizeImagePayload(message.content)} />;
+    return <ImageRenderer image={normalizeImagePayload(message.content)} onPreviewImage={onPreviewImage} />;
   }
   if (message.output_type === 'image_gallery') {
-    return <ImageGalleryRenderer images={normalizeImageGallery(message.content)} />;
+    return <ImageGalleryRenderer images={normalizeImageGallery(message.content)} onPreviewImage={onPreviewImage} />;
   }
   if (message.output_type === 'rich_content') {
-    return <RichContentRenderer blocks={normalizeRichContentBlocks(message.content)} />;
+    return <RichContentRenderer blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
   }
   return <PlainTextRenderer content={message.content} />;
 }
@@ -258,7 +259,7 @@ export function PlainTextRenderer({ content }: { content: unknown }) {
   return <div className="message-content plain-text">{contentToText(content)}</div>;
 }
 
-function UserMessageRenderer({ content, attachments }: { content: unknown; attachments: ImageAttachment[] }) {
+function UserMessageRenderer({ content, attachments, onPreviewImage }: { content: unknown; attachments: ImageAttachment[]; onPreviewImage: (image: ImagePreview) => void }) {
   const text = contentToText(content);
   const collapsible = shouldCollapseUserMessage(text);
   const [expanded, setExpanded] = useState(false);
@@ -269,7 +270,7 @@ function UserMessageRenderer({ content, attachments }: { content: unknown; attac
 
   return (
     <div className="user-message-content">
-      {attachments.length ? <AttachmentGallery attachments={attachments} /> : null}
+      {attachments.length ? <AttachmentGallery attachments={attachments} onPreviewImage={onPreviewImage} /> : null}
       {text ? <div className={`message-content plain-text ${collapsible && !expanded ? 'collapsed-user-content' : ''}`}>{text}</div> : null}
       {collapsible ? (
         <button className="message-expand-button" type="button" onClick={() => setExpanded((current) => !current)}>
@@ -280,12 +281,14 @@ function UserMessageRenderer({ content, attachments }: { content: unknown; attac
   );
 }
 
-function AttachmentGallery({ attachments }: { attachments: ImageAttachment[] }) {
+function AttachmentGallery({ attachments, onPreviewImage }: { attachments: ImageAttachment[]; onPreviewImage: (image: ImagePreview) => void }) {
   return (
     <div className={`message-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
       {attachments.map((attachment) => (
         <figure className="message-attachment" key={attachment.id}>
-          <img src={attachment.data_url} alt={attachment.name || 'Attached image'} loading="lazy" />
+          <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachment.data_url, alt: attachment.name || 'Attached image', title: attachment.name })}>
+            <img src={attachment.data_url} alt={attachment.name || 'Attached image'} loading="lazy" />
+          </button>
         </figure>
       ))}
     </div>
@@ -313,7 +316,7 @@ export function JsonRenderer({ content }: { content: unknown }) {
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
 }
 
-function ImageRenderer({ image }: { image: ImagePayload | null }) {
+function ImageRenderer({ image, onPreviewImage }: { image: ImagePayload | null; onPreviewImage: (image: ImagePreview) => void }) {
   if (!image) {
     return <PlainTextRenderer content="" />;
   }
@@ -324,28 +327,28 @@ function ImageRenderer({ image }: { image: ImagePayload | null }) {
   return (
     <figure className="message-content image-content">
       {image.title ? <figcaption className="image-title">{image.title}</figcaption> : null}
-      <a href={url} target="_blank" rel="noreferrer">
+      <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url, alt: image.alt, title: image.title, caption: image.caption })}>
         <img src={url} alt={image.alt || image.title || image.caption || ''} loading="lazy" />
-      </a>
+      </button>
       {image.caption ? <figcaption className="image-caption">{image.caption}</figcaption> : null}
     </figure>
   );
 }
 
-function ImageGalleryRenderer({ images }: { images: ImagePayload[] }) {
+function ImageGalleryRenderer({ images, onPreviewImage }: { images: ImagePayload[]; onPreviewImage: (image: ImagePreview) => void }) {
   if (!images.length) {
     return <PlainTextRenderer content="" />;
   }
   return (
     <div className="message-content image-gallery">
       {images.map((image, index) => (
-        <ImageRenderer key={`${image.url}-${index}`} image={image} />
+        <ImageRenderer key={`${image.url}-${index}`} image={image} onPreviewImage={onPreviewImage} />
       ))}
     </div>
   );
 }
 
-function RichContentRenderer({ blocks }: { blocks: ChatContentBlock[] }) {
+function RichContentRenderer({ blocks, onPreviewImage }: { blocks: ChatContentBlock[]; onPreviewImage: (image: ImagePreview) => void }) {
   if (!blocks.length) {
     return <PlainTextRenderer content="" />;
   }
@@ -356,7 +359,7 @@ function RichContentRenderer({ blocks }: { blocks: ChatContentBlock[] }) {
           return <MarkdownRenderer key={index} content={block.text} />;
         }
         if (block.type === 'image') {
-          return <ImageRenderer key={index} image={block} />;
+          return <ImageRenderer key={index} image={block} onPreviewImage={onPreviewImage} />;
         }
         return <PlainTextRenderer key={index} content={block.text} />;
       })}
@@ -448,13 +451,6 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
-}
-
-function safeImageUrl(value: string): string {
-  const trimmed = value.trim();
-  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')) return trimmed;
-  if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml|bmp);base64,[a-z0-9+/=\s]+$/i.test(trimmed)) return trimmed;
-  return '';
 }
 
 function extractReasoningContent(metadata: Record<string, unknown> | undefined): string {

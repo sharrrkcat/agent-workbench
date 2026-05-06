@@ -3,16 +3,19 @@ import { ChatInput } from './components/ChatInput';
 import { ChatHeader } from './components/ChatHeader';
 import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
+import { ImagePreviewModal } from './components/ImagePreviewModal';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
 import { createWebSocketUrl } from './api/client';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
+import type { ImagePreview } from './utils/images';
 
 export default function App() {
   const { currentSession, initialize, refreshCurrent, applyRuntimeEvent } = useWorkbenchStore();
   const [path, setPath] = useState(() => window.location.pathname);
   const [wsUnavailable, setWsUnavailable] = useState(false);
+  const [previewImage, setPreviewImage] = useState<ImagePreview | null>(null);
 
   useEffect(() => {
     void initialize();
@@ -87,10 +90,11 @@ export default function App() {
       <main className="workspace">
         <ChatHeader onOpenSettings={() => navigate('/settings')} />
         <ErrorBanner />
-        <ChatView />
-        <ChatInput />
+        <ChatView onPreviewImage={setPreviewImage} />
+        <ChatInput onPreviewImage={setPreviewImage} />
         <StatusBar />
       </main>
+      <ImagePreviewModal image={previewImage} onClose={() => setPreviewImage(null)} />
     </div>
   );
 }

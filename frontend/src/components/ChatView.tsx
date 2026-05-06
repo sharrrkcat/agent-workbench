@@ -3,8 +3,9 @@ import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Message } from '../types';
 import { MessageBubble } from './MessageBubble';
+import type { ImagePreview } from '../utils/images';
 
-export function ChatView() {
+export function ChatView({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
   const { messages, currentSession, createSession, loading, creatingSession, sendMessage, sending } = useWorkbenchStore();
   const scrollRef = useRef<HTMLElement | null>(null);
   const autoScrollRef = useRef(true);
@@ -72,7 +73,7 @@ export function ChatView() {
           </div>
         </div>
       ) : (
-        messages.map((message) => <MessageBubble key={message.message_id} message={message} />)
+        messages.map((message) => <MessageBubble key={message.message_id} message={message} onPreviewImage={onPreviewImage} />)
       )}
     </section>
   );
