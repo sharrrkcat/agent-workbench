@@ -1,5 +1,6 @@
 import type { ConfigFieldSchema } from '../../types';
 import type { ConfigValues } from './configUtils';
+import { SecretInput, MASKED_SECRET_VALUE } from './SecretInput';
 import { ToggleSwitch } from './ToggleSwitch';
 
 export function ConfigForm({
@@ -54,6 +55,20 @@ function ConfigFieldEditor({
       </div>
     );
   }
+  if (field.secret) {
+    const stringValue = String(value ?? '');
+    const hasSecret = stringValue === MASKED_SECRET_VALUE;
+    return (
+      <SecretInput
+        id={id}
+        label={label}
+        required={field.required}
+        value={hasSecret ? '' : stringValue}
+        hasSecret={hasSecret}
+        onChange={onChange}
+      />
+    );
+  }
   return (
     <label className="config-field settings-config-field" htmlFor={id}>
       <span>
@@ -99,7 +114,7 @@ function renderInput(field: ConfigFieldSchema, id: string, value: unknown, onCha
   return (
     <input
       id={id}
-      type={field.secret ? 'password' : 'text'}
+      type="text"
       value={String(value ?? '')}
       onChange={(event) => onChange(event.target.value)}
     />

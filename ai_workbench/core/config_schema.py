@@ -96,6 +96,9 @@ def merge_secret_patch(
     secret_fields = {field.name for field in schema if field.secret}
     merged = dict(incoming_config)
     for name in secret_fields:
+        if name not in incoming_config and name in existing_config:
+            merged[name] = existing_config[name]
+            continue
         if incoming_config.get(name) == MASKED_SECRET:
             if name in existing_config:
                 merged[name] = existing_config[name]

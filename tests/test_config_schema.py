@@ -95,6 +95,7 @@ def test_secret_masking_and_patch_preserve_mask() -> None:
 
     assert mask_config(schema, {"api_key": "secret"}) == {"api_key": MASKED_SECRET}
     assert merge_secret_patch(schema, {"api_key": "secret"}, {"api_key": MASKED_SECRET}) == {"api_key": "secret"}
+    assert merge_secret_patch(schema, {"api_key": "secret"}, {}) == {"api_key": "secret"}
     assert merge_secret_patch(schema, {"api_key": "secret"}, {"api_key": "new"}) == {"api_key": "new"}
 
 

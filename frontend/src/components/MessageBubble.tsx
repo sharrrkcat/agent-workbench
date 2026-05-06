@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
@@ -136,15 +136,45 @@ export function MessageBubble({ message }: { message: Message }) {
 
 function ThoughtBlock({ content, streaming }: { content: string; streaming: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const contentRef = useRef<HTMLPreElement | null>(null);
+  const autoScrollRef = useRef(true);
+
+  useLayoutEffect(() => {
+    if (!expanded || !streaming || !autoScrollRef.current) return;
+    const container = contentRef.current;
+    if (!container) return;
+    window.requestAnimationFrame(() => {
+      if (!autoScrollRef.current) return;
+      container.scrollTop = container.scrollHeight;
+    });
+  }, [content, expanded, streaming]);
+
+  function toggleExpanded() {
+    setExpanded((current) => {
+      const next = !current;
+      if (next) autoScrollRef.current = true;
+      return next;
+    });
+  }
+
+  function handleThoughtScroll() {
+    const container = contentRef.current;
+    if (!container) return;
+    autoScrollRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+  }
 
   return (
     <section className={`thought-block ${expanded ? 'expanded' : ''}`}>
-      <button className="thought-toggle" type="button" onClick={() => setExpanded((current) => !current)} aria-expanded={expanded}>
+      <button className="thought-toggle" type="button" onClick={toggleExpanded} aria-expanded={expanded}>
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span>Thought</span>
         {streaming ? <small>Thinking...</small> : null}
       </button>
-      {expanded ? <pre className="thought-content">{content}</pre> : null}
+      {expanded ? (
+        <pre className="thought-content" ref={contentRef} onScroll={handleThoughtScroll}>
+          {content}
+        </pre>
+      ) : null}
     </section>
   );
 }

@@ -6,10 +6,10 @@ import type { CapabilityConfig, LlmProfile, LlmProfileInput, LlmResolvedConfig, 
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import { ConfigForm } from './ConfigForm';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { SecretInput } from './SecretInput';
 import { stableConfigString, type ConfigValues } from './configUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
-const MASKED_SECRET = '********';
 const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom'] as const;
 const profileDefaults: LlmProfileInput = {
   alias: '',
@@ -337,7 +337,13 @@ export function LlmSettingsPanel({
                 disabled={profileBusy}
               />
             </div>
-            <ProfileForm draft={profileDraft} models={profileModels} onChange={setProfileDraft} disabled={profileBusy} />
+            <ProfileForm
+              draft={profileDraft}
+              models={profileModels}
+              onChange={setProfileDraft}
+              disabled={profileBusy}
+              hasApiKey={Boolean(selectedProfile?.api_key_set)}
+            />
             <div className="settings-button-row">
               {profileDirty ? (
                 <button className="settings-primary-button" type="button" onClick={() => void saveProfile()} disabled={profileBusy}>
@@ -583,7 +589,14 @@ export function LlmProfileDetail({
               </select>
             </label>
             <TextField label="Base URL" value={draft.base_url} onChange={(base_url) => updateDraft({ base_url })} disabled={busy} />
-            <TextField label="API key" value={draft.api_key} onChange={(api_key) => updateDraft({ api_key })} disabled={busy} secret />
+            <TextField
+              label="API key"
+              value={draft.api_key}
+              onChange={(api_key) => updateDraft({ api_key })}
+              disabled={busy}
+              secret
+              hasSecret={Boolean(selectedProfile?.api_key_set)}
+            />
             <label className="config-field settings-config-field">
               <span>Model ID</span>
               <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy} />
@@ -658,11 +671,13 @@ function ProfileForm({
   models,
   onChange,
   disabled,
+  hasApiKey,
 }: {
   draft: LlmProfileInput;
   models: string[];
   onChange: (draft: LlmProfileInput) => void;
   disabled: boolean;
+  hasApiKey: boolean;
 }) {
   const set = (key: keyof LlmProfileInput, value: unknown) => onChange({ ...draft, [key]: value });
   return (
@@ -680,7 +695,14 @@ function ProfileForm({
         </select>
       </label>
       <TextField label="Base URL" value={draft.base_url} onChange={(value) => set('base_url', value)} disabled={disabled} />
-      <TextField label="API key" value={draft.api_key} onChange={(value) => set('api_key', value)} disabled={disabled} secret />
+      <TextField
+        label="API key"
+        value={draft.api_key}
+        onChange={(value) => set('api_key', value)}
+        disabled={disabled}
+        secret
+        hasSecret={hasApiKey}
+      />
       <label className="config-field settings-config-field">
         <span>Model ID</span>
         <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => set('model_id', event.target.value)} disabled={disabled} />
@@ -718,6 +740,7 @@ function TextField({
   disabled,
   secret = false,
   textarea = false,
+  hasSecret = false,
 }: {
   label: string;
   value: unknown;
@@ -725,7 +748,19 @@ function TextField({
   disabled: boolean;
   secret?: boolean;
   textarea?: boolean;
+  hasSecret?: boolean;
 }) {
+  if (secret) {
+    return (
+      <SecretInput
+        label={label}
+        value={String(value ?? '')}
+        onChange={onChange}
+        hasSecret={hasSecret}
+        disabled={disabled}
+      />
+    );
+  }
   return (
     <label className="config-field settings-config-field">
       <span>{label}</span>
@@ -733,7 +768,7 @@ function TextField({
         <textarea value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
       ) : (
         <input
-          type={secret ? 'password' : 'text'}
+          type="text"
           value={String(value ?? '')}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
@@ -779,7 +814,7 @@ function draftFromProfile(profile: LlmProfile): LlmProfileInput {
     name: profile.name,
     provider: profile.provider,
     base_url: profile.base_url,
-    api_key: profile.api_key_set ? MASKED_SECRET : '',
+    api_key: '',
     model_id: profile.model_id,
     enabled: profile.enabled,
     temperature: profile.temperature ?? null,
@@ -806,7 +841,12 @@ function capabilitiesFromDraft(draft: LlmProfileInput) {
 }
 
 function cleanProfileInput(input: LlmProfileInput): LlmProfileInput {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as LlmProfileInput;
+  const entries = Object.entries(input).filter(([key, value]) => {
+    if (value === undefined) return false;
+    if (key === 'api_key' && String(value || '').trim() === '') return false;
+    return true;
+  });
+  return Object.fromEntries(entries) as LlmProfileInput;
 }
 
 export function sanitizeProfileKey(value: string): string {

@@ -1,4 +1,5 @@
 import type { AgentConfig, CapabilityConfig, ConfigFieldSchema } from '../../types';
+import { MASKED_SECRET_VALUE } from './SecretInput';
 
 export type EditableConfig = AgentConfig | CapabilityConfig;
 export type ConfigValues = Record<string, unknown>;
@@ -13,6 +14,9 @@ export function buildUserConfig(fields: ConfigFieldSchema[], values: ConfigValue
   for (const field of fields) {
     const value = values[field.name];
     if (value === '' || value === undefined) {
+      continue;
+    }
+    if (field.secret && value === MASKED_SECRET_VALUE) {
       continue;
     }
     if (field.type === 'integer') {
@@ -39,10 +43,26 @@ export function buildUserConfig(fields: ConfigFieldSchema[], values: ConfigValue
 export function isConfigDirty(config: EditableConfig, enabled: boolean, values: ConfigValues): boolean {
   if (enabled !== config.enabled) return true;
   try {
-    return stableConfigString(buildUserConfig(config.config_schema || [], values)) !== stableConfigString(config.user_config || {});
+    const fields = config.config_schema || [];
+    return stableConfigString(buildUserConfig(fields, values)) !== stableConfigString(normalizeStoredConfigForDirty(fields, config.user_config || {}, values));
   } catch {
     return true;
   }
+}
+
+function normalizeStoredConfigForDirty(
+  fields: ConfigFieldSchema[],
+  stored: Record<string, unknown>,
+  values: ConfigValues,
+): Record<string, unknown> {
+  const normalized = { ...stored };
+  for (const field of fields) {
+    if (!field.secret) continue;
+    if (stored[field.name] === MASKED_SECRET_VALUE && (!values[field.name] || values[field.name] === MASKED_SECRET_VALUE)) {
+      delete normalized[field.name];
+    }
+  }
+  return normalized;
 }
 
 export function stableConfigString(value: Record<string, unknown>): string {

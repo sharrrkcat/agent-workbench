@@ -2736,6 +2736,34 @@ input:disabled {
   line-height: 1.4;
 }
 
+.secret-field {
+  min-width: 0;
+}
+
+.secret-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+}
+
+.secret-input-icon-button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.secret-input-icon-button {
+  width: 36px;
+  padding: 0;
+}
+
+.secret-input-icon-button:disabled {
+  opacity: 0.45;
+}
+
 .settings-config-field textarea {
   min-height: 90px;
   resize: vertical;

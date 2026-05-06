@@ -1,15 +1,41 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import type { Message } from '../types';
 import { MessageBubble } from './MessageBubble';
 
 export function ChatView() {
   const { messages, currentSession, createSession, loading, creatingSession, sendMessage, sending } = useWorkbenchStore();
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const autoScrollRef = useRef(true);
+  const previousSessionIdRef = useRef<string | undefined>(currentSession?.session_id);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length]);
+  useLayoutEffect(() => {
+    const sessionId = currentSession?.session_id;
+    if (previousSessionIdRef.current !== sessionId) {
+      previousSessionIdRef.current = sessionId;
+      autoScrollRef.current = true;
+    }
+
+    const container = scrollRef.current;
+    if (!container) return;
+    const lastMessage = messages[messages.length - 1];
+    const shouldResumeForUserMessage = lastMessage?.role === 'user' && lastMessage.client_status === 'pending';
+    if (shouldResumeForUserMessage) {
+      autoScrollRef.current = true;
+    }
+    if (!autoScrollRef.current && !shouldResumeForUserMessage) return;
+    window.requestAnimationFrame(() => {
+      if (previousSessionIdRef.current !== sessionId) return;
+      scrollToBottom(container);
+    });
+  }, [currentSession?.session_id, messagesSignature(messages)]);
+
+  function handleScroll() {
+    const container = scrollRef.current;
+    if (!container) return;
+    autoScrollRef.current = isNearBottom(container);
+  }
 
   if (!currentSession) {
     return (
@@ -29,7 +55,7 @@ export function ChatView() {
   }
 
   return (
-    <section className="chat-view">
+    <section className="chat-view" ref={scrollRef} onScroll={handleScroll}>
       {messages.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">
@@ -48,7 +74,29 @@ export function ChatView() {
       ) : (
         messages.map((message) => <MessageBubble key={message.message_id} message={message} />)
       )}
-      <div ref={endRef} />
     </section>
   );
+}
+
+function isNearBottom(container: HTMLElement): boolean {
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+}
+
+function scrollToBottom(container: HTMLElement) {
+  container.scrollTop = container.scrollHeight;
+}
+
+function messagesSignature(messages: Message[]): string {
+  return messages
+    .map((message) => {
+      const text = typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '');
+      const reasoning =
+        typeof message.metadata?.reasoning_content === 'string'
+          ? message.metadata.reasoning_content
+          : typeof (message.metadata?.reasoning as Record<string, unknown> | undefined)?.content === 'string'
+            ? String((message.metadata?.reasoning as Record<string, unknown>).content)
+            : '';
+      return `${message.message_id}:${message.client_status || ''}:${text.length}:${reasoning.length}`;
+    })
+    .join('|');
 }
