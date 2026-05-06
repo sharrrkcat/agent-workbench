@@ -8,6 +8,7 @@ import type {
   CapabilityConfig,
   Command,
   LlmResolvedConfig,
+  LlmProfile,
   LlmTestResult,
   Message,
   Run,
@@ -21,6 +22,7 @@ type WorkbenchState = {
   commands: Command[];
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
+  llmProfiles: LlmProfile[];
   sessions: Session[];
   currentSession?: Session;
   messages: Message[];
@@ -44,6 +46,7 @@ type WorkbenchState = {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   updateDefaultAgent: (agentId: string) => Promise<void>;
+  updateSessionLlmProfile: (profileId: string | null) => Promise<void>;
   refreshConfigs: () => Promise<void>;
   updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config'>>) => Promise<void>;
   updateCapabilityConfig: (
@@ -65,6 +68,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   commands: [],
   agentConfigs: [],
   capabilityConfigs: [],
+  llmProfiles: [],
   sessions: [],
   messages: [],
   runs: [],
@@ -80,16 +84,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   initialize: async () => {
     set({ loading: true, error: undefined, lastError: undefined });
     try {
-      const [agents, commands, sessions, agentConfigs, capabilityConfigs] = await Promise.all([
+      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles] = await Promise.all([
         api.listAgents(),
         api.listCommands(),
         api.listSessions(),
         api.listAgentConfigs(),
         api.listCapabilityConfigs(),
+        api.listLlmProfiles(),
       ]);
       const sortedSessions = sortSessionsByRecent(sessions);
       const currentSession = sortedSessions[0];
-      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, loading: false });
+      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, loading: false });
       if (currentSession) {
         await get().refreshCurrent();
       }
@@ -218,14 +223,41 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
+  updateSessionLlmProfile: async (profileId: string | null) => {
+    const session = get().currentSession;
+    if (!session) return;
+    if (profileId) {
+      const profile = get().llmProfiles.find((item) => item.id === profileId);
+      if (!profile || !profile.enabled) {
+        set({
+          error: 'LLM_PROFILE_NOT_FOUND: Select an enabled saved profile.',
+          lastError: { code: 'LLM_PROFILE_NOT_FOUND', message: 'Select an enabled saved profile.' },
+        });
+        return;
+      }
+    }
+    try {
+      const updated = await api.updateSession(session.session_id, { llm_profile_id: profileId });
+      set({
+        currentSession: updated,
+        sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
+        error: undefined,
+        lastError: undefined,
+      });
+    } catch (error) {
+      set(formatError(error, 'Failed to update session model'));
+    }
+  },
+
   refreshConfigs: async () => {
-    const [agents, commands, agentConfigs, capabilityConfigs] = await Promise.all([
+    const [agents, commands, agentConfigs, capabilityConfigs, llmProfiles] = await Promise.all([
       api.listAgents(),
       api.listCommands(),
       api.listAgentConfigs(),
       api.listCapabilityConfigs(),
+      api.listLlmProfiles(),
     ]);
-    set({ agents, commands, agentConfigs, capabilityConfigs });
+    set({ agents, commands, agentConfigs, capabilityConfigs, llmProfiles });
   },
 
   updateAgentConfig: async (agentId, patch) => {

@@ -36,6 +36,7 @@ def resolve_llm_config(
     capability_schema: Any = None,
     capability_config: Optional[Dict[str, Any]] = None,
     llm_profile_store: Any = None,
+    session_llm_profile_id: Optional[str] = None,
     explicit_override: Optional[Dict[str, Any]] = None,
     env: Optional[Dict[str, str]] = None,
 ) -> LLMRuntimeConfig:
@@ -44,6 +45,7 @@ def resolve_llm_config(
     if not isinstance(persisted, dict):
         raise LLMConfigError("LLM_CONFIG_INVALID", "LLM capability config must be a JSON object.")
     persisted = {key: value for key, value in persisted.items() if value != MASKED_SECRET}
+    capability_default_profile = persisted.get("default_profile")
 
     try:
         validate_user_config(schema_fields, persisted)
@@ -56,9 +58,10 @@ def resolve_llm_config(
         "source": "manifest_default",
         "profile_id": None,
         "profile_alias": None,
+        "profile_key": None,
         "profile_name": None,
         "provider": None,
-        "session_override_requested": None,
+        "session_override_requested": session_llm_profile_id,
         "session_override_applied": False,
         "allow_session_override": True,
     }
@@ -72,11 +75,18 @@ def resolve_llm_config(
         value = env_source.get(env_name)
         if value not in (None, ""):
             _set_value(values, sources, key, _coerce_env_value(key, value), "env")
+            metadata["source"] = "env"
 
     for key, value in persisted.items():
+        if key == "default_profile":
+            continue
         if value not in (None, ""):
             _set_value(values, sources, key, value, "llm_capability_config")
             metadata["source"] = "llm_capability_config"
+
+    if capability_default_profile:
+        profile = _get_enabled_profile(llm_profile_store, str(capability_default_profile))
+        _apply_profile(values, sources, metadata, profile, "llm_capability_config")
 
     agent_model = getattr(agent_schema, "model", None) if agent_schema is not None else None
     if isinstance(agent_model, dict):
@@ -92,49 +102,13 @@ def resolve_llm_config(
 
     profile_ref = llm_config.get("profile") if llm_config else None
     if profile_ref:
-        if llm_profile_store is None:
-            raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_ref}")
-        try:
-            profile = llm_profile_store.get_by_id_or_alias(str(profile_ref))
-        except KeyError as exc:
-            raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_ref}") from exc
-        if not profile.enabled:
-            raise LLMConfigError("LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
-        if not profile.base_url or not profile.model_id:
-            raise LLMConfigError(
-                "LLM_PROFILE_INVALID",
-                f"LLM profile '{profile.alias}' must define base_url and model_id.",
-            )
-        profile_values = profile.model_dump()
-        for key in (
-            "provider",
-            "base_url",
-            "api_key",
-            "model_id",
-            "temperature",
-            "top_p",
-            "top_k",
-            "max_tokens",
-            "timeout",
-            "supports_vision",
-            "supports_tools",
-            "supports_reasoning",
-            "supports_streaming",
-            "supports_json_mode",
-        ):
-            value = profile_values.get(key)
-            if value is not None:
-                _set_value(values, sources, key, value, "agent_llm_profile")
-        _set_value(values, sources, "model", profile.model_id, "agent_llm_profile")
-        metadata.update(
-            {
-                "source": "agent_llm_profile",
-                "profile_id": profile.id,
-                "profile_alias": profile.alias,
-                "profile_name": profile.name,
-                "provider": profile.provider,
-            }
-        )
+        profile = _get_enabled_profile(llm_profile_store, str(profile_ref))
+        _apply_profile(values, sources, metadata, profile, "agent_llm_profile")
+
+    if session_llm_profile_id and metadata["allow_session_override"]:
+        profile = _get_enabled_profile(llm_profile_store, str(session_llm_profile_id))
+        _apply_profile(values, sources, metadata, profile, "session_override")
+        metadata["session_override_applied"] = True
 
     if llm_config:
         for key in ("temperature", "top_p", "top_k", "max_tokens"):
@@ -152,6 +126,57 @@ def resolve_llm_config(
     if values.get("provider"):
         metadata["provider"] = values.get("provider")
     return LLMRuntimeConfig(values=values, sources=sources, metadata=metadata)
+
+
+def _get_enabled_profile(llm_profile_store: Any, profile_ref: str):
+    if llm_profile_store is None:
+        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_ref}")
+    try:
+        profile = llm_profile_store.get_by_id_or_alias(profile_ref)
+    except KeyError as exc:
+        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_ref}") from exc
+    if not profile.enabled:
+        raise LLMConfigError("LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
+    if not profile.base_url or not profile.model_id:
+        raise LLMConfigError(
+            "LLM_PROFILE_INVALID",
+            f"LLM profile '{profile.alias}' must define base_url and model_id.",
+        )
+    return profile
+
+
+def _apply_profile(values: Dict[str, Any], sources: Dict[str, str], metadata: Dict[str, Any], profile, source: str) -> None:
+    profile_values = profile.model_dump()
+    for key in (
+        "provider",
+        "base_url",
+        "api_key",
+        "model_id",
+        "temperature",
+        "top_p",
+        "top_k",
+        "max_tokens",
+        "timeout",
+        "supports_vision",
+        "supports_tools",
+        "supports_reasoning",
+        "supports_streaming",
+        "supports_json_mode",
+    ):
+        value = profile_values.get(key)
+        if value is not None:
+            _set_value(values, sources, key, value, source)
+    _set_value(values, sources, "model", profile.model_id, source)
+    metadata.update(
+        {
+            "source": source,
+            "profile_id": profile.id,
+            "profile_alias": profile.alias,
+            "profile_key": profile.alias,
+            "profile_name": profile.name,
+            "provider": profile.provider,
+        }
+    )
 
 
 def _set_value(values: Dict[str, Any], sources: Dict[str, str], key: str, value: Any, source: str) -> None:
@@ -198,6 +223,7 @@ def public_llm_config_status(config: LLMRuntimeConfig) -> Dict[str, Any]:
         "source": config.metadata.get("source"),
         "profile_id": config.metadata.get("profile_id"),
         "profile_alias": config.metadata.get("profile_alias"),
+        "profile_key": config.metadata.get("profile_key") or config.metadata.get("profile_alias"),
         "profile_name": config.metadata.get("profile_name"),
         "provider": config.metadata.get("provider") or config.values.get("provider"),
         "base_url": config.values.get("base_url", ""),
@@ -227,6 +253,7 @@ def _llm_config_schema(capability_schema: Any = None) -> list[ConfigFieldSchema]
         ConfigFieldSchema(name="base_url", type="string", label="Base URL", default="http://localhost:1234/v1"),
         ConfigFieldSchema(name="api_key", type="string", label="API key", secret=True),
         ConfigFieldSchema(name="model", type="string", label="Model"),
+        ConfigFieldSchema(name="default_profile", type="string", label="Default profile"),
         ConfigFieldSchema(name="timeout", type="float", label="Timeout", default=60),
     ]
 

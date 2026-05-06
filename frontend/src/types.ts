@@ -169,6 +169,7 @@ export type LlmResolvedConfig = {
   source?: string | null;
   profile_id?: string | null;
   profile_alias?: string | null;
+  profile_key?: string | null;
   profile_name?: string | null;
   provider?: string | null;
   base_url: string;
@@ -194,6 +195,8 @@ export type Session = {
   title: string;
   default_agent_id: string;
   waiting_run_id?: string | null;
+  llm_profile_id?: string | null;
+  last_announced_llm_profile_id?: string | null;
   created_at: string;
   updated_at: string;
 };

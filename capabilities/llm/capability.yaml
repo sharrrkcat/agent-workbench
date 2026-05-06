@@ -19,6 +19,11 @@ config_schema:
     label: Model
     required: false
     description: Optional default model for later unified LLM config.
+  - name: default_profile
+    type: string
+    label: Default profile
+    required: false
+    description: Optional LLM Profile alias or id used as the global LLM default.
   - name: timeout
     type: float
     label: Timeout

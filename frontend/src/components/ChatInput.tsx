@@ -9,7 +9,7 @@ export function ChatInput() {
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { currentSession, sendMessage, sending } = useWorkbenchStore();
+  const { currentSession, llmProfiles, sendMessage, sending, updateSessionLlmProfile } = useWorkbenchStore();
 
   const canSend = Boolean(currentSession && value.trim() && !sending);
 
@@ -127,14 +127,43 @@ export function ChatInput() {
               <Slash size={15} />
             </button>
           </div>
-          <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
-            {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
-            <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
-          </button>
+          <div className="composer-actions">
+            <label className="model-selector-pill" title={modelSelectorTitle(currentSession?.llm_profile_id || null, llmProfiles)}>
+              <span>Model:</span>
+              <select
+                value={currentSession?.llm_profile_id || ''}
+                disabled={!currentSession}
+                onChange={(event) => void updateSessionLlmProfile(event.target.value || null)}
+              >
+                <option value="">Default</option>
+                {currentSession?.llm_profile_id && !llmProfiles.some((profile) => profile.id === currentSession.llm_profile_id && profile.enabled) ? (
+                  <option value={currentSession.llm_profile_id}>Missing profile</option>
+                ) : null}
+                {llmProfiles
+                  .filter((profile) => profile.enabled)
+                  .map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name || profile.alias}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
+              {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
+              <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </form>
   );
+}
+
+function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[]): string {
+  if (!profileId) return 'Default uses the agent manifest or global LLM fallback';
+  const profile = profiles.find((item) => item.id === profileId);
+  if (!profile) return 'Missing profile';
+  return `${profile.name || profile.alias} - ${profile.model_id}`;
 }
 
 function getActiveToken(value: string, cursorPosition: number): { token: string; start: number; end: number } | null {

@@ -22,6 +22,7 @@ class UpdateSessionRequest(BaseModel):
 
     title: Optional[str] = None
     default_agent_id: Optional[str] = None
+    llm_profile_id: Optional[str] = None
 
 
 @router.post("")
@@ -69,6 +70,16 @@ def update_session(session_id: str, payload: UpdateSessionRequest, state: Runtim
 
     if payload.title is not None:
         session = state.sessions.set_title(session_id, payload.title)
+
+    if "llm_profile_id" in payload.model_fields_set:
+        if payload.llm_profile_id is not None:
+            try:
+                profile = state.llm_profiles.get(payload.llm_profile_id)
+            except KeyError:
+                raise_error(400, "LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {payload.llm_profile_id}")
+            if not profile.enabled:
+                raise_error(400, "LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
+        session = state.sessions.set_llm_profile(session_id, payload.llm_profile_id)
 
     return session.model_dump()
 

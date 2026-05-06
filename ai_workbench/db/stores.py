@@ -92,6 +92,30 @@ class SqlSessionStore:
             session.refresh(record)
             return _session_from_record(record)
 
+    def set_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
+        with DbSession(self.engine) as session:
+            record = session.get(SessionRecord, session_id)
+            if record is None:
+                raise KeyError(f"unknown session id: {session_id}")
+            record.llm_profile_id = profile_id
+            record.updated_at = datetime.utcnow()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _session_from_record(record)
+
+    def set_last_announced_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
+        with DbSession(self.engine) as session:
+            record = session.get(SessionRecord, session_id)
+            if record is None:
+                raise KeyError(f"unknown session id: {session_id}")
+            record.last_announced_llm_profile_id = profile_id
+            record.updated_at = datetime.utcnow()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _session_from_record(record)
+
     def clear_interrupted_waiting_runs(self, interrupted_run_ids: List[str]) -> None:
         if not interrupted_run_ids:
             return
@@ -521,6 +545,8 @@ def _session_from_record(record: SessionRecord) -> Session:
         title=record.title,
         default_agent_id=record.default_agent_id,
         waiting_run_id=record.waiting_run_id,
+        llm_profile_id=record.llm_profile_id,
+        last_announced_llm_profile_id=record.last_announced_llm_profile_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )

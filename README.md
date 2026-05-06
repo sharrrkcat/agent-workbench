@@ -63,13 +63,18 @@ LLM config resolution now uses one shared path for Prompt Agents, Script Agent `
 
 Priority, highest first:
 
+- per-invocation explicit override
+- session LLM Profile override, when the Agent allows it
 - Agent manifest `llm.profile`
 - Agent manifest legacy `model` fields
-- persisted `llm` CapabilityConfig from Settings
+- persisted `llm` CapabilityConfig `default_profile`
+- persisted direct `llm` CapabilityConfig from Settings
 - `.env` / process environment fallback: `AGENT_WORKBENCH_LLM_BASE_URL`, `AGENT_WORKBENCH_LLM_API_KEY`, `AGENT_WORKBENCH_LLM_MODEL`, `AGENT_WORKBENCH_LLM_TIMEOUT`
 - `llm` capability manifest defaults
 
-The next round is expected to add a session-level `llm_profile` override above Agent manifest configuration. The current round does not expose a Chat model selector.
+The Chat composer has a session model selector beside Send. `Default` means the current Agent manifest or global fallback resolves the model. Selecting an enabled saved LLM Profile stores `session.llm_profile_id` and overrides LLM Agents in that session unless the Agent opts out.
+
+When the session model changes, the app inserts a centered `model_changed` separator before the next user message. This separator is persisted for UI history but is filtered out of LLM context.
 
 ## Basic Usage
 
@@ -162,7 +167,9 @@ llm:
   max_tokens: 2048
 ```
 
-`allow_session_override` defaults to `true`. It is stored in the manifest schema and returned by the Agent API for the next round's session selector.
+`allow_session_override` defaults to `true`. If it is `false`, the session model selector does not override that Agent; the Agent keeps using its manifest profile/model or fallback. The Agent dropdown marks these Agents as locked.
+
+Agent replies store resolved model metadata in run metadata and assistant message metadata under `llm_resolution`. The Chat UI displays the model used for that specific reply, preferring profile name, then profile key, then model id. The API never returns plaintext API keys in this metadata.
 
 The old manifest `model` field remains compatible:
 

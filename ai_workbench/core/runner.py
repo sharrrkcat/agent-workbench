@@ -178,7 +178,7 @@ class AgentRunner:
         messages.extend(context.messages)
 
         try:
-            llm_config = self._resolve_llm_model_config(agent, action)
+            llm_config = self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
             self._record_llm_resolution(run.run_id, llm_config)
             content = self.llm_runtime.chat(messages=messages, model_config=llm_config.values, stream=False)
@@ -258,7 +258,7 @@ class AgentRunner:
 
         return RunResult(success=True, run_id=done_run.run_id, data=content)
 
-    def _resolve_llm_model_config(self, agent, action):
+    def _resolve_llm_model_config(self, agent, action, session_id: str):
         capability = None
         capability_config = {}
         if self.capability_registry is not None:
@@ -268,12 +268,16 @@ class AgentRunner:
                 capability = None
         if self.capability_config_store is not None:
             capability_config = self.capability_config_store.get_config("llm")
+        session_llm_profile_id = None
+        if self.session_store is not None:
+            session_llm_profile_id = self.session_store.get_session(session_id).llm_profile_id
         return resolve_llm_config(
             agent_schema=agent,
             action_schema=action,
             capability_schema=capability,
             capability_config=capability_config,
             llm_profile_store=self.llm_profile_store,
+            session_llm_profile_id=session_llm_profile_id,
         )
 
     def _record_llm_resolution(self, run_id: str, llm_config) -> None:
@@ -353,6 +357,7 @@ def _public_llm_resolution(llm_config) -> dict:
         "source": metadata.get("source"),
         "profile_id": metadata.get("profile_id"),
         "profile_alias": metadata.get("profile_alias"),
+        "profile_key": metadata.get("profile_key") or metadata.get("profile_alias"),
         "profile_name": metadata.get("profile_name"),
         "provider": metadata.get("provider") or values.get("provider"),
         "model_id": values.get("model_id") or values.get("model"),
@@ -360,6 +365,11 @@ def _public_llm_resolution(llm_config) -> dict:
         "session_override_requested": metadata.get("session_override_requested"),
         "session_override_applied": bool(metadata.get("session_override_applied", False)),
         "allow_session_override": bool(metadata.get("allow_session_override", True)),
+        "supports_vision": bool(values.get("supports_vision", False)),
+        "supports_tools": bool(values.get("supports_tools", False)),
+        "supports_reasoning": bool(values.get("supports_reasoning", False)),
+        "supports_streaming": bool(values.get("supports_streaming", False)),
+        "supports_json_mode": bool(values.get("supports_json_mode", False)),
     }
 
 

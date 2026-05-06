@@ -9,6 +9,11 @@ import { AgentAvatar } from './AgentAvatar';
 
 export function MessageBubble({ message }: { message: Message }) {
   const agents = useWorkbenchStore((state) => state.agents);
+  const runs = useWorkbenchStore((state) => state.runs);
+
+  if (message.output_type === 'event') {
+    return <SystemEventSeparator message={message} />;
+  }
 
   if (message.output_type === 'error' || message.client_error || message.metadata?.success === false) {
     return <InlineErrorBlock message={message} />;
@@ -23,7 +28,7 @@ export function MessageBubble({ message }: { message: Message }) {
     <article className={`message-row ${kind}`}>
       {!isUser ? <AgentAvatar agent={agent} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
-        <MessageHeader message={message} agent={agent} kind={kind} />
+        <MessageHeader message={message} agent={agent} kind={kind} modelLabel={resolvedModelLabel(message, runs)} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
           <MessageContent message={message} kind={kind} />
           {message.client_status === 'pending' ? (
@@ -39,18 +44,37 @@ export function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-function MessageHeader({ message, agent, kind }: { message: Message; agent?: Agent; kind: 'user' | 'agent' | 'command' }) {
+function MessageHeader({
+  message,
+  agent,
+  kind,
+  modelLabel,
+}: {
+  message: Message;
+  agent?: Agent;
+  kind: 'user' | 'agent' | 'command';
+  modelLabel?: string;
+}) {
   const name = kind === 'user' ? 'You' : message.command_name || agent?.name || message.agent_id || 'Assistant';
   const action = message.action_id && message.action_id !== 'default' ? message.action_id : '';
+  const secondary = modelLabel || action;
 
   return (
     <div className="message-meta">
       <div className="message-title">
         <span>{name}</span>
-        {action ? <small>{action}</small> : null}
+        {secondary ? <small title={secondary}>{truncateLabel(secondary)}</small> : null}
       </div>
       <time>{formatTime(message.created_at)}</time>
     </div>
+  );
+}
+
+function SystemEventSeparator({ message }: { message: Message }) {
+  return (
+    <article className="message-row system event">
+      <div className="system-event-separator">{contentToText(message.content)}</div>
+    </article>
   );
 }
 
@@ -169,6 +193,27 @@ function normalizeError(message: Message): { code?: string; message?: string } {
     };
   }
   return { code: message.run_id ? 'RUN_FAILED' : undefined, message: contentToText(message.content) };
+}
+
+function resolvedModelLabel(message: Message, runs: { run_id: string; metadata?: Record<string, unknown> }[]): string | undefined {
+  const fromMessage = extractResolutionLabel(message.metadata?.llm_resolution);
+  if (fromMessage) return fromMessage;
+  const run = message.run_id ? runs.find((item) => item.run_id === message.run_id) : undefined;
+  return extractResolutionLabel(run?.metadata?.llm_resolution);
+}
+
+function extractResolutionLabel(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const resolution = value as Record<string, unknown>;
+  for (const key of ['profile_name', 'profile_key', 'profile_alias', 'model_id']) {
+    const item = resolution[key];
+    if (typeof item === 'string' && item.trim()) return item.trim();
+  }
+  return undefined;
+}
+
+function truncateLabel(value: string): string {
+  return value.length > 34 ? `${value.slice(0, 31)}...` : value;
 }
 
 function unwrapJsonString(value: string): string {

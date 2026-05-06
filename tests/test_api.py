@@ -26,6 +26,21 @@ def post_message(client: TestClient, session_id: str, content: str) -> dict:
     return response.json()
 
 
+def create_llm_profile(client: TestClient, alias: str = "myqwen3", enabled: bool = True) -> dict:
+    response = client.post(
+        "/api/llm-profiles",
+        json={
+            "alias": alias,
+            "name": alias.replace("-", " ").title(),
+            "base_url": f"http://{alias}/v1",
+            "model_id": f"{alias}-model",
+            "enabled": enabled,
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def register_temp_agent(
     client: TestClient,
     tmp_path: Path,
@@ -257,6 +272,41 @@ def test_patch_session_can_change_default_agent() -> None:
 
     assert response.status_code == 200
     assert response.json()["default_agent_id"] == "translate"
+
+
+def test_patch_session_can_change_llm_profile_id_and_default() -> None:
+    client = make_client()
+    session = create_session(client)
+    profile = create_llm_profile(client)
+
+    selected = client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
+    cleared = client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": None})
+
+    assert selected.status_code == 200
+    assert selected.json()["llm_profile_id"] == profile["id"]
+    assert cleared.status_code == 200
+    assert cleared.json()["llm_profile_id"] is None
+
+
+def test_patch_session_unknown_llm_profile_returns_structured_error() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    response = client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": "missing"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "LLM_PROFILE_NOT_FOUND"
+
+
+def test_patch_session_disabled_llm_profile_returns_structured_error() -> None:
+    client = make_client()
+    session = create_session(client)
+    profile = create_llm_profile(client, enabled=False)
+
+    response = client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "LLM_PROFILE_DISABLED"
 
 
 def test_patch_session_unknown_default_agent_returns_structured_error() -> None:
@@ -572,6 +622,89 @@ def test_post_message_plain_text_uses_default_agent_with_fake_llm() -> None:
     assert payload["success"] is True
     assert payload["data"] == "chat reply"
     assert payload["run"]["target_id"] == "chat"
+
+
+def test_session_model_change_inserts_event_before_next_user_message() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+    profile = create_llm_profile(client, alias="myqwen3")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
+
+    payload = post_message(client, session["session_id"], "hello")
+
+    assert payload["messages"][0]["output_type"] == "event"
+    assert payload["messages"][0]["metadata"]["event_type"] == "model_changed"
+    assert payload["messages"][0]["metadata"]["profile_id"] == profile["id"]
+    assert payload["messages"][1]["role"] == "user"
+
+
+def test_multiple_session_model_changes_insert_only_final_event() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+    first = create_llm_profile(client, alias="first")
+    second = create_llm_profile(client, alias="second")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": first["id"]})
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": second["id"]})
+
+    payload = post_message(client, session["session_id"], "hello")
+
+    events = [message for message in payload["messages"] if message["output_type"] == "event"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["profile_id"] == second["id"]
+
+
+def test_switching_session_model_back_to_default_inserts_default_event() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+    profile = create_llm_profile(client, alias="myqwen3")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
+    post_message(client, session["session_id"], "first")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": None})
+
+    payload = post_message(client, session["session_id"], "second")
+
+    assert payload["messages"][0]["output_type"] == "event"
+    assert payload["messages"][0]["content"] == "Session model switched to Default"
+    assert payload["messages"][0]["metadata"]["is_default"] is True
+
+
+def test_session_model_override_records_resolution_metadata() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    session = create_session(client)
+    profile = create_llm_profile(client, alias="myqwen3")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
+
+    payload = post_message(client, session["session_id"], "hello")
+    resolution = payload["run"]["metadata"]["llm_resolution"]
+
+    assert llm.calls[-1]["model_config"]["model"] == "myqwen3-model"
+    assert resolution["source"] == "session_override"
+    assert resolution["profile_id"] == profile["id"]
+    assert resolution["session_override_applied"] is True
+    assert payload["messages"][-1]["metadata"]["llm_resolution"]["source"] == "session_override"
+
+
+def test_locked_agent_records_session_override_requested_but_not_applied() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    state = client.app.state.runtime_state
+    chat = state.agents.get("chat")
+    state.agents._agents["chat"] = chat.model_copy(
+        update={"llm": {"profile": "locked", "allow_session_override": False}, "model": None}
+    )
+    create_llm_profile(client, alias="locked")
+    session_profile = create_llm_profile(client, alias="session")
+    session = create_session(client, default_agent_id="chat")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": session_profile["id"]})
+
+    payload = post_message(client, session["session_id"], "hello")
+    resolution = payload["run"]["metadata"]["llm_resolution"]
+
+    assert llm.calls[-1]["model_config"]["model"] == "locked-model"
+    assert resolution["source"] == "agent_llm_profile"
+    assert resolution["session_override_requested"] == session_profile["id"]
+    assert resolution["session_override_applied"] is False
 
 
 def test_prompt_run_events_include_message_done() -> None:

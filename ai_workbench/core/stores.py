@@ -46,6 +46,20 @@ class SessionStore:
         self._sessions[session_id] = updated
         return updated
 
+    def set_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
+        session = self.get_session(session_id)
+        updated = session.model_copy(update={"llm_profile_id": profile_id, "updated_at": datetime.utcnow()})
+        self._sessions[session_id] = updated
+        return updated
+
+    def set_last_announced_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
+        session = self.get_session(session_id)
+        updated = session.model_copy(
+            update={"last_announced_llm_profile_id": profile_id, "updated_at": datetime.utcnow()}
+        )
+        self._sessions[session_id] = updated
+        return updated
+
     def delete_session(self, session_id: str) -> None:
         self.get_session(session_id)
         del self._sessions[session_id]

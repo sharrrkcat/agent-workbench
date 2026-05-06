@@ -65,7 +65,7 @@ class ContextBuilder:
         history = [
             _message_to_llm(message.role, str(message.content))
             for message in self.message_store.list_messages(session_id)
-            if message.message_id != current_message_id
+            if message.message_id != current_message_id and _message_can_enter_context(message)
         ]
         if policy.mode == "recent_messages" and policy.max_messages is not None:
             history = history[-policy.max_messages :]
@@ -84,6 +84,15 @@ def _message_to_llm(role: str, content: str) -> Dict[str, str]:
     if role in {"tool", "command"}:
         return {"role": "tool", "content": content}
     return {"role": "user", "content": content}
+
+
+def _message_can_enter_context(message) -> bool:
+    if getattr(message, "output_type", "") in {"event", "error"}:
+        return False
+    metadata = getattr(message, "metadata", {}) or {}
+    if metadata.get("event_type"):
+        return False
+    return True
 
 
 def _limit_chars(messages: List[Dict[str, str]], max_chars: Optional[int]) -> List[Dict[str, str]]:

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.core.llm_config import LLMConfigError
 from ai_workbench.core.schema.run import RunStatus
 
 
@@ -39,6 +40,11 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
     before_ids = {message.message_id for message in state.messages.list_messages(session_id)}
 
     input_message_id = ""
+    try:
+        state.runtime.announce_model_change_if_needed(session_id)
+    except LLMConfigError as exc:
+        raise_error(400, exc.code, exc.message)
+
     if payload.content.startswith("/"):
         user_message = state.messages.add_message(session_id=session_id, role="user", content=payload.content)
         input_message_id = user_message.message_id

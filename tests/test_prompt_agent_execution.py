@@ -129,6 +129,25 @@ def test_chat_agent_session_context_includes_history() -> None:
     assert sent[-1] == {"role": "user", "content": "new user"}
 
 
+def test_chat_agent_session_context_excludes_model_change_events() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="system",
+        content="Session model switched to My Qwen3",
+        output_type="event",
+        metadata={"event_type": "model_changed"},
+    )
+
+    run(fixture.runtime.handle_input(session, "new user"))
+    sent = llm.calls[0]["messages"]
+
+    assert {"role": "system", "content": "Session model switched to My Qwen3"} not in sent
+    assert sent[-1] == {"role": "user", "content": "new user"}
+
+
 def test_translate_current_message_context_excludes_history() -> None:
     llm = FakeLLMRuntime(response="hello")
     fixture = PromptRuntimeFixture(llm=llm)

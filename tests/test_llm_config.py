@@ -104,6 +104,21 @@ def test_capability_config_precedes_env_fallback(monkeypatch) -> None:
     assert config.sources["model"] == "llm_capability_config"
 
 
+def test_llm_capability_default_profile_precedes_direct_config(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_LLM_MODEL", "env-model")
+    store = profile_store()
+
+    config = resolve_llm_config(
+        capability_schema=llm_capability(),
+        capability_config={"user_config": {"default_profile": "myqwen3", "model": "ui-model"}},
+        llm_profile_store=store,
+    )
+
+    assert config.values["model"] == "qwen3-local"
+    assert config.sources["model"] == "llm_capability_config"
+    assert config.metadata["profile_alias"] == "myqwen3"
+
+
 def test_secret_mask_does_not_override_real_secret(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_WORKBENCH_LLM_API_KEY", raising=False)
 
@@ -214,6 +229,61 @@ def test_agent_manifest_llm_profile_resolves_profile_before_legacy_model(monkeyp
     assert config.values["base_url"] == "http://qwen3/v1"
     assert config.metadata["source"] == "agent_llm_profile"
     assert config.metadata["profile_alias"] == "myqwen3"
+
+
+def test_session_llm_profile_override_precedes_agent_manifest_profile(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_WORKBENCH_LLM_MODEL", raising=False)
+    store = profile_store()
+    store.create(
+        LLMProfileSchema(
+            id="profile-2",
+            alias="session-model",
+            name="Session Model",
+            provider="llama_cpp",
+            base_url="http://session/v1",
+            model_id="session-local",
+        )
+    )
+    agent = chat_agent().model_copy(update={"llm": {"profile": "myqwen3"}})
+
+    config = resolve_llm_config(
+        agent_schema=agent,
+        capability_schema=llm_capability(),
+        llm_profile_store=store,
+        session_llm_profile_id="profile-2",
+    )
+
+    assert config.values["model"] == "session-local"
+    assert config.metadata["source"] == "session_override"
+    assert config.metadata["session_override_applied"] is True
+
+
+def test_locked_agent_ignores_session_llm_profile_override(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_WORKBENCH_LLM_MODEL", raising=False)
+    store = profile_store()
+    store.create(
+        LLMProfileSchema(
+            id="profile-2",
+            alias="session-model",
+            name="Session Model",
+            provider="llama_cpp",
+            base_url="http://session/v1",
+            model_id="session-local",
+        )
+    )
+    agent = chat_agent().model_copy(update={"llm": {"profile": "myqwen3", "allow_session_override": False}})
+
+    config = resolve_llm_config(
+        agent_schema=agent,
+        capability_schema=llm_capability(),
+        llm_profile_store=store,
+        session_llm_profile_id="profile-2",
+    )
+
+    assert config.values["model"] == "qwen3-local"
+    assert config.metadata["source"] == "agent_llm_profile"
+    assert config.metadata["session_override_requested"] == "profile-2"
+    assert config.metadata["session_override_applied"] is False
 
 
 def test_llm_profile_disabled_raises_clear_error() -> None:

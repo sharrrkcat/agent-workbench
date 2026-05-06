@@ -1,5 +1,6 @@
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
+from ai_workbench.core.llm_config import LLMConfigError
 from ai_workbench.core.schema.invocation import ActionInvocationRequest
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.route import RouteKind
@@ -37,6 +38,46 @@ class WorkbenchRuntime:
                 source_message_id=source_message_id,
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
+
+    def announce_model_change_if_needed(self, session_id: str) -> None:
+        if self.agent_runner is None or self.agent_runner.session_store is None:
+            return
+        session = self.agent_runner.session_store.get_session(session_id)
+        if session.llm_profile_id == session.last_announced_llm_profile_id:
+            return
+
+        profile = None
+        label = "Default"
+        profile_alias = None
+        if session.llm_profile_id:
+            if self.agent_runner.llm_profile_store is None:
+                raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {session.llm_profile_id}")
+            try:
+                profile = self.agent_runner.llm_profile_store.get(session.llm_profile_id)
+            except KeyError as exc:
+                raise LLMConfigError(
+                    "LLM_PROFILE_NOT_FOUND",
+                    f"LLM profile not found: {session.llm_profile_id}",
+                ) from exc
+            if not profile.enabled:
+                raise LLMConfigError("LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
+            label = profile.name or profile.alias or profile.model_id
+            profile_alias = profile.alias
+
+        self.agent_runner.message_store.add_message(
+            session_id=session_id,
+            role="system",
+            content=f"Session model switched to {label}",
+            output_type="event",
+            metadata={
+                "event_type": "model_changed",
+                "profile_id": profile.id if profile else None,
+                "profile_name": profile.name if profile else None,
+                "profile_key": profile_alias,
+                "is_default": profile is None,
+            },
+        )
+        self.agent_runner.session_store.set_last_announced_llm_profile(session_id, session.llm_profile_id)
 
     async def invoke_action(
         self,

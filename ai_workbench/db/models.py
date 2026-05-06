@@ -9,6 +9,8 @@ class SessionRecord(SQLModel, table=True):
     title: str = ""
     default_agent_id: str = "chat"
     waiting_run_id: Optional[str] = None
+    llm_profile_id: Optional[str] = None
+    last_announced_llm_profile_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

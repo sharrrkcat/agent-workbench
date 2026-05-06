@@ -173,6 +173,7 @@ class AgentContext:
         runtime_registry: CapabilityRuntimeRegistry,
         llm_runtime: Any,
         llm_model_config: Optional[Dict[str, Any]] = None,
+        llm_resolution: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -190,6 +191,7 @@ class AgentContext:
         self.event_bus = event_bus
         self.runtime_registry = runtime_registry
         self.llm = LLMProxy(llm_runtime, default_model_config=llm_model_config)
+        self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
         self.waiting = False
 
@@ -205,7 +207,7 @@ class AgentContext:
             output_type=resolved_output_type,
             parent_message_id=self.parent_message_id,
             available_actions=actions or [],
-            metadata={"success": True},
+            metadata={"success": True, **({"llm_resolution": self.llm_resolution} if self.llm_resolution else {})},
         )
         self.event_bus.emit(
             "message_done",
@@ -315,7 +317,7 @@ class ScriptAgentRunner:
             return self._fail(run.run_id, session_id, str(exc) or "Script loading failed.")
 
         try:
-            llm_config = self._resolve_llm_model_config(agent)
+            llm_config = self._resolve_llm_model_config(agent, session_id)
             self._record_llm_resolution(run.run_id, llm_config)
         except LLMConfigError as exc:
             return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
@@ -337,6 +339,7 @@ class ScriptAgentRunner:
             runtime_registry=self.runtime_registry,
             llm_runtime=self.llm_runtime,
             llm_model_config=llm_config.values,
+            llm_resolution=self.run_store.get_run(run.run_id).metadata.get("llm_resolution"),
         )
 
         try:
@@ -370,7 +373,7 @@ class ScriptAgentRunner:
             raise ValueError("script entry must export async def run(ctx)")
         return run_callable
 
-    def _resolve_llm_model_config(self, agent: AgentSchema):
+    def _resolve_llm_model_config(self, agent: AgentSchema, session_id: str):
         capability = None
         capability_config = {}
         if self.capability_registry is not None:
@@ -380,11 +383,13 @@ class ScriptAgentRunner:
                 capability = None
         if self.capability_config_store is not None:
             capability_config = self.capability_config_store.get_config("llm")
+        session_llm_profile_id = self.session_store.get_session(session_id).llm_profile_id if _agent_uses_llm(agent) else None
         return resolve_llm_config(
             agent_schema=agent,
             capability_schema=capability,
             capability_config=capability_config,
             llm_profile_store=self.llm_profile_store,
+            session_llm_profile_id=session_llm_profile_id,
         )
 
     def _record_llm_resolution(self, run_id: str, llm_config) -> None:
@@ -427,3 +432,7 @@ def _extract_json_text(content: str) -> str:
 
 def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:
     return "\n\n".join(f"{message.get('role', 'user')}: {message.get('content', '')}" for message in messages)
+
+
+def _agent_uses_llm(agent: AgentSchema) -> bool:
+    return bool(agent.llm or agent.model or "llm" in (agent.capabilities or []))
