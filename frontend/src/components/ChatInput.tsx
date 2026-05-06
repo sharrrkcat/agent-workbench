@@ -1,6 +1,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Check, ChevronDown, Loader2, Paperclip, Send, Slash } from 'lucide-react';
+import { AtSign, Brain, Check, ChevronDown, Eye, Hammer, Loader2, Paperclip, Send, Slash } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import type { Agent, CapabilityConfig, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
 
 export function ChatInput() {
@@ -8,10 +9,11 @@ export function ChatInput() {
   const [cursorPosition, setCursorPosition] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { currentSession, llmProfiles, sendMessage, sending, updateSessionLlmProfile } = useWorkbenchStore();
+  const { agents, capabilityConfigs, currentSession, llmProfiles, sendMessage, sending, updateSessionLlmProfile } = useWorkbenchStore();
 
   const canSend = Boolean(currentSession && value.trim() && !sending);
 
@@ -24,14 +26,22 @@ export function ChatInput() {
     return 'none';
   }, [activeToken, suggestionsDismissed]);
 
+  const suggestionPanelOpen = mode !== 'none';
+  const isCompact = !isFocused && value.trim().length === 0 && !suggestionPanelOpen && !sending;
+
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    const nextHeight = Math.min(textarea.scrollHeight, 180);
+    if (isCompact) {
+      textarea.style.height = '38px';
+      textarea.style.overflowY = 'hidden';
+      return;
+    }
+    const nextHeight = Math.min(textarea.scrollHeight, 200);
     textarea.style.height = `${Math.max(nextHeight, 44)}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 180 ? 'auto' : 'hidden';
-  }, [value]);
+    textarea.style.overflowY = textarea.scrollHeight > 200 ? 'auto' : 'hidden';
+  }, [isCompact, value]);
 
   useEffect(() => {
     setSuggestionsDismissed(false);
@@ -123,9 +133,27 @@ export function ChatInput() {
 
   const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles);
   const enabledProfiles = llmProfiles.filter((profile) => profile.enabled);
+  const capabilities = getCurrentComposerCapabilities({
+    session: currentSession,
+    agents,
+    capabilityConfigs,
+    llmProfiles,
+    selectedAgentId: currentSession?.default_agent_id,
+  });
+  const hasCapabilities = capabilities.vision || capabilities.tools || capabilities.reasoning;
 
   return (
-    <form ref={formRef} className="composer-shell" onSubmit={submit}>
+    <form
+      ref={formRef}
+      className={`composer-shell ${isCompact ? 'compact' : 'expanded'}`}
+      onSubmit={submit}
+      onFocus={() => setIsFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsFocused(false);
+        }
+      }}
+    >
       <div className="composer-card">
         <CommandPalette mode={mode} token={activeToken?.token ?? ''} onPick={pickSuggestion} />
         <textarea
@@ -151,6 +179,7 @@ export function ChatInput() {
             </button>
           </div>
           <div className="composer-actions">
+            {hasCapabilities ? <CapabilityIcons capabilities={capabilities} /> : null}
             <div ref={modelSelectorRef} className="model-selector-wrap">
               <button
                 className="model-selector-pill"
@@ -204,6 +233,84 @@ export function ChatInput() {
       </div>
     </form>
   );
+}
+
+type ComposerCapabilities = {
+  vision: boolean;
+  tools: boolean;
+  reasoning: boolean;
+};
+
+type ComposerCapabilitySource = {
+  session?: Session;
+  agents: Agent[];
+  capabilityConfigs: CapabilityConfig[];
+  llmProfiles: LlmProfile[];
+  selectedAgentId?: string | null;
+};
+
+function CapabilityIcons({ capabilities }: { capabilities: ComposerCapabilities }) {
+  return (
+    <div className="capability-icons" aria-label="Current model capabilities">
+      {capabilities.vision ? (
+        <span className="capability-icon vision" title="Vision supported" aria-label="Vision supported">
+          <Eye size={14} aria-hidden="true" />
+          <span>Vision</span>
+        </span>
+      ) : null}
+      {capabilities.tools ? (
+        <span className="capability-icon tools" title="Tools supported" aria-label="Tools supported">
+          <Hammer size={14} aria-hidden="true" />
+          <span>Tools</span>
+        </span>
+      ) : null}
+      {capabilities.reasoning ? (
+        <span className="capability-icon reasoning" title="Reasoning supported" aria-label="Reasoning supported">
+          <Brain size={14} aria-hidden="true" />
+          <span>Reasoning</span>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+export function getCurrentComposerCapabilities({
+  session,
+  agents,
+  capabilityConfigs,
+  llmProfiles,
+  selectedAgentId,
+}: ComposerCapabilitySource): ComposerCapabilities {
+  const empty = { vision: false, tools: false, reasoning: false };
+  const sessionProfile = findEnabledProfile(llmProfiles, session?.llm_profile_id);
+  if (sessionProfile) return profileCapabilities(sessionProfile);
+
+  const agent = agents.find((item) => item.id === (selectedAgentId || session?.default_agent_id));
+  const agentProfile = findEnabledProfile(llmProfiles, agent?.llm?.profile);
+  if (agentProfile) return profileCapabilities(agentProfile);
+
+  const llmConfig = capabilityConfigs.find((config) => config.capability_id === 'llm');
+  const fallbackProfileRef = firstStringValue(llmConfig?.resolved_config, 'default_profile') || firstStringValue(llmConfig?.user_config, 'default_profile');
+  const fallbackProfile = findEnabledProfile(llmProfiles, fallbackProfileRef);
+  return fallbackProfile ? profileCapabilities(fallbackProfile) : empty;
+}
+
+function profileCapabilities(profile: LlmProfile): ComposerCapabilities {
+  return {
+    vision: Boolean(profile.supports_vision),
+    tools: Boolean(profile.supports_tools),
+    reasoning: Boolean(profile.supports_reasoning),
+  };
+}
+
+function findEnabledProfile(profiles: LlmProfile[], profileRef?: string | null): LlmProfile | undefined {
+  if (!profileRef) return undefined;
+  return profiles.find((profile) => profile.enabled && (profile.id === profileRef || profile.alias === profileRef));
+}
+
+function firstStringValue(source: Record<string, unknown> | undefined, key: string): string | null {
+  const value = source?.[key];
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[]): string {
