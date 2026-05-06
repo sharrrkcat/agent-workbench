@@ -8,7 +8,7 @@ export function SettingsConsole() {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
   const [activeSection, setActiveSection] = useState<SettingsSection>('llm');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
-  const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('llm');
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
 
@@ -19,7 +19,8 @@ export function SettingsConsole() {
   }, [agentConfigs, selectedAgentId]);
 
   useEffect(() => {
-    if (!selectedCapabilityId && capabilityConfigs.length) {
+    if (!capabilityConfigs.length) return;
+    if (!selectedCapabilityId || !capabilityConfigs.some((config) => config.capability_id === selectedCapabilityId)) {
       setSelectedCapabilityId(capabilityConfigs[0].capability_id);
     }
   }, [capabilityConfigs, selectedCapabilityId]);
@@ -38,8 +39,8 @@ export function SettingsConsole() {
     if (section === 'agents' && !selectedAgentId && agentConfigs[0]) {
       setSelectedAgentId(agentConfigs[0].agent_id);
     }
-    if ((section === 'capabilities' || section === 'llm') && !selectedCapabilityId && capabilityConfigs[0]) {
-      setSelectedCapabilityId(section === 'llm' ? 'llm' : capabilityConfigs[0].capability_id);
+    if (section === 'capabilities' && !selectedCapabilityId && capabilityConfigs[0]) {
+      setSelectedCapabilityId(capabilityConfigs[0].capability_id);
     }
   }
 

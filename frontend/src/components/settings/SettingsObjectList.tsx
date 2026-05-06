@@ -57,19 +57,21 @@ export function SettingsObjectList({
   }
 
   if (section === 'llm') {
+    const llmConfig = capabilityConfigs.find((config) => config.capability_id === 'llm');
+    const llmEnabled = llmConfig?.enabled ?? false;
     return (
       <aside className="settings-object-list" aria-label="LLM settings">
         <ObjectListHeader title="LLM" count={1} />
-        <button type="button" className="settings-object-row active">
+        <button type="button" className={`settings-object-row active ${llmEnabled ? '' : 'disabled'}`}>
           <div className="settings-object-avatar">
             <SlidersHorizontal size={16} />
           </div>
           <div className="settings-object-copy">
-            <strong>LLM Runtime</strong>
-            <small>llm</small>
-            <p>OpenAI-compatible local model connection.</p>
+            <strong>{llmConfig?.manifest_summary.name || 'LLM Runtime'}</strong>
+            <small>{llmConfig?.capability_id || 'llm'}</small>
+            <p>{llmConfig?.manifest_summary.description || 'OpenAI-compatible local model connection.'}</p>
           </div>
-          <span className="settings-status-dot enabled">Enabled</span>
+          <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? 'Enabled' : 'Disabled'}</span>
         </button>
       </aside>
     );

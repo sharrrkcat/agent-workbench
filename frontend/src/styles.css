@@ -1717,6 +1717,11 @@ input:disabled {
   min-height: 0;
 }
 
+.settings-detail-form.disabled .settings-detail-avatar,
+.settings-detail-form.disabled .settings-detail-body {
+  opacity: 0.62;
+}
+
 .settings-detail-header {
   display: flex;
   align-items: center;
@@ -1931,6 +1936,10 @@ input:disabled {
   border-radius: 12px;
 }
 
+.settings-table-wrap.disabled {
+  opacity: 0.55;
+}
+
 .settings-table {
   width: 100%;
   min-width: 760px;
@@ -1958,6 +1967,36 @@ input:disabled {
 
 .settings-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.settings-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: lowercase;
+}
+
+.settings-badge.success {
+  border-color: rgba(34, 160, 107, 0.22);
+  background: rgba(34, 160, 107, 0.15);
+  color: #86efac;
+}
+
+.settings-badge.warning {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fcd34d;
+}
+
+.settings-badge.muted {
+  color: rgba(255, 255, 255, 0.54);
 }
 
 .settings-config-form,
@@ -2101,6 +2140,64 @@ input:disabled {
   gap: 8px;
   margin: 0;
   padding-left: 18px;
+}
+
+.settings-page-intro {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 14px;
+}
+
+.settings-page-intro h2 {
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.settings-page-intro p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 13px;
+}
+
+.settings-error-box {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 12px;
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.settings-error-box strong {
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-error-box span,
+.settings-error-box summary {
+  color: rgba(254, 202, 202, 0.86);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-error-box details {
+  margin-top: 3px;
+}
+
+.settings-error-box pre {
+  overflow: auto;
+  max-height: 140px;
+  margin: 7px 0 0;
+  padding: 8px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(254, 226, 226, 0.86);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .settings-error-text,

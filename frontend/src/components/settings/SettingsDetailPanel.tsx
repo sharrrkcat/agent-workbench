@@ -5,6 +5,7 @@ import type { Agent, AgentConfig, CapabilityConfig, Command, HealthDetails } fro
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmSettingsPanel } from './LlmSettingsPanel';
+import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import type { SettingsSection } from './SettingsNav';
@@ -82,17 +83,20 @@ export function SettingsDetailPanel({
 }
 
 function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirtyChange: (dirty: boolean) => void }) {
-  const { updateCapabilityConfig, savingConfigId } = useWorkbenchStore();
+  const { updateCapabilityConfig, savingConfigId, testingLlm } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
-  const [localError, setLocalError] = useState('');
+  const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
+  const [llmBusy, setLlmBusy] = useState(false);
   const dirty = isConfigDirty(config, enabled, values);
   const isSaving = savingConfigId === 'capability:llm';
+  const saveDisabled = isSaving || testingLlm || llmBusy;
 
   useEffect(() => {
     setEnabled(config.enabled);
     setValues(initialConfigValues(config));
-    setLocalError('');
+    setLocalError(null);
+    setLlmBusy(false);
   }, [config]);
 
   useEffect(() => {
@@ -102,15 +106,15 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
   async function save(event: FormEvent) {
     event.preventDefault();
     try {
-      setLocalError('');
+      setLocalError(null);
       await updateCapabilityConfig('llm', { enabled, user_config: buildUserConfig(config.config_schema || [], values) });
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to save LLM config.');
+      setLocalError(toSettingsError(error, 'Failed to save LLM config.'));
     }
   }
 
   return (
-    <form className="settings-detail-form" onSubmit={save}>
+    <form className={`settings-detail-form ${enabled ? '' : 'disabled'}`} onSubmit={save}>
       <header className="settings-detail-header">
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">
@@ -126,7 +130,7 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
         </div>
         <div className="settings-detail-actions">
           {dirty ? (
-            <button className="settings-primary-button" type="submit" disabled={isSaving}>
+            <button className="settings-primary-button" type="submit" disabled={saveDisabled}>
               <Save size={14} />
               {isSaving ? 'Saving...' : 'Save'}
             </button>
@@ -135,8 +139,12 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
         </div>
       </header>
       <div className="settings-detail-body">
-        {localError ? <p className="settings-error-text">{localError}</p> : null}
-        <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} />
+        <div className="settings-page-intro">
+          <h2>LLM</h2>
+          <p>OpenAI-compatible local LLM configuration</p>
+        </div>
+        {localError ? <SettingsApiError error={localError} /> : null}
+        <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} onBusyChange={setLlmBusy} />
       </div>
     </form>
   );

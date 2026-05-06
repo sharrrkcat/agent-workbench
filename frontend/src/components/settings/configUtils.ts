@@ -64,7 +64,7 @@ export function sortObject(value: unknown): unknown {
 }
 
 export function displayValue(value: unknown): string {
-  if (value === undefined || value === null || value === '') return 'Unset';
+  if (value === undefined || value === null || value === '') return 'Not specified';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);

@@ -6,6 +6,7 @@ import { ConfigForm } from './ConfigForm';
 import { DetailTabs } from './DetailTabs';
 import { LlmSettingsPanel } from './LlmSettingsPanel';
 import { ManifestViewer } from './ManifestViewer';
+import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, type ConfigValues } from './configUtils';
 
@@ -30,11 +31,13 @@ export function CapabilityDetail({
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const { updateCapabilityConfig, savingConfigId } = useWorkbenchStore();
+  const { updateCapabilityConfig, savingConfigId, testingLlm } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
-  const [localError, setLocalError] = useState('');
+  const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
+  const [healthBusy, setHealthBusy] = useState(false);
   const isSaving = savingConfigId === `capability:${config.capability_id}`;
+  const saveDisabled = isSaving || (config.capability_id === 'llm' && (testingLlm || healthBusy));
   const dirty = isConfigDirty(config, enabled, values);
   const summary = config.manifest_summary;
   const name = summary.name || config.capability_id;
@@ -42,7 +45,8 @@ export function CapabilityDetail({
   useEffect(() => {
     setEnabled(config.enabled);
     setValues(initialConfigValues(config));
-    setLocalError('');
+    setLocalError(null);
+    setHealthBusy(false);
   }, [config]);
 
   useEffect(() => {
@@ -52,10 +56,10 @@ export function CapabilityDetail({
   async function save(event: FormEvent) {
     event.preventDefault();
     try {
-      setLocalError('');
+      setLocalError(null);
       await updateCapabilityConfig(config.capability_id, { enabled, user_config: buildUserConfig(config.config_schema || [], values) });
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to save capability config.');
+      setLocalError(toSettingsError(error, 'Failed to save capability config.'));
     }
   }
 
@@ -65,7 +69,7 @@ export function CapabilityDetail({
   const manifest = useMemo(() => ({ config, commands: visibleCommands }), [config, visibleCommands]);
 
   return (
-    <form className="settings-detail-form" onSubmit={save}>
+    <form className={`settings-detail-form ${enabled ? '' : 'disabled'}`} onSubmit={save}>
       <header className="settings-detail-header">
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">{initials(name) || <Boxes size={18} />}</div>
@@ -79,7 +83,7 @@ export function CapabilityDetail({
         </div>
         <div className="settings-detail-actions">
           {dirty ? (
-            <button className="settings-primary-button" type="submit" disabled={isSaving}>
+            <button className="settings-primary-button" type="submit" disabled={saveDisabled}>
               <Save size={14} />
               {isSaving ? 'Saving...' : 'Save'}
             </button>
@@ -90,8 +94,8 @@ export function CapabilityDetail({
 
       <DetailTabs tabs={tabs} activeTab={tabs.some((tab) => tab.id === activeTab) ? activeTab : 'overview'} onChange={onTabChange} />
       <div className="settings-detail-body">
-        {localError ? <p className="settings-error-text">{localError}</p> : null}
-        {activeTab === 'commands' ? <CommandsTab commands={visibleCommands} /> : null}
+        {localError ? <SettingsApiError error={localError} /> : null}
+        {activeTab === 'commands' ? <CommandsTab commands={visibleCommands} capabilityEnabled={enabled} /> : null}
         {activeTab === 'config' ? (
           <ConfigForm
             fields={config.config_schema || []}
@@ -102,38 +106,43 @@ export function CapabilityDetail({
         ) : null}
         {activeTab === 'health' ? (
           config.capability_id === 'llm' ? (
-            <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} showConfig={false} />
+            <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} showConfig={false} onBusyChange={setHealthBusy} />
           ) : (
             <div className="settings-empty-state">No health checks available for this capability.</div>
           )
         ) : null}
         {activeTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
-        {activeTab === 'overview' || !tabs.some((tab) => tab.id === activeTab) ? <OverviewTab config={config} /> : null}
+        {activeTab === 'overview' || !tabs.some((tab) => tab.id === activeTab) ? (
+          <OverviewTab config={config} commandCount={visibleCommands.length} />
+        ) : null}
       </div>
     </form>
   );
 }
 
-function OverviewTab({ config }: { config: CapabilityConfig }) {
+function OverviewTab({ config, commandCount }: { config: CapabilityConfig; commandCount: number }) {
   const summary = config.manifest_summary;
+  const configFieldCount = config.config_schema?.length ?? 0;
   return (
     <div className="settings-detail-grid">
       <InfoRow label="Name" value={summary.name || config.capability_id} />
       <InfoRow label="ID" value={config.capability_id} />
-      <InfoRow label="Description" value={summary.description || 'No description.'} />
-      <InfoRow label="Version" value="Unset" />
+      <InfoRow label="Description" value={summary.description} />
+      <InfoRow label="Version" value={(summary as { version?: string }).version} />
       <InfoRow label="Entry / runtime" value={config.capability_id === 'llm' ? 'OpenAI-compatible LLM runtime' : 'Local Python capability'} />
       <InfoRow label="Enabled" value={config.enabled} />
+      <InfoRow label="Exposed commands" value={commandCount} />
+      <InfoRow label="Config fields" value={configFieldCount} />
     </div>
   );
 }
 
-function CommandsTab({ commands }: { commands: Command[] }) {
+function CommandsTab({ commands, capabilityEnabled }: { commands: Command[]; capabilityEnabled: boolean }) {
   if (!commands.length) {
     return <div className="settings-empty-state">This capability does not expose slash commands.</div>;
   }
   return (
-    <div className="settings-table-wrap">
+    <div className={`settings-table-wrap ${capabilityEnabled ? '' : 'disabled'}`}>
       <table className="settings-table">
         <thead>
           <tr>
@@ -152,8 +161,12 @@ function CommandsTab({ commands }: { commands: Command[] }) {
               </td>
               <td>{command.method}</td>
               <td>{command.description || 'None'}</td>
-              <td>{command.safe ? 'Yes' : 'No'}</td>
-              <td>{command.confirm || 'No'}</td>
+              <td>
+                <span className={`settings-badge ${command.safe ? 'success' : 'muted'}`}>{command.safe ? 'yes' : 'no'}</span>
+              </td>
+              <td>
+                <span className={`settings-badge ${command.confirm ? 'warning' : 'muted'}`}>{command.confirm || 'no'}</span>
+              </td>
             </tr>
           ))}
         </tbody>

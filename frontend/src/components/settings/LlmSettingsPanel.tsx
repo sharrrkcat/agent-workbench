@@ -1,9 +1,10 @@
 import { RefreshCw, Zap } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { CapabilityConfig, LlmResolvedConfig, LlmTestResult } from '../../types';
 import { ConfigForm } from './ConfigForm';
+import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import type { ConfigValues } from './configUtils';
 
 export function LlmSettingsPanel({
@@ -11,46 +12,74 @@ export function LlmSettingsPanel({
   values,
   onValuesChange,
   showConfig = true,
+  onBusyChange,
 }: {
   config: CapabilityConfig;
   values: ConfigValues;
   onValuesChange: (values: ConfigValues) => void;
   showConfig?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 }) {
-  const { getResolvedLlmConfig, testLlmConnection, testingLlm } = useWorkbenchStore();
+  const { testLlmConnection, testingLlm } = useWorkbenchStore();
   const [resolved, setResolved] = useState<LlmResolvedConfig | null>(null);
   const [testResult, setTestResult] = useState<LlmTestResult | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [localError, setLocalError] = useState('');
+  const [resolvedError, setResolvedError] = useState<SettingsErrorValue | null>(null);
+  const [modelListError, setModelListError] = useState<SettingsErrorValue | null>(null);
+  const [testError, setTestError] = useState<SettingsErrorValue | null>(null);
+  const busy = testingLlm || loadingModels;
+  const hasEnvSource = useMemo(() => {
+    const sources = resolved?.sources || {};
+    return Object.values(sources).some((source) => String(source).toLowerCase().includes('env'));
+  }, [resolved]);
 
   useEffect(() => {
     let cancelled = false;
-    void getResolvedLlmConfig().then((status) => {
-      if (!cancelled) setResolved(status);
+    setResolvedError(null);
+    void api.getResolvedLlmConfig().then((status) => {
+      if (cancelled) return;
+      setResolved(status);
+      setResolvedError(null);
+    }).catch((error) => {
+      if (cancelled) return;
+      setResolved(null);
+      setResolvedError(toSettingsError(error, 'Failed to load resolved LLM config.'));
     });
     return () => {
       cancelled = true;
     };
-  }, [getResolvedLlmConfig, config.updated_at]);
+  }, [config.updated_at]);
+
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
 
   async function runTest() {
-    setLocalError('');
-    const result = await testLlmConnection();
-    setTestResult(result);
-    if (result.models?.length) {
-      setModels(result.models);
+    setTestError(null);
+    setTestResult(null);
+    try {
+      const result = await testLlmConnection();
+      setTestResult(result);
+      if (!result.success) {
+        setTestError({ code: result.error_code || 'LLM_CONNECTION_FAILED', message: result.message });
+      }
+      if (result.models?.length) {
+        setModels(result.models);
+      }
+    } catch (error) {
+      setTestError(toSettingsError(error, 'LLM connection test failed.'));
     }
   }
 
   async function refreshModels() {
     setLoadingModels(true);
-    setLocalError('');
+    setModelListError(null);
     try {
       const result = await api.listLlmModels();
       setModels(result.models.map((model) => model.id).filter(Boolean));
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to list models.');
+      setModelListError(toSettingsError(error, 'Failed to list models.'));
     } finally {
       setLoadingModels(false);
     }
@@ -79,6 +108,10 @@ export function LlmSettingsPanel({
           </button>
         </div>
         {resolved ? <ResolvedLlmConfig status={resolved} /> : <div className="settings-empty-state">Resolved config is unavailable.</div>}
+        <p className="settings-warning-text">
+          {hasEnvSource ? 'Environment variables may override saved settings.' : 'Environment variables may override saved settings.'}
+        </p>
+        {resolvedError ? <SettingsApiError error={resolvedError} /> : null}
         <div className="settings-button-row">
           <button className="settings-primary-button" type="button" disabled={testingLlm || loadingModels} onClick={() => void runTest()}>
             <Zap size={14} />
@@ -109,7 +142,8 @@ export function LlmSettingsPanel({
             {testResult.models?.length ? ` Models: ${testResult.models.join(', ')}` : ''}
           </p>
         ) : null}
-        {localError ? <p className="settings-error-text">{localError}</p> : null}
+        {testError ? <SettingsApiError error={testError} /> : null}
+        {modelListError ? <SettingsApiError error={modelListError} /> : null}
       </section>
     </div>
   );
