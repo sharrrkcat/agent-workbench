@@ -91,6 +91,7 @@ class AgentRunner:
         prefill=None,
         input_message_id: str = "",
         create_user_message: bool = True,
+        display_input: str = "",
     ) -> RunResult:
         try:
             agent = self.agent_registry.get(agent_id)
@@ -126,6 +127,7 @@ class AgentRunner:
                 prefill=prefill or {},
                 input_message_id=input_message_id,
                 create_user_message=create_user_message,
+                display_input=display_input,
             )
 
         if agent.type != "prompt":
@@ -134,28 +136,30 @@ class AgentRunner:
         action = next(item for item in agent.actions if item.id == action_id)
         parent_id = parent_message_id or source_message_id or ""
         current_user_message_id = ""
-        if action_id == "default":
-            if input_message_id and not create_user_message:
-                user_message = self.message_store.get_message(input_message_id)
-                current_user_message_id = user_message.message_id
-            else:
-                user_message = self.message_store.add_message(
-                    session_id=session_id,
-                    role="user",
-                    content=args,
-                    agent_id=agent_id,
-                    action_id=action_id,
-                    metadata={
-                        "input_source": "text",
-                        "invocation": {
-                            "route_type": "agent",
-                            "agent_id": agent_id,
-                            "action_id": action_id,
-                            "raw_text": args,
-                        },
+        if input_message_id and not create_user_message:
+            user_message = self.message_store.get_message(input_message_id)
+            current_user_message_id = user_message.message_id
+        elif create_user_message and (action_id == "default" or display_input):
+            raw_text = display_input or args
+            user_message = self.message_store.add_message(
+                session_id=session_id,
+                role="user",
+                content=raw_text,
+                agent_id=agent_id,
+                action_id=action_id,
+                metadata={
+                    "input_source": "text",
+                    "invocation": {
+                        "route_type": "agent",
+                        "agent_id": agent_id,
+                        "action_id": action_id,
+                        "raw_text": raw_text,
+                        "args": args,
                     },
-                )
-                current_user_message_id = user_message.message_id
+                },
+            )
+            current_user_message_id = user_message.message_id
+        if current_user_message_id and not parent_id:
             parent_id = user_message.message_id
 
         kind = "agent" if action_id == "default" else "action"

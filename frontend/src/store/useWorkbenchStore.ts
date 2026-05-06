@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ApiError, api } from '../api/client';
+import { parseServerTime } from '../utils/time';
 import type {
   Agent,
   AgentConfig,
@@ -638,8 +639,8 @@ function sortMessagesByCreatedAt(messages: Message[]): Message[] {
   return messages
     .map((message, index) => ({ message, index }))
     .sort((left, right) => {
-      const leftTime = Date.parse(left.message.created_at || '');
-      const rightTime = Date.parse(right.message.created_at || '');
+      const leftTime = parseServerTime(left.message.created_at || '').getTime();
+      const rightTime = parseServerTime(right.message.created_at || '').getTime();
       const normalizedLeft = Number.isNaN(leftTime) ? 0 : leftTime;
       const normalizedRight = Number.isNaN(rightTime) ? 0 : rightTime;
       if (normalizedLeft !== normalizedRight) return normalizedLeft - normalizedRight;
@@ -666,6 +667,7 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
   const fetchedRunIds = new Set(fetched.map((message) => message.run_id).filter(Boolean));
   const remaining = transient.filter((message) => {
     if (message.run_id && fetchedRunIds.has(message.run_id)) return false;
+    if (message.role === 'user' && message.client_status === 'pending' && hasFetchedReplacementUser(fetched, message)) return false;
     if (message.role !== 'user') return true;
     return !fetched.some((candidate) => candidate.role === 'user' && candidate.content === message.content);
   });
@@ -675,6 +677,17 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
 
 function isTransientMessage(message: Message): boolean {
   return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-') || message.message_id.startsWith('draft-');
+}
+
+function hasFetchedReplacementUser(fetched: Message[], pending: Message): boolean {
+  const pendingTime = parseServerTime(pending.created_at || '').getTime();
+  return fetched.some((candidate) => {
+    if (candidate.role !== 'user') return false;
+    if (candidate.content === pending.content) return true;
+    const candidateTime = parseServerTime(candidate.created_at || '').getTime();
+    if (Number.isNaN(candidateTime) || Number.isNaN(pendingTime)) return false;
+    return candidateTime >= pendingTime - 5000;
+  });
 }
 
 function upsertDraftMessage(messages: Message[], draft: Message): Message[] {
@@ -772,9 +785,9 @@ function sortSessionsByRecent(sessions: Session[]): Session[] {
 }
 
 function sessionSortTime(session: Session): number {
-  const updated = Date.parse(session.updated_at || '');
+  const updated = parseServerTime(session.updated_at || '').getTime();
   if (!Number.isNaN(updated)) return updated;
-  const created = Date.parse(session.created_at || '');
+  const created = parseServerTime(session.created_at || '').getTime();
   if (!Number.isNaN(created)) return created;
   return 0;
 }

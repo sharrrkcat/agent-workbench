@@ -852,6 +852,25 @@ def test_delete_agent_message_removes_only_selected_message() -> None:
     assert second["messages"][-1]["message_id"] in ids
 
 
+def test_delete_command_message_removes_only_selected_message() -> None:
+    client = make_client()
+    session = create_session(client)
+    first = post_message(client, session["session_id"], "/base64 hello")
+    second = post_message(client, session["session_id"], "later")
+    command_message = first["messages"][-1]
+
+    response = client.delete(f"/api/messages/{command_message['message_id']}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True, "message_id": command_message["message_id"]}
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    ids = [message["message_id"] for message in messages]
+    assert command_message["message_id"] not in ids
+    assert first["messages"][0]["message_id"] in ids
+    assert second["messages"][0]["message_id"] in ids
+    assert second["messages"][-1]["message_id"] in ids
+
+
 def test_delete_missing_message_returns_structured_404() -> None:
     response = make_client().delete("/api/messages/missing")
 
@@ -995,6 +1014,23 @@ def test_action_api_invokes_translate_formal() -> None:
     payload = response.json()
     assert payload["success"] is True
     assert payload["run"]["action_id"] == "formal"
+
+
+def test_agent_action_text_route_preserves_raw_user_message_and_parsed_args() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="chat")
+
+    payload = post_message(client, session["session_id"], "@render_test:image 1")
+
+    messages = payload["messages"]
+    user_message = messages[0]
+    assert user_message["role"] == "user"
+    assert user_message["content"] == "@render_test:image 1"
+    assert user_message["metadata"]["invocation"]["raw_text"] == "@render_test:image 1"
+    assert user_message["metadata"]["invocation"]["args"] == "1"
+    assert payload["run"]["metadata"]["args"] == "1"
+    assert [message["output_type"] for message in messages[1:]] == ["image", "rich_content", "image_gallery"]
+    assert all("llm_resolution" not in message["metadata"] for message in messages[1:])
 
 
 def test_action_api_missing_source_returns_structured_error() -> None:

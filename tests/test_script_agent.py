@@ -428,6 +428,34 @@ def test_image_reply_helpers_write_expected_output_types(tmp_path: Path) -> None
     }
 
 
+def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> None:
+    fixture = ScriptRuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@render_test:text hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert messages[0].role == "user"
+    assert messages[0].content == "@render_test:text hello"
+    assert messages[0].metadata["invocation"]["raw_text"] == "@render_test:text hello"
+    assert messages[0].metadata["invocation"]["args"] == "hello"
+    assert messages[-1].role == "agent"
+    assert messages[-1].content == "hello"
+
+
+def test_render_test_image_action_returns_three_non_llm_messages() -> None:
+    fixture = ScriptRuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@render_test:image 1"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert [message.output_type for message in messages[1:]] == ["image", "rich_content", "image_gallery"]
+    assert all("llm_resolution" not in message.metadata for message in messages[1:])
+
+
 def test_reply_accepts_type_and_output_type_compatibility(tmp_path: Path) -> None:
     registry = write_script_agent(
         tmp_path,

@@ -6,10 +6,10 @@ import type { Agent, ChatContentBlock, ImagePayload, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
+import { formatMessageTime } from '../utils/time';
 
 export function MessageBubble({ message }: { message: Message }) {
   const agents = useWorkbenchStore((state) => state.agents);
-  const runs = useWorkbenchStore((state) => state.runs);
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
   const retryMessage = useWorkbenchStore((state) => state.retryMessage);
   const editMessage = useWorkbenchStore((state) => state.editMessage);
@@ -71,7 +71,7 @@ export function MessageBubble({ message }: { message: Message }) {
     <article className={`message-row ${kind}`}>
       {!isUser ? <AgentAvatar agent={agent} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
-        <MessageHeader message={message} agent={agent} kind={kind} modelLabel={resolvedModelLabel(message, runs)} />
+        <MessageHeader message={message} agent={agent} kind={kind} modelLabel={resolvedModelLabel(message)} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
           {editing ? (
             <div className="message-edit-form">
@@ -121,7 +121,7 @@ export function MessageBubble({ message }: { message: Message }) {
                 <Pencil size={13} />
               </button>
             ) : null}
-            {(isUser || isAgentMessage) ? (
+            {isUser || isAgentMessage || isCommand ? (
               <button type="button" className="danger" onClick={confirmDelete} disabled={operationPending} title="Delete">
                 <Trash2 size={13} />
               </button>
@@ -200,7 +200,7 @@ function MessageHeader({
         <span>{name}</span>
         {secondary ? <small title={secondary}>{truncateLabel(secondary)}</small> : null}
       </div>
-      <time>{formatTime(message.created_at)}</time>
+      <time>{formatMessageTime(message.created_at)}</time>
     </div>
   );
 }
@@ -462,11 +462,10 @@ function normalizeError(message: Message): { code?: string; message?: string } {
   return { code: message.run_id ? 'RUN_FAILED' : undefined, message: contentToText(message.content) };
 }
 
-function resolvedModelLabel(message: Message, runs: { run_id: string; metadata?: Record<string, unknown> }[]): string | undefined {
+function resolvedModelLabel(message: Message): string | undefined {
   const fromMessage = extractResolutionLabel(message.metadata?.llm_resolution);
   if (fromMessage) return fromMessage;
-  const run = message.run_id ? runs.find((item) => item.run_id === message.run_id) : undefined;
-  return extractResolutionLabel(run?.metadata?.llm_resolution);
+  return undefined;
 }
 
 function extractResolutionLabel(value: unknown): string | undefined {
@@ -532,10 +531,4 @@ function shouldCollapseUserMessage(value: string): boolean {
   if (value.length > 600) return true;
   if (value.split(/\r\n|\r|\n/).length > 8) return true;
   return value.split(/\s+/).some((token) => token.length > 160);
-}
-
-function formatTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

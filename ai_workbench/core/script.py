@@ -300,15 +300,18 @@ class ScriptAgentRunner:
         prefill=None,
         input_message_id: str = "",
         create_user_message: bool = True,
+        display_input: str = "",
     ) -> RunResult:
         session = self.session_store.get_session(session_id)
+        user_message = None
         if input_message_id and not create_user_message:
             user_message = self.message_store.get_message(input_message_id)
-        else:
+        elif create_user_message:
+            raw_text = display_input or args
             user_message = self.message_store.add_message(
                 session_id=session_id,
                 role="user",
-                content=args,
+                content=raw_text,
                 agent_id=agent.id,
                 action_id=action_id,
                 metadata={
@@ -317,11 +320,12 @@ class ScriptAgentRunner:
                         "route_type": "agent",
                         "agent_id": agent.id,
                         "action_id": action_id,
-                        "raw_text": args,
+                        "raw_text": raw_text,
+                        "args": args,
                     },
                 },
             )
-        parent_id = parent_message_id or source_message_id or user_message.message_id
+        parent_id = parent_message_id or source_message_id or (user_message.message_id if user_message is not None else "")
         run = self.run_store.create_run(
             kind="agent" if action_id == "default" else "action",
             target_id=agent.id,
@@ -329,7 +333,7 @@ class ScriptAgentRunner:
             session_id=session_id,
             metadata={
                 "args": args,
-                "input_message_id": user_message.message_id,
+                "input_message_id": user_message.message_id if user_message is not None else None,
                 "parent_message_id": parent_id or None,
                 "source_message_id": source_message_id or None,
             },
@@ -342,11 +346,13 @@ class ScriptAgentRunner:
         except Exception as exc:
             return self._fail(run.run_id, session_id, str(exc) or "Script loading failed.")
 
-        try:
-            llm_config = self._resolve_llm_model_config(agent, session_id)
-            self._record_llm_resolution(run.run_id, llm_config)
-        except LLMConfigError as exc:
-            return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
+        llm_config = None
+        if _agent_uses_llm(agent):
+            try:
+                llm_config = self._resolve_llm_model_config(agent, session_id)
+                self._record_llm_resolution(run.run_id, llm_config)
+            except LLMConfigError as exc:
+                return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
 
         ctx = AgentContext(
             agent=agent,
@@ -364,7 +370,7 @@ class ScriptAgentRunner:
             event_bus=self.event_bus,
             runtime_registry=self.runtime_registry,
             llm_runtime=self.llm_runtime,
-            llm_model_config=llm_config.values,
+            llm_model_config=llm_config.values if llm_config is not None else {},
             llm_resolution=self.run_store.get_run(run.run_id).metadata.get("llm_resolution"),
         )
 

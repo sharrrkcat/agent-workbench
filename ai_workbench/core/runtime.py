@@ -47,6 +47,7 @@ class WorkbenchRuntime:
                 args=route.args,
                 session_id=route.session_id,
                 source_message_id=source_message_id,
+                display_input=route.raw_input,
             )
             self._maybe_generate_session_title(session.session_id, route.args, result)
             return result
@@ -72,10 +73,11 @@ class WorkbenchRuntime:
             if route_type == "agent":
                 if self.agent_runner is None:
                     return RunResult(success=False, run_id="", error="Agent runner is not configured.")
+                parsed_args = _agent_invocation_args(invocation, str(message.content))
                 result = await self.agent_runner.run(
                     agent_id=str(invocation.get("agent_id") or session.default_agent_id),
                     action_id=str(invocation.get("action_id") or "default"),
-                    args=str(message.content),
+                    args=parsed_args,
                     session_id=session.session_id,
                     input_message_id=message.message_id,
                     create_user_message=False,
@@ -125,7 +127,11 @@ class WorkbenchRuntime:
             return RunResult(success=False, run_id="", error="Agent runner is not configured.")
         agent_id = message.agent_id or ""
         action_id = message.action_id or "default"
-        args = str(source_user_message.content)
+        invocation = (source_user_message.metadata or {}).get("invocation")
+        if isinstance(invocation, dict) and invocation.get("route_type") == "agent":
+            args = _agent_invocation_args(invocation, str(source_user_message.content))
+        else:
+            args = str(source_user_message.content)
         result = await self.agent_runner.run(
             agent_id=agent_id,
             action_id=action_id,
@@ -313,6 +319,7 @@ class WorkbenchRuntime:
             source_message_id=request.source_message_id or "",
             parent_message_id=request.parent_message_id or "",
             prefill=request.prefill,
+            create_user_message=False,
         )
 
 
@@ -348,6 +355,14 @@ def normalize_generated_title(title: str) -> str:
     value = re.sub(r"\s+", " ", value).strip()
     value = re.sub(r"[.!?]+$", "", value).strip()
     return value[:TITLE_MAX_LENGTH].strip()
+
+
+def _agent_invocation_args(invocation: dict, fallback_content: str) -> str:
+    action_id = str(invocation.get("action_id") or "default")
+    raw_text = str(invocation.get("raw_text") or "")
+    if action_id != "default" or raw_text.startswith("@"):
+        return str(invocation.get("args") if invocation.get("args") is not None else fallback_content)
+    return fallback_content
 
 
 def _truncate_text(value: str, limit: int) -> str:

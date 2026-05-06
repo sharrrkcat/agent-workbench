@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Run } from '../types';
+import { formatMessageTime } from '../utils/time';
 
 export function RunPanel() {
   const { runs, runEvents, runEventLoading, loadRunEvents } = useWorkbenchStore();
@@ -53,7 +54,7 @@ export function RunPanel() {
                       ) : (
                         events.map((event) => (
                           <div className="timeline-event" key={event.event_id}>
-                            <time>{new Date(event.created_at).toLocaleTimeString()}</time>
+                            <time>{formatMessageTime(event.created_at)}</time>
                             <strong>{event.type}</strong>
                             {event.message ? <span>{event.message}</span> : null}
                           </div>
