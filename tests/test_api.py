@@ -797,6 +797,26 @@ def test_list_messages_returns_json_content_as_structured_object() -> None:
     assert message["content"] == {"ok": True, "items": [1, 2]}
 
 
+def test_list_messages_returns_image_content_as_structured_object() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    state.messages.add_message(
+        session_id=session["session_id"],
+        role="agent",
+        content={"url": "https://example.test/image.png", "alt": "Example"},
+        agent_id="render_test",
+        output_type="image",
+    )
+
+    response = client.get(f"/api/sessions/{session['session_id']}/messages")
+
+    assert response.status_code == 200
+    message = response.json()[-1]
+    assert message["output_type"] == "image"
+    assert message["content"] == {"url": "https://example.test/image.png", "alt": "Example"}
+
+
 def test_delete_user_message_removes_only_selected_message() -> None:
     client = make_client(response="chat reply")
     session = create_session(client)

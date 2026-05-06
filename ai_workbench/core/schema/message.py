@@ -1,7 +1,52 @@
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Annotated, Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class ImagePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    alt: Optional[str] = None
+    title: Optional[str] = None
+    caption: Optional[str] = None
+
+
+class ImageGalleryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    images: list[ImagePayload]
+
+
+class TextContentBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text"]
+    text: str
+
+
+class MarkdownContentBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["markdown"]
+    text: str
+
+
+class ImageContentBlock(ImagePayload):
+    type: Literal["image"]
+
+
+ChatContentBlock = Annotated[
+    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock],
+    Field(discriminator="type"),
+]
+
+
+class RichContentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    blocks: list[ChatContentBlock]
 
 
 class MessageSchema(BaseModel):

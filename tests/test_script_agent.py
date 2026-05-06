@@ -9,6 +9,7 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.agent import AgentSchema
+from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from tests.test_prompt_agent_execution import FakeLLMRuntime, run
@@ -361,6 +362,69 @@ def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
         ("**bold**", "markdown"),
         ({"ok": True}, "json"),
     ]
+
+
+def test_image_output_schema_accepts_supported_payloads() -> None:
+    image = ImagePayload.model_validate({"url": "https://example.test/image.png", "alt": "Example"})
+    gallery = ImageGalleryPayload.model_validate({"images": [image.model_dump()]})
+    rich = RichContentPayload.model_validate(
+        {
+            "blocks": [
+                {"type": "markdown", "text": "**hello**"},
+                {"type": "image", "url": "https://example.test/inline.png", "caption": "Inline"},
+                {"type": "text", "text": "done"},
+            ]
+        }
+    )
+
+    assert image.url == "https://example.test/image.png"
+    assert gallery.images[0].alt == "Example"
+    assert [block.type for block in rich.blocks] == ["markdown", "image", "text"]
+
+
+def test_image_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "image_reply_script",
+        "async def run(ctx):\n"
+        "    await ctx.reply_image('https://example.test/single.png', alt='Single', title='One', caption='Caption')\n"
+        "    await ctx.reply_images([\n"
+        "        {'url': 'https://example.test/a.png', 'alt': 'A'},\n"
+        "        {'url': 'https://example.test/b.png', 'caption': 'B caption'},\n"
+        "    ])\n"
+        "    await ctx.reply_blocks([\n"
+        "        {'type': 'markdown', 'text': '**bold**'},\n"
+        "        {'type': 'image', 'url': 'https://example.test/inline.png', 'alt': 'Inline'},\n"
+        "        {'type': 'text', 'text': 'plain'},\n"
+        "    ])\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@image_reply_script hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert [message.output_type for message in messages[-3:]] == ["image", "image_gallery", "rich_content"]
+    assert messages[-3].content == {
+        "url": "https://example.test/single.png",
+        "alt": "Single",
+        "title": "One",
+        "caption": "Caption",
+    }
+    assert messages[-2].content == {
+        "images": [
+            {"url": "https://example.test/a.png", "alt": "A"},
+            {"url": "https://example.test/b.png", "caption": "B caption"},
+        ]
+    }
+    assert messages[-1].content == {
+        "blocks": [
+            {"type": "markdown", "text": "**bold**"},
+            {"type": "image", "url": "https://example.test/inline.png", "alt": "Inline"},
+            {"type": "text", "text": "plain"},
+        ]
+    }
 
 
 def test_reply_accepts_type_and_output_type_compatibility(tmp_path: Path) -> None:

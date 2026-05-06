@@ -2,6 +2,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
+
 
 class CommandResult(BaseModel):
     model_config = ConfigDict(extra="forbid")

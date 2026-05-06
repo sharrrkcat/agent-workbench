@@ -1,7 +1,7 @@
 id: render_test
 name: Render Test Agent
 type: script
-description: Tiny fixture agent for text, markdown, and JSON rendering checks
+description: Tiny fixture agent for text, markdown, JSON, and image rendering checks
 entry: agent.py
 
 actions:
@@ -16,6 +16,9 @@ actions:
   - id: llm
     label: LLM
     description: Attempt one LLM call for diagnostics checks
+  - id: image
+    label: Images
+    description: Reply with image, rich content, and image gallery messages
 
 context_policy:
   mode: current_message

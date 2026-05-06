@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Agent, Message } from '../types';
+import type { Agent, ChatContentBlock, ImagePayload, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -242,6 +242,15 @@ function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'a
   if (message.output_type === 'json') {
     return <JsonRenderer content={message.content} />;
   }
+  if (message.output_type === 'image') {
+    return <ImageRenderer image={normalizeImagePayload(message.content)} />;
+  }
+  if (message.output_type === 'image_gallery') {
+    return <ImageGalleryRenderer images={normalizeImageGallery(message.content)} />;
+  }
+  if (message.output_type === 'rich_content') {
+    return <RichContentRenderer blocks={normalizeRichContentBlocks(message.content)} />;
+  }
   return <PlainTextRenderer content={message.content} />;
 }
 
@@ -291,6 +300,53 @@ export function JsonRenderer({ content }: { content: unknown }) {
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
 }
 
+function ImageRenderer({ image }: { image: ImagePayload | null }) {
+  if (!image) {
+    return <PlainTextRenderer content="" />;
+  }
+  return (
+    <figure className="message-content image-content">
+      {image.title ? <figcaption className="image-title">{image.title}</figcaption> : null}
+      <a href={image.url} target="_blank" rel="noreferrer">
+        <img src={image.url} alt={image.alt || image.title || image.caption || ''} loading="lazy" />
+      </a>
+      {image.caption ? <figcaption className="image-caption">{image.caption}</figcaption> : null}
+    </figure>
+  );
+}
+
+function ImageGalleryRenderer({ images }: { images: ImagePayload[] }) {
+  if (!images.length) {
+    return <PlainTextRenderer content="" />;
+  }
+  return (
+    <div className="message-content image-gallery">
+      {images.map((image, index) => (
+        <ImageRenderer key={`${image.url}-${index}`} image={image} />
+      ))}
+    </div>
+  );
+}
+
+function RichContentRenderer({ blocks }: { blocks: ChatContentBlock[] }) {
+  if (!blocks.length) {
+    return <PlainTextRenderer content="" />;
+  }
+  return (
+    <div className="message-content rich-content">
+      {blocks.map((block, index) => {
+        if (block.type === 'markdown') {
+          return <MarkdownRenderer key={index} content={block.text} />;
+        }
+        if (block.type === 'image') {
+          return <ImageRenderer key={index} image={block} />;
+        }
+        return <PlainTextRenderer key={index} content={block.text} />;
+      })}
+    </div>
+  );
+}
+
 export function contentToText(content: unknown): string {
   if (typeof content === 'string') {
     return unwrapJsonString(content);
@@ -308,7 +364,53 @@ function copyableMessageContent(message: Message): string {
   if (message.output_type === 'json') {
     return JSON.stringify(normalizeJsonContent(message.content), null, 2);
   }
+  if (['image', 'image_gallery', 'rich_content'].includes(message.output_type)) {
+    return JSON.stringify(message.content, null, 2);
+  }
   return contentToText(message.content);
+}
+
+function normalizeImagePayload(content: unknown): ImagePayload | null {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return null;
+  const value = content as Record<string, unknown>;
+  if (typeof value.url !== 'string' || !value.url.trim()) return null;
+  return {
+    url: value.url,
+    alt: optionalString(value.alt),
+    title: optionalString(value.title),
+    caption: optionalString(value.caption),
+  };
+}
+
+function normalizeImageGallery(content: unknown): ImagePayload[] {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return [];
+  const value = content as Record<string, unknown>;
+  if (!Array.isArray(value.images)) return [];
+  return value.images.map(normalizeImagePayload).filter((image): image is ImagePayload => image !== null);
+}
+
+function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return [];
+  const value = content as Record<string, unknown>;
+  if (!Array.isArray(value.blocks)) return [];
+  const blocks: ChatContentBlock[] = [];
+  for (const block of value.blocks) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
+    const item = block as Record<string, unknown>;
+    if (item.type === 'text' && typeof item.text === 'string') {
+      blocks.push({ type: 'text', text: item.text });
+    } else if (item.type === 'markdown' && typeof item.text === 'string') {
+      blocks.push({ type: 'markdown', text: item.text });
+    } else if (item.type === 'image') {
+      const image = normalizeImagePayload(item);
+      if (image) blocks.push({ type: 'image', ...image });
+    }
+  }
+  return blocks;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 function extractReasoningContent(metadata: Record<string, unknown> | undefined): string {

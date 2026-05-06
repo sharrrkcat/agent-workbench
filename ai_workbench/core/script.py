@@ -15,6 +15,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 from ai_workbench.core.schema.agent import AgentSchema
+from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.session import Session
@@ -226,6 +227,18 @@ class AgentContext:
 
     async def reply_json(self, data: dict | list, actions=None):
         return await self.reply(data, output_type="json", actions=actions)
+
+    async def reply_image(self, url: str, alt: str = None, title: str = None, caption: str = None, actions=None):
+        payload = ImagePayload(url=url, alt=alt, title=title, caption=caption)
+        return await self.reply(payload.model_dump(exclude_none=True), output_type="image", actions=actions)
+
+    async def reply_images(self, images: list, actions=None):
+        payload = ImageGalleryPayload(images=[ImagePayload.model_validate(image) for image in images])
+        return await self.reply(payload.model_dump(exclude_none=True), output_type="image_gallery", actions=actions)
+
+    async def reply_blocks(self, blocks: list, actions=None):
+        payload = RichContentPayload.model_validate({"blocks": blocks})
+        return await self.reply(payload.model_dump(exclude_none=True), output_type="rich_content", actions=actions)
 
     def step(self, name: str) -> ScriptStep:
         return ScriptStep(self, name)

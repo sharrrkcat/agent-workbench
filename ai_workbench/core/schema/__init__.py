@@ -6,7 +6,13 @@ from ai_workbench.core.schema.capability import CapabilityMethodSchema, Capabili
 from ai_workbench.core.schema.command import CommandRegistration, CommandSchema
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.invocation import ActionInvocationRequest
-from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.schema.message import (
+    ChatContentBlock,
+    ImageGalleryPayload,
+    ImagePayload,
+    MessageSchema,
+    RichContentPayload,
+)
 from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
 from ai_workbench.core.schema.result import CapabilityCallResult, CommandResult, RunResult
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
@@ -23,10 +29,14 @@ __all__ = [
     "CommandSchema",
     "ContextPolicy",
     "CommandResult",
+    "ChatContentBlock",
+    "ImageGalleryPayload",
+    "ImagePayload",
     "MessageSchema",
     "ModelLifecyclePolicy",
     "RouteKind",
     "RouteTarget",
+    "RichContentPayload",
     "RunResult",
     "RunSchema",
     "RunStatus",

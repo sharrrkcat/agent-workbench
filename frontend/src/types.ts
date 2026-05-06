@@ -209,6 +209,18 @@ export type AvailableAction = {
   prefill: Record<string, unknown>;
 };
 
+export type ImagePayload = {
+  url: string;
+  alt?: string | null;
+  title?: string | null;
+  caption?: string | null;
+};
+
+export type ChatContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'markdown'; text: string }
+  | ({ type: 'image' } & ImagePayload);
+
 export type Message = {
   message_id: string;
   session_id: string;
