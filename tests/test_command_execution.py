@@ -142,6 +142,59 @@ def test_base64_to_image_alias_returns_image_output() -> None:
     assert message.output_type == "image"
 
 
+def test_image_base64_without_attachment_fails() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+    user = fixture.messages.add_message(
+        session_id=session.session_id,
+        role="user",
+        content="/image-base64",
+        metadata={"attachments": []},
+    )
+
+    result = run(fixture.command_runner.run("/image-base64", "", session.session_id, input_message_id=user.message_id))
+
+    assert result.success is False
+    assert result.error == "No image attachment found."
+
+
+def test_image_base64_returns_first_attachment_data() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+    user = fixture.messages.add_message(
+        session_id=session.session_id,
+        role="user",
+        content="/image-base64",
+        metadata={"attachments": [sample_attachment("one.svg", SVG_DATA_URL)]},
+    )
+
+    result = run(fixture.command_runner.run("/image-base64", "", session.session_id, input_message_id=user.message_id))
+
+    assert result.success is True
+    assert result.output_type == "json"
+    assert result.data["name"] == "one.svg"
+    assert result.data["data_url"] == SVG_DATA_URL
+    assert result.data["base64"] == SVG_DATA_URL.split(",", 1)[1]
+
+
+def test_image_base64_can_select_second_attachment() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+    second = SVG_DATA_URL.replace("b2s", "b2s")
+    user = fixture.messages.add_message(
+        session_id=session.session_id,
+        role="user",
+        content="/image-base64 2",
+        metadata={"attachments": [sample_attachment("one.svg", SVG_DATA_URL), sample_attachment("two.svg", second)]},
+    )
+
+    result = run(fixture.command_runner.run("/image-base64", "2", session.session_id, input_message_id=user.message_id))
+
+    assert result.success is True
+    assert result.data["index"] == 2
+    assert result.data["name"] == "two.svg"
+
+
 def test_base64_decode_invalid_input_returns_failed_result_and_run() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
@@ -288,3 +341,14 @@ def test_unknown_command_returns_structured_error_without_run() -> None:
     assert result.run_id == ""
     assert result.error == "Unknown command: /missing"
     assert fixture.runs.list_runs(session.session_id) == []
+
+
+def sample_attachment(name: str, data_url: str) -> dict:
+    return {
+        "id": name,
+        "type": "image",
+        "mime_type": "image/svg+xml",
+        "name": name,
+        "size": 120,
+        "data_url": data_url,
+    }

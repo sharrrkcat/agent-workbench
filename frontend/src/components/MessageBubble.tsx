@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Agent, ChatContentBlock, ImagePayload, Message } from '../types';
+import type { Agent, ChatContentBlock, ImageAttachment, ImagePayload, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -231,7 +231,7 @@ function InlineErrorBlock({ message }: { message: Message }) {
 
 function MessageContent({ message, kind }: { message: Message; kind: 'user' | 'agent' | 'command' }) {
   if (kind === 'user') {
-    return <UserPlainTextRenderer content={message.content} />;
+    return <UserMessageRenderer content={message.content} attachments={messageImageAttachments(message)} />;
   }
   if (message.output_type === 'markdown') {
     return <MarkdownRenderer content={message.content} />;
@@ -258,7 +258,7 @@ export function PlainTextRenderer({ content }: { content: unknown }) {
   return <div className="message-content plain-text">{contentToText(content)}</div>;
 }
 
-function UserPlainTextRenderer({ content }: { content: unknown }) {
+function UserMessageRenderer({ content, attachments }: { content: unknown; attachments: ImageAttachment[] }) {
   const text = contentToText(content);
   const collapsible = shouldCollapseUserMessage(text);
   const [expanded, setExpanded] = useState(false);
@@ -269,12 +269,25 @@ function UserPlainTextRenderer({ content }: { content: unknown }) {
 
   return (
     <div className="user-message-content">
-      <div className={`message-content plain-text ${collapsible && !expanded ? 'collapsed-user-content' : ''}`}>{text}</div>
+      {attachments.length ? <AttachmentGallery attachments={attachments} /> : null}
+      {text ? <div className={`message-content plain-text ${collapsible && !expanded ? 'collapsed-user-content' : ''}`}>{text}</div> : null}
       {collapsible ? (
         <button className="message-expand-button" type="button" onClick={() => setExpanded((current) => !current)}>
           {expanded ? 'Show less' : 'Show more'}
         </button>
       ) : null}
+    </div>
+  );
+}
+
+function AttachmentGallery({ attachments }: { attachments: ImageAttachment[] }) {
+  return (
+    <div className={`message-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
+      {attachments.map((attachment) => (
+        <figure className="message-attachment" key={attachment.id}>
+          <img src={attachment.data_url} alt={attachment.name || 'Attached image'} loading="lazy" />
+        </figure>
+      ))}
     </div>
   );
 }
@@ -372,6 +385,26 @@ function copyableMessageContent(message: Message): string {
     return JSON.stringify(message.content, null, 2);
   }
   return contentToText(message.content);
+}
+
+function messageImageAttachments(message: Message): ImageAttachment[] {
+  const attachments = message.metadata?.attachments;
+  if (!Array.isArray(attachments)) return [];
+  return attachments.filter(isImageAttachment);
+}
+
+function isImageAttachment(value: unknown): value is ImageAttachment {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    item.type === 'image' &&
+    typeof item.id === 'string' &&
+    typeof item.mime_type === 'string' &&
+    typeof item.name === 'string' &&
+    typeof item.size === 'number' &&
+    typeof item.data_url === 'string' &&
+    Boolean(safeImageUrl(item.data_url))
+  );
 }
 
 function normalizeImagePayload(content: unknown): ImagePayload | null {

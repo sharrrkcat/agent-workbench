@@ -40,6 +40,15 @@ methods:
     output:
       type: image
 
+  - id: encode_image
+    description: Encode the current user message image attachment as Base64
+    input_schema:
+      text:
+        type: string
+        required: false
+    output:
+      type: json
+
 commands:
   - name: /base64
     method: encode
@@ -59,4 +68,14 @@ commands:
   - name: /base64-to-image
     method: decode_image
     description: Decode Base64 image data into an image
+    safe: true
+
+  - name: /image-base64
+    method: encode_image
+    description: Encode the current message image attachment to Base64
+    safe: true
+
+  - name: /base64-encode-image
+    method: encode_image
+    description: Encode the current message image attachment to Base64
     safe: true

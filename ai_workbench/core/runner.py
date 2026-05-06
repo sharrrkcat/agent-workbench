@@ -92,7 +92,9 @@ class AgentRunner:
         input_message_id: str = "",
         create_user_message: bool = True,
         display_input: str = "",
+        attachments: list[dict] = None,
     ) -> RunResult:
+        attachments = attachments or []
         try:
             agent = self.agent_registry.get(agent_id)
         except KeyError:
@@ -148,6 +150,7 @@ class AgentRunner:
                 agent_id=agent_id,
                 action_id=action_id,
                 metadata={
+                    "attachments": attachments,
                     "input_source": "text",
                     "invocation": {
                         "route_type": "agent",
@@ -915,7 +918,7 @@ class CommandRunner:
 
         try:
             method = self.runtime_registry.get_method(command.capability_id, command.method)
-            data = method(args)
+            data = self._call_method(method, args, self._command_context(session_id, input_message_id))
             output_type = self._normalize_output_type(command, data)
             self._validate_output_payload(output_type, data)
         except Exception as exc:
@@ -967,6 +970,26 @@ class CommandRunner:
             message_id=message.message_id,
         )
         return CommandResult(success=True, run_id=done_run.run_id, data=data, output_type=output_type)
+
+    def _command_context(self, session_id: str, input_message_id: str) -> dict:
+        attachments = []
+        if input_message_id:
+            try:
+                message = self.message_store.get_message(input_message_id)
+                attachments = list((message.metadata or {}).get("attachments") or [])
+            except KeyError:
+                attachments = []
+        return {
+            "session_id": session_id,
+            "input_message_id": input_message_id or "",
+            "attachments": attachments,
+        }
+
+    def _call_method(self, method, args: str, context: dict):
+        parameters = inspect.signature(method).parameters
+        if len(parameters) >= 2:
+            return method(args, context)
+        return method(args)
 
     def _normalize_output_type(self, command, data: Any) -> str:
         declared = self._declared_output_type(command)

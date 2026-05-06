@@ -66,6 +66,34 @@ class CapabilityRuntime:
             "caption": f"Decoded from base64 · {mime_type} · {len(image_bytes)} bytes",
         }
 
+    def encode_image(self, text: str, context: dict) -> dict:
+        attachments = context.get("attachments") if isinstance(context, dict) else []
+        images = [
+            item
+            for item in attachments or []
+            if isinstance(item, dict) and item.get("type") == "image" and isinstance(item.get("data_url"), str)
+        ]
+        if not images:
+            raise ValueError("No image attachment found.")
+
+        index = _parse_image_index(text)
+        if index < 1 or index > len(images):
+            raise ValueError(f"Image attachment index out of range. Available images: {len(images)}.")
+
+        image = images[index - 1]
+        data_url = image["data_url"].strip()
+        raw_base64 = data_url.split(",", 1)[1] if "," in data_url else data_url
+        return {
+            "mime_type": image.get("mime_type") or "",
+            "name": image.get("name") or "",
+            "size": image.get("size") or 0,
+            "index": index,
+            "total_images": len(images),
+            "note": "Encoded the selected image attachment. Multiple attachments are supported by passing a 1-based index.",
+            "data_url": data_url,
+            "base64": raw_base64,
+        }
+
 
 def _decode_image_input(text: str) -> Tuple[bytes, Optional[str]]:
     cleaned = (text or "").strip()
@@ -114,3 +142,13 @@ def _detect_image_mime_type(image_bytes: bytes) -> Optional[str]:
         return "image/svg+xml"
 
     return None
+
+
+def _parse_image_index(text: str) -> int:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return 1
+    try:
+        return int(cleaned)
+    except ValueError as exc:
+        raise ValueError("Image attachment index must be a number.") from exc

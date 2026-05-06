@@ -330,6 +330,31 @@ See [docs/AGENT_DEVELOPMENT.md](docs/AGENT_DEVELOPMENT.md) for Prompt Agent and 
 
 The same guide covers frontend output rendering for `text`, `markdown`, and `json`, LLM JSON reliability patterns for small local models, and a practical Script Agent debug workflow.
 
+## Image Input Alpha
+
+User messages can include image attachments from the composer attachment button, drag-and-drop, or clipboard paste while the composer is focused.
+
+In this alpha, images are stored directly as data URLs in `message.metadata.attachments`:
+
+```json
+{
+  "id": "uuid",
+  "type": "image",
+  "mime_type": "image/png",
+  "name": "image.png",
+  "size": 12345,
+  "data_url": "data:image/png;base64,...",
+  "width": 800,
+  "height": 600
+}
+```
+
+Supported MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`. The current limits are 10 MB per image and 6 images per message.
+
+Attached images render in the composer preview and in user message bubbles. They are not sent to vision models yet, even when the selected LLM profile has `supports_vision=true`. The context builder sends text only; image-only user messages enter LLM context as a short placeholder such as `User attached 1 image.` and never include image base64.
+
+Use `/image-base64` or `/base64-encode-image` on a message with image attachments to return the selected attachment as JSON containing the data URL and raw base64. Pass a 1-based index to select another image, for example `/image-base64 2`. Use `/base64-image` or `/base64-to-image` to decode base64 back into a renderable image command output.
+
 ## Current Limitations
 
 - Technical Alpha, local-first only.
@@ -338,7 +363,7 @@ The same guide covers frontend output rendering for `text`, `markdown`, and `jso
 - No secret encryption.
 - No external app integrations.
 - No function calling, MCP, or LLM automatic tool selection.
-- No file upload.
+- Image input stores data URLs in SQLite metadata; there is no file-system attachment store, cloud upload, image editing, OCR, or vision model call yet.
 - Script Agent visible streaming is not implemented yet; Script Agent LLM helpers still return final text.
 - Thought display is intentionally read-only and collapsed by default; there is no composer-side reasoning toggle or reasoning effort control yet.
 - WebSocket unavailable mode degrades to final HTTP refresh instead of live deltas.

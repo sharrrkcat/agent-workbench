@@ -1,7 +1,7 @@
-import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Check, ChevronDown, Octagon, Paperclip, Send, Slash } from 'lucide-react';
+import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AtSign, Check, ChevronDown, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Agent, CapabilityConfig, LlmProfile, Session } from '../types';
+import type { Agent, CapabilityConfig, ImageAttachment, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 
@@ -11,12 +11,15 @@ export function ChatInput() {
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [dragActive, setDragActive] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { agents, capabilityConfigs, currentSession, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile } = useWorkbenchStore();
+  const { agents, capabilityConfigs, currentSession, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, setError } = useWorkbenchStore();
 
-  const canSend = Boolean(currentSession && value.trim() && !sending);
+  const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
 
   const activeToken = useMemo(() => getActiveToken(value, cursorPosition), [cursorPosition, value]);
   const mode = useMemo(() => {
@@ -28,7 +31,7 @@ export function ChatInput() {
   }, [activeToken, suggestionsDismissed]);
 
   const suggestionPanelOpen = mode !== 'none';
-  const isCompact = !isFocused && value.trim().length === 0 && !suggestionPanelOpen && !sending;
+  const isCompact = !isFocused && value.trim().length === 0 && attachments.length === 0 && !suggestionPanelOpen && !sending;
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -71,14 +74,20 @@ export function ChatInput() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  function submit(event?: FormEvent) {
+  async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!canSend) return;
     const content = value;
+    const pendingAttachments = attachments;
     setValue('');
+    setAttachments([]);
     setCursorPosition(0);
     setSuggestionsDismissed(true);
-    void sendMessage(content);
+    const success = await sendMessage(content, pendingAttachments);
+    if (!success) {
+      setValue(content);
+      setAttachments(pendingAttachments);
+    }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -89,8 +98,74 @@ export function ChatInput() {
     }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      submit();
+      void submit();
     }
+  }
+
+  async function addFiles(files: FileList | File[]) {
+    const fileItems = Array.from(files);
+    if (!fileItems.length) return;
+    const available = MAX_IMAGE_ATTACHMENTS - attachments.length;
+    if (available <= 0) {
+      setError(new Error(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`), 'Too many image attachments');
+      return;
+    }
+
+    const accepted: File[] = [];
+    for (const file of fileItems) {
+      if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.type as ImageAttachment['mime_type'])) {
+        setError(new Error(`Unsupported file type: ${file.type || file.name}`), 'Unsupported image type');
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setError(new Error(`${file.name || 'Image'} is larger than 10 MB.`), 'Image too large');
+        continue;
+      }
+      accepted.push(file);
+    }
+
+    if (accepted.length > available) {
+      setError(new Error(`Only ${available} more image${available === 1 ? '' : 's'} can be attached.`), 'Too many image attachments');
+    }
+    const next = await Promise.all(accepted.slice(0, available).map(fileToAttachment));
+    if (next.length) setAttachments((current) => [...current, ...next]);
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }
+
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.currentTarget.files;
+    if (files) void addFiles(files);
+    event.currentTarget.value = '';
+  }
+
+  function onDragOver(event: DragEvent<HTMLFormElement>) {
+    if (!hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    setDragActive(true);
+  }
+
+  function onDragLeave(event: DragEvent<HTMLFormElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragActive(false);
+    }
+  }
+
+  function onDrop(event: DragEvent<HTMLFormElement>) {
+    if (!hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    setDragActive(false);
+    void addFiles(event.dataTransfer.files);
+  }
+
+  function onPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (files.length) void addFiles(files);
   }
 
   function updateValue(nextValue: string, nextCursor: number) {
@@ -147,6 +222,9 @@ export function ChatInput() {
       ref={formRef}
       className={`composer-shell ${isCompact ? 'compact' : 'expanded'}`}
       onSubmit={submit}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       onFocus={() => setIsFocused(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
@@ -155,20 +233,32 @@ export function ChatInput() {
       }}
     >
       <div className="composer-card">
+        {dragActive ? <div className="composer-drag-overlay">Drop images to attach</div> : null}
         <CommandPalette mode={mode} token={activeToken?.token ?? ''} onPick={pickSuggestion} />
+        <AttachmentPreview attachments={attachments} onRemove={removeAttachment} />
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(event) => updateValue(event.target.value, event.target.selectionStart)}
           onKeyDown={onKeyDown}
           onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+          onPaste={onPaste}
           onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
           placeholder="Ask anything, use @agent or /command"
           rows={2}
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ALLOWED_IMAGE_MIME_TYPES.join(',')}
+          multiple
+          className="sr-only"
+          tabIndex={-1}
+          onChange={onFileChange}
+        />
         <div className="composer-toolbar">
           <div className="composer-tools" aria-label="Composer tools">
-            <button type="button" title="Attachments coming later" disabled>
+            <button type="button" title="Attach images" onClick={() => fileInputRef.current?.click()} disabled={!currentSession || sending}>
               <Paperclip size={15} />
             </button>
             <button type="button" title="Mention an agent" onClick={() => insertTrigger('@')}>
@@ -241,6 +331,22 @@ export function ChatInput() {
   );
 }
 
+function AttachmentPreview({ attachments, onRemove }: { attachments: ImageAttachment[]; onRemove: (id: string) => void }) {
+  if (!attachments.length) return null;
+  return (
+    <div className={`composer-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
+      {attachments.map((attachment) => (
+        <figure className="composer-attachment" key={attachment.id}>
+          <img src={attachment.data_url} alt={attachment.name || 'Attached image'} />
+          <button type="button" onClick={() => onRemove(attachment.id)} title={`Remove ${attachment.name || 'image'}`}>
+            <X size={14} />
+          </button>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
 type ComposerCapabilitySource = {
   session?: Session;
   agents: Agent[];
@@ -307,4 +413,57 @@ function getActiveToken(value: string, cursorPosition: number): { token: string;
   if (!token.startsWith('@') && !token.startsWith('/')) return null;
 
   return { token, start: tokenStart, end: cursor };
+}
+
+const ALLOWED_IMAGE_MIME_TYPES: ImageAttachment['mime_type'][] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_ATTACHMENTS = 6;
+
+async function fileToAttachment(file: File): Promise<ImageAttachment> {
+  const dataUrl = await readFileAsDataUrl(file);
+  const dimensions = await readImageDimensions(dataUrl).catch(() => ({}));
+  return {
+    id: newClientId(),
+    type: 'image',
+    mime_type: file.type as ImageAttachment['mime_type'],
+    name: file.name || 'image',
+    size: file.size,
+    data_url: dataUrl,
+    ...dimensions,
+  };
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read image.'));
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Failed to read image.'));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function readImageDimensions(dataUrl: string): Promise<Pick<ImageAttachment, 'width' | 'height'>> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth || undefined, height: image.naturalHeight || undefined });
+    image.onerror = () => reject(new Error('Image dimensions unavailable.'));
+    image.src = dataUrl;
+  });
+}
+
+function hasFiles(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes('Files');
+}
+
+function newClientId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

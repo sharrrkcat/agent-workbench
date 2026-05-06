@@ -216,6 +216,17 @@ export type ImagePayload = {
   caption?: string | null;
 };
 
+export type ImageAttachment = {
+  id: string;
+  type: 'image';
+  mime_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'image/svg+xml';
+  name: string;
+  size: number;
+  data_url: string;
+  width?: number;
+  height?: number;
+};
+
 export type ChatContentBlock =
   | { type: 'text'; text: string }
   | { type: 'markdown'; text: string }
@@ -238,6 +249,8 @@ export type Message = {
   client_status?: 'pending' | 'failed' | 'streaming';
   client_error?: AppError;
 };
+
+export type SendMessageAttachment = ImageAttachment;
 
 export type AppError = {
   code: string;

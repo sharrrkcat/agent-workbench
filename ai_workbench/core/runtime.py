@@ -22,7 +22,14 @@ class WorkbenchRuntime:
         self.command_runner = command_runner
         self.agent_runner = agent_runner
 
-    async def handle_input(self, session: Session, raw_input: str, input_message_id: str = "") -> RunResult:
+    async def handle_input(
+        self,
+        session: Session,
+        raw_input: str,
+        input_message_id: str = "",
+        attachments: list[dict] | None = None,
+    ) -> RunResult:
+        attachments = attachments or []
         route = self.router.route(session, raw_input)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message)
@@ -48,6 +55,7 @@ class WorkbenchRuntime:
                 session_id=route.session_id,
                 source_message_id=source_message_id,
                 display_input=route.raw_input,
+                attachments=attachments,
             )
             self._maybe_generate_session_title(session.session_id, route.args, result)
             return result

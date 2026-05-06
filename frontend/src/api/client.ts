@@ -15,6 +15,7 @@ import type {
   HealthDetails,
   RuntimeResponse,
   Session,
+  SendMessageAttachment,
 } from '../types';
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -111,10 +112,10 @@ export const api = {
       method: 'DELETE',
     }),
   listMessages: (sessionId: string) => request<Message[]>(`/api/sessions/${sessionId}/messages`),
-  sendMessage: (sessionId: string, content: string) =>
+  sendMessage: (sessionId: string, content: string, attachments: SendMessageAttachment[] = []) =>
     request<RuntimeResponse>(`/api/sessions/${sessionId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, attachments }),
     }),
   deleteMessage: (messageId: string) =>
     request<DeleteMessageResponse>(`/api/messages/${messageId}`, {

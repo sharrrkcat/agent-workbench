@@ -10,6 +10,12 @@ from ai_workbench.core.schema.run import RunStatus
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
 
+SVG_DATA_URL = (
+    "data:image/svg+xml;base64,"
+    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNjAiPjx0ZXh0IHg9IjgiIHk9IjM1Ij5vazwvdGV4dD48L3N2Zz4="
+)
+
+
 def make_client(response: str = "fake reply") -> TestClient:
     return TestClient(create_app(llm_runtime=FakeLLMRuntime(response=response), use_memory=True))
 
@@ -24,6 +30,17 @@ def post_message(client: TestClient, session_id: str, content: str) -> dict:
     response = client.post(f"/api/sessions/{session_id}/messages", json={"content": content})
     assert response.status_code == 200
     return response.json()
+
+
+def image_attachment(name: str = "image.svg", data_url: str = SVG_DATA_URL, size: int = 120, mime_type: str = "image/svg+xml") -> dict:
+    return {
+        "id": name,
+        "type": "image",
+        "mime_type": mime_type,
+        "name": name,
+        "size": size,
+        "data_url": data_url,
+    }
 
 
 def create_llm_profile(client: TestClient, alias: str = "myqwen3", enabled: bool = True) -> dict:
@@ -755,6 +772,99 @@ def test_list_messages_shows_user_and_output_messages() -> None:
     assert response.status_code == 200
     roles = [message["role"] for message in response.json()]
     assert roles == ["user", "assistant"]
+
+
+def test_user_message_can_save_single_image_attachment() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={"content": "see image", "attachments": [image_attachment()]},
+    )
+
+    assert response.status_code == 200
+    user_message = response.json()["messages"][0]
+    assert user_message["role"] == "user"
+    assert user_message["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
+
+
+def test_user_message_can_save_multiple_image_attachments() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={"content": "see images", "attachments": [image_attachment("one.svg"), image_attachment("two.svg")]},
+    )
+
+    assert response.status_code == 200
+    user_message = response.json()["messages"][0]
+    assert [item["name"] for item in user_message["metadata"]["attachments"]] == ["one.svg", "two.svg"]
+
+
+def test_user_message_rejects_non_image_attachment_mime() -> None:
+    client = make_client()
+    session = create_session(client)
+    attachment = image_attachment(mime_type="text/plain")
+    attachment["data_url"] = "data:text/plain;base64,aGVsbG8="
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={"content": "bad", "attachments": [attachment]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_ATTACHMENTS"
+
+
+def test_user_message_rejects_large_image_attachment() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={"content": "large", "attachments": [image_attachment(size=10 * 1024 * 1024 + 1)]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_ATTACHMENTS"
+
+
+def test_image_only_message_is_allowed_and_uses_llm_placeholder() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    session = create_session(client)
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={"content": "", "attachments": [image_attachment()]},
+    )
+
+    assert response.status_code == 200
+    user_message = response.json()["messages"][0]
+    assert user_message["content"] == ""
+    assert user_message["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
+    sent_text = "\n".join(message["content"] for message in llm.calls[-1]["messages"])
+    assert "User attached 1 image." in sent_text
+    assert SVG_DATA_URL not in sent_text
+
+
+def test_image_base64_api_reads_current_user_message_attachment() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={"content": "/image-base64", "attachments": [image_attachment()]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["messages"][0]["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
+    assert payload["messages"][-1]["command_name"] == "/image-base64"
+    assert payload["messages"][-1]["content"]["data_url"] == SVG_DATA_URL
 
 
 def test_list_messages_returns_markdown_content_as_plain_string() -> None:

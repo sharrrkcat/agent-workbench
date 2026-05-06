@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.core.attachments import validate_image_attachments
 from ai_workbench.core.llm_config import LLMConfigError
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -17,7 +18,8 @@ message_router = APIRouter(prefix="/api/messages", tags=["messages"])
 class CreateMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    content: str
+    content: str = ""
+    attachments: list[dict] = Field(default_factory=list)
 
 
 class InvokeActionRequest(BaseModel):
@@ -47,6 +49,13 @@ def list_messages(session_id: str, state: RuntimeState = Depends(get_state)) -> 
 async def create_message(session_id: str, payload: CreateMessageRequest, state: RuntimeState = Depends(get_state)) -> dict:
     session = _get_session_or_404(state, session_id)
     before_ids = {message.message_id for message in state.messages.list_messages(session_id)}
+    try:
+        attachments = validate_image_attachments(payload.attachments)
+    except ValueError as exc:
+        raise_error(400, "INVALID_ATTACHMENTS", str(exc) or "Invalid attachments.")
+
+    if not payload.content.strip() and not attachments:
+        raise_error(400, "EMPTY_MESSAGE", "Message content or an image attachment is required.")
 
     input_message_id = ""
     try:
@@ -61,6 +70,7 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
             role="user",
             content=payload.content,
             metadata={
+                "attachments": attachments,
                 "input_source": "command",
                 "invocation": {
                     "route_type": "command",
@@ -71,7 +81,12 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
         )
         input_message_id = user_message.message_id
 
-    result = await state.runtime.handle_input(session, payload.content, input_message_id=input_message_id)
+    result = await state.runtime.handle_input(
+        session,
+        payload.content,
+        input_message_id=input_message_id,
+        attachments=attachments,
+    )
     if not result.success and result.run_id:
         run = state.runs.get_run(result.run_id)
         if run.status == RunStatus.FAILED:

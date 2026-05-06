@@ -23,12 +23,16 @@ def test_command_registry_exposes_base64_commands() -> None:
         "/base64-decode",
         "/base64-image",
         "/base64-to-image",
+        "/image-base64",
+        "/base64-encode-image",
     }
     assert commands.get("/base64").capability_id == "base64"
     assert commands.get("/base64").method == "encode"
     assert commands.get("/base64-decode").method == "decode"
     assert commands.get("/base64-image").method == "decode_image"
     assert commands.get("/base64-to-image").method == "decode_image"
+    assert commands.get("/image-base64").method == "encode_image"
+    assert commands.get("/base64-encode-image").method == "encode_image"
 
 
 def test_duplicate_agent_id_fails() -> None:

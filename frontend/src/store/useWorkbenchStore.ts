@@ -17,6 +17,7 @@ import type {
   HealthDetails,
   RuntimeEvent,
   Session,
+  SendMessageAttachment,
 } from '../types';
 
 type WorkbenchState = {
@@ -63,7 +64,7 @@ type WorkbenchState = {
   refreshHealth: () => Promise<void>;
   loadRunEvents: (runId: string) => Promise<void>;
   applyRuntimeEvent: (event: RuntimeEvent) => void;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, attachments?: SendMessageAttachment[]) => Promise<boolean>;
   cancelActiveRun: () => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -362,10 +363,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  sendMessage: async (content: string) => {
+  sendMessage: async (content: string, attachments: SendMessageAttachment[] = []) => {
     const session = get().currentSession;
-    if (!session || !content.trim() || get().sending) return;
-    const optimisticMessage = createOptimisticUserMessage(session, content);
+    if (!session || (!content.trim() && !attachments.length) || get().sending) return false;
+    const optimisticMessage = createOptimisticUserMessage(session, content, attachments);
     set({
       messages: [...get().messages, optimisticMessage],
       sending: true,
@@ -373,12 +374,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       lastError: undefined,
     });
     try {
-      const result = await api.sendMessage(session.session_id, content);
+      const result = await api.sendMessage(session.session_id, content, attachments);
       await get().refreshCurrent();
       if (!result.success) {
         set({ error: undefined, lastError: undefined });
       }
       set({ sending: false, activeRunId: undefined });
+      return true;
     } catch (error) {
       const formatted = formatError(error, 'Message failed');
       set({
@@ -391,6 +393,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
             : message,
         ),
       });
+      return false;
     }
   },
 
@@ -544,7 +547,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 }));
 
-function createOptimisticUserMessage(session: Session, content: string): Message {
+function createOptimisticUserMessage(session: Session, content: string, attachments: SendMessageAttachment[]): Message {
   return {
     message_id: `optimistic-${newClientId()}`,
     session_id: session.session_id,
@@ -557,6 +560,7 @@ function createOptimisticUserMessage(session: Session, content: string): Message
     output_type: 'text',
     parent_message_id: null,
     available_actions: [],
+    metadata: { attachments },
     created_at: new Date().toISOString(),
     client_status: 'pending',
   };
@@ -669,7 +673,7 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
     if (message.run_id && fetchedRunIds.has(message.run_id)) return false;
     if (message.role === 'user' && message.client_status === 'pending' && hasFetchedReplacementUser(fetched, message)) return false;
     if (message.role !== 'user') return true;
-    return !fetched.some((candidate) => candidate.role === 'user' && candidate.content === message.content);
+    return !fetched.some((candidate) => candidate.role === 'user' && candidate.content === message.content && sameAttachmentIds(candidate, message));
   });
 
   return [...fetched, ...remaining];
@@ -683,11 +687,26 @@ function hasFetchedReplacementUser(fetched: Message[], pending: Message): boolea
   const pendingTime = parseServerTime(pending.created_at || '').getTime();
   return fetched.some((candidate) => {
     if (candidate.role !== 'user') return false;
-    if (candidate.content === pending.content) return true;
+    if (candidate.content === pending.content && sameAttachmentIds(candidate, pending)) return true;
     const candidateTime = parseServerTime(candidate.created_at || '').getTime();
     if (Number.isNaN(candidateTime) || Number.isNaN(pendingTime)) return false;
     return candidateTime >= pendingTime - 5000;
   });
+}
+
+function sameAttachmentIds(left: Message, right: Message): boolean {
+  const leftIds = attachmentIds(left);
+  const rightIds = attachmentIds(right);
+  if (leftIds.length !== rightIds.length) return false;
+  return leftIds.every((id, index) => id === rightIds[index]);
+}
+
+function attachmentIds(message: Message): string[] {
+  const attachments = message.metadata?.attachments;
+  if (!Array.isArray(attachments)) return [];
+  return attachments
+    .map((item) => (isRecord(item) && typeof item.id === 'string' ? item.id : ''))
+    .filter(Boolean);
 }
 
 function upsertDraftMessage(messages: Message[], draft: Message): Message[] {

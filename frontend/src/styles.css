@@ -1070,6 +1070,44 @@ input:disabled {
   object-fit: cover;
 }
 
+.message-attachments {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.message-attachments.single {
+  width: min(360px, 100%);
+}
+
+.message-attachments.multi {
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  max-width: min(420px, 100%);
+}
+
+.message-attachment {
+  margin: 0;
+  min-width: 0;
+}
+
+.message-attachment img {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: #191919;
+  object-fit: cover;
+}
+
+.message-attachments.single .message-attachment img {
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.message-attachments.multi .message-attachment img {
+  aspect-ratio: 1;
+}
+
 .rich-content {
   display: grid;
   gap: 12px;
@@ -1333,6 +1371,21 @@ input:disabled {
   pointer-events: auto;
 }
 
+.composer-drag-overlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(134, 239, 172, 0.55);
+  border-radius: 18px;
+  background: rgba(25, 44, 38, 0.86);
+  color: #bbf7d0;
+  font-size: 13px;
+  font-weight: 760;
+  pointer-events: none;
+}
+
 .composer-shell.compact .composer-card {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -1372,6 +1425,68 @@ input:disabled {
 
 .composer-card textarea::placeholder {
   color: rgba(255, 255, 255, 0.42);
+}
+
+.composer-attachments {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+}
+
+.composer-attachments.single {
+  overflow-x: visible;
+}
+
+.composer-attachment {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.composer-attachments.single .composer-attachment {
+  width: min(230px, 58vw);
+}
+
+.composer-attachments.multi .composer-attachment {
+  width: 78px;
+}
+
+.composer-attachment img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: #191919;
+  object-fit: cover;
+}
+
+.composer-attachments.single .composer-attachment img {
+  aspect-ratio: 4 / 3;
+}
+
+.composer-attachment button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(245, 245, 245, 0.94);
+  color: #171717;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.composer-attachment button:hover {
+  background: #ffffff;
 }
 
 .composer-card:focus-within {

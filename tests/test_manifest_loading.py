@@ -26,12 +26,14 @@ def test_capability_manifest_loads() -> None:
 
     assert isinstance(capability, CapabilitySchema)
     assert capability.id == "base64"
-    assert {method.id for method in capability.methods} == {"encode", "decode", "decode_image"}
+    assert {method.id for method in capability.methods} == {"encode", "decode", "decode_image", "encode_image"}
     assert {command.name for command in capability.commands} == {
         "/base64",
         "/base64-decode",
         "/base64-image",
         "/base64-to-image",
+        "/image-base64",
+        "/base64-encode-image",
     }
     decode_image = next(method for method in capability.methods if method.id == "decode_image")
     assert decode_image.output == {"type": "image"}
