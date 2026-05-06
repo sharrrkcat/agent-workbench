@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 from pathlib import Path
 
+import pytest
+
 from ai_workbench.api.main import create_app
 from ai_workbench.core.config_schema import parse_config_schema
 from ai_workbench.core.schema.agent import AgentSchema
@@ -54,6 +56,32 @@ def test_create_app_returns_fastapi_app() -> None:
     app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
 
     assert app.title == "Agent Workbench"
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:6188",
+    ],
+)
+def test_cors_preflight_allows_localhost_and_loopback_any_port(origin: str) -> None:
+    response = make_client().options(
+        "/api/sessions",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert "GET" in response.headers["access-control-allow-methods"]
+    assert "content-type" in response.headers["access-control-allow-headers"].lower()
 
 
 def test_health_returns_version_database_and_schema_version() -> None:
