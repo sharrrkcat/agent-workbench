@@ -1,5 +1,5 @@
-import { Boxes, SlidersHorizontal } from 'lucide-react';
-import type { AgentConfig, CapabilityConfig } from '../../types';
+import { Boxes, Plus, SlidersHorizontal } from 'lucide-react';
+import type { AgentConfig, CapabilityConfig, LlmProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import type { SettingsSection } from './SettingsNav';
 import { initials } from './configUtils';
@@ -10,16 +10,22 @@ export function SettingsObjectList({
   capabilityConfigs,
   selectedAgentId,
   selectedCapabilityId,
+  llmProfiles = [],
+  selectedLlmItemId = 'global',
   onSelectAgent,
   onSelectCapability,
+  onSelectLlmItem,
 }: {
   section: SettingsSection;
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
   selectedAgentId?: string;
   selectedCapabilityId?: string;
+  llmProfiles?: LlmProfile[];
+  selectedLlmItemId?: string;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
+  onSelectLlmItem?: (itemId: string) => void;
 }) {
   if (section === 'agents') {
     return (
@@ -63,16 +69,35 @@ export function SettingsObjectList({
     return (
       <aside className="settings-object-list" aria-label="LLM settings">
         <ObjectListHeader title="LLM" count={1} />
-        <button type="button" className={`settings-object-row active ${llmEnabled ? '' : 'disabled'}`}>
+        <button
+          type="button"
+          className={`settings-object-row ${selectedLlmItemId === 'global' ? 'active' : ''} ${llmEnabled ? '' : 'disabled'}`}
+          onClick={() => onSelectLlmItem?.('global')}
+        >
           <div className="settings-object-avatar">
             <SlidersHorizontal size={16} />
           </div>
           <div className="settings-object-copy">
-            <strong>{llmConfig?.manifest_summary.name || 'LLM Runtime'}</strong>
-            <small>{llmConfig?.capability_id || 'llm'}</small>
+            <strong>Global fallback</strong>
+            <small>LLM Capability</small>
           </div>
           <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? 'Enabled' : 'Disabled'}</span>
         </button>
+        <ObjectListHeader title="LLM Profiles" count={llmProfiles.length} actionLabel="New profile" onAction={() => onSelectLlmItem?.('new')} />
+        <div className="settings-list-scroll">
+          {llmProfiles.length ? (
+            llmProfiles.map((profile) => (
+              <ProfileListItem
+                key={profile.id}
+                profile={profile}
+                active={selectedLlmItemId === profile.id}
+                onClick={() => onSelectLlmItem?.(profile.id)}
+              />
+            ))
+          ) : (
+            <div className="settings-empty-state compact">No saved profiles.</div>
+          )}
+        </div>
       </aside>
     );
   }
@@ -85,11 +110,49 @@ export function SettingsObjectList({
   );
 }
 
-function ObjectListHeader({ title, count }: { title: string; count: number }) {
+function ObjectListHeader({ title, count, actionLabel, onAction }: { title: string; count: number; actionLabel?: string; onAction?: () => void }) {
   return (
     <div className="settings-list-header">
       <span>{title}</span>
-      <small>{count}</small>
+      {actionLabel ? (
+        <button className="settings-list-action" type="button" onClick={onAction}>
+          <Plus size={13} />
+          {actionLabel}
+        </button>
+      ) : (
+        <small>{count}</small>
+      )}
+    </div>
+  );
+}
+
+function ProfileListItem({ profile, active, onClick }: { profile: LlmProfile; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className={`settings-object-row llm-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{profile.name}</strong>
+        <small>{profile.provider} · {profile.model_id || 'No model ID'}</small>
+        <CapabilityChips profile={profile} />
+      </div>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+    </button>
+  );
+}
+
+function CapabilityChips({ profile }: { profile: LlmProfile }) {
+  const chips = [
+    ['Vision', Boolean(profile.supports_vision)],
+    ['Tools', Boolean(profile.supports_tools)],
+    ['Reasoning', Boolean(profile.supports_reasoning)],
+    ['Streaming', Boolean(profile.supports_streaming)],
+    ['JSON', Boolean(profile.supports_json_mode)],
+  ] as const;
+  const enabled = chips.filter(([, value]) => value);
+  if (!enabled.length) return null;
+  return (
+    <div className="settings-chip-row compact">
+      {enabled.map(([label]) => <span key={label}>{label}</span>)}
     </div>
   );
 }

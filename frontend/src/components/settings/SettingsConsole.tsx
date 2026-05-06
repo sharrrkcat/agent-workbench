@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import type { LlmProfile } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type SettingsSection } from './SettingsNav';
 import { SettingsObjectList } from './SettingsObjectList';
@@ -9,8 +11,14 @@ export function SettingsConsole() {
   const [activeSection, setActiveSection] = useState<SettingsSection>('llm');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
+  const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);
+  const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('global');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
+
+  useEffect(() => {
+    void refreshLlmProfiles().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!selectedAgentId && agentConfigs.length) {
@@ -42,6 +50,9 @@ export function SettingsConsole() {
     if (section === 'capabilities' && !selectedCapabilityId && capabilityConfigs[0]) {
       setSelectedCapabilityId(capabilityConfigs[0].capability_id);
     }
+    if (section === 'llm' && !selectedLlmItemId) {
+      setSelectedLlmItemId('global');
+    }
   }
 
   function selectAgent(agentId: string) {
@@ -58,6 +69,29 @@ export function SettingsConsole() {
     setDetailDirty(false);
     setSelectedCapabilityId(capabilityId);
     setActiveDetailTab('overview');
+  }
+
+  async function refreshLlmProfiles(nextSelectedId?: string) {
+    const profiles = await api.listLlmProfiles();
+    setLlmProfiles(profiles);
+    if (nextSelectedId === 'global' || nextSelectedId === 'new') {
+      setSelectedLlmItemId(nextSelectedId);
+      return;
+    }
+    if (nextSelectedId && profiles.some((profile) => profile.id === nextSelectedId)) {
+      setSelectedLlmItemId(nextSelectedId);
+      return;
+    }
+    if (selectedLlmItemId !== 'global' && selectedLlmItemId !== 'new' && !profiles.some((profile) => profile.id === selectedLlmItemId)) {
+      setSelectedLlmItemId('global');
+    }
+  }
+
+  function selectLlmItem(itemId: string) {
+    if (itemId === selectedLlmItemId) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedLlmItemId(itemId);
   }
 
   const selectedAgentConfig = agentConfigs.find((config) => config.agent_id === selectedAgentId) || agentConfigs[0];
@@ -78,8 +112,11 @@ export function SettingsConsole() {
         capabilityConfigs={capabilityConfigs}
         selectedAgentId={selectedAgentConfig?.agent_id}
         selectedCapabilityId={selectedCapabilityConfig?.capability_id}
+        llmProfiles={llmProfiles}
+        selectedLlmItemId={selectedLlmItemId}
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
+        onSelectLlmItem={selectLlmItem}
       />
       <SettingsDetailPanel
         section={activeSection}
@@ -88,6 +125,9 @@ export function SettingsConsole() {
         selectedCapabilityConfig={selectedCapabilityConfig}
         commands={commands}
         health={health}
+        llmProfiles={llmProfiles}
+        selectedLlmItemId={selectedLlmItemId}
+        onLlmProfilesChanged={refreshLlmProfiles}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}
         onDirtyChange={setDetailDirty}

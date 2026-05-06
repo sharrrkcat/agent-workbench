@@ -1,10 +1,10 @@
 import { Database, Info, Save, Settings } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, HealthDetails } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, HealthDetails, LlmProfile } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
-import { LlmSettingsPanel } from './LlmSettingsPanel';
+import { LlmProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
@@ -17,6 +17,9 @@ export function SettingsDetailPanel({
   selectedCapabilityConfig,
   commands,
   health,
+  llmProfiles = [],
+  selectedLlmItemId = 'global',
+  onLlmProfilesChanged,
   activeTab,
   onTabChange,
   onDirtyChange,
@@ -27,6 +30,9 @@ export function SettingsDetailPanel({
   selectedCapabilityConfig?: CapabilityConfig;
   commands: Command[];
   health?: HealthDetails;
+  llmProfiles?: LlmProfile[];
+  selectedLlmItemId?: string;
+  onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -70,7 +76,16 @@ export function SettingsDetailPanel({
   if (section === 'llm') {
     return (
       <section className="settings-detail-panel">
-        {selectedCapabilityConfig ? <LlmDetail config={selectedCapabilityConfig} onDirtyChange={onDirtyChange} /> : null}
+        {selectedLlmItemId === 'global' ? (
+          selectedCapabilityConfig ? <LlmDetail config={selectedCapabilityConfig} onDirtyChange={onDirtyChange} /> : null
+        ) : (
+          <LlmProfileDetail
+            profiles={llmProfiles}
+            selectedProfileId={selectedLlmItemId}
+            onProfilesChanged={onLlmProfilesChanged || (async () => undefined)}
+            onDirtyChange={onDirtyChange}
+          />
+        )}
       </section>
     );
   }
@@ -144,7 +159,7 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
           <p>OpenAI-compatible local LLM configuration</p>
         </div>
         {localError ? <SettingsApiError error={localError} /> : null}
-        <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} onBusyChange={setLlmBusy} />
+        <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} showProfiles={false} onBusyChange={setLlmBusy} />
       </div>
     </form>
   );

@@ -118,7 +118,11 @@ After a successful test, available models are shown in the LLM settings area. Se
 
 ## LLM Profiles
 
-Saved LLM Profiles are reusable model connection configs. A profile has a user-facing `alias`, display `name`, provider, `base_url`, optional `api_key`, and provider model id stored as `model_id`.
+Saved LLM Profiles are reusable model connection configs. The user-facing fields are:
+
+- Name: the display name shown in Settings, such as `My Qwen3 Local`.
+- Model ID: the real provider model id, such as `ascat/Ministral-3-3b-it-ad`.
+- Profile key: the stable key used by Agent manifests. In the current API this maps to the stored `alias` field.
 
 Supported provider labels in this alpha:
 
@@ -129,12 +133,12 @@ Supported provider labels in this alpha:
 
 All provider labels currently use the same OpenAI-compatible runtime path.
 
-Settings -> LLM has two sections:
+Settings -> LLM follows the Settings Console three-column structure. The middle object list contains:
 
-- Global fallback config, backed by the existing `llm` CapabilityConfig.
-- Saved LLM Profiles, backed by the new `llm_profiles` SQLite table.
+- Global fallback, backed by the existing `llm` CapabilityConfig.
+- LLM Profiles, backed by the `llm_profiles` SQLite table.
 
-The profile editor can create, edit, delete, test, and refresh models for saved profiles. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
+The profile editor can create, edit, delete, test, and refresh models for saved profiles. New profiles generate a Profile key from Name by lowercasing, replacing whitespace with underscores, removing invalid characters, and appending a numeric suffix if needed. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
 
 Profile capability flags are available for display and future behavior:
 
@@ -146,7 +150,7 @@ Profile capability flags are available for display and future behavior:
 
 These flags do not change runtime behavior yet.
 
-Agent manifests can reference a profile by alias or id:
+Agent manifests can reference a profile by Profile key or id:
 
 ```yaml
 llm:

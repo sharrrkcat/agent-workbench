@@ -36,12 +36,14 @@ export function LlmSettingsPanel({
   values,
   onValuesChange,
   showConfig = true,
+  showProfiles = false,
   onBusyChange,
 }: {
   config: CapabilityConfig;
   values: ConfigValues;
   onValuesChange: (values: ConfigValues) => void;
   showConfig?: boolean;
+  showProfiles?: boolean;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const { testLlmConnection, testingLlm } = useWorkbenchStore();
@@ -89,8 +91,8 @@ export function LlmSettingsPanel({
   }, [config.updated_at]);
 
   useEffect(() => {
-    void loadProfiles();
-  }, []);
+    if (showProfiles) void loadProfiles();
+  }, [showProfiles]);
 
   useEffect(() => {
     if (selectedProfile) {
@@ -104,8 +106,8 @@ export function LlmSettingsPanel({
   }, [selectedProfile, selectedProfileId]);
 
   useEffect(() => {
-    onBusyChange?.(busy || profileBusy || profilesLoading);
-  }, [busy, onBusyChange, profileBusy, profilesLoading]);
+    onBusyChange?.(busy || (showProfiles && (profileBusy || profilesLoading)));
+  }, [busy, onBusyChange, profileBusy, profilesLoading, showProfiles]);
 
   async function loadProfiles(nextSelectedId?: string) {
     setProfilesLoading(true);
@@ -293,6 +295,7 @@ export function LlmSettingsPanel({
         {modelListError ? <SettingsApiError error={modelListError} /> : null}
       </section>
 
+      {showProfiles ? (
       <section className="detail-section">
         <div className="detail-section-heading">
           <h3>Saved LLM Profiles</h3>
@@ -365,6 +368,7 @@ export function LlmSettingsPanel({
           </div>
         </div>
       </section>
+      ) : null}
     </div>
   );
 }
@@ -397,6 +401,242 @@ function ResolvedLlmConfig({ status }: { status: LlmResolvedConfig }) {
         <dd>{status.api_key_set ? 'yes' : 'no'}</dd>
       </div>
     </dl>
+  );
+}
+
+export function LlmProfileDetail({
+  profiles,
+  selectedProfileId,
+  onProfilesChanged,
+  onDirtyChange,
+}: {
+  profiles: LlmProfile[];
+  selectedProfileId: string;
+  onProfilesChanged: (selectedProfileId?: string) => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const isNew = selectedProfileId === 'new';
+  const [draft, setDraft] = useState<LlmProfileInput>(() => (selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults));
+  const [keyTouched, setKeyTouched] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [result, setResult] = useState<LlmTestResult | null>(null);
+
+  useEffect(() => {
+    setDraft(selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults);
+    setKeyTouched(false);
+    setModels([]);
+    setBusy(false);
+    setError(null);
+    setResult(null);
+  }, [selectedProfile, selectedProfileId]);
+
+  const baseDraft = selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults;
+  const dirty = stableConfigString(cleanProfileInput(draft)) !== stableConfigString(cleanProfileInput(baseDraft));
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  function updateDraft(patch: LlmProfileInput) {
+    const next = { ...draft, ...patch };
+    if (Object.prototype.hasOwnProperty.call(patch, 'name') && !keyTouched && isNew) {
+      next.alias = uniqueProfileKey(String(patch.name || ''), profiles);
+    }
+    setDraft(next);
+  }
+
+  async function saveProfile() {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = cleanProfileInput({
+        ...draft,
+        alias: draft.alias || uniqueProfileKey(String(draft.name || ''), profiles, selectedProfile?.id),
+      });
+      if (!String(payload.name || '').trim()) {
+        throw new Error('Name is required.');
+      }
+      const saved = selectedProfile
+        ? await api.patchLlmProfile(selectedProfile.id, payload)
+        : await api.createLlmProfile(payload);
+      await onProfilesChanged(saved.id);
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to save LLM profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteProfile() {
+    if (!selectedProfile) return;
+    if (!window.confirm(`Delete LLM profile "${selectedProfile.name}"?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteLlmProfile(selectedProfile.id);
+      await onProfilesChanged('global');
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to delete LLM profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testProfile() {
+    if (!selectedProfile) return;
+    setBusy(true);
+    setResult(null);
+    setError(null);
+    try {
+      const testResult = await api.testLlmProfile(selectedProfile.id);
+      setResult(testResult);
+      if (!testResult.success) {
+        setError({ code: testResult.error_code || 'LLM_CONNECTION_FAILED', message: testResult.message });
+      }
+      if (testResult.models?.length) setModels(testResult.models);
+    } catch (caught) {
+      setError(toSettingsError(caught, 'LLM profile connection test failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshProfileModels() {
+    if (!selectedProfile) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.listLlmProfileModels(selectedProfile.id);
+      setModels(response.models.map((model) => model.id).filter(Boolean));
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to list profile models.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!selectedProfile && !isNew) {
+    return <div className="settings-placeholder"><h2>LLM Profile</h2><p>Select a profile or create a new one.</p></div>;
+  }
+
+  return (
+    <form className="settings-detail-form" onSubmit={(event) => event.preventDefault()}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">{profileInitials(String(draft.name || 'LLM'))}</div>
+          <div>
+            <h2>{String(draft.name || 'New profile')}</h2>
+            <p>
+              <code>{String(draft.alias || 'profile_key')}</code>
+              <span>{String(draft.provider || 'openai_compatible')}</span>
+            </p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {dirty ? (
+            <button className="settings-primary-button" type="button" onClick={() => void saveProfile()} disabled={busy}>
+              <Save size={14} />
+              {busy ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
+          {selectedProfile ? (
+            <button className="settings-secondary-button danger" type="button" onClick={() => void deleteProfile()} disabled={busy}>
+              <Trash2 size={14} />
+              Delete
+            </button>
+          ) : null}
+          <ToggleSwitch checked={Boolean(draft.enabled)} onChange={(enabled) => updateDraft({ enabled })} disabled={busy} />
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {error ? <SettingsApiError error={error} /> : null}
+        <section className="detail-section">
+          <div className="detail-section-heading">
+            <h3>Connection</h3>
+            <div className="settings-button-row">
+              {selectedProfile ? (
+                <>
+                  <button className="settings-secondary-button" type="button" onClick={() => void testProfile()} disabled={busy}>
+                    <Zap size={14} />
+                    Test connection
+                  </button>
+                  <button className="settings-secondary-button" type="button" onClick={() => void refreshProfileModels()} disabled={busy}>
+                    <RefreshCw size={14} className={busy ? 'spin' : ''} />
+                    Refresh models
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div className="settings-config-form llm-profile-form">
+            <TextField label="Name" value={draft.name} onChange={(name) => updateDraft({ name })} disabled={busy} />
+            <label className="config-field settings-config-field">
+              <span>Provider</span>
+              <select value={draft.provider || 'openai_compatible'} onChange={(event) => updateDraft({ provider: event.target.value as LlmProfileInput['provider'] })} disabled={busy}>
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>{provider}</option>
+                ))}
+              </select>
+            </label>
+            <TextField label="Base URL" value={draft.base_url} onChange={(base_url) => updateDraft({ base_url })} disabled={busy} />
+            <TextField label="API key" value={draft.api_key} onChange={(api_key) => updateDraft({ api_key })} disabled={busy} secret />
+            <label className="config-field settings-config-field">
+              <span>Model ID</span>
+              <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy} />
+              {models.length ? (
+                <select value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy}>
+                  <option value="">Select refreshed model</option>
+                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              ) : null}
+            </label>
+            <NumberField label="Timeout" value={draft.timeout} onChange={(timeout) => updateDraft({ timeout })} disabled={busy} integer />
+          </div>
+          {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
+        </section>
+        <section className="detail-section">
+          <h3>Generation defaults</h3>
+          <div className="settings-config-form llm-profile-form">
+            <NumberField label="Temperature" value={draft.temperature} onChange={(temperature) => updateDraft({ temperature })} disabled={busy} />
+            <NumberField label="Top P" value={draft.top_p} onChange={(top_p) => updateDraft({ top_p })} disabled={busy} />
+            <NumberField label="Top K" value={draft.top_k} onChange={(top_k) => updateDraft({ top_k })} disabled={busy} integer />
+            <NumberField label="Max tokens" value={draft.max_tokens} onChange={(max_tokens) => updateDraft({ max_tokens })} disabled={busy} integer />
+          </div>
+        </section>
+        <section className="detail-section">
+          <h3>Capabilities</h3>
+          <div className="llm-profile-flags">
+            <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(supports_vision) => updateDraft({ supports_vision })} label="Vision" disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(supports_tools) => updateDraft({ supports_tools })} label="Tools" disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateDraft({ supports_reasoning })} label="Reasoning" disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(supports_streaming) => updateDraft({ supports_streaming })} label="Streaming" disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_json_mode)} onChange={(supports_json_mode) => updateDraft({ supports_json_mode })} label="JSON mode" disabled={busy} />
+          </div>
+        </section>
+        <section className="detail-section">
+          <h3>Advanced</h3>
+          <div className="settings-config-form llm-profile-form">
+            <label className="config-field settings-config-field">
+              <span>Profile key</span>
+              <input
+                type="text"
+                value={String(draft.alias ?? '')}
+                onChange={(event) => {
+                  setKeyTouched(true);
+                  updateDraft({ alias: sanitizeProfileKey(event.target.value) });
+                }}
+                disabled={busy}
+              />
+              <small>Used by agent manifests as llm.profile. This currently maps to API alias.</small>
+            </label>
+            <TextField label="Notes" value={draft.notes} onChange={(notes) => updateDraft({ notes })} disabled={busy} textarea />
+          </div>
+        </section>
+      </div>
+    </form>
   );
 }
 
@@ -552,15 +792,50 @@ function draftFromProfile(profile: LlmProfile): LlmProfileInput {
     top_k: profile.top_k ?? null,
     max_tokens: profile.max_tokens ?? null,
     timeout: profile.timeout ?? null,
-    supports_vision: profile.supports_vision,
-    supports_tools: profile.supports_tools,
-    supports_reasoning: profile.supports_reasoning,
-    supports_streaming: profile.supports_streaming,
-    supports_json_mode: profile.supports_json_mode,
+    supports_vision: Boolean(profile.supports_vision),
+    supports_tools: Boolean(profile.supports_tools),
+    supports_reasoning: Boolean(profile.supports_reasoning),
+    supports_streaming: Boolean(profile.supports_streaming),
+    supports_json_mode: Boolean(profile.supports_json_mode),
     notes: profile.notes || '',
   };
 }
 
 function cleanProfileInput(input: LlmProfileInput): LlmProfileInput {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as LlmProfileInput;
+}
+
+export function sanitizeProfileKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/-+/g, '-');
+}
+
+export function uniqueProfileKey(name: string, profiles: LlmProfile[], currentProfileId?: string): string {
+  const base = sanitizeProfileKey(name) || 'profile';
+  const existing = new Set(
+    profiles
+      .filter((profile) => profile.id !== currentProfileId)
+      .map((profile) => profile.alias),
+  );
+  if (!existing.has(base)) return base;
+  let index = 2;
+  while (existing.has(`${base}_${index}`)) {
+    index += 1;
+  }
+  return `${base}_${index}`;
+}
+
+function profileInitials(value: string): string {
+  return value
+    .replace(/[/_-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join('');
 }
