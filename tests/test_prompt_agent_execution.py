@@ -15,6 +15,8 @@ from ai_workbench.core.stores import LLMProfileStore, MessageStore, RunStore, Se
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PNG_DATA_URL = "data:image/png;base64,aGVsbG8="
+JPEG_DATA_URL = "data:image/jpeg;base64,aGVsbG8="
 
 
 class FakeLLMRuntime:
@@ -267,18 +269,31 @@ def add_profile(
     fixture: PromptRuntimeFixture,
     supports_streaming: bool = True,
     supports_reasoning: bool = False,
+    supports_vision: bool = False,
 ) -> LLMProfileSchema:
     profile = LLMProfileSchema(
-        id=f"profile-{supports_streaming}-{supports_reasoning}",
-        alias=f"profile_{supports_streaming}_{supports_reasoning}",
+        id=f"profile-{supports_streaming}-{supports_reasoning}-{supports_vision}",
+        alias=f"profile_{supports_streaming}_{supports_reasoning}_{supports_vision}",
         name="Streaming profile" if supports_streaming else "Non-streaming profile",
         base_url="http://localhost:1234/v1",
         model_id="fake-model",
         supports_streaming=supports_streaming,
         supports_reasoning=supports_reasoning,
+        supports_vision=supports_vision,
     )
     fixture.llm_profiles.create(profile)
     return profile
+
+
+def image_attachment(name: str = "image.png", data_url: str = PNG_DATA_URL, mime_type: str = "image/png") -> dict:
+    return {
+        "id": name,
+        "type": "image",
+        "mime_type": mime_type,
+        "name": name,
+        "size": 5,
+        "data_url": data_url,
+    }
 
 
 def test_nonstream_llm_result_parses_reasoning_content_separately() -> None:
@@ -358,6 +373,127 @@ def test_prompt_agent_uses_non_streaming_when_profile_does_not_support_streaming
     assert message.content == "complete"
     assert message.metadata["llm_metrics"]["streamed"] is False
     assert message.metadata["llm_metrics"]["usage_source"] == "estimated"
+
+
+def test_vision_profile_sends_text_and_single_image_as_content_parts() -> None:
+    llm = FakeLLMRuntime(response="vision reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_vision=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "what is this?", attachments=[image_attachment()]))
+    sent = llm.calls[0]["messages"][-1]
+    run_metadata = fixture.runs.get_run(result.run_id).metadata
+    assistant = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert sent["role"] == "user"
+    assert sent["content"] == [
+        {"type": "text", "text": "what is this?"},
+        {"type": "image_url", "image_url": {"url": PNG_DATA_URL}},
+    ]
+    assert run_metadata["vision_input"] == {"supported": True, "images_attached": 1, "images_sent": 1, "images_ignored": 0}
+    assert assistant.metadata["vision_input"] == run_metadata["vision_input"]
+
+
+def test_vision_profile_sends_multiple_images() -> None:
+    llm = FakeLLMRuntime(response="vision reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_vision=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    run(
+        fixture.runtime.handle_input(
+            session,
+            "compare these",
+            attachments=[
+                image_attachment("one.png", PNG_DATA_URL, "image/png"),
+                image_attachment("two.jpg", JPEG_DATA_URL, "image/jpeg"),
+            ],
+        )
+    )
+    content = llm.calls[0]["messages"][-1]["content"]
+
+    assert content[0] == {"type": "text", "text": "compare these"}
+    assert [part["image_url"]["url"] for part in content[1:]] == [PNG_DATA_URL, JPEG_DATA_URL]
+
+
+def test_vision_profile_uses_default_text_for_image_only_message() -> None:
+    llm = FakeLLMRuntime(response="vision reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_vision=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    run(fixture.runtime.handle_input(session, "", attachments=[image_attachment()]))
+    content = llm.calls[0]["messages"][-1]["content"]
+
+    assert content == [
+        {"type": "text", "text": "Please analyze the attached image."},
+        {"type": "image_url", "image_url": {"url": PNG_DATA_URL}},
+    ]
+
+
+def test_non_vision_profile_does_not_send_data_url_and_adds_placeholder() -> None:
+    llm = FakeLLMRuntime(response="text reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_vision=False)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "what is this?", attachments=[image_attachment()]))
+    sent = llm.calls[0]["messages"][-1]
+    assistant = fixture.messages.list_messages(session.session_id)[-1]
+    user = fixture.messages.list_messages(session.session_id)[0]
+
+    assert result.success is True
+    assert sent["content"] == "what is this?\n\nUser attached 1 image, but the selected model does not support vision."
+    assert PNG_DATA_URL not in sent["content"]
+    assert assistant.metadata["vision_input"] == {"supported": False, "images_attached": 1, "images_sent": 0, "images_ignored": 1}
+    assert user.metadata["attachments"][0]["data_url"] == PNG_DATA_URL
+
+
+def test_context_does_not_inject_historical_image_data_urls() -> None:
+    llm = FakeLLMRuntime(response="next")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_vision=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="user",
+        content="old image",
+        metadata={"attachments": [image_attachment()]},
+    )
+
+    run(fixture.runtime.handle_input(session, "new text"))
+    sent = llm.calls[0]["messages"]
+
+    assert {"role": "user", "content": "old image"} in sent
+    assert all(PNG_DATA_URL not in str(message["content"]) for message in sent)
+
+
+def test_streaming_prompt_agent_uses_vision_messages() -> None:
+    llm = FakeStreamingLLMRuntime(chunks=["vision"])
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=True, supports_vision=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "describe", attachments=[image_attachment()]))
+    content = llm.calls[0]["messages"][-1]["content"]
+
+    assert result.success is True
+    assert llm.calls[0]["stream"] is True
+    assert content[1] == {"type": "image_url", "image_url": {"url": PNG_DATA_URL}}
 
 
 def test_nonstream_prompt_agent_saves_reasoning_metadata() -> None:

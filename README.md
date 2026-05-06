@@ -351,7 +351,21 @@ In this alpha, images are stored directly as data URLs in `message.metadata.atta
 
 Supported MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`. The current limits are 10 MB per image and 6 images per message.
 
-Attached images render in the composer preview and in user message bubbles. They are not sent to vision models yet, even when the selected LLM profile has `supports_vision=true`. The context builder sends text only; image-only user messages enter LLM context as a short placeholder such as `User attached 1 image.` and never include image base64.
+Attached images render in the composer preview and in user message bubbles. Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; this uses the final resolved config after session profile overrides, Agent manifest settings, LLM Capability config, and environment fallback. When Vision is disabled, images remain visible in the user message but image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
+
+Vision input currently uses OpenAI-compatible content parts and sends only images attached to the current user message:
+
+```json
+{
+  "role": "user",
+  "content": [
+    { "type": "text", "text": "What is in this image?" },
+    { "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } }
+  ]
+}
+```
+
+Historical image attachments are not resent in LLM context yet. They remain stored in message metadata and render in the UI, but only their text or placeholder enters normal text context.
 
 Use `/image-base64` or `/base64-encode-image` on a message with image attachments to return the selected attachment as JSON containing the data URL and raw base64. Pass a 1-based index to select another image, for example `/image-base64 2`. Use `/base64-image` or `/base64-to-image` to decode base64 back into a renderable image command output.
 
@@ -363,7 +377,7 @@ Use `/image-base64` or `/base64-encode-image` on a message with image attachment
 - No secret encryption.
 - No external app integrations.
 - No function calling, MCP, or LLM automatic tool selection.
-- Image input stores data URLs in SQLite metadata; there is no file-system attachment store, cloud upload, image editing, OCR, or vision model call yet.
+- Image input stores data URLs in SQLite metadata; there is no file-system attachment store, cloud upload, image editing, OCR, or historical image resend yet.
 - Script Agent visible streaming is not implemented yet; Script Agent LLM helpers still return final text.
 - Thought display is intentionally read-only and collapsed by default; there is no composer-side reasoning toggle or reasoning effort control yet.
 - WebSocket unavailable mode degrades to final HTTP refresh instead of live deltas.

@@ -846,7 +846,7 @@ def test_image_only_message_is_allowed_and_uses_llm_placeholder() -> None:
     assert user_message["content"] == ""
     assert user_message["metadata"]["attachments"][0]["data_url"] == SVG_DATA_URL
     sent_text = "\n".join(message["content"] for message in llm.calls[-1]["messages"])
-    assert "User attached 1 image." in sent_text
+    assert "User attached 1 image, but the selected model does not support vision." in sent_text
     assert SVG_DATA_URL not in sent_text
 
 

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.attachments import ImageAttachment
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
@@ -262,7 +263,16 @@ class AgentRunner:
         try:
             llm_config = self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
+            vision_input = _prepare_vision_messages(
+                messages=messages,
+                message_store=self.message_store,
+                current_user_message_id=current_user_message_id,
+                llm_config=llm_config,
+            )
+            messages = vision_input["messages"]
+            context_warnings = [*context.warnings, *vision_input["warnings"]]
             self._record_llm_resolution(run.run_id, llm_config)
+            self._record_vision_metadata(run.run_id, vision_input["metadata"])
             if _streaming_enabled(llm_config):
                 return await self._run_prompt_agent_streaming(
                     agent=agent,
@@ -274,8 +284,9 @@ class AgentRunner:
                     current_user_message_id=current_user_message_id,
                     prefill=prefill,
                     run=run,
-                    context_warnings=context.warnings,
+                    context_warnings=context_warnings,
                     llm_config=llm_config,
+                    vision_input=vision_input["metadata"],
                 )
             metrics_recorder = LLMMetricsRecorder(streamed=False)
             raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
@@ -321,17 +332,18 @@ class AgentRunner:
         source_user_message_id = current_user_message_id or original_user_message_id
         metadata = {
             "success": True,
-            "context_warnings": context.warnings,
+            "context_warnings": context_warnings,
             "original_user_message_id": original_user_message_id,
             "source_user_message_id": source_user_message_id,
             "prefill": prefill or {},
             "llm_resolution": _public_llm_resolution(llm_config),
             "llm_metrics": llm_metrics,
+            "vision_input": vision_input["metadata"],
             "reasoning": _reasoning_metadata(llm_config, llm_result.reasoning_content),
         }
         if llm_result.reasoning_content:
             metadata["reasoning_content"] = llm_result.reasoning_content
-        self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"])
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
@@ -389,6 +401,7 @@ class AgentRunner:
         run: RunSchema,
         context_warnings: list,
         llm_config,
+        vision_input: dict,
     ) -> RunResult:
         draft_message_id = f"draft-{run.run_id}"
         resolution = _public_llm_resolution(llm_config)
@@ -453,6 +466,7 @@ class AgentRunner:
                     context_warnings=context_warnings,
                     llm_config=llm_config,
                     llm_metrics=llm_metrics,
+                    vision_input=vision_input,
                     reasoning_content="".join(reasoning_parts),
                     interrupted=True,
                 )
@@ -471,7 +485,7 @@ class AgentRunner:
                     payload={"available_actions": message.available_actions},
                 )
             cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
-            self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
+            self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input)
             self.event_bus.emit(
                 "run_metrics",
                 session_id=session_id,
@@ -507,10 +521,11 @@ class AgentRunner:
             context_warnings=context_warnings,
             llm_config=llm_config,
             llm_metrics=llm_metrics,
+            vision_input=vision_input,
             reasoning_content="".join(reasoning_parts),
         )
         done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
-        self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
             "run_metrics",
@@ -553,6 +568,7 @@ class AgentRunner:
         context_warnings: list,
         llm_config,
         llm_metrics: dict,
+        vision_input: dict,
         reasoning_content: str = "",
         interrupted: bool = False,
     ):
@@ -566,6 +582,7 @@ class AgentRunner:
             "prefill": prefill or {},
             "llm_resolution": _public_llm_resolution(llm_config),
             "llm_metrics": llm_metrics,
+            "vision_input": vision_input,
             "reasoning": _reasoning_metadata(llm_config, reasoning_content),
         }
         if reasoning_content:
@@ -618,11 +635,19 @@ class AgentRunner:
         metadata["llm_resolution"] = _public_llm_resolution(llm_config)
         self.run_store.update_metadata(run_id, metadata)
 
-    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict) -> None:
+    def _record_vision_metadata(self, run_id: str, vision_input: dict) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["vision_input"] = vision_input
+        self.run_store.update_metadata(run_id, metadata)
+
+    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict, vision_input: dict | None = None) -> None:
         run = self.run_store.get_run(run_id)
         metadata = dict(run.metadata)
         metadata["llm_resolution"] = _public_llm_resolution(llm_config)
         metadata["llm_metrics"] = llm_metrics
+        if vision_input is not None:
+            metadata["vision_input"] = vision_input
         self.run_store.update_metadata(run_id, metadata)
 
     def _is_cancelled(self, run_id: str) -> bool:
@@ -721,6 +746,101 @@ def _public_llm_resolution(llm_config) -> dict:
 def _streaming_enabled(llm_config) -> bool:
     values = getattr(llm_config, "values", {}) or {}
     return values.get("supports_streaming") is True
+
+
+def _prepare_vision_messages(messages: list, message_store: MessageStore, current_user_message_id: str, llm_config) -> dict:
+    supported = bool((getattr(llm_config, "values", {}) or {}).get("supports_vision", False))
+    attachments, warnings = _current_image_attachments(message_store, current_user_message_id)
+    valid_attachments = [item for item in attachments if item.get("valid")]
+    images_attached = len(attachments)
+    images_sent = len(valid_attachments) if supported else 0
+    images_ignored = images_attached - images_sent
+    metadata = {
+        "supported": supported,
+        "images_attached": images_attached,
+        "images_sent": images_sent,
+        "images_ignored": images_ignored,
+    }
+    if warnings:
+        metadata["warnings"] = warnings
+    if not images_attached:
+        return {"messages": messages, "metadata": metadata, "warnings": warnings}
+
+    next_messages = [dict(message) for message in messages]
+    target_index = _last_user_message_index(next_messages)
+    if target_index is None:
+        return {"messages": next_messages, "metadata": metadata, "warnings": warnings}
+
+    current = next_messages[target_index]
+    text = str(current.get("content") or "")
+    if text == _generic_image_placeholder(images_attached):
+        text = ""
+    if supported and valid_attachments:
+        content_parts: list[dict[str, Any]] = [{"type": "text", "text": text.strip() or "Please analyze the attached image."}]
+        content_parts.extend(
+            {"type": "image_url", "image_url": {"url": attachment["data_url"]}}
+            for attachment in valid_attachments
+        )
+        current["content"] = content_parts
+    elif images_attached:
+        current["content"] = _append_image_placeholder(text, images_attached)
+    return {"messages": next_messages, "metadata": metadata, "warnings": warnings}
+
+
+def _current_image_attachments(message_store: MessageStore, current_user_message_id: str) -> tuple[list[dict[str, Any]], list[str]]:
+    if not current_user_message_id:
+        return [], []
+    try:
+        message = message_store.get_message(current_user_message_id)
+    except KeyError:
+        return [], ["current user message was not found for vision input"]
+    raw_attachments = (message.metadata or {}).get("attachments")
+    if not isinstance(raw_attachments, list):
+        return [], []
+
+    attachments: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for index, raw_attachment in enumerate(raw_attachments, start=1):
+        if not isinstance(raw_attachment, dict) or raw_attachment.get("type") != "image":
+            continue
+        try:
+            attachment = ImageAttachment.model_validate(raw_attachment)
+            if _vision_data_url_mime_type(attachment.data_url) != attachment.mime_type:
+                raise ValueError("Attachment MIME type does not match data_url MIME type.")
+            data = attachment.model_dump(exclude_none=True)
+            data["valid"] = True
+            attachments.append(data)
+        except Exception as exc:
+            attachments.append({"valid": False})
+            warnings.append(f"image attachment {index} was ignored: {str(exc) or 'invalid image attachment'}")
+    return attachments, warnings
+
+
+def _last_user_message_index(messages: list) -> int | None:
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].get("role") == "user":
+            return index
+    return None
+
+
+def _vision_data_url_mime_type(data_url: str) -> str:
+    prefix = str(data_url or "").split(";", 1)[0]
+    if not prefix.startswith("data:"):
+        return ""
+    return prefix.removeprefix("data:").lower()
+
+
+def _append_image_placeholder(text: str, image_count: int) -> str:
+    suffix = "s" if image_count != 1 else ""
+    placeholder = f"User attached {image_count} image{suffix}, but the selected model does not support vision."
+    if text.strip():
+        return f"{text.rstrip()}\n\n{placeholder}"
+    return placeholder
+
+
+def _generic_image_placeholder(image_count: int) -> str:
+    suffix = "s" if image_count != 1 else ""
+    return f"User attached {image_count} image{suffix}."
 
 
 async def _call_chat_nonstream(llm_runtime: object, messages: list, model_config: dict) -> Any:
