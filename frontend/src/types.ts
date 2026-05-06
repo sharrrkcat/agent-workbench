@@ -3,7 +3,26 @@ export type AgentAction = {
   label?: string | null;
   description: string;
   instruction?: string | null;
+  input_schema?: Record<string, unknown>;
+  context_policy?: ContextPolicy | null;
+  attach_to?: string | null;
   callable: boolean;
+};
+
+export type ContextPolicy = {
+  mode: 'none' | 'current_message' | 'recent_messages' | 'session' | 'selected_message';
+  max_messages?: number | null;
+  max_chars?: number | null;
+  include_system_prompt?: boolean;
+  include_attachments?: 'none' | 'explicit';
+  include_last_agent_message?: boolean;
+  include_original_user_message?: boolean;
+};
+
+export type ModelLifecyclePolicy = {
+  load: 'on_demand';
+  unload: 'never' | 'after_run' | 'manual';
+  unload_failure: 'ignore' | 'warn' | 'fail';
 };
 
 export type Agent = {
@@ -12,7 +31,12 @@ export type Agent = {
   type: 'prompt' | 'script';
   description: string;
   avatar: string;
+  entry?: string | null;
   actions: AgentAction[];
+  model?: Record<string, unknown> | null;
+  context_policy?: ContextPolicy;
+  model_lifecycle?: ModelLifecyclePolicy;
+  capabilities?: string[];
   enabled: boolean;
 };
 

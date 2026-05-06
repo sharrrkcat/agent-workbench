@@ -14,7 +14,12 @@ def serialize_agent(agent, enabled: bool = True) -> dict:
         "type": agent.type,
         "description": agent.description,
         "avatar": agent.avatar,
+        "entry": agent.entry,
         "actions": [action.model_dump() for action in agent.actions],
+        "model": agent.model,
+        "context_policy": agent.context_policy.model_dump(),
+        "model_lifecycle": agent.model_lifecycle.model_dump(),
+        "capabilities": agent.capabilities,
         "enabled": enabled,
     }
 

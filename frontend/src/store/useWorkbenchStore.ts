@@ -184,6 +184,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ savingConfigId: undefined });
     } catch (error) {
       set({ ...formatError(error, 'Failed to update agent config'), savingConfigId: undefined });
+      throw error;
     }
   },
 
@@ -195,6 +196,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ savingConfigId: undefined });
     } catch (error) {
       set({ ...formatError(error, 'Failed to update capability config'), savingConfigId: undefined });
+      throw error;
     }
   },
 

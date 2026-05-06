@@ -1,6 +1,6 @@
 import { ArrowLeft, Bot, Boxes, Settings } from 'lucide-react';
 import { ErrorBanner } from './ErrorBanner';
-import { SettingsPanel } from './SettingsPanel';
+import { SettingsConsole } from './settings/SettingsConsole';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function SettingsPage({ onBack }: { onBack: () => void }) {
@@ -34,7 +34,7 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
         </div>
       </header>
       <ErrorBanner />
-      <SettingsPanel showTitle={false} />
+      <SettingsConsole />
     </main>
   );
 }
