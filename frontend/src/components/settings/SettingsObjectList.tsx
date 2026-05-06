@@ -1,6 +1,7 @@
 import { Boxes, Plus, SlidersHorizontal } from 'lucide-react';
 import type { AgentConfig, CapabilityConfig, LlmProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
+import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import type { SettingsSection } from './SettingsNav';
 import { initials } from './configUtils';
 
@@ -133,27 +134,10 @@ function ProfileListItem({ profile, active, onClick }: { profile: LlmProfile; ac
       <div className="settings-object-copy">
         <strong>{profile.name}</strong>
         <small>{profile.provider} · {profile.model_id || 'No model ID'}</small>
-        <CapabilityChips profile={profile} />
+        <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons" />
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>
-  );
-}
-
-function CapabilityChips({ profile }: { profile: LlmProfile }) {
-  const chips = [
-    ['Vision', Boolean(profile.supports_vision)],
-    ['Tools', Boolean(profile.supports_tools)],
-    ['Reasoning', Boolean(profile.supports_reasoning)],
-    ['Streaming', Boolean(profile.supports_streaming)],
-    ['JSON', Boolean(profile.supports_json_mode)],
-  ] as const;
-  const enabled = chips.filter(([, value]) => value);
-  if (!enabled.length) return null;
-  return (
-    <div className="settings-chip-row compact">
-      {enabled.map(([label]) => <span key={label}>{label}</span>)}
-    </div>
   );
 }
 

@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 export function ToggleSwitch({
   checked,
   onChange,
@@ -6,7 +8,7 @@ export function ToggleSwitch({
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label?: string;
+  label?: ReactNode;
   disabled?: boolean;
 }) {
   return (

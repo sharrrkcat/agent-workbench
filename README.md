@@ -166,9 +166,8 @@ Profile capability flags are available for display and future behavior:
 - Tools
 - Reasoning
 - Streaming
-- JSON mode
 
-These flags do not change runtime behavior yet.
+These flags are currently used primarily for UI display and future feature preparation. Vision, Tools, Reasoning, and Streaming runtime behavior will be connected incrementally in later work. JSON mode is not shown as a user-configurable capability for now because provider support differs and there is no unified runtime behavior yet.
 
 Agent manifests can reference a profile by Profile key or id:
 

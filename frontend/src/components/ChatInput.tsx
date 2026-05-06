@@ -1,8 +1,9 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Brain, Check, ChevronDown, Eye, Hammer, Loader2, Paperclip, Send, Slash } from 'lucide-react';
+import { AtSign, Check, ChevronDown, Loader2, Paperclip, Send, Slash } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, CapabilityConfig, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
+import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 
 export function ChatInput() {
   const [value, setValue] = useState('');
@@ -140,7 +141,6 @@ export function ChatInput() {
     llmProfiles,
     selectedAgentId: currentSession?.default_agent_id,
   });
-  const hasCapabilities = capabilities.vision || capabilities.tools || capabilities.reasoning;
 
   return (
     <form
@@ -179,7 +179,7 @@ export function ChatInput() {
             </button>
           </div>
           <div className="composer-actions">
-            {hasCapabilities ? <CapabilityIcons capabilities={capabilities} /> : null}
+            <ModelCapabilityIcons capabilities={capabilities} />
             <div ref={modelSelectorRef} className="model-selector-wrap">
               <button
                 className="model-selector-pill"
@@ -235,12 +235,6 @@ export function ChatInput() {
   );
 }
 
-type ComposerCapabilities = {
-  vision: boolean;
-  tools: boolean;
-  reasoning: boolean;
-};
-
 type ComposerCapabilitySource = {
   session?: Session;
   agents: Agent[];
@@ -249,39 +243,14 @@ type ComposerCapabilitySource = {
   selectedAgentId?: string | null;
 };
 
-function CapabilityIcons({ capabilities }: { capabilities: ComposerCapabilities }) {
-  return (
-    <div className="capability-icons" aria-label="Current model capabilities">
-      {capabilities.vision ? (
-        <span className="capability-icon vision" title="Vision supported" aria-label="Vision supported">
-          <Eye size={14} aria-hidden="true" />
-          <span>Vision</span>
-        </span>
-      ) : null}
-      {capabilities.tools ? (
-        <span className="capability-icon tools" title="Tools supported" aria-label="Tools supported">
-          <Hammer size={14} aria-hidden="true" />
-          <span>Tools</span>
-        </span>
-      ) : null}
-      {capabilities.reasoning ? (
-        <span className="capability-icon reasoning" title="Reasoning supported" aria-label="Reasoning supported">
-          <Brain size={14} aria-hidden="true" />
-          <span>Reasoning</span>
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 export function getCurrentComposerCapabilities({
   session,
   agents,
   capabilityConfigs,
   llmProfiles,
   selectedAgentId,
-}: ComposerCapabilitySource): ComposerCapabilities {
-  const empty = { vision: false, tools: false, reasoning: false };
+}: ComposerCapabilitySource): ModelCapabilities {
+  const empty = { vision: false, tools: false, reasoning: false, streaming: false };
   const sessionProfile = findEnabledProfile(llmProfiles, session?.llm_profile_id);
   if (sessionProfile) return profileCapabilities(sessionProfile);
 
@@ -295,12 +264,8 @@ export function getCurrentComposerCapabilities({
   return fallbackProfile ? profileCapabilities(fallbackProfile) : empty;
 }
 
-function profileCapabilities(profile: LlmProfile): ComposerCapabilities {
-  return {
-    vision: Boolean(profile.supports_vision),
-    tools: Boolean(profile.supports_tools),
-    reasoning: Boolean(profile.supports_reasoning),
-  };
+function profileCapabilities(profile: LlmProfile): ModelCapabilities {
+  return capabilitiesFromProfile(profile);
 }
 
 function findEnabledProfile(profiles: LlmProfile[], profileRef?: string | null): LlmProfile | undefined {

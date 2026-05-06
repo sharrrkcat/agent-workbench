@@ -1320,6 +1320,12 @@ input:disabled {
   color: #86efac;
 }
 
+.capability-icon.streaming {
+  border-color: rgba(168, 85, 247, 0.26);
+  background: rgba(168, 85, 247, 0.11);
+  color: #d8b4fe;
+}
+
 .model-selector-pill {
   display: inline-flex;
   align-items: center;
@@ -2321,6 +2327,9 @@ input:disabled {
 }
 
 .settings-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   min-height: 0;
   overflow-y: auto;
   padding: 16px 18px 24px;
@@ -2583,6 +2592,52 @@ input:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 9px;
+}
+
+.settings-capability-icons {
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.settings-capability-icons .capability-icon {
+  width: 26px;
+  min-height: 24px;
+  padding: 0;
+  justify-content: center;
+}
+
+.llm-profile-row .capability-icons,
+.settings-object-copy .capability-icons {
+  overflow: visible;
+}
+
+.llm-profile-row .capability-icon {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.capability-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.capability-toggle-label.vision {
+  color: #fcd34d;
+}
+
+.capability-toggle-label.tools {
+  color: #93c5fd;
+}
+
+.capability-toggle-label.reasoning {
+  color: #86efac;
+}
+
+.capability-toggle-label.streaming {
+  color: #d8b4fe;
 }
 
 .settings-chip-row.compact {

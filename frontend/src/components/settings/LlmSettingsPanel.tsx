@@ -1,8 +1,9 @@
-import { Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
+import { Brain, Eye, Hammer, Plus, Radio, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { CapabilityConfig, LlmProfile, LlmProfileInput, LlmResolvedConfig, LlmTestResult } from '../../types';
+import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import { ConfigForm } from './ConfigForm';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { stableConfigString, type ConfigValues } from './configUtils';
@@ -320,7 +321,7 @@ export function LlmSettingsPanel({
                   <code>{profile.alias}</code> {profile.provider}
                 </span>
                 <small>{profile.model_id || 'No model selected'}</small>
-                <CapabilityChips profile={profile} />
+                <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons" />
               </button>
             ))}
           </div>
@@ -533,6 +534,7 @@ export function LlmProfileDetail({
               <code>{String(draft.alias || 'profile_key')}</code>
               <span>{String(draft.provider || 'openai_compatible')}</span>
             </p>
+            <ModelCapabilityIcons capabilities={capabilitiesFromDraft(draft)} className="settings-capability-icons" />
           </div>
         </div>
         <div className="settings-detail-actions">
@@ -609,11 +611,10 @@ export function LlmProfileDetail({
         <section className="detail-section">
           <h3>Capabilities</h3>
           <div className="llm-profile-flags">
-            <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(supports_vision) => updateDraft({ supports_vision })} label="Vision" disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(supports_tools) => updateDraft({ supports_tools })} label="Tools" disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateDraft({ supports_reasoning })} label="Reasoning" disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(supports_streaming) => updateDraft({ supports_streaming })} label="Streaming" disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_json_mode)} onChange={(supports_json_mode) => updateDraft({ supports_json_mode })} label="JSON mode" disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(supports_vision) => updateDraft({ supports_vision })} label={<CapabilityToggleLabel kind="vision" label="Vision" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(supports_tools) => updateDraft({ supports_tools })} label={<CapabilityToggleLabel kind="tools" label="Tools" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateDraft({ supports_reasoning })} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(supports_streaming) => updateDraft({ supports_streaming })} label={<CapabilityToggleLabel kind="streaming" label="Streaming" />} disabled={busy} />
           </div>
         </section>
         <section className="detail-section">
@@ -640,20 +641,13 @@ export function LlmProfileDetail({
   );
 }
 
-function CapabilityChips({ profile }: { profile: LlmProfile }) {
-  const chips = [
-    ['Vision', profile.supports_vision],
-    ['Tools', profile.supports_tools],
-    ['Reasoning', profile.supports_reasoning],
-    ['Streaming', profile.supports_streaming],
-    ['JSON', profile.supports_json_mode],
-  ] as const;
+function CapabilityToggleLabel({ kind, label }: { kind: 'vision' | 'tools' | 'reasoning' | 'streaming'; label: string }) {
+  const Icon = kind === 'vision' ? Eye : kind === 'tools' ? Hammer : kind === 'reasoning' ? Brain : Radio;
   return (
-    <div className="settings-chip-row compact">
-      {chips.filter(([, enabled]) => enabled).map(([label]) => (
-        <span key={label}>{label}</span>
-      ))}
-    </div>
+    <span className={`capability-toggle-label ${kind}`}>
+      <Icon size={13} aria-hidden="true" />
+      {label}
+    </span>
   );
 }
 
@@ -706,11 +700,10 @@ function ProfileForm({
       <NumberField label="Timeout" value={draft.timeout} onChange={(value) => set('timeout', value)} disabled={disabled} integer />
       <TextField label="Notes" value={draft.notes} onChange={(value) => set('notes', value)} disabled={disabled} textarea />
       <div className="llm-profile-flags">
-        <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(value) => set('supports_vision', value)} label="Vision" disabled={disabled} />
-        <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(value) => set('supports_tools', value)} label="Tools" disabled={disabled} />
-        <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(value) => set('supports_reasoning', value)} label="Reasoning" disabled={disabled} />
-        <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(value) => set('supports_streaming', value)} label="Streaming" disabled={disabled} />
-        <ToggleSwitch checked={Boolean(draft.supports_json_mode)} onChange={(value) => set('supports_json_mode', value)} label="JSON mode" disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(value) => set('supports_vision', value)} label={<CapabilityToggleLabel kind="vision" label="Vision" />} disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(value) => set('supports_tools', value)} label={<CapabilityToggleLabel kind="tools" label="Tools" />} disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(value) => set('supports_reasoning', value)} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning" />} disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(value) => set('supports_streaming', value)} label={<CapabilityToggleLabel kind="streaming" label="Streaming" />} disabled={disabled} />
       </div>
     </div>
   );
@@ -798,6 +791,15 @@ function draftFromProfile(profile: LlmProfile): LlmProfileInput {
     supports_streaming: Boolean(profile.supports_streaming),
     supports_json_mode: Boolean(profile.supports_json_mode),
     notes: profile.notes || '',
+  };
+}
+
+function capabilitiesFromDraft(draft: LlmProfileInput) {
+  return {
+    vision: Boolean(draft.supports_vision),
+    tools: Boolean(draft.supports_tools),
+    reasoning: Boolean(draft.supports_reasoning),
+    streaming: Boolean(draft.supports_streaming),
   };
 }
 
