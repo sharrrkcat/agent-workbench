@@ -328,7 +328,9 @@ Script Agents are local trusted Python code. They can call core helpers through 
 
 See [docs/AGENT_DEVELOPMENT.md](docs/AGENT_DEVELOPMENT.md) for Prompt Agent and Script Agent templates, the recommended `ctx.llm` and reply SDKs, `scripts/check_agents.py`, and command-line Agent testing with `scripts/run_agent.py`.
 
-The same guide covers frontend output rendering for `text`, `markdown`, and `json`, LLM JSON reliability patterns for small local models, and a practical Script Agent debug workflow.
+See [docs/CAPABILITY_DEVELOPMENT.md](docs/CAPABILITY_DEVELOPMENT.md) for Capability templates, command mapping, runtime method checks, `scripts/create_capability.py`, and command-line testing with `scripts/run_command.py`.
+
+The development guides cover output rendering for `text`, `markdown`, `json`, `image`, `image_gallery`, and `rich_content`, plus common strict-check failures and a practical CLI debug workflow.
 
 ## Image Input Alpha
 

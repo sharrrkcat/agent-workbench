@@ -30,16 +30,19 @@ def parse_target(value: str) -> tuple[str, str]:
 async def run_agent(
     target: str,
     text: str,
+    action: str | None = None,
     use_memory: bool = True,
     json_output: bool = False,
     show_trace: bool = False,
 ) -> int:
     agent_id, action_id = parse_target(target)
+    if action:
+        action_id = action
     state = build_runtime_state(root=ROOT, use_memory=use_memory)
     try:
         state.agents.get(agent_id)
     except KeyError:
-        payload = {"run": None, "events": [], "messages": [], "error": f"Unknown agent: {agent_id}"}
+        payload = {"run": None, "events": [], "messages": [], "result": None, "error": f"Unknown agent: {agent_id}"}
         _emit(payload, json_output=json_output, show_trace=show_trace)
         return 1
 
@@ -60,6 +63,7 @@ async def run_agent(
         "run": _dump_model(run) if run else None,
         "events": [_dump_model(event) for event in events],
         "messages": [_dump_model(message) for message in messages],
+        "result": _dump_model(result),
         "error": error,
     }
     _emit(payload, json_output=json_output, show_trace=show_trace)
@@ -70,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an Agent from the command line.")
     parser.add_argument("target", help="agent_id or agent_id:action_id")
     parser.add_argument("text", help="input text")
+    parser.add_argument("--action", help="action id to invoke")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument("--show-trace", action="store_true", help="show traceback/debug metadata when present")
     parser.add_argument("--use-memory", action="store_true", default=True, help="use an in-memory runtime")
@@ -79,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         run_agent(
             args.target,
             args.text,
+            action=args.action,
             use_memory=not args.use_sqlite,
             json_output=args.json,
             show_trace=args.show_trace,
@@ -102,9 +108,20 @@ def _print_human(payload: dict[str, Any], show_trace: bool) -> None:
             print(f"current step: {run['current_step']}")
         if run.get("error"):
             print(f"run error: {_developer_error(run['error'])}")
+        metadata = run.get("metadata") or {}
+        if isinstance(metadata, dict):
+            metrics = metadata.get("llm_metrics")
+            if metrics:
+                print(f"metrics: {json.dumps(metrics, ensure_ascii=False)}")
+            reasoning = metadata.get("reasoning")
+            if isinstance(reasoning, dict):
+                print(f"reasoning: expected={bool(reasoning.get('expected'))} received={bool(reasoning.get('received'))}")
     else:
         print("run status: failed")
 
+    result = payload.get("result") or {}
+    if isinstance(result, dict) and result.get("error_code"):
+        print(f"error code: {result['error_code']}")
     if payload.get("error"):
         print(f"error: {payload['error']}")
 
@@ -112,7 +129,7 @@ def _print_human(payload: dict[str, Any], show_trace: bool) -> None:
     if events:
         print("events:")
         for event in events:
-            payload_text = json.dumps(event.get("payload", {}), ensure_ascii=False)
+            payload_text = json.dumps(_safe_preview(event.get("payload", {})), ensure_ascii=False)
             print(f"- {event.get('type')}: {payload_text}")
 
     messages = payload.get("messages") or []
@@ -151,13 +168,24 @@ def _list_run_events(state: Any, run_id: str) -> list[Any]:
 
 
 def _format_content(content: Any, output_type: str) -> str:
+    if output_type == "image":
+        return _image_summary(content)
+    if output_type == "image_gallery":
+        images = content.get("images", []) if isinstance(content, dict) else []
+        summaries = [_image_summary(image) for image in images[:3]]
+        suffix = "" if len(images) <= 3 else f"\n... {len(images) - 3} more image(s)"
+        return f"image_gallery: {len(images)} image(s)" + (("\n" + "\n".join(summaries)) if summaries else "") + suffix
+    if output_type == "rich_content":
+        blocks = content.get("blocks", []) if isinstance(content, dict) else []
+        types = [str(block.get("type", "unknown")) for block in blocks if isinstance(block, dict)]
+        return f"rich_content: {len(blocks)} block(s); types={', '.join(types) if types else 'none'}"
     if output_type == "json":
         parsed = _parse_json_like(content)
         if isinstance(parsed, (dict, list)):
-            return json.dumps(parsed, ensure_ascii=False, indent=2)
+            return json.dumps(_safe_preview(parsed), ensure_ascii=False, indent=2)
         return str(parsed)
     if isinstance(content, (dict, list)):
-        return json.dumps(content, ensure_ascii=False, indent=2)
+        return json.dumps(_safe_preview(content), ensure_ascii=False, indent=2)
     if isinstance(content, str):
         return _unwrap_json_string(content)
     return "" if content is None else str(content)
@@ -179,6 +207,44 @@ def _unwrap_json_string(value: str) -> str:
     except json.JSONDecodeError:
         return value
     return parsed if isinstance(parsed, str) else value
+
+
+def _image_summary(content: Any) -> str:
+    if not isinstance(content, dict):
+        return str(content)
+    url = str(content.get("url") or "")
+    return (
+        f"image: mime={_data_url_mime(url) or 'remote/unknown'} "
+        f"size={_data_url_size(url) or 'unknown'} url_prefix={url[:32]!r} url_length={len(url)}"
+    )
+
+
+def _safe_preview(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _safe_preview_value(key, item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_safe_preview(item) for item in value]
+    return value
+
+
+def _safe_preview_value(key: str, value: Any) -> Any:
+    if isinstance(value, str) and (key in {"url", "data_url", "base64"} or value.startswith("data:image/")):
+        return {"prefix": value[:32], "length": len(value)}
+    return _safe_preview(value)
+
+
+def _data_url_mime(url: str) -> str:
+    if not url.startswith("data:") or ";base64," not in url:
+        return ""
+    return url.split(";", 1)[0].removeprefix("data:")
+
+
+def _data_url_size(url: str) -> int | None:
+    if ";base64," not in url:
+        return None
+    raw = url.split(",", 1)[1]
+    padding = raw.count("=")
+    return max(0, (len(raw) * 3) // 4 - padding)
 
 
 def _developer_error(error: Any) -> Any:

@@ -1,10 +1,24 @@
 # Agent Development
 
-Agents live under `agents/<agent_id>/` with an `agent.yaml` manifest. Agent ids are global and must be unique. Every Agent must define a `default` action.
+Agents live under `agents/<agent_id>/` with an `agent.yaml` manifest. Agent ids are global, lowercase snake_case, and unique. Every Agent must define a `default` action.
 
-## Prompt Agents
+Use the template generator for new Agents:
 
-A Prompt Agent sends core-built context plus the manifest prompt to the configured OpenAI-compatible LLM runtime.
+```powershell
+uv run python scripts/create_agent.py demo --type script
+uv run python scripts/create_agent.py translator --type prompt
+uv run python scripts/create_agent.py image_helper --type script --name "Image Helper Agent"
+```
+
+Add `--dry-run` to preview files and `--force` only when intentionally overwriting a local template directory.
+
+## Agent Types
+
+Prompt Agents send core-built context plus a manifest prompt to an OpenAI-compatible LLM runtime. The model output is treated as plain text.
+
+Script Agents are trusted local Python code imported and run inside the backend process. They can call Capabilities and LLM helpers through `AgentContext`. There is no sandbox, so do not run Agents from untrusted sources.
+
+## Prompt Agent Manifest
 
 Minimal `agents/my_prompt/agent.yaml`:
 
@@ -12,36 +26,37 @@ Minimal `agents/my_prompt/agent.yaml`:
 id: my_prompt
 name: My Prompt Agent
 type: prompt
-prompt: You are concise and helpful.
+description: Reply with a concise answer.
+avatar: ""
+
 actions:
   - id: default
+    label: Chat
+    description: Reply to the current user message.
+
+prompt: |
+  You are concise, practical, and helpful.
+
 context_policy:
   mode: current_message
   max_messages: 1
   max_chars: 4000
+
 model_lifecycle:
   load: on_demand
-  unload: manual
+  unload: never
   unload_failure: warn
 ```
 
-Prompt Agents do not declare slash commands. Commands belong to Capability manifests.
+If an LLM model is not configured, Prompt Agent runs fail clearly. Set `AGENT_WORKBENCH_LLM_MODEL`, save an LLM Profile in Settings, or reference a profile in the Agent manifest:
 
-## Agent Avatars
-
-Place image avatars in the Agent directory when possible:
-
-```text
-agents/my_agent/avatar.png
+```yaml
+llm:
+  profile: my_local_model
+  allow_session_override: true
 ```
 
-The backend checks these files first, in order: `avatar.png`, `avatar.jpg`, `avatar.jpeg`, `avatar.webp`, `avatar.svg`, `agent.png`, `agent.jpg`. A directory avatar overrides `avatar` in `agent.yaml`.
-
-If no directory avatar exists, `avatar` in `agent.yaml` supports emoji, `http`/`https` image URLs, local paths inside the Agent directory such as `./avatar.png` or `avatar.png`, and short text fallbacks. Local paths using `../` or absolute paths are ignored.
-
-## Script Agents
-
-Script Agents are trusted local Python code. They are imported and run inside the backend process with no sandbox. Do not treat Script Agents as a boundary for untrusted code.
+## Script Agent Manifest
 
 Minimal `agents/my_script/agent.yaml`:
 
@@ -49,214 +64,136 @@ Minimal `agents/my_script/agent.yaml`:
 id: my_script
 name: My Script Agent
 type: script
+description: Run local Python logic.
 entry: agent.py
+
 actions:
   - id: default
+    label: Run
+    description: Run the script agent.
+
 context_policy:
   mode: current_message
   max_messages: 1
   max_chars: 4000
+
 model_lifecycle:
   load: on_demand
   unload: manual
   unload_failure: warn
 ```
 
+The script entry path must stay inside the Agent directory. The module must export `async def run(ctx)`.
+
+## Script Agent SDK
+
 Minimal `agents/my_script/agent.py`:
 
 ```python
 async def run(ctx):
-    await ctx.reply_text(f"Input: {ctx.input.text}")
+    async with ctx.step("prepare"):
+        text = ctx.input.text.strip()
+
+    await ctx.reply_text(f"Input: {text}")
 ```
 
-The script entry path must stay inside the Agent directory. The module must export `async def run(ctx)`.
-
-## LLM SDK
-
-Recommended Script Agent LLM methods:
-
-```python
-text = await ctx.llm.text(system="You are concise.", user=ctx.input.text)
-data = await ctx.llm.json(system="Return a JSON object.", user=ctx.input.text)
-reply = await ctx.llm.chat([
-    {"role": "system", "content": "You are concise."},
-    {"role": "user", "content": ctx.input.text},
-])
-```
-
-`ctx.llm.text(...)` returns `str`. `ctx.llm.json(...)` extracts a raw or fenced JSON object and returns `dict`; invalid JSON raises a clear error. `ctx.llm.chat(...)` returns text.
-
-`ctx.llm.generate(...)` remains for compatibility and supports old calls such as `await ctx.llm.generate(prompt=...)` plus `await ctx.llm.generate(system=..., user=...)`. New Script Agents should prefer `text`, `json`, and `chat`.
-
-Manual unload is available:
-
-```python
-await ctx.llm.unload()
-```
-
-Do not depend on LLM function calling, MCP, or automatic tool selection. Script Agents should call Capabilities and parse/validate LLM output explicitly.
-
-## Reply SDK
-
-Recommended reply methods:
+Useful reply helpers:
 
 ```python
 await ctx.reply_text("plain text")
 await ctx.reply_markdown("**markdown**")
 await ctx.reply_json({"ok": True})
+await ctx.reply_image("https://example.test/image.png", alt="Example")
+await ctx.reply_blocks([
+    {"type": "markdown", "text": "## Result"},
+    {"type": "text", "text": "Plain text block"},
+])
+await ctx.reply_images([
+    {"url": "https://example.test/a.png", "alt": "A"},
+    {"url": "https://example.test/b.png", "alt": "B"},
+])
 ```
 
-`reply_json` stores structured JSON content with `output_type=json`. It does not stringify the object for the backend API.
-
-Compatibility forms still work:
+Optional LLM helper:
 
 ```python
-await ctx.reply("markdown body", type="markdown")
-await ctx.reply("markdown body", output_type="markdown")
+summary = await ctx.llm.text(system="Summarize briefly.", user=ctx.input.text)
+await ctx.reply_text(summary)
 ```
 
-## Output Rendering
+Manual unload is available to Script Agents:
 
-The frontend renders messages by `output_type`:
+```python
+await ctx.llm.unload()
+```
+
+Script Agents should parse and validate LLM output explicitly. Do not depend on model function-calling or automatic tool selection.
+
+## Actions
+
+Actions are Agent entry points:
+
+```text
+@my_script hello
+@my_script:default hello
+@translate:formal
+```
+
+CLI action calls:
+
+```powershell
+uv run python scripts/run_agent.py render_test:image "1"
+uv run python scripts/run_agent.py render_test "1" --action image
+```
+
+## Output Types
+
+Supported rendered output types are:
 
 - `text`: plain text with line breaks preserved.
-- `markdown`: Markdown rendered with headings, lists, tables, and code blocks. Raw HTML is not enabled.
-- `json`: objects and arrays are pretty-printed as JSON.
+- `markdown`: Markdown prose, headings, lists, tables, and code blocks.
+- `json`: structured objects and arrays.
+- `image`: one renderable image payload.
+- `image_gallery`: a list of image payloads.
+- `rich_content`: ordered text, markdown, and image blocks.
 
-Match content type to output type:
+Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
 
-```python
-await ctx.reply_text("plain text")
-await ctx.reply_markdown("# Title\n\n- item")
-await ctx.reply_json({"summary": "ok", "items": [1, 2]})
-```
+## CLI Workflow
 
-Avoid returning JSON as a Markdown string unless the user should read it as prose. Prefer `reply_json` when downstream UI or tools should inspect structured data.
-
-## LLM JSON Reliability
-
-Small local models often produce invalid JSON, comments around JSON, or Markdown fences with broken content. `ctx.llm.json(...)` is strict: it extracts a raw or fenced JSON object and calls `json.loads`. It does not repair invalid JSON.
-
-For complex Agents, use an explicit fallback path:
-
-```python
-import json
-
-
-async def run(ctx):
-    raw = await ctx.llm.text(
-        system="Return only a JSON object with keys summary and tasks.",
-        user=ctx.input.text,
-    )
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        repaired = await ctx.llm.text(
-            system="Rewrite this as valid JSON only. No prose.",
-            user=raw,
-        )
-        try:
-            data = json.loads(repaired)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Model did not produce valid JSON: {exc}") from exc
-
-    await ctx.reply_json(data)
-```
-
-Use stricter prompts, smaller schemas, and clear errors when repair fails. Do not rely on LLM tool calling, MCP, or automatic tool choice.
-
-## Capabilities
-
-Script Agents call internal Capabilities through `ctx.capability(...)`:
-
-```python
-async def run(ctx):
-    cap = ctx.capability("base64")
-    encoded = await cap.encode(text="hello")
-    if not encoded.success:
-        raise RuntimeError(encoded.error or "base64 failed")
-    await ctx.reply_text(encoded.data)
-```
-
-Declare capability dependencies in `agent.yaml`:
-
-```yaml
-capabilities:
-  - base64
-```
-
-## Local Checks
-
-Validate all Agent manifests and Script Agent imports:
+Create and test a Script Agent:
 
 ```powershell
-uv run python scripts/check_agents.py
+uv run python scripts/create_agent.py demo --type script
+uv run python scripts/check_agents.py --strict
+uv run python scripts/run_agent.py demo "hello"
 ```
 
-This checks unique Agent ids, `default` actions, script entry paths, `run(ctx)`, async `run`, and declared Capability references. It imports Script Agent modules but does not execute `run(ctx)`, connect to an LLM, touch the frontend, or modify the database.
-
-Run an Agent from the command line:
+Create and test a Prompt Agent:
 
 ```powershell
-uv run python scripts/run_agent.py echo_script "hello"
-uv run python scripts/run_agent.py project_planner:json_only "plan a local release"
-uv run python scripts/run_agent.py meeting_digest "今天讨论了..."
-uv run python scripts/run_agent.py meeting_digest:json_only "今天讨论了..."
-uv run python scripts/run_agent.py echo_script "hello" --json
-uv run python scripts/run_agent.py echo_script "hello" --show-trace
+uv run python scripts/create_agent.py translator --type prompt
+uv run python scripts/check_agents.py --strict
+uv run python scripts/run_agent.py translator "Translate this"
 ```
 
-The command prints run id, run status, events, messages, and errors. It defaults to an in-memory runtime so quick Agent tests do not pollute local SQLite.
-
-## Debug Workflow
-
-1. Run manifest/import checks:
+Use JSON output for automation:
 
 ```powershell
-uv run python scripts/check_agents.py
+uv run python scripts/check_agents.py --strict --json
+uv run python scripts/run_agent.py demo "hello" --json
 ```
 
-2. Run the Agent without opening the frontend:
+## Common Errors
 
-```powershell
-uv run python scripts/run_agent.py echo_script "hello"
-uv run python scripts/run_agent.py project_planner:json_only "plan a local release"
-```
+- Missing manifest fields: check that `id`, `name`, `type`, `actions`, `context_policy`, and `model_lifecycle` are present.
+- Script import error: run `uv run python scripts/check_agents.py --strict` and inspect the file path in the error.
+- Missing script entry: ensure `entry: agent.py` points to an existing file inside the Agent directory.
+- Duplicate action id: every action under one Agent must be unique.
+- Unknown capability reference: add the Capability under `capabilities/<id>/` or remove the reference.
+- Image output displayed as JSON: the Agent likely used `reply_json` or returned a dict with `output_type=json`; use `reply_image` or `reply_images`.
+- LLM model not configured: set `AGENT_WORKBENCH_LLM_MODEL`, save an LLM Profile, or add an Agent `llm.profile`.
 
-3. Use machine-readable output when comparing runs:
+## Safety
 
-```powershell
-uv run python scripts/run_agent.py echo_script "hello" --json
-```
-
-4. Use traceback output only when debugging local code:
-
-```powershell
-uv run python scripts/run_agent.py echo_script "hello" --show-trace
-```
-
-If an LLM model is missing, set `AGENT_WORKBENCH_LLM_MODEL`, save a model in Settings, or set the Agent manifest `model` field. The default CLI memory runtime may not read saved SQLite Settings; use `--use-sqlite` when testing persisted Settings.
-
-## Common Mistakes
-
-- Missing `default` action in `agent.yaml`.
-- Typo in `capabilities` such as `base_64` instead of `base64`.
-- LLM model not configured for an Agent that calls `ctx.llm`.
-- Invalid JSON from a small model passed directly to `reply_json`.
-- Mismatch between `output_type` and content, such as `output_type=json` with a prose string.
-- Using `ctx.reply(...)` with the wrong keyword; prefer `reply_text`, `reply_markdown`, and `reply_json`.
-
-## Migration Note
-
-Existing Script Agents such as a local `meeting_digest` can continue using:
-
-```python
-generated = await ctx.llm.generate(system="...", user="...")
-```
-
-For new code, prefer:
-
-```python
-text = await ctx.llm.text(system="...", user="...")
-data = await ctx.llm.json(system="...", user="...")
-```
+Script Agents are trusted local Python code. They run in the backend process and can access local files and network through normal Python APIs. The current project does not sandbox Script Agents, enforce permissions, or isolate third-party code.

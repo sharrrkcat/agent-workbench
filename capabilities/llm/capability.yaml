@@ -53,4 +53,4 @@ methods:
   - id: unload
     description: Best-effort model unload
     output:
-      type: object
+      type: json
