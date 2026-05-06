@@ -1,11 +1,35 @@
-import { RefreshCw, Zap } from 'lucide-react';
+import { Plus, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { CapabilityConfig, LlmResolvedConfig, LlmTestResult } from '../../types';
+import type { CapabilityConfig, LlmProfile, LlmProfileInput, LlmResolvedConfig, LlmTestResult } from '../../types';
 import { ConfigForm } from './ConfigForm';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
-import type { ConfigValues } from './configUtils';
+import { stableConfigString, type ConfigValues } from './configUtils';
+import { ToggleSwitch } from './ToggleSwitch';
+
+const MASKED_SECRET = '********';
+const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom'] as const;
+const profileDefaults: LlmProfileInput = {
+  alias: '',
+  name: '',
+  provider: 'openai_compatible',
+  base_url: 'http://localhost:1234/v1',
+  api_key: '',
+  model_id: '',
+  enabled: true,
+  temperature: null,
+  top_p: null,
+  top_k: null,
+  max_tokens: null,
+  timeout: 60,
+  supports_vision: false,
+  supports_tools: false,
+  supports_reasoning: false,
+  supports_streaming: true,
+  supports_json_mode: false,
+  notes: '',
+};
 
 export function LlmSettingsPanel({
   config,
@@ -28,7 +52,20 @@ export function LlmSettingsPanel({
   const [resolvedError, setResolvedError] = useState<SettingsErrorValue | null>(null);
   const [modelListError, setModelListError] = useState<SettingsErrorValue | null>(null);
   const [testError, setTestError] = useState<SettingsErrorValue | null>(null);
+  const [profiles, setProfiles] = useState<LlmProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [profileDraft, setProfileDraft] = useState<LlmProfileInput>(profileDefaults);
+  const [profileModels, setProfileModels] = useState<string[]>([]);
+  const [profileError, setProfileError] = useState<SettingsErrorValue | null>(null);
+  const [profileResult, setProfileResult] = useState<LlmTestResult | null>(null);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
   const busy = testingLlm || loadingModels;
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const profileDirty = useMemo(() => {
+    const base = selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults;
+    return stableConfigString(cleanProfileInput(profileDraft)) !== stableConfigString(cleanProfileInput(base));
+  }, [profileDraft, selectedProfile]);
   const hasEnvSource = useMemo(() => {
     const sources = resolved?.sources || {};
     return Object.values(sources).some((source) => String(source).toLowerCase().includes('env'));
@@ -52,8 +89,46 @@ export function LlmSettingsPanel({
   }, [config.updated_at]);
 
   useEffect(() => {
-    onBusyChange?.(busy);
-  }, [busy, onBusyChange]);
+    void loadProfiles();
+  }, []);
+
+  useEffect(() => {
+    if (selectedProfile) {
+      setProfileDraft(draftFromProfile(selectedProfile));
+    } else if (!selectedProfileId) {
+      setProfileDraft(profileDefaults);
+    }
+    setProfileModels([]);
+    setProfileResult(null);
+    setProfileError(null);
+  }, [selectedProfile, selectedProfileId]);
+
+  useEffect(() => {
+    onBusyChange?.(busy || profileBusy || profilesLoading);
+  }, [busy, onBusyChange, profileBusy, profilesLoading]);
+
+  async function loadProfiles(nextSelectedId?: string) {
+    setProfilesLoading(true);
+    setProfileError(null);
+    try {
+      const loaded = await api.listLlmProfiles();
+      setProfiles(loaded);
+      if (nextSelectedId) {
+        setSelectedProfileId(nextSelectedId);
+      } else if (selectedProfileId && loaded.some((profile) => profile.id === selectedProfileId)) {
+        setSelectedProfileId(selectedProfileId);
+      } else if (loaded[0]) {
+        setSelectedProfileId(loaded[0].id);
+      } else {
+        setSelectedProfileId('');
+        setProfileDraft(profileDefaults);
+      }
+    } catch (error) {
+      setProfileError(toSettingsError(error, 'Failed to load LLM profiles.'));
+    } finally {
+      setProfilesLoading(false);
+    }
+  }
 
   async function runTest() {
     setTestError(null);
@@ -85,11 +160,83 @@ export function LlmSettingsPanel({
     }
   }
 
+  function startNewProfile() {
+    setSelectedProfileId('');
+    setProfileDraft(profileDefaults);
+    setProfileModels([]);
+    setProfileResult(null);
+    setProfileError(null);
+  }
+
+  async function saveProfile() {
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      const payload = cleanProfileInput(profileDraft);
+      const saved = selectedProfile
+        ? await api.patchLlmProfile(selectedProfile.id, payload)
+        : await api.createLlmProfile(payload);
+      await loadProfiles(saved.id);
+    } catch (error) {
+      setProfileError(toSettingsError(error, 'Failed to save LLM profile.'));
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function deleteProfile() {
+    if (!selectedProfile) return;
+    if (!window.confirm(`Delete LLM profile "${selectedProfile.alias}"?`)) return;
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      await api.deleteLlmProfile(selectedProfile.id);
+      await loadProfiles('');
+    } catch (error) {
+      setProfileError(toSettingsError(error, 'Failed to delete LLM profile.'));
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function testProfile() {
+    if (!selectedProfile) return;
+    setProfileBusy(true);
+    setProfileResult(null);
+    setProfileError(null);
+    try {
+      const result = await api.testLlmProfile(selectedProfile.id);
+      setProfileResult(result);
+      if (!result.success) {
+        setProfileError({ code: result.error_code || 'LLM_CONNECTION_FAILED', message: result.message });
+      }
+      if (result.models?.length) setProfileModels(result.models);
+    } catch (error) {
+      setProfileError(toSettingsError(error, 'LLM profile connection test failed.'));
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function refreshProfileModels() {
+    if (!selectedProfile) return;
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      const result = await api.listLlmProfileModels(selectedProfile.id);
+      setProfileModels(result.models.map((model) => model.id).filter(Boolean));
+    } catch (error) {
+      setProfileError(toSettingsError(error, 'Failed to list profile models.'));
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
   return (
     <div className="llm-settings-panel">
       {showConfig ? (
         <section className="detail-section">
-          <h3>Connection</h3>
+          <h3>Global fallback config</h3>
           <ConfigForm
             fields={config.config_schema || []}
             values={values}
@@ -145,6 +292,79 @@ export function LlmSettingsPanel({
         {testError ? <SettingsApiError error={testError} /> : null}
         {modelListError ? <SettingsApiError error={modelListError} /> : null}
       </section>
+
+      <section className="detail-section">
+        <div className="detail-section-heading">
+          <h3>Saved LLM Profiles</h3>
+          <button className="settings-secondary-button" type="button" onClick={startNewProfile} disabled={profileBusy}>
+            <Plus size={14} />
+            New profile
+          </button>
+        </div>
+        <div className="llm-profile-layout">
+          <div className="llm-profile-list">
+            {profilesLoading ? <div className="settings-empty-state compact">Loading profiles...</div> : null}
+            {!profilesLoading && !profiles.length ? <div className="settings-empty-state compact">No saved profiles.</div> : null}
+            {profiles.map((profile) => (
+              <button
+                key={profile.id}
+                className={`llm-profile-row ${profile.id === selectedProfileId ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`}
+                type="button"
+                onClick={() => setSelectedProfileId(profile.id)}
+              >
+                <strong>{profile.name}</strong>
+                <span>
+                  <code>{profile.alias}</code> {profile.provider}
+                </span>
+                <small>{profile.model_id || 'No model selected'}</small>
+                <CapabilityChips profile={profile} />
+              </button>
+            ))}
+          </div>
+          <div className="llm-profile-editor">
+            <div className="llm-profile-editor-heading">
+              <div>
+                <strong>{selectedProfile ? selectedProfile.name : 'New profile'}</strong>
+                <span>{selectedProfile ? selectedProfile.alias : 'Unsaved'}</span>
+              </div>
+              <ToggleSwitch
+                checked={Boolean(profileDraft.enabled)}
+                onChange={(enabled) => setProfileDraft({ ...profileDraft, enabled })}
+                disabled={profileBusy}
+              />
+            </div>
+            <ProfileForm draft={profileDraft} models={profileModels} onChange={setProfileDraft} disabled={profileBusy} />
+            <div className="settings-button-row">
+              {profileDirty ? (
+                <button className="settings-primary-button" type="button" onClick={() => void saveProfile()} disabled={profileBusy}>
+                  <Save size={14} />
+                  {profileBusy ? 'Saving...' : 'Save'}
+                </button>
+              ) : null}
+              {selectedProfile ? (
+                <>
+                  <button className="settings-secondary-button" type="button" onClick={() => void testProfile()} disabled={profileBusy}>
+                    <Zap size={14} />
+                    Test connection
+                  </button>
+                  <button className="settings-secondary-button" type="button" onClick={() => void refreshProfileModels()} disabled={profileBusy}>
+                    <RefreshCw size={14} className={profileBusy ? 'spin' : ''} />
+                    Refresh models
+                  </button>
+                  <button className="settings-secondary-button danger" type="button" onClick={() => void deleteProfile()} disabled={profileBusy}>
+                    <Trash2 size={14} />
+                    Delete
+                  </button>
+                </>
+              ) : null}
+            </div>
+            {profileResult ? (
+              <p className={profileResult.success ? 'settings-success-text' : 'settings-error-text'}>{profileResult.message}</p>
+            ) : null}
+            {profileError ? <SettingsApiError error={profileError} /> : null}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -152,6 +372,14 @@ export function LlmSettingsPanel({
 function ResolvedLlmConfig({ status }: { status: LlmResolvedConfig }) {
   return (
     <dl className="settings-definition-grid">
+      <div>
+        <dt>Source</dt>
+        <dd>{status.source || 'unset'}</dd>
+      </div>
+      <div>
+        <dt>Provider</dt>
+        <dd>{status.provider || 'unset'}</dd>
+      </div>
       <div>
         <dt>Base URL</dt>
         <dd>{status.base_url || 'unset'}</dd>
@@ -170,4 +398,169 @@ function ResolvedLlmConfig({ status }: { status: LlmResolvedConfig }) {
       </div>
     </dl>
   );
+}
+
+function CapabilityChips({ profile }: { profile: LlmProfile }) {
+  const chips = [
+    ['Vision', profile.supports_vision],
+    ['Tools', profile.supports_tools],
+    ['Reasoning', profile.supports_reasoning],
+    ['Streaming', profile.supports_streaming],
+    ['JSON', profile.supports_json_mode],
+  ] as const;
+  return (
+    <div className="settings-chip-row compact">
+      {chips.filter(([, enabled]) => enabled).map(([label]) => (
+        <span key={label}>{label}</span>
+      ))}
+    </div>
+  );
+}
+
+function ProfileForm({
+  draft,
+  models,
+  onChange,
+  disabled,
+}: {
+  draft: LlmProfileInput;
+  models: string[];
+  onChange: (draft: LlmProfileInput) => void;
+  disabled: boolean;
+}) {
+  const set = (key: keyof LlmProfileInput, value: unknown) => onChange({ ...draft, [key]: value });
+  return (
+    <div className="settings-config-form llm-profile-form">
+      <TextField label="Alias" value={draft.alias} onChange={(value) => set('alias', value)} disabled={disabled} />
+      <TextField label="Name" value={draft.name} onChange={(value) => set('name', value)} disabled={disabled} />
+      <label className="config-field settings-config-field">
+        <span>Provider</span>
+        <select value={draft.provider || 'openai_compatible'} onChange={(event) => set('provider', event.target.value)} disabled={disabled}>
+          {providerOptions.map((provider) => (
+            <option key={provider} value={provider}>
+              {provider}
+            </option>
+          ))}
+        </select>
+      </label>
+      <TextField label="Base URL" value={draft.base_url} onChange={(value) => set('base_url', value)} disabled={disabled} />
+      <TextField label="API key" value={draft.api_key} onChange={(value) => set('api_key', value)} disabled={disabled} secret />
+      <label className="config-field settings-config-field">
+        <span>Model ID</span>
+        <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => set('model_id', event.target.value)} disabled={disabled} />
+        {models.length ? (
+          <select value={String(draft.model_id ?? '')} onChange={(event) => set('model_id', event.target.value)} disabled={disabled}>
+            <option value="">Select refreshed model</option>
+            {models.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </label>
+      <NumberField label="Temperature" value={draft.temperature} onChange={(value) => set('temperature', value)} disabled={disabled} />
+      <NumberField label="Top P" value={draft.top_p} onChange={(value) => set('top_p', value)} disabled={disabled} />
+      <NumberField label="Top K" value={draft.top_k} onChange={(value) => set('top_k', value)} disabled={disabled} integer />
+      <NumberField label="Max tokens" value={draft.max_tokens} onChange={(value) => set('max_tokens', value)} disabled={disabled} integer />
+      <NumberField label="Timeout" value={draft.timeout} onChange={(value) => set('timeout', value)} disabled={disabled} integer />
+      <TextField label="Notes" value={draft.notes} onChange={(value) => set('notes', value)} disabled={disabled} textarea />
+      <div className="llm-profile-flags">
+        <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(value) => set('supports_vision', value)} label="Vision" disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(value) => set('supports_tools', value)} label="Tools" disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(value) => set('supports_reasoning', value)} label="Reasoning" disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(value) => set('supports_streaming', value)} label="Streaming" disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_json_mode)} onChange={(value) => set('supports_json_mode', value)} label="JSON mode" disabled={disabled} />
+      </div>
+    </div>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+  disabled,
+  secret = false,
+  textarea = false,
+}: {
+  label: string;
+  value: unknown;
+  onChange: (value: string) => void;
+  disabled: boolean;
+  secret?: boolean;
+  textarea?: boolean;
+}) {
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      {textarea ? (
+        <textarea value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
+      ) : (
+        <input
+          type={secret ? 'password' : 'text'}
+          value={String(value ?? '')}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+        />
+      )}
+    </label>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+  disabled,
+  integer = false,
+}: {
+  label: string;
+  value: unknown;
+  onChange: (value: number | null) => void;
+  disabled: boolean;
+  integer?: boolean;
+}) {
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      <input
+        type="number"
+        step={integer ? 1 : 'any'}
+        value={value === null || value === undefined ? '' : String(value)}
+        onChange={(event) => {
+          const raw = event.target.value;
+          onChange(raw === '' ? null : integer ? Number.parseInt(raw, 10) : Number(raw));
+        }}
+        disabled={disabled}
+      />
+    </label>
+  );
+}
+
+function draftFromProfile(profile: LlmProfile): LlmProfileInput {
+  return {
+    alias: profile.alias,
+    name: profile.name,
+    provider: profile.provider,
+    base_url: profile.base_url,
+    api_key: profile.api_key_set ? MASKED_SECRET : '',
+    model_id: profile.model_id,
+    enabled: profile.enabled,
+    temperature: profile.temperature ?? null,
+    top_p: profile.top_p ?? null,
+    top_k: profile.top_k ?? null,
+    max_tokens: profile.max_tokens ?? null,
+    timeout: profile.timeout ?? null,
+    supports_vision: profile.supports_vision,
+    supports_tools: profile.supports_tools,
+    supports_reasoning: profile.supports_reasoning,
+    supports_streaming: profile.supports_streaming,
+    supports_json_mode: profile.supports_json_mode,
+    notes: profile.notes || '',
+  };
+}
+
+function cleanProfileInput(input: LlmProfileInput): LlmProfileInput {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as LlmProfileInput;
 }

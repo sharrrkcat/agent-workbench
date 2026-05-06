@@ -5,6 +5,8 @@ import type {
   Command,
   DeleteSessionResponse,
   LlmResolvedConfig,
+  LlmProfile,
+  LlmProfileInput,
   LlmTestResult,
   Message,
   Run,
@@ -71,6 +73,25 @@ export const api = {
   getResolvedLlmConfig: () => request<LlmResolvedConfig>('/api/capability-configs/llm/resolved'),
   listLlmModels: () => request<{ success: boolean; models: { id: string }[] }>('/api/capability-configs/llm/models'),
   testLlmConnection: () => request<LlmTestResult>('/api/capability-configs/llm/test', { method: 'POST' }),
+  listLlmProfiles: () => request<LlmProfile[]>('/api/llm-profiles'),
+  createLlmProfile: (profile: LlmProfileInput) =>
+    request<LlmProfile>('/api/llm-profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchLlmProfile: (profileIdOrAlias: string, patch: LlmProfileInput) =>
+    request<LlmProfile>(`/api/llm-profiles/${profileIdOrAlias}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteLlmProfile: (profileIdOrAlias: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/llm-profiles/${profileIdOrAlias}`, {
+      method: 'DELETE',
+    }),
+  testLlmProfile: (profileIdOrAlias: string) =>
+    request<LlmTestResult>(`/api/llm-profiles/${profileIdOrAlias}/test`, { method: 'POST' }),
+  listLlmProfileModels: (profileIdOrAlias: string) =>
+    request<{ success: boolean; models: { id: string }[] }>(`/api/llm-profiles/${profileIdOrAlias}/models`),
   getHealthDetails: () => request<HealthDetails>('/api/health/details'),
   listSessions: () => request<Session[]>('/api/sessions'),
   createSession: (title = '', default_agent_id = 'chat') =>

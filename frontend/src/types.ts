@@ -38,10 +38,20 @@ export type Agent = {
   entry?: string | null;
   actions: AgentAction[];
   model?: Record<string, unknown> | null;
+  llm?: AgentLlmConfig | null;
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
   capabilities?: string[];
   enabled: boolean;
+};
+
+export type AgentLlmConfig = {
+  profile?: string | null;
+  allow_session_override?: boolean;
+  temperature?: number | null;
+  top_p?: number | null;
+  top_k?: number | null;
+  max_tokens?: number | null;
 };
 
 export type Command = {
@@ -106,11 +116,76 @@ export type LlmTestResult = {
   error_code?: string;
 };
 
+export type LlmProfile = {
+  id: string;
+  alias: string;
+  name: string;
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom';
+  base_url: string;
+  api_key: string;
+  api_key_set?: boolean;
+  model_id: string;
+  enabled: boolean;
+  temperature?: number | null;
+  top_p?: number | null;
+  top_k?: number | null;
+  max_tokens?: number | null;
+  timeout?: number | null;
+  supports_vision: boolean;
+  supports_tools: boolean;
+  supports_reasoning: boolean;
+  supports_streaming: boolean;
+  supports_json_mode: boolean;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LlmProfileInput = Partial<
+  Pick<
+    LlmProfile,
+    | 'alias'
+    | 'name'
+    | 'provider'
+    | 'base_url'
+    | 'api_key'
+    | 'model_id'
+    | 'enabled'
+    | 'temperature'
+    | 'top_p'
+    | 'top_k'
+    | 'max_tokens'
+    | 'timeout'
+    | 'supports_vision'
+    | 'supports_tools'
+    | 'supports_reasoning'
+    | 'supports_streaming'
+    | 'supports_json_mode'
+    | 'notes'
+  >
+>;
+
 export type LlmResolvedConfig = {
+  source?: string | null;
+  profile_id?: string | null;
+  profile_alias?: string | null;
+  profile_name?: string | null;
+  provider?: string | null;
   base_url: string;
   model: string;
+  model_id?: string;
   timeout?: number | null;
   api_key_set: boolean;
+  temperature?: number | null;
+  top_p?: number | null;
+  top_k?: number | null;
+  max_tokens?: number | null;
+  supports_vision?: boolean;
+  supports_tools?: boolean;
+  supports_reasoning?: boolean;
+  supports_streaming?: boolean;
+  supports_json_mode?: boolean;
+  allow_session_override?: boolean;
   sources?: Record<string, string>;
 };
 

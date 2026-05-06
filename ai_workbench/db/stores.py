@@ -7,6 +7,7 @@ from sqlmodel import Session as DbSession
 from sqlmodel import delete
 from sqlmodel import select
 
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
@@ -15,6 +16,7 @@ from ai_workbench.db.models import (
     AgentConfigRecord,
     AppMetadataRecord,
     CapabilityConfigRecord,
+    LLMProfileRecord,
     MessageRecord,
     RunEventRecord,
     RunRecord,
@@ -426,6 +428,81 @@ class SqlCapabilityConfigStore:
         return bool(self.get_config(capability_id)["enabled"])
 
 
+class SqlLLMProfileStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def create(self, profile: LLMProfileSchema) -> LLMProfileSchema:
+        with DbSession(self.engine) as session:
+            if session.get(LLMProfileRecord, profile.id) is not None:
+                raise ValueError(f"LLM profile id already exists: {profile.id}")
+            if _find_profile_record_by_alias(session, profile.alias) is not None:
+                raise ValueError(f"LLM profile alias already exists: {profile.alias}")
+            record = _profile_to_record(profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _profile_from_record(record)
+
+    def get(self, profile_id: str) -> LLMProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(LLMProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown LLM profile id: {profile_id}")
+            return _profile_from_record(record)
+
+    def find_by_alias(self, alias: str) -> Optional[LLMProfileSchema]:
+        with DbSession(self.engine) as session:
+            record = _find_profile_record_by_alias(session, alias)
+            return _profile_from_record(record) if record is not None else None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> LLMProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(LLMProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_profile_record_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown LLM profile: {profile_id_or_alias}")
+            return _profile_from_record(record)
+
+    def update(self, profile_id_or_alias: str, values: Dict[str, Any]) -> LLMProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(LLMProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_profile_record_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown LLM profile: {profile_id_or_alias}")
+            alias = values.get("alias")
+            if alias is not None:
+                conflict = _find_profile_record_by_alias(session, str(alias))
+                if conflict is not None and conflict.id != record.id:
+                    raise ValueError(f"LLM profile alias already exists: {alias}")
+            candidate = _profile_from_record(record).model_copy(update={**values, "updated_at": datetime.utcnow()})
+            profile = LLMProfileSchema.model_validate(candidate.model_dump())
+            _apply_profile_to_record(record, profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _profile_from_record(record)
+
+    def delete(self, profile_id_or_alias: str) -> LLMProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(LLMProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_profile_record_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown LLM profile: {profile_id_or_alias}")
+            profile = _profile_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
+    def list(self) -> List[LLMProfileSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(LLMProfileRecord).order_by(LLMProfileRecord.alias)).all()
+            return [_profile_from_record(record) for record in records]
+
+
 class SqlAppMetadataStore:
     def __init__(self, engine) -> None:
         self.engine = engine
@@ -513,3 +590,42 @@ def _capability_config_from_record(record: CapabilityConfigRecord) -> Dict[str, 
         "created_at": record.created_at,
         "updated_at": record.updated_at,
     }
+
+
+def _find_profile_record_by_alias(session: DbSession, alias: str) -> Optional[LLMProfileRecord]:
+    return session.exec(select(LLMProfileRecord).where(LLMProfileRecord.alias == alias)).first()
+
+
+def _profile_to_record(profile: LLMProfileSchema) -> LLMProfileRecord:
+    return LLMProfileRecord(**profile.model_dump())
+
+
+def _apply_profile_to_record(record: LLMProfileRecord, profile: LLMProfileSchema) -> None:
+    for key, value in profile.model_dump().items():
+        setattr(record, key, value)
+
+
+def _profile_from_record(record: LLMProfileRecord) -> LLMProfileSchema:
+    return LLMProfileSchema(
+        id=record.id,
+        alias=record.alias,
+        name=record.name,
+        provider=record.provider,
+        base_url=record.base_url,
+        api_key=record.api_key,
+        model_id=record.model_id,
+        enabled=record.enabled,
+        temperature=record.temperature,
+        top_p=record.top_p,
+        top_k=record.top_k,
+        max_tokens=record.max_tokens,
+        timeout=record.timeout,
+        supports_vision=record.supports_vision,
+        supports_tools=record.supports_tools,
+        supports_reasoning=record.supports_reasoning,
+        supports_streaming=record.supports_streaming,
+        supports_json_mode=record.supports_json_mode,
+        notes=record.notes,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )

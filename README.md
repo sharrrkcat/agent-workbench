@@ -63,12 +63,13 @@ LLM config resolution now uses one shared path for Prompt Agents, Script Agent `
 
 Priority, highest first:
 
-- Explicit environment overrides: `AGENT_WORKBENCH_LLM_BASE_URL`, `AGENT_WORKBENCH_LLM_API_KEY`, `AGENT_WORKBENCH_LLM_MODEL`, `AGENT_WORKBENCH_LLM_TIMEOUT`
-- Agent manifest `model` fields
+- Agent manifest `llm.profile`
+- Agent manifest legacy `model` fields
 - persisted `llm` CapabilityConfig from Settings
+- `.env` / process environment fallback: `AGENT_WORKBENCH_LLM_BASE_URL`, `AGENT_WORKBENCH_LLM_API_KEY`, `AGENT_WORKBENCH_LLM_MODEL`, `AGENT_WORKBENCH_LLM_TIMEOUT`
 - `llm` capability manifest defaults
 
-Environment variables intentionally win so local development and CI can temporarily override UI-saved settings without editing SQLite.
+The next round is expected to add a session-level `llm_profile` override above Agent manifest configuration. The current round does not expose a Chat model selector.
 
 ## Basic Usage
 
@@ -115,6 +116,67 @@ In Settings, use the `llm` capability `Test connection` button. It calls `/api/c
 
 After a successful test, available models are shown in the LLM settings area. Select one, then click Save to persist it as `CapabilityConfig.user_config.model`. Prompt Agents without their own manifest model use that saved model by default. Agents that declare a model in their manifest keep using the manifest model unless an environment override is present.
 
+## LLM Profiles
+
+Saved LLM Profiles are reusable model connection configs. A profile has a user-facing `alias`, display `name`, provider, `base_url`, optional `api_key`, and provider model id stored as `model_id`.
+
+Supported provider labels in this alpha:
+
+- `openai_compatible`
+- `lm_studio`
+- `llama_cpp`
+- `custom`
+
+All provider labels currently use the same OpenAI-compatible runtime path.
+
+Settings -> LLM has two sections:
+
+- Global fallback config, backed by the existing `llm` CapabilityConfig.
+- Saved LLM Profiles, backed by the new `llm_profiles` SQLite table.
+
+The profile editor can create, edit, delete, test, and refresh models for saved profiles. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
+
+Profile capability flags are available for display and future behavior:
+
+- Vision
+- Tools
+- Reasoning
+- Streaming
+- JSON mode
+
+These flags do not change runtime behavior yet.
+
+Agent manifests can reference a profile by alias or id:
+
+```yaml
+llm:
+  profile: myqwen3
+  allow_session_override: false
+  temperature: 0.2
+  top_p: 0.9
+  top_k: 40
+  max_tokens: 2048
+```
+
+`allow_session_override` defaults to `true`. It is stored in the manifest schema and returned by the Agent API for the next round's session selector.
+
+The old manifest `model` field remains compatible:
+
+```yaml
+model:
+  provider: openai_compatible
+  base_url: http://localhost:1234/v1
+  model: qwen2.5-3b-instruct
+```
+
+`model` is legacy. New Agents should prefer `llm.profile`.
+
+Profile resolution errors are structured:
+
+- `LLM_PROFILE_NOT_FOUND`
+- `LLM_PROFILE_DISABLED`
+- `LLM_PROFILE_INVALID`
+
 ## Settings
 
 AgentConfig and CapabilityConfig now use manifest-declared `config_schema` fields. Unknown user config fields are rejected by the API.
@@ -159,6 +221,8 @@ AGENT_WORKBENCH_DATABASE_URL=sqlite:///./data/agent_workbench.db
 ```
 
 The current schema version is stored in app metadata as `schema_version`.
+
+This project still uses a lightweight schema version guard plus `SQLModel.metadata.create_all`. New tables can be created during startup, but there is no Alembic migration system yet.
 
 Reset local data with a dry run:
 

@@ -13,7 +13,7 @@ from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
-from ai_workbench.core.llm_config import resolve_llm_config
+from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
@@ -261,6 +261,7 @@ class ScriptAgentRunner:
         llm_runtime: Any,
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
+        llm_profile_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -271,6 +272,7 @@ class ScriptAgentRunner:
         self.llm_runtime = llm_runtime
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
+        self.llm_profile_store = llm_profile_store
 
     async def run(
         self,
@@ -312,6 +314,12 @@ class ScriptAgentRunner:
         except Exception as exc:
             return self._fail(run.run_id, session_id, str(exc) or "Script loading failed.")
 
+        try:
+            llm_config = self._resolve_llm_model_config(agent)
+            self._record_llm_resolution(run.run_id, llm_config)
+        except LLMConfigError as exc:
+            return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
+
         ctx = AgentContext(
             agent=agent,
             action_id=action_id,
@@ -328,7 +336,7 @@ class ScriptAgentRunner:
             event_bus=self.event_bus,
             runtime_registry=self.runtime_registry,
             llm_runtime=self.llm_runtime,
-            llm_model_config=self._resolve_llm_model_config(agent),
+            llm_model_config=llm_config.values,
         )
 
         try:
@@ -362,7 +370,7 @@ class ScriptAgentRunner:
             raise ValueError("script entry must export async def run(ctx)")
         return run_callable
 
-    def _resolve_llm_model_config(self, agent: AgentSchema) -> Dict[str, Any]:
+    def _resolve_llm_model_config(self, agent: AgentSchema):
         capability = None
         capability_config = {}
         if self.capability_registry is not None:
@@ -376,12 +384,24 @@ class ScriptAgentRunner:
             agent_schema=agent,
             capability_schema=capability,
             capability_config=capability_config,
-        ).values
+            llm_profile_store=self.llm_profile_store,
+        )
 
-    def _fail(self, run_id: str, session_id: str, error: str) -> RunResult:
+    def _record_llm_resolution(self, run_id: str, llm_config) -> None:
+        from ai_workbench.core.runner import _public_llm_resolution
+
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["llm_resolution"] = _public_llm_resolution(llm_config)
+        self.run_store.update_metadata(run_id, metadata)
+
+    def _fail(self, run_id: str, session_id: str, error: str, error_code: str = None) -> RunResult:
         failed_run = self.run_store.update_status(run_id, RunStatus.FAILED, current_step="failed", error=error)
-        self.event_bus.emit("run_failed", session_id=session_id, run_id=run_id, payload={"error": error})
-        return RunResult(success=False, run_id=failed_run.run_id, error=error)
+        payload = {"error": error}
+        if error_code:
+            payload["error_code"] = error_code
+        self.event_bus.emit("run_failed", session_id=session_id, run_id=run_id, payload=payload)
+        return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=error_code)
 
 
 def _load_module(path: Path, module_name: str) -> ModuleType:

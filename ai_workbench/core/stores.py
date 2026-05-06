@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
@@ -290,3 +291,56 @@ class AgentConfigStore(ConfigStore):
 class CapabilityConfigStore(ConfigStore):
     def __init__(self) -> None:
         super().__init__("capability_id")
+
+
+class LLMProfileStore:
+    def __init__(self) -> None:
+        self._records: Dict[str, LLMProfileSchema] = {}
+
+    def create(self, profile: LLMProfileSchema) -> LLMProfileSchema:
+        if profile.id in self._records:
+            raise ValueError(f"LLM profile id already exists: {profile.id}")
+        if self.find_by_alias(profile.alias) is not None:
+            raise ValueError(f"LLM profile alias already exists: {profile.alias}")
+        self._records[profile.id] = profile
+        return profile
+
+    def get(self, profile_id: str) -> LLMProfileSchema:
+        try:
+            return self._records[profile_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown LLM profile id: {profile_id}") from exc
+
+    def find_by_alias(self, alias: str) -> Optional[LLMProfileSchema]:
+        for profile in self._records.values():
+            if profile.alias == alias:
+                return profile
+        return None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> LLMProfileSchema:
+        if profile_id_or_alias in self._records:
+            return self._records[profile_id_or_alias]
+        profile = self.find_by_alias(profile_id_or_alias)
+        if profile is not None:
+            return profile
+        raise KeyError(f"unknown LLM profile: {profile_id_or_alias}")
+
+    def update(self, profile_id_or_alias: str, values: Dict[str, Any]) -> LLMProfileSchema:
+        existing = self.get_by_id_or_alias(profile_id_or_alias)
+        alias = values.get("alias")
+        if alias is not None:
+            conflict = self.find_by_alias(str(alias))
+            if conflict is not None and conflict.id != existing.id:
+                raise ValueError(f"LLM profile alias already exists: {alias}")
+        updated = existing.model_copy(update={**values, "updated_at": datetime.utcnow()})
+        updated = LLMProfileSchema.model_validate(updated.model_dump())
+        self._records[existing.id] = updated
+        return updated
+
+    def delete(self, profile_id_or_alias: str) -> LLMProfileSchema:
+        existing = self.get_by_id_or_alias(profile_id_or_alias)
+        del self._records[existing.id]
+        return existing
+
+    def list(self) -> List[LLMProfileSchema]:
+        return sorted(self._records.values(), key=lambda item: (item.alias, item.created_at))

@@ -14,6 +14,7 @@ class ActionSchema(BaseModel):
     instruction: Optional[str] = None
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     context_policy: Optional[ContextPolicy] = None
+    llm: Optional[Dict[str, Any]] = None
     attach_to: Optional[str] = None
     callable: bool = True
 

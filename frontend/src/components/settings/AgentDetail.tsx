@@ -40,7 +40,7 @@ export function AgentDetail({
   const name = summary.name || agent?.name || config.agent_id;
   const hasActions = Boolean(agent?.actions?.length);
   const hasConfigFields = Boolean(config.config_schema?.length);
-  const hasRuntime = Boolean(agent?.context_policy || agent?.model_lifecycle || agent?.model || agent?.type === 'script');
+  const hasRuntime = Boolean(agent?.context_policy || agent?.model_lifecycle || agent?.llm || agent?.model || agent?.type === 'script');
   const manifest = useMemo(() => ({ agent, config }), [agent, config]);
   const tabs = useMemo(
     () =>
@@ -145,6 +145,7 @@ function OverviewTab({ config, agent }: { config: AgentConfig; agent?: Agent }) 
       </div>
       <InfoRow label="Context policy" value={summarizeContextPolicy(agent?.context_policy)} />
       <InfoRow label="Model lifecycle" value={summarizeLifecycle(agent?.model_lifecycle)} />
+      <InfoRow label="LLM" value={summarizeLlm(agent)} />
     </div>
   );
 }
@@ -210,8 +211,12 @@ function RuntimeTab({ agent }: { agent?: Agent }) {
         </dl>
       </section>
       <section className="detail-section">
-        <h3>Model override</h3>
-        {agent?.model ? <ManifestViewer value={agent.model} /> : <div className="settings-empty-state">No model override declared.</div>}
+        <h3>LLM routing</h3>
+        <LlmRuntimeSummary agent={agent} />
+      </section>
+      <section className="detail-section">
+        <h3>Legacy model</h3>
+        {agent?.model ? <ManifestViewer value={agent.model} /> : <div className="settings-empty-state">Uses global LLM fallback.</div>}
       </section>
       {agent?.type === 'script' ? (
         <p className="settings-warning-text">Script Agents are trusted local Python code and are not sandboxed.</p>
@@ -247,6 +252,52 @@ function PolicyGrid({ policy }: { policy?: ContextPolicy | null }) {
   );
 }
 
+function LlmRuntimeSummary({ agent }: { agent?: Agent }) {
+  if (agent?.llm?.profile) {
+    const overrides = ['temperature', 'top_p', 'top_k', 'max_tokens']
+      .map((key) => [key, agent.llm?.[key as keyof NonNullable<Agent['llm']>]])
+      .filter(([, value]) => value !== undefined && value !== null && value !== '');
+    return (
+      <dl className="settings-definition-grid">
+        <div>
+          <dt>LLM profile</dt>
+          <dd>{agent.llm.profile}</dd>
+        </div>
+        <div>
+          <dt>Session override</dt>
+          <dd>{agent.llm.allow_session_override === false ? 'no' : 'yes'}</dd>
+        </div>
+        <div>
+          <dt>Overrides</dt>
+          <dd>{overrides.length ? overrides.map(([key, value]) => `${key}: ${value}`).join(', ') : 'None'}</dd>
+        </div>
+      </dl>
+    );
+  }
+  if (agent?.model) {
+    const model = String(agent.model.model || agent.model.model_id || 'unset');
+    const provider = String(agent.model.provider || 'openai_compatible');
+    const baseUrl = String(agent.model.base_url || 'unset');
+    return (
+      <dl className="settings-definition-grid">
+        <div>
+          <dt>Legacy model</dt>
+          <dd>{model}</dd>
+        </div>
+        <div>
+          <dt>Provider</dt>
+          <dd>{provider}</dd>
+        </div>
+        <div>
+          <dt>Base URL</dt>
+          <dd>{baseUrl}</dd>
+        </div>
+      </dl>
+    );
+  }
+  return <div className="settings-empty-state">Uses global LLM fallback.</div>;
+}
+
 function InfoRow({ label, value, wide = false }: { label: string; value: unknown; wide?: boolean }) {
   return (
     <div className={`settings-info-row ${wide ? 'wide' : ''}`}>
@@ -262,6 +313,12 @@ function summarizeContextPolicy(policy?: ContextPolicy | null): string {
   if (policy.max_messages) parts.push(`${policy.max_messages} messages`);
   if (policy.max_chars) parts.push(`${policy.max_chars} chars`);
   return parts.join(' · ');
+}
+
+function summarizeLlm(agent?: Agent): string {
+  if (agent?.llm?.profile) return `LLM profile: ${agent.llm.profile}`;
+  if (agent?.model) return `Legacy model: ${String(agent.model.model || agent.model.model_id || 'unset')}`;
+  return 'Uses global LLM fallback';
 }
 
 function summarizeLifecycle(policy?: ModelLifecyclePolicy): string {

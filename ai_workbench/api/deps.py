@@ -12,11 +12,20 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
-from ai_workbench.core.stores import AgentConfigStore, CapabilityConfigStore, MessageStore, RunEventStore, RunStore, SessionStore
+from ai_workbench.core.stores import (
+    AgentConfigStore,
+    CapabilityConfigStore,
+    LLMProfileStore,
+    MessageStore,
+    RunEventStore,
+    RunStore,
+    SessionStore,
+)
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.db.stores import (
     SqlAgentConfigStore,
     SqlCapabilityConfigStore,
+    SqlLLMProfileStore,
     SqlMessageStore,
     SqlRunEventStore,
     SqlRunStore,
@@ -41,6 +50,7 @@ class RuntimeState:
     runtime: WorkbenchRuntime
     agent_configs: Any = None
     capability_configs: Any = None
+    llm_profiles: Any = None
 
 
 def build_runtime_state(
@@ -72,6 +82,7 @@ def build_runtime_state(
         run_events = RunEventStore()
         agent_configs = AgentConfigStore()
         capability_configs = CapabilityConfigStore()
+        llm_profiles = LLMProfileStore()
     else:
         engine = get_engine(database_url)
         init_db(engine)
@@ -81,6 +92,7 @@ def build_runtime_state(
         run_events = SqlRunEventStore(engine)
         agent_configs = SqlAgentConfigStore(engine)
         capability_configs = SqlCapabilityConfigStore(engine)
+        llm_profiles = SqlLLMProfileStore(engine)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
     events = EventBus(run_event_store=run_events)
@@ -104,6 +116,7 @@ def build_runtime_state(
         agent_config_store=agent_configs,
         capability_registry=capabilities,
         capability_config_store=capability_configs,
+        llm_profile_store=llm_profiles,
     )
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
     return RuntimeState(
@@ -122,6 +135,7 @@ def build_runtime_state(
         runtime=runtime,
         agent_configs=agent_configs,
         capability_configs=capability_configs,
+        llm_profiles=llm_profiles,
     )
 
 

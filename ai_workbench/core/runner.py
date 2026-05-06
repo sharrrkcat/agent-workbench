@@ -24,6 +24,7 @@ class AgentRunner:
         agent_config_store=None,
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
+        llm_profile_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -36,6 +37,7 @@ class AgentRunner:
         self.agent_config_store = agent_config_store
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
+        self.llm_profile_store = llm_profile_store
         self.script_runner = None
         if session_store is not None and runtime_registry is not None:
             self.script_runner = ScriptAgentRunner(
@@ -48,6 +50,7 @@ class AgentRunner:
                 llm_runtime=llm_runtime,
                 capability_registry=capability_registry,
                 capability_config_store=capability_config_store,
+                llm_profile_store=llm_profile_store,
             )
 
     async def run(
@@ -177,6 +180,7 @@ class AgentRunner:
         try:
             llm_config = self._resolve_llm_model_config(agent, action)
             require_llm_model(llm_config)
+            self._record_llm_resolution(run.run_id, llm_config)
             content = self.llm_runtime.chat(messages=messages, model_config=llm_config.values, stream=False)
         except LLMConfigError as exc:
             failed_run = self.run_store.update_status(
@@ -214,6 +218,7 @@ class AgentRunner:
             "context_warnings": context.warnings,
             "original_user_message_id": original_user_message_id,
             "prefill": prefill or {},
+            "llm_resolution": _public_llm_resolution(llm_config),
         }
         message = self.message_store.add_message(
             session_id=session_id,
@@ -268,7 +273,14 @@ class AgentRunner:
             action_schema=action,
             capability_schema=capability,
             capability_config=capability_config,
+            llm_profile_store=self.llm_profile_store,
         )
+
+    def _record_llm_resolution(self, run_id: str, llm_config) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["llm_resolution"] = _public_llm_resolution(llm_config)
+        self.run_store.update_metadata(run_id, metadata)
 
     def _available_actions(self, agent, source_message_id: str):
         actions = []
@@ -332,6 +344,23 @@ class AgentRunner:
         self.run_store.update_status(run_id, RunStatus.FAILED, current_step="unload_failed", error=message)
         self.event_bus.emit("run_failed", session_id=session_id, run_id=run_id, payload={"error": message})
         return True
+
+
+def _public_llm_resolution(llm_config) -> dict:
+    metadata = dict(getattr(llm_config, "metadata", {}) or {})
+    values = getattr(llm_config, "values", {}) or {}
+    return {
+        "source": metadata.get("source"),
+        "profile_id": metadata.get("profile_id"),
+        "profile_alias": metadata.get("profile_alias"),
+        "profile_name": metadata.get("profile_name"),
+        "provider": metadata.get("provider") or values.get("provider"),
+        "model_id": values.get("model_id") or values.get("model"),
+        "base_url": values.get("base_url", ""),
+        "session_override_requested": metadata.get("session_override_requested"),
+        "session_override_applied": bool(metadata.get("session_override_applied", False)),
+        "allow_session_override": bool(metadata.get("allow_session_override", True)),
+    }
 
 
 class CommandRunner:

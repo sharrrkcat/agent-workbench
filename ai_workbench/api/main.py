@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, commands, configs, health, messages, runs, sessions
+from ai_workbench.api.routes import agents, commands, configs, health, llm_profiles, messages, runs, sessions
 from ai_workbench.api.ws import router as ws_router
 
 
@@ -52,6 +52,7 @@ def create_app(
     app.include_router(agents.router)
     app.include_router(commands.router)
     app.include_router(configs.router)
+    app.include_router(llm_profiles.router)
     app.include_router(health.router)
     app.include_router(sessions.router)
     app.include_router(messages.router)

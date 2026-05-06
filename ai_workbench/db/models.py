@@ -69,6 +69,32 @@ class CapabilityConfigRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LLMProfileRecord(SQLModel, table=True):
+    __tablename__ = "llm_profiles"
+
+    id: str = Field(primary_key=True)
+    alias: str = Field(index=True)
+    name: str
+    provider: str = "openai_compatible"
+    base_url: str = ""
+    api_key: str = ""
+    model_id: str = ""
+    enabled: bool = True
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    max_tokens: Optional[int] = None
+    timeout: Optional[int] = None
+    supports_vision: bool = False
+    supports_tools: bool = False
+    supports_reasoning: bool = False
+    supports_streaming: bool = True
+    supports_json_mode: bool = False
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class AppMetadataRecord(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str

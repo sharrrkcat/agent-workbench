@@ -6,6 +6,8 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.llm_config import resolve_llm_config
 from ai_workbench.core.manifest_loader import load_capability_manifest
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema
+from ai_workbench.core.stores import LLMProfileStore
 from tests.test_api import create_session, post_message
 from tests.test_prompt_agent_execution import FakeLLMRuntime, run
 from tests.test_script_agent import ScriptRuntimeFixture, write_script_agent
@@ -45,7 +47,7 @@ def test_resolve_llm_config_uses_capability_schema_defaults(monkeypatch) -> None
 
     assert config.values["base_url"] == "http://localhost:1234/v1"
     assert config.values["timeout"] == 60.0
-    assert config.sources["base_url"] == "capability_default"
+    assert config.sources["base_url"] == "manifest_default"
 
 
 def test_resolve_llm_config_uses_persisted_capability_config(monkeypatch) -> None:
@@ -58,7 +60,7 @@ def test_resolve_llm_config_uses_persisted_capability_config(monkeypatch) -> Non
 
     assert config.values["base_url"] == "http://local/v1"
     assert config.values["model"] == "ui-model"
-    assert config.sources["model"] == "capability_config"
+    assert config.sources["model"] == "llm_capability_config"
 
 
 def test_agent_manifest_model_overrides_capability_model(monkeypatch) -> None:
@@ -71,24 +73,35 @@ def test_agent_manifest_model_overrides_capability_model(monkeypatch) -> None:
     )
 
     assert config.values["model"] == "qwen2.5-3b-instruct"
-    assert config.sources["model"] == "agent_manifest"
+    assert config.sources["model"] == "agent_legacy_model"
 
 
-def test_env_overrides_llm_config(monkeypatch) -> None:
+def test_env_fallback_is_used_when_no_saved_config(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_LLM_BASE_URL", "http://env/v1")
     monkeypatch.setenv("AGENT_WORKBENCH_LLM_API_KEY", "env-key")
     monkeypatch.setenv("AGENT_WORKBENCH_LLM_MODEL", "env-model")
 
     config = resolve_llm_config(
-        agent_schema=chat_agent(),
         capability_schema=llm_capability(),
-        capability_config={"user_config": {"base_url": "http://ui/v1", "api_key": "ui-key", "model": "ui-model"}},
+        capability_config={"user_config": {}},
     )
 
     assert config.values["base_url"] == "http://env/v1"
     assert config.values["api_key"] == "env-key"
     assert config.values["model"] == "env-model"
     assert config.sources["api_key"] == "env"
+
+
+def test_capability_config_precedes_env_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_LLM_MODEL", "env-model")
+
+    config = resolve_llm_config(
+        capability_schema=llm_capability(),
+        capability_config={"user_config": {"model": "ui-model"}},
+    )
+
+    assert config.values["model"] == "ui-model"
+    assert config.sources["model"] == "llm_capability_config"
 
 
 def test_secret_mask_does_not_override_real_secret(monkeypatch) -> None:
@@ -185,6 +198,69 @@ def test_saved_model_is_used_by_resolved_config(monkeypatch) -> None:
     assert response.json()["model"] == "saved-model"
 
 
+def test_agent_manifest_llm_profile_resolves_profile_before_legacy_model(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_WORKBENCH_LLM_MODEL", raising=False)
+    store = profile_store()
+    agent = chat_agent().model_copy(update={"llm": {"profile": "myqwen3"}, "model": {"model": "legacy-model"}})
+
+    config = resolve_llm_config(
+        agent_schema=agent,
+        capability_schema=llm_capability(),
+        capability_config={"user_config": {"model": "ui-model"}},
+        llm_profile_store=store,
+    )
+
+    assert config.values["model"] == "qwen3-local"
+    assert config.values["base_url"] == "http://qwen3/v1"
+    assert config.metadata["source"] == "agent_llm_profile"
+    assert config.metadata["profile_alias"] == "myqwen3"
+
+
+def test_llm_profile_disabled_raises_clear_error() -> None:
+    store = profile_store(enabled=False)
+    agent = chat_agent().model_copy(update={"llm": {"profile": "myqwen3"}})
+
+    try:
+        resolve_llm_config(agent_schema=agent, capability_schema=llm_capability(), llm_profile_store=store)
+    except Exception as exc:
+        assert getattr(exc, "code") == "LLM_PROFILE_DISABLED"
+    else:
+        raise AssertionError("expected disabled profile error")
+
+
+def test_llm_profile_missing_raises_clear_error() -> None:
+    agent = chat_agent().model_copy(update={"llm": {"profile": "missing"}})
+
+    try:
+        resolve_llm_config(agent_schema=agent, capability_schema=llm_capability(), llm_profile_store=LLMProfileStore())
+    except Exception as exc:
+        assert getattr(exc, "code") == "LLM_PROFILE_NOT_FOUND"
+    else:
+        raise AssertionError("expected missing profile error")
+
+
+def test_llm_profile_invalid_raises_clear_error() -> None:
+    store = profile_store(model_id="")
+    agent = chat_agent().model_copy(update={"llm": {"profile": "myqwen3"}})
+
+    try:
+        resolve_llm_config(agent_schema=agent, capability_schema=llm_capability(), llm_profile_store=store)
+    except Exception as exc:
+        assert getattr(exc, "code") == "LLM_PROFILE_INVALID"
+    else:
+        raise AssertionError("expected invalid profile error")
+
+
+def test_llm_profile_overrides_apply_to_profile_config() -> None:
+    store = profile_store(temperature=0.7)
+    agent = chat_agent().model_copy(update={"llm": {"profile": "myqwen3", "temperature": 0.2, "max_tokens": 2048}})
+
+    config = resolve_llm_config(agent_schema=agent, capability_schema=llm_capability(), llm_profile_store=store)
+
+    assert config.values["temperature"] == 0.2
+    assert config.values["max_tokens"] == 2048
+
+
 def test_resolved_config_does_not_return_api_key_plaintext() -> None:
     client = TestClient(create_app(llm_runtime=InspectableLLMRuntime(), use_memory=True))
     client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "secret"}})
@@ -209,4 +285,22 @@ def fixture_capability_store(user_config):
 
     store = CapabilityConfigStore()
     store.set_config("llm", user_config=user_config)
+    return store
+
+
+def profile_store(**overrides):
+    store = LLMProfileStore()
+    store.create(
+        LLMProfileSchema(
+            id="profile-1",
+            alias="myqwen3",
+            name="My Qwen3",
+            provider="llama_cpp",
+            base_url=overrides.pop("base_url", "http://qwen3/v1"),
+            api_key=overrides.pop("api_key", "secret"),
+            model_id=overrides.pop("model_id", "qwen3-local"),
+            enabled=overrides.pop("enabled", True),
+            **overrides,
+        )
+    )
     return store

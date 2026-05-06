@@ -70,3 +70,36 @@ def test_agent_manifest_with_slash_command_alias_field_fails() -> None:
             }
         )
 
+
+def test_agent_manifest_llm_profile_defaults_allow_session_override_true() -> None:
+    agent = AgentSchema.model_validate(
+        {
+            "id": "profile_agent",
+            "name": "Profile Agent",
+            "type": "prompt",
+            "actions": [{"id": "default"}],
+            "llm": {"profile": "myqwen3", "temperature": 0.2},
+            "context_policy": {"mode": "current_message"},
+            "model_lifecycle": {"load": "on_demand", "unload": "never", "unload_failure": "warn"},
+        }
+    )
+
+    assert agent.llm["profile"] == "myqwen3"
+    assert agent.llm["allow_session_override"] is True
+    assert agent.llm["temperature"] == 0.2
+
+
+def test_agent_manifest_llm_allow_session_override_false_loads() -> None:
+    agent = AgentSchema.model_validate(
+        {
+            "id": "locked_agent",
+            "name": "Locked Agent",
+            "type": "prompt",
+            "actions": [{"id": "default"}],
+            "llm": {"profile": "myqwen3", "allow_session_override": False},
+            "context_policy": {"mode": "current_message"},
+            "model_lifecycle": {"load": "on_demand", "unload": "never", "unload_failure": "warn"},
+        }
+    )
+
+    assert agent.llm["allow_session_override"] is False

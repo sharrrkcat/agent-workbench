@@ -34,6 +34,7 @@ class AgentSchema(BaseModel):
     entry: Optional[str] = None
     actions: List[ActionSchema]
     model: Optional[Dict[str, Any]] = None
+    llm: Optional[Dict[str, Any]] = None
     prompt: Optional[str] = None
     context_policy: ContextPolicy
     model_lifecycle: ModelLifecyclePolicy
@@ -53,6 +54,9 @@ class AgentSchema(BaseModel):
             if "config_schema" in data:
                 data = dict(data)
                 data["config_schema"] = parse_config_schema(data.get("config_schema"))
+            if isinstance(data.get("llm"), dict) and "allow_session_override" not in data["llm"]:
+                data = dict(data)
+                data["llm"] = {**data["llm"], "allow_session_override": True}
         return data
 
     @model_validator(mode="after")

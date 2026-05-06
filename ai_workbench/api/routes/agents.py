@@ -21,6 +21,7 @@ def serialize_agent(state: RuntimeState, agent, enabled: bool = True) -> dict:
         "entry": agent.entry,
         "actions": [action.model_dump() for action in agent.actions],
         "model": agent.model,
+        "llm": agent.llm,
         "context_policy": agent.context_policy.model_dump(),
         "model_lifecycle": agent.model_lifecycle.model_dump(),
         "capabilities": agent.capabilities,

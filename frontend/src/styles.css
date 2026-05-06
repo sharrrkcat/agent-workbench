@@ -1898,6 +1898,11 @@ input:disabled {
   color: #f5f5f5;
 }
 
+.settings-secondary-button.danger {
+  border-color: rgba(248, 113, 113, 0.22);
+  color: #fecaca;
+}
+
 .settings-primary-button:hover:not(:disabled) {
   background: #ffffff;
 }
@@ -2099,6 +2104,132 @@ input:disabled {
 .llm-settings-panel {
   display: grid;
   gap: 12px;
+}
+
+.llm-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.llm-profile-list,
+.llm-profile-editor,
+.llm-profile-form,
+.llm-profile-editor-heading {
+  min-width: 0;
+}
+
+.llm-profile-list {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  max-height: 620px;
+  overflow-y: auto;
+}
+
+.llm-profile-row {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: #242424;
+  color: #f5f5f5;
+  text-align: left;
+}
+
+.llm-profile-row:hover,
+.llm-profile-row.active {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: #303030;
+}
+
+.llm-profile-row.disabled {
+  opacity: 0.55;
+}
+
+.llm-profile-row strong,
+.llm-profile-row span,
+.llm-profile-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-profile-row strong {
+  font-size: 13px;
+}
+
+.llm-profile-row span,
+.llm-profile-row small {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+}
+
+.llm-profile-editor {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.llm-profile-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.llm-profile-editor-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.llm-profile-editor-heading strong,
+.llm-profile-editor-heading span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-profile-editor-heading strong {
+  font-size: 13px;
+}
+
+.llm-profile-editor-heading span {
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 11px;
+}
+
+.llm-profile-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.llm-profile-form .settings-config-field:has(textarea),
+.llm-profile-form .llm-profile-flags {
+  grid-column: 1 / -1;
+}
+
+.llm-profile-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.settings-chip-row.compact {
+  gap: 4px;
+}
+
+.settings-chip-row.compact span {
+  padding: 2px 6px;
+  font-size: 10px;
 }
 
 .settings-config-field input[type="text"],

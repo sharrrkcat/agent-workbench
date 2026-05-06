@@ -119,6 +119,20 @@ def test_list_agents_returns_builtin_agents() -> None:
     assert all("avatar_type" in agent for agent in response.json())
 
 
+def test_agent_api_returns_manifest_llm_fields() -> None:
+    client = make_client()
+    state = client.app.state.runtime_state
+    chat = state.agents.get("chat")
+    state.agents._agents["chat"] = chat.model_copy(
+        update={"llm": {"profile": "myqwen3", "allow_session_override": False, "temperature": 0.2}}
+    )
+
+    response = client.get("/api/agents/chat")
+
+    assert response.status_code == 200
+    assert response.json()["llm"] == {"profile": "myqwen3", "allow_session_override": False, "temperature": 0.2}
+
+
 def test_agent_directory_avatar_png_takes_priority(tmp_path: Path) -> None:
     client = make_client()
     register_temp_agent(client, tmp_path, "avatar_dir", avatar="TA", files={"avatar.png": b"png-avatar"})
@@ -408,6 +422,83 @@ def test_capability_config_secret_new_value_updates_store() -> None:
 
     assert response.status_code == 200
     assert client.app.state.runtime_state.capability_configs.get_config("llm")["user_config"]["api_key"] == "new"
+
+
+def test_llm_profile_api_create_list_get_patch_delete_and_masks_secret() -> None:
+    client = make_client()
+
+    created = client.post(
+        "/api/llm-profiles",
+        json={
+            "alias": "myqwen3",
+            "name": "My Qwen3",
+            "provider": "llama_cpp",
+            "base_url": "http://localhost:8080/v1",
+            "api_key": "secret-token",
+            "model_id": "qwen3",
+            "supports_vision": True,
+        },
+    )
+
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["alias"] == "myqwen3"
+    assert payload["api_key"] == "********"
+    assert payload["api_key_set"] is True
+    assert "secret-token" not in str(payload)
+
+    listed = client.get("/api/llm-profiles")
+    assert listed.status_code == 200
+    assert listed.json()[0]["alias"] == "myqwen3"
+
+    fetched = client.get("/api/llm-profiles/myqwen3")
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == payload["id"]
+
+    patched = client.patch(
+        "/api/llm-profiles/myqwen3",
+        json={"api_key": "********", "name": "Renamed", "supports_reasoning": True},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["name"] == "Renamed"
+    assert patched.json()["supports_reasoning"] is True
+    assert client.app.state.runtime_state.llm_profiles.get_by_id_or_alias("myqwen3").api_key == "secret-token"
+
+    deleted = client.delete("/api/llm-profiles/myqwen3")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True, "profile_id": payload["id"]}
+    assert client.get("/api/llm-profiles/myqwen3").status_code == 404
+
+
+def test_llm_profile_api_rejects_alias_conflict_and_invalid_alias() -> None:
+    client = make_client()
+    body = {"alias": "myqwen3", "name": "My Qwen3", "model_id": "qwen3", "base_url": "http://local/v1"}
+
+    assert client.post("/api/llm-profiles", json=body).status_code == 200
+    conflict = client.post("/api/llm-profiles", json={**body, "name": "Duplicate"})
+    invalid = client.post("/api/llm-profiles", json={**body, "alias": "bad alias"})
+
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "LLM_PROFILE_ALIAS_CONFLICT"
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "LLM_PROFILE_INVALID"
+
+
+def test_llm_profile_test_and_models_use_profile_config() -> None:
+    llm = FakeDiagnosticLLMRuntime()
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    created = client.post(
+        "/api/llm-profiles",
+        json={"alias": "profile1", "name": "Profile 1", "base_url": "http://profile/v1", "model_id": "profile-model"},
+    ).json()
+
+    test_response = client.post(f"/api/llm-profiles/{created['id']}/test")
+    models_response = client.get("/api/llm-profiles/profile1/models")
+
+    assert test_response.status_code == 200
+    assert test_response.json()["success"] is True
+    assert models_response.status_code == 200
+    assert models_response.json()["models"] == [{"id": "fake-model"}]
 
 
 class FakeDiagnosticLLMRuntime(FakeLLMRuntime):
