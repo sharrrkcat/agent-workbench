@@ -62,6 +62,8 @@ class AgentRunner:
         source_message_id: str = "",
         parent_message_id: str = "",
         prefill=None,
+        input_message_id: str = "",
+        create_user_message: bool = True,
     ) -> RunResult:
         try:
             agent = self.agent_registry.get(agent_id)
@@ -95,6 +97,8 @@ class AgentRunner:
                 source_message_id=source_message_id,
                 parent_message_id=parent_message_id,
                 prefill=prefill or {},
+                input_message_id=input_message_id,
+                create_user_message=create_user_message,
             )
 
         if agent.type != "prompt":
@@ -104,15 +108,27 @@ class AgentRunner:
         parent_id = parent_message_id or source_message_id or ""
         current_user_message_id = ""
         if action_id == "default":
-            user_message = self.message_store.add_message(
-                session_id=session_id,
-                role="user",
-                content=args,
-                agent_id=agent_id,
-                action_id=action_id,
-                metadata={"input_source": "text"},
-            )
-            current_user_message_id = user_message.message_id
+            if input_message_id and not create_user_message:
+                user_message = self.message_store.get_message(input_message_id)
+                current_user_message_id = user_message.message_id
+            else:
+                user_message = self.message_store.add_message(
+                    session_id=session_id,
+                    role="user",
+                    content=args,
+                    agent_id=agent_id,
+                    action_id=action_id,
+                    metadata={
+                        "input_source": "text",
+                        "invocation": {
+                            "route_type": "agent",
+                            "agent_id": agent_id,
+                            "action_id": action_id,
+                            "raw_text": args,
+                        },
+                    },
+                )
+                current_user_message_id = user_message.message_id
             parent_id = user_message.message_id
 
         kind = "agent" if action_id == "default" else "action"
@@ -213,10 +229,12 @@ class AgentRunner:
             return RunResult(success=False, run_id=failed_run.run_id, error=error)
 
         original_user_message_id = self._find_original_user_message_id(source_message_id)
+        source_user_message_id = current_user_message_id or original_user_message_id
         metadata = {
             "success": True,
             "context_warnings": context.warnings,
             "original_user_message_id": original_user_message_id,
+            "source_user_message_id": source_user_message_id,
             "prefill": prefill or {},
             "llm_resolution": _public_llm_resolution(llm_config),
         }

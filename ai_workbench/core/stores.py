@@ -132,6 +132,34 @@ class MessageStore:
             self._session_store.touch_session(message.session_id)
         return message
 
+    def delete_message(self, message_id: str) -> MessageSchema:
+        message = self.get_message(message_id)
+        self._messages.pop(message_id, None)
+        message_ids = self._session_message_ids.get(message.session_id, [])
+        self._session_message_ids[message.session_id] = [item for item in message_ids if item != message_id]
+        if self._session_store is not None:
+            self._session_store.touch_session(message.session_id)
+        return message
+
+    def delete_messages_after(self, session_id: str, message_id: str, include_target: bool = False) -> List[MessageSchema]:
+        messages = self.list_messages(session_id)
+        index = next((idx for idx, message in enumerate(messages) if message.message_id == message_id), None)
+        if index is None:
+            raise KeyError(f"unknown message id: {message_id}")
+        start = index if include_target else index + 1
+        deleted = messages[start:]
+        if not deleted:
+            return []
+        deleted_ids = {message.message_id for message in deleted}
+        for deleted_id in deleted_ids:
+            self._messages.pop(deleted_id, None)
+        self._session_message_ids[session_id] = [
+            item for item in self._session_message_ids.get(session_id, []) if item not in deleted_ids
+        ]
+        if self._session_store is not None:
+            self._session_store.touch_session(session_id)
+        return deleted
+
     def list_messages(self, session_id: str) -> List[MessageSchema]:
         return [self._messages[message_id] for message_id in self._session_message_ids.get(session_id, [])]
 
@@ -211,6 +239,19 @@ class RunStore:
         run_ids = self._session_run_ids.pop(session_id, [])
         for run_id in run_ids:
             self._runs.pop(run_id, None)
+
+    def cancel_runs(self, run_ids: List[str], reason: str = "Messages were removed.") -> List[RunSchema]:
+        cancelled: List[RunSchema] = []
+        for run_id in run_ids:
+            run = self._runs.get(run_id)
+            if run is None or run.status in {RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
+                continue
+            updated = run.model_copy(
+                update={"status": RunStatus.CANCELLED, "current_step": "cancelled", "error": reason, "updated_at": datetime.utcnow()}
+            )
+            self._runs[run_id] = updated
+            cancelled.append(updated)
+        return cancelled
 
 
 class RunEventStore:

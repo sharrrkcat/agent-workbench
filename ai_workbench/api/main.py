@@ -56,6 +56,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(sessions.router)
     app.include_router(messages.router)
+    app.include_router(messages.message_router)
     app.include_router(runs.router)
     app.include_router(ws_router)
     return app

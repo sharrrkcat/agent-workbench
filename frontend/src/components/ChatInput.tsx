@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Loader2, Paperclip, Send, Slash } from 'lucide-react';
+import { AtSign, Check, ChevronDown, Loader2, Paperclip, Send, Slash } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { CommandPalette } from './CommandPalette';
 
@@ -7,7 +7,9 @@ export function ChatInput() {
   const [value, setValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { currentSession, llmProfiles, sendMessage, sending, updateSessionLlmProfile } = useWorkbenchStore();
 
@@ -40,9 +42,22 @@ export function ChatInput() {
       if (!formRef.current?.contains(event.target as Node)) {
         setSuggestionsDismissed(true);
       }
+      if (!modelSelectorRef.current?.contains(event.target as Node)) {
+        setModelMenuOpen(false);
+      }
     }
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setModelMenuOpen(false);
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
   function submit(event?: FormEvent) {
@@ -101,6 +116,14 @@ export function ChatInput() {
     });
   }
 
+  function selectModel(profileId: string | null) {
+    setModelMenuOpen(false);
+    void updateSessionLlmProfile(profileId);
+  }
+
+  const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles);
+  const enabledProfiles = llmProfiles.filter((profile) => profile.enabled);
+
   return (
     <form ref={formRef} className="composer-shell" onSubmit={submit}>
       <div className="composer-card">
@@ -128,26 +151,51 @@ export function ChatInput() {
             </button>
           </div>
           <div className="composer-actions">
-            <label className="model-selector-pill" title={modelSelectorTitle(currentSession?.llm_profile_id || null, llmProfiles)}>
-              <span>Model:</span>
-              <select
-                value={currentSession?.llm_profile_id || ''}
+            <div ref={modelSelectorRef} className="model-selector-wrap">
+              <button
+                className="model-selector-pill"
+                type="button"
+                title={modelSelectorTitle(currentSession?.llm_profile_id || null, llmProfiles)}
                 disabled={!currentSession}
-                onChange={(event) => void updateSessionLlmProfile(event.target.value || null)}
+                aria-haspopup="menu"
+                aria-expanded={modelMenuOpen}
+                onClick={() => setModelMenuOpen((open) => !open)}
               >
-                <option value="">Default</option>
-                {currentSession?.llm_profile_id && !llmProfiles.some((profile) => profile.id === currentSession.llm_profile_id && profile.enabled) ? (
-                  <option value={currentSession.llm_profile_id}>Missing profile</option>
-                ) : null}
-                {llmProfiles
-                  .filter((profile) => profile.enabled)
-                  .map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name || profile.alias}
-                    </option>
-                  ))}
-              </select>
-            </label>
+                <span>Model:</span>
+                <strong>{selectedModelLabel}</strong>
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+              {modelMenuOpen ? (
+                <div className="model-selector-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={!currentSession?.llm_profile_id}
+                    className={!currentSession?.llm_profile_id ? 'selected' : ''}
+                    onClick={() => selectModel(null)}
+                  >
+                    <span>Default</span>
+                    {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
+                  </button>
+                  {enabledProfiles.map((profile) => {
+                    const selected = currentSession?.llm_profile_id === profile.id;
+                    return (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        className={selected ? 'selected' : ''}
+                        onClick={() => selectModel(profile.id)}
+                      >
+                        <span>{profile.name || profile.alias}</span>
+                        {selected ? <Check size={14} /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             <button className="send-button" disabled={!canSend} title={sending ? 'Sending' : 'Send'}>
               {sending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
               <span className="sr-only">{sending ? 'Sending' : 'Send'}</span>
@@ -164,6 +212,12 @@ function modelSelectorTitle(profileId: string | null, profiles: { id: string; na
   const profile = profiles.find((item) => item.id === profileId);
   if (!profile) return 'Missing profile';
   return `${profile.name || profile.alias} - ${profile.model_id}`;
+}
+
+function modelSelectorLabel(profileId: string | null, profiles: { id: string; name: string; alias: string }[]): string {
+  if (!profileId) return 'Default';
+  const profile = profiles.find((item) => item.id === profileId);
+  return profile ? profile.name || profile.alias : 'Missing profile';
 }
 
 function getActiveToken(value: string, cursorPosition: number): { token: string; start: number; end: number } | null {

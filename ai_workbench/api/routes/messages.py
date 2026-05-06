@@ -6,10 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.llm_config import LLMConfigError
+from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunStatus
 
 
 router = APIRouter(prefix="/api/sessions/{session_id}", tags=["messages"])
+message_router = APIRouter(prefix="/api/messages", tags=["messages"])
 
 
 class CreateMessageRequest(BaseModel):
@@ -26,6 +28,13 @@ class InvokeActionRequest(BaseModel):
     source_message_id: Optional[str] = None
     input_text: str = ""
     prefill: dict = Field(default_factory=dict)
+
+
+class EditMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str
+    rerun: bool = True
 
 
 @router.get("/messages")
@@ -46,7 +55,20 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
         raise_error(400, exc.code, exc.message)
 
     if payload.content.startswith("/"):
-        user_message = state.messages.add_message(session_id=session_id, role="user", content=payload.content)
+        command_name = payload.content.split(maxsplit=1)[0]
+        user_message = state.messages.add_message(
+            session_id=session_id,
+            role="user",
+            content=payload.content,
+            metadata={
+                "input_source": "command",
+                "invocation": {
+                    "route_type": "command",
+                    "command_id": command_name,
+                    "raw_text": payload.content,
+                },
+            },
+        )
         input_message_id = user_message.message_id
 
     result = await state.runtime.handle_input(session, payload.content, input_message_id=input_message_id)
@@ -59,6 +81,81 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
         raise_error(status_code, result.error_code or "ROUTE_ERROR", result.error or "Input could not be routed")
 
     return _result_payload(state, session_id, result, before_ids)
+
+
+@message_router.delete("/{message_id}")
+def delete_message(message_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        state.messages.delete_message(message_id)
+    except KeyError:
+        raise_error(404, "MESSAGE_NOT_FOUND", f"Message not found: {message_id}")
+    except Exception as exc:
+        raise_error(400, "MESSAGE_DELETE_FAILED", str(exc) or "Message delete failed")
+    return {"deleted": True, "message_id": message_id}
+
+
+@message_router.post("/{message_id}/retry")
+async def retry_message(message_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    message = _get_message_or_404(state, message_id)
+    if message.role not in {"assistant", "agent"}:
+        raise_error(400, "CANNOT_RETRY_MESSAGE", "Only assistant messages can be retried.")
+    if not message.agent_id:
+        raise_error(400, "CANNOT_RETRY_MESSAGE", "Message has no agent invocation to retry.")
+
+    source_user_message = _source_user_message_for_retry(state, message)
+    session = _get_session_or_404(state, message.session_id)
+    try:
+        deleted = state.messages.delete_messages_after(message.session_id, message.message_id, include_target=True)
+        _cancel_runs_for_deleted_messages(state, deleted)
+        state.runtime.announce_model_change_if_needed(message.session_id)
+        before_ids = {item.message_id for item in state.messages.list_messages(message.session_id)}
+        result = await state.runtime.retry_assistant_message(session, message, source_user_message)
+    except LLMConfigError as exc:
+        raise_error(400, exc.code, exc.message)
+    except Exception as exc:
+        raise_error(400, "MESSAGE_RETRY_FAILED", str(exc) or "Message retry failed")
+
+    if not result.success:
+        if result.error_code == "ACTION_NOT_FOUND":
+            raise_error(404, result.error_code, result.error or "Action not found")
+        raise_error(400, result.error_code or "MESSAGE_RETRY_FAILED", result.error or "Message retry failed")
+    return _result_payload(state, message.session_id, result, before_ids)
+
+
+@message_router.post("/{message_id}/edit")
+async def edit_message(message_id: str, payload: EditMessageRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    message = _get_message_or_404(state, message_id)
+    if message.role != "user":
+        raise_error(400, "CANNOT_EDIT_MESSAGE", "Only user messages can be edited.")
+
+    session = _get_session_or_404(state, message.session_id)
+    try:
+        updated_message = message.model_copy(update={"content": payload.content})
+        updated_message = state.messages.update_message(updated_message)
+        deleted = state.messages.delete_messages_after(message.session_id, message.message_id, include_target=False)
+        _cancel_runs_for_deleted_messages(state, deleted)
+        result = None
+        before_ids = {item.message_id for item in state.messages.list_messages(message.session_id)}
+        if payload.rerun:
+            state.runtime.announce_model_change_if_needed(message.session_id)
+            before_ids = {item.message_id for item in state.messages.list_messages(message.session_id)}
+            result = await state.runtime.rerun_user_message(session, updated_message)
+    except LLMConfigError as exc:
+        raise_error(400, exc.code, exc.message)
+    except Exception as exc:
+        raise_error(400, "MESSAGE_EDIT_FAILED", str(exc) or "Message edit failed")
+
+    if result is None:
+        return {
+            "success": True,
+            "data": updated_message.model_dump(),
+            "error": None,
+            "run": None,
+            "messages": [],
+        }
+    if not result.success:
+        raise_error(400, result.error_code or "MESSAGE_EDIT_FAILED", result.error or "Message edit failed")
+    return _result_payload(state, message.session_id, result, before_ids)
 
 
 @router.post("/actions")
@@ -96,6 +193,45 @@ def _get_session_or_404(state: RuntimeState, session_id: str):
         return state.sessions.get_session(session_id)
     except KeyError:
         raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
+
+
+def _get_message_or_404(state: RuntimeState, message_id: str) -> MessageSchema:
+    try:
+        return state.messages.get_message(message_id)
+    except KeyError:
+        raise_error(404, "MESSAGE_NOT_FOUND", f"Message not found: {message_id}")
+
+
+def _source_user_message_for_retry(state: RuntimeState, message: MessageSchema) -> MessageSchema:
+    metadata = message.metadata or {}
+    candidate_ids = [
+        metadata.get("source_user_message_id"),
+        metadata.get("input_message_id"),
+        message.parent_message_id,
+    ]
+    if message.run_id:
+        try:
+            run = state.runs.get_run(message.run_id)
+            candidate_ids.append((run.metadata or {}).get("input_message_id"))
+        except KeyError:
+            pass
+    for candidate_id in candidate_ids:
+        if not candidate_id:
+            continue
+        try:
+            candidate = state.messages.get_message(str(candidate_id))
+        except KeyError:
+            continue
+        if candidate.role == "user":
+            return candidate
+    raise_error(400, "CANNOT_RETRY_MESSAGE", "Could not find the user message that produced this response.")
+
+
+def _cancel_runs_for_deleted_messages(state: RuntimeState, messages: list[MessageSchema]) -> None:
+    run_ids = sorted({message.run_id for message in messages if message.run_id})
+    cancel_runs = getattr(state.runs, "cancel_runs", None)
+    if callable(cancel_runs):
+        cancel_runs(run_ids, reason="Messages were removed.")
 
 
 def _result_payload(state: RuntimeState, session_id: str, result, before_ids=None) -> dict:

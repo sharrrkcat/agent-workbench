@@ -36,6 +36,7 @@ type WorkbenchState = {
   savingConfigId?: string;
   testingLlm: boolean;
   pendingActionKey?: string;
+  pendingMessageActionId?: string;
   error?: string;
   lastError?: AppError;
   setError: (error: unknown, fallback: string) => void;
@@ -59,6 +60,9 @@ type WorkbenchState = {
   loadRunEvents: (runId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
+  retryMessage: (messageId: string) => Promise<void>;
+  editMessage: (messageId: string, content: string) => Promise<void>;
 };
 
 export const actionKey = (action: AvailableAction) => `${action.source_message_id}-${action.agent_id}-${action.action_id}`;
@@ -388,6 +392,56 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         pendingActionKey: undefined,
         messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, action.source_message_id)],
       });
+    }
+  },
+
+  deleteMessage: async (messageId: string) => {
+    const session = get().currentSession;
+    if (!session) return;
+    set({ pendingMessageActionId: messageId, error: undefined, lastError: undefined });
+    try {
+      await api.deleteMessage(messageId);
+      set({
+        pendingMessageActionId: undefined,
+        messages: get().messages.filter((message) => message.message_id !== messageId),
+        error: undefined,
+        lastError: undefined,
+      });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to delete message'), pendingMessageActionId: undefined });
+    }
+  },
+
+  retryMessage: async (messageId: string) => {
+    const session = get().currentSession;
+    if (!session) return;
+    set({ pendingMessageActionId: messageId, error: undefined, lastError: undefined });
+    try {
+      const result = await api.retryMessage(messageId);
+      await get().refreshCurrent();
+      if (!result.success) {
+        set({ error: undefined, lastError: undefined });
+      }
+      set({ pendingMessageActionId: undefined });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to retry message'), pendingMessageActionId: undefined });
+    }
+  },
+
+  editMessage: async (messageId: string, content: string) => {
+    const session = get().currentSession;
+    if (!session) return;
+    set({ pendingMessageActionId: messageId, error: undefined, lastError: undefined });
+    try {
+      const result = await api.editMessage(messageId, content, true);
+      await get().refreshCurrent();
+      if (!result.success) {
+        set({ error: undefined, lastError: undefined });
+      }
+      set({ pendingMessageActionId: undefined });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to edit message'), pendingMessageActionId: undefined });
+      throw error;
     }
   },
 }));

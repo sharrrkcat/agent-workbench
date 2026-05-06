@@ -72,7 +72,7 @@ Priority, highest first:
 - `.env` / process environment fallback: `AGENT_WORKBENCH_LLM_BASE_URL`, `AGENT_WORKBENCH_LLM_API_KEY`, `AGENT_WORKBENCH_LLM_MODEL`, `AGENT_WORKBENCH_LLM_TIMEOUT`
 - `llm` capability manifest defaults
 
-The Chat composer has a session model selector beside Send. `Default` means the current Agent manifest or global fallback resolves the model. Selecting an enabled saved LLM Profile stores `session.llm_profile_id` and overrides LLM Agents in that session unless the Agent opts out.
+The Chat composer has a custom dark session model selector beside Send. `Default` means the current Agent manifest or global fallback resolves the model. Selecting an enabled saved LLM Profile stores `session.llm_profile_id` and overrides LLM Agents in that session unless the Agent opts out. The dropdown hides disabled profiles and highlights the selected item.
 
 When the session model changes, the app inserts a centered `model_changed` separator before the next user message. This separator is persisted for UI history but is filtered out of LLM context.
 
@@ -88,6 +88,17 @@ hello
 ```
 
 Message action buttons use the same Agent action system as text calls.
+
+Message hover actions are available in Chat:
+
+- User messages: Copy, Edit, Delete.
+- Agent messages: Copy, Retry, Delete.
+
+Copy uses the raw message content. Markdown replies copy Markdown source, and JSON messages copy pretty JSON.
+
+Delete only removes the selected message. It does not remove later messages and does not cascade-delete runs.
+
+Agent Retry deletes the selected Agent message and all later messages, then regenerates from the source user message. User Edit updates the selected user message, deletes all later messages, then submits the edited content again. Retry and Edit both use the current session model resolution rules, so switching the composer model before retrying or editing affects the regenerated Agent reply and still records `llm_resolution` metadata.
 
 Sessions can be deleted from the sidebar. Deleting a session is a hard delete in this alpha: its messages, runs, and run events are removed from SQLite.
 

@@ -285,3 +285,8 @@ export type DeleteSessionResponse = {
   deleted: boolean;
   session_id: string;
 };
+
+export type DeleteMessageResponse = {
+  deleted: boolean;
+  message_id: string;
+};

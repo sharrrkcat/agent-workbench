@@ -285,16 +285,29 @@ class ScriptAgentRunner:
         source_message_id: str = "",
         parent_message_id: str = "",
         prefill=None,
+        input_message_id: str = "",
+        create_user_message: bool = True,
     ) -> RunResult:
         session = self.session_store.get_session(session_id)
-        user_message = self.message_store.add_message(
-            session_id=session_id,
-            role="user",
-            content=args,
-            agent_id=agent.id,
-            action_id=action_id,
-            metadata={"input_source": "script_agent"},
-        )
+        if input_message_id and not create_user_message:
+            user_message = self.message_store.get_message(input_message_id)
+        else:
+            user_message = self.message_store.add_message(
+                session_id=session_id,
+                role="user",
+                content=args,
+                agent_id=agent.id,
+                action_id=action_id,
+                metadata={
+                    "input_source": "script_agent",
+                    "invocation": {
+                        "route_type": "agent",
+                        "agent_id": agent.id,
+                        "action_id": action_id,
+                        "raw_text": args,
+                    },
+                },
+            )
         parent_id = parent_message_id or source_message_id or user_message.message_id
         run = self.run_store.create_run(
             kind="agent" if action_id == "default" else "action",

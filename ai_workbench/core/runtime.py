@@ -39,6 +39,81 @@ class WorkbenchRuntime:
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
 
+    async def rerun_user_message(self, session: Session, message) -> RunResult:
+        invocation = (message.metadata or {}).get("invocation")
+        if isinstance(invocation, dict):
+            route_type = invocation.get("route_type")
+            if route_type == "command":
+                raw_command = str(message.content)
+                route = self.router.route(session, raw_command)
+                command_id = route.target_id if route.kind == RouteKind.COMMAND else str(invocation.get("command_id") or "")
+                args = route.args if route.kind == RouteKind.COMMAND else raw_command
+                return await self.command_runner.run(
+                    command_id,
+                    args,
+                    session.session_id,
+                    input_message_id=message.message_id,
+                )
+            if route_type == "agent":
+                if self.agent_runner is None:
+                    return RunResult(success=False, run_id="", error="Agent runner is not configured.")
+                return await self.agent_runner.run(
+                    agent_id=str(invocation.get("agent_id") or session.default_agent_id),
+                    action_id=str(invocation.get("action_id") or "default"),
+                    args=str(message.content),
+                    session_id=session.session_id,
+                    input_message_id=message.message_id,
+                    create_user_message=False,
+                )
+
+        raw_input = str(message.content)
+        route = self.router.route(session, raw_input)
+        if route.kind == RouteKind.ERROR:
+            return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
+        if route.kind == RouteKind.COMMAND:
+            return await self.command_runner.run(
+                route.target_id or "",
+                route.args,
+                route.session_id,
+                input_message_id=message.message_id,
+            )
+        if route.kind == RouteKind.AGENT:
+            if self.agent_runner is None:
+                return RunResult(success=False, run_id="", error="Agent runner is not configured.")
+            source_message_id = ""
+            if (route.action_id or "default") != "default":
+                latest = self.agent_runner.message_store.find_latest_assistant_message(
+                    route.session_id,
+                    agent_id=route.target_id,
+                )
+                if latest is not None:
+                    source_message_id = latest.message_id
+            return await self.agent_runner.run(
+                agent_id=route.target_id or "",
+                action_id=route.action_id or "default",
+                args=route.args,
+                session_id=route.session_id,
+                source_message_id=source_message_id,
+                input_message_id=message.message_id,
+                create_user_message=False,
+            )
+        return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
+
+    async def retry_assistant_message(self, session: Session, message, source_user_message) -> RunResult:
+        if self.agent_runner is None:
+            return RunResult(success=False, run_id="", error="Agent runner is not configured.")
+        agent_id = message.agent_id or ""
+        action_id = message.action_id or "default"
+        args = str(source_user_message.content)
+        return await self.agent_runner.run(
+            agent_id=agent_id,
+            action_id=action_id,
+            args=args,
+            session_id=session.session_id,
+            input_message_id=source_user_message.message_id,
+            create_user_message=False,
+        )
+
     def announce_model_change_if_needed(self, session_id: str) -> None:
         if self.agent_runner is None or self.agent_runner.session_store is None:
             return

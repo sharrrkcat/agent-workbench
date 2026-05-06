@@ -215,6 +215,41 @@ class SqlMessageStore:
             session.refresh(record)
             return _message_from_record(record)
 
+    def delete_message(self, message_id: str) -> MessageSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(MessageRecord, message_id)
+            if record is None:
+                raise KeyError(f"unknown message id: {message_id}")
+            message = _message_from_record(record)
+            session.delete(record)
+            session_record = session.get(SessionRecord, message.session_id)
+            if session_record is not None:
+                session_record.updated_at = datetime.utcnow()
+                session.add(session_record)
+            session.commit()
+            return message
+
+    def delete_messages_after(self, session_id: str, message_id: str, include_target: bool = False) -> List[MessageSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(
+                select(MessageRecord).where(MessageRecord.session_id == session_id).order_by(MessageRecord.created_at)
+            ).all()
+            index = next((idx for idx, record in enumerate(records) if record.message_id == message_id), None)
+            if index is None:
+                raise KeyError(f"unknown message id: {message_id}")
+            start = index if include_target else index + 1
+            deleted_records = records[start:]
+            deleted = [_message_from_record(record) for record in deleted_records]
+            for record in deleted_records:
+                session.delete(record)
+            if deleted_records:
+                session_record = session.get(SessionRecord, session_id)
+                if session_record is not None:
+                    session_record.updated_at = datetime.utcnow()
+                    session.add(session_record)
+            session.commit()
+            return deleted
+
     def list_messages(self, session_id: str) -> List[MessageSchema]:
         with DbSession(self.engine) as session:
             records = session.exec(
@@ -315,6 +350,24 @@ class SqlRunStore:
         with DbSession(self.engine) as session:
             session.exec(delete(RunRecord).where(RunRecord.session_id == session_id))
             session.commit()
+
+    def cancel_runs(self, run_ids: List[str], reason: str = "Messages were removed.") -> List[RunSchema]:
+        if not run_ids:
+            return []
+        cancelled: List[RunSchema] = []
+        with DbSession(self.engine) as session:
+            records = session.exec(select(RunRecord).where(RunRecord.run_id.in_(run_ids))).all()
+            for record in records:
+                if record.status in {RunStatus.CANCELLED.value, RunStatus.INTERRUPTED.value}:
+                    continue
+                record.status = RunStatus.CANCELLED.value
+                record.current_step = "cancelled"
+                record.error = reason
+                record.updated_at = datetime.utcnow()
+                session.add(record)
+                cancelled.append(_run_from_record(record))
+            session.commit()
+        return cancelled
 
     def interrupt_unfinished_runs(self) -> List[str]:
         interrupted: List[str] = []

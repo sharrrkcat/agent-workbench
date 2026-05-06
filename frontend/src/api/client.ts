@@ -3,6 +3,7 @@ import type {
   AgentConfig,
   CapabilityConfig,
   Command,
+  DeleteMessageResponse,
   DeleteSessionResponse,
   LlmResolvedConfig,
   LlmProfile,
@@ -114,6 +115,19 @@ export const api = {
     request<RuntimeResponse>(`/api/sessions/${sessionId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content }),
+    }),
+  deleteMessage: (messageId: string) =>
+    request<DeleteMessageResponse>(`/api/messages/${messageId}`, {
+      method: 'DELETE',
+    }),
+  retryMessage: (messageId: string) =>
+    request<RuntimeResponse>(`/api/messages/${messageId}/retry`, {
+      method: 'POST',
+    }),
+  editMessage: (messageId: string, content: string, rerun = true) =>
+    request<RuntimeResponse>(`/api/messages/${messageId}/edit`, {
+      method: 'POST',
+      body: JSON.stringify({ content, rerun }),
     }),
   invokeAction: (
     sessionId: string,

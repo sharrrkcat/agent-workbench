@@ -797,6 +797,163 @@ def test_list_messages_returns_json_content_as_structured_object() -> None:
     assert message["content"] == {"ok": True, "items": [1, 2]}
 
 
+def test_delete_user_message_removes_only_selected_message() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+    first = post_message(client, session["session_id"], "first")
+    second = post_message(client, session["session_id"], "second")
+    user_message = first["messages"][0]
+
+    response = client.delete(f"/api/messages/{user_message['message_id']}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True, "message_id": user_message["message_id"]}
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    ids = [message["message_id"] for message in messages]
+    assert user_message["message_id"] not in ids
+    assert second["messages"][0]["message_id"] in ids
+    assert second["messages"][-1]["message_id"] in ids
+
+
+def test_delete_agent_message_removes_only_selected_message() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+    first = post_message(client, session["session_id"], "first")
+    second = post_message(client, session["session_id"], "second")
+    assistant_message = first["messages"][-1]
+
+    response = client.delete(f"/api/messages/{assistant_message['message_id']}")
+
+    assert response.status_code == 200
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    ids = [message["message_id"] for message in messages]
+    assert assistant_message["message_id"] not in ids
+    assert first["messages"][0]["message_id"] in ids
+    assert second["messages"][-1]["message_id"] in ids
+
+
+def test_delete_missing_message_returns_structured_404() -> None:
+    response = make_client().delete("/api/messages/missing")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "MESSAGE_NOT_FOUND"
+
+
+def test_agent_retry_deletes_target_and_later_messages_then_regenerates() -> None:
+    llm = FakeLLMRuntime(response="retry reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    session = create_session(client)
+    first = post_message(client, session["session_id"], "first")
+    target = first["messages"][-1]
+    later = post_message(client, session["session_id"], "later")
+
+    response = client.post(f"/api/messages/{target['message_id']}/retry")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["messages"][-1]["content"] == "retry reply"
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    ids = [message["message_id"] for message in messages]
+    assert target["message_id"] not in ids
+    assert later["messages"][0]["message_id"] not in ids
+    assert later["messages"][-1]["message_id"] not in ids
+    assert messages[-1]["metadata"]["llm_resolution"]
+    assert llm.calls[-1]["messages"][-1]["content"] == "first"
+
+
+def test_agent_retry_without_source_user_returns_cannot_retry() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    message = state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content="orphan",
+        agent_id="chat",
+        action_id="default",
+    )
+
+    response = client.post(f"/api/messages/{message.message_id}/retry")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "CANNOT_RETRY_MESSAGE"
+
+
+def test_user_edit_updates_content_deletes_later_messages_and_regenerates() -> None:
+    llm = FakeLLMRuntime(response="edited reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    session = create_session(client)
+    first = post_message(client, session["session_id"], "first")
+    user_message = first["messages"][0]
+    later = post_message(client, session["session_id"], "later")
+
+    response = client.post(f"/api/messages/{user_message['message_id']}/edit", json={"content": "edited", "rerun": True})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    ids = [message["message_id"] for message in messages]
+    assert user_message["message_id"] in ids
+    assert later["messages"][0]["message_id"] not in ids
+    assert later["messages"][-1]["message_id"] not in ids
+    assert next(message for message in messages if message["message_id"] == user_message["message_id"])["content"] == "edited"
+    assert messages[-1]["content"] == "edited reply"
+    assert messages[-1]["metadata"]["llm_resolution"]
+    assert llm.calls[-1]["messages"][-1]["content"] == "edited"
+
+
+def test_user_edit_rejects_assistant_message() -> None:
+    client = make_client(response="chat reply")
+    session = create_session(client)
+    payload = post_message(client, session["session_id"], "hello")
+    assistant_message = payload["messages"][-1]
+
+    response = client.post(f"/api/messages/{assistant_message['message_id']}/edit", json={"content": "edited", "rerun": True})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "CANNOT_EDIT_MESSAGE"
+
+
+def test_deleted_messages_do_not_enter_context() -> None:
+    llm = FakeLLMRuntime(response="reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    session = create_session(client)
+    first = post_message(client, session["session_id"], "deleted text")
+    client.delete(f"/api/messages/{first['messages'][0]['message_id']}")
+
+    post_message(client, session["session_id"], "fresh")
+
+    sent_text = "\n".join(message["content"] for message in llm.calls[-1]["messages"])
+    assert "deleted text" not in sent_text
+
+
+def test_retry_edit_use_current_session_model_override_and_model_change_range() -> None:
+    llm = FakeLLMRuntime(response="profile reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    session = create_session(client)
+    profile = create_llm_profile(client, alias="retryprofile")
+    first = post_message(client, session["session_id"], "first")
+    user_message = first["messages"][0]
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
+
+    retry_response = client.post(f"/api/messages/{first['messages'][-1]['message_id']}/retry")
+
+    assert retry_response.status_code == 200
+    assert llm.calls[-1]["model_config"]["model"] == "retryprofile-model"
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    assert any(message["output_type"] == "event" and message["metadata"]["profile_id"] == profile["id"] for message in messages)
+    assert messages[-1]["metadata"]["llm_resolution"]["source"] == "session_override"
+
+    edit_response = client.post(f"/api/messages/{user_message['message_id']}/edit", json={"content": "edited again", "rerun": True})
+
+    assert edit_response.status_code == 200
+    assert llm.calls[-1]["model_config"]["model"] == "retryprofile-model"
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    assert messages[-1]["metadata"]["llm_resolution"]["source"] == "session_override"
+
+
 def test_action_api_invokes_translate_formal() -> None:
     client = make_client(response="hello")
     session = create_session(client)

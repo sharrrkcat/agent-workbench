@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CircleAlert, Clock3 } from 'lucide-react';
+import { Check, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import type { Agent, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
@@ -10,6 +10,14 @@ import { AgentAvatar } from './AgentAvatar';
 export function MessageBubble({ message }: { message: Message }) {
   const agents = useWorkbenchStore((state) => state.agents);
   const runs = useWorkbenchStore((state) => state.runs);
+  const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
+  const retryMessage = useWorkbenchStore((state) => state.retryMessage);
+  const editMessage = useWorkbenchStore((state) => state.editMessage);
+  const setError = useWorkbenchStore((state) => state.setError);
+  const pendingMessageActionId = useWorkbenchStore((state) => state.pendingMessageActionId);
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(contentToText(message.content));
 
   if (message.output_type === 'event') {
     return <SystemEventSeparator message={message} />;
@@ -23,6 +31,39 @@ export function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user';
   const isCommand = message.role === 'command' || Boolean(message.command_name);
   const kind = isUser ? 'user' : isCommand ? 'command' : 'agent';
+  const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
+  const operationPending = pendingMessageActionId === message.message_id;
+
+  useEffect(() => {
+    if (!editing) setEditValue(contentToText(message.content));
+  }, [editing, message.content]);
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(copyableMessageContent(message));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1300);
+    } catch (error) {
+      setError(error, 'Failed to copy message');
+    }
+  }
+
+  function confirmDelete() {
+    const confirmed = window.confirm('Delete this message?\nThis only removes the selected message.');
+    if (!confirmed) return;
+    void deleteMessage(message.message_id);
+  }
+
+  async function saveEdit() {
+    const next = editValue.trim();
+    if (!next || operationPending) return;
+    try {
+      await editMessage(message.message_id, next);
+      setEditing(false);
+    } catch {
+      // The store surfaces the floating error.
+    }
+  }
 
   return (
     <article className={`message-row ${kind}`}>
@@ -30,7 +71,21 @@ export function MessageBubble({ message }: { message: Message }) {
       <div className="message-stack">
         <MessageHeader message={message} agent={agent} kind={kind} modelLabel={resolvedModelLabel(message, runs)} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
-          <MessageContent message={message} kind={kind} />
+          {editing ? (
+            <div className="message-edit-form">
+              <textarea value={editValue} onChange={(event) => setEditValue(event.target.value)} rows={Math.min(8, Math.max(3, editValue.split(/\r\n|\r|\n/).length))} />
+              <div>
+                <button type="button" onClick={() => setEditing(false)} disabled={operationPending}>
+                  Cancel
+                </button>
+                <button type="button" className="primary" onClick={() => void saveEdit()} disabled={!editValue.trim() || operationPending}>
+                  Save & submit
+                </button>
+              </div>
+            </div>
+          ) : (
+            <MessageContent message={message} kind={kind} />
+          )}
           {message.client_status === 'pending' ? (
             <div className="message-status">
               <Clock3 size={13} />
@@ -39,6 +94,32 @@ export function MessageBubble({ message }: { message: Message }) {
           ) : null}
           <ActionButtons actions={message.available_actions} />
         </div>
+        {!message.client_status && !editing ? (
+          <div className="message-hover-actions" aria-label="Message actions">
+            <button type="button" onClick={() => void copyMessage()} disabled={operationPending} title="Copy">
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+            {isAgentMessage ? (
+              <button type="button" onClick={() => void retryMessage(message.message_id)} disabled={operationPending} title="Retry">
+                <RefreshCw size={13} className={operationPending ? 'spin' : undefined} />
+                <span>Retry</span>
+              </button>
+            ) : null}
+            {isUser ? (
+              <button type="button" onClick={() => setEditing(true)} disabled={operationPending} title="Edit">
+                <Pencil size={13} />
+                <span>Edit</span>
+              </button>
+            ) : null}
+            {(isUser || isAgentMessage) ? (
+              <button type="button" className="danger" onClick={confirmDelete} disabled={operationPending} title="Delete">
+                <Trash2 size={13} />
+                <span>Delete</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -167,6 +248,13 @@ export function contentToText(content: unknown): string {
     return JSON.stringify(content, null, 2);
   }
   return String(content);
+}
+
+function copyableMessageContent(message: Message): string {
+  if (message.output_type === 'json') {
+    return JSON.stringify(normalizeJsonContent(message.content), null, 2);
+  }
+  return contentToText(message.content);
 }
 
 export function normalizeJsonContent(content: unknown): unknown {
