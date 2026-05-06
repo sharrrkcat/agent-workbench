@@ -13,6 +13,14 @@ class LLMStreamChunk:
     raw: Optional[Dict[str, Any]] = None
 
 
+@dataclass
+class LLMResult:
+    content: str
+    reasoning_content: Optional[str] = None
+    usage: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, Any]] = None
+
+
 class LLMMetricsRecorder:
     def __init__(self, streamed: bool) -> None:
         self.streamed = streamed

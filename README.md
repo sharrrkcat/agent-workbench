@@ -167,7 +167,9 @@ Profile capability flags are available for display and future behavior:
 - Reasoning
 - Streaming
 
-`supports_streaming=true` enables visible streaming for Prompt Agent replies after the current LLM call resolves to that profile. `supports_streaming=false` keeps the normal full-response path. If no profile is resolved and the app is only using the LLM CapabilityConfig or environment fallback, streaming is off unless the resolved config explicitly contains `supports_streaming=true`. Vision, Tools, and Reasoning are still capability flags only; JSON mode is not shown as a user-configurable capability for now because provider support differs and there is no unified runtime behavior yet.
+Reasoning is a profile-level output declaration. If Reasoning is enabled, Agent Workbench expects the profile to return reasoning content when available and may display it as a collapsed Thought section. If Reasoning is disabled, the profile is treated as a direct-answer model. This flag does not change model behavior by itself and does not inject provider-specific reasoning request parameters; those may be added later.
+
+`supports_streaming=true` enables visible streaming for Prompt Agent replies after the current LLM call resolves to that profile. `supports_streaming=false` keeps the normal full-response path. If no profile is resolved and the app is only using the LLM CapabilityConfig or environment fallback, streaming is off unless the resolved config explicitly contains `supports_streaming=true`. Vision, Tools, and Reasoning are still capability/output flags only; JSON mode is not shown as a user-configurable capability for now because provider support differs and there is no unified runtime behavior yet.
 
 Agent manifests can reference a profile by Profile key or id:
 
@@ -186,6 +188,8 @@ llm:
 Agent replies store resolved model metadata in run metadata and assistant message metadata under `llm_resolution`. The Chat UI displays the model used for that specific reply, preferring profile name, then profile key, then model id. The API never returns plaintext API keys in this metadata.
 
 Prompt Agent replies also store `llm_metrics` in run and assistant message metadata. The Chat UI shows a compact line with output tokens, tokens per second, first-token latency for streaming responses, or total duration when first-token timing is unavailable. When a provider returns usage, those token counts are used. When usage is absent, completion tokens are estimated from output characters and displayed with a `~` prefix.
+
+Prompt Agent replies can store reasoning output in assistant message metadata. Non-streaming OpenAI-compatible responses read `choices[0].message.reasoning_content`; streaming responses read `choices[].delta.reasoning_content` and keep it separate from normal answer content. Reasoning content is displayed above the answer as a collapsed Thought section when present, is persisted with the message, and is not included in future LLM context.
 
 Streaming replies can be stopped from the composer. Cancelling a streaming run interrupts the active task and may preserve the partial assistant message with `metadata.interrupted=true`; failed streaming runs do not silently retry as non-streaming because that would hide provider streaming errors. If WebSocket events are unavailable, sending still falls back to the final HTTP response and message refresh, so the completed message remains visible after the request finishes.
 
@@ -336,7 +340,7 @@ The same guide covers frontend output rendering for `text`, `markdown`, and `jso
 - No function calling, MCP, or LLM automatic tool selection.
 - No file upload.
 - Script Agent visible streaming is not implemented yet; Script Agent LLM helpers still return final text.
-- Reasoning delta parsing is reserved in metadata, but the UI does not implement a full reasoning display.
+- Thought display is intentionally read-only and collapsed by default; there is no composer-side reasoning toggle or reasoning effort control yet.
 - WebSocket unavailable mode degrades to final HTTP refresh instead of live deltas.
 - No model pool, GPU scheduling, or advanced model lifecycle management.
 - Non-streaming run cancellation is best effort; blocking provider calls may finish before the task observes cancellation.

@@ -1014,6 +1014,55 @@ input:disabled {
   word-break: normal;
 }
 
+.thought-block {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.thought-toggle {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 8px 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.thought-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.thought-toggle small {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.thought-content {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 11px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+  color: rgba(255, 255, 255, 0.58);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .message-status {
   display: inline-flex;
   align-items: center;
@@ -2891,6 +2940,13 @@ input:disabled {
   border-radius: 12px;
   background: rgba(120, 53, 15, 0.22);
   color: #fcd34d;
+}
+
+.settings-muted-copy {
+  margin: -2px 0 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .run-list {

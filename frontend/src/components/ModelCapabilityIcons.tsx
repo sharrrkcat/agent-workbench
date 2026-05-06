@@ -25,7 +25,11 @@ export function ModelCapabilityIcons({ capabilities, className = '' }: { capabil
         </span>
       ) : null}
       {capabilities.reasoning ? (
-        <span className="capability-icon reasoning" title="Reasoning supported" aria-label="Reasoning supported">
+        <span
+          className="capability-icon reasoning"
+          title="Reasoning output: this profile is expected to return reasoning content. It does not change provider request parameters."
+          aria-label="Reasoning output"
+        >
           <Brain size={14} aria-hidden="true" />
         </span>
       ) : null}

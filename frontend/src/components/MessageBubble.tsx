@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import type { Agent, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
@@ -34,6 +34,7 @@ export function MessageBubble({ message }: { message: Message }) {
   const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
+  const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
 
   useEffect(() => {
     if (!editing) setEditValue(contentToText(message.content));
@@ -85,7 +86,10 @@ export function MessageBubble({ message }: { message: Message }) {
               </div>
             </div>
           ) : (
-            <MessageContent message={message} kind={kind} />
+            <>
+              {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
+              <MessageContent message={message} kind={kind} />
+            </>
           )}
           {message.client_status === 'pending' ? (
             <div className="message-status">
@@ -127,6 +131,21 @@ export function MessageBubble({ message }: { message: Message }) {
         ) : null}
       </div>
     </article>
+  );
+}
+
+function ThoughtBlock({ content, streaming }: { content: string; streaming: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <section className={`thought-block ${expanded ? 'expanded' : ''}`}>
+      <button className="thought-toggle" type="button" onClick={() => setExpanded((current) => !current)} aria-expanded={expanded}>
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>Thought</span>
+        {streaming ? <small>Thinking...</small> : null}
+      </button>
+      {expanded ? <pre className="thought-content">{content}</pre> : null}
+    </section>
   );
 }
 
@@ -260,6 +279,18 @@ function copyableMessageContent(message: Message): string {
     return JSON.stringify(normalizeJsonContent(message.content), null, 2);
   }
   return contentToText(message.content);
+}
+
+function extractReasoningContent(metadata: Record<string, unknown> | undefined): string {
+  if (!metadata) return '';
+  const direct = metadata.reasoning_content;
+  if (typeof direct === 'string' && direct.trim()) return direct;
+  const reasoning = metadata.reasoning;
+  if (reasoning && typeof reasoning === 'object' && !Array.isArray(reasoning)) {
+    const content = (reasoning as Record<string, unknown>).content;
+    if (typeof content === 'string' && content.trim()) return content;
+  }
+  return '';
 }
 
 export function normalizeJsonContent(content: unknown): unknown {

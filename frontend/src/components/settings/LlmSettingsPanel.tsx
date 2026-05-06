@@ -609,10 +609,13 @@ export function LlmProfileDetail({
         </section>
         <section className="detail-section">
           <h3>Capabilities</h3>
+          <p className="settings-muted-copy">
+            Reasoning output declares expected output behavior only. It does not change provider request parameters.
+          </p>
           <div className="llm-profile-flags">
             <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(supports_vision) => updateDraft({ supports_vision })} label={<CapabilityToggleLabel kind="vision" label="Vision" />} disabled={busy} />
             <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(supports_tools) => updateDraft({ supports_tools })} label={<CapabilityToggleLabel kind="tools" label="Tools" />} disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateDraft({ supports_reasoning })} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateDraft({ supports_reasoning })} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning output" />} disabled={busy} />
             <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(supports_streaming) => updateDraft({ supports_streaming })} label={<CapabilityToggleLabel kind="streaming" label="Streaming" />} disabled={busy} />
           </div>
         </section>
@@ -701,7 +704,7 @@ function ProfileForm({
       <div className="llm-profile-flags">
         <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(value) => set('supports_vision', value)} label={<CapabilityToggleLabel kind="vision" label="Vision" />} disabled={disabled} />
         <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(value) => set('supports_tools', value)} label={<CapabilityToggleLabel kind="tools" label="Tools" />} disabled={disabled} />
-        <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(value) => set('supports_reasoning', value)} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning" />} disabled={disabled} />
+        <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(value) => set('supports_reasoning', value)} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning output" />} disabled={disabled} />
         <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(value) => set('supports_streaming', value)} label={<CapabilityToggleLabel kind="streaming" label="Streaming" />} disabled={disabled} />
       </div>
     </div>

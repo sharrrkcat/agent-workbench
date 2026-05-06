@@ -27,6 +27,15 @@ class CapabilityRuntime:
         model_config: Optional[Dict[str, Any]] = None,
         stream: bool = False,
     ) -> str:
+        result = self.chat_raw(messages=messages, model_config=model_config, stream=stream)
+        return result.get("content") or ""
+
+    def chat_raw(
+        self,
+        messages: List[Dict[str, str]],
+        model_config: Optional[Dict[str, Any]] = None,
+        stream: bool = False,
+    ) -> Dict[str, Any]:
         if stream:
             raise ValueError("Use chat_stream for streaming responses.")
         config = _resolve_config(model_config or {})
@@ -50,9 +59,15 @@ class CapabilityRuntime:
 
         choices = data.get("choices") or []
         if not choices:
-            return ""
+            return {"content": "", "reasoning_content": None, "usage": data.get("usage"), "raw": data}
         message = choices[0].get("message") or {}
-        return message.get("content") or ""
+        reasoning_content = message.get("reasoning_content")
+        return {
+            "content": message.get("content") or "",
+            "reasoning_content": reasoning_content if isinstance(reasoning_content, str) and reasoning_content else None,
+            "usage": data.get("usage") if isinstance(data.get("usage"), dict) else None,
+            "raw": data,
+        }
 
     async def chat_stream(
         self,

@@ -7,7 +7,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
-from ai_workbench.core.runner import AgentRunner, CommandRunner
+from ai_workbench.core.runner import AgentRunner, CommandRunner, _extract_llm_result, _normalize_stream_chunk
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -262,17 +262,59 @@ def test_base64_still_executes_with_prompt_runtime_configured() -> None:
     assert result.data == "aGVsbG8="
 
 
-def add_profile(fixture: PromptRuntimeFixture, supports_streaming: bool = True) -> LLMProfileSchema:
+def add_profile(
+    fixture: PromptRuntimeFixture,
+    supports_streaming: bool = True,
+    supports_reasoning: bool = False,
+) -> LLMProfileSchema:
     profile = LLMProfileSchema(
-        id=f"profile-{supports_streaming}",
-        alias=f"profile_{supports_streaming}",
+        id=f"profile-{supports_streaming}-{supports_reasoning}",
+        alias=f"profile_{supports_streaming}_{supports_reasoning}",
         name="Streaming profile" if supports_streaming else "Non-streaming profile",
         base_url="http://localhost:1234/v1",
         model_id="fake-model",
         supports_streaming=supports_streaming,
+        supports_reasoning=supports_reasoning,
     )
     fixture.llm_profiles.create(profile)
     return profile
+
+
+def test_nonstream_llm_result_parses_reasoning_content_separately() -> None:
+    raw = {
+        "choices": [
+            {
+                "message": {
+                    "content": "final answer",
+                    "reasoning_content": "private thought",
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+    }
+
+    result = _extract_llm_result(raw)
+
+    assert result.content == "final answer"
+    assert result.reasoning_content == "private thought"
+    assert "private thought" not in result.content
+    assert result.usage == {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+
+
+def test_nonstream_empty_reasoning_content_is_ignored() -> None:
+    raw = {"choices": [{"message": {"content": "final answer", "reasoning_content": ""}}]}
+
+    result = _extract_llm_result(raw)
+
+    assert result.content == "final answer"
+    assert result.reasoning_content is None
+
+
+def test_streaming_openai_chunk_parses_reasoning_delta_separately() -> None:
+    chunk = _normalize_stream_chunk({"choices": [{"delta": {"content": "answer", "reasoning_content": "thought"}}]})
+
+    assert chunk.content_delta == "answer"
+    assert chunk.reasoning_delta == "thought"
 
 
 def test_prompt_agent_uses_streaming_when_profile_supports_streaming() -> None:
@@ -317,6 +359,131 @@ def test_prompt_agent_uses_non_streaming_when_profile_does_not_support_streaming
     assert message.metadata["llm_metrics"]["usage_source"] == "estimated"
 
 
+def test_nonstream_prompt_agent_saves_reasoning_metadata() -> None:
+    llm = FakeLLMRuntime(
+        response={
+            "choices": [
+                {
+                    "message": {
+                        "content": "visible answer",
+                        "reasoning_content": "hidden chain",
+                    }
+                }
+            ]
+        }
+    )
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_reasoning=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.content == "visible answer"
+    assert message.metadata["reasoning_content"] == "hidden chain"
+    assert message.metadata["reasoning"] == {"expected": True, "received": True, "content": "hidden chain"}
+
+
+def test_nonstream_prompt_agent_without_reasoning_does_not_write_empty_thought() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response={"choices": [{"message": {"content": "visible answer"}}]}))
+    profile = add_profile(fixture, supports_streaming=False, supports_reasoning=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.content == "visible answer"
+    assert "reasoning_content" not in message.metadata
+    assert message.metadata["reasoning"] == {"expected": True, "received": False, "content": None}
+
+
+def test_reasoning_content_does_not_enter_next_context() -> None:
+    llm = FakeLLMRuntime(response="next")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="old user")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content="old answer",
+        agent_id="chat",
+        metadata={"reasoning_content": "do not send this thought"},
+    )
+
+    run(fixture.runtime.handle_input(session, "new user"))
+    sent = llm.calls[0]["messages"]
+
+    assert {"role": "assistant", "content": "old answer"} in sent
+    assert all("do not send this thought" not in message["content"] for message in sent)
+
+
+def test_retry_regenerates_reasoning_metadata() -> None:
+    llm = FakeLLMRuntime(
+        response={
+            "choices": [
+                {
+                    "message": {
+                        "content": "retry answer",
+                        "reasoning_content": "retry thought",
+                    }
+                }
+            ]
+        }
+    )
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_reasoning=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    first = run(fixture.runtime.handle_input(session, "hello"))
+    source_user_message = fixture.messages.list_messages(session.session_id)[0]
+    first_message = fixture.messages.list_messages(session.session_id)[-1]
+    retry = run(fixture.runtime.retry_assistant_message(session, first_message, source_user_message))
+    retry_message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert first.success is True
+    assert retry.success is True
+    assert retry_message.metadata["reasoning_content"] == "retry thought"
+
+
+def test_edit_rerun_regenerates_reasoning_metadata() -> None:
+    llm = FakeLLMRuntime(
+        response={
+            "choices": [
+                {
+                    "message": {
+                        "content": "edited answer",
+                        "reasoning_content": "edited thought",
+                    }
+                }
+            ]
+        }
+    )
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, supports_reasoning=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    first = run(fixture.runtime.handle_input(session, "hello"))
+    user_message = fixture.messages.list_messages(session.session_id)[0]
+    updated_user = fixture.messages.update_message(user_message.model_copy(update={"content": "edited hello"}))
+    rerun = run(fixture.runtime.rerun_user_message(session, updated_user))
+    rerun_message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert first.success is True
+    assert rerun.success is True
+    assert rerun_message.content == "edited answer"
+    assert rerun_message.metadata["reasoning_content"] == "edited thought"
+
+
 def test_streaming_without_provider_usage_estimates_completion_tokens() -> None:
     llm = FakeStreamingLLMRuntime(chunks=["abcd", "efgh"])
     fixture = PromptRuntimeFixture(llm=llm)
@@ -331,6 +498,33 @@ def test_streaming_without_provider_usage_estimates_completion_tokens() -> None:
     assert result.success is True
     assert message.metadata["llm_metrics"]["usage_source"] == "estimated"
     assert message.metadata["llm_metrics"]["estimated_completion_tokens"] == 2
+
+
+def test_streaming_reasoning_delta_accumulates_to_final_metadata() -> None:
+    llm = FakeStreamingLLMRuntime(
+        chunks=[
+            {"reasoning_delta": "think "},
+            {"delta": "visible "},
+            {"choices": [{"delta": {"reasoning_content": "more"}}]},
+            {"choices": [{"delta": {"content": "answer"}}]},
+        ]
+    )
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=True, supports_reasoning=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    events = fixture.events.list_events()
+
+    assert result.success is True
+    assert message.content == "visible answer"
+    assert message.metadata["reasoning_content"] == "think more"
+    assert message.metadata["reasoning"] == {"expected": True, "received": True, "content": "think more"}
+    assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == ["", "visible ", "", "answer"]
+    assert [event.payload.get("reasoning_delta") for event in events if event.type == "message_delta"] == ["think ", None, "more", None]
 
 
 def test_streaming_failure_marks_run_failed() -> None:
@@ -377,3 +571,33 @@ def test_cancel_streaming_run_persists_partial_message() -> None:
     assert messages[-1].content == "part"
     assert messages[-1].metadata["interrupted"] is True
     assert "run_cancelled" in [event.type for event in fixture.events.list_events()]
+
+
+def test_cancel_streaming_run_persists_reasoning_only_partial_message() -> None:
+    async def scenario():
+        llm = FakeStreamingLLMRuntime(chunks=[{"reasoning_delta": "partial thought"}, "__WAIT__", " never"])
+        fixture = PromptRuntimeFixture(llm=llm)
+        profile = add_profile(fixture, supports_streaming=True, supports_reasoning=True)
+        session = fixture.sessions.create_session(default_agent_id="chat")
+        fixture.sessions.set_llm_profile(session.session_id, profile.id)
+        session = fixture.sessions.get_session(session.session_id)
+        task = asyncio.create_task(fixture.runtime.handle_input(session, "hello"))
+        await llm.stream_started.wait()
+        run_id = fixture.runs.list_runs(session.session_id)[0].run_id
+        for _ in range(20):
+            if any(event.payload.get("reasoning_delta") for event in fixture.events.list_events() if event.type == "message_delta"):
+                break
+            await asyncio.sleep(0)
+        assert fixture.agent_runner.active_runs.cancel(run_id) is True
+        result = await task
+        return fixture, result, run_id, session.session_id
+
+    fixture, result, run_id, session_id = run(scenario())
+    prompt_run = fixture.runs.get_run(run_id)
+    messages = fixture.messages.list_messages(session_id)
+
+    assert result.success is False
+    assert prompt_run.status == RunStatus.CANCELLED
+    assert messages[-1].content == ""
+    assert messages[-1].metadata["reasoning_content"] == "partial thought"
+    assert messages[-1].metadata["interrupted"] is True

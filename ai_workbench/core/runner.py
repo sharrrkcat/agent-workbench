@@ -10,7 +10,7 @@ from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
-from ai_workbench.core.llm_stream import LLMStreamChunk, LLMMetricsRecorder
+from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
@@ -271,8 +271,9 @@ class AgentRunner:
                 )
             metrics_recorder = LLMMetricsRecorder(streamed=False)
             raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
-            content = _extract_content(raw_content)
-            llm_metrics = metrics_recorder.complete(content, _extract_usage(raw_content))
+            llm_result = _extract_llm_result(raw_content)
+            content = llm_result.content
+            llm_metrics = metrics_recorder.complete(content, llm_result.usage)
         except LLMConfigError as exc:
             failed_run = self.run_store.update_status(
                 run.run_id,
@@ -318,7 +319,10 @@ class AgentRunner:
             "prefill": prefill or {},
             "llm_resolution": _public_llm_resolution(llm_config),
             "llm_metrics": llm_metrics,
+            "reasoning": _reasoning_metadata(llm_config, llm_result.reasoning_content),
         }
+        if llm_result.reasoning_content:
+            metadata["reasoning_content"] = llm_result.reasoning_content
         self._record_llm_metadata(run.run_id, llm_config, llm_metrics)
         message = self.message_store.add_message(
             session_id=session_id,
@@ -427,7 +431,7 @@ class AgentRunner:
             content = "".join(content_parts)
             llm_metrics = metrics_recorder.complete(content, usage)
             message = None
-            if content:
+            if content or reasoning_parts:
                 message = self._persist_prompt_message(
                     agent=agent,
                     action_id=action_id,
@@ -554,6 +558,7 @@ class AgentRunner:
             "prefill": prefill or {},
             "llm_resolution": _public_llm_resolution(llm_config),
             "llm_metrics": llm_metrics,
+            "reasoning": _reasoning_metadata(llm_config, reasoning_content),
         }
         if reasoning_content:
             metadata["reasoning_content"] = reasoning_content
@@ -711,6 +716,14 @@ def _streaming_enabled(llm_config) -> bool:
 
 
 async def _call_chat_nonstream(llm_runtime: object, messages: list, model_config: dict) -> Any:
+    raw_method = getattr(llm_runtime, "chat_raw", None)
+    if callable(raw_method):
+        return await asyncio.to_thread(
+            raw_method,
+            messages=messages,
+            model_config=model_config,
+            stream=False,
+        )
     return await asyncio.to_thread(
         llm_runtime.chat,
         messages=messages,
@@ -746,14 +759,43 @@ def _normalize_stream_chunk(chunk: Any) -> LLMStreamChunk:
     if isinstance(chunk, str):
         return LLMStreamChunk(content_delta=chunk)
     if isinstance(chunk, dict):
+        choice_delta = _first_choice_delta(chunk)
+        if choice_delta is not None:
+            usage = chunk.get("usage") if isinstance(chunk.get("usage"), dict) else None
+            first_choice = chunk.get("choices")[0] if isinstance(chunk.get("choices"), list) and chunk.get("choices") else {}
+            finish_reason = first_choice.get("finish_reason") if isinstance(first_choice, dict) else None
+            return LLMStreamChunk(
+                content_delta=_non_empty_string(choice_delta.get("content")),
+                reasoning_delta=_non_empty_string(choice_delta.get("reasoning_content") or choice_delta.get("reasoning_delta")),
+                finish_reason=finish_reason,
+                usage=usage,
+                raw=chunk,
+            )
         return LLMStreamChunk(
             content_delta=chunk.get("content_delta") or chunk.get("delta"),
-            reasoning_delta=chunk.get("reasoning_delta"),
+            reasoning_delta=chunk.get("reasoning_delta") or chunk.get("reasoning_content"),
             finish_reason=chunk.get("finish_reason"),
             usage=chunk.get("usage") if isinstance(chunk.get("usage"), dict) else None,
             raw=chunk.get("raw") if isinstance(chunk.get("raw"), dict) else chunk,
         )
     return LLMStreamChunk(content_delta=str(chunk) if chunk is not None else None)
+
+
+def _extract_llm_result(value: Any) -> LLMResult:
+    if isinstance(value, LLMResult):
+        return value
+    if isinstance(value, str):
+        return LLMResult(content=value)
+    if isinstance(value, dict):
+        content = _extract_content(value)
+        reasoning_content = _extract_reasoning_content(value)
+        return LLMResult(
+            content=content,
+            reasoning_content=reasoning_content,
+            usage=_extract_usage(value),
+            raw=value,
+        )
+    return LLMResult(content="" if value is None else str(value))
 
 
 def _extract_usage(value: Any) -> dict | None:
@@ -774,6 +816,49 @@ def _extract_content(value: Any) -> str:
             if isinstance(message, dict) and isinstance(message.get("content"), str):
                 return message["content"]
     return "" if value is None else str(value)
+
+
+def _extract_reasoning_content(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    direct = _non_empty_string(value.get("reasoning_content") or value.get("reasoning"))
+    if direct is not None:
+        return direct
+    choices = value.get("choices")
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if isinstance(message, dict):
+            return _non_empty_string(message.get("reasoning_content") or message.get("reasoning"))
+    return None
+
+
+def _first_choice_delta(value: dict) -> dict | None:
+    choices = value.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    delta = first.get("delta")
+    return delta if isinstance(delta, dict) else None
+
+
+def _non_empty_string(value: Any) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _reasoning_metadata(llm_config, reasoning_content: str | None) -> dict:
+    values = getattr(llm_config, "values", {}) or {}
+    content = reasoning_content if isinstance(reasoning_content, str) and reasoning_content else None
+    return {
+        # Reasoning is a profile-level output declaration: this profile is expected
+        # to return reasoning content. It does not change provider request parameters.
+        "expected": bool(values.get("supports_reasoning", False)),
+        "received": bool(content),
+        "content": content,
+    }
 
 
 class CommandRunner:
