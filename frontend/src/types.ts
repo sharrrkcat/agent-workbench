@@ -278,6 +278,7 @@ export type RuntimeResponse = {
   data: unknown;
   error?: string | null;
   run?: Run | null;
+  session?: Session;
   messages: Message[];
 };
 

@@ -238,10 +238,12 @@ def _result_payload(state: RuntimeState, session_id: str, result, before_ids=Non
     before_ids = before_ids or set()
     messages = [message for message in state.messages.list_messages(session_id) if message.message_id not in before_ids]
     run = state.runs.get_run(result.run_id) if result.run_id else None
+    session = state.sessions.get_session(session_id)
     return {
         "success": result.success,
         "data": result.data,
         "error": result.error,
         "run": run.model_dump() if run else None,
+        "session": session.model_dump(),
         "messages": [message.model_dump() for message in messages],
     }

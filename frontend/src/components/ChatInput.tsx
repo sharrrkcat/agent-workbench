@@ -161,7 +161,6 @@ export function ChatInput() {
                 aria-expanded={modelMenuOpen}
                 onClick={() => setModelMenuOpen((open) => !open)}
               >
-                <span>Model:</span>
                 <strong>{selectedModelLabel}</strong>
                 <ChevronDown size={13} aria-hidden="true" />
               </button>

@@ -46,6 +46,7 @@ type WorkbenchState = {
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, title: string) => Promise<void>;
   updateDefaultAgent: (agentId: string) => Promise<void>;
   updateSessionLlmProfile: (profileId: string | null) => Promise<void>;
   refreshConfigs: () => Promise<void>;
@@ -200,6 +201,27 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       await get().refreshCurrent();
     } catch (error) {
       set(formatError(error, 'Failed to delete session'));
+    }
+  },
+
+  renameSession: async (sessionId: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      const emptyTitle = { code: 'SESSION_TITLE_EMPTY', message: 'Session title cannot be empty.' };
+      set({ error: `${emptyTitle.code}: ${emptyTitle.message}`, lastError: emptyTitle });
+      throw new Error(emptyTitle.message);
+    }
+    try {
+      const updated = await api.updateSession(sessionId, { title: trimmed });
+      set({
+        currentSession: get().currentSession?.session_id === updated.session_id ? updated : get().currentSession,
+        sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
+        error: undefined,
+        lastError: undefined,
+      });
+    } catch (error) {
+      set(formatError(error, 'Failed to rename session'));
+      throw error;
     }
   },
 

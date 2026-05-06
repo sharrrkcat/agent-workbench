@@ -209,6 +209,7 @@ input:disabled {
   text-align: left;
 }
 
+.session-rename-button,
 .session-delete-button {
   display: inline-flex;
   flex: 0 0 auto;
@@ -225,7 +226,41 @@ input:disabled {
   transition: opacity 140ms ease, background 140ms ease, color 140ms ease, border-color 140ms ease;
 }
 
+.session-rename-button:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.session-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(0, 0, 0, 0.22);
+  color: #f5f5f5;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.session-title-input:focus {
+  border-color: rgba(34, 160, 107, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 160, 107, 0.15);
+}
+
+.session-row.editing {
+  background: #222222;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.session-row.editing .session-rename-button,
+.session-row.editing .session-delete-button,
+.session-row:hover .session-rename-button,
 .session-row:hover .session-delete-button,
+.session-rename-button:focus-visible,
 .session-delete-button:focus-visible {
   opacity: 1;
 }

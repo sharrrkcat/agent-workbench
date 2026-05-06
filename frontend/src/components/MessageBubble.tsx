@@ -98,24 +98,21 @@ export function MessageBubble({ message }: { message: Message }) {
           <div className="message-hover-actions" aria-label="Message actions">
             <button type="button" onClick={() => void copyMessage()} disabled={operationPending} title="Copy">
               {copied ? <Check size={13} /> : <Copy size={13} />}
-              <span>{copied ? 'Copied' : 'Copy'}</span>
+              {copied ? <span>Copied</span> : ''}
             </button>
             {isAgentMessage ? (
               <button type="button" onClick={() => void retryMessage(message.message_id)} disabled={operationPending} title="Retry">
                 <RefreshCw size={13} className={operationPending ? 'spin' : undefined} />
-                <span>Retry</span>
               </button>
             ) : null}
             {isUser ? (
               <button type="button" onClick={() => setEditing(true)} disabled={operationPending} title="Edit">
                 <Pencil size={13} />
-                <span>Edit</span>
               </button>
             ) : null}
             {(isUser || isAgentMessage) ? (
               <button type="button" className="danger" onClick={confirmDelete} disabled={operationPending} title="Delete">
                 <Trash2 size={13} />
-                <span>Delete</span>
               </button>
             ) : null}
           </div>

@@ -8,6 +8,7 @@ from ai_workbench.api.errors import raise_error
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+MAX_SESSION_TITLE_LENGTH = 120
 
 
 class CreateSessionRequest(BaseModel):
@@ -69,7 +70,16 @@ def update_session(session_id: str, payload: UpdateSessionRequest, state: Runtim
         session = state.sessions.set_default_agent(session_id, payload.default_agent_id)
 
     if payload.title is not None:
-        session = state.sessions.set_title(session_id, payload.title)
+        title = payload.title.strip()
+        if not title:
+            raise_error(400, "SESSION_TITLE_EMPTY", "Session title cannot be empty.")
+        if len(title) > MAX_SESSION_TITLE_LENGTH:
+            raise_error(
+                400,
+                "SESSION_TITLE_TOO_LONG",
+                f"Session title must be {MAX_SESSION_TITLE_LENGTH} characters or fewer.",
+            )
+        session = state.sessions.set_title(session_id, title)
 
     if "llm_profile_id" in payload.model_fields_set:
         if payload.llm_profile_id is not None:

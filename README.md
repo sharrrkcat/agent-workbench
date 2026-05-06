@@ -102,6 +102,10 @@ Agent Retry deletes the selected Agent message and all later messages, then rege
 
 Sessions can be deleted from the sidebar. Deleting a session is a hard delete in this alpha: its messages, runs, and run events are removed from SQLite.
 
+Session titles can be renamed inline from the sidebar. Empty titles are not saved, and titles are limited to 120 characters.
+
+When a session still has a default title such as `Session 1`, the core runtime makes one simple best-effort attempt to generate a short title after the first successful user interaction. It uses only the current user message and the first readable output from that run, not the full session history. If title generation fails or no LLM can be resolved, the original title is kept and the main conversation still succeeds. There is no title history, regenerate button, or separate title model setting in this alpha.
+
 ## Agent Avatars
 
 Agent image avatars can live beside the Agent manifest. Directory avatars take priority over `agent.yaml`:
