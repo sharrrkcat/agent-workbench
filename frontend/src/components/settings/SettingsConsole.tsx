@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { LlmProfile } from '../../types';
+import type { LlmProfile, LlmProviderProfile } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type SettingsSection } from './SettingsNav';
 import { SettingsObjectList } from './SettingsObjectList';
@@ -12,6 +12,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
   const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);
+  const [llmProviderProfiles, setLlmProviderProfiles] = useState<LlmProviderProfile[]>([]);
   const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('global');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
@@ -72,10 +73,19 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   }
 
   async function refreshLlmProfiles(nextSelectedId?: string) {
-    const profiles = await api.listLlmProfiles();
+    const [profiles, providerProfiles] = await Promise.all([api.listLlmProfiles(), api.listLlmProviderProfiles()]);
     setLlmProfiles(profiles);
-    if (nextSelectedId === 'global' || nextSelectedId === 'new') {
+    setLlmProviderProfiles(providerProfiles);
+    if (nextSelectedId === 'global' || nextSelectedId === 'new' || nextSelectedId === 'new-provider') {
       setSelectedLlmItemId(nextSelectedId);
+      return;
+    }
+    if (nextSelectedId?.startsWith('provider:') && providerProfiles.some((profile) => `provider:${profile.id}` === nextSelectedId)) {
+      setSelectedLlmItemId(nextSelectedId);
+      return;
+    }
+    if (selectedLlmItemId.startsWith('provider:') && !providerProfiles.some((profile) => `provider:${profile.id}` === selectedLlmItemId)) {
+      setSelectedLlmItemId('global');
       return;
     }
     if (nextSelectedId && profiles.some((profile) => profile.id === nextSelectedId)) {
@@ -113,6 +123,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         selectedAgentId={selectedAgentConfig?.agent_id}
         selectedCapabilityId={selectedCapabilityConfig?.capability_id}
         llmProfiles={llmProfiles}
+        llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
@@ -126,6 +137,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         commands={commands}
         health={health}
         llmProfiles={llmProfiles}
+        llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
         onLlmProfilesChanged={refreshLlmProfiles}
         activeTab={activeDetailTab}

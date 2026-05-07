@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, attachments, commands, configs, data, diagnostics, health, llm_profiles, messages, runs, sessions, settings
+from ai_workbench.api.routes import agents, attachments, commands, configs, data, diagnostics, health, llm_profiles, llm_provider_profiles, messages, runs, sessions, settings
 from ai_workbench.api.ws import router as ws_router
 
 
@@ -71,6 +71,7 @@ def create_app(
     app.include_router(data.router)
     app.include_router(diagnostics.router)
     app.include_router(llm_profiles.router)
+    app.include_router(llm_provider_profiles.router)
     app.include_router(settings.router)
     app.include_router(health.router)
     app.include_router(sessions.router)

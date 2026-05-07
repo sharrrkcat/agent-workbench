@@ -134,40 +134,46 @@ http://localhost:1234/v1
 
 Set `AGENT_WORKBENCH_LLM_MODEL` in `.env`, or configure the `llm` capability in Settings. Local LM Studio setups often do not require an API key; an empty key is allowed.
 
-In Settings, use the `llm` capability `Test connection` button. It calls `/api/capability-configs/llm/test`, checks `/models`, and returns a success or failure message with the configured base URL.
+In Settings, LLM configuration is split into Provider Profiles and Model Profiles.
 
-After a successful test, available models are shown in the LLM settings area. Select one, then click Save to persist it as `CapabilityConfig.user_config.model`. Prompt Agents without their own manifest model use that saved model by default. Agents that declare a model in their manifest keep using the manifest model unless an environment override is present.
+## LLM Provider And Model Profiles
 
-## LLM Profiles
+Provider Profiles hold connection details:
 
-Saved LLM Profiles are reusable model connection configs. The user-facing fields are:
+- Provider label: `openai_compatible`, `lm_studio`, `llama_cpp`, or `custom`.
+- Base URL.
+- API key.
+- Timeout.
+- Enabled state and provider-specific metadata.
+
+Model Profiles hold model selection and behavior defaults:
 
 - Name: the display name shown in Settings, such as `My Qwen3 Local`.
+- Provider Profile: the connection used for the model.
 - Model ID: the real provider model id, such as `ascat/Ministral-3-3b-it-ad`.
 - Profile key: the stable key used by Agent manifests. In the current API this maps to the stored `alias` field.
-
-Supported provider labels in this alpha:
-
-- `openai_compatible`
-- `lm_studio`
-- `llama_cpp`
-- `custom`
-
-All provider labels currently use the same OpenAI-compatible runtime path.
+- Capabilities: Vision, Tools, Reasoning, Streaming.
+- Generation defaults: Temperature, Top P, Top K, Max tokens.
+- Notes and enabled state.
 
 Settings -> LLM follows the Settings Console three-column structure. The middle object list contains:
 
-- Global fallback, backed by the existing `llm` CapabilityConfig.
-- LLM Profiles, backed by the `llm_profiles` SQLite table.
+- Defaults: choose the Default model profile.
+- Provider Profiles, backed by `llm_provider_profiles`.
+- Model Profiles, backed by the existing `llm_profiles` table for compatibility.
 
-The profile editor can create, edit, delete, test, and refresh models for saved profiles. New profiles generate a Profile key from Name by lowercasing, replacing whitespace with underscores, removing invalid characters, and appending a numeric suffix if needed. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
+Existing LLM Profiles are migrated automatically. Legacy profile connection fields (`provider`, `base_url`, `api_key`, `timeout`) are moved into deduplicated Provider Profiles and the original `llm_profiles` rows become Model Profiles that reference those providers. The migration is idempotent and keeps capability flags and generation defaults. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
 
-Profile capability flags are available for display and future behavior:
+The default model profile replaces the old editable Global fallback UI. Runtime resolution order is:
 
-- Vision
-- Tools
-- Reasoning
-- Streaming
+1. Session model override, when allowed.
+2. AgentConfig runtime `llm_profile_id`.
+3. Agent manifest `llm.profile`.
+4. Default model profile.
+5. Legacy global fallback from the `llm` CapabilityConfig.
+6. Environment fallback.
+
+The legacy global fallback and environment variables remain as compatibility fallback only. Provider-specific model status, LM Studio native load/unload, llama.cpp status detection, desktop packaging changes, and ComfyUI integration are not part of this round.
 
 Reasoning is a profile-level output declaration. If Reasoning is enabled, Agent Workbench expects the profile to return reasoning content when available and may display it as a collapsed Thought section. If Reasoning is disabled, the profile is treated as a direct-answer model. This flag does not change model behavior by itself and does not inject provider-specific reasoning request parameters; those may be added later.
 

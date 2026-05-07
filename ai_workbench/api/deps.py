@@ -17,8 +17,10 @@ from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.stores import (
     AgentConfigStore,
     CapabilityConfigStore,
+    LLMDefaultsStore,
     LLMProfileStore,
     MessageStore,
+    ProviderProfileStore,
     RunEventStore,
     RunStore,
     SessionStore,
@@ -28,7 +30,9 @@ from ai_workbench.db.stores import (
     SqlAgentConfigStore,
     SqlCapabilityConfigStore,
     SqlLLMProfileStore,
+    SqlLLMDefaultsStore,
     SqlMessageStore,
+    SqlProviderProfileStore,
     SqlRunEventStore,
     SqlRunStore,
     SqlSessionStore,
@@ -54,6 +58,8 @@ class RuntimeState:
     agent_configs: Any = None
     capability_configs: Any = None
     llm_profiles: Any = None
+    provider_profiles: Any = None
+    llm_defaults: Any = None
     app_settings: Any = None
     database_url: str | None = None
     started_at: datetime = field(default_factory=datetime.utcnow)
@@ -90,6 +96,8 @@ def build_runtime_state(
         agent_configs = AgentConfigStore()
         capability_configs = CapabilityConfigStore()
         llm_profiles = LLMProfileStore()
+        provider_profiles = ProviderProfileStore()
+        llm_defaults = LLMDefaultsStore()
         app_settings = AppSettingsStore()
         resolved_database_url = "sqlite:///:memory:"
     else:
@@ -102,6 +110,8 @@ def build_runtime_state(
         agent_configs = SqlAgentConfigStore(engine)
         capability_configs = SqlCapabilityConfigStore(engine)
         llm_profiles = SqlLLMProfileStore(engine)
+        provider_profiles = SqlProviderProfileStore(engine)
+        llm_defaults = SqlLLMDefaultsStore(engine)
         from ai_workbench.db.database import get_database_url
         from ai_workbench.db.stores import SqlAppSettingsStore
 
@@ -133,6 +143,8 @@ def build_runtime_state(
         capability_registry=capabilities,
         capability_config_store=capability_configs,
         llm_profile_store=llm_profiles,
+        provider_profile_store=provider_profiles,
+        llm_defaults_store=llm_defaults,
         app_settings_store=app_settings,
         active_runs=active_runs,
     )
@@ -155,6 +167,8 @@ def build_runtime_state(
         agent_configs=agent_configs,
         capability_configs=capability_configs,
         llm_profiles=llm_profiles,
+        provider_profiles=provider_profiles,
+        llm_defaults=llm_defaults,
         app_settings=app_settings,
         database_url=resolved_database_url,
     )

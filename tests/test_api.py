@@ -60,6 +60,22 @@ def create_llm_profile(client: TestClient, alias: str = "myqwen3", enabled: bool
     return response.json()
 
 
+def create_provider_profile(client: TestClient, name: str = "Local Provider", enabled: bool = True) -> dict:
+    response = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": name,
+            "provider": "lm_studio",
+            "base_url": "http://provider/v1",
+            "api_key": "secret-provider-key",
+            "timeout_seconds": 45,
+            "enabled": enabled,
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def register_temp_agent(
     client: TestClient,
     tmp_path: Path,
@@ -352,6 +368,90 @@ def test_disabled_llm_profile_override_returns_clear_error() -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "LLM_PROFILE_DISABLED"
+
+
+def test_provider_profile_api_masks_secret_and_supports_crud_duplicate() -> None:
+    client = make_client()
+    provider = create_provider_profile(client)
+
+    assert provider["api_key"] == "********"
+    assert provider["api_key_set"] is True
+    assert "secret-provider-key" not in str(provider)
+
+    patched = client.patch(
+        f"/api/llm-provider-profiles/{provider['id']}",
+        json={"base_url": "http://patched/v1", "timeout_seconds": 30, "enabled": False},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["base_url"] == "http://patched/v1"
+    assert patched.json()["timeout_seconds"] == 30
+    assert patched.json()["enabled"] is False
+
+    duplicate = client.post(f"/api/llm-provider-profiles/{provider['id']}/duplicate")
+    assert duplicate.status_code == 200
+    assert duplicate.json()["name"].endswith("copy")
+    assert duplicate.json()["api_key_set"] is True
+
+
+def test_provider_profile_delete_rejects_when_model_profile_uses_it() -> None:
+    client = make_client()
+    provider = create_provider_profile(client)
+    response = client.post(
+        "/api/llm-profiles",
+        json={
+            "alias": "provider_model",
+            "name": "Provider Model",
+            "provider_profile_id": provider["id"],
+            "model_id": "model-id",
+        },
+    )
+    assert response.status_code == 200
+
+    delete_response = client.delete(f"/api/llm-provider-profiles/{provider['id']}")
+
+    assert delete_response.status_code == 409
+    assert delete_response.json()["error"]["code"] == "LLM_PROVIDER_PROFILE_IN_USE"
+
+
+def test_model_profile_provider_reference_duplicate_and_default_resolution() -> None:
+    llm = FakeLLMRuntime(response="reply")
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    provider = create_provider_profile(client)
+    profile_response = client.post(
+        "/api/llm-profiles",
+        json={
+            "alias": "provider_model",
+            "name": "Provider Model",
+            "provider_profile_id": provider["id"],
+            "model_id": "provider-model",
+            "supports_streaming": False,
+            "supports_vision": True,
+        },
+    )
+    assert profile_response.status_code == 200
+    profile = profile_response.json()
+    assert profile["provider_profile_id"] == provider["id"]
+
+    duplicate = client.post(f"/api/llm-profiles/{profile['id']}/duplicate")
+    assert duplicate.status_code == 200
+    assert duplicate.json()["provider_profile_id"] == provider["id"]
+    assert duplicate.json()["name"].endswith("copy")
+
+    defaults = client.patch("/api/settings/llm-defaults", json={"default_model_profile_id": profile["id"]})
+    assert defaults.status_code == 200
+    assert client.get("/api/settings/llm-defaults").json()["default_model_profile_id"] == profile["id"]
+
+    state = client.app.state.runtime_state
+    chat = state.agents.get("chat")
+    state.agents._agents["chat"] = chat.model_copy(update={"model": None, "llm": None})
+    session = create_session(client)
+    result = post_message(client, session["session_id"], "hello")
+
+    assert result["success"] is True
+    assert llm.calls[-1]["model_config"]["base_url"] == "http://provider/v1"
+    assert llm.calls[-1]["model_config"]["model"] == "provider-model"
+    assert result["messages"][-1]["metadata"]["llm_resolution"]["profile_id"] == profile["id"]
+    assert result["messages"][-1]["metadata"]["llm_resolution"]["provider_profile_id"] == provider["id"]
 
 
 def test_write_manifest_requires_confirm() -> None:

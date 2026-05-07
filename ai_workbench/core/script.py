@@ -319,6 +319,8 @@ class ScriptAgentRunner:
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
         llm_profile_store=None,
+        provider_profile_store=None,
+        llm_defaults_store=None,
         agent_config_store=None,
     ) -> None:
         self.agent_registry = agent_registry
@@ -331,6 +333,8 @@ class ScriptAgentRunner:
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
         self.llm_profile_store = llm_profile_store
+        self.provider_profile_store = provider_profile_store
+        self.llm_defaults_store = llm_defaults_store
         self.agent_config_store = agent_config_store
 
     async def run(
@@ -474,6 +478,8 @@ class ScriptAgentRunner:
             capability_schema=capability,
             capability_config=capability_config,
             llm_profile_store=self.llm_profile_store,
+            provider_profile_store=self.provider_profile_store,
+            llm_defaults_store=self.llm_defaults_store,
             session_llm_profile_id=session_llm_profile_id,
             agent_runtime=resolved_runtime_override(self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}),
         )

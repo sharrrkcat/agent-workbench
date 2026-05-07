@@ -1,5 +1,5 @@
 import { Boxes, Plus, SlidersHorizontal } from 'lucide-react';
-import type { AgentConfig, CapabilityConfig, LlmProfile } from '../../types';
+import type { AgentConfig, CapabilityConfig, LlmProfile, LlmProviderProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import type { SettingsSection } from './SettingsNav';
@@ -13,6 +13,7 @@ export function SettingsObjectList({
   selectedAgentId,
   selectedCapabilityId,
   llmProfiles = [],
+  llmProviderProfiles = [],
   selectedLlmItemId = 'global',
   onSelectAgent,
   onSelectCapability,
@@ -24,6 +25,7 @@ export function SettingsObjectList({
   selectedAgentId?: string;
   selectedCapabilityId?: string;
   llmProfiles?: LlmProfile[];
+  llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
@@ -70,7 +72,7 @@ export function SettingsObjectList({
     const llmEnabled = llmConfig?.enabled ?? false;
     return (
       <aside className="settings-object-list" aria-label="LLM settings">
-        <ObjectListHeader title="LLM" count={1} />
+        <ObjectListHeader title="Defaults" count={1} />
         <button
           type="button"
           className={`settings-object-row ${selectedLlmItemId === 'global' ? 'active' : ''} ${llmEnabled ? '' : 'disabled'}`}
@@ -80,12 +82,27 @@ export function SettingsObjectList({
             <SlidersHorizontal size={16} />
           </div>
           <div className="settings-object-copy">
-            <strong>Global fallback</strong>
-            <small>LLM Capability</small>
+            <strong>Default model profile</strong>
+            <small>Global fallback</small>
           </div>
           <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? 'Enabled' : 'Disabled'}</span>
         </button>
-        <ObjectListHeader title="LLM Profiles" count={llmProfiles.length} actionLabel="New profile" onAction={() => onSelectLlmItem?.('new')} />
+        <ObjectListHeader title="Provider Profiles" count={llmProviderProfiles.length} actionLabel="New provider" onAction={() => onSelectLlmItem?.('new-provider')} />
+        <div className="settings-list-scroll compact">
+          {llmProviderProfiles.length ? (
+            llmProviderProfiles.map((profile) => (
+              <ProviderListItem
+                key={profile.id}
+                profile={profile}
+                active={selectedLlmItemId === `provider:${profile.id}`}
+                onClick={() => onSelectLlmItem?.(`provider:${profile.id}`)}
+              />
+            ))
+          ) : (
+            <div className="settings-empty-state compact">No provider profiles.</div>
+          )}
+        </div>
+        <ObjectListHeader title="Model Profiles" count={llmProfiles.length} actionLabel="New model" onAction={() => onSelectLlmItem?.('new')} />
         <div className="settings-list-scroll">
           {llmProfiles.length ? (
             llmProfiles.map((profile) => (
@@ -136,6 +153,19 @@ function ProfileListItem({ profile, active, onClick }: { profile: LlmProfile; ac
         <strong>{profile.name}</strong>
         <small>{profile.provider} · {profile.model_id || 'No model ID'}</small>
         <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons" />
+      </div>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+    </button>
+  );
+}
+
+function ProviderListItem({ profile, active, onClick }: { profile: LlmProviderProfile; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className={`settings-object-row llm-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{profile.name}</strong>
+        <small>{profile.provider} / {profile.base_url || 'No base URL'}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>

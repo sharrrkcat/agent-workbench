@@ -79,6 +79,7 @@ class LLMProfileRecord(SQLModel, table=True):
     id: str = Field(primary_key=True)
     alias: str = Field(index=True)
     name: str
+    provider_profile_id: Optional[str] = Field(default=None, index=True)
     provider: str = "openai_compatible"
     base_url: str = ""
     api_key: str = ""
@@ -95,6 +96,21 @@ class LLMProfileRecord(SQLModel, table=True):
     supports_streaming: bool = True
     supports_json_mode: bool = False
     notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProviderProfileRecord(SQLModel, table=True):
+    __tablename__ = "llm_provider_profiles"
+
+    id: str = Field(primary_key=True)
+    name: str
+    provider: str = "openai_compatible"
+    base_url: str = ""
+    api_key: str = ""
+    timeout_seconds: Optional[int] = 60
+    enabled: bool = True
+    metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -67,6 +67,8 @@ class AgentRunner:
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
         llm_profile_store=None,
+        provider_profile_store=None,
+        llm_defaults_store=None,
         app_settings_store=None,
         active_runs: ActiveRunRegistry = None,
     ) -> None:
@@ -82,6 +84,8 @@ class AgentRunner:
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
         self.llm_profile_store = llm_profile_store
+        self.provider_profile_store = provider_profile_store
+        self.llm_defaults_store = llm_defaults_store
         self.app_settings_store = app_settings_store
         self.active_runs = active_runs or ActiveRunRegistry()
         self.script_runner = None
@@ -97,6 +101,8 @@ class AgentRunner:
                 capability_registry=capability_registry,
                 capability_config_store=capability_config_store,
                 llm_profile_store=llm_profile_store,
+                provider_profile_store=provider_profile_store,
+                llm_defaults_store=llm_defaults_store,
                 agent_config_store=agent_config_store,
             )
 
@@ -674,6 +680,8 @@ class AgentRunner:
             capability_schema=capability,
             capability_config=capability_config,
             llm_profile_store=self.llm_profile_store,
+            provider_profile_store=self.provider_profile_store,
+            llm_defaults_store=self.llm_defaults_store,
             session_llm_profile_id=session_llm_profile_id,
             agent_runtime=resolved_runtime_override(self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}),
         )
@@ -791,6 +799,8 @@ def _public_llm_resolution(llm_config) -> dict:
         "profile_alias": metadata.get("profile_alias"),
         "profile_key": metadata.get("profile_key") or metadata.get("profile_alias"),
         "profile_name": metadata.get("profile_name"),
+        "provider_profile_id": metadata.get("provider_profile_id"),
+        "provider_profile_name": metadata.get("provider_profile_name"),
         "provider": metadata.get("provider") or values.get("provider"),
         "model_id": values.get("model_id") or values.get("model"),
         "base_url": values.get("base_url", ""),

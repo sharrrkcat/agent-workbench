@@ -20,6 +20,7 @@ class LLMProfileCreateRequest(BaseModel):
 
     alias: str
     name: str
+    provider_profile_id: Optional[str] = None
     provider: str = "openai_compatible"
     base_url: str = ""
     api_key: str = ""
@@ -43,6 +44,7 @@ class LLMProfilePatchRequest(BaseModel):
 
     alias: Optional[str] = None
     name: Optional[str] = None
+    provider_profile_id: Optional[str] = None
     provider: Optional[str] = None
     base_url: Optional[str] = None
     api_key: Optional[str] = None
@@ -111,13 +113,26 @@ def delete_llm_profile(profile_id_or_alias: str, state: RuntimeState = Depends(g
     return {"deleted": True, "profile_id": profile.id}
 
 
+@router.post("/{profile_id_or_alias}/duplicate")
+def duplicate_llm_profile(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
+    profile = _get_profile_or_404(state, profile_id_or_alias)
+    data = profile.model_dump()
+    data["id"] = str(uuid4())
+    data["alias"] = _copy_alias(profile.alias, state.llm_profiles)
+    data["name"] = f"{profile.name} copy"
+    data["created_at"] = datetime.utcnow()
+    data["updated_at"] = datetime.utcnow()
+    created = state.llm_profiles.create(LLMProfileSchema.model_validate(data))
+    return _serialize_profile(created)
+
+
 @router.post("/{profile_id_or_alias}/test")
 def test_llm_profile(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
     profile = _get_profile_or_404(state, profile_id_or_alias)
     try:
         _validate_profile_for_runtime(profile)
         runtime = state.runtimes.get_runtime("llm")
-        models = _runtime_list_models(runtime, _profile_model_config(profile))
+        models = _runtime_list_models(runtime, _profile_model_config(profile, state))
         return {
             "success": True,
             "message": "LLM profile is reachable.",
@@ -142,7 +157,7 @@ def list_llm_profile_models(profile_id_or_alias: str, state: RuntimeState = Depe
         if not profile.base_url:
             raise ValueError(f"LLM profile '{profile.alias}' must define base_url.")
         runtime = state.runtimes.get_runtime("llm")
-        models = _runtime_list_models(runtime, _profile_model_config(profile))
+        models = _runtime_list_models(runtime, _profile_model_config(profile, state))
         return {"success": True, "models": [{"id": model_id} for model_id in models]}
     except ValueError as exc:
         raise_error(400, "LLM_PROFILE_INVALID", str(exc))
@@ -169,20 +184,25 @@ def _serialize_profile(profile: LLMProfileSchema) -> Dict[str, Any]:
     return data
 
 
-def _profile_model_config(profile: LLMProfileSchema) -> Dict[str, Any]:
+def _profile_model_config(profile: LLMProfileSchema, state: RuntimeState | None = None) -> Dict[str, Any]:
+    provider = None
+    if profile.provider_profile_id and state is not None and state.provider_profiles is not None:
+        provider = state.provider_profiles.get(profile.provider_profile_id)
     return {
-        "provider": profile.provider,
-        "base_url": profile.base_url,
-        "api_key": profile.api_key,
+        "provider": provider.provider if provider is not None else profile.provider,
+        "base_url": provider.base_url if provider is not None else profile.base_url,
+        "api_key": provider.api_key if provider is not None else profile.api_key,
         "model": profile.model_id,
         "model_id": profile.model_id,
-        "timeout": profile.timeout or 60,
+        "timeout": (provider.timeout_seconds if provider is not None else profile.timeout) or 60,
     }
 
 
 def _validate_profile_for_runtime(profile: LLMProfileSchema) -> None:
-    if not profile.base_url or not profile.model_id:
-        raise ValueError(f"LLM profile '{profile.alias}' must define base_url and model_id.")
+    if not profile.provider_profile_id and not profile.base_url:
+        raise ValueError(f"Model profile '{profile.alias}' must define a provider profile or legacy base_url.")
+    if not profile.model_id:
+        raise ValueError(f"Model profile '{profile.alias}' must define model_id.")
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -190,3 +210,13 @@ def _validation_message(exc: ValidationError) -> str:
     if not errors:
         return "LLM profile is invalid."
     return str(errors[0].get("msg") or "LLM profile is invalid.")
+
+
+def _copy_alias(alias: str, store) -> str:
+    base = f"{alias}_copy"
+    candidate = base
+    index = 2
+    while store.find_by_alias(candidate) is not None:
+        candidate = f"{base}_{index}"
+        index += 1
+    return candidate

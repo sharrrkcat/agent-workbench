@@ -9,8 +9,10 @@ import type {
   CapabilityConfig,
   Command,
   LlmResolvedConfig,
+  LlmDefaults,
   GeneralSettings,
   LlmProfile,
+  LlmProviderProfile,
   LlmTestResult,
   Message,
   Run,
@@ -27,6 +29,8 @@ type WorkbenchState = {
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
   llmProfiles: LlmProfile[];
+  llmProviderProfiles: LlmProviderProfile[];
+  llmDefaults?: LlmDefaults;
   sessions: Session[];
   currentSession?: Session;
   messages: Message[];
@@ -86,6 +90,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   agentConfigs: [],
   capabilityConfigs: [],
   llmProfiles: [],
+  llmProviderProfiles: [],
   sessions: [],
   messages: [],
   runs: [],
@@ -101,18 +106,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   initialize: async () => {
     set({ loading: true, error: undefined, lastError: undefined });
     try {
-      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles, generalSettings] = await Promise.all([
+      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings] = await Promise.all([
         api.listAgents(),
         api.listCommands(),
         api.listSessions(),
         api.listAgentConfigs(),
         api.listCapabilityConfigs(),
         api.listLlmProfiles(),
+        api.listLlmProviderProfiles(),
+        api.getLlmDefaults(),
         api.getGeneralSettings(),
       ]);
       const sortedSessions = sortSessionsByRecent(sessions);
       const currentSession = sortedSessions[0];
-      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, generalSettings, loading: false });
+      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, loading: false });
       if (currentSession) {
         await get().refreshCurrent();
       }
@@ -289,14 +296,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   refreshConfigs: async () => {
-    const [agents, commands, agentConfigs, capabilityConfigs, llmProfiles] = await Promise.all([
+    const [agents, commands, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults] = await Promise.all([
       api.listAgents(),
       api.listCommands(),
       api.listAgentConfigs(),
       api.listCapabilityConfigs(),
       api.listLlmProfiles(),
+      api.listLlmProviderProfiles(),
+      api.getLlmDefaults(),
     ]);
-    set({ agents, commands, agentConfigs, capabilityConfigs, llmProfiles });
+    set({ agents, commands, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults });
   },
 
   updateAgentConfig: async (agentId, patch) => {

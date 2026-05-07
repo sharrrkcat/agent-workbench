@@ -2,10 +2,10 @@ import { Activity, Database, RefreshCw, Save, Search, Settings, Trash2 } from 'l
 import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, StorageStats } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
-import { LlmProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
+import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
@@ -19,6 +19,7 @@ export function SettingsDetailPanel({
   commands,
   health,
   llmProfiles = [],
+  llmProviderProfiles = [],
   selectedLlmItemId = 'global',
   onLlmProfilesChanged,
   activeTab,
@@ -32,6 +33,7 @@ export function SettingsDetailPanel({
   commands: Command[];
   health?: HealthDetails;
   llmProfiles?: LlmProfile[];
+  llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   activeTab: string;
@@ -78,10 +80,18 @@ export function SettingsDetailPanel({
     return (
       <section className="settings-detail-panel">
         {selectedLlmItemId === 'global' ? (
-          selectedCapabilityConfig ? <LlmDetail config={selectedCapabilityConfig} onDirtyChange={onDirtyChange} /> : null
+          <LlmDefaultsDetail profiles={llmProfiles} onDirtyChange={onDirtyChange} />
+        ) : selectedLlmItemId.startsWith('provider:') || selectedLlmItemId === 'new-provider' ? (
+          <LlmProviderProfileDetail
+            profiles={llmProviderProfiles}
+            selectedProfileId={selectedLlmItemId === 'new-provider' ? 'new' : selectedLlmItemId.replace(/^provider:/, '')}
+            onProfilesChanged={onLlmProfilesChanged || (async () => undefined)}
+            onDirtyChange={onDirtyChange}
+          />
         ) : (
           <LlmProfileDetail
             profiles={llmProfiles}
+            providerProfiles={llmProviderProfiles}
             selectedProfileId={selectedLlmItemId}
             onProfilesChanged={onLlmProfilesChanged || (async () => undefined)}
             onDirtyChange={onDirtyChange}

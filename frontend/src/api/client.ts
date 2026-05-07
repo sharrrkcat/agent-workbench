@@ -7,8 +7,11 @@ import type {
   DeleteSessionResponse,
   Diagnostics,
   LlmResolvedConfig,
+  LlmDefaults,
   LlmProfile,
   LlmProfileInput,
+  LlmProviderProfile,
+  LlmProviderProfileInput,
   LlmTestResult,
   Message,
   Run,
@@ -90,6 +93,27 @@ export const api = {
   listLlmModels: () => request<{ success: boolean; models: { id: string }[] }>('/api/capability-configs/llm/models'),
   testLlmConnection: () => request<LlmTestResult>('/api/capability-configs/llm/test', { method: 'POST' }),
   listLlmProfiles: () => request<LlmProfile[]>('/api/llm-profiles'),
+  listLlmProviderProfiles: () => request<LlmProviderProfile[]>('/api/llm-provider-profiles'),
+  createLlmProviderProfile: (profile: LlmProviderProfileInput) =>
+    request<LlmProviderProfile>('/api/llm-provider-profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchLlmProviderProfile: (profileId: string, patch: LlmProviderProfileInput) =>
+    request<LlmProviderProfile>(`/api/llm-provider-profiles/${profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteLlmProviderProfile: (profileId: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/llm-provider-profiles/${profileId}`, {
+      method: 'DELETE',
+    }),
+  duplicateLlmProviderProfile: (profileId: string) =>
+    request<LlmProviderProfile>(`/api/llm-provider-profiles/${profileId}/duplicate`, { method: 'POST' }),
+  testLlmProviderProfile: (profileId: string) =>
+    request<LlmTestResult>(`/api/llm-provider-profiles/${profileId}/test`, { method: 'POST' }),
+  listLlmProviderModels: (profileId: string) =>
+    request<{ success: boolean; models: { id: string }[] }>(`/api/llm-provider-profiles/${profileId}/models`),
   createLlmProfile: (profile: LlmProfileInput) =>
     request<LlmProfile>('/api/llm-profiles', {
       method: 'POST',
@@ -104,9 +128,17 @@ export const api = {
     request<{ deleted: boolean; profile_id: string }>(`/api/llm-profiles/${profileIdOrAlias}`, {
       method: 'DELETE',
     }),
+  duplicateLlmProfile: (profileIdOrAlias: string) =>
+    request<LlmProfile>(`/api/llm-profiles/${profileIdOrAlias}/duplicate`, { method: 'POST' }),
   testLlmProfile: (profileIdOrAlias: string) =>
     request<LlmTestResult>(`/api/llm-profiles/${profileIdOrAlias}/test`, { method: 'POST' }),
   getGeneralSettings: () => request<GeneralSettings>('/api/settings/general'),
+  getLlmDefaults: () => request<LlmDefaults>('/api/settings/llm-defaults'),
+  updateLlmDefaults: (patch: Partial<LlmDefaults>) =>
+    request<LlmDefaults>('/api/settings/llm-defaults', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
   updateGeneralSettings: (patch: Partial<GeneralSettings>) =>
     request<GeneralSettings>('/api/settings/general', {
       method: 'PATCH',

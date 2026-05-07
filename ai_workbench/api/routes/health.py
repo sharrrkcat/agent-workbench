@@ -53,7 +53,13 @@ def _llm_status(state: RuntimeState) -> dict:
     try:
         capability = state.capabilities.get("llm")
         capability_config = state.capability_configs.get_config("llm")
-        resolved = resolve_llm_config(capability_schema=capability, capability_config=capability_config)
+        resolved = resolve_llm_config(
+            capability_schema=capability,
+            capability_config=capability_config,
+            llm_profile_store=state.llm_profiles,
+            provider_profile_store=state.provider_profiles,
+            llm_defaults_store=state.llm_defaults,
+        )
         return {"status": "ok", **public_llm_config_status(resolved)}
     except Exception as exc:
         return {"status": "degraded", "error": str(exc) or "LLM config unavailable"}

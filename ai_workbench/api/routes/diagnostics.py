@@ -133,6 +133,8 @@ def _llm(state: RuntimeState) -> dict[str, Any]:
                 capability_schema=capability,
                 capability_config=capability_config,
                 llm_profile_store=state.llm_profiles,
+                provider_profile_store=state.provider_profiles,
+                llm_defaults_store=state.llm_defaults,
             )
         )
         default_resolved = {
@@ -149,6 +151,7 @@ def _llm(state: RuntimeState) -> dict[str, Any]:
         "status": resolved_status,
         "profiles_total": len(profiles),
         "profiles_enabled": sum(1 for profile in profiles if profile.enabled),
+        "provider_profiles_total": len(state.provider_profiles.list()) if state.provider_profiles is not None else 0,
         "global_fallback_enabled": bool(capability_config.get("enabled", True)),
         "default_resolved": default_resolved,
         "last_error": last_error,

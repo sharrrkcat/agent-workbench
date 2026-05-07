@@ -20,6 +20,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, setError } = useWorkbenchStore();
+  const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
 
   const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
 
@@ -222,6 +223,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     agents,
     capabilityConfigs,
     llmProfiles,
+    defaultModelProfileId: llmDefaults?.default_model_profile_id,
     selectedAgentId: currentSession?.default_agent_id,
   });
 
@@ -399,6 +401,7 @@ type ComposerCapabilitySource = {
   agents: Agent[];
   capabilityConfigs: CapabilityConfig[];
   llmProfiles: LlmProfile[];
+  defaultModelProfileId?: string | null;
   selectedAgentId?: string | null;
 };
 
@@ -407,6 +410,7 @@ export function getCurrentComposerCapabilities({
   agents,
   capabilityConfigs,
   llmProfiles,
+  defaultModelProfileId,
   selectedAgentId,
 }: ComposerCapabilitySource): ModelCapabilities {
   const empty = { vision: false, tools: false, reasoning: false, streaming: false };
@@ -418,6 +422,8 @@ export function getCurrentComposerCapabilities({
   const agentProfile = findEnabledProfile(llmProfiles, agent?.resolved_runtime?.llm_profile_id || agent?.llm?.profile);
   if (agentProfile) return profileCapabilities(agentProfile);
 
+  const defaultProfile = findEnabledProfile(llmProfiles, defaultModelProfileId);
+  if (defaultProfile) return profileCapabilities(defaultProfile);
   const llmConfig = capabilityConfigs.find((config) => config.capability_id === 'llm');
   const fallbackProfileRef = firstStringValue(llmConfig?.resolved_config, 'default_profile') || firstStringValue(llmConfig?.user_config, 'default_profile');
   const fallbackProfile = findEnabledProfile(llmProfiles, fallbackProfileRef);
@@ -439,9 +445,9 @@ function firstStringValue(source: Record<string, unknown> | undefined, key: stri
 }
 
 function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[]): string {
-  if (!profileId) return 'Default uses the resolved agent profile or global LLM fallback';
+  if (!profileId) return 'Default uses the resolved agent model profile or global default';
   const profile = profiles.find((item) => item.id === profileId);
-  if (!profile) return 'Missing profile';
+  if (!profile) return 'Missing model profile';
   return `${profile.name || profile.alias} - ${profile.model_id}`;
 }
 

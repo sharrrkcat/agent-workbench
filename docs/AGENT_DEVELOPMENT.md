@@ -48,7 +48,7 @@ model_lifecycle:
   unload_failure: warn
 ```
 
-If an LLM model is not configured, Prompt Agent runs fail clearly. Set `AGENT_WORKBENCH_LLM_MODEL`, save an LLM Profile in Settings, or reference a profile in the Agent manifest:
+If an LLM model is not configured, Prompt Agent runs fail clearly. Set `AGENT_WORKBENCH_LLM_MODEL`, save a Model Profile in Settings, set the Default model profile, or reference a profile in the Agent manifest:
 
 ```yaml
 llm:
@@ -85,7 +85,7 @@ AgentConfig display override > manifest/package avatar > generated fallback
 LLM resolution:
 
 ```text
-session override, when allowed > AgentConfig runtime llm_profile_id > manifest llm.profile > global fallback > environment fallback
+session override, when allowed > AgentConfig runtime llm_profile_id > manifest llm.profile > default model profile > legacy global fallback > environment fallback
 ```
 
 Context and lifecycle resolution:

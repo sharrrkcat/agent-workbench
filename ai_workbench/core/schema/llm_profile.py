@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -15,6 +15,7 @@ class LLMProfileSchema(BaseModel):
     id: str
     alias: str
     name: str
+    provider_profile_id: Optional[str] = None
     provider: Literal["openai_compatible", "lm_studio", "llama_cpp", "custom"] = "openai_compatible"
     base_url: str = ""
     api_key: str = ""
@@ -44,6 +45,28 @@ class LLMProfileSchema(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("name must not be empty")
+        return value
+
+
+class ProviderProfileSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    provider: Literal["openai_compatible", "lm_studio", "llama_cpp", "custom"] = "openai_compatible"
+    base_url: str = ""
+    api_key: str = ""
+    timeout_seconds: Optional[int] = 60
+    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_validator("name")
+    @classmethod
+    def validate_provider_name(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("name must not be empty")
         return value

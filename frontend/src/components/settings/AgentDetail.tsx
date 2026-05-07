@@ -304,7 +304,7 @@ function OverridesTab({
             <span className="settings-badge muted">{overrideCount(omitKeys(runtimeDraft, ['prompt']))} overrides</span>
           </div>
           <OverrideSelect
-            label="LLM profile"
+            label="Model profile"
             field="runtime.llm_profile_id"
             value={runtimeDraft.llm_profile_id || ''}
             config={config}

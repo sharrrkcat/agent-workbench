@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from ai_workbench.core.schema.message import MessageSchema
-from ai_workbench.core.schema.llm_profile import LLMProfileSchema
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
@@ -421,3 +421,49 @@ class LLMProfileStore:
 
     def list(self) -> List[LLMProfileSchema]:
         return sorted(self._records.values(), key=lambda item: (item.alias, item.created_at))
+
+
+class ProviderProfileStore:
+    def __init__(self) -> None:
+        self._records: Dict[str, ProviderProfileSchema] = {}
+
+    def create(self, profile: ProviderProfileSchema) -> ProviderProfileSchema:
+        if profile.id in self._records:
+            raise ValueError(f"Provider profile id already exists: {profile.id}")
+        self._records[profile.id] = profile
+        return profile
+
+    def get(self, profile_id: str) -> ProviderProfileSchema:
+        try:
+            return self._records[profile_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown provider profile id: {profile_id}") from exc
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> ProviderProfileSchema:
+        existing = self.get(profile_id)
+        updated = existing.model_copy(update={**values, "updated_at": datetime.utcnow()})
+        updated = ProviderProfileSchema.model_validate(updated.model_dump())
+        self._records[existing.id] = updated
+        return updated
+
+    def delete(self, profile_id: str) -> ProviderProfileSchema:
+        existing = self.get(profile_id)
+        del self._records[existing.id]
+        return existing
+
+    def list(self) -> List[ProviderProfileSchema]:
+        return sorted(self._records.values(), key=lambda item: (item.name.lower(), item.created_at))
+
+
+class LLMDefaultsStore:
+    def __init__(self) -> None:
+        self.default_model_profile_id: Optional[str] = None
+
+    def get(self) -> Dict[str, Optional[str]]:
+        return {"default_model_profile_id": self.default_model_profile_id}
+
+    def patch(self, values: Dict[str, Any]) -> Dict[str, Optional[str]]:
+        if "default_model_profile_id" in values:
+            value = values.get("default_model_profile_id")
+            self.default_model_profile_id = str(value) if value else None
+        return self.get()

@@ -7,7 +7,7 @@ from sqlmodel import Session as DbSession
 from sqlmodel import delete
 from sqlmodel import select
 
-from ai_workbench.core.schema.llm_profile import LLMProfileSchema
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
@@ -19,6 +19,7 @@ from ai_workbench.db.models import (
     CapabilityConfigRecord,
     LLMProfileRecord,
     MessageRecord,
+    ProviderProfileRecord,
     RunEventRecord,
     RunRecord,
     SessionRecord,
@@ -597,6 +598,56 @@ class SqlLLMProfileStore:
             return [_profile_from_record(record) for record in records]
 
 
+class SqlProviderProfileStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def create(self, profile: ProviderProfileSchema) -> ProviderProfileSchema:
+        with DbSession(self.engine) as session:
+            if session.get(ProviderProfileRecord, profile.id) is not None:
+                raise ValueError(f"Provider profile id already exists: {profile.id}")
+            record = _provider_to_record(profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _provider_from_record(record)
+
+    def get(self, profile_id: str) -> ProviderProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(ProviderProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown provider profile id: {profile_id}")
+            return _provider_from_record(record)
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> ProviderProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(ProviderProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown provider profile id: {profile_id}")
+            candidate = _provider_from_record(record).model_copy(update={**values, "updated_at": datetime.utcnow()})
+            profile = ProviderProfileSchema.model_validate(candidate.model_dump())
+            _apply_provider_to_record(record, profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _provider_from_record(record)
+
+    def delete(self, profile_id: str) -> ProviderProfileSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(ProviderProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown provider profile id: {profile_id}")
+            profile = _provider_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
+    def list(self) -> List[ProviderProfileSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(ProviderProfileRecord).order_by(ProviderProfileRecord.name)).all()
+            return [_provider_from_record(record) for record in records]
+
+
 class SqlAppMetadataStore:
     def __init__(self, engine) -> None:
         self.engine = engine
@@ -639,6 +690,41 @@ class SqlAppSettingsStore:
             session.add(record)
             session.commit()
             return next_settings
+
+
+class SqlLLMDefaultsStore:
+    SETTINGS_KEY = "llm_defaults"
+
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def get(self) -> Dict[str, Optional[str]]:
+        with DbSession(self.engine) as session:
+            record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
+            if record is None:
+                return {"default_model_profile_id": None}
+            payload = _loads(record.value, {})
+            return {"default_model_profile_id": payload.get("default_model_profile_id") or None}
+
+    def patch(self, values: Dict[str, Any]) -> Dict[str, Optional[str]]:
+        allowed = {"default_model_profile_id"}
+        extra = set(values) - allowed
+        if extra:
+            raise ValueError(f"unknown LLM defaults field: {sorted(extra)[0]}")
+        next_values = self.get()
+        if "default_model_profile_id" in values:
+            value = values.get("default_model_profile_id")
+            next_values["default_model_profile_id"] = str(value) if value else None
+        with DbSession(self.engine) as session:
+            record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
+            if record is None:
+                record = AppMetadataRecord(key=self.SETTINGS_KEY, value=_dumps(next_values))
+            else:
+                record.value = _dumps(next_values)
+                record.updated_at = datetime.utcnow()
+            session.add(record)
+            session.commit()
+        return next_values
 
 
 def _session_from_record(record: SessionRecord) -> Session:
@@ -740,6 +826,7 @@ def _profile_from_record(record: LLMProfileRecord) -> LLMProfileSchema:
         id=record.id,
         alias=record.alias,
         name=record.name,
+        provider_profile_id=record.provider_profile_id,
         provider=record.provider,
         base_url=record.base_url,
         api_key=record.api_key,
@@ -756,6 +843,35 @@ def _profile_from_record(record: LLMProfileRecord) -> LLMProfileSchema:
         supports_streaming=record.supports_streaming,
         supports_json_mode=record.supports_json_mode,
         notes=record.notes,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _provider_to_record(profile: ProviderProfileSchema) -> ProviderProfileRecord:
+    data = profile.model_dump()
+    data["metadata_json"] = _dumps(data.pop("metadata", {}))
+    return ProviderProfileRecord(**data)
+
+
+def _apply_provider_to_record(record: ProviderProfileRecord, profile: ProviderProfileSchema) -> None:
+    data = profile.model_dump()
+    metadata = data.pop("metadata", {})
+    for key, value in data.items():
+        setattr(record, key, value)
+    record.metadata_json = _dumps(metadata)
+
+
+def _provider_from_record(record: ProviderProfileRecord) -> ProviderProfileSchema:
+    return ProviderProfileSchema(
+        id=record.id,
+        name=record.name,
+        provider=record.provider,
+        base_url=record.base_url,
+        api_key=record.api_key,
+        timeout_seconds=record.timeout_seconds,
+        enabled=record.enabled,
+        metadata=_loads(record.metadata_json, {}),
         created_at=record.created_at,
         updated_at=record.updated_at,
     )

@@ -1,8 +1,8 @@
-import { Brain, Eye, Hammer, Plus, Radio, RefreshCw, Save, Trash2, Zap } from 'lucide-react';
+import { Brain, Eye, Hammer, Plus, Radio, RefreshCw, Save, Settings, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { CapabilityConfig, LlmProfile, LlmProfileInput, LlmResolvedConfig, LlmTestResult } from '../../types';
+import type { CapabilityConfig, LlmDefaults, LlmProfile, LlmProfileInput, LlmProviderProfile, LlmProviderProfileInput, LlmResolvedConfig, LlmTestResult } from '../../types';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import { ConfigForm } from './ConfigForm';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
@@ -14,6 +14,7 @@ const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom'
 const profileDefaults: LlmProfileInput = {
   alias: '',
   name: '',
+  provider_profile_id: null,
   provider: 'openai_compatible',
   base_url: 'http://localhost:1234/v1',
   api_key: '',
@@ -30,6 +31,15 @@ const profileDefaults: LlmProfileInput = {
   supports_streaming: true,
   supports_json_mode: false,
   notes: '',
+};
+const providerDefaults: LlmProviderProfileInput = {
+  name: '',
+  provider: 'openai_compatible',
+  base_url: 'http://localhost:1234/v1',
+  api_key: '',
+  timeout_seconds: 60,
+  enabled: true,
+  metadata: {},
 };
 
 export function LlmSettingsPanel({
@@ -411,13 +421,235 @@ function ResolvedLlmConfig({ status }: { status: LlmResolvedConfig }) {
   );
 }
 
-export function LlmProfileDetail({
+export function LlmDefaultsDetail({
+  profiles,
+  onDirtyChange,
+}: {
+  profiles: LlmProfile[];
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const [defaults, setDefaults] = useState<LlmDefaults | null>(null);
+  const [selected, setSelected] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const dirty = Boolean(defaults && selected !== (defaults.default_model_profile_id || ''));
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.getLlmDefaults().then((loaded) => {
+      if (cancelled) return;
+      setDefaults(loaded);
+      setSelected(loaded.default_model_profile_id || '');
+    }).catch((caught) => setError(toSettingsError(caught, 'Failed to load LLM defaults.')));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.updateLlmDefaults({ default_model_profile_id: selected || null });
+      setDefaults(saved);
+      setSelected(saved.default_model_profile_id || '');
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to save default model profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="settings-detail-form" onSubmit={(event) => event.preventDefault()}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">
+            <Settings size={18} />
+          </div>
+          <div>
+            <h2>Default model profile</h2>
+            <p>Global fallback model</p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {dirty ? (
+            <button className="settings-primary-button" type="button" onClick={() => void save()} disabled={busy}>
+              <Save size={14} />
+              {busy ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {error ? <SettingsApiError error={error} /> : null}
+        <section className="detail-section">
+          <h3>Defaults</h3>
+          <label className="config-field settings-config-field">
+            <span>Default model profile</span>
+            <select value={selected} onChange={(event) => setSelected(event.target.value)} disabled={busy}>
+              <option value="">Legacy fallback / environment</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id} disabled={!profile.enabled}>
+                  {profile.name} ({profile.model_id || profile.alias}){profile.enabled ? '' : ' - disabled'}
+                </option>
+              ))}
+            </select>
+            <small>Legacy fallback is used only when no model profile is resolved.</small>
+          </label>
+        </section>
+      </div>
+    </form>
+  );
+}
+
+export function LlmProviderProfileDetail({
   profiles,
   selectedProfileId,
   onProfilesChanged,
   onDirtyChange,
 }: {
+  profiles: LlmProviderProfile[];
+  selectedProfileId: string;
+  onProfilesChanged: (selectedProfileId?: string) => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const isNew = selectedProfileId === 'new';
+  const [draft, setDraft] = useState<LlmProviderProfileInput>(() => (selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [result, setResult] = useState<LlmTestResult | null>(null);
+
+  useEffect(() => {
+    setDraft(selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults);
+    setError(null);
+    setResult(null);
+  }, [selectedProfile, selectedProfileId]);
+
+  const baseDraft = selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults;
+  const dirty = stableConfigString(cleanProviderInput(draft)) !== stableConfigString(cleanProviderInput(baseDraft));
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function saveProvider() {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = cleanProviderInput(draft);
+      if (!String(payload.name || '').trim()) throw new Error('Name is required.');
+      const saved = selectedProfile ? await api.patchLlmProviderProfile(selectedProfile.id, payload) : await api.createLlmProviderProfile(payload);
+      await onProfilesChanged(`provider:${saved.id}`);
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to save provider profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function duplicateProvider() {
+    if (!selectedProfile) return;
+    setBusy(true);
+    try {
+      const saved = await api.duplicateLlmProviderProfile(selectedProfile.id);
+      await onProfilesChanged(`provider:${saved.id}`);
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to duplicate provider profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteProvider() {
+    if (!selectedProfile) return;
+    if (!window.confirm(`Delete provider profile "${selectedProfile.name}"?`)) return;
+    setBusy(true);
+    try {
+      await api.deleteLlmProviderProfile(selectedProfile.id);
+      await onProfilesChanged('global');
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to delete provider profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testProvider() {
+    if (!selectedProfile) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const testResult = await api.testLlmProviderProfile(selectedProfile.id);
+      setResult(testResult);
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Provider profile connection test failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!selectedProfile && !isNew) {
+    return <div className="settings-placeholder"><h2>Provider Profile</h2><p>Select a provider profile or create a new one.</p></div>;
+  }
+
+  return (
+    <form className="settings-detail-form" onSubmit={(event) => event.preventDefault()}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">{profileInitials(String(draft.name || 'Provider'))}</div>
+          <div>
+            <h2>{String(draft.name || 'New provider')}</h2>
+            <p><span>{String(draft.provider || 'openai_compatible')}</span></p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {dirty ? <button className="settings-primary-button" type="button" onClick={() => void saveProvider()} disabled={busy}><Save size={14} />{busy ? 'Saving...' : 'Save'}</button> : null}
+          {selectedProfile ? <button className="settings-secondary-button" type="button" onClick={() => void duplicateProvider()} disabled={busy}>Duplicate</button> : null}
+          {selectedProfile ? <button className="settings-secondary-button danger" type="button" onClick={() => void deleteProvider()} disabled={busy}><Trash2 size={14} />Delete</button> : null}
+          <ToggleSwitch checked={Boolean(draft.enabled)} onChange={(enabled) => setDraft({ ...draft, enabled })} disabled={busy} />
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {error ? <SettingsApiError error={error} /> : null}
+        <section className="detail-section">
+          <div className="detail-section-heading">
+            <h3>Connection</h3>
+            {selectedProfile ? <button className="settings-secondary-button" type="button" onClick={() => void testProvider()} disabled={busy}><Zap size={14} />Test connection</button> : null}
+          </div>
+          <div className="settings-config-form llm-profile-form">
+            <TextField label="Name" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} disabled={busy} />
+            <label className="config-field settings-config-field">
+              <span>Provider</span>
+              <select value={draft.provider || 'openai_compatible'} onChange={(event) => setDraft({ ...draft, provider: event.target.value as LlmProviderProfileInput['provider'] })} disabled={busy}>
+                {providerOptions.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+              </select>
+            </label>
+            <TextField label="Base URL" value={draft.base_url} onChange={(base_url) => setDraft({ ...draft, base_url })} disabled={busy} />
+            <TextField label="API key" value={draft.api_key} onChange={(api_key) => setDraft({ ...draft, api_key })} disabled={busy} secret hasSecret={Boolean(selectedProfile?.api_key_set)} />
+            <NumberField label="Timeout" value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
+          </div>
+          {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
+        </section>
+      </div>
+    </form>
+  );
+}
+
+export function LlmProfileDetail({
+  profiles,
+  providerProfiles,
+  selectedProfileId,
+  onProfilesChanged,
+  onDirtyChange,
+}: {
   profiles: LlmProfile[];
+  providerProfiles: LlmProviderProfile[];
   selectedProfileId: string;
   onProfilesChanged: (selectedProfileId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -492,6 +724,20 @@ export function LlmProfileDetail({
     }
   }
 
+  async function duplicateProfile() {
+    if (!selectedProfile) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.duplicateLlmProfile(selectedProfile.id);
+      await onProfilesChanged(saved.id);
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to duplicate model profile.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function testProfile() {
     if (!selectedProfile) return;
     setBusy(true);
@@ -512,11 +758,12 @@ export function LlmProfileDetail({
   }
 
   async function refreshProfileModels() {
-    if (!selectedProfile) return;
+    const providerId = String(draft.provider_profile_id || selectedProfile?.provider_profile_id || '');
+    if (!providerId) return;
     setBusy(true);
     setError(null);
     try {
-      const response = await api.listLlmProfileModels(selectedProfile.id);
+      const response = await api.listLlmProviderModels(providerId);
       setModels(response.models.map((model) => model.id).filter(Boolean));
     } catch (caught) {
       setError(toSettingsError(caught, 'Failed to list profile models.'));
@@ -526,7 +773,7 @@ export function LlmProfileDetail({
   }
 
   if (!selectedProfile && !isNew) {
-    return <div className="settings-placeholder"><h2>LLM Profile</h2><p>Select a profile or create a new one.</p></div>;
+    return <div className="settings-placeholder"><h2>Model Profile</h2><p>Select a model profile or create a new one.</p></div>;
   }
 
   return (
@@ -535,10 +782,10 @@ export function LlmProfileDetail({
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">{profileInitials(String(draft.name || 'LLM'))}</div>
           <div>
-            <h2>{String(draft.name || 'New profile')}</h2>
+            <h2>{String(draft.name || 'New model')}</h2>
             <p>
               <code>{String(draft.alias || 'profile_key')}</code>
-              <span>{String(draft.provider || 'openai_compatible')}</span>
+              <span>{providerProfileLabel(String(draft.provider_profile_id || ''), providerProfiles)}</span>
             </p>
           </div>
         </div>
@@ -547,6 +794,11 @@ export function LlmProfileDetail({
             <button className="settings-primary-button" type="button" onClick={() => void saveProfile()} disabled={busy}>
               <Save size={14} />
               {busy ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
+          {selectedProfile ? (
+            <button className="settings-secondary-button" type="button" onClick={() => void duplicateProfile()} disabled={busy}>
+              Duplicate
             </button>
           ) : null}
           {selectedProfile ? (
@@ -562,15 +814,11 @@ export function LlmProfileDetail({
         {error ? <SettingsApiError error={error} /> : null}
         <section className="detail-section">
           <div className="detail-section-heading">
-            <h3>Connection</h3>
+            <h3>Model</h3>
             <div className="settings-button-row">
               {selectedProfile ? (
                 <>
-                  <button className="settings-secondary-button" type="button" onClick={() => void testProfile()} disabled={busy}>
-                    <Zap size={14} />
-                    Test connection
-                  </button>
-                  <button className="settings-secondary-button" type="button" onClick={() => void refreshProfileModels()} disabled={busy}>
+                  <button className="settings-secondary-button" type="button" onClick={() => void refreshProfileModels()} disabled={busy || !draft.provider_profile_id}>
                     <RefreshCw size={14} className={busy ? 'spin' : ''} />
                     Refresh models
                   </button>
@@ -581,22 +829,16 @@ export function LlmProfileDetail({
           <div className="settings-config-form llm-profile-form">
             <TextField label="Name" value={draft.name} onChange={(name) => updateDraft({ name })} disabled={busy} />
             <label className="config-field settings-config-field">
-              <span>Provider</span>
-              <select value={draft.provider || 'openai_compatible'} onChange={(event) => updateDraft({ provider: event.target.value as LlmProfileInput['provider'] })} disabled={busy}>
-                {providerOptions.map((provider) => (
-                  <option key={provider} value={provider}>{provider}</option>
+              <span>Provider profile</span>
+              <select value={String(draft.provider_profile_id || '')} onChange={(event) => updateDraft({ provider_profile_id: event.target.value || null })} disabled={busy}>
+                <option value="">Missing provider profile</option>
+                {providerProfiles.map((provider) => (
+                  <option key={provider.id} value={provider.id} disabled={!provider.enabled}>
+                    {provider.name}{provider.enabled ? '' : ' - disabled'}
+                  </option>
                 ))}
               </select>
             </label>
-            <TextField label="Base URL" value={draft.base_url} onChange={(base_url) => updateDraft({ base_url })} disabled={busy} />
-            <TextField
-              label="API key"
-              value={draft.api_key}
-              onChange={(api_key) => updateDraft({ api_key })}
-              disabled={busy}
-              secret
-              hasSecret={Boolean(selectedProfile?.api_key_set)}
-            />
             <label className="config-field settings-config-field">
               <span>Model ID</span>
               <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy} />
@@ -607,7 +849,7 @@ export function LlmProfileDetail({
                 </select>
               ) : null}
             </label>
-            <NumberField label="Timeout" value={draft.timeout} onChange={(timeout) => updateDraft({ timeout })} disabled={busy} integer />
+            <TextField label="Notes" value={draft.notes} onChange={(notes) => updateDraft({ notes })} disabled={busy} textarea />
           </div>
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
         </section>
@@ -648,7 +890,6 @@ export function LlmProfileDetail({
               />
               <small>Used by agent manifests as llm.profile. This currently maps to API alias.</small>
             </label>
-            <TextField label="Notes" value={draft.notes} onChange={(notes) => updateDraft({ notes })} disabled={busy} textarea />
           </div>
         </section>
       </div>
@@ -812,6 +1053,7 @@ function draftFromProfile(profile: LlmProfile): LlmProfileInput {
   return {
     alias: profile.alias,
     name: profile.name,
+    provider_profile_id: profile.provider_profile_id || null,
     provider: profile.provider,
     base_url: profile.base_url,
     api_key: '',
@@ -831,6 +1073,18 @@ function draftFromProfile(profile: LlmProfile): LlmProfileInput {
   };
 }
 
+function providerDraftFromProfile(profile: LlmProviderProfile): LlmProviderProfileInput {
+  return {
+    name: profile.name,
+    provider: profile.provider,
+    base_url: profile.base_url,
+    api_key: '',
+    timeout_seconds: profile.timeout_seconds ?? null,
+    enabled: profile.enabled,
+    metadata: profile.metadata || {},
+  };
+}
+
 function capabilitiesFromDraft(draft: LlmProfileInput) {
   return {
     vision: Boolean(draft.supports_vision),
@@ -847,6 +1101,21 @@ function cleanProfileInput(input: LlmProfileInput): LlmProfileInput {
     return true;
   });
   return Object.fromEntries(entries) as LlmProfileInput;
+}
+
+function cleanProviderInput(input: LlmProviderProfileInput): LlmProviderProfileInput {
+  const entries = Object.entries(input).filter(([key, value]) => {
+    if (value === undefined) return false;
+    if (key === 'api_key' && String(value || '').trim() === '') return false;
+    return true;
+  });
+  return Object.fromEntries(entries) as LlmProviderProfileInput;
+}
+
+function providerProfileLabel(providerProfileId: string, providers: LlmProviderProfile[]): string {
+  if (!providerProfileId) return 'Missing provider profile';
+  const provider = providers.find((item) => item.id === providerProfileId);
+  return provider ? provider.name : 'Missing provider profile';
 }
 
 export function sanitizeProfileKey(value: string): string {

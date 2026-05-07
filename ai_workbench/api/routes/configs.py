@@ -293,7 +293,13 @@ def _resolve_for_response(schema, user_config: Dict[str, Any]) -> Dict[str, Any]
 def _resolve_llm_capability_config(state: RuntimeState):
     capability = _get_capability_or_404(state, "llm")
     stored = state.capability_configs.get_config("llm")
-    return resolve_llm_config(capability_schema=capability, capability_config=stored)
+    return resolve_llm_config(
+        capability_schema=capability,
+        capability_config=stored,
+        llm_profile_store=state.llm_profiles,
+        provider_profile_store=state.provider_profiles,
+        llm_defaults_store=state.llm_defaults,
+    )
 
 
 def _validate_runtime_profile(state: RuntimeState, runtime: Dict[str, Any]) -> None:
@@ -301,13 +307,13 @@ def _validate_runtime_profile(state: RuntimeState, runtime: Dict[str, Any]) -> N
     if not profile_id:
         return
     if state.llm_profiles is None:
-        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_id}")
+        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"Model profile not found: {profile_id}")
     try:
         profile = state.llm_profiles.get_by_id_or_alias(profile_id)
     except KeyError as exc:
-        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_id}") from exc
+        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"Model profile not found: {profile_id}") from exc
     if not profile.enabled:
-        raise LLMConfigError("LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
+        raise LLMConfigError("LLM_PROFILE_DISABLED", f"Model profile is disabled: {profile.alias}")
 
 
 def _enrich_resolved_runtime(state: RuntimeState, resolved: Dict[str, Any]) -> None:

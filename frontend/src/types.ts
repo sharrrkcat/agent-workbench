@@ -185,6 +185,7 @@ export type LlmProfile = {
   id: string;
   alias: string;
   name: string;
+  provider_profile_id?: string | null;
   provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom';
   base_url: string;
   api_key: string;
@@ -206,11 +207,26 @@ export type LlmProfile = {
   updated_at: string;
 };
 
+export type LlmProviderProfile = {
+  id: string;
+  name: string;
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom';
+  base_url: string;
+  api_key: string;
+  api_key_set?: boolean;
+  timeout_seconds?: number | null;
+  enabled: boolean;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type LlmProfileInput = Partial<
   Pick<
     LlmProfile,
     | 'alias'
     | 'name'
+    | 'provider_profile_id'
     | 'provider'
     | 'base_url'
     | 'api_key'
@@ -230,12 +246,22 @@ export type LlmProfileInput = Partial<
   >
 >;
 
+export type LlmProviderProfileInput = Partial<
+  Pick<LlmProviderProfile, 'name' | 'provider' | 'base_url' | 'api_key' | 'timeout_seconds' | 'enabled' | 'metadata'>
+>;
+
+export type LlmDefaults = {
+  default_model_profile_id: string | null;
+};
+
 export type LlmResolvedConfig = {
   source?: string | null;
   profile_id?: string | null;
   profile_alias?: string | null;
   profile_key?: string | null;
   profile_name?: string | null;
+  provider_profile_id?: string | null;
+  provider_profile_name?: string | null;
   provider?: string | null;
   base_url: string;
   model: string;

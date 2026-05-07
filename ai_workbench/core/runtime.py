@@ -223,6 +223,8 @@ class WorkbenchRuntime:
                 capability_schema=capability,
                 capability_config=capability_config,
                 llm_profile_store=self.agent_runner.llm_profile_store,
+                provider_profile_store=getattr(self.agent_runner, "provider_profile_store", None),
+                llm_defaults_store=getattr(self.agent_runner, "llm_defaults_store", None),
                 session_llm_profile_id=session.llm_profile_id,
             )
 
@@ -240,6 +242,8 @@ class WorkbenchRuntime:
             capability_schema=capability,
             capability_config=capability_config,
             llm_profile_store=self.agent_runner.llm_profile_store,
+            provider_profile_store=getattr(self.agent_runner, "provider_profile_store", None),
+            llm_defaults_store=getattr(self.agent_runner, "llm_defaults_store", None),
             session_llm_profile_id=session.llm_profile_id,
         )
 

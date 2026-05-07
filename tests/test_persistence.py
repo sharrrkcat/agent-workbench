@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from ai_workbench.api.main import LazyApp, create_app
 from ai_workbench.db.database import get_engine, init_db
@@ -48,6 +48,71 @@ def test_sqlite_database_initialization_creates_tables(tmp_path: Path) -> None:
     assert AgentConfigRecord.__tablename__ in tables
     assert CapabilityConfigRecord.__tablename__ in tables
     assert AppMetadataRecord.__tablename__ in tables
+    assert "llm_provider_profiles" in tables
+
+
+def test_legacy_llm_profiles_migrate_to_provider_profiles_idempotently(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.db"
+    engine = get_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE llm_profiles (
+                    id VARCHAR PRIMARY KEY,
+                    alias VARCHAR,
+                    name VARCHAR,
+                    provider VARCHAR,
+                    base_url VARCHAR,
+                    api_key VARCHAR,
+                    model_id VARCHAR,
+                    enabled BOOLEAN,
+                    temperature FLOAT,
+                    top_p FLOAT,
+                    top_k INTEGER,
+                    max_tokens INTEGER,
+                    timeout INTEGER,
+                    supports_vision BOOLEAN,
+                    supports_tools BOOLEAN,
+                    supports_reasoning BOOLEAN,
+                    supports_streaming BOOLEAN,
+                    supports_json_mode BOOLEAN,
+                    notes VARCHAR,
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+                """
+            )
+        )
+        for profile_id, alias, model_id in (("p1", "one", "model-one"), ("p2", "two", "model-two")):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO llm_profiles (
+                        id, alias, name, provider, base_url, api_key, model_id, enabled,
+                        timeout, supports_vision, supports_tools, supports_reasoning, supports_streaming,
+                        supports_json_mode, created_at, updated_at
+                    ) VALUES (
+                        :id, :alias, :name, 'lm_studio', 'http://localhost:1234/v1', 'secret',
+                        :model_id, 1, 60, 1, 0, 0, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                    """
+                ),
+                {"id": profile_id, "alias": alias, "name": alias, "model_id": model_id},
+            )
+
+    init_db(engine)
+    init_db(engine)
+
+    with engine.connect() as connection:
+        providers = connection.execute(text("SELECT id, api_key FROM llm_provider_profiles")).fetchall()
+        profiles = connection.execute(text("SELECT provider_profile_id, supports_vision, supports_streaming FROM llm_profiles")).fetchall()
+
+    assert len(providers) == 1
+    assert providers[0].api_key == "secret"
+    assert {row.provider_profile_id for row in profiles} == {providers[0].id}
+    assert all(row.supports_vision == 1 for row in profiles)
+    assert all(row.supports_streaming == 1 for row in profiles)
 
 
 def test_sql_session_store_create_get_list_update(tmp_path: Path) -> None:

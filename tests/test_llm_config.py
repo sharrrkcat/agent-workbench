@@ -6,8 +6,8 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.llm_config import resolve_llm_config
 from ai_workbench.core.manifest_loader import load_capability_manifest
-from ai_workbench.core.schema.llm_profile import LLMProfileSchema
-from ai_workbench.core.stores import LLMProfileStore
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
+from ai_workbench.core.stores import LLMDefaultsStore, LLMProfileStore, ProviderProfileStore
 from tests.test_api import create_session, post_message
 from tests.test_prompt_agent_execution import FakeLLMRuntime, run
 from tests.test_script_agent import ScriptRuntimeFixture, write_script_agent
@@ -340,6 +340,105 @@ def test_resolved_config_does_not_return_api_key_plaintext() -> None:
     assert response.status_code == 200
     assert response.json()["api_key_set"] is True
     assert "secret" not in str(response.json())
+
+
+def test_runtime_resolution_uses_model_and_provider_profiles(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_WORKBENCH_LLM_MODEL", raising=False)
+    providers = ProviderProfileStore()
+    providers.create(
+        ProviderProfileSchema(
+            id="provider-1",
+            name="LM Studio local",
+            provider="lm_studio",
+            base_url="http://provider/v1",
+            api_key="secret",
+            timeout_seconds=45,
+        )
+    )
+    models = LLMProfileStore()
+    models.create(
+        LLMProfileSchema(
+            id="model-1",
+            alias="model_one",
+            name="Model One",
+            provider_profile_id="provider-1",
+            model_id="provider-model",
+            supports_streaming=True,
+            supports_vision=True,
+        )
+    )
+
+    config = resolve_llm_config(
+        capability_schema=llm_capability(),
+        llm_profile_store=models,
+        provider_profile_store=providers,
+        session_llm_profile_id="model-1",
+    )
+
+    assert config.values["provider"] == "lm_studio"
+    assert config.values["base_url"] == "http://provider/v1"
+    assert config.values["model"] == "provider-model"
+    assert config.values["timeout"] == 45
+    assert config.values["supports_streaming"] is True
+    assert config.values["supports_vision"] is True
+    assert config.metadata["provider_profile_id"] == "provider-1"
+
+
+def test_default_model_profile_is_used_before_legacy_and_env(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_LLM_MODEL", "env-model")
+    providers = ProviderProfileStore()
+    providers.create(ProviderProfileSchema(id="provider-1", name="Provider", base_url="http://default/v1"))
+    models = LLMProfileStore()
+    models.create(
+        LLMProfileSchema(
+            id="model-1",
+            alias="default_model",
+            name="Default Model",
+            provider_profile_id="provider-1",
+            model_id="default-model",
+        )
+    )
+    defaults = LLMDefaultsStore()
+    defaults.patch({"default_model_profile_id": "model-1"})
+
+    config = resolve_llm_config(
+        capability_schema=llm_capability(),
+        capability_config={"user_config": {"model": "legacy-model"}},
+        llm_profile_store=models,
+        provider_profile_store=providers,
+        llm_defaults_store=defaults,
+    )
+
+    assert config.values["model"] == "default-model"
+    assert config.metadata["source"] == "global_default"
+
+
+def test_missing_and_disabled_provider_profile_raise_clear_errors() -> None:
+    models = LLMProfileStore()
+    models.create(
+        LLMProfileSchema(
+            id="model-1",
+            alias="missing_provider",
+            name="Missing Provider",
+            provider_profile_id="provider-missing",
+            model_id="model",
+        )
+    )
+    try:
+        resolve_llm_config(llm_profile_store=models, provider_profile_store=ProviderProfileStore(), session_llm_profile_id="model-1")
+    except Exception as exc:
+        assert getattr(exc, "code") == "LLM_PROVIDER_PROFILE_NOT_FOUND"
+    else:
+        raise AssertionError("expected missing provider profile error")
+
+    providers = ProviderProfileStore()
+    providers.create(ProviderProfileSchema(id="provider-missing", name="Provider", base_url="http://local/v1", enabled=False))
+    try:
+        resolve_llm_config(llm_profile_store=models, provider_profile_store=providers, session_llm_profile_id="model-1")
+    except Exception as exc:
+        assert getattr(exc, "code") == "LLM_PROVIDER_PROFILE_DISABLED"
+    else:
+        raise AssertionError("expected disabled provider profile error")
 
 
 def llm_capability_registry():
