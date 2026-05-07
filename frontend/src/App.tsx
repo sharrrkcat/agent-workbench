@@ -37,12 +37,12 @@ export default function App() {
         socket.send(JSON.stringify({ type: 'next_event' }));
       }
     }
-    socket.addEventListener('open', () => {
+    const handleOpen = () => {
       opened = true;
       socket.send(JSON.stringify({ type: 'ping' }));
       requestNextEvent();
-    });
-    socket.addEventListener('message', (event) => {
+    };
+    const handleMessage = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type && payload.type !== 'pong') {
@@ -55,14 +55,20 @@ export default function App() {
       } catch {
         // Ignore malformed development messages.
       }
-    });
-    socket.addEventListener('error', () => {
+    };
+    const handleError = () => {
       if (!opened) {
         setWsUnavailable(true);
       }
-    });
+    };
+    socket.addEventListener('open', handleOpen);
+    socket.addEventListener('message', handleMessage);
+    socket.addEventListener('error', handleError);
     return () => {
       closed = true;
+      socket.removeEventListener('open', handleOpen);
+      socket.removeEventListener('message', handleMessage);
+      socket.removeEventListener('error', handleError);
       socket.close();
     };
   }, [currentSession?.session_id, refreshCurrent, applyRuntimeEvent, wsUnavailable]);

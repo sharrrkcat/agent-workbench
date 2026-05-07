@@ -36,15 +36,16 @@ class ActiveRunRegistry:
         task.cancel()
         return True
 
-    async def cancel_all(self) -> None:
+    async def cancel_all(self, timeout: float = 2.0) -> None:
         tasks = [task for task in self._tasks.values() if not task.done()]
         for task in tasks:
             task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        for run_id, task in list(self._tasks.items()):
-            if task.done():
-                self.unregister(run_id)
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=timeout)
+            except asyncio.TimeoutError:
+                pass
+        self._tasks.clear()
 
 
 class AgentRunner:

@@ -1,13 +1,15 @@
 from fastapi.testclient import TestClient
 from pathlib import Path
+import asyncio
 
 import pytest
 
 from ai_workbench.api.main import create_app
+from ai_workbench.api.ws import websocket_endpoint
 from ai_workbench.core.config_schema import parse_config_schema
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.run import RunStatus
-from tests.test_prompt_agent_execution import FakeLLMRuntime
+from tests.test_prompt_agent_execution import FakeLLMRuntime, run
 
 
 SVG_DATA_URL = (
@@ -1340,3 +1342,37 @@ def test_app_shutdown_closes_events_and_cancels_active_runs() -> None:
     assert fake_active_runs.cancelled is True
     assert queue.get_nowait() is None
     assert app.state.runtime_state.events._subscribers == []
+
+
+def test_websocket_cancelled_path_unsubscribes_eventbus_queue() -> None:
+    class FakeWebSocket:
+        def __init__(self, app) -> None:
+            self.app = app
+            self.accepted = False
+
+        async def accept(self) -> None:
+            self.accepted = True
+
+        async def receive_json(self) -> dict:
+            await asyncio.Event().wait()
+            return {}
+
+        async def send_json(self, payload) -> None:
+            pass
+
+    async def scenario():
+        app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+        websocket = FakeWebSocket(app)
+        task = asyncio.create_task(websocket_endpoint(websocket, "session-1"))
+        for _ in range(20):
+            if app.state.runtime_state.events._subscribers:
+                break
+            await asyncio.sleep(0)
+
+        task.cancel()
+        await task
+
+        assert websocket.accepted is True
+        assert app.state.runtime_state.events._subscribers == []
+
+    run(scenario())
