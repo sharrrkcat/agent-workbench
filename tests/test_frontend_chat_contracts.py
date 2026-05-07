@@ -61,5 +61,31 @@ def test_store_merges_run_step_updates_by_step_id() -> None:
 
     assert "run_step_created" in source
     assert "run_step_updated" in source
+    assert "stepsByRunId" in source
+    assert "runsById" in source
     assert "byId.set(step.step_id" in source
-    assert "upsertMessageRunStep" in source
+    assert "mergeRunStepIntoState" in source
+    assert "mergeRunsIntoState" in source
+    assert "parseRunStepPayload" in source
+
+
+def test_run_steps_expansion_is_scoped_by_run_id() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    store = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "runStepsExpandedByRunId" in store
+    assert "setRunStepsExpanded" in store
+    assert "Object.prototype.hasOwnProperty.call(expandedByRunId, runId)" in source
+    assert "defaultRunStepsExpanded" in source
+    assert "'FAILED', 'CANCELLED'" in source
+
+
+def test_run_steps_duration_and_running_tick_are_rendered() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "stepDurationLabel" in source
+    assert "formatDurationMs" in source
+    assert "window.setInterval" in source
+    assert "window.clearInterval" in source
+    assert "hasRunningStep" in source
+    assert "stepsByRunId[message.run_id]" in source

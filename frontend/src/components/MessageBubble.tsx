@@ -25,6 +25,8 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const editMessage = useWorkbenchStore((state) => state.editMessage);
   const setError = useWorkbenchStore((state) => state.setError);
   const pendingMessageActionId = useWorkbenchStore((state) => state.pendingMessageActionId);
+  const storeRun = useWorkbenchStore((state) => (message.run_id ? state.runsById[message.run_id] : undefined));
+  const storeRunSteps = useWorkbenchStore((state) => (message.run_id ? state.stepsByRunId[message.run_id] : undefined));
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(contentToText(message.content));
@@ -46,8 +48,8 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
-  const runSteps = messageRunSteps(message);
-  const messageRun = message.run;
+  const runSteps = storeRunSteps || messageRunSteps(message);
+  const messageRun = storeRun || message.run;
   if (!editing && !message.client_status && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
@@ -199,25 +201,35 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
 function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps: RunStep[]; forceExpanded?: boolean }) {
   const cancelActiveRun = useWorkbenchStore((state) => state.cancelActiveRun);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
+  const expandedByRunId = useWorkbenchStore((state) => state.runStepsExpandedByRunId);
+  const setRunStepsExpanded = useWorkbenchStore((state) => state.setRunStepsExpanded);
+  const [, setNowTick] = useState(0);
   const active = run ? isActiveRunStatus(run.status) : steps.some((step) => step.status === 'running');
   const failed = run?.status === 'FAILED' || steps.some((step) => step.status === 'failed');
-  const [expanded, setExpanded] = useState(forceExpanded || active || failed);
+  const runId = run?.run_id || steps[0]?.run_id || '';
+  const hasManualExpanded = Boolean(runId && Object.prototype.hasOwnProperty.call(expandedByRunId, runId));
+  const expanded = hasManualExpanded ? expandedByRunId[runId] : forceExpanded || defaultRunStepsExpanded(run);
+  const hasRunningStep = steps.some((step) => step.status === 'running' && step.started_at);
 
   useEffect(() => {
-    if (forceExpanded || active || failed) setExpanded(true);
-  }, [active, failed, forceExpanded]);
+    if (!hasRunningStep) return;
+    const interval = window.setInterval(() => setNowTick((current) => current + 1), 1000);
+    return () => window.clearInterval(interval);
+  }, [hasRunningStep]);
 
   if (!steps.length && !run) return null;
   const duration = runDurationLabel(run, steps);
-  const summary = steps.length ? `${steps.length} steps${duration ? ` · ${duration}` : ''}` : runStatusLabel(run?.status);
+  const progressSummary = run?.progress_total && run.progress_current !== undefined && run.progress_current !== null ? `${run.progress_current} / ${run.progress_total}` : '';
+  const stepSummary = progressSummary || (steps.length ? `${steps.length} steps` : runStatusLabel(run?.status));
+  const displaySummary = `${stepSummary}${duration ? ` · ${duration}` : ''}`;
   const canCancel = Boolean(run?.run_id && (activeRunId === run.run_id || active) && !run.cancel_requested && run.status !== 'CANCELLING');
 
   return (
     <section className={`run-steps-panel ${expanded ? 'expanded' : 'collapsed'} ${failed ? 'failed' : ''}`}>
       <div className="run-steps-header">
-        <button type="button" onClick={() => setExpanded((current) => !current)} aria-expanded={expanded}>
+        <button type="button" onClick={() => (runId ? setRunStepsExpanded(runId, !expanded) : undefined)} aria-expanded={expanded}>
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span>运行步骤：{summary}</span>
+          <span>运行步骤：{displaySummary}</span>
         </button>
         {run?.status === 'CANCELLING' ? <small>Cancelling</small> : null}
         {canCancel ? (
@@ -232,7 +244,7 @@ function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps
             <li className={`run-step-item ${step.status}`} key={step.step_id}>
               <RunStepIcon status={step.status} />
               <span>
-                <strong>{step.label}</strong>
+                <strong>{step.label}{stepDurationLabel(step) ? ` · ${stepDurationLabel(step)}` : ''}</strong>
                 {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
               </span>
             </li>
@@ -252,7 +264,7 @@ function RunStepIcon({ status }: { status: string }) {
 }
 
 function messageRunSteps(message: Message): RunStep[] {
-  return [...(message.run_steps || message.run?.steps || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return sortRunSteps([...(message.run_steps || message.run?.steps || [])]);
 }
 
 function stepMessage(step: RunStep): string {
@@ -264,6 +276,11 @@ function isActiveRunStatus(status: string): boolean {
   return ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(status);
 }
 
+function defaultRunStepsExpanded(run?: Run): boolean {
+  if (!run) return false;
+  return ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER', 'FAILED', 'CANCELLED'].includes(run.status);
+}
+
 function runStatusLabel(status?: string): string {
   if (!status) return '';
   return status.toLowerCase().replace(/_/g, ' ');
@@ -271,17 +288,36 @@ function runStatusLabel(status?: string): string {
 
 function runDurationLabel(run: Run | undefined, steps: RunStep[]): string {
   const start = run?.started_at || steps.find((step) => step.started_at)?.started_at || run?.created_at;
-  const end = run?.finished_at || run?.updated_at;
+  const end = run?.finished_at || (run && isActiveRunStatus(run.status) ? new Date().toISOString() : run?.updated_at);
   if (!start || !end) return '';
   const ms = parseDateMs(end) - parseDateMs(start);
   if (!Number.isFinite(ms) || ms < 0) return '';
-  if (ms < 1000) return '<1s';
+  return formatDurationMs(ms);
+}
+
+function stepDurationLabel(step: RunStep): string {
+  if (!step.started_at) return '';
+  if (step.status === 'pending' || step.status === 'skipped') return '';
+  const end = step.finished_at || (step.status === 'running' ? new Date().toISOString() : '');
+  if (!end) return '';
+  const ms = parseDateMs(end) - parseDateMs(step.started_at);
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  return formatDurationMs(ms);
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1).replace(/\.0$/, '')}s`;
   return `${Math.round(ms / 1000)}s`;
 }
 
 function parseDateMs(value: string): number {
   const ms = Date.parse(value);
   return Number.isNaN(ms) ? 0 : ms;
+}
+
+function sortRunSteps(steps: RunStep[]): RunStep[] {
+  return steps.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || parseDateMs(a.started_at || a.created_at) - parseDateMs(b.started_at || b.created_at));
 }
 
 function MessageHeader({
@@ -327,10 +363,12 @@ function InlineErrorBlock({ message }: { message: Message }) {
   const dismissNotification = useWorkbenchStore((state) => state.dismissNotification);
   const setError = useWorkbenchStore((state) => state.setError);
   const pendingMessageActionId = useWorkbenchStore((state) => state.pendingMessageActionId);
+  const storeRun = useWorkbenchStore((state) => (message.run_id ? state.runsById[message.run_id] : undefined));
+  const storeRunSteps = useWorkbenchStore((state) => (message.run_id ? state.stepsByRunId[message.run_id] : undefined));
   const [copied, setCopied] = useState(false);
   const operationPending = pendingMessageActionId === message.message_id;
   const canDismiss = message.message_id.startsWith('run-error:') || message.metadata?.notification === true;
-  const runSteps = messageRunSteps(message);
+  const runSteps = storeRunSteps || messageRunSteps(message);
 
   async function copyNotification() {
     try {
@@ -352,7 +390,7 @@ function InlineErrorBlock({ message }: { message: Message }) {
             <p>{error.message || 'The run failed.'}</p>
           </div>
         </div>
-        <RunStepsPanel run={message.run} steps={runSteps} forceExpanded />
+        <RunStepsPanel run={storeRun || message.run} steps={runSteps} forceExpanded />
         <div className="message-hover-actions system-notification-actions" aria-label="Notification actions">
           <button type="button" onClick={() => void copyNotification()} disabled={operationPending} title="Copy">
             {copied ? <Check size={13} /> : <Copy size={13} />}

@@ -237,6 +237,13 @@ class AgentRunner:
             },
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
+        self._emit_prompt_message_started(
+            agent=agent,
+            action_id=action_id,
+            session_id=session_id,
+            run=run,
+            parent_id=parent_id,
+        )
         if action_id != "default":
             self.event_bus.emit(
                 "action_invoked",
@@ -467,6 +474,26 @@ class AgentRunner:
 
         return RunResult(success=True, run_id=done_run.run_id, data=content)
 
+    def _emit_prompt_message_started(self, agent, action_id: str, session_id: str, run: RunSchema, parent_id: str = "", llm_resolution: dict | None = None) -> str:
+        draft_message_id = f"draft-{run.run_id}"
+        self.event_bus.emit(
+            "message_started",
+            session_id=session_id,
+            run_id=run.run_id,
+            message_id=draft_message_id,
+            payload={
+                "message_id": draft_message_id,
+                "role": "assistant",
+                "agent_id": agent.id,
+                "agent_name": agent.name,
+                "action_id": action_id,
+                "parent_message_id": parent_id or None,
+                "created_at": datetime.utcnow().isoformat(),
+                "llm_resolution": llm_resolution or None,
+            },
+        )
+        return draft_message_id
+
     async def _run_prompt_agent_streaming(
         self,
         agent,
@@ -486,21 +513,14 @@ class AgentRunner:
         llm_use_key: tuple[str, str] | None,
         calling_llm_step_id: str,
     ) -> RunResult:
-        draft_message_id = f"draft-{run.run_id}"
         resolution = _public_llm_resolution(llm_config)
-        self.event_bus.emit(
-            "message_started",
+        draft_message_id = self._emit_prompt_message_started(
+            agent=agent,
+            action_id=action_id,
             session_id=session_id,
-            run_id=run.run_id,
-            message_id=draft_message_id,
-            payload={
-                "message_id": draft_message_id,
-                "role": "assistant",
-                "agent_id": agent.id,
-                "agent_name": agent.name,
-                "created_at": datetime.utcnow().isoformat(),
-                "llm_resolution": resolution,
-            },
+            run=run,
+            parent_id=parent_id,
+            llm_resolution=resolution,
         )
         metrics_recorder = LLMMetricsRecorder(streamed=True)
         content_parts: list[str] = []

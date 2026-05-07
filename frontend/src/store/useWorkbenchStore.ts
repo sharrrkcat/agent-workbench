@@ -39,6 +39,9 @@ type WorkbenchState = {
   currentSession?: Session;
   messages: Message[];
   runs: Run[];
+  runsById: Record<string, Run>;
+  stepsByRunId: Record<string, RunStep[]>;
+  runStepsExpandedByRunId: Record<string, boolean>;
   runEvents: Record<string, RunEvent[]>;
   health?: HealthDetails;
   generalSettings?: GeneralSettings;
@@ -79,6 +82,7 @@ type WorkbenchState = {
   refreshGeneralSettings: () => Promise<void>;
   updateGeneralSettings: (patch: Partial<GeneralSettings>) => Promise<void>;
   loadRunEvents: (runId: string) => Promise<void>;
+  setRunStepsExpanded: (runId: string, expanded: boolean) => void;
   applyRuntimeEvent: (event: RuntimeEvent) => void;
   sendMessage: (content: string, attachments?: SendMessageAttachment[]) => Promise<boolean>;
   cancelActiveRun: () => Promise<void>;
@@ -102,6 +106,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   sessions: [],
   messages: [],
   runs: [],
+  runsById: {},
+  stepsByRunId: {},
+  runStepsExpandedByRunId: {},
   runEvents: {},
   loading: false,
   creatingSession: false,
@@ -149,11 +156,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (get().currentSession?.session_id !== session.session_id) return;
     const sessions = await api.listSessions();
     if (get().currentSession?.session_id !== session.session_id) return;
+    const mergedRunState = mergeRunsIntoState(get(), runs);
     set({
       currentSession: freshSession,
       sessions: sortSessionsByRecent(sessions),
-      messages: buildTimeline(messages, runs, get().messages, session.session_id),
-      runs,
+      messages: buildTimeline(messages, mergedRunState.runs, get().messages, session.session_id),
+      runs: mergedRunState.runs,
+      runsById: mergedRunState.runsById,
+      stepsByRunId: mergedRunState.stepsByRunId,
     });
   },
 
@@ -172,7 +182,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     try {
       const session = await api.createSession(`Session ${get().sessions.length + 1}`, defaultAgentId);
       const sessions = sortSessionsByRecent(await api.listSessions());
-      set({ sessions, currentSession: session, messages: [], runs: [], creatingSession: false });
+      set({ sessions, currentSession: session, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runStepsExpandedByRunId: {}, creatingSession: false });
     } catch (error) {
       set({ ...formatError(error, 'Failed to create session'), creatingSession: false });
     }
@@ -192,7 +202,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     try {
       await api.deleteSession(sessionId);
       if (deletingCurrent) {
-        set({ currentSession: nextSession, messages: [], runs: [], runEvents: {} });
+        set({ currentSession: nextSession, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runEvents: {}, runStepsExpandedByRunId: {} });
       }
       const sessions = sortSessionsByRecent((await api.listSessions()).filter((session) => session.session_id !== sessionId));
       if (!deletingCurrent) {
@@ -210,6 +220,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
           currentSession: undefined,
           messages: [],
           runs: [],
+          runsById: {},
+          stepsByRunId: {},
+          runStepsExpandedByRunId: {},
           runEvents: {},
           error: undefined,
           lastError: undefined,
@@ -223,6 +236,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         currentSession: freshNextSession,
         messages: [],
         runs: [],
+        runsById: {},
+        stepsByRunId: {},
+        runStepsExpandedByRunId: {},
         runEvents: {},
         error: undefined,
         lastError: undefined,
@@ -456,6 +472,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
+  setRunStepsExpanded: (runId: string, expanded: boolean) => {
+    if (!runId) return;
+    set({ runStepsExpandedByRunId: { ...get().runStepsExpandedByRunId, [runId]: expanded } });
+  },
+
   sendMessage: async (content: string, attachments: SendMessageAttachment[] = []) => {
     const session = get().currentSession;
     if (!session || (!content.trim() && !attachments.length) || get().sending) return false;
@@ -499,10 +520,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
     if ((event.type === 'run_updated' || event.type === 'run_created' || event.type === 'run_cancel_requested' || event.type === 'run_completed') && event.run_id) {
       const run = parseRunPayload(event.payload.run) || runFromEvent(event, session.session_id);
-      const runs = upsertRun(get().runs, run);
+      const mergedRunState = mergeRunsIntoState(get(), [run]);
       set({
-        runs,
-        messages: attachRunToMessages(get().messages, run),
+        runs: mergedRunState.runs,
+        runsById: mergedRunState.runsById,
+        stepsByRunId: mergedRunState.stepsByRunId,
+        messages: attachRunToMessages(get().messages, mergedRunState.runsById[run.run_id] || run, mergedRunState.stepsByRunId),
         sending: isRunActive(run.status) ? true : get().sending,
         activeRunId: isRunActive(run.status) ? run.run_id : get().activeRunId,
       });
@@ -514,10 +537,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if ((event.type === 'run_step_created' || event.type === 'run_step_updated') && event.run_id) {
       const step = parseRunStepPayload(event.payload.step);
       if (!step) return;
-      const runs = upsertRunStep(get().runs, step);
+      const mergedRunState = mergeRunStepIntoState(get(), step);
       set({
-        runs,
-        messages: upsertMessageRunStep(get().messages, step, runs),
+        runs: mergedRunState.runs,
+        runsById: mergedRunState.runsById,
+        stepsByRunId: mergedRunState.stepsByRunId,
+        messages: upsertMessageRunStep(get().messages, step, mergedRunState.runs, mergedRunState.stepsByRunId),
       });
       return;
     }
@@ -555,21 +580,26 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         message: typeof event.payload.error === 'string' ? event.payload.error : 'Run failed.',
       };
       const runs = upsertRun(get().runs, parseRunPayload(event.payload.run) || failedRunFromEvent(event, session.session_id, error));
+      const mergedRunState = mergeRunsIntoState(get(), runs);
       set({
         sending: false,
         activeRunId: undefined,
-        runs,
-        messages: buildTimeline(get().messages, runs, get().messages, session.session_id),
+        runs: mergedRunState.runs,
+        runsById: mergedRunState.runsById,
+        stepsByRunId: mergedRunState.stepsByRunId,
+        messages: buildTimeline(get().messages, mergedRunState.runs, get().messages, session.session_id),
       });
       return;
     }
     if (event.type === 'run_cancelled') {
       const run = parseRunPayload(event.payload.run);
-      const runs = run ? upsertRun(get().runs, run) : get().runs;
+      const mergedRunState = run ? mergeRunsIntoState(get(), [run]) : pickRunState(get());
       set({
         sending: false,
         activeRunId: undefined,
-        runs,
+        runs: mergedRunState.runs,
+        runsById: mergedRunState.runsById,
+        stepsByRunId: mergedRunState.stepsByRunId,
         messages: markDraftInterrupted(get().messages, event.run_id || ''),
       });
       return;
@@ -739,10 +769,10 @@ function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Me
     content: '',
     agent_id: typeof payload.agent_id === 'string' ? payload.agent_id : null,
     command_name: null,
-    action_id: 'default',
+    action_id: typeof payload.action_id === 'string' ? payload.action_id : 'default',
     run_id: event.run_id || null,
     output_type: 'text',
-    parent_message_id: null,
+    parent_message_id: typeof payload.parent_message_id === 'string' ? payload.parent_message_id : null,
     available_actions: [],
     metadata: {
       llm_resolution: isRecord(payload.llm_resolution) ? payload.llm_resolution : undefined,
@@ -757,6 +787,45 @@ function buildTimeline(fetchedMessages: Message[], runs: Run[], current: Message
   const baseMessages = sortMessagesByCreatedAt(removeSupersededFailedDrafts(fetchedMessages, runs));
   const messages = sortTimelineItems(baseMessages, failedRunErrors(baseMessages, runs, sessionId));
   return mergeTransientMessages(messages, current, sessionId);
+}
+
+function pickRunState(state: Pick<WorkbenchState, 'runs' | 'runsById' | 'stepsByRunId'>): Pick<WorkbenchState, 'runs' | 'runsById' | 'stepsByRunId'> {
+  return {
+    runs: state.runs,
+    runsById: state.runsById,
+    stepsByRunId: state.stepsByRunId,
+  };
+}
+
+function mergeRunsIntoState(state: Pick<WorkbenchState, 'runs' | 'runsById' | 'stepsByRunId'>, incomingRuns: Run[]): Pick<WorkbenchState, 'runs' | 'runsById' | 'stepsByRunId'> {
+  const stepsByRunId = { ...state.stepsByRunId };
+  const runsById = { ...state.runsById };
+  for (const run of incomingRuns) {
+    if (!run.run_id) continue;
+    const mergedSteps = mergeRunSteps(stepsByRunId[run.run_id] || runsById[run.run_id]?.steps || [], run.steps || []);
+    stepsByRunId[run.run_id] = mergedSteps;
+    runsById[run.run_id] = {
+      ...(runsById[run.run_id] || {}),
+      ...run,
+      steps: mergedSteps,
+      metadata: { ...(runsById[run.run_id]?.metadata || {}), ...(run.metadata || {}) },
+    };
+  }
+  const mergedRuns = dedupeRuns([...state.runs, ...incomingRuns]).map((run) => runsById[run.run_id] || run);
+  return { runs: mergedRuns, runsById, stepsByRunId };
+}
+
+function mergeRunStepIntoState(state: Pick<WorkbenchState, 'runs' | 'runsById' | 'stepsByRunId'>, step: RunStep): Pick<WorkbenchState, 'runs' | 'runsById' | 'stepsByRunId'> {
+  const stepsByRunId = {
+    ...state.stepsByRunId,
+    [step.run_id]: mergeRunSteps(state.stepsByRunId[step.run_id] || state.runsById[step.run_id]?.steps || [], [step]),
+  };
+  const runsById = { ...state.runsById };
+  if (runsById[step.run_id]) {
+    runsById[step.run_id] = { ...runsById[step.run_id], steps: stepsByRunId[step.run_id] };
+  }
+  const runs = state.runs.map((run) => (run.run_id === step.run_id ? { ...run, steps: stepsByRunId[step.run_id] } : run));
+  return { runs, runsById, stepsByRunId };
 }
 
 function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): Message[] {
@@ -945,8 +1014,22 @@ function attachmentIds(message: Message): string[] {
 }
 
 function upsertDraftMessage(messages: Message[], draft: Message): Message[] {
-  if (messages.some((message) => message.message_id === draft.message_id || (draft.run_id && message.run_id === draft.run_id && message.role === 'assistant'))) {
-    return messages;
+  let replaced = false;
+  const next = messages.map((message) => {
+    const sameDraft = message.message_id === draft.message_id || (draft.run_id && message.run_id === draft.run_id && message.role === 'assistant' && message.message_id.startsWith('draft-'));
+    if (!sameDraft) return message;
+    replaced = true;
+    return {
+      ...message,
+      agent_id: message.agent_id || draft.agent_id,
+      action_id: message.action_id || draft.action_id,
+      parent_message_id: message.parent_message_id || draft.parent_message_id,
+      metadata: { ...(message.metadata || {}), ...(draft.metadata || {}) },
+      client_status: message.client_status || draft.client_status,
+    };
+  });
+  if (replaced) {
+    return next;
   }
   return [...messages, draft];
 }
@@ -1048,15 +1131,17 @@ function mergeRunSteps(left: RunStep[], right: RunStep[]): RunStep[] {
   return [...byId.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || parseServerTime(a.created_at).getTime() - parseServerTime(b.created_at).getTime());
 }
 
-function attachRunToMessages(messages: Message[], run: Run): Message[] {
-  return messages.map((message) => (message.run_id === run.run_id ? { ...message, run, run_steps: mergeRunSteps(message.run_steps || [], run.steps || []) } : message));
+function attachRunToMessages(messages: Message[], run: Run, stepsByRunId: Record<string, RunStep[]>): Message[] {
+  return messages.map((message) =>
+    message.run_id === run.run_id ? { ...message, run, run_steps: mergeRunSteps(message.run_steps || [], stepsByRunId[run.run_id] || run.steps || []) } : message,
+  );
 }
 
-function upsertMessageRunStep(messages: Message[], step: RunStep, runs: Run[]): Message[] {
+function upsertMessageRunStep(messages: Message[], step: RunStep, runs: Run[], stepsByRunId: Record<string, RunStep[]>): Message[] {
   const run = runs.find((item) => item.run_id === step.run_id);
   return messages.map((message) => {
     if (message.run_id !== step.run_id) return message;
-    return { ...message, run: run || message.run, run_steps: mergeRunSteps(message.run_steps || [], [step]) };
+    return { ...message, run: run || message.run, run_steps: mergeRunSteps(message.run_steps || [], stepsByRunId[step.run_id] || [step]) };
   });
 }
 

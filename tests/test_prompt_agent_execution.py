@@ -12,7 +12,7 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner, _extract_llm_result, _friendly_llm_error, _normalize_stream_chunk
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
-from ai_workbench.core.schema.run import RunStatus
+from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunStore, SessionStore
 
 
@@ -230,6 +230,56 @@ def test_prompt_agent_success_creates_default_run_steps() -> None:
         "Cleanup",
     ]
     assert [step.status.value for step in steps] == ["completed"] * 6
+
+
+def test_run_lifecycle_steps_write_timestamps_and_emit_updates() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    session = fixture.sessions.create_session()
+    run_record = fixture.runs.create_run(kind="agent", target_id="chat", session_id=session.session_id)
+    lifecycle = fixture.agent_runner.run_lifecycle
+
+    started = lifecycle.start_step(run_record.run_id, "Resolving agent")
+    completed = lifecycle.complete_step(started.step_id)
+    failed = lifecycle.start_step(run_record.run_id, "Calling LLM")
+    failed = lifecycle.fail_step(failed.step_id, error_message="Provider unreachable")
+    skipped = fixture.runs.create_step(run_record.run_id, "Cleanup", status=RunStepStatus.PENDING)
+    skipped = lifecycle.skip_step(skipped.step_id, message="Skipped after failure")
+
+    events = fixture.events.list_events()
+    assert started.started_at is not None
+    assert completed.finished_at is not None
+    assert failed.finished_at is not None
+    assert skipped.finished_at is not None
+    assert [event.type for event in events].count("run_step_created") == 2
+    assert [event.type for event in events].count("run_step_updated") == 3
+    assert all(event.run_id == run_record.run_id for event in events)
+
+
+def test_run_status_update_emits_run_update_event() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    session = fixture.sessions.create_session()
+    run_record = fixture.runs.create_run(kind="agent", target_id="chat", session_id=session.session_id)
+
+    fixture.agent_runner.run_lifecycle.start_run(run_record.run_id, stage="running")
+
+    events = fixture.events.list_events()
+    assert events[-1].type == "run_updated"
+    assert events[-1].run_id == run_record.run_id
+    assert events[-1].payload["run"]["status"] == "RUNNING"
+
+
+def test_prompt_agent_emits_early_placeholder_bound_to_run_id() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    events = fixture.events.list_events()
+    placeholder = next(event for event in events if event.type == "message_started")
+
+    assert placeholder.run_id == result.run_id
+    assert placeholder.payload["message_id"] == f"draft-{result.run_id}"
+    assert placeholder.payload["agent_id"] == "chat"
+    assert events.index(placeholder) < next(index for index, event in enumerate(events) if event.type == "run_step_created")
 
 
 def test_prompt_agent_llm_failure_marks_calling_llm_step_failed() -> None:
