@@ -50,7 +50,7 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
     session = _get_session_or_404(state, session_id)
     before_ids = {message.message_id for message in state.messages.list_messages(session_id)}
     try:
-        attachments = validate_attachments(payload.attachments)
+        attachments = validate_attachments(payload.attachments, settings=state.app_settings.get())
     except ValueError as exc:
         raise_error(400, "INVALID_ATTACHMENTS", str(exc) or "Invalid attachments.")
 

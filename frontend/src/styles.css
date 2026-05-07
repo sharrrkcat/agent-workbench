@@ -3415,6 +3415,10 @@ input:disabled {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.settings-definition-grid div.wide {
+  grid-column: 1 / -1;
+}
+
 .settings-definition-grid dt,
 .settings-definition-grid dd {
   margin: 0;

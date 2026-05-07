@@ -62,6 +62,7 @@ class AgentRunner:
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
         llm_profile_store=None,
+        app_settings_store=None,
         active_runs: ActiveRunRegistry = None,
     ) -> None:
         self.agent_registry = agent_registry
@@ -76,6 +77,7 @@ class AgentRunner:
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
         self.llm_profile_store = llm_profile_store
+        self.app_settings_store = app_settings_store
         self.active_runs = active_runs or ActiveRunRegistry()
         self.script_runner = None
         if session_store is not None and runtime_registry is not None:
@@ -288,6 +290,7 @@ class AgentRunner:
                 messages=messages,
                 message_store=self.message_store,
                 current_user_message_id=current_user_message_id,
+                settings=self._app_settings(),
             )
             messages = file_context["messages"]
             vision_input = _prepare_vision_messages(
@@ -693,6 +696,11 @@ class AgentRunner:
             metadata["file_context"] = file_context
         self.run_store.update_metadata(run_id, metadata)
 
+    def _app_settings(self):
+        if self.app_settings_store is None:
+            return None
+        return self.app_settings_store.get()
+
     def _is_cancelled(self, run_id: str) -> bool:
         try:
             return self.run_store.get_run(run_id).status == RunStatus.CANCELLED
@@ -795,14 +803,16 @@ MAX_LLM_TEXT_ATTACHMENT_BYTES = 200 * 1024
 MAX_LLM_TEXT_ATTACHMENTS_BYTES = 500 * 1024
 
 
-def _prepare_file_context_messages(messages: list, message_store: MessageStore, current_user_message_id: str) -> dict:
-    attachments, warnings = _current_file_attachments(message_store, current_user_message_id)
+def _prepare_file_context_messages(messages: list, message_store: MessageStore, current_user_message_id: str, settings=None) -> dict:
+    enabled = True if settings is None else bool(settings.send_text_file_attachments_to_llm)
+    attachments, warnings = _current_file_attachments(message_store, current_user_message_id, settings=settings)
     text_attachments = [item for item in attachments if item.get("text")]
     files_attached = len(attachments)
     files_sent = len(text_attachments)
     files_ignored = files_attached - files_sent
     total_chars = sum(len(item["text"]["content"]) for item in text_attachments)
     metadata = {
+        "enabled": enabled,
         "files_attached": files_attached,
         "files_sent": files_sent,
         "files_ignored": files_ignored,
@@ -821,7 +831,10 @@ def _prepare_file_context_messages(messages: list, message_store: MessageStore, 
     current = next_messages[target_index]
     text = str(current.get("content") or "")
     additions = []
-    if text_attachments:
+    if files_attached and not enabled:
+        suffix = "" if files_attached == 1 else "s"
+        additions.append(f"User attached {files_attached} text file{suffix}, but file context is disabled.")
+    elif text_attachments:
         if not text.strip():
             suffix = "" if files_sent == 1 else "s"
             additions.append(f"User attached {files_sent} text file{suffix}.")
@@ -836,7 +849,7 @@ def _prepare_file_context_messages(messages: list, message_store: MessageStore, 
     return {"messages": next_messages, "metadata": metadata, "warnings": warnings}
 
 
-def _current_file_attachments(message_store: MessageStore, current_user_message_id: str) -> tuple[list[dict[str, Any]], list[str]]:
+def _current_file_attachments(message_store: MessageStore, current_user_message_id: str, settings=None) -> tuple[list[dict[str, Any]], list[str]]:
     if not current_user_message_id:
         return [], []
     try:
@@ -849,7 +862,10 @@ def _current_file_attachments(message_store: MessageStore, current_user_message_
 
     attachments: list[dict[str, Any]] = []
     warnings: list[str] = []
-    remaining = MAX_LLM_TEXT_ATTACHMENTS_BYTES
+    enabled = True if settings is None else bool(settings.send_text_file_attachments_to_llm)
+    per_file_limit = getattr(settings, "max_file_context_per_file_bytes", MAX_LLM_TEXT_ATTACHMENT_BYTES)
+    total_limit = getattr(settings, "max_total_file_context_per_message_bytes", MAX_LLM_TEXT_ATTACHMENTS_BYTES)
+    remaining = total_limit
     for index, raw_attachment in enumerate(raw_attachments, start=1):
         if not isinstance(raw_attachment, dict) or raw_attachment.get("type") != "file":
             continue
@@ -858,7 +874,10 @@ def _current_file_attachments(message_store: MessageStore, current_user_message_
             if not is_text_attachment(raw_attachment):
                 attachments.append(item)
                 continue
-            limit = max(0, min(MAX_LLM_TEXT_ATTACHMENT_BYTES, remaining))
+            if not enabled:
+                attachments.append(item)
+                continue
+            limit = max(0, min(per_file_limit, remaining))
             if limit <= 0:
                 warnings.append(f"file attachment {index} was ignored: text attachment context limit reached")
                 attachments.append(item)

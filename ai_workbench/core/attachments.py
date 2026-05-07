@@ -19,7 +19,8 @@ ALLOWED_IMAGE_MIME_TYPES = {
     "image/svg+xml",
 }
 MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024
-MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024
+MAX_FILE_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_CONFIGURABLE_ATTACHMENT_BYTES = 100 * 1024 * 1024
 MAX_ATTACHMENTS_PER_MESSAGE = 10
 MAX_IMAGE_ATTACHMENTS_PER_MESSAGE = 6
 TEXT_READ_LIMIT_BYTES = 1024 * 1024
@@ -100,7 +101,7 @@ class ImageAttachment(BaseModel):
     type: str = "image"
     mime_type: str
     name: str = ""
-    size: int = Field(ge=0, le=MAX_IMAGE_ATTACHMENT_BYTES)
+    size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
     data_url: str | None = Field(default=None, min_length=1)
     uri: str | None = Field(default=None, min_length=1)
     created_at: str | None = None
@@ -151,7 +152,7 @@ class Attachment(BaseModel):
     type: Literal["image", "file"]
     mime_type: str
     name: str = ""
-    size: int = Field(ge=0, le=MAX_IMAGE_ATTACHMENT_BYTES)
+    size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
     data_url: str | None = Field(default=None, min_length=1)
     uri: str | None = Field(default=None, min_length=1)
     created_at: str | None = None
@@ -192,7 +193,8 @@ def validate_image_attachments(value: Any) -> list[dict[str, Any]]:
     return validate_attachments(value, max_attachments=MAX_IMAGE_ATTACHMENTS_PER_MESSAGE, images_only=True)
 
 
-def validate_attachments(value: Any, max_attachments: int = MAX_ATTACHMENTS_PER_MESSAGE, images_only: bool = False) -> list[dict[str, Any]]:
+def validate_attachments(value: Any, max_attachments: int | None = None, images_only: bool = False, settings: Any = None) -> list[dict[str, Any]]:
+    max_attachments = max_attachments or getattr(settings, "max_attachments_per_message", MAX_ATTACHMENTS_PER_MESSAGE)
     if value is None:
         return []
     if not isinstance(value, list):
@@ -211,10 +213,10 @@ def validate_attachments(value: Any, max_attachments: int = MAX_ATTACHMENTS_PER_
             data_mime = _data_url_mime_type(attachment.data_url)
             if data_mime != attachment.mime_type:
                 raise ValueError("Attachment MIME type does not match data_url MIME type.")
-            attachments.append(save_attachment_from_data_url(attachment.model_dump(exclude_none=True)))
+            attachments.append(save_attachment_from_data_url(attachment.model_dump(exclude_none=True), settings=settings))
         else:
             data = attachment.model_dump(exclude_none=True)
-            _validate_attachment_metadata(data)
+            _validate_attachment_metadata(data, settings=settings)
             attachments.append(data)
     return attachments
 
@@ -230,7 +232,7 @@ def attachments_root() -> Path:
     return root.resolve()
 
 
-def save_attachment_from_data_url(attachment: dict[str, Any]) -> dict[str, Any]:
+def save_attachment_from_data_url(attachment: dict[str, Any], settings: Any = None) -> dict[str, Any]:
     parsed = Attachment.model_validate(attachment)
     if not parsed.data_url:
         raise ValueError("Attachment data_url is required.")
@@ -240,7 +242,8 @@ def save_attachment_from_data_url(attachment: dict[str, Any]) -> dict[str, Any]:
     inferred_type = infer_attachment_type(parsed.name, mime_type)
     if parsed.type != inferred_type:
         raise ValueError("Attachment type does not match MIME type or extension.")
-    _validate_attachment_payload(parsed.name, mime_type, attachment_bytes, inferred_type)
+    _validate_attachment_payload(parsed.name, mime_type, attachment_bytes, inferred_type, settings=settings)
+    _validate_attachment_size(max(parsed.size, len(attachment_bytes)), inferred_type, settings=settings)
 
     attachment_id = str(uuid4())
     extension = _extension_for_attachment(parsed.name, mime_type)
@@ -264,7 +267,7 @@ def save_attachment_from_data_url(attachment: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def save_attachment_from_file(path: str | Path, name: str | None = None, mime_type: str | None = None) -> dict[str, Any]:
+def save_attachment_from_file(path: str | Path, name: str | None = None, mime_type: str | None = None, settings: Any = None) -> dict[str, Any]:
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError("Attachment file not found.")
@@ -272,13 +275,13 @@ def save_attachment_from_file(path: str | Path, name: str | None = None, mime_ty
     guessed_mime = (mime_type or mimetypes.guess_type(display_name)[0] or _mime_type_for_extension(Path(display_name).suffix)).lower()
     data = source.read_bytes()
     attachment_type = infer_attachment_type(display_name, guessed_mime)
-    _validate_attachment_payload(display_name, guessed_mime, data, attachment_type)
+    _validate_attachment_payload(display_name, guessed_mime, data, attachment_type, settings=settings)
     return _store_attachment_bytes(display_name, guessed_mime, data, attachment_type)
 
 
-def save_attachment_from_upload(name: str, mime_type: str, data: bytes) -> dict[str, Any]:
+def save_attachment_from_upload(name: str, mime_type: str, data: bytes, settings: Any = None) -> dict[str, Any]:
     attachment_type = infer_attachment_type(name, mime_type)
-    _validate_attachment_payload(name, mime_type, data, attachment_type)
+    _validate_attachment_payload(name, mime_type, data, attachment_type, settings=settings)
     return _store_attachment_bytes(name, mime_type.strip().lower(), data, attachment_type)
 
 
@@ -483,25 +486,38 @@ def _extension_for_attachment(name: str | None, mime_type: str) -> str:
     raise ValueError("Unsupported attachment file type.")
 
 
-def _validate_attachment_metadata(attachment: dict[str, Any]) -> None:
+def _validate_attachment_metadata(attachment: dict[str, Any], settings: Any = None) -> None:
     attachment_type = infer_attachment_type(str(attachment.get("name") or ""), str(attachment.get("mime_type") or ""))
     if attachment.get("type") != attachment_type:
         raise ValueError("Attachment type does not match MIME type or extension.")
     _extension_for_attachment(str(attachment.get("name") or attachment.get("uri") or ""), str(attachment.get("mime_type") or ""))
+    size = int(attachment.get("size") or 0)
+    _validate_attachment_size(size, attachment_type, settings=settings)
 
 
-def _validate_attachment_payload(name: str | None, mime_type: str, data: bytes, attachment_type: str) -> None:
+def _validate_attachment_payload(name: str | None, mime_type: str, data: bytes, attachment_type: str, settings: Any = None) -> None:
     if attachment_type == "image":
         if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
             raise ValueError("Unsupported image MIME type.")
-        if len(data) > MAX_IMAGE_ATTACHMENT_BYTES:
-            raise ValueError("Attachment image is too large. Maximum size is 10 MB.")
+        _validate_attachment_size(len(data), attachment_type, settings=settings)
         return
     suffix = Path(name or "").suffix.lower()
     if suffix not in ALLOWED_TEXT_EXTENSIONS:
         raise ValueError("Unsupported file type.")
-    if len(data) > MAX_FILE_ATTACHMENT_BYTES:
-        raise ValueError("Attachment file is too large. Maximum size is 5 MB.")
+    _validate_attachment_size(len(data), attachment_type, settings=settings)
+
+
+def _validate_attachment_size(size: int, attachment_type: str, settings: Any = None) -> None:
+    if attachment_type == "image":
+        max_mb = getattr(settings, "max_image_size_mb", MAX_IMAGE_ATTACHMENT_BYTES // (1024 * 1024))
+        max_bytes = getattr(settings, "max_image_size_bytes", max_mb * 1024 * 1024)
+        if size > max_bytes:
+            raise ValueError(f"Attachment image is too large. Maximum size is {max_mb} MB.")
+        return
+    max_mb = getattr(settings, "max_file_size_mb", MAX_FILE_ATTACHMENT_BYTES // (1024 * 1024))
+    max_bytes = getattr(settings, "max_file_size_bytes", max_mb * 1024 * 1024)
+    if size > max_bytes:
+        raise ValueError(f"Attachment file is too large. Maximum size is {max_mb} MB.")
 
 
 def _attachment_is_referenced(attachment_id: Any, uri: Any, message_store: Any, session_id: str | None) -> bool:

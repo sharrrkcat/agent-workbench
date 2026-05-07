@@ -9,6 +9,7 @@ import type {
   CapabilityConfig,
   Command,
   LlmResolvedConfig,
+  GeneralSettings,
   LlmProfile,
   LlmTestResult,
   Message,
@@ -32,6 +33,7 @@ type WorkbenchState = {
   runs: Run[];
   runEvents: Record<string, RunEvent[]>;
   health?: HealthDetails;
+  generalSettings?: GeneralSettings;
   runEventLoading?: string;
   loading: boolean;
   creatingSession: boolean;
@@ -62,6 +64,8 @@ type WorkbenchState = {
   getResolvedLlmConfig: () => Promise<LlmResolvedConfig | null>;
   testLlmConnection: () => Promise<LlmTestResult>;
   refreshHealth: () => Promise<void>;
+  refreshGeneralSettings: () => Promise<void>;
+  updateGeneralSettings: (patch: Partial<GeneralSettings>) => Promise<void>;
   loadRunEvents: (runId: string) => Promise<void>;
   applyRuntimeEvent: (event: RuntimeEvent) => void;
   sendMessage: (content: string, attachments?: SendMessageAttachment[]) => Promise<boolean>;
@@ -95,17 +99,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   initialize: async () => {
     set({ loading: true, error: undefined, lastError: undefined });
     try {
-      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles] = await Promise.all([
+      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles, generalSettings] = await Promise.all([
         api.listAgents(),
         api.listCommands(),
         api.listSessions(),
         api.listAgentConfigs(),
         api.listCapabilityConfigs(),
         api.listLlmProfiles(),
+        api.getGeneralSettings(),
       ]);
       const sortedSessions = sortSessionsByRecent(sessions);
       const currentSession = sortedSessions[0];
-      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, loading: false });
+      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, generalSettings, loading: false });
       if (currentSession) {
         await get().refreshCurrent();
       }
@@ -350,6 +355,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ health });
     } catch (error) {
       set(formatError(error, 'Failed to load backend health'));
+    }
+  },
+
+  refreshGeneralSettings: async () => {
+    try {
+      const generalSettings = await api.getGeneralSettings();
+      set({ generalSettings });
+    } catch (error) {
+      set(formatError(error, 'Failed to load general settings'));
+    }
+  },
+
+  updateGeneralSettings: async (patch) => {
+    try {
+      const generalSettings = await api.updateGeneralSettings(patch);
+      set({ generalSettings, error: undefined, lastError: undefined });
+    } catch (error) {
+      set(formatError(error, 'Failed to update general settings'));
+      throw error;
     }
   },
 

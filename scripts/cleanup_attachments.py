@@ -3,14 +3,15 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ai_workbench.core.attachments import attachments_root
 from ai_workbench.db.database import get_database_url
+from ai_workbench.core.storage_maintenance import cleanup_orphan_attachments, scan_orphan_attachments, sqlite_database_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,38 +20,44 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--database-url", default=None, help="override the SQLite database URL")
     args = parser.parse_args(argv)
 
-    referenced = _referenced_attachment_filenames(args.database_url)
-    files = _attachment_files()
-    orphan_files = [path for path in files if path.name not in referenced]
-    deleted = 0
-    errors: list[str] = []
-
+    store = _SqliteMessageMetadataStore(args.database_url)
+    scan = scan_orphan_attachments(store)
+    result = {"deleted_count": 0, "errors": []}
     if args.apply:
-        for path in orphan_files:
-            try:
-                path.unlink()
-                deleted += 1
-            except OSError as exc:
-                errors.append(f"{path}: {exc}")
+        result = cleanup_orphan_attachments(store)
 
-    print(f"referenced count: {len(referenced)}")
-    print(f"orphan count: {len(orphan_files)}")
-    print(f"deleted count: {deleted}")
-    print(f"errors: {len(errors)}")
-    for error in errors:
-        print(error)
+    print(f"referenced count: {len(_referenced_attachment_filenames(args.database_url))}")
+    print(f"orphan count: {scan['orphan_count']}")
+    print(f"deleted count: {result['deleted_count']}")
+    print(f"errors: {len(result['errors'])}")
+    for error in result["errors"]:
+        print(f"{error.get('path')}: {error.get('error')}")
     if not args.apply:
         print("dry-run: pass --apply to delete orphan files")
-    return 1 if errors else 0
+    return 1 if result["errors"] else 0
 
 
-def _attachment_files() -> list[Path]:
-    files: list[Path] = []
-    for child in ("images", "files"):
-        root = attachments_root() / child
-        if root.exists():
-            files.extend(path for path in root.iterdir() if path.is_file())
-    return sorted(files)
+class _SqliteMessageMetadataStore:
+    def __init__(self, database_url: str | None) -> None:
+        self.database_url = database_url
+
+    def list_all_messages(self) -> list:
+        db_path = _sqlite_path(self.database_url)
+        if db_path is None or not db_path.exists():
+            return []
+        messages = []
+        with sqlite3.connect(db_path) as connection:
+            try:
+                rows = connection.execute("SELECT metadata_json FROM messagerecord").fetchall()
+            except sqlite3.Error:
+                return messages
+        for (metadata_json,) in rows:
+            try:
+                metadata = json.loads(metadata_json or "{}")
+            except json.JSONDecodeError:
+                metadata = {}
+            messages.append(SimpleNamespace(metadata=metadata))
+        return messages
 
 
 def _referenced_attachment_filenames(database_url: str | None) -> set[str]:
@@ -81,13 +88,7 @@ def _referenced_attachment_filenames(database_url: str | None) -> set[str]:
 
 
 def _sqlite_path(database_url: str | None) -> Path | None:
-    resolved = get_database_url(database_url)
-    if not resolved.startswith("sqlite:///"):
-        return None
-    value = resolved.replace("sqlite:///", "", 1)
-    if value == ":memory:":
-        return None
-    return Path(value).resolve()
+    return sqlite_database_path(get_database_url(database_url))
 
 
 if __name__ == "__main__":

@@ -356,3 +356,48 @@ export type DeleteMessageResponse = {
   deleted: boolean;
   message_id: string;
 };
+
+export type GeneralSettings = {
+  max_image_size_mb: number;
+  max_file_size_mb: number;
+  max_attachments_per_message: number;
+  max_file_context_per_file_kb: number;
+  max_total_file_context_per_message_kb: number;
+  send_text_file_attachments_to_llm: boolean;
+};
+
+export type StorageStats = {
+  database: {
+    status: string;
+    path: string;
+    size_bytes: number;
+    schema_version: string;
+  };
+  attachments: {
+    directory: string;
+    count: number;
+    total_size_bytes: number;
+    orphan_count: number;
+    orphan_size_bytes: number;
+    last_scan_time?: string;
+  };
+  warnings?: string[];
+};
+
+export type OrphanAttachment = {
+  id: string;
+  path: string;
+  size_bytes: number;
+};
+
+export type OrphanScanResult = {
+  orphan_count: number;
+  orphan_size_bytes: number;
+  orphans: OrphanAttachment[];
+};
+
+export type CleanupOrphansResult = {
+  deleted_count: number;
+  deleted_size_bytes: number;
+  errors: { path?: string; error?: string }[];
+};

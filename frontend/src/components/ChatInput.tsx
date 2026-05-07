@@ -18,7 +18,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { agents, capabilityConfigs, currentSession, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, setError } = useWorkbenchStore();
+  const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, setError } = useWorkbenchStore();
 
   const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
 
@@ -106,9 +106,12 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   async function addFiles(files: FileList | File[]) {
     const fileItems = Array.from(files);
     if (!fileItems.length) return;
-    const available = MAX_ATTACHMENTS - attachments.length;
+    const maxAttachments = generalSettings?.max_attachments_per_message ?? MAX_ATTACHMENTS;
+    const maxImageBytes = (generalSettings?.max_image_size_mb ?? 10) * 1024 * 1024;
+    const maxFileBytes = (generalSettings?.max_file_size_mb ?? 10) * 1024 * 1024;
+    const available = maxAttachments - attachments.length;
     if (available <= 0) {
-      setError(new Error(`You can attach up to ${MAX_ATTACHMENTS} files.`), 'Too many attachments');
+      setError(new Error(`You can attach up to ${maxAttachments} files.`), 'Too many attachments');
       return;
     }
 
@@ -119,9 +122,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
         setError(new Error(`Unsupported file type: ${file.type || file.name}`), 'Unsupported attachment type');
         continue;
       }
-      const maxBytes = kind === 'image' ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+      const maxBytes = kind === 'image' ? maxImageBytes : maxFileBytes;
       if (file.size > maxBytes) {
-        setError(new Error(`${file.name || 'Attachment'} is larger than ${kind === 'image' ? '10 MB' : '5 MB'}.`), 'Attachment too large');
+        setError(new Error(`${file.name || 'Attachment'} is larger than ${kind === 'image' ? generalSettings?.max_image_size_mb ?? 10 : generalSettings?.max_file_size_mb ?? 10} MB.`), 'Attachment too large');
         continue;
       }
       accepted.push(file);
@@ -460,8 +463,6 @@ function getActiveToken(value: string, cursorPosition: number): { token: string;
 const ALLOWED_IMAGE_MIME_TYPES: ImageAttachment['mime_type'][] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
 const ALLOWED_TEXT_EXTENSIONS = ['.txt', '.md', '.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml', '.toml', '.xml', '.html', '.css', '.env', '.log', '.csv', '.sql', '.sh', '.ps1', '.bat', '.ini', '.cfg'];
 const ATTACHMENT_ACCEPT = [...ALLOWED_IMAGE_MIME_TYPES, 'image/*', ...ALLOWED_TEXT_EXTENSIONS].join(',');
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
 
 async function fileToAttachment(file: File): Promise<Attachment> {

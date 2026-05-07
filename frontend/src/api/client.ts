@@ -13,9 +13,13 @@ import type {
   Run,
   RunEvent,
   HealthDetails,
+  CleanupOrphansResult,
+  GeneralSettings,
+  OrphanScanResult,
   RuntimeResponse,
   Session,
   SendMessageAttachment,
+  StorageStats,
 } from '../types';
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -92,6 +96,19 @@ export const api = {
     }),
   testLlmProfile: (profileIdOrAlias: string) =>
     request<LlmTestResult>(`/api/llm-profiles/${profileIdOrAlias}/test`, { method: 'POST' }),
+  getGeneralSettings: () => request<GeneralSettings>('/api/settings/general'),
+  updateGeneralSettings: (patch: Partial<GeneralSettings>) =>
+    request<GeneralSettings>('/api/settings/general', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  getStorageStats: () => request<StorageStats>('/api/data/storage-stats'),
+  scanOrphanAttachments: () => request<OrphanScanResult>('/api/data/attachments/scan-orphans', { method: 'POST' }),
+  cleanupOrphanAttachments: (confirm: boolean) =>
+    request<CleanupOrphansResult>('/api/data/attachments/cleanup-orphans', {
+      method: 'POST',
+      body: JSON.stringify({ confirm }),
+    }),
   listLlmProfileModels: (profileIdOrAlias: string) =>
     request<{ success: boolean; models: { id: string }[] }>(`/api/llm-profiles/${profileIdOrAlias}/models`),
   getHealthDetails: () => request<HealthDetails>('/api/health/details'),

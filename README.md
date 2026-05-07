@@ -241,6 +241,17 @@ Secret fields render as password inputs. API responses return the fixed mask `**
 
 Secret masking is API/UI masking only. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
 
+Settings -> General stores local app settings in SQLite and exposes:
+
+- max image size
+- max file size
+- max attachments per message
+- max file context per file
+- max total file context per message
+- whether ordinary text file attachments are sent to Prompt Agent LLM context
+
+Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
+
 ## SQLite Data
 
 Default database path:
@@ -258,6 +269,16 @@ AGENT_WORKBENCH_DATABASE_URL=sqlite:///./data/agent_workbench.db
 The current schema version is stored in app metadata as `schema_version`.
 
 This project still uses a lightweight schema version guard plus `SQLModel.metadata.create_all`. New tables can be created during startup, but there is no Alembic migration system yet.
+
+Settings -> Data shows the database path and size, the attachment directory, attachment count and size, orphan attachment count and size, and optional last scan time. Use:
+
+```text
+GET /api/data/storage-stats
+POST /api/data/attachments/scan-orphans
+POST /api/data/attachments/cleanup-orphans
+```
+
+Cleanup requires `{"confirm": true}` and only deletes unreferenced local files inside the configured attachment directory. It does not reset data, browse folders, generate thumbnails, export/import data, or sync to cloud storage. Environment variables may still override runtime paths such as the SQLite database URL and attachment directory.
 
 Reset local data with a dry run:
 
@@ -365,13 +386,13 @@ New uploads are stored under `data/attachments/images` or `data/attachments/file
 ]
 ```
 
-Existing legacy image attachments with `data_url` remain supported for display and vision input. No thumbnail files are generated in this version; the UI uses the original image URL for compact previews. Supported image MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`, up to 10 MB per image.
+Existing legacy image attachments with `data_url` remain supported for display and vision input. No thumbnail files are generated in this version; the UI uses the original image URL for compact previews. Supported image MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`. Image size, file size, and attachment count limits come from Settings -> General and are enforced by the backend.
 
-Supported text/code/config extensions are `.txt`, `.md`, `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.json`, `.yaml`, `.yml`, `.toml`, `.xml`, `.html`, `.css`, `.env`, `.log`, `.csv`, `.sql`, `.sh`, `.ps1`, `.bat`, `.ini`, and `.cfg`, up to 5 MB per file. Unknown binary files are rejected in this alpha. A message can include up to 10 attachments.
+Supported text/code/config extensions are `.txt`, `.md`, `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.json`, `.yaml`, `.yml`, `.toml`, `.xml`, `.html`, `.css`, `.env`, `.log`, `.csv`, `.sql`, `.sh`, `.ps1`, `.bat`, `.ini`, and `.cfg`. Unknown binary files are rejected in this alpha.
 
 Attached images render as thumbnails in the composer and in user message bubbles. Text/code/config files render as file chips; clicking a stored text file chip opens an in-page preview modal that fetches `GET /api/attachments/{attachment_id}` and preserves the file text as returned. Local attachment serving only resolves files inside the attachment directory and does not auto-download files.
 
-Prompt Agents do not automatically receive ordinary file contents. If a Prompt Agent receives a text file attachment, the user message displays the file chip, but the LLM receives only the user text. Vision behavior is unchanged: Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; local images are read from disk and converted to `data:image/...;base64,...` for the provider call. When Vision is disabled, image files are not read and image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
+Prompt Agents can include ordinary text file attachment content in LLM context when Settings -> General enables `Send text file attachments to LLM`. The per-file and per-message context limits are applied before provider calls, and truncated files are marked in the generated context. When disabled, Prompt Agents add a lightweight placeholder and do not read or send text file contents. Vision behavior is unchanged: Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; local images are read from disk and converted to `data:image/...;base64,...` for the provider call. When Vision is disabled, image files are not read and image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
 
 Vision input currently uses OpenAI-compatible content parts and sends only images attached to the current user message:
 

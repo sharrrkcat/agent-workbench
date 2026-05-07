@@ -12,6 +12,7 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.stores import (
     AgentConfigStore,
     CapabilityConfigStore,
@@ -52,6 +53,8 @@ class RuntimeState:
     agent_configs: Any = None
     capability_configs: Any = None
     llm_profiles: Any = None
+    app_settings: Any = None
+    database_url: str | None = None
 
 
 def build_runtime_state(
@@ -84,6 +87,8 @@ def build_runtime_state(
         agent_configs = AgentConfigStore()
         capability_configs = CapabilityConfigStore()
         llm_profiles = LLMProfileStore()
+        app_settings = AppSettingsStore()
+        resolved_database_url = "sqlite:///:memory:"
     else:
         engine = get_engine(database_url)
         init_db(engine)
@@ -94,6 +99,11 @@ def build_runtime_state(
         agent_configs = SqlAgentConfigStore(engine)
         capability_configs = SqlCapabilityConfigStore(engine)
         llm_profiles = SqlLLMProfileStore(engine)
+        from ai_workbench.db.database import get_database_url
+        from ai_workbench.db.stores import SqlAppSettingsStore
+
+        app_settings = SqlAppSettingsStore(engine)
+        resolved_database_url = get_database_url(database_url)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
     events = EventBus(run_event_store=run_events)
@@ -120,6 +130,7 @@ def build_runtime_state(
         capability_registry=capabilities,
         capability_config_store=capability_configs,
         llm_profile_store=llm_profiles,
+        app_settings_store=app_settings,
         active_runs=active_runs,
     )
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
@@ -141,6 +152,8 @@ def build_runtime_state(
         agent_configs=agent_configs,
         capability_configs=capability_configs,
         llm_profiles=llm_profiles,
+        app_settings=app_settings,
+        database_url=resolved_database_url,
     )
 
 

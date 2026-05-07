@@ -12,6 +12,7 @@ from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
+from ai_workbench.core.settings import AppSettings, AppSettingsPatch
 from ai_workbench.db.models import (
     AgentConfigRecord,
     AppMetadataRecord,
@@ -595,6 +596,38 @@ class SqlAppMetadataStore:
             if record is None:
                 raise KeyError(f"unknown app metadata key: {key}")
             return record.value
+
+
+class SqlAppSettingsStore:
+    SETTINGS_KEY = "app_settings"
+
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def get(self) -> AppSettings:
+        with DbSession(self.engine) as session:
+            record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
+            if record is None:
+                return AppSettings()
+            return AppSettings.model_validate(_loads(record.value, {}))
+
+    def patch(self, values: Dict[str, Any]) -> AppSettings:
+        patch = AppSettingsPatch.model_validate(values)
+        updates = patch.model_dump(exclude_none=True)
+        with DbSession(self.engine) as session:
+            record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
+            current = AppSettings()
+            if record is not None:
+                current = AppSettings.model_validate(_loads(record.value, {}))
+            next_settings = AppSettings.model_validate({**current.model_dump(), **updates})
+            if record is None:
+                record = AppMetadataRecord(key=self.SETTINGS_KEY, value=_dumps(next_settings.model_dump()))
+            else:
+                record.value = _dumps(next_settings.model_dump())
+                record.updated_at = datetime.utcnow()
+            session.add(record)
+            session.commit()
+            return next_settings
 
 
 def _session_from_record(record: SessionRecord) -> Session:
