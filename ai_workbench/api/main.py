@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
+import os
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
@@ -26,6 +29,7 @@ def create_app(
     llm_runtime: Any = None,
     database_url: str = None,
     use_memory: bool = False,
+    frontend_dist: str | Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agent Workbench", lifespan=runtime_lifespan)
     app.state.runtime_state = runtime_state or build_runtime_state(
@@ -74,7 +78,56 @@ def create_app(
     app.include_router(messages.message_router)
     app.include_router(runs.router)
     app.include_router(ws_router)
+    configure_frontend_routes(app, frontend_dist)
     return app
+
+
+def configure_frontend_routes(app: FastAPI, frontend_dist: str | Path | None = None) -> None:
+    dist = _resolve_frontend_dist(frontend_dist)
+    index_html = dist / "index.html"
+    app.state.frontend_dist = dist
+
+    if (dist / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    def frontend_root():
+        if index_html.is_file():
+            return FileResponse(index_html)
+        return PlainTextResponse(
+            "frontend build not found; please run: cd frontend && npm run build",
+            status_code=503,
+        )
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def frontend_fallback(path: str):
+        if _is_backend_path(path):
+            raise HTTPException(status_code=404, detail="Not found")
+        if not index_html.is_file():
+            return PlainTextResponse(
+                "frontend build not found; please run: cd frontend && npm run build",
+                status_code=503,
+            )
+        requested = (dist / path).resolve()
+        try:
+            requested.relative_to(dist.resolve())
+        except ValueError:
+            requested = index_html
+        if requested.is_file():
+            return FileResponse(requested)
+        return FileResponse(index_html)
+
+
+def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
+    configured = frontend_dist or os.environ.get("AGENT_WORKBENCH_FRONTEND_DIST")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path(__file__).resolve().parents[2] / "frontend" / "dist").resolve()
+
+
+def _is_backend_path(path: str) -> bool:
+    first_segment = path.split("/", 1)[0]
+    return first_segment in {"api", "docs", "openapi.json", "redoc"}
 
 
 class LazyApp:
