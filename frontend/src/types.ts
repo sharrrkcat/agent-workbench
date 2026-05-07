@@ -234,6 +234,19 @@ export type ImageAttachment = {
   height?: number;
 };
 
+export type FileAttachment = {
+  id: string;
+  type: 'file';
+  mime_type: string;
+  name: string;
+  size: number;
+  data_url?: string;
+  uri?: string;
+  created_at?: string;
+};
+
+export type Attachment = ImageAttachment | FileAttachment;
+
 export type FileContentPayload = {
   filename?: string | null;
   language?: string | null;
@@ -268,7 +281,7 @@ export type Message = {
   client_error?: AppError;
 };
 
-export type SendMessageAttachment = ImageAttachment;
+export type SendMessageAttachment = Attachment;
 
 export type AppError = {
   code: string;

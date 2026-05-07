@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
@@ -426,6 +427,57 @@ def test_image_reply_helpers_write_expected_output_types(tmp_path: Path) -> None
             {"type": "text", "text": "plain"},
         ]
     }
+
+
+def test_script_agent_sees_and_reads_input_attachments(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    stored = save_attachment_from_upload("config.yaml", "application/yaml", b"id: chat\n  enabled: true\n")
+    registry = write_script_agent(
+        tmp_path,
+        "attachment_reader",
+        "async def run(ctx):\n"
+        "    assert len(ctx.input.attachments) == 1\n"
+        "    payload = ctx.read_attachment_text(ctx.input.attachments[0])\n"
+        "    await ctx.reply_file_content(**payload)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@attachment_reader", attachments=[stored]))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.output_type == "file_content"
+    assert message.content["filename"] == "config.yaml"
+    assert message.content["content"] == "id: chat\n  enabled: true\n"
+
+
+def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    fixture = ScriptRuntimeFixture(llm=FakeLLMRuntime(response="should not be called"))
+    session = fixture.sessions.create_session(title="Echo attachment test")
+    image = {
+        "id": "client-image",
+        "type": "image",
+        "mime_type": "image/png",
+        "name": "cat.png",
+        "size": 5,
+        "data_url": "data:image/png;base64,aGVsbG8=",
+    }
+    file_attachment = save_attachment_from_upload("tool.py", "text/x-python", b"def main():\n    return 'ok'\n")
+
+    result = run(fixture.runtime.handle_input(session, "@echo_attachments hello", attachments=[image, file_attachment]))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert result.success is True
+    assert [message.output_type for message in messages[-3:]] == ["text", "image", "file_content"]
+    assert messages[-3].content == "hello"
+    assert messages[-2].content["url"] == image["data_url"]
+    assert messages[-2].content["title"] == "cat.png"
+    assert messages[-1].content["filename"] == "tool.py"
+    assert messages[-1].content["language"] == "python"
+    assert messages[-1].content["content"] == "def main():\n    return 'ok'\n"
+    assert fixture.llm.calls == []
 
 
 def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> None:

@@ -45,10 +45,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _attachment_files() -> list[Path]:
-    root = attachments_root() / "images"
-    if not root.exists():
-        return []
-    return sorted(path for path in root.iterdir() if path.is_file())
+    files: list[Path] = []
+    for child in ("images", "files"):
+        root = attachments_root() / child
+        if root.exists():
+            files.extend(path for path in root.iterdir() if path.is_file())
+    return sorted(files)
 
 
 def _referenced_attachment_filenames(database_url: str | None) -> set[str]:

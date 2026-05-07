@@ -20,3 +20,11 @@ export function safeImageUrl(value: string | null | undefined): string {
 export function attachmentImageUrl(value: string | null | undefined): string {
   return safeImageUrl(value);
 }
+
+export function localAttachmentUrl(value: string | null | undefined): string {
+  const trimmed = String(value || '').trim();
+  if (/^local:\/\/attachments\/[a-f0-9-]+\.[a-z0-9]+$/i.test(trimmed)) {
+    return `/api/attachments/${encodeURIComponent(trimmed.replace(/^local:\/\/attachments\//i, ''))}`;
+  }
+  return '';
+}

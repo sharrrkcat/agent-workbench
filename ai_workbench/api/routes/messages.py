@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_image_attachments
+from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_attachments
 from ai_workbench.core.llm_config import LLMConfigError
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -50,12 +50,12 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
     session = _get_session_or_404(state, session_id)
     before_ids = {message.message_id for message in state.messages.list_messages(session_id)}
     try:
-        attachments = validate_image_attachments(payload.attachments)
+        attachments = validate_attachments(payload.attachments)
     except ValueError as exc:
         raise_error(400, "INVALID_ATTACHMENTS", str(exc) or "Invalid attachments.")
 
     if not payload.content.strip() and not attachments:
-        raise_error(400, "EMPTY_MESSAGE", "Message content or an image attachment is required.")
+        raise_error(400, "EMPTY_MESSAGE", "Message content or an attachment is required.")
 
     input_message_id = ""
     try:

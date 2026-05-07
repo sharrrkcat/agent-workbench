@@ -1,15 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Agent, ChatContentBlock, FileContentPayload, ImageAttachment, ImagePayload, Message } from '../types';
+import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, FileText, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import type { Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
 import { formatMessageTime } from '../utils/time';
-import { safeImageUrl, type ImagePreview } from '../utils/images';
+import { localAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
 
-export function MessageBubble({ message, onPreviewImage }: { message: Message; onPreviewImage: (image: ImagePreview) => void }) {
+export type FilePreview = {
+  url: string;
+  name: string;
+  mime_type: string;
+  size: number;
+};
+
+export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { message: Message; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
   const agents = useWorkbenchStore((state) => state.agents);
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
   const retryMessage = useWorkbenchStore((state) => state.retryMessage);
@@ -89,7 +96,7 @@ export function MessageBubble({ message, onPreviewImage }: { message: Message; o
           ) : (
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
-              <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} />
+              <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
             </>
           )}
           {message.client_status === 'pending' ? (
@@ -230,9 +237,9 @@ function InlineErrorBlock({ message }: { message: Message }) {
   );
 }
 
-function MessageContent({ message, kind, onPreviewImage }: { message: Message; kind: 'user' | 'agent' | 'command'; onPreviewImage: (image: ImagePreview) => void }) {
+function MessageContent({ message, kind, onPreviewImage, onPreviewFile }: { message: Message; kind: 'user' | 'agent' | 'command'; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
   if (kind === 'user') {
-    return <UserMessageRenderer content={message.content} attachments={messageImageAttachments(message)} onPreviewImage={onPreviewImage} />;
+    return <UserMessageRenderer content={message.content} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
   }
   if (message.output_type === 'markdown') {
     return <MarkdownRenderer content={message.content} />;
@@ -262,7 +269,7 @@ export function PlainTextRenderer({ content }: { content: unknown }) {
   return <div className="message-content plain-text">{contentToText(content)}</div>;
 }
 
-function UserMessageRenderer({ content, attachments, onPreviewImage }: { content: unknown; attachments: ImageAttachment[]; onPreviewImage: (image: ImagePreview) => void }) {
+function UserMessageRenderer({ content, attachments, onPreviewImage, onPreviewFile }: { content: unknown; attachments: Attachment[]; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
   const text = contentToText(content);
   const collapsible = shouldCollapseUserMessage(text);
   const [expanded, setExpanded] = useState(false);
@@ -273,7 +280,7 @@ function UserMessageRenderer({ content, attachments, onPreviewImage }: { content
 
   return (
     <div className="user-message-content">
-      {attachments.length ? <AttachmentGallery attachments={attachments} onPreviewImage={onPreviewImage} /> : null}
+      {attachments.length ? <AttachmentGallery attachments={attachments} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} /> : null}
       {text ? <div className={`message-content plain-text ${collapsible && !expanded ? 'collapsed-user-content' : ''}`}>{text}</div> : null}
       {collapsible ? (
         <button className="message-expand-button" type="button" onClick={() => setExpanded((current) => !current)}>
@@ -284,16 +291,36 @@ function UserMessageRenderer({ content, attachments, onPreviewImage }: { content
   );
 }
 
-function AttachmentGallery({ attachments, onPreviewImage }: { attachments: ImageAttachment[]; onPreviewImage: (image: ImagePreview) => void }) {
+function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { attachments: Attachment[]; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
   return (
     <div className={`message-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
-      {attachments.map((attachment) => (
-        <figure className="message-attachment" key={attachment.id}>
-          <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachmentUrl(attachment), alt: attachment.name || 'Attached image', title: attachment.name })}>
-            <img src={attachmentUrl(attachment)} alt={attachment.name || 'Attached image'} loading="lazy" />
+      {attachments.map((attachment) =>
+        attachment.type === 'image' ? (
+          <figure className="message-attachment" key={attachment.id}>
+            <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachmentUrl(attachment), alt: attachment.name || 'Attached image', title: attachment.name })}>
+              <img src={attachmentUrl(attachment)} alt={attachment.name || 'Attached image'} loading="lazy" />
+            </button>
+          </figure>
+        ) : (
+          <button
+            className="message-file-chip"
+            key={attachment.id}
+            type="button"
+            onClick={() => {
+              const url = localAttachmentUrl(attachment.uri);
+              if (url) onPreviewFile({ url, name: attachment.name || 'File', mime_type: attachment.mime_type, size: attachment.size });
+            }}
+            title={isPreviewableFile(attachment) ? `Preview ${attachment.name}` : 'Preview not available'}
+            disabled={!isPreviewableFile(attachment) || !localAttachmentUrl(attachment.uri)}
+          >
+            <FileText size={18} />
+            <span>
+              <strong>{attachment.name || 'File'}</strong>
+              <small>{fileKindLabel(attachment.mime_type, attachment.name)} · {formatBytes(attachment.size)}</small>
+            </span>
           </button>
-        </figure>
-      ))}
+        ),
+      )}
     </div>
   );
 }
@@ -438,28 +465,40 @@ function copyableMessageContent(message: Message): string {
   return contentToText(message.content);
 }
 
-function messageImageAttachments(message: Message): ImageAttachment[] {
+function messageAttachments(message: Message): Attachment[] {
   const attachments = message.metadata?.attachments;
   if (!Array.isArray(attachments)) return [];
-  return attachments.filter(isImageAttachment);
+  return attachments.filter(isAttachment);
 }
 
-function isImageAttachment(value: unknown): value is ImageAttachment {
+function isAttachment(value: unknown): value is Attachment {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return (
+  const base =
     item.type === 'image' &&
     typeof item.id === 'string' &&
     typeof item.mime_type === 'string' &&
     typeof item.name === 'string' &&
     typeof item.size === 'number' &&
     ((typeof item.data_url === 'string' && Boolean(safeImageUrl(item.data_url))) ||
-      (typeof item.uri === 'string' && Boolean(safeImageUrl(item.uri))))
-  );
+      (typeof item.uri === 'string' && Boolean(safeImageUrl(item.uri))));
+  if (base) return true;
+  return item.type === 'file' && typeof item.id === 'string' && typeof item.mime_type === 'string' && typeof item.name === 'string' && typeof item.size === 'number' && (typeof item.uri === 'string' || typeof item.data_url === 'string');
 }
 
 function attachmentUrl(attachment: ImageAttachment): string {
   return safeImageUrl(attachment.uri || attachment.data_url || '');
+}
+
+function isPreviewableFile(attachment: FileAttachment): boolean {
+  const mimeType = attachment.mime_type.toLowerCase();
+  const extension = basename(attachment.name)?.toLowerCase().match(/(\.[^.]+)$/)?.[1] || '';
+  return mimeType.startsWith('text/') || ['application/json', 'application/xml', 'application/yaml', 'application/toml', 'application/sql'].includes(mimeType) || ['.txt', '.md', '.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml', '.toml', '.xml', '.html', '.css', '.env', '.log', '.csv', '.sql', '.sh', '.ps1', '.bat', '.ini', '.cfg'].includes(extension);
+}
+
+function fileKindLabel(mimeType: string, name: string): string {
+  const extension = basename(name)?.match(/(\.[^.]+)$/)?.[1]?.replace('.', '').toUpperCase();
+  return extension || mimeType || 'FILE';
 }
 
 function normalizeImagePayload(content: unknown): ImagePayload | null {

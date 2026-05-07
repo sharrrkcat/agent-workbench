@@ -1,7 +1,7 @@
 import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Check, ChevronDown, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
+import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Agent, CapabilityConfig, ImageAttachment, LlmProfile, Session } from '../types';
+import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import type { ImagePreview } from '../utils/images';
@@ -12,7 +12,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -106,27 +106,29 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   async function addFiles(files: FileList | File[]) {
     const fileItems = Array.from(files);
     if (!fileItems.length) return;
-    const available = MAX_IMAGE_ATTACHMENTS - attachments.length;
+    const available = MAX_ATTACHMENTS - attachments.length;
     if (available <= 0) {
-      setError(new Error(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`), 'Too many image attachments');
+      setError(new Error(`You can attach up to ${MAX_ATTACHMENTS} files.`), 'Too many attachments');
       return;
     }
 
     const accepted: File[] = [];
     for (const file of fileItems) {
-      if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.type as ImageAttachment['mime_type'])) {
-        setError(new Error(`Unsupported file type: ${file.type || file.name}`), 'Unsupported image type');
+      const kind = inferFileKind(file);
+      if (!kind) {
+        setError(new Error(`Unsupported file type: ${file.type || file.name}`), 'Unsupported attachment type');
         continue;
       }
-      if (file.size > MAX_IMAGE_BYTES) {
-        setError(new Error(`${file.name || 'Image'} is larger than 10 MB.`), 'Image too large');
+      const maxBytes = kind === 'image' ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+      if (file.size > maxBytes) {
+        setError(new Error(`${file.name || 'Attachment'} is larger than ${kind === 'image' ? '10 MB' : '5 MB'}.`), 'Attachment too large');
         continue;
       }
       accepted.push(file);
     }
 
     if (accepted.length > available) {
-      setError(new Error(`Only ${available} more image${available === 1 ? '' : 's'} can be attached.`), 'Too many image attachments');
+      setError(new Error(`Only ${available} more attachment${available === 1 ? '' : 's'} can be added.`), 'Too many attachments');
     }
     const next = await Promise.all(accepted.slice(0, available).map(fileToAttachment));
     if (next.length) setAttachments((current) => [...current, ...next]);
@@ -163,7 +165,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
 
   function onPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const files = Array.from(event.clipboardData.items)
-      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null);
     if (files.length) void addFiles(files);
@@ -234,7 +236,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
       }}
     >
       <div className="composer-card">
-        {dragActive ? <div className="composer-drag-overlay">Drop images to attach</div> : null}
+        {dragActive ? <div className="composer-drag-overlay">Drop files to attach</div> : null}
         <CommandPalette mode={mode} token={activeToken?.token ?? ''} onPick={pickSuggestion} />
         <AttachmentPreview attachments={attachments} onRemove={removeAttachment} onPreviewImage={onPreviewImage} />
         <textarea
@@ -251,7 +253,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
         <input
           ref={fileInputRef}
           type="file"
-          accept={ALLOWED_IMAGE_MIME_TYPES.join(',')}
+          accept={ATTACHMENT_ACCEPT}
           multiple
           className="sr-only"
           tabIndex={-1}
@@ -259,7 +261,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
         />
         <div className="composer-toolbar">
           <div className="composer-tools" aria-label="Composer tools">
-            <button type="button" title="Attach images" onClick={() => fileInputRef.current?.click()} disabled={!currentSession || sending}>
+            <button type="button" title="Attach files" onClick={() => fileInputRef.current?.click()} disabled={!currentSession || sending}>
               <Paperclip size={15} />
             </button>
             <button type="button" title="Mention an agent" onClick={() => insertTrigger('@')}>
@@ -337,7 +339,7 @@ function AttachmentPreview({
   onRemove,
   onPreviewImage,
 }: {
-  attachments: ImageAttachment[];
+  attachments: Attachment[];
   onRemove: (id: string) => void;
   onPreviewImage: (image: ImagePreview) => void;
 }) {
@@ -346,9 +348,19 @@ function AttachmentPreview({
     <div className="composer-attachments">
       {attachments.map((attachment) => (
         <figure className="composer-attachment" key={attachment.id}>
-          <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: attachment.data_url || '', alt: attachment.name || 'Attached image', title: attachment.name })}>
-            <img src={attachment.data_url || ''} alt={attachment.name || 'Attached image'} />
-          </button>
+          {attachment.type === 'image' ? (
+            <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: attachment.data_url || '', alt: attachment.name || 'Attached image', title: attachment.name })}>
+              <img src={attachment.data_url || ''} alt={attachment.name || 'Attached image'} />
+            </button>
+          ) : (
+            <div className="composer-file-chip" title={attachment.name}>
+              <FileText size={18} />
+              <span>
+                <strong>{attachment.name || 'File'}</strong>
+                <small>{fileKindLabel(attachment.mime_type, attachment.name)} · {formatBytes(attachment.size)}</small>
+              </span>
+            </div>
+          )}
           <button
             className="composer-attachment-remove"
             type="button"
@@ -356,7 +368,7 @@ function AttachmentPreview({
               event.stopPropagation();
               onRemove(attachment.id);
             }}
-            title={`Remove ${attachment.name || 'image'}`}
+            title={`Remove ${attachment.name || 'attachment'}`}
           >
             <X size={14} />
           </button>
@@ -364,6 +376,17 @@ function AttachmentPreview({
       ))}
     </div>
   );
+}
+
+function fileKindLabel(mimeType: string, name: string): string {
+  const extension = fileExtension(name).replace('.', '').toUpperCase();
+  return extension || mimeType || 'FILE';
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 type ComposerCapabilitySource = {
@@ -435,21 +458,81 @@ function getActiveToken(value: string, cursorPosition: number): { token: string;
 }
 
 const ALLOWED_IMAGE_MIME_TYPES: ImageAttachment['mime_type'][] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
+const ALLOWED_TEXT_EXTENSIONS = ['.txt', '.md', '.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml', '.toml', '.xml', '.html', '.css', '.env', '.log', '.csv', '.sql', '.sh', '.ps1', '.bat', '.ini', '.cfg'];
+const ATTACHMENT_ACCEPT = [...ALLOWED_IMAGE_MIME_TYPES, 'image/*', ...ALLOWED_TEXT_EXTENSIONS].join(',');
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_IMAGE_ATTACHMENTS = 6;
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_ATTACHMENTS = 10;
 
-async function fileToAttachment(file: File): Promise<ImageAttachment> {
+async function fileToAttachment(file: File): Promise<Attachment> {
   const dataUrl = await readFileAsDataUrl(file);
+  const kind = inferFileKind(file);
+  if (kind === 'file') {
+    return {
+      id: newClientId(),
+      type: 'file',
+      mime_type: normalizedMimeType(file),
+      name: file.name || 'file',
+      size: file.size,
+      data_url: dataUrl,
+    };
+  }
   const dimensions = await readImageDimensions(dataUrl).catch(() => ({}));
   return {
     id: newClientId(),
     type: 'image',
-    mime_type: file.type as ImageAttachment['mime_type'],
+    mime_type: normalizedMimeType(file) as ImageAttachment['mime_type'],
     name: file.name || 'image',
     size: file.size,
     data_url: dataUrl,
     ...dimensions,
   };
+}
+
+function inferFileKind(file: File): 'image' | 'file' | null {
+  const mimeType = normalizedMimeType(file);
+  const extension = fileExtension(file.name);
+  if (ALLOWED_IMAGE_MIME_TYPES.includes(mimeType as ImageAttachment['mime_type']) || mimeType.startsWith('image/')) return 'image';
+  if (ALLOWED_TEXT_EXTENSIONS.includes(extension)) return 'file';
+  return null;
+}
+
+function normalizedMimeType(file: File): string {
+  const fromType = file.type.trim().toLowerCase();
+  if (fromType) return fromType;
+  const extension = fileExtension(file.name);
+  return (
+    {
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.py': 'text/x-python',
+      '.js': 'text/javascript',
+      '.ts': 'text/typescript',
+      '.tsx': 'text/tsx',
+      '.jsx': 'text/jsx',
+      '.json': 'application/json',
+      '.yaml': 'application/yaml',
+      '.yml': 'application/yaml',
+      '.toml': 'application/toml',
+      '.xml': 'application/xml',
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.env': 'text/plain',
+      '.log': 'text/plain',
+      '.csv': 'text/csv',
+      '.sql': 'application/sql',
+      '.sh': 'application/x-sh',
+      '.ps1': 'text/plain',
+      '.bat': 'application/bat',
+      '.ini': 'text/plain',
+      '.cfg': 'text/plain',
+    }[extension] || 'application/octet-stream'
+  );
+}
+
+function fileExtension(name: string): string {
+  const match = name.toLowerCase().match(/(\.[^.]+)$/);
+  return match ? match[1] : '';
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

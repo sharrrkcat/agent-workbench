@@ -7,8 +7,11 @@ from fastapi.testclient import TestClient
 from ai_workbench.api.main import create_app
 from ai_workbench.core.attachments import (
     read_attachment_as_data_url,
+    read_attachment_text,
     resolve_attachment_uri,
     save_attachment_from_data_url,
+    save_attachment_from_upload,
+    validate_attachments,
     validate_image_attachments,
 )
 from capabilities.file import CapabilityRuntime as FileRuntime
@@ -43,6 +46,64 @@ def test_validate_image_attachments_migrates_data_url(monkeypatch, tmp_path: Pat
     assert attachments[0]["created_at"]
 
 
+def test_text_file_attachment_is_saved_without_data_url(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    data_url = "data:text/plain;base64,aGVsbG8KICB3b3JsZA=="
+
+    attachments = validate_attachments(
+        [
+            {
+                "id": "client-file",
+                "type": "file",
+                "mime_type": "text/plain",
+                "name": "note.txt",
+                "size": 13,
+                "data_url": data_url,
+            }
+        ]
+    )
+
+    stored = attachments[0]
+    assert stored["type"] == "file"
+    assert stored["uri"].startswith("local://attachments/")
+    assert "data_url" not in stored
+    assert resolve_attachment_uri(stored["uri"]).read_bytes() == b"hello\n  world"
+    assert read_attachment_text(stored)["content"] == "hello\n  world"
+
+
+def test_multiple_attachments_are_all_saved(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+
+    attachments = validate_attachments(
+        [
+            image_attachment(name="cat.png", data_url=PNG_DATA_URL, size=5, mime_type="image/png"),
+            {
+                "id": "client-file",
+                "type": "file",
+                "mime_type": "application/yaml",
+                "name": "agent.yaml",
+                "size": 9,
+                "data_url": "data:application/yaml;base64,aWQ6IGNoYXQK",
+            },
+        ]
+    )
+
+    assert [item["type"] for item in attachments] == ["image", "file"]
+    assert all(item["uri"].startswith("local://attachments/") for item in attachments)
+    assert all("data_url" not in item for item in attachments)
+
+
+def test_unsupported_binary_attachment_is_rejected(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+
+    try:
+        save_attachment_from_upload("archive.zip", "application/zip", b"PK\x03\x04")
+    except ValueError as exc:
+        assert "Unsupported file type" in str(exc)
+    else:
+        raise AssertionError("expected unsupported binary rejection")
+
+
 def test_attachment_api_returns_bytes_and_rejects_traversal(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     stored = save_attachment_from_data_url(image_attachment(name="cat.png", data_url=PNG_DATA_URL, size=5, mime_type="image/png"))
@@ -56,6 +117,19 @@ def test_attachment_api_returns_bytes_and_rejects_traversal(monkeypatch, tmp_pat
     assert response.headers["content-type"].startswith("image/png")
     assert response.content == b"hello"
     assert escaped.status_code == 404
+
+
+def test_attachment_api_returns_text_file_bytes(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    stored = save_attachment_from_upload("note.txt", "text/plain", b"hello text")
+    attachment_id = stored["uri"].removeprefix("local://attachments/")
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+
+    response = client.get(f"/api/attachments/{attachment_id}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.content == b"hello text"
 
 
 def test_local_attachment_is_sent_to_vision_model(monkeypatch, tmp_path: Path) -> None:
@@ -169,6 +243,40 @@ def test_cleanup_attachments_dry_run(monkeypatch, tmp_path: Path, capsys) -> Non
 
     assert exit_code == 0
     assert "referenced count: 1" in output
+    assert "orphan count: 1" in output
+    assert orphan.exists()
+
+
+def test_cleanup_attachments_tracks_file_attachments(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    db_url = f"sqlite:///{tmp_path / 'workbench.db'}"
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
+    session = create_session(client)
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/messages",
+        json={
+            "content": "file",
+            "attachments": [
+                {
+                    "id": "client-file",
+                    "type": "file",
+                    "mime_type": "text/plain",
+                    "name": "note.txt",
+                    "size": 5,
+                    "data_url": "data:text/plain;base64,aGVsbG8=",
+                }
+            ],
+        },
+    )
+    attachment = response.json()["messages"][0]["metadata"]["attachments"][0]
+    orphan = tmp_path / "attachments" / "files" / "00000000-0000-0000-0000-000000000000.txt"
+    orphan.write_bytes(b"orphan")
+
+    exit_code = cleanup_main(["--database-url", db_url])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert attachment["uri"].removeprefix("local://attachments/") in output or "referenced count: 1" in output
     assert "orphan count: 1" in output
     assert orphan.exists()
 

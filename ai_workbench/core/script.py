@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_bytes, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
@@ -29,6 +30,7 @@ class ScriptInput(BaseModel):
     context: list = Field(default_factory=list)
     source_message_id: Optional[str] = None
     prefill: Dict[str, Any] = Field(default_factory=dict)
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ScriptSession(BaseModel):
@@ -175,6 +177,7 @@ class AgentContext:
         llm_runtime: Any,
         llm_model_config: Optional[Dict[str, Any]] = None,
         llm_resolution: Optional[Dict[str, Any]] = None,
+        attachments: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -183,6 +186,7 @@ class AgentContext:
             text=input_text,
             source_message_id=source_message_id,
             prefill=prefill or {},
+            attachments=list(attachments or []),
         )
         self.session = ScriptSession(session_id=session.session_id, default_agent_id=session.default_agent_id)
         self.config = config or {}
@@ -236,9 +240,46 @@ class AgentContext:
         payload = ImageGalleryPayload(images=[ImagePayload.model_validate(image) for image in images])
         return await self.reply(payload.model_dump(exclude_none=True), output_type="image_gallery", actions=actions)
 
+    async def reply_file_content(
+        self,
+        content: str,
+        filename: str = None,
+        language: str = None,
+        mime_type: str = None,
+        size: int = None,
+        truncated: bool = False,
+        actions=None,
+    ):
+        payload = {
+            "content": content,
+            "filename": filename,
+            "language": language,
+            "mime_type": mime_type,
+            "size": size,
+            "truncated": truncated,
+        }
+        return await self.reply({key: value for key, value in payload.items() if value is not None}, output_type="file_content", actions=actions)
+
     async def reply_blocks(self, blocks: list, actions=None):
         payload = RichContentPayload.model_validate({"blocks": blocks})
         return await self.reply(payload.model_dump(exclude_none=True), output_type="rich_content", actions=actions)
+
+    def read_attachment_bytes(self, attachment: dict[str, Any] | str) -> bytes:
+        return read_attachment_bytes(self._attachment_for_read(attachment))
+
+    def read_attachment_text(self, attachment: dict[str, Any] | str) -> dict[str, Any]:
+        return read_attachment_text(self._attachment_for_read(attachment))
+
+    def attachment_as_data_url(self, attachment: dict[str, Any] | str) -> str:
+        return read_attachment_as_data_url(self._attachment_for_read(attachment))
+
+    def _attachment_for_read(self, attachment: dict[str, Any] | str) -> dict[str, Any]:
+        if isinstance(attachment, dict):
+            return attachment
+        for item in self.input.attachments:
+            if item.get("id") == attachment:
+                return item
+        raise ValueError(f"Attachment not found: {attachment}")
 
     def step(self, name: str) -> ScriptStep:
         return ScriptStep(self, name)
@@ -301,11 +342,14 @@ class ScriptAgentRunner:
         input_message_id: str = "",
         create_user_message: bool = True,
         display_input: str = "",
+        attachments: list[dict] = None,
     ) -> RunResult:
+        attachments = attachments or []
         session = self.session_store.get_session(session_id)
         user_message = None
         if input_message_id and not create_user_message:
             user_message = self.message_store.get_message(input_message_id)
+            attachments = list((user_message.metadata or {}).get("attachments") or [])
         elif create_user_message:
             raw_text = display_input or args
             user_message = self.message_store.add_message(
@@ -315,6 +359,7 @@ class ScriptAgentRunner:
                 agent_id=agent.id,
                 action_id=action_id,
                 metadata={
+                    "attachments": attachments,
                     "input_source": "script_agent",
                     "invocation": {
                         "route_type": "agent",
@@ -372,6 +417,7 @@ class ScriptAgentRunner:
             llm_runtime=self.llm_runtime,
             llm_model_config=llm_config.values if llm_config is not None else {},
             llm_resolution=self.run_store.get_run(run.run_id).metadata.get("llm_resolution"),
+            attachments=attachments,
         )
 
         try:

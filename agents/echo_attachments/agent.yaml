@@ -1,0 +1,19 @@
+id: echo_attachments
+name: Echo Attachment Agent
+type: script
+description: Echo text and current message attachments without calling an LLM
+entry: agent.py
+
+actions:
+  - id: default
+    description: Echo text, images, and readable file attachments
+
+context_policy:
+  mode: current_message
+  max_messages: 1
+  max_chars: 4000
+
+model_lifecycle:
+  load: on_demand
+  unload: manual
+  unload_failure: warn

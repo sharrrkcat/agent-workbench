@@ -3,6 +3,7 @@ from threading import Event as ThreadingEvent
 from pathlib import Path
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
@@ -458,6 +459,23 @@ def test_non_vision_profile_does_not_send_data_url_and_adds_placeholder() -> Non
     assert PNG_DATA_URL not in sent["content"]
     assert assistant.metadata["vision_input"] == {"supported": False, "images_attached": 1, "images_sent": 0, "images_ignored": 1}
     assert user.metadata["attachments"][0]["data_url"] == PNG_DATA_URL
+
+
+def test_prompt_agent_does_not_read_file_attachment_content(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    llm = FakeLLMRuntime(response="text reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    stored = save_attachment_from_upload("secret.yaml", "application/yaml", b"api_key: should_not_be_sent\n")
+
+    result = run(fixture.runtime.handle_input(session, "summarize", attachments=[stored]))
+    sent = llm.calls[0]["messages"][-1]["content"]
+    user = fixture.messages.list_messages(session.session_id)[0]
+
+    assert result.success is True
+    assert sent == "summarize"
+    assert "should_not_be_sent" not in str(llm.calls[0]["messages"])
+    assert user.metadata["attachments"][0]["type"] == "file"
 
 
 def test_context_does_not_inject_historical_image_data_urls() -> None:

@@ -334,29 +334,44 @@ See [docs/CAPABILITY_DEVELOPMENT.md](docs/CAPABILITY_DEVELOPMENT.md) for Capabil
 
 The development guides cover output rendering for `text`, `markdown`, `json`, `image`, `image_gallery`, `file_content`, and `rich_content`, plus common strict-check failures and a practical CLI debug workflow.
 
-## Image Input Alpha
+## File Attachments Alpha
 
-User messages can include image attachments from the composer attachment button, drag-and-drop, or clipboard paste while the composer is focused.
+User messages can include image and file attachments from the composer attachment button, drag-and-drop, or clipboard paste while the composer is focused. Browser support for pasted files is inconsistent; image paste is the most reliable path, and text file paste depends on the browser and OS clipboard format.
 
-New image uploads are stored under `data/attachments/images` by default, or under `AGENT_WORKBENCH_ATTACHMENTS_DIR` when configured. Message metadata stores local references instead of full base64 data:
+New uploads are stored under `data/attachments/images` or `data/attachments/files` by default, or under `AGENT_WORKBENCH_ATTACHMENTS_DIR` when configured. Message metadata stores local references instead of full base64 data:
 
 ```json
-{
-  "id": "uuid",
-  "type": "image",
-  "mime_type": "image/png",
-  "name": "image.png",
-  "size": 12345,
-  "uri": "local://attachments/<id>.png",
-  "created_at": "2026-05-06T12:00:00",
-  "width": 800,
-  "height": 600
-}
+[
+  {
+    "id": "uuid",
+    "type": "image",
+    "mime_type": "image/png",
+    "name": "image.png",
+    "size": 12345,
+    "uri": "local://attachments/<id>.png",
+    "created_at": "2026-05-06T12:00:00",
+    "width": 800,
+    "height": 600
+  },
+  {
+    "id": "uuid",
+    "type": "file",
+    "mime_type": "application/yaml",
+    "name": "agent.yaml",
+    "size": 1234,
+    "uri": "local://attachments/<id>.yaml",
+    "created_at": "2026-05-07T12:00:00"
+  }
+]
 ```
 
-Existing legacy attachments with `data_url` remain supported for display and vision input. No thumbnail files are generated in this version; the UI uses the original image URL for compact previews. Supported MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`. The current limits are 10 MB per image and 6 images per message.
+Existing legacy image attachments with `data_url` remain supported for display and vision input. No thumbnail files are generated in this version; the UI uses the original image URL for compact previews. Supported image MIME types are `image/png`, `image/jpeg`, `image/webp`, `image/gif`, and `image/svg+xml`, up to 10 MB per image.
 
-Attached images render in the composer preview and in user message bubbles. Local attachment URIs are served through `GET /api/attachments/{attachment_id}`, which only resolves files inside the attachment directory. Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; local images are read from disk and converted to `data:image/...;base64,...` for the provider call. When Vision is disabled, image files are not read and image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
+Supported text/code/config extensions are `.txt`, `.md`, `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.json`, `.yaml`, `.yml`, `.toml`, `.xml`, `.html`, `.css`, `.env`, `.log`, `.csv`, `.sql`, `.sh`, `.ps1`, `.bat`, `.ini`, and `.cfg`, up to 5 MB per file. Unknown binary files are rejected in this alpha. A message can include up to 10 attachments.
+
+Attached images render as thumbnails in the composer and in user message bubbles. Text/code/config files render as file chips; clicking a stored text file chip opens an in-page preview modal that fetches `GET /api/attachments/{attachment_id}` and preserves the file text as returned. Local attachment serving only resolves files inside the attachment directory and does not auto-download files.
+
+Prompt Agents do not automatically receive ordinary file contents. If a Prompt Agent receives a text file attachment, the user message displays the file chip, but the LLM receives only the user text. Vision behavior is unchanged: Prompt Agents send image attachments to the LLM only when the resolved LLM configuration for that run has `supports_vision=true`; local images are read from disk and converted to `data:image/...;base64,...` for the provider call. When Vision is disabled, image files are not read and image data is not passed to the LLM. The model receives the user text plus a lightweight placeholder such as `User attached 1 image, but the selected model does not support vision.`
 
 Vision input currently uses OpenAI-compatible content parts and sends only images attached to the current user message:
 
@@ -373,6 +388,25 @@ Vision input currently uses OpenAI-compatible content parts and sends only image
 Historical image attachments are not resent in LLM context yet. They remain stored in message metadata and render in the UI, but only their text or placeholder enters normal text context.
 
 Use `/image-base64` or `/base64-encode-image` on a message with image attachments to return the selected attachment as JSON containing the data URL and raw base64. Pass a 1-based index to select another image, for example `/image-base64 2`. Use `/base64-image` or `/base64-to-image` to decode base64 back into a renderable image command output.
+
+Script Agents can inspect the current input attachments through `ctx.input.attachments`. Helpers are available for trusted local agents:
+
+```python
+ctx.read_attachment_text(attachment)
+ctx.read_attachment_bytes(attachment)
+ctx.attachment_as_data_url(attachment)
+await ctx.reply_file_content(content, filename="agent.yaml", language="yaml")
+```
+
+The `echo_attachments` Script Agent is a small test agent for this API. Examples:
+
+```text
+@echo_attachments hello
+@echo_attachments + image attachment
+@echo_attachments + yaml file attachment
+```
+
+It echoes text, returns attached images as image outputs, and returns supported text/code/config attachments as `file_content`. It does not call an LLM.
 
 Delete a message to remove any local attachment files that are no longer referenced by another message in that session. To scan SQLite metadata and remove orphan files, use:
 
@@ -401,7 +435,7 @@ This is a local trusted-user alpha. File and HTTP capabilities are powerful: the
 - No secret encryption.
 - No external app integrations.
 - No function calling, MCP, or LLM automatic tool selection.
-- No attachment thumbnails, cloud upload, image editing, OCR, or historical image resend yet.
+- No attachment thumbnails, cloud upload, file search, file editing, OCR, PDF/Office parsing, archive extraction, or historical image resend yet.
 - File and HTTP capabilities have lightweight allowlists and size limits, not a full sandbox or permission system.
 - Script Agent visible streaming is not implemented yet; Script Agent LLM helpers still return final text.
 - Thought display is intentionally read-only and collapsed by default; there is no composer-side reasoning toggle or reasoning effort control yet.

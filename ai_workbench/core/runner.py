@@ -142,6 +142,7 @@ class AgentRunner:
                 input_message_id=input_message_id,
                 create_user_message=create_user_message,
                 display_input=display_input,
+                attachments=attachments,
             )
 
         if agent.type != "prompt":
