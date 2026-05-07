@@ -358,13 +358,15 @@ export function JsonRenderer({ content }: { content: unknown }) {
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
 }
 
-export function FileContentRenderer({ payload }: { payload: FileContentPayload }) {
+export function FileContentRenderer({ payload, variant = 'card', wrapLines }: { payload: FileContentPayload; variant?: 'card' | 'modal'; wrapLines?: boolean }) {
   const setError = useWorkbenchStore((state) => state.setError);
   const [copied, setCopied] = useState(false);
   const filename = payload.filename?.trim() || 'File content';
   const language = payload.language?.trim() || 'text';
   const size = typeof payload.size === 'number' && Number.isFinite(payload.size) ? formatBytes(payload.size) : '';
-  const [wrapLines, setWrapLines] = useState(defaultWrapLines(filename, language));
+  const [cardWrapLines, setCardWrapLines] = useState(defaultWrapLines(filename, language));
+  const isModal = variant === 'modal';
+  const effectiveWrapLines = isModal && typeof wrapLines === 'boolean' ? wrapLines : cardWrapLines;
 
   async function copyFileContent() {
     try {
@@ -377,26 +379,28 @@ export function FileContentRenderer({ payload }: { payload: FileContentPayload }
   }
 
   return (
-    <section className="message-content file-content-card">
-      <header className="file-content-header">
-        <div className="file-content-title">
-          <strong title={filename}>{filename}</strong>
-          <span>{language}</span>
-          {size ? <span>{size}</span> : null}
-          {payload.truncated ? <span className="file-content-truncated">Truncated</span> : null}
-        </div>
-        <div className="file-content-actions">
-          <button type="button" className="file-content-wrap-toggle" onClick={() => setWrapLines((current) => !current)}>
-            {wrapLines ? 'No wrap' : 'Wrap lines'}
-          </button>
-          <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title="Copy file content">
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            <span>{copied ? 'Copied' : 'Copy'}</span>
-          </button>
-        </div>
-      </header>
+    <section className={`message-content file-content-card ${isModal ? 'modal' : 'card'}`}>
+      {!isModal ? (
+        <header className="file-content-header">
+          <div className="file-content-title">
+            <strong title={filename}>{filename}</strong>
+            <span>{language}</span>
+            {size ? <span>{size}</span> : null}
+            {payload.truncated ? <span className="file-content-truncated">Truncated</span> : null}
+          </div>
+          <div className="file-content-actions">
+            <button type="button" className="file-content-wrap-toggle" onClick={() => setCardWrapLines((current) => !current)}>
+              {effectiveWrapLines ? 'No wrap' : 'Wrap lines'}
+            </button>
+            <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title="Copy file content">
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          </div>
+        </header>
+      ) : null}
       {payload.truncated ? <div className="file-content-notice">Content truncated · showing first 1 MB</div> : null}
-      <pre className={`file-content-body ${wrapLines ? 'wrap' : 'no-wrap'}`}>
+      <pre className={`file-content-body ${effectiveWrapLines ? 'wrap' : 'no-wrap'}`}>
         <code>{payload.content}</code>
       </pre>
     </section>
@@ -626,7 +630,7 @@ function languageForFilename(name: string): string {
   );
 }
 
-function defaultWrapLines(filename: string, language: string): boolean {
+export function defaultWrapLines(filename: string, language: string): boolean {
   const extension = basename(filename)?.toLowerCase().match(/(\.[^.]+)$/)?.[1] || '';
   const codeExtensions = new Set(['.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml', '.toml', '.xml', '.html', '.css', '.sql', '.sh', '.ps1', '.bat', '.ini', '.cfg']);
   const textExtensions = new Set(['.md', '.txt', '.log', '.csv']);

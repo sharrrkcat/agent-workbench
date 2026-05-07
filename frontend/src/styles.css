@@ -1046,6 +1046,19 @@ input:disabled {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.file-content-card.modal {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.file-content-card.modal .file-content-body {
+  max-height: none;
+  min-height: 0;
+  padding: 14px;
+}
+
 .file-content-title {
   display: inline-flex;
   align-items: center;
@@ -1386,41 +1399,69 @@ input:disabled {
   overflow: hidden;
 }
 
-.file-preview-modal header {
+.file-preview-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 16px;
   padding: 13px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.file-preview-modal header div {
+.file-preview-title {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.file-preview-modal header strong {
+.file-preview-modal .file-preview-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+
+.file-preview-title strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-preview-modal header span,
+.file-preview-title span,
 .file-preview-status {
   color: rgba(255, 255, 255, 0.58);
   font-size: 0.78rem;
 }
 
-.file-preview-modal header button {
+.file-preview-action-button,
+.file-preview-close-button {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
   height: 32px;
-  padding: 0;
+  white-space: nowrap;
   border-radius: 999px;
+}
+
+.file-preview-action-button {
+  gap: 5px;
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.file-preview-action-button span {
+  color: inherit;
+  font-size: inherit;
+}
+
+.file-preview-close-button {
+  width: 32px;
+  padding: 0;
 }
 
 .file-preview-content {
