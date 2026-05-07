@@ -391,7 +391,7 @@ def infer_attachment_type(name: str | None, mime_type: str | None) -> Literal["i
 def is_text_attachment(attachment: dict[str, Any]) -> bool:
     suffix = Path(str(attachment.get("name") or attachment.get("uri") or "")).suffix.lower()
     mime_type = str(attachment.get("mime_type") or "").lower()
-    return suffix in ALLOWED_TEXT_EXTENSIONS or mime_type.startswith("text/") or mime_type in {"application/json", "application/xml", "application/yaml", "application/toml", "application/sql"}
+    return suffix in ALLOWED_TEXT_EXTENSIONS or mime_type.startswith("text/") or mime_type in {"application/json", "application/xml", "application/yaml", "application/x-yaml", "application/toml", "application/sql"}
 
 
 def language_for_filename(name: str | None) -> str:

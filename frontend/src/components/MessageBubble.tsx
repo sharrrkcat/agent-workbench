@@ -7,13 +7,14 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
 import { formatMessageTime } from '../utils/time';
-import { localAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
+import { resolveAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
 
 export type FilePreview = {
   url: string;
   name: string;
   mime_type: string;
   size: number;
+  language?: string | null;
 };
 
 export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { message: Message; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
@@ -43,6 +44,9 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
+  if (!editing && !message.client_status && !hasRenderableMessage(message, reasoningContent)) {
+    return null;
+  }
 
   useEffect(() => {
     if (!editing) setEditValue(contentToText(message.content));
@@ -307,11 +311,19 @@ function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { att
             key={attachment.id}
             type="button"
             onClick={() => {
-              const url = localAttachmentUrl(attachment.uri);
-              if (url) onPreviewFile({ url, name: attachment.name || 'File', mime_type: attachment.mime_type, size: attachment.size });
+              const url = resolveAttachmentUrl(attachment);
+              if (url) {
+                onPreviewFile({
+                  url,
+                  name: attachment.name || 'File',
+                  mime_type: attachment.mime_type,
+                  size: attachment.size,
+                  language: languageForFilename(attachment.name),
+                });
+              }
             }}
             title={isPreviewableFile(attachment) ? `Preview ${attachment.name}` : 'Preview not available'}
-            disabled={!isPreviewableFile(attachment) || !localAttachmentUrl(attachment.uri)}
+            disabled={!isPreviewableFile(attachment) || !resolveAttachmentUrl(attachment)}
           >
             <FileText size={18} />
             <span>
@@ -346,12 +358,13 @@ export function JsonRenderer({ content }: { content: unknown }) {
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
 }
 
-function FileContentRenderer({ payload }: { payload: FileContentPayload }) {
+export function FileContentRenderer({ payload }: { payload: FileContentPayload }) {
   const setError = useWorkbenchStore((state) => state.setError);
   const [copied, setCopied] = useState(false);
   const filename = payload.filename?.trim() || 'File content';
   const language = payload.language?.trim() || 'text';
   const size = typeof payload.size === 'number' && Number.isFinite(payload.size) ? formatBytes(payload.size) : '';
+  const [wrapLines, setWrapLines] = useState(defaultWrapLines(filename, language));
 
   async function copyFileContent() {
     try {
@@ -372,13 +385,18 @@ function FileContentRenderer({ payload }: { payload: FileContentPayload }) {
           {size ? <span>{size}</span> : null}
           {payload.truncated ? <span className="file-content-truncated">Truncated</span> : null}
         </div>
-        <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title="Copy file content">
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
-        </button>
+        <div className="file-content-actions">
+          <button type="button" className="file-content-wrap-toggle" onClick={() => setWrapLines((current) => !current)}>
+            {wrapLines ? 'No wrap' : 'Wrap lines'}
+          </button>
+          <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title="Copy file content">
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
       </header>
       {payload.truncated ? <div className="file-content-notice">Content truncated · showing first 1 MB</div> : null}
-      <pre className="file-content-body">
+      <pre className={`file-content-body ${wrapLines ? 'wrap' : 'no-wrap'}`}>
         <code>{payload.content}</code>
       </pre>
     </section>
@@ -487,7 +505,7 @@ function isAttachment(value: unknown): value is Attachment {
 }
 
 function attachmentUrl(attachment: ImageAttachment): string {
-  return safeImageUrl(attachment.uri || attachment.data_url || '');
+  return resolveAttachmentUrl(attachment);
 }
 
 function isPreviewableFile(attachment: FileAttachment): boolean {
@@ -559,6 +577,16 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
   return blocks;
 }
 
+function hasRenderableMessage(message: Message, reasoningContent: string): boolean {
+  if (reasoningContent.trim()) return true;
+  if (message.output_type === 'image') return normalizeImagePayload(message.content) !== null;
+  if (message.output_type === 'image_gallery') return normalizeImageGallery(message.content).length > 0;
+  if (message.output_type === 'rich_content') return normalizeRichContentBlocks(message.content).length > 0;
+  if (message.output_type === 'file_content') return Boolean(normalizeFileContentPayload(message.content).content.trim());
+  if (message.role === 'user' && messageAttachments(message).length) return true;
+  return Boolean(contentToText(message.content).trim());
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
@@ -566,6 +594,45 @@ function optionalString(value: unknown): string | undefined {
 function basename(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return value.split(/[\\/]/).filter(Boolean).pop() || value;
+}
+
+function languageForFilename(name: string): string {
+  const extension = basename(name)?.toLowerCase().match(/(\.[^.]+)$/)?.[1] || '';
+  return (
+    {
+      '.md': 'markdown',
+      '.py': 'python',
+      '.js': 'javascript',
+      '.ts': 'typescript',
+      '.tsx': 'tsx',
+      '.jsx': 'jsx',
+      '.json': 'json',
+      '.yaml': 'yaml',
+      '.yml': 'yaml',
+      '.toml': 'toml',
+      '.xml': 'xml',
+      '.html': 'html',
+      '.css': 'css',
+      '.env': 'dotenv',
+      '.log': 'log',
+      '.csv': 'csv',
+      '.sql': 'sql',
+      '.sh': 'shell',
+      '.ps1': 'powershell',
+      '.bat': 'batch',
+      '.ini': 'ini',
+      '.cfg': 'ini',
+    }[extension] || 'text'
+  );
+}
+
+function defaultWrapLines(filename: string, language: string): boolean {
+  const extension = basename(filename)?.toLowerCase().match(/(\.[^.]+)$/)?.[1] || '';
+  const codeExtensions = new Set(['.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml', '.toml', '.xml', '.html', '.css', '.sql', '.sh', '.ps1', '.bat', '.ini', '.cfg']);
+  const textExtensions = new Set(['.md', '.txt', '.log', '.csv']);
+  if (codeExtensions.has(extension)) return false;
+  if (textExtensions.has(extension)) return true;
+  return !['python', 'javascript', 'typescript', 'tsx', 'jsx', 'json', 'yaml', 'toml', 'xml', 'html', 'css', 'sql', 'shell', 'powershell', 'batch', 'ini'].includes(language.toLowerCase());
 }
 
 function extractReasoningContent(metadata: Record<string, unknown> | undefined): string {

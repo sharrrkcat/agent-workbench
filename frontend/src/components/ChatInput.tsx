@@ -4,7 +4,7 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
-import type { ImagePreview } from '../utils/images';
+import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 
 export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
   const [value, setValue] = useState('');
@@ -347,10 +347,10 @@ function AttachmentPreview({
   return (
     <div className="composer-attachments">
       {attachments.map((attachment) => (
-        <figure className="composer-attachment" key={attachment.id}>
+        <figure className={`composer-attachment ${attachment.type === 'file' ? 'file' : 'image'}`} key={attachment.id}>
           {attachment.type === 'image' ? (
-            <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: attachment.data_url || '', alt: attachment.name || 'Attached image', title: attachment.name })}>
-              <img src={attachment.data_url || ''} alt={attachment.name || 'Attached image'} />
+            <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: resolveAttachmentUrl(attachment), alt: attachment.name || 'Attached image', title: attachment.name })}>
+              <img src={resolveAttachmentUrl(attachment)} alt={attachment.name || 'Attached image'} />
             </button>
           ) : (
             <div className="composer-file-chip" title={attachment.name}>

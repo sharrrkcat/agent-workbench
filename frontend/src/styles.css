@@ -1079,7 +1079,15 @@ input:disabled {
   color: #fde68a;
 }
 
-.file-content-copy {
+.file-content-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-content-copy,
+.file-content-wrap-toggle {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -1094,7 +1102,8 @@ input:disabled {
   font-weight: 760;
 }
 
-.file-content-copy:hover {
+.file-content-copy:hover,
+.file-content-wrap-toggle:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -1117,9 +1126,18 @@ input:disabled {
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.file-content-body.no-wrap {
   white-space: pre;
+  overflow-x: auto;
   overflow-wrap: normal;
   word-break: normal;
+}
+
+.file-content-body.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .image-content {
@@ -1762,10 +1780,11 @@ input:disabled {
 
 .composer-attachments {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
   padding: 2px 8px 6px 2px;
 }
 
@@ -1774,19 +1793,28 @@ input:disabled {
   flex: 0 0 auto;
   width: 96px;
   margin: 0;
+  min-width: 0;
+}
+
+.composer-attachment.file {
+  width: min(240px, 100%);
+  min-width: 180px;
 }
 
 .composer-file-chip {
   display: flex;
   align-items: center;
   gap: 9px;
-  width: 180px;
+  width: 100%;
+  min-width: 180px;
+  max-width: 240px;
   min-height: 58px;
-  padding: 9px 12px;
+  padding: 9px 32px 9px 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.9);
+  min-width: 0;
 }
 
 .composer-attachment-preview {

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.attachments import ImageAttachment, read_attachment_as_data_url
+from ai_workbench.core.attachments import ImageAttachment, is_text_attachment, language_for_filename, read_attachment_as_data_url, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
@@ -284,6 +284,12 @@ class AgentRunner:
         try:
             llm_config = self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
+            file_context = _prepare_file_context_messages(
+                messages=messages,
+                message_store=self.message_store,
+                current_user_message_id=current_user_message_id,
+            )
+            messages = file_context["messages"]
             vision_input = _prepare_vision_messages(
                 messages=messages,
                 message_store=self.message_store,
@@ -291,8 +297,9 @@ class AgentRunner:
                 llm_config=llm_config,
             )
             messages = vision_input["messages"]
-            context_warnings = [*context.warnings, *vision_input["warnings"]]
+            context_warnings = [*context.warnings, *file_context["warnings"], *vision_input["warnings"]]
             self._record_llm_resolution(run.run_id, llm_config)
+            self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
             if _streaming_enabled(llm_config):
                 return await self._run_prompt_agent_streaming(
@@ -308,6 +315,7 @@ class AgentRunner:
                     context_warnings=context_warnings,
                     llm_config=llm_config,
                     vision_input=vision_input["metadata"],
+                    file_context=file_context["metadata"],
                 )
             metrics_recorder = LLMMetricsRecorder(streamed=False)
             raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
@@ -360,11 +368,12 @@ class AgentRunner:
             "llm_resolution": _public_llm_resolution(llm_config),
             "llm_metrics": llm_metrics,
             "vision_input": vision_input["metadata"],
+            "file_context": file_context["metadata"],
             "reasoning": _reasoning_metadata(llm_config, llm_result.reasoning_content),
         }
         if llm_result.reasoning_content:
             metadata["reasoning_content"] = llm_result.reasoning_content
-        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"])
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"], file_context["metadata"])
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
@@ -423,6 +432,7 @@ class AgentRunner:
         context_warnings: list,
         llm_config,
         vision_input: dict,
+        file_context: dict,
     ) -> RunResult:
         draft_message_id = f"draft-{run.run_id}"
         resolution = _public_llm_resolution(llm_config)
@@ -488,6 +498,7 @@ class AgentRunner:
                     llm_config=llm_config,
                     llm_metrics=llm_metrics,
                     vision_input=vision_input,
+                    file_context=file_context,
                     reasoning_content="".join(reasoning_parts),
                     interrupted=True,
                 )
@@ -506,7 +517,7 @@ class AgentRunner:
                     payload={"available_actions": message.available_actions},
                 )
             cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
-            self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input)
+            self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context)
             self.event_bus.emit(
                 "run_metrics",
                 session_id=session_id,
@@ -543,10 +554,11 @@ class AgentRunner:
             llm_config=llm_config,
             llm_metrics=llm_metrics,
             vision_input=vision_input,
+            file_context=file_context,
             reasoning_content="".join(reasoning_parts),
         )
         done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
-        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input)
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
             "run_metrics",
@@ -590,6 +602,7 @@ class AgentRunner:
         llm_config,
         llm_metrics: dict,
         vision_input: dict,
+        file_context: dict,
         reasoning_content: str = "",
         interrupted: bool = False,
     ):
@@ -604,6 +617,7 @@ class AgentRunner:
             "llm_resolution": _public_llm_resolution(llm_config),
             "llm_metrics": llm_metrics,
             "vision_input": vision_input,
+            "file_context": file_context,
             "reasoning": _reasoning_metadata(llm_config, reasoning_content),
         }
         if reasoning_content:
@@ -662,13 +676,21 @@ class AgentRunner:
         metadata["vision_input"] = vision_input
         self.run_store.update_metadata(run_id, metadata)
 
-    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict, vision_input: dict | None = None) -> None:
+    def _record_file_context_metadata(self, run_id: str, file_context: dict) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["file_context"] = file_context
+        self.run_store.update_metadata(run_id, metadata)
+
+    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict, vision_input: dict | None = None, file_context: dict | None = None) -> None:
         run = self.run_store.get_run(run_id)
         metadata = dict(run.metadata)
         metadata["llm_resolution"] = _public_llm_resolution(llm_config)
         metadata["llm_metrics"] = llm_metrics
         if vision_input is not None:
             metadata["vision_input"] = vision_input
+        if file_context is not None:
+            metadata["file_context"] = file_context
         self.run_store.update_metadata(run_id, metadata)
 
     def _is_cancelled(self, run_id: str) -> bool:
@@ -767,6 +789,112 @@ def _public_llm_resolution(llm_config) -> dict:
 def _streaming_enabled(llm_config) -> bool:
     values = getattr(llm_config, "values", {}) or {}
     return values.get("supports_streaming") is True
+
+
+MAX_LLM_TEXT_ATTACHMENT_BYTES = 200 * 1024
+MAX_LLM_TEXT_ATTACHMENTS_BYTES = 500 * 1024
+
+
+def _prepare_file_context_messages(messages: list, message_store: MessageStore, current_user_message_id: str) -> dict:
+    attachments, warnings = _current_file_attachments(message_store, current_user_message_id)
+    text_attachments = [item for item in attachments if item.get("text")]
+    files_attached = len(attachments)
+    files_sent = len(text_attachments)
+    files_ignored = files_attached - files_sent
+    total_chars = sum(len(item["text"]["content"]) for item in text_attachments)
+    metadata = {
+        "files_attached": files_attached,
+        "files_sent": files_sent,
+        "files_ignored": files_ignored,
+        "total_chars": total_chars,
+    }
+    if warnings:
+        metadata["warnings"] = warnings
+    if not attachments:
+        return {"messages": messages, "metadata": metadata, "warnings": warnings}
+
+    next_messages = [dict(message) for message in messages]
+    target_index = _last_user_message_index(next_messages)
+    if target_index is None:
+        return {"messages": next_messages, "metadata": metadata, "warnings": warnings}
+
+    current = next_messages[target_index]
+    text = str(current.get("content") or "")
+    additions = []
+    if text_attachments:
+        if not text.strip():
+            suffix = "" if files_sent == 1 else "s"
+            additions.append(f"User attached {files_sent} text file{suffix}.")
+        for item in text_attachments:
+            payload = item["text"]
+            additions.append(_format_text_attachment_for_llm(payload))
+    if files_ignored:
+        suffix = "" if files_ignored == 1 else "s"
+        additions.append(f"User attached {files_ignored} file{suffix} that {'is' if files_ignored == 1 else 'are'} not readable as text.")
+    if additions:
+        current["content"] = "\n\n".join(part for part in [text.strip(), *additions] if part)
+    return {"messages": next_messages, "metadata": metadata, "warnings": warnings}
+
+
+def _current_file_attachments(message_store: MessageStore, current_user_message_id: str) -> tuple[list[dict[str, Any]], list[str]]:
+    if not current_user_message_id:
+        return [], []
+    try:
+        message = message_store.get_message(current_user_message_id)
+    except KeyError:
+        return [], ["current user message was not found for file context"]
+    raw_attachments = (message.metadata or {}).get("attachments")
+    if not isinstance(raw_attachments, list):
+        return [], []
+
+    attachments: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    remaining = MAX_LLM_TEXT_ATTACHMENTS_BYTES
+    for index, raw_attachment in enumerate(raw_attachments, start=1):
+        if not isinstance(raw_attachment, dict) or raw_attachment.get("type") != "file":
+            continue
+        item = {"text": None}
+        try:
+            if not is_text_attachment(raw_attachment):
+                attachments.append(item)
+                continue
+            limit = max(0, min(MAX_LLM_TEXT_ATTACHMENT_BYTES, remaining))
+            if limit <= 0:
+                warnings.append(f"file attachment {index} was ignored: text attachment context limit reached")
+                attachments.append(item)
+                continue
+            payload = read_attachment_text(raw_attachment, limit=limit)
+            remaining = max(0, remaining - min(int(payload.get("size") or 0), limit))
+            item["text"] = payload
+            attachments.append(item)
+        except Exception as exc:
+            attachments.append(item)
+            warnings.append(f"file attachment {index} was ignored: {str(exc) or 'unreadable text attachment'}")
+    return attachments, warnings
+
+
+def _format_text_attachment_for_llm(payload: dict[str, Any]) -> str:
+    filename = str(payload.get("filename") or "attached file")
+    mime_type = str(payload.get("mime_type") or "text/plain")
+    size = int(payload.get("size") or 0)
+    truncated = bool(payload.get("truncated"))
+    language = str(payload.get("language") or language_for_filename(filename) or "text")
+    content = str(payload.get("content") or "")
+    return (
+        f"User attached file: {filename}\n"
+        f"MIME: {mime_type}\n"
+        f"Size: {_format_attachment_size(size)}\n"
+        f"Truncated: {'true' if truncated else 'false'}\n\n"
+        f"```{language}\n{content}\n```"
+    )
+
+
+def _format_attachment_size(size: int) -> str:
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 def _prepare_vision_messages(messages: list, message_store: MessageStore, current_user_message_id: str, llm_config) -> dict:

@@ -461,21 +461,86 @@ def test_non_vision_profile_does_not_send_data_url_and_adds_placeholder() -> Non
     assert user.metadata["attachments"][0]["data_url"] == PNG_DATA_URL
 
 
-def test_prompt_agent_does_not_read_file_attachment_content(monkeypatch, tmp_path: Path) -> None:
+def test_prompt_agent_adds_current_text_file_attachment_to_llm_context(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     llm = FakeLLMRuntime(response="text reply")
     fixture = PromptRuntimeFixture(llm=llm)
     session = fixture.sessions.create_session(default_agent_id="chat")
-    stored = save_attachment_from_upload("secret.yaml", "application/yaml", b"api_key: should_not_be_sent\n")
+    stored = save_attachment_from_upload("Cal.md", "text/markdown", b"# Calendar\n\n- Monday: planning\n")
 
     result = run(fixture.runtime.handle_input(session, "summarize", attachments=[stored]))
     sent = llm.calls[0]["messages"][-1]["content"]
     user = fixture.messages.list_messages(session.session_id)[0]
+    run_metadata = fixture.runs.get_run(result.run_id).metadata
 
     assert result.success is True
-    assert sent == "summarize"
-    assert "should_not_be_sent" not in str(llm.calls[0]["messages"])
+    assert sent.startswith("summarize\n\nUser attached file: Cal.md")
+    assert "MIME: text/markdown" in sent
+    assert "Size: 31 B" in sent
+    assert "Truncated: false" in sent
+    assert "```markdown\n# Calendar\n\n- Monday: planning\n" in sent
+    assert run_metadata["file_context"]["files_attached"] == 1
+    assert run_metadata["file_context"]["files_sent"] == 1
+    assert run_metadata["file_context"]["files_ignored"] == 0
     assert user.metadata["attachments"][0]["type"] == "file"
+    assert "Calendar" not in str(run_metadata)
+
+
+def test_prompt_agent_uses_file_context_when_message_has_no_text(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    llm = FakeLLMRuntime(response="text reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    stored = save_attachment_from_upload("notes.txt", "text/plain", b"only file body")
+
+    result = run(fixture.runtime.handle_input(session, "", attachments=[stored]))
+    sent = llm.calls[0]["messages"][-1]["content"]
+
+    assert result.success is True
+    assert sent.startswith("User attached 1 text file.\n\nUser attached file: notes.txt")
+    assert "only file body" in sent
+
+
+def test_prompt_agent_truncates_large_text_file_attachment(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    llm = FakeLLMRuntime(response="text reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    stored = save_attachment_from_upload("large.log", "text/plain", b"a" * (220 * 1024))
+
+    result = run(fixture.runtime.handle_input(session, "summarize", attachments=[stored]))
+    sent = llm.calls[0]["messages"][-1]["content"]
+    run_metadata = fixture.runs.get_run(result.run_id).metadata
+
+    assert result.success is True
+    assert "Truncated: true" in sent
+    assert run_metadata["file_context"]["files_sent"] == 1
+    assert run_metadata["file_context"]["total_chars"] == 200 * 1024
+    assert len(sent) < 210 * 1024
+
+
+def test_prompt_agent_ignores_binary_file_attachment() -> None:
+    llm = FakeLLMRuntime(response="text reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    binary = {
+        "id": "binary",
+        "type": "file",
+        "mime_type": "application/octet-stream",
+        "name": "data.bin",
+        "size": 4,
+        "uri": "local://attachments/00000000-0000-0000-0000-000000000000.bin",
+    }
+
+    result = run(fixture.runtime.handle_input(session, "summarize", attachments=[binary]))
+    sent = llm.calls[0]["messages"][-1]["content"]
+    run_metadata = fixture.runs.get_run(result.run_id).metadata
+
+    assert result.success is True
+    assert sent == "summarize\n\nUser attached 1 file that is not readable as text."
+    assert run_metadata["file_context"]["files_attached"] == 1
+    assert run_metadata["file_context"]["files_sent"] == 0
+    assert run_metadata["file_context"]["files_ignored"] == 1
 
 
 def test_context_does_not_inject_historical_image_data_urls() -> None:
