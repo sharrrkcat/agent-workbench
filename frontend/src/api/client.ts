@@ -22,9 +22,9 @@ import type {
   SendMessageAttachment,
   StorageStats,
 } from '../types';
+import { API_BASE_URL, createWebSocketUrlFromBase, joinApiUrl } from './url';
 
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-export const API_BASE_URL = rawBaseUrl.replace(/\/$/, '');
+export { API_BASE_URL, joinApiUrl };
 
 export class ApiError extends Error {
   code: string;
@@ -39,7 +39,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${normalizeApiPath(path)}`, {
+  const response = await fetch(joinApiUrl(API_BASE_URL, path), {
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
@@ -55,13 +55,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new ApiError(code, message, details);
   }
   return payload as T;
-}
-
-function normalizeApiPath(path: string): string {
-  if (API_BASE_URL.endsWith('/api') && path.startsWith('/api/')) {
-    return path.slice('/api'.length);
-  }
-  return path;
 }
 
 export const api = {
@@ -182,9 +175,5 @@ export const api = {
 };
 
 export function createWebSocketUrl(sessionId: string): string {
-  const url = new URL(API_BASE_URL, window.location.origin);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const basePath = url.pathname.endsWith('/api') ? url.pathname : '/api';
-  url.pathname = `${basePath}/ws/${sessionId}`;
-  return url.toString();
+  return createWebSocketUrlFromBase(API_BASE_URL, sessionId, window.location.origin);
 }

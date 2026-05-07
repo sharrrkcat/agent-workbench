@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { API_BASE_URL } from '../api/client';
+import { resolveAvatarUrlFromBase } from '../api/url';
 import type { Agent, ManifestSummary } from '../types';
 
 type AvatarSource = Pick<Agent, 'id' | 'name' | 'avatar' | 'avatar_type' | 'avatar_url'> | ManifestSummary;
@@ -51,10 +52,7 @@ function avatarText(agent: AvatarSource | undefined, fallbackLabel: string): str
 }
 
 function resolveImageUrl(value?: string | null): string {
-  if (!value) return '';
-  if (/^https?:\/\//i.test(value)) return value;
-  if (value.startsWith('/')) return `${API_BASE_URL}${value}`;
-  return value;
+  return resolveAvatarUrlFromBase(API_BASE_URL, value);
 }
 
 function initials(value: string): string {
