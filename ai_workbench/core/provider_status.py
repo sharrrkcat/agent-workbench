@@ -205,8 +205,24 @@ def _refresh_lm_studio(provider: ProviderProfileSchema, model_profiles: list[LLM
         try:
             response = client.get(_lm_studio_native_models_url(provider.base_url), headers=headers)
             response.raise_for_status()
-            native_models = _extract_models(response.json())
-            model_items = [_lm_studio_model_item(item) for item in native_models]
+            native_data = response.json()
+            native_models = _extract_lm_studio_native_models(native_data)
+            if native_models is None:
+                fallback = _lm_studio_openai_fallback(client, provider, headers, model_profiles, checked_at)
+                fallback["warnings"] = ["LM Studio native API returned an unexpected model list; used OpenAI-compatible fallback."]
+                return fallback
+            model_items, warnings = _lm_studio_model_items(native_models)
+            if native_models and not model_items:
+                models = _unknown_model_statuses(model_profiles)
+                return _provider_payload(
+                    provider=provider,
+                    reachable=True,
+                    status=MODEL_STATUS_UNKNOWN,
+                    mode="lm_studio_native",
+                    checked_at=checked_at,
+                    models=models,
+                    warnings=warnings or ["LM Studio native API returned models, but no model identifiers were recognized."],
+                )
             models = _map_model_profiles(model_profiles, model_items, reliable=True)
             return _provider_payload(
                 provider=provider,
@@ -215,22 +231,32 @@ def _refresh_lm_studio(provider: ProviderProfileSchema, model_profiles: list[LLM
                 mode="lm_studio_native",
                 checked_at=checked_at,
                 models=models,
-                warnings=[],
+                warnings=warnings,
             )
         except httpx.HTTPError:
-            response = client.get(f"{provider.base_url.rstrip('/')}/models", headers=headers)
-            response.raise_for_status()
-            fallback_models = [_openai_model_item(item) for item in _extract_models(response.json())]
-            models = _map_model_profiles(model_profiles, fallback_models, reliable=False)
-            return _provider_payload(
-                provider=provider,
-                reachable=True,
-                status=MODEL_STATUS_UNKNOWN,
-                mode="lm_studio_openai_compatible_partial",
-                checked_at=checked_at,
-                models=models,
-                warnings=["LM Studio native API was unavailable; model availability is partial."],
-            )
+            return _lm_studio_openai_fallback(client, provider, headers, model_profiles, checked_at)
+
+
+def _lm_studio_openai_fallback(
+    client: httpx.Client,
+    provider: ProviderProfileSchema,
+    headers: dict[str, str],
+    model_profiles: list[LLMProfileSchema],
+    checked_at: str,
+) -> Dict[str, Any]:
+    response = client.get(f"{provider.base_url.rstrip('/')}/models", headers=headers)
+    response.raise_for_status()
+    fallback_models = [_openai_model_item(item) for item in _extract_models(response.json())]
+    models = _map_model_profiles(model_profiles, fallback_models, reliable=False)
+    return _provider_payload(
+        provider=provider,
+        reachable=True,
+        status=MODEL_STATUS_UNKNOWN,
+        mode="lm_studio_openai_compatible_partial",
+        checked_at=checked_at,
+        models=models,
+        warnings=["LM Studio native API was unavailable; model availability is partial."],
+    )
 
 
 def _refresh_llama_cpp(provider: ProviderProfileSchema, model_profiles: list[LLMProfileSchema], checked_at: str) -> Dict[str, Any]:
@@ -410,9 +436,11 @@ def _aggregate_model_status(models: list[dict[str, Any]]) -> str:
 
 def _lm_studio_model_item(item: dict[str, Any]) -> dict[str, Any]:
     instances = _loaded_instances(item)
+    model_id = _lm_studio_model_identifier(item)
     return {
-        "id": _model_identifier(item),
-        "name": item.get("display_name") or item.get("name") or item.get("id"),
+        "id": model_id,
+        "name": item.get("display_name") or item.get("name") or model_id,
+        "type": _model_type(item),
         "available": True,
         "loaded": bool(instances),
         "loaded_instance_ids": [str(instance.get("id")) for instance in instances if instance.get("id")],
@@ -430,6 +458,7 @@ def _llama_router_model_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": _model_identifier(item),
         "name": item.get("name") or item.get("id"),
+        "type": _model_type(item),
         "available": True,
         "loaded": loaded if status_value else None,
         "loaded_instance_ids": [],
@@ -442,6 +471,7 @@ def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": _model_identifier(item),
         "name": item.get("name") or item.get("display_name") or item.get("id"),
+        "type": _model_type(item),
         "available": True,
         "loaded": None,
         "loaded_instance_ids": [],
@@ -461,6 +491,34 @@ def _extract_models(data: Any) -> list[dict[str, Any]]:
     return [item for item in models if isinstance(item, dict) and _model_identifier(item)]
 
 
+def _extract_lm_studio_native_models(data: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(data, dict):
+        return None
+    if "models" in data:
+        models = data.get("models")
+    elif "data" in data:
+        models = data.get("data")
+    else:
+        return None
+    if not isinstance(models, list):
+        return None
+    return [item for item in models if isinstance(item, dict)]
+
+
+def _lm_studio_model_items(models: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    items: list[dict[str, Any]] = []
+    skipped = 0
+    for model in models:
+        if not _lm_studio_model_identifier(model):
+            skipped += 1
+            continue
+        items.append(_lm_studio_model_item(model))
+    warnings = []
+    if skipped:
+        warnings.append(f"LM Studio native API returned {skipped} model(s) without key or id.")
+    return items, warnings
+
+
 def _has_model_list(data: Any) -> bool:
     if not isinstance(data, dict):
         return False
@@ -469,6 +527,15 @@ def _has_model_list(data: Any) -> bool:
 
 def _model_identifier(item: dict[str, Any]) -> str:
     return str(item.get("id") or item.get("model_key") or item.get("key") or item.get("name") or "").strip()
+
+
+def _lm_studio_model_identifier(item: dict[str, Any]) -> str:
+    return str(item.get("key") or item.get("id") or "").strip()
+
+
+def _model_type(item: dict[str, Any]) -> str:
+    value = str(item.get("type") or "").strip().lower()
+    return value if value in {"llm", "embedding"} else "unknown"
 
 
 def _loaded_instances(item: dict[str, Any]) -> list[dict[str, Any]]:
@@ -483,9 +550,9 @@ def _capabilities(item: dict[str, Any]) -> dict[str, bool]:
     if not isinstance(raw, dict):
         return {}
     return {
-        "vision": bool(raw.get("vision")),
-        "tools": bool(raw.get("tools")),
-        "reasoning": bool(raw.get("reasoning")),
+        "vision": bool(raw.get("vision") or raw.get("image_input")),
+        "tools": bool(raw.get("tools") or raw.get("trained_for_tool_use")),
+        "reasoning": bool(raw.get("reasoning") or raw.get("reasoning_output")),
     }
 
 
@@ -503,6 +570,8 @@ def _lm_studio_native_unload_url(base_url: str) -> str:
 
 def _without_trailing_v1(base_url: str) -> str:
     trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/api/v1"):
+        return trimmed[:-7]
     if trimmed.endswith("/v1"):
         trimmed = trimmed[:-3]
     return trimmed

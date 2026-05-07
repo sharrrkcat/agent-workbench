@@ -314,6 +314,74 @@ def test_builtin_llm_runtime_model_listing_provider_urls(monkeypatch) -> None:
     assert calls[-1] == "http://studio/api/v1/models"
 
 
+def test_builtin_llm_runtime_lm_studio_native_models_key_items(monkeypatch) -> None:
+    from capabilities.llm import CapabilityRuntime
+    import capabilities.llm as llm_module
+
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, timeout) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def get(self, url, headers=None):
+            calls.append(url)
+            return FakeResponse(
+                {
+                    "models": [
+                        {
+                            "key": "chat-model",
+                            "display_name": "Chat Model",
+                            "type": "llm",
+                            "loaded_instances": [{"id": "instance-1"}],
+                            "capabilities": {
+                                "vision": True,
+                                "trained_for_tool_use": True,
+                                "reasoning": True,
+                            },
+                        },
+                        {
+                            "key": "embed-model",
+                            "display_name": "Embedding Model",
+                            "type": "embedding",
+                        },
+                    ]
+                }
+            )
+
+    monkeypatch.setattr(llm_module.httpx, "Client", FakeClient)
+    runtime = CapabilityRuntime()
+
+    assert runtime.list_models({"provider": "lm_studio", "base_url": "http://studio/api/v1"}) == ["chat-model", "embed-model"]
+    assert calls == ["http://studio/api/v1/models"]
+    items = runtime.list_model_items({"provider": "lm_studio", "base_url": "http://studio/v1"})
+    assert items[0]["id"] == "chat-model"
+    assert items[0]["name"] == "Chat Model"
+    assert items[0]["type"] == "llm"
+    assert items[0]["loaded"] is True
+    assert items[0]["loaded_instance_ids"] == ["instance-1"]
+    assert items[0]["capabilities"]["vision"] is True
+    assert items[0]["capabilities"]["tools"] is True
+    assert items[0]["capabilities"]["reasoning"] is True
+    assert items[1]["type"] == "embedding"
+
+
 def test_builtin_llm_runtime_lm_studio_falls_back_to_openai_models(monkeypatch) -> None:
     from capabilities.llm import CapabilityRuntime
     import capabilities.llm as llm_module

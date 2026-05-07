@@ -210,6 +210,9 @@ export type LlmProfile = {
 export type LlmProviderModel = {
   id: string;
   name?: string | null;
+  type?: 'llm' | 'embedding' | 'unknown' | string;
+  loaded?: boolean | null;
+  loaded_instance_ids?: string[];
   capabilities?: {
     vision?: boolean;
     tools?: boolean;
@@ -233,6 +236,8 @@ export type LlmProviderStatusCode =
 
 export type LlmProviderStatusModel = {
   id: string;
+  name?: string | null;
+  type?: 'llm' | 'embedding' | 'unknown' | string;
   available?: boolean | null;
   loaded?: boolean | null;
   status?: LlmProviderStatusCode | string;

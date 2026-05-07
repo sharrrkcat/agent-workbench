@@ -644,9 +644,15 @@ export function LlmProviderProfileDetail({
     try {
       const response = await api.listLlmProviderModels(selectedProfile.id);
       setModels(response.models.map((model) => model.id).filter(Boolean));
+      const chatModels = response.models.filter(isChatModel);
+      const message = response.models.length && !chatModels.length
+        ? 'Provider returned models, but none are chat/LLM models.'
+        : response.models.length
+          ? `Found ${response.models.length} model${response.models.length === 1 ? '' : 's'}.`
+          : 'Provider returned no models.';
       setResult({
         success: true,
-        message: response.models.length ? `Found ${response.models.length} model${response.models.length === 1 ? '' : 's'}.` : 'Provider returned no models.',
+        message,
         base_url: selectedProfile.base_url,
         models: response.models.map((model) => model.id).filter(Boolean),
       });
@@ -852,7 +858,18 @@ export function LlmProfileDetail({
     setError(null);
     try {
       const response = await api.listLlmProviderModels(providerId);
-      setModels(response.models.filter((model) => Boolean(model.id)));
+      const chatModels = response.models.filter((model) => Boolean(model.id) && isChatModel(model));
+      setModels(chatModels);
+      setResult({
+        success: true,
+        message: response.models.length && !chatModels.length
+          ? 'Provider returned models, but none are chat/LLM models.'
+          : chatModels.length
+            ? `Found ${chatModels.length} chat/LLM model${chatModels.length === 1 ? '' : 's'}.`
+            : 'Provider returned no models.',
+        base_url: providerProfileBaseUrl(providerId, providerProfiles),
+        models: chatModels.map((model) => model.id),
+      });
     } catch (caught) {
       setError(toSettingsError(caught, 'Failed to list profile models.'));
     } finally {
@@ -957,7 +974,7 @@ export function LlmProfileDetail({
               <span>Choose from provider</span>
               <select value={selectedProviderModelId} onChange={(event) => selectProviderModel(event.target.value)} disabled={busy || !models.length}>
                 <option value="">{models.length ? 'Select refreshed model' : 'No refreshed models'}</option>
-                {models.map((model) => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
+                {models.map((model) => <option key={model.id} value={model.id} title={model.id}>{model.name || model.id}</option>)}
               </select>
               <small>Prefer selecting a refreshed provider model when available.</small>
             </label>
@@ -1233,6 +1250,14 @@ function providerProfileLabel(providerProfileId: string, providers: LlmProviderP
   if (!providerProfileId) return 'Missing provider profile';
   const provider = providers.find((item) => item.id === providerProfileId);
   return provider ? provider.name : 'Missing provider profile';
+}
+
+function providerProfileBaseUrl(providerProfileId: string, providers: LlmProviderProfile[]): string {
+  return providers.find((item) => item.id === providerProfileId)?.base_url || '';
+}
+
+function isChatModel(model: LlmProviderModel): boolean {
+  return String(model.type || 'unknown').toLowerCase() !== 'embedding';
 }
 
 function providerHelperText(providerProfileId: string | undefined | null, providers: LlmProviderProfile[]) {

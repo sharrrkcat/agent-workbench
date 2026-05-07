@@ -117,6 +117,9 @@ class CapabilityRuntime:
         }
 
     def list_models(self, model_config: Optional[Dict[str, Any]] = None) -> List[str]:
+        return [item["id"] for item in self.list_model_items(model_config=model_config) if item.get("id")]
+
+    def list_model_items(self, model_config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         config = _resolve_config(model_config or {}, require_model=False)
         provider = (model_config or {}).get("provider") or "openai_compatible"
         headers = {}
@@ -128,9 +131,9 @@ class CapabilityRuntime:
                 try:
                     response = client.get(_lm_studio_native_models_url(config["base_url"]), headers=headers)
                     response.raise_for_status()
-                    data = response.json()
-                    models = data.get("data") or data.get("models") or []
-                    return [item.get("id") or item.get("name") or "" for item in models if isinstance(item, dict) and (item.get("id") or item.get("name"))]
+                    native_models = _extract_lm_studio_native_models(response.json())
+                    if native_models is not None:
+                        return [_lm_studio_model_item(item) for item in native_models if _lm_studio_model_identifier(item)]
                 except httpx.HTTPError:
                     pass
             response = client.get(f"{config['base_url'].rstrip('/')}/models", headers=headers)
@@ -138,7 +141,7 @@ class CapabilityRuntime:
             data = response.json()
 
         models = data.get("data") or []
-        return [item.get("id", "") for item in models if isinstance(item, dict) and item.get("id")]
+        return [_openai_model_item(item) for item in models if isinstance(item, dict) and item.get("id")]
 
 
 def _resolve_config(model_config: Dict[str, Any], require_model: bool = True) -> Dict[str, Any]:
@@ -162,9 +165,79 @@ def _resolve_config(model_config: Dict[str, Any], require_model: bool = True) ->
 
 def _lm_studio_native_models_url(base_url: str) -> str:
     trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/api/v1"):
+        trimmed = trimmed[:-7]
     if trimmed.endswith("/v1"):
         trimmed = trimmed[:-3]
     return f"{trimmed}/api/v1/models"
+
+
+def _extract_lm_studio_native_models(data: Any) -> List[Dict[str, Any]] | None:
+    if not isinstance(data, dict):
+        return None
+    if "models" in data:
+        models = data.get("models")
+    elif "data" in data:
+        models = data.get("data")
+    else:
+        return None
+    if not isinstance(models, list):
+        return None
+    return [item for item in models if isinstance(item, dict)]
+
+
+def _lm_studio_model_identifier(item: Dict[str, Any]) -> str:
+    return str(item.get("key") or item.get("id") or "").strip()
+
+
+def _model_type(item: Dict[str, Any]) -> str:
+    value = str(item.get("type") or "").strip().lower()
+    return value if value in {"llm", "embedding"} else "unknown"
+
+
+def _loaded_instances(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    instances = item.get("loaded_instances")
+    if not isinstance(instances, list):
+        return []
+    return [instance for instance in instances if isinstance(instance, dict)]
+
+
+def _capabilities(item: Dict[str, Any]) -> Dict[str, bool]:
+    raw = item.get("capabilities")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "vision": bool(raw.get("vision") or raw.get("image_input")),
+        "tools": bool(raw.get("tools") or raw.get("trained_for_tool_use")),
+        "reasoning": bool(raw.get("reasoning") or raw.get("reasoning_output")),
+    }
+
+
+def _lm_studio_model_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    model_id = _lm_studio_model_identifier(item)
+    instances = _loaded_instances(item)
+    return {
+        "id": model_id,
+        "name": item.get("display_name") or item.get("name") or model_id,
+        "type": _model_type(item),
+        "loaded": bool(instances),
+        "loaded_instance_ids": [str(instance.get("id")) for instance in instances if instance.get("id")],
+        "capabilities": _capabilities(item),
+        "raw": item,
+    }
+
+
+def _openai_model_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    model_id = str(item.get("id") or "").strip()
+    return {
+        "id": model_id,
+        "name": item.get("name") or item.get("display_name") or model_id,
+        "type": _model_type(item),
+        "loaded": None,
+        "loaded_instance_ids": [],
+        "capabilities": _capabilities(item),
+        "raw": item,
+    }
 
 
 async def _stream_chat_completion(config: Dict[str, Any], headers: Dict[str, str], payload: Dict[str, Any]):

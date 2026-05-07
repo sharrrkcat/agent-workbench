@@ -350,7 +350,9 @@ def _runtime_list_models(runtime, model_config: Dict[str, Any]) -> list[str]:
 
 
 def _runtime_model_items(runtime, model_config: Dict[str, Any]) -> list[dict]:
-    if hasattr(runtime, "list_models") and callable(runtime.list_models):
+    if hasattr(runtime, "list_model_items") and callable(runtime.list_model_items):
+        models = runtime.list_model_items(model_config=model_config)
+    elif hasattr(runtime, "list_models") and callable(runtime.list_models):
         models = runtime.list_models(model_config=model_config)
     elif hasattr(runtime, "test_connection") and callable(runtime.test_connection):
         result = runtime.test_connection(model_config=model_config)
@@ -366,6 +368,9 @@ def _runtime_model_items(runtime, model_config: Dict[str, Any]) -> list[dict]:
             item = {
                 "id": str(model_id),
                 "name": model.get("name") or model.get("display_name") or str(model_id),
+                "type": model.get("type") or "unknown",
+                "loaded": model.get("loaded"),
+                "loaded_instance_ids": model.get("loaded_instance_ids") if isinstance(model.get("loaded_instance_ids"), list) else [],
                 "capabilities": model.get("capabilities") if isinstance(model.get("capabilities"), dict) else None,
                 "raw": _safe_model_raw(model),
             }

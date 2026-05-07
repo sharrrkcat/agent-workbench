@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
-from ai_workbench.core.provider_status import unload_model
+from ai_workbench.core.provider_status import _lm_studio_native_models_url, unload_model
 from ai_workbench.core.script import LLMProxy
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.stores import LLMProfileStore, ProviderProfileStore
@@ -111,6 +111,103 @@ def test_lm_studio_status_uses_native_models_and_loaded_instances() -> None:
     assert FakeClient.calls[0][1] == "http://localhost:1234/api/v1/models"
 
 
+def test_lm_studio_native_models_key_response_is_normalized() -> None:
+    client = TestClient(create_app(use_memory=True))
+    provider, _, _ = create_provider_and_models(client, "lm_studio", "http://localhost:1234/v1")
+    FakeClient.routes["http://localhost:1234/api/v1/models"] = FakeResponse(
+        {
+            "models": [
+                {
+                    "key": "qwen/qwen3-8b",
+                    "display_name": "Qwen3 8B",
+                    "type": "llm",
+                    "loaded_instances": [{"id": "loaded-1"}],
+                    "capabilities": {
+                        "vision": True,
+                        "trained_for_tool_use": True,
+                        "reasoning": True,
+                    },
+                },
+                {
+                    "key": "text-embedding",
+                    "display_name": "Text Embedding",
+                    "type": "embedding",
+                    "loaded_instances": [],
+                    "capabilities": {},
+                },
+            ]
+        }
+    )
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["mode"] == "lm_studio_native"
+    assert payload["models"][0]["id"] == "model-a"
+    assert payload["models"][0]["status"] == "MODEL_NOT_AVAILABLE"
+
+    no_profiles = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "No Profiles", "provider": "lm_studio", "base_url": "http://localhost:1234/v1"},
+    ).json()
+    payload = client.post(f"/api/llm-provider-profiles/{no_profiles['id']}/status/refresh").json()["providers"][0]
+    assert [item["id"] for item in payload["models"]] == ["qwen/qwen3-8b", "text-embedding"]
+    assert payload["models"][0]["name"] == "Qwen3 8B"
+    assert payload["models"][0]["type"] == "llm"
+    assert payload["models"][0]["loaded"] is True
+    assert payload["models"][0]["loaded_instance_ids"] == ["loaded-1"]
+    assert payload["models"][0]["capabilities"]["vision"] is True
+    assert payload["models"][0]["capabilities"]["tools"] is True
+    assert payload["models"][0]["capabilities"]["reasoning"] is True
+    assert payload["models"][1]["type"] == "embedding"
+
+
+def test_lm_studio_native_display_name_fallback_and_capability_aliases() -> None:
+    client = TestClient(create_app(use_memory=True))
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Studio", "provider": "lm_studio", "base_url": "http://studio/v1"},
+    ).json()
+    FakeClient.routes["http://studio/api/v1/models"] = FakeResponse(
+        {
+            "models": [
+                {
+                    "id": "fallback-id",
+                    "type": "llm",
+                    "capabilities": {
+                        "image_input": True,
+                        "tools": True,
+                        "reasoning_output": True,
+                    },
+                }
+            ]
+        }
+    )
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["models"][0]["id"] == "fallback-id"
+    assert payload["models"][0]["name"] == "fallback-id"
+    assert payload["models"][0]["capabilities"] == {"vision": True, "tools": True, "reasoning": True}
+
+
+def test_lm_studio_native_nonempty_unrecognized_models_do_not_fallback() -> None:
+    client = TestClient(create_app(use_memory=True))
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Studio", "provider": "lm_studio", "base_url": "http://studio/v1"},
+    ).json()
+    FakeClient.routes["http://studio/api/v1/models"] = FakeResponse({"models": [{"display_name": "No Key"}]})
+    FakeClient.routes["http://studio/v1/models"] = FakeResponse({"data": [{"id": "fallback"}]})
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["mode"] == "lm_studio_native"
+    assert payload["status"] == "MODEL_STATUS_UNKNOWN"
+    assert payload["models"] == []
+    assert payload["warnings"]
+    assert [call[1] for call in FakeClient.calls] == ["http://studio/api/v1/models"]
+
+
 def test_lm_studio_native_fallback_is_partial_unknown_not_unavailable() -> None:
     client = TestClient(create_app(use_memory=True))
     provider, _, _ = create_provider_and_models(client, "lm_studio", "http://studio/v1")
@@ -122,6 +219,12 @@ def test_lm_studio_native_fallback_is_partial_unknown_not_unavailable() -> None:
     assert payload["mode"] == "lm_studio_openai_compatible_partial"
     assert payload["status"] == "MODEL_STATUS_UNKNOWN"
     assert all(item["status"] == "MODEL_STATUS_UNKNOWN" for item in payload["models"])
+
+
+def test_lm_studio_native_url_normalization() -> None:
+    assert _lm_studio_native_models_url("http://localhost:1234/v1") == "http://localhost:1234/api/v1/models"
+    assert _lm_studio_native_models_url("http://localhost:1234") == "http://localhost:1234/api/v1/models"
+    assert _lm_studio_native_models_url("http://localhost:1234/api/v1") == "http://localhost:1234/api/v1/models"
 
 
 def test_lm_studio_unload_uses_loaded_instance_ids() -> None:
