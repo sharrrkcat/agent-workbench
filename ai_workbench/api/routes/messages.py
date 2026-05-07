@@ -42,7 +42,7 @@ class EditMessageRequest(BaseModel):
 @router.get("/messages")
 def list_messages(session_id: str, state: RuntimeState = Depends(get_state)) -> list:
     _get_session_or_404(state, session_id)
-    return [message.model_dump() for message in state.messages.list_messages(session_id)]
+    return [_message_payload(state, message) for message in state.messages.list_messages(session_id)]
 
 
 @router.post("/messages")
@@ -277,5 +277,18 @@ def _result_payload(state: RuntimeState, session_id: str, result, before_ids=Non
         "error": result.error,
         "run": run.model_dump() if run else None,
         "session": session.model_dump(),
-        "messages": [message.model_dump() for message in messages],
+        "messages": [_message_payload(state, message) for message in messages],
     }
+
+
+def _message_payload(state: RuntimeState, message: MessageSchema) -> dict:
+    payload = message.model_dump()
+    if not message.run_id:
+        return payload
+    try:
+        run = state.runs.get_run(message.run_id)
+    except KeyError:
+        return payload
+    payload["run"] = run.model_dump()
+    payload["run_steps"] = [step.model_dump() for step in state.runs.list_steps(run.run_id)]
+    return payload

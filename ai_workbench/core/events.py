@@ -88,6 +88,11 @@ def _event_message(event: Event) -> str:
         return f"Message {event.message_id}"
     labels = {
         "run_started": "Run started.",
+        "run_updated": "Run updated.",
+        "run_step_created": "Run step created.",
+        "run_step_updated": "Run step updated.",
+        "run_cancel_requested": "Run cancellation requested.",
+        "run_completed": "Run completed.",
         "run_step": "Run step.",
         "action_invoked": "Action invoked.",
         "message_done": "Message completed.",

@@ -39,7 +39,32 @@ class RunRecord(SQLModel, table=True):
     session_id: str = Field(index=True)
     status: str
     current_step: str = ""
+    stage: str = ""
+    progress_message: str = ""
+    progress_current: Optional[int] = None
+    progress_total: Optional[int] = None
+    cancel_requested: bool = False
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
     error: Optional[str] = None
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class RunStepRecord(SQLModel, table=True):
+    step_id: str = Field(primary_key=True)
+    run_id: str = Field(index=True)
+    label: str
+    status: str
+    message: str = ""
+    order: int = Field(default=0, index=True)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
     metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

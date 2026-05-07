@@ -17,6 +17,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 from ai_workbench.core.provider_status import unload_model_for_profile
+from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
@@ -48,17 +49,33 @@ class ScriptStep:
         self.name = name
 
     async def __aenter__(self) -> "ScriptStep":
-        self.ctx.run_store.update_status(self.ctx.run_id, RunStatus.RUNNING, current_step=self.name)
-        self.ctx.event_bus.emit(
-            "run_step",
-            session_id=self.ctx.session.session_id,
-            run_id=self.ctx.run_id,
-            payload={"step": self.name},
-        )
+        self.step = self.ctx.run.start_step(self.name)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
+        if exc is None:
+            self.ctx.run.complete_step(self.step.step_id)
+        else:
+            self.ctx.run.fail_step(self.step.step_id, error_message=str(exc) or "Script step failed.")
         return False
+
+
+class ScriptRunLifecycleProxy:
+    def __init__(self, lifecycle: RunLifecycle, run_id: str) -> None:
+        self.lifecycle = lifecycle
+        self.run_id = run_id
+
+    def update_progress(self, message: str, current: int = None, total: int = None):
+        return self.lifecycle.update_progress(self.run_id, message=message, current=current, total=total)
+
+    def start_step(self, label: str, message: str = None):
+        return self.lifecycle.start_step(self.run_id, label=label, message=message)
+
+    def complete_step(self, step_id: str, message: str = None):
+        return self.lifecycle.complete_step(step_id, message=message)
+
+    def fail_step(self, step_id: str, error_code: str = None, error_message: str = None):
+        return self.lifecycle.fail_step(step_id, error_code=error_code, error_message=error_message)
 
 
 class CapabilityProxy:
@@ -234,6 +251,7 @@ class AgentContext:
         provider_profile_store: Any = None,
         llm_profile_store: Any = None,
         attachments: Optional[list[dict[str, Any]]] = None,
+        run_lifecycle: RunLifecycle = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -261,6 +279,7 @@ class AgentContext:
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
         self.waiting = False
+        self.run = ScriptRunLifecycleProxy(run_lifecycle, run_id) if run_lifecycle is not None else None
 
     async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None):
         resolved_output_type = output_type or type
@@ -344,6 +363,8 @@ class AgentContext:
         raise ValueError(f"Attachment not found: {attachment}")
 
     def step(self, name: str) -> ScriptStep:
+        if self.run is None:
+            raise RuntimeError("Run lifecycle is not configured.")
         return ScriptStep(self, name)
 
     def capability(self, name: str) -> CapabilityProxy:
@@ -383,6 +404,7 @@ class ScriptAgentRunner:
         provider_profile_store=None,
         llm_defaults_store=None,
         agent_config_store=None,
+        run_lifecycle: RunLifecycle = None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -397,6 +419,7 @@ class ScriptAgentRunner:
         self.provider_profile_store = provider_profile_store
         self.llm_defaults_store = llm_defaults_store
         self.agent_config_store = agent_config_store
+        self.run_lifecycle = run_lifecycle or RunLifecycle(run_store, event_bus)
 
     async def run(
         self,
@@ -458,20 +481,26 @@ class ScriptAgentRunner:
             metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config)["runtime"]
             run = self.run_store.update_metadata(run.run_id, metadata)
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
-        self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
+        self.run_lifecycle.start_run(run.run_id, stage="running")
 
+        resolving_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         try:
             script_run = self._load_script_run(agent)
         except Exception as exc:
+            self.run_lifecycle.fail_step(resolving_step.step_id, error_message=str(exc) or "Script loading failed.")
             return self._fail(run.run_id, session_id, str(exc) or "Script loading failed.")
+        self.run_lifecycle.complete_step(resolving_step.step_id)
 
         llm_config = None
         if _agent_uses_llm(agent):
+            model_step = self.run_lifecycle.start_step(run.run_id, "Resolving model")
             try:
                 llm_config = self._resolve_llm_model_config(agent, session_id)
                 self._record_llm_resolution(run.run_id, llm_config)
             except LLMConfigError as exc:
+                self.run_lifecycle.fail_step(model_step.step_id, error_code=exc.code, error_message=exc.message)
                 return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
+            self.run_lifecycle.complete_step(model_step.step_id)
 
         ctx = AgentContext(
             agent=agent,
@@ -494,22 +523,32 @@ class ScriptAgentRunner:
             provider_profile_store=self.provider_profile_store,
             llm_profile_store=self.llm_profile_store,
             attachments=attachments,
+            run_lifecycle=self.run_lifecycle,
         )
 
+        starting_step = self.run_lifecycle.start_step(run.run_id, "Starting script")
+        self.run_lifecycle.complete_step(starting_step.step_id)
+        running_step = self.run_lifecycle.start_step(run.run_id, "Running script")
         try:
             await script_run(ctx)
         except Exception as exc:
+            self.run_lifecycle.fail_step(running_step.step_id, error_message=str(exc) or "Script agent failed.")
             result = self._fail(run.run_id, session_id, str(exc) or "Script agent failed.")
             self._apply_model_lifecycle(ctx, lifecycle)
             return result
+        self.run_lifecycle.complete_step(running_step.step_id)
 
         final_run = self.run_store.get_run(run.run_id)
         if final_run.status == RunStatus.WAITING_FOR_USER:
             return RunResult(success=False, run_id=run.run_id, error="Waiting for user input.")
 
-        done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
-        self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
+        saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
+        self.run_lifecycle.complete_step(saving_step.step_id)
+        cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
         self._apply_model_lifecycle(ctx, lifecycle)
+        self.run_lifecycle.complete_step(cleanup_step.step_id)
+        done_run = self.run_lifecycle.complete_run(run.run_id)
+        self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         return RunResult(success=True, run_id=done_run.run_id, data=None)
 
     def _load_script_run(self, agent: AgentSchema):
@@ -561,11 +600,10 @@ class ScriptAgentRunner:
         self.run_store.update_metadata(run_id, metadata)
 
     def _fail(self, run_id: str, session_id: str, error: str, error_code: str = None) -> RunResult:
-        failed_run = self.run_store.update_status(run_id, RunStatus.FAILED, current_step="failed", error=error)
+        failed_run = self.run_lifecycle.fail_run(run_id, error_code, error)
         payload = {"error": error}
         if error_code:
             payload["error_code"] = error_code
-        self.event_bus.emit("run_failed", session_id=session_id, run_id=run_id, payload=payload)
         return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=error_code)
 
     def _apply_model_lifecycle(self, ctx: AgentContext, lifecycle) -> None:

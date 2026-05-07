@@ -44,3 +44,22 @@ def test_model_status_helper_has_four_ui_tones_and_unloaded_yellow() -> None:
     assert "MODEL_NOT_LOADED', tone: 'yellow'" in source
     assert "PROVIDER_UNREACHABLE', tone: 'red'" in source
     assert "READY', tone: 'green'" in source
+
+
+def test_chat_renders_run_steps_panel_and_step_statuses() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "RunStepsPanel" in source
+    assert "completed" in source
+    assert "failed" in source
+    assert "running" in source
+    assert "skipped" in source
+
+
+def test_store_merges_run_step_updates_by_step_id() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "run_step_created" in source
+    assert "run_step_updated" in source
+    assert "byId.set(step.step_id" in source
+    assert "upsertMessageRunStep" in source

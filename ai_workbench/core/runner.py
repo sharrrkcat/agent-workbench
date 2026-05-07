@@ -15,6 +15,7 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
 from ai_workbench.core.provider_status import MODEL_MISMATCH, MODEL_NOT_AVAILABLE, MODEL_STATUS_UNKNOWN, PROVIDER_UNREACHABLE, unload_model_for_profile
+from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
@@ -114,6 +115,7 @@ class AgentRunner:
         self.llm_defaults_store = llm_defaults_store
         self.app_settings_store = app_settings_store
         self.active_runs = active_runs or ActiveRunRegistry()
+        self.run_lifecycle = RunLifecycle(run_store, event_bus)
         self.active_llm_uses = ActiveLLMUseRegistry()
         self.script_runner = None
         if session_store is not None and runtime_registry is not None:
@@ -131,6 +133,7 @@ class AgentRunner:
                 provider_profile_store=provider_profile_store,
                 llm_defaults_store=llm_defaults_store,
                 agent_config_store=agent_config_store,
+                run_lifecycle=self.run_lifecycle,
             )
 
     async def run(
@@ -246,7 +249,7 @@ class AgentRunner:
                     "prefill": prefill or {},
                 },
             )
-        self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
+        self.run_lifecycle.start_run(run.run_id, stage="running")
         current_task = asyncio.current_task()
         if current_task is not None:
             self.active_runs.register(run.run_id, current_task)
@@ -267,9 +270,8 @@ class AgentRunner:
         except asyncio.CancelledError:
             try:
                 current_run = self.run_store.get_run(run.run_id)
-                if current_run.status in {RunStatus.PENDING, RunStatus.RUNNING, RunStatus.WAITING_FOR_USER}:
-                    cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
-                    self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
+                if current_run.status in {RunStatus.PENDING, RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.WAITING_FOR_USER}:
+                    self.run_lifecycle.cancel_run(run.run_id)
             except KeyError:
                 pass
             return RunResult(success=False, run_id=run.run_id, error="Run was cancelled.", data=None)
@@ -289,12 +291,15 @@ class AgentRunner:
         prefill: dict,
         run: RunSchema,
     ) -> RunResult:
+        resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
         lifecycle = resolved_model_lifecycle(agent, agent_config)
         run_metadata = dict(self.run_store.get_run(run.run_id).metadata)
         run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config)["runtime"]
         self.run_store.update_metadata(run.run_id, run_metadata)
+        self.run_lifecycle.complete_step(resolving_agent_step.step_id)
         context_policy = resolved_context_policy(agent, action, agent_config)
+        context_step = self.run_lifecycle.start_step(run.run_id, "Building context")
         try:
             context = self.context_builder.build(
                 session_id=session_id,
@@ -305,19 +310,10 @@ class AgentRunner:
             )
         except KeyError as exc:
             error = str(exc)
-            failed_run = self.run_store.update_status(
-                run.run_id,
-                RunStatus.FAILED,
-                current_step="failed",
-                error=error,
-            )
-            self.event_bus.emit(
-                "run_failed",
-                session_id=session_id,
-                run_id=failed_run.run_id,
-                payload={"error": error},
-            )
+            self.run_lifecycle.fail_step(context_step.step_id, error_message=error)
+            failed_run = self.run_lifecycle.fail_run(run.run_id, "CONTEXT_BUILD_FAILED", error)
             return RunResult(success=False, run_id=failed_run.run_id, error=error)
+        self.run_lifecycle.complete_step(context_step.step_id)
 
         messages = []
         prompt = resolved_prompt(agent, agent_config)
@@ -331,7 +327,10 @@ class AgentRunner:
         llm_use_key = None
         llm_started = False
         cleanup_done = False
+        resolving_model_step = None
+        calling_llm_step = None
         try:
+            resolving_model_step = self.run_lifecycle.start_step(run.run_id, "Resolving model")
             llm_config = self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
             file_context = _prepare_file_context_messages(
@@ -352,8 +351,10 @@ class AgentRunner:
             self._record_llm_resolution(run.run_id, llm_config)
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
+            self.run_lifecycle.complete_step(resolving_model_step.step_id)
             llm_use_key = self._begin_llm_use(llm_config)
             llm_started = True
+            calling_llm_step = self.run_lifecycle.start_step(run.run_id, "Calling LLM", message="Waiting for model response...")
             if _streaming_enabled(llm_config):
                 cleanup_done = True
                 return await self._run_prompt_agent_streaming(
@@ -372,25 +373,18 @@ class AgentRunner:
                     file_context=file_context["metadata"],
                     lifecycle=lifecycle,
                     llm_use_key=llm_use_key,
+                    calling_llm_step_id=calling_llm_step.step_id,
                 )
             metrics_recorder = LLMMetricsRecorder(streamed=False)
             raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
             llm_result = _extract_llm_result(raw_content)
             content = llm_result.content
             llm_metrics = metrics_recorder.complete(content, llm_result.usage)
+            self.run_lifecycle.complete_step(calling_llm_step.step_id)
         except LLMConfigError as exc:
-            failed_run = self.run_store.update_status(
-                run.run_id,
-                RunStatus.FAILED,
-                current_step="failed",
-                error=exc.message,
-            )
-            self.event_bus.emit(
-                "run_failed",
-                session_id=session_id,
-                run_id=failed_run.run_id,
-                payload={"error": exc.message, "error_code": exc.code},
-            )
+            if resolving_model_step is not None:
+                self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=exc.code, error_message=exc.message)
+            failed_run = self.run_lifecycle.fail_run(run.run_id, exc.code, exc.message)
             return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
         except asyncio.CancelledError:
             if llm_started and not cleanup_done and llm_config is not None:
@@ -400,27 +394,19 @@ class AgentRunner:
         except Exception as exc:
             friendly = _friendly_llm_error(exc, locals().get("llm_config", None))
             error = friendly["message"]
-            failed_run = self.run_store.update_status(
-                run.run_id,
-                RunStatus.FAILED,
-                current_step="failed",
-                error=error,
-            )
+            if calling_llm_step is not None:
+                self.run_lifecycle.fail_step(calling_llm_step.step_id, error_code=friendly["code"], error_message=error)
+            elif resolving_model_step is not None:
+                self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=friendly["code"], error_message=error)
+            failed_run = self.run_lifecycle.fail_run(run.run_id, friendly["code"], error)
             self._record_run_error_metadata(run.run_id, friendly)
-            self.event_bus.emit(
-                "run_failed",
-                session_id=session_id,
-                run_id=failed_run.run_id,
-                payload={"error": error, "error_code": friendly["code"], "details": friendly.get("details", {})},
-            )
             if llm_started and not cleanup_done and llm_config is not None:
                 self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, failed_run.run_id, session_id)
                 cleanup_done = True
             return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         if self._is_cancelled(run.run_id):
-            cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
-            self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
+            cancelled_run = self.run_lifecycle.cancel_run(run.run_id)
             return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", data=None)
 
         original_user_message_id = self._find_original_user_message_id(source_message_id)
@@ -441,6 +427,7 @@ class AgentRunner:
         if llm_result.reasoning_content:
             metadata["reasoning_content"] = llm_result.reasoning_content
         self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"], file_context["metadata"], llm_raw=llm_result.raw)
+        saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
@@ -457,11 +444,12 @@ class AgentRunner:
         if message_actions:
             message = message.model_copy(update={"available_actions": message_actions})
             self.message_store.update_message(message)
-        done_run = self.run_store.update_status(
-            run.run_id,
-            RunStatus.DONE,
-            current_step="done",
-        )
+        self.run_lifecycle.complete_step(saving_step.step_id)
+        cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
+        if llm_started and not cleanup_done:
+            self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
+        self.run_lifecycle.complete_step(cleanup_step.step_id)
+        done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
             "run_metrics",
@@ -476,9 +464,6 @@ class AgentRunner:
             message_id=message.message_id,
             payload={"available_actions": message.available_actions},
         )
-
-        if llm_started and not cleanup_done:
-            self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, done_run.run_id, session_id)
 
         return RunResult(success=True, run_id=done_run.run_id, data=content)
 
@@ -499,6 +484,7 @@ class AgentRunner:
         file_context: dict,
         lifecycle,
         llm_use_key: tuple[str, str] | None,
+        calling_llm_step_id: str,
     ) -> RunResult:
         draft_message_id = f"draft-{run.run_id}"
         resolution = _public_llm_resolution(llm_config)
@@ -586,7 +572,8 @@ class AgentRunner:
                     message_id=message.message_id,
                     payload={"available_actions": message.available_actions},
                 )
-            cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
+            self.run_lifecycle.fail_step(calling_llm_step_id, error_code="RUN_CANCELLED", error_message="Run was cancelled.")
+            cancelled_run = self.run_lifecycle.cancel_run(run.run_id)
             self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context, llm_raw=actual_raw)
             self.event_bus.emit(
                 "run_metrics",
@@ -594,26 +581,21 @@ class AgentRunner:
                 run_id=run.run_id,
                 payload={"metrics": llm_metrics},
             )
-            self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
             self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, cancelled_run.run_id, session_id)
             return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", data=content)
         except Exception as exc:
             friendly = _friendly_llm_error(exc, llm_config)
             error = friendly["message"]
-            failed_run = self.run_store.update_status(run.run_id, RunStatus.FAILED, current_step="failed", error=error)
+            self.run_lifecycle.fail_step(calling_llm_step_id, error_code=friendly["code"], error_message=error)
+            failed_run = self.run_lifecycle.fail_run(run.run_id, friendly["code"], error)
             self._record_run_error_metadata(run.run_id, friendly)
-            self.event_bus.emit(
-                "run_failed",
-                session_id=session_id,
-                run_id=failed_run.run_id,
-                message_id=draft_message_id,
-                payload={"error": error, "error_code": friendly["code"], "details": friendly.get("details", {})},
-            )
             self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, failed_run.run_id, session_id)
             return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         content = "".join(content_parts)
         llm_metrics = metrics_recorder.complete(content, usage)
+        self.run_lifecycle.complete_step(calling_llm_step_id)
+        saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
         message = self._persist_prompt_message(
             agent=agent,
             action_id=action_id,
@@ -632,8 +614,12 @@ class AgentRunner:
             reasoning_content="".join(reasoning_parts),
             llm_raw=actual_raw,
         )
-        done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
+        self.run_lifecycle.complete_step(saving_step.step_id)
         self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context, llm_raw=actual_raw)
+        cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
+        self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
+        self.run_lifecycle.complete_step(cleanup_step.step_id)
+        done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
             "run_metrics",
@@ -655,7 +641,6 @@ class AgentRunner:
             message_id=message.message_id,
             payload={"available_actions": message.available_actions},
         )
-        self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, done_run.run_id, session_id)
         return RunResult(success=True, run_id=done_run.run_id, data=content)
 
     def _persist_prompt_message(
@@ -783,7 +768,8 @@ class AgentRunner:
 
     def _is_cancelled(self, run_id: str) -> bool:
         try:
-            return self.run_store.get_run(run_id).status == RunStatus.CANCELLED
+            run = self.run_store.get_run(run_id)
+            return run.status in {RunStatus.CANCELLED, RunStatus.CANCELLING} or run.cancel_requested
         except KeyError:
             return False
 

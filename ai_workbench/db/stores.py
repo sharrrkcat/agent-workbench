@@ -9,7 +9,7 @@ from sqlmodel import select
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import MessageSchema
-from ai_workbench.core.schema.run import RunSchema, RunStatus
+from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch
@@ -22,6 +22,7 @@ from ai_workbench.db.models import (
     ProviderProfileRecord,
     RunEventRecord,
     RunRecord,
+    RunStepRecord,
     SessionRecord,
 )
 
@@ -320,16 +321,60 @@ class SqlRunStore:
         status: RunStatus,
         current_step: Optional[str] = None,
         error: Optional[str] = None,
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+        cancel_requested: Optional[bool] = None,
     ) -> RunSchema:
         with DbSession(self.engine) as session:
             record = session.get(RunRecord, run_id)
             if record is None:
                 raise KeyError(f"unknown run id: {run_id}")
             record.status = status.value if isinstance(status, RunStatus) else str(status)
+            now = datetime.utcnow()
+            if record.status == RunStatus.RUNNING.value and record.started_at is None:
+                record.started_at = now
+            if record.status in {RunStatus.DONE.value, RunStatus.FAILED.value, RunStatus.CANCELLED.value, RunStatus.INTERRUPTED.value}:
+                record.finished_at = now
             if current_step is not None:
                 record.current_step = current_step
+                record.stage = current_step
             if error is not None:
                 record.error = error
+                record.error_message = error
+            if error_code is not None:
+                record.error_code = error_code
+            if error_message is not None:
+                record.error_message = error_message
+                record.error = error_message
+            if cancel_requested is not None:
+                record.cancel_requested = cancel_requested
+            record.updated_at = now
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _run_from_record(record)
+
+    def update_progress(
+        self,
+        run_id: str,
+        stage: Optional[str] = None,
+        message: Optional[str] = None,
+        current: Optional[int] = None,
+        total: Optional[int] = None,
+    ) -> RunSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(RunRecord, run_id)
+            if record is None:
+                raise KeyError(f"unknown run id: {run_id}")
+            if stage is not None:
+                record.stage = stage
+                record.current_step = stage
+            if message is not None:
+                record.progress_message = message
+            if current is not None:
+                record.progress_current = current
+            if total is not None:
+                record.progress_total = total
             record.updated_at = datetime.utcnow()
             session.add(record)
             session.commit()
@@ -360,6 +405,9 @@ class SqlRunStore:
 
     def delete_session(self, session_id: str) -> None:
         with DbSession(self.engine) as session:
+            run_ids = [record.run_id for record in session.exec(select(RunRecord).where(RunRecord.session_id == session_id)).all()]
+            if run_ids:
+                session.exec(delete(RunStepRecord).where(RunStepRecord.run_id.in_(run_ids)))
             session.exec(delete(RunRecord).where(RunRecord.session_id == session_id))
             session.commit()
 
@@ -380,6 +428,81 @@ class SqlRunStore:
                 cancelled.append(_run_from_record(record))
             session.commit()
         return cancelled
+
+    def create_step(
+        self,
+        run_id: str,
+        label: str,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        status: RunStepStatus = RunStepStatus.RUNNING,
+    ) -> RunStepSchema:
+        now = datetime.utcnow()
+        status_value = status.value if isinstance(status, RunStepStatus) else str(status)
+        with DbSession(self.engine) as session:
+            if session.get(RunRecord, run_id) is None:
+                raise KeyError(f"unknown run id: {run_id}")
+            order = len(session.exec(select(RunStepRecord).where(RunStepRecord.run_id == run_id)).all())
+            record = RunStepRecord(
+                step_id=str(uuid4()),
+                run_id=run_id,
+                label=label,
+                status=status_value,
+                message=message or "",
+                order=order,
+                started_at=now if status_value == RunStepStatus.RUNNING.value else None,
+                metadata_json=_dumps(metadata or {}),
+            )
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _run_step_from_record(record)
+
+    def update_step(
+        self,
+        step_id: str,
+        status: Optional[RunStepStatus] = None,
+        message: Optional[str] = None,
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> RunStepSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(RunStepRecord, step_id)
+            if record is None:
+                raise KeyError(f"unknown run step id: {step_id}")
+            now = datetime.utcnow()
+            if status is not None:
+                record.status = status.value if isinstance(status, RunStepStatus) else str(status)
+                if record.status == RunStepStatus.RUNNING.value and record.started_at is None:
+                    record.started_at = now
+                if record.status in {RunStepStatus.COMPLETED.value, RunStepStatus.FAILED.value, RunStepStatus.SKIPPED.value}:
+                    record.finished_at = now
+            if message is not None:
+                record.message = message
+            if error_code is not None:
+                record.error_code = error_code
+            if error_message is not None:
+                record.error_message = error_message
+            if metadata is not None:
+                record.metadata_json = _dumps({**_loads(record.metadata_json, {}), **metadata})
+            record.updated_at = now
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _run_step_from_record(record)
+
+    def get_step(self, step_id: str) -> RunStepSchema:
+        with DbSession(self.engine) as session:
+            record = session.get(RunStepRecord, step_id)
+            if record is None:
+                raise KeyError(f"unknown run step id: {step_id}")
+            return _run_step_from_record(record)
+
+    def list_steps(self, run_id: str) -> List[RunStepSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(RunStepRecord).where(RunStepRecord.run_id == run_id).order_by(RunStepRecord.order, RunStepRecord.created_at)).all()
+            return [_run_step_from_record(record) for record in records]
 
     def interrupt_unfinished_runs(self) -> List[str]:
         interrupted: List[str] = []
@@ -767,7 +890,34 @@ def _run_from_record(record: RunRecord) -> RunSchema:
         session_id=record.session_id,
         status=RunStatus(record.status),
         current_step=record.current_step,
+        stage=getattr(record, "stage", "") or "",
+        progress_message=getattr(record, "progress_message", "") or "",
+        progress_current=getattr(record, "progress_current", None),
+        progress_total=getattr(record, "progress_total", None),
+        cancel_requested=bool(getattr(record, "cancel_requested", False)),
+        started_at=getattr(record, "started_at", None),
+        finished_at=getattr(record, "finished_at", None),
+        error_code=getattr(record, "error_code", None),
+        error_message=getattr(record, "error_message", None),
         error=record.error,
+        metadata=_loads(record.metadata_json, {}),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _run_step_from_record(record: RunStepRecord) -> RunStepSchema:
+    return RunStepSchema(
+        step_id=record.step_id,
+        run_id=record.run_id,
+        label=record.label,
+        status=RunStepStatus(record.status),
+        message=record.message,
+        order=record.order,
+        started_at=record.started_at,
+        finished_at=record.finished_at,
+        error_code=record.error_code,
+        error_message=record.error_message,
         metadata=_loads(record.metadata_json, {}),
         created_at=record.created_at,
         updated_at=record.updated_at,

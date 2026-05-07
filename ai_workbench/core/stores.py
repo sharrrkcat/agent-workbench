@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
-from ai_workbench.core.schema.run import RunSchema, RunStatus
+from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 
@@ -185,6 +185,8 @@ class RunStore:
     def __init__(self) -> None:
         self._runs: Dict[str, RunSchema] = {}
         self._session_run_ids: Dict[str, List[str]] = {}
+        self._steps: Dict[str, RunStepSchema] = {}
+        self._run_step_ids: Dict[str, List[str]] = {}
 
     def create_run(
         self,
@@ -218,13 +220,52 @@ class RunStore:
         status: RunStatus,
         current_step: Optional[str] = None,
         error: Optional[str] = None,
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+        cancel_requested: Optional[bool] = None,
     ) -> RunSchema:
         run = self.get_run(run_id)
         updates: Dict[str, Any] = {"status": status, "updated_at": datetime.utcnow()}
+        if status == RunStatus.RUNNING and run.started_at is None:
+            updates["started_at"] = updates["updated_at"]
+        if status in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
+            updates["finished_at"] = updates["updated_at"]
         if current_step is not None:
             updates["current_step"] = current_step
+            updates["stage"] = current_step
         if error is not None:
             updates["error"] = error
+            updates["error_message"] = error
+        if error_code is not None:
+            updates["error_code"] = error_code
+        if error_message is not None:
+            updates["error_message"] = error_message
+            updates["error"] = error_message
+        if cancel_requested is not None:
+            updates["cancel_requested"] = cancel_requested
+        updated = run.model_copy(update=updates)
+        self._runs[run_id] = updated
+        return updated
+
+    def update_progress(
+        self,
+        run_id: str,
+        stage: Optional[str] = None,
+        message: Optional[str] = None,
+        current: Optional[int] = None,
+        total: Optional[int] = None,
+    ) -> RunSchema:
+        run = self.get_run(run_id)
+        updates: Dict[str, Any] = {"updated_at": datetime.utcnow()}
+        if stage is not None:
+            updates["stage"] = stage
+            updates["current_step"] = stage
+        if message is not None:
+            updates["progress_message"] = message
+        if current is not None:
+            updates["progress_current"] = current
+        if total is not None:
+            updates["progress_total"] = total
         updated = run.model_copy(update=updates)
         self._runs[run_id] = updated
         return updated
@@ -245,6 +286,8 @@ class RunStore:
         run_ids = self._session_run_ids.pop(session_id, [])
         for run_id in run_ids:
             self._runs.pop(run_id, None)
+            for step_id in self._run_step_ids.pop(run_id, []):
+                self._steps.pop(step_id, None)
 
     def cancel_runs(self, run_ids: List[str], reason: str = "Messages were removed.") -> List[RunSchema]:
         cancelled: List[RunSchema] = []
@@ -258,6 +301,75 @@ class RunStore:
             self._runs[run_id] = updated
             cancelled.append(updated)
         return cancelled
+
+    def create_step(
+        self,
+        run_id: str,
+        label: str,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        status: RunStepStatus = RunStepStatus.RUNNING,
+    ) -> RunStepSchema:
+        self.get_run(run_id)
+        order = len(self._run_step_ids.get(run_id, []))
+        now = datetime.utcnow()
+        step = RunStepSchema(
+            step_id=str(uuid4()),
+            run_id=run_id,
+            label=label,
+            status=status,
+            message=message or "",
+            order=order,
+            started_at=now if status == RunStepStatus.RUNNING else None,
+            metadata=metadata or {},
+            created_at=now,
+            updated_at=now,
+        )
+        self._steps[step.step_id] = step
+        self._run_step_ids.setdefault(run_id, []).append(step.step_id)
+        return step
+
+    def update_step(
+        self,
+        step_id: str,
+        status: Optional[RunStepStatus] = None,
+        message: Optional[str] = None,
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> RunStepSchema:
+        try:
+            step = self._steps[step_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown run step id: {step_id}") from exc
+        now = datetime.utcnow()
+        updates: Dict[str, Any] = {"updated_at": now}
+        if status is not None:
+            updates["status"] = status
+            if status == RunStepStatus.RUNNING and step.started_at is None:
+                updates["started_at"] = now
+            if status in {RunStepStatus.COMPLETED, RunStepStatus.FAILED, RunStepStatus.SKIPPED}:
+                updates["finished_at"] = now
+        if message is not None:
+            updates["message"] = message
+        if error_code is not None:
+            updates["error_code"] = error_code
+        if error_message is not None:
+            updates["error_message"] = error_message
+        if metadata is not None:
+            updates["metadata"] = {**step.metadata, **metadata}
+        updated = step.model_copy(update=updates)
+        self._steps[step_id] = updated
+        return updated
+
+    def get_step(self, step_id: str) -> RunStepSchema:
+        try:
+            return self._steps[step_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown run step id: {step_id}") from exc
+
+    def list_steps(self, run_id: str) -> List[RunStepSchema]:
+        return [self._steps[step_id] for step_id in self._run_step_ids.get(run_id, [])]
 
 
 class RunEventStore:

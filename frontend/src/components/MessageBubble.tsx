@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, FileText, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message } from '../types';
+import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import type { Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message, Run, RunStep } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -46,6 +46,8 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
+  const runSteps = messageRunSteps(message);
+  const messageRun = message.run;
   if (!editing && !message.client_status && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
@@ -103,6 +105,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
               <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
+              <RunStepsPanel run={messageRun} steps={runSteps} />
             </>
           )}
           {message.client_status === 'pending' ? (
@@ -193,6 +196,94 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
   );
 }
 
+function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps: RunStep[]; forceExpanded?: boolean }) {
+  const cancelActiveRun = useWorkbenchStore((state) => state.cancelActiveRun);
+  const activeRunId = useWorkbenchStore((state) => state.activeRunId);
+  const active = run ? isActiveRunStatus(run.status) : steps.some((step) => step.status === 'running');
+  const failed = run?.status === 'FAILED' || steps.some((step) => step.status === 'failed');
+  const [expanded, setExpanded] = useState(forceExpanded || active || failed);
+
+  useEffect(() => {
+    if (forceExpanded || active || failed) setExpanded(true);
+  }, [active, failed, forceExpanded]);
+
+  if (!steps.length && !run) return null;
+  const duration = runDurationLabel(run, steps);
+  const summary = steps.length ? `${steps.length} steps${duration ? ` · ${duration}` : ''}` : runStatusLabel(run?.status);
+  const canCancel = Boolean(run?.run_id && (activeRunId === run.run_id || active) && !run.cancel_requested && run.status !== 'CANCELLING');
+
+  return (
+    <section className={`run-steps-panel ${expanded ? 'expanded' : 'collapsed'} ${failed ? 'failed' : ''}`}>
+      <div className="run-steps-header">
+        <button type="button" onClick={() => setExpanded((current) => !current)} aria-expanded={expanded}>
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span>运行步骤：{summary}</span>
+        </button>
+        {run?.status === 'CANCELLING' ? <small>Cancelling</small> : null}
+        {canCancel ? (
+          <button type="button" className="run-steps-stop" onClick={() => void cancelActiveRun()}>
+            Stop
+          </button>
+        ) : null}
+      </div>
+      {expanded && steps.length ? (
+        <ol className="run-step-list">
+          {steps.map((step) => (
+            <li className={`run-step-item ${step.status}`} key={step.step_id}>
+              <RunStepIcon status={step.status} />
+              <span>
+                <strong>{step.label}</strong>
+                {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+}
+
+function RunStepIcon({ status }: { status: string }) {
+  if (status === 'completed') return <Check size={13} />;
+  if (status === 'failed') return <XCircle size={13} />;
+  if (status === 'running') return <Loader2 size={13} className="spin" />;
+  if (status === 'skipped') return <Minus size={13} />;
+  return <Circle size={12} />;
+}
+
+function messageRunSteps(message: Message): RunStep[] {
+  return [...(message.run_steps || message.run?.steps || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+function stepMessage(step: RunStep): string {
+  if (step.status === 'failed') return step.error_message || step.message || 'failed';
+  return step.message || '';
+}
+
+function isActiveRunStatus(status: string): boolean {
+  return ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(status);
+}
+
+function runStatusLabel(status?: string): string {
+  if (!status) return '';
+  return status.toLowerCase().replace(/_/g, ' ');
+}
+
+function runDurationLabel(run: Run | undefined, steps: RunStep[]): string {
+  const start = run?.started_at || steps.find((step) => step.started_at)?.started_at || run?.created_at;
+  const end = run?.finished_at || run?.updated_at;
+  if (!start || !end) return '';
+  const ms = parseDateMs(end) - parseDateMs(start);
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  if (ms < 1000) return '<1s';
+  return `${Math.round(ms / 1000)}s`;
+}
+
+function parseDateMs(value: string): number {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
 function MessageHeader({
   message,
   agent,
@@ -239,6 +330,7 @@ function InlineErrorBlock({ message }: { message: Message }) {
   const [copied, setCopied] = useState(false);
   const operationPending = pendingMessageActionId === message.message_id;
   const canDismiss = message.message_id.startsWith('run-error:') || message.metadata?.notification === true;
+  const runSteps = messageRunSteps(message);
 
   async function copyNotification() {
     try {
@@ -260,6 +352,7 @@ function InlineErrorBlock({ message }: { message: Message }) {
             <p>{error.message || 'The run failed.'}</p>
           </div>
         </div>
+        <RunStepsPanel run={message.run} steps={runSteps} forceExpanded />
         <div className="message-hover-actions system-notification-actions" aria-label="Notification actions">
           <button type="button" onClick={() => void copyNotification()} disabled={operationPending} title="Copy">
             {copied ? <Check size={13} /> : <Copy size={13} />}

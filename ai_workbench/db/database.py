@@ -36,6 +36,7 @@ def init_db(engine) -> None:
     ensure_session_model_columns(engine)
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
+    ensure_run_lifecycle_columns(engine)
     migrate_llm_provider_profiles(engine)
     ensure_schema_version(engine)
 
@@ -73,6 +74,30 @@ def ensure_llm_profile_columns(engine) -> None:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(llm_profiles)").fetchall()}
         if "provider_profile_id" not in columns:
             connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN provider_profile_id VARCHAR"))
+
+
+def ensure_run_lifecycle_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "runrecord" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(runrecord)").fetchall()}
+        additions = {
+            "stage": "VARCHAR DEFAULT ''",
+            "progress_message": "VARCHAR DEFAULT ''",
+            "progress_current": "INTEGER",
+            "progress_total": "INTEGER",
+            "cancel_requested": "BOOLEAN DEFAULT 0",
+            "started_at": "DATETIME",
+            "finished_at": "DATETIME",
+            "error_code": "VARCHAR",
+            "error_message": "VARCHAR",
+        }
+        for column, ddl in additions.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE runrecord ADD COLUMN {column} {ddl}"))
 
 
 def migrate_llm_provider_profiles(engine) -> None:

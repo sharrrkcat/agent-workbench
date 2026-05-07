@@ -1585,6 +1585,135 @@ input:disabled {
   font-size: 12px;
 }
 
+.run-steps-panel {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+}
+
+.system-notification-stack .run-steps-panel {
+  width: min(520px, 100%);
+  margin-top: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.run-steps-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-steps-header > button:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 690;
+}
+
+.run-steps-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-steps-header small {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.run-steps-stop {
+  min-height: 24px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.run-step-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-step-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.run-step-item > svg {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.44);
+}
+
+.run-step-item.completed > svg {
+  color: #86efac;
+}
+
+.run-step-item.running > svg {
+  color: #93c5fd;
+}
+
+.run-step-item.failed > svg {
+  color: #fca5a5;
+}
+
+.run-step-item.skipped > svg {
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.run-step-item span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.run-step-item strong,
+.run-step-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-step-item strong {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-weight: 640;
+}
+
+.run-step-item.failed strong,
+.run-step-item.failed small {
+  color: #fca5a5;
+}
+
+.run-step-item small {
+  color: rgba(255, 255, 255, 0.44);
+  font-size: 11px;
+}
+
 .message-metrics {
   flex: 0 1 auto;
   min-width: 0;

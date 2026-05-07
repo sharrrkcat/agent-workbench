@@ -419,6 +419,8 @@ export type Message = {
   output_type: string;
   parent_message_id?: string | null;
   metadata?: Record<string, unknown>;
+  run?: Run;
+  run_steps?: RunStep[];
   available_actions: AvailableAction[];
   created_at: string;
   client_status?: 'pending' | 'failed' | 'streaming';
@@ -456,7 +458,33 @@ export type Run = {
   target_id: string;
   action_id?: string | null;
   current_step: string;
+  stage?: string;
+  progress_message?: string;
+  progress_current?: number | null;
+  progress_total?: number | null;
+  cancel_requested?: boolean;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
   error?: string | null;
+  metadata?: Record<string, unknown>;
+  steps?: RunStep[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type RunStep = {
+  step_id: string;
+  run_id: string;
+  label: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
+  message?: string;
+  order: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;

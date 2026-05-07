@@ -19,6 +19,7 @@ import type {
   Message,
   Run,
   RunEvent,
+  RunStep,
   HealthDetails,
   RuntimeEvent,
   Session,
@@ -496,6 +497,30 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ activeRunId: event.run_id, sending: true });
       return;
     }
+    if ((event.type === 'run_updated' || event.type === 'run_created' || event.type === 'run_cancel_requested' || event.type === 'run_completed') && event.run_id) {
+      const run = parseRunPayload(event.payload.run) || runFromEvent(event, session.session_id);
+      const runs = upsertRun(get().runs, run);
+      set({
+        runs,
+        messages: attachRunToMessages(get().messages, run),
+        sending: isRunActive(run.status) ? true : get().sending,
+        activeRunId: isRunActive(run.status) ? run.run_id : get().activeRunId,
+      });
+      if (event.type === 'run_completed') {
+        set({ sending: false, activeRunId: undefined });
+      }
+      return;
+    }
+    if ((event.type === 'run_step_created' || event.type === 'run_step_updated') && event.run_id) {
+      const step = parseRunStepPayload(event.payload.step);
+      if (!step) return;
+      const runs = upsertRunStep(get().runs, step);
+      set({
+        runs,
+        messages: upsertMessageRunStep(get().messages, step, runs),
+      });
+      return;
+    }
     if (event.type === 'message_started' && event.run_id) {
       const draft = createDraftAssistantMessage(session.session_id, event);
       set({
@@ -529,7 +554,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         code,
         message: typeof event.payload.error === 'string' ? event.payload.error : 'Run failed.',
       };
-      const runs = upsertRun(get().runs, failedRunFromEvent(event, session.session_id, error));
+      const runs = upsertRun(get().runs, parseRunPayload(event.payload.run) || failedRunFromEvent(event, session.session_id, error));
       set({
         sending: false,
         activeRunId: undefined,
@@ -539,9 +564,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       return;
     }
     if (event.type === 'run_cancelled') {
+      const run = parseRunPayload(event.payload.run);
+      const runs = run ? upsertRun(get().runs, run) : get().runs;
       set({
         sending: false,
         activeRunId: undefined,
+        runs,
         messages: markDraftInterrupted(get().messages, event.run_id || ''),
       });
       return;
@@ -762,6 +790,8 @@ function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): M
         command_name: null,
         action_id: run.action_id,
         run_id: run.run_id,
+        run,
+        run_steps: run.steps || [],
         output_type: 'error',
         parent_message_id: parentMessageId,
         metadata: { synthetic: true, notification: true, severity: 'error', run_kind: run.kind, target_id: run.target_id },
@@ -984,13 +1014,77 @@ function contentToDraftText(content: unknown): string {
 }
 
 function runningRunId(runs: Run[]): string | undefined {
-  return [...runs].reverse().find((run) => run.status === 'RUNNING' || run.status === 'PENDING')?.run_id;
+  return [...runs].reverse().find((run) => isRunActive(run.status))?.run_id;
+}
+
+function isRunActive(status: string): boolean {
+  return ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(status);
 }
 
 function upsertRun(runs: Run[], run: Run): Run[] {
   const index = runs.findIndex((item) => item.run_id === run.run_id);
   if (index === -1) return [...runs, run];
-  return runs.map((item, itemIndex) => (itemIndex === index ? { ...item, ...run, metadata: { ...(item.metadata || {}), ...(run.metadata || {}) } } : item));
+  return runs.map((item, itemIndex) =>
+    itemIndex === index
+      ? { ...item, ...run, steps: mergeRunSteps(item.steps || [], run.steps || []), metadata: { ...(item.metadata || {}), ...(run.metadata || {}) } }
+      : item,
+  );
+}
+
+function upsertRunStep(runs: Run[], step: RunStep): Run[] {
+  const existing = runs.find((run) => run.run_id === step.run_id);
+  if (!existing) {
+    return runs;
+  }
+  return runs.map((run) => (run.run_id === step.run_id ? { ...run, steps: mergeRunSteps(run.steps || [], [step]) } : run));
+}
+
+function mergeRunSteps(left: RunStep[], right: RunStep[]): RunStep[] {
+  const byId = new Map<string, RunStep>();
+  for (const step of [...left, ...right]) {
+    if (!step.step_id) continue;
+    byId.set(step.step_id, { ...(byId.get(step.step_id) || {}), ...step });
+  }
+  return [...byId.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || parseServerTime(a.created_at).getTime() - parseServerTime(b.created_at).getTime());
+}
+
+function attachRunToMessages(messages: Message[], run: Run): Message[] {
+  return messages.map((message) => (message.run_id === run.run_id ? { ...message, run, run_steps: mergeRunSteps(message.run_steps || [], run.steps || []) } : message));
+}
+
+function upsertMessageRunStep(messages: Message[], step: RunStep, runs: Run[]): Message[] {
+  const run = runs.find((item) => item.run_id === step.run_id);
+  return messages.map((message) => {
+    if (message.run_id !== step.run_id) return message;
+    return { ...message, run: run || message.run, run_steps: mergeRunSteps(message.run_steps || [], [step]) };
+  });
+}
+
+function parseRunPayload(value: unknown): Run | null {
+  if (!isRecord(value) || typeof value.run_id !== 'string') return null;
+  return value as Run;
+}
+
+function parseRunStepPayload(value: unknown): RunStep | null {
+  if (!isRecord(value) || typeof value.step_id !== 'string' || typeof value.run_id !== 'string') return null;
+  return value as RunStep;
+}
+
+function runFromEvent(event: RuntimeEvent, sessionId: string): Run {
+  const existing = event.run_id ? getCurrentRun(event.run_id) : undefined;
+  return {
+    run_id: event.run_id || fallbackRunId(sessionId, event.created_at, event.type),
+    session_id: sessionId,
+    kind: existing?.kind || 'agent',
+    status: event.type === 'run_completed' ? 'DONE' : event.type === 'run_cancel_requested' ? 'CANCELLING' : 'RUNNING',
+    target_id: existing?.target_id || stringPayload(event.payload, 'target_id') || 'unknown',
+    action_id: existing?.action_id || stringPayload(event.payload, 'action_id') || null,
+    current_step: stringPayload(event.payload, 'stage') || existing?.current_step || '',
+    metadata: existing?.metadata || {},
+    steps: existing?.steps || [],
+    created_at: existing?.created_at || event.created_at,
+    updated_at: event.created_at,
+  };
 }
 
 function dedupeRuns(runs: Run[]): Run[] {

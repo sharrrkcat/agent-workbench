@@ -354,7 +354,17 @@ Runs also have a lightweight event timeline:
 GET /api/runs/{run_id}/events
 ```
 
-The timeline records events such as `run_started`, `run_step`, `action_invoked`, `message_done`, `run_done`, `run_failed`, and `run_cancelled`. The frontend Runs panel can expand a run to show this timeline.
+The timeline records events such as `run_started`, `run_step_created`, `run_step_updated`, `action_invoked`, `message_done`, `run_done`, `run_failed`, and `run_cancelled`. The frontend Runs panel can expand a run to show this timeline.
+
+## Long Task Lifecycle MVP
+
+Agent runs persist a lightweight lifecycle record that the chat UI renders as a compact step timeline. A run records status, current stage, progress message, cancellation state, timestamps, error details, and metadata. Run steps are stored separately with stable ordering, status, message, timestamps, error details, and metadata.
+
+Prompt agents record the default path: Resolving agent, Building context, Resolving model, Calling LLM, Saving response, and Cleanup. Script agents record Resolving agent, Starting script, Running script, Saving response, and Cleanup; scripts can optionally report progress or custom steps through `ctx.run`.
+
+`POST /api/runs/{run_id}/cancel` marks active runs as cancelling, requests cancellation from the active task registry, and leaves completed or failed runs unchanged. WebSocket events include run and step updates (`run_updated`, `run_step_created`, `run_step_updated`, `run_cancel_requested`, `run_completed`, `run_failed`) so chat can update the timeline live. Session message loads include related run and step payloads so completed, failed, or refreshed runs can still display their timeline.
+
+This MVP intentionally does not include ComfyUI integration, a full Diagnostics/Run Trace page, a background job queue, priority/retry/pause/resume controls, or complex command diff UI.
 
 API errors use a structured shape:
 

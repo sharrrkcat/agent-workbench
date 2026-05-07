@@ -1688,6 +1688,29 @@ def test_cancel_run_records_run_cancelled_event() -> None:
     assert "run_cancelled" in [event["type"] for event in response.json()]
 
 
+def test_session_messages_include_run_steps_after_prompt_run() -> None:
+    client = make_client(response="hello")
+    session = create_session(client)
+
+    result = post_message(client, session["session_id"], "@chat hello")
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    assistant = next(message for message in messages if message.get("run_id") == result["run"]["run_id"])
+
+    assert assistant["run"]["status"] == "DONE"
+    assert [step["label"] for step in assistant["run_steps"]][-2:] == ["Saving response", "Cleanup"]
+
+
+def test_run_steps_endpoint_returns_persisted_steps() -> None:
+    client = make_client(response="hello")
+    session = create_session(client)
+    result = post_message(client, session["session_id"], "@chat hello")
+
+    response = client.get(f"/api/runs/{result['run']['run_id']}/steps")
+
+    assert response.status_code == 200
+    assert response.json()[0]["label"] == "Resolving agent"
+
+
 def test_cancel_waiting_run_clears_session_waiting_run() -> None:
     app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
     client = TestClient(app)

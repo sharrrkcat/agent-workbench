@@ -70,6 +70,8 @@ def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_stat
         if not _is_visible_failed_run_notification(run):
             continue
         notification = _notification_from_failed_run(run, message_by_id)
+        notification["run"] = run.model_dump()
+        notification["run_steps"] = [step.model_dump() for step in state.runs.list_steps(run.run_id)]
         parent_message_id = notification["metadata"].get("parent_message_id")
         sequence = message_sequence.get(parent_message_id, (len(messages) + run_index) * 2) + 1
         sortable_items.append((sequence, {"kind": "notification", "notification": notification}))

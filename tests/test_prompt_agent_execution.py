@@ -214,6 +214,50 @@ def test_prompt_agent_success_creates_done_run() -> None:
     assert prompt_run.status == RunStatus.DONE
 
 
+def test_prompt_agent_success_creates_default_run_steps() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    steps = fixture.runs.list_steps(result.run_id)
+
+    assert [step.label for step in steps] == [
+        "Resolving agent",
+        "Building context",
+        "Resolving model",
+        "Calling LLM",
+        "Saving response",
+        "Cleanup",
+    ]
+    assert [step.status.value for step in steps] == ["completed"] * 6
+
+
+def test_prompt_agent_llm_failure_marks_calling_llm_step_failed() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(fail=True))
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    steps = fixture.runs.list_steps(result.run_id)
+    calling_llm = next(step for step in steps if step.label == "Calling LLM")
+
+    assert result.success is False
+    assert fixture.runs.get_run(result.run_id).status == RunStatus.FAILED
+    assert calling_llm.status.value == "failed"
+    assert calling_llm.error_message
+
+
+def test_run_lifecycle_events_include_run_and_step_payloads() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    session = fixture.sessions.create_session()
+
+    run(fixture.runtime.handle_input(session, "@chat hello"))
+
+    step_event = next(event for event in fixture.events.list_events() if event.type == "run_step_created")
+    run_event = next(event for event in fixture.events.list_events() if event.type == "run_updated")
+    assert step_event.payload["step"]["label"] == "Resolving agent"
+    assert "run_id" in run_event.payload["run"]
+
+
 def test_actual_model_metadata_from_nonstream_response() -> None:
     fixture = PromptRuntimeFixture(
         llm=RawLLMRuntime(

@@ -132,13 +132,15 @@ def test_script_agent_step_emits_run_step_event() -> None:
 
     run(fixture.runtime.handle_input(session, "@echo_script hello"))
 
-    assert [event.type for event in fixture.events.list_events()] == [
-        "run_started",
-        "run_step",
-        "message_done",
-        "run_done",
+    step_events = [event for event in fixture.events.list_events() if event.type == "run_step_created"]
+    assert [event.payload["step"]["label"] for event in step_events] == [
+        "Resolving agent",
+        "Starting script",
+        "Running script",
+        "encoding",
+        "Saving response",
+        "Cleanup",
     ]
-    assert fixture.events.list_events()[1].payload == {"step": "encoding"}
 
 
 def test_script_agent_can_call_base64_capability() -> None:
@@ -165,6 +167,34 @@ def test_script_agent_exception_marks_run_failed(tmp_path: Path) -> None:
     assert result.success is False
     assert result.error == "script exploded"
     assert failed_run.status == RunStatus.FAILED
+
+
+def test_script_agent_success_creates_default_run_steps() -> None:
+    fixture = ScriptRuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    steps = fixture.runs.list_steps(result.run_id)
+
+    assert "Starting script" in [step.label for step in steps]
+    assert "Running script" in [step.label for step in steps]
+    assert "Saving response" in [step.label for step in steps]
+
+
+def test_script_agent_exception_marks_running_script_step_failed(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "bad_script",
+        "async def run(ctx):\n    raise RuntimeError('script exploded')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@bad_script hello"))
+    running = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Running script")
+
+    assert running.status.value == "failed"
+    assert running.error_message == "script exploded"
 
 
 def test_script_missing_async_run_returns_structured_error(tmp_path: Path) -> None:
