@@ -6,9 +6,9 @@ import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type SettingsSection } from './SettingsNav';
 import { SettingsObjectList } from './SettingsObjectList';
 
-export function SettingsConsole() {
+export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
-  const [activeSection, setActiveSection] = useState<SettingsSection>('llm');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
   const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);

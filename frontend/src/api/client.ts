@@ -5,6 +5,7 @@ import type {
   Command,
   DeleteMessageResponse,
   DeleteSessionResponse,
+  Diagnostics,
   LlmResolvedConfig,
   LlmProfile,
   LlmProfileInput,
@@ -103,6 +104,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   getStorageStats: () => request<StorageStats>('/api/data/storage-stats'),
+  getDiagnostics: () => request<Diagnostics>('/api/diagnostics'),
   scanOrphanAttachments: () => request<OrphanScanResult>('/api/data/attachments/scan-orphans', { method: 'POST' }),
   cleanupOrphanAttachments: (confirm: boolean) =>
     request<CleanupOrphansResult>('/api/data/attachments/cleanup-orphans', {

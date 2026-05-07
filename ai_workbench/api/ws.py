@@ -10,6 +10,7 @@ router = APIRouter(tags=["ws"])
 async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
     state = websocket.app.state.runtime_state
     await websocket.accept()
+    state.active_websockets = getattr(state, "active_websockets", 0) + 1
     queue = state.events.subscribe()
     receive_task: asyncio.Task | None = None
     event_task: asyncio.Task | None = None
@@ -50,3 +51,4 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
         if pending_tasks:
             await asyncio.gather(*pending_tasks, return_exceptions=True)
         state.events.unsubscribe(queue)
+        state.active_websockets = max(0, getattr(state, "active_websockets", 0) - 1)

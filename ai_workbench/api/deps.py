@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,8 @@ class RuntimeState:
     llm_profiles: Any = None
     app_settings: Any = None
     database_url: str | None = None
+    started_at: datetime = field(default_factory=datetime.utcnow)
+    active_websockets: int = 0
 
 
 def build_runtime_state(

@@ -18,9 +18,11 @@ def test_eventbus_unsubscribe_is_idempotent() -> None:
     events = EventBus()
     queue = events.subscribe()
 
+    assert events.subscriber_count() == 1
     events.unsubscribe(queue)
     events.unsubscribe(queue)
 
+    assert events.subscriber_count() == 0
     assert events._subscribers == []
 
 

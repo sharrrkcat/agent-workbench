@@ -1,9 +1,10 @@
 import { ArrowLeft, Bot, Boxes, Settings } from 'lucide-react';
 import { ErrorBanner } from './ErrorBanner';
 import { SettingsConsole } from './settings/SettingsConsole';
+import type { SettingsSection } from './settings/SettingsNav';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
-export function SettingsPage({ onBack }: { onBack: () => void }) {
+export function SettingsPage({ initialSection = 'general', onBack }: { initialSection?: SettingsSection; onBack: () => void }) {
   const { agentConfigs, capabilityConfigs } = useWorkbenchStore();
 
   return (
@@ -34,7 +35,7 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
         </div>
       </header>
       <ErrorBanner />
-      <SettingsConsole />
+      <SettingsConsole initialSection={initialSection} />
     </main>
   );
 }

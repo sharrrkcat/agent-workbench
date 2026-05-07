@@ -55,6 +55,9 @@ class EventBus:
     def list_events(self) -> List[Event]:
         return list(self._events)
 
+    def subscriber_count(self) -> int:
+        return len(self._subscribers)
+
     def subscribe(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
         if self._closed:

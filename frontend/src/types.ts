@@ -384,6 +384,78 @@ export type StorageStats = {
   warnings?: string[];
 };
 
+export type Diagnostics = {
+  backend: {
+    status: string;
+    version?: string;
+    python_version?: string;
+    uptime_seconds?: number;
+  };
+  database: {
+    status: string;
+    schema_version?: string;
+    path?: string;
+    size_bytes?: number;
+  };
+  attachments: {
+    status: string;
+    directory?: string;
+    count?: number;
+    total_size_bytes?: number;
+    writable?: boolean;
+  };
+  event_bus: {
+    status: string;
+    subscriber_count?: number;
+    active_websocket_connections?: number;
+  };
+  runs: {
+    active_count: number;
+    active_task_count?: number;
+    recent_failed_count: number;
+    recent_failures: DiagnosticsRunFailure[];
+  };
+  llm: {
+    status?: string;
+    profiles_total: number;
+    profiles_enabled: number;
+    global_fallback_enabled?: boolean;
+    default_resolved?: {
+      profile?: string | null;
+      model_id?: string | null;
+      base_url?: string;
+      api_key_set: boolean;
+    } | null;
+    last_error?: string | null;
+  };
+  capabilities: {
+    file: {
+      enabled: boolean;
+      status: string;
+      allowed_directories_count?: number;
+      max_read_file_size_bytes?: number;
+    };
+    http: {
+      enabled: boolean;
+      status: string;
+      timeout_seconds?: number;
+      max_response_size_bytes?: number;
+      allow_redirects?: boolean;
+    };
+  };
+  warnings: string[];
+};
+
+export type DiagnosticsRunFailure = {
+  run_id: string;
+  session_id: string;
+  agent_id?: string | null;
+  command_name?: string | null;
+  error_code: string;
+  message: string;
+  created_at: string;
+};
+
 export type OrphanAttachment = {
   id: string;
   path: string;

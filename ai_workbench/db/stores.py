@@ -352,6 +352,11 @@ class SqlRunStore:
             records = session.exec(select(RunRecord).where(RunRecord.session_id == session_id).order_by(RunRecord.created_at)).all()
             return [_run_from_record(record) for record in records]
 
+    def list_all_runs(self) -> List[RunSchema]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(RunRecord).order_by(RunRecord.created_at)).all()
+            return [_run_from_record(record) for record in records]
+
     def delete_session(self, session_id: str) -> None:
         with DbSession(self.engine) as session:
             session.exec(delete(RunRecord).where(RunRecord.session_id == session_id))

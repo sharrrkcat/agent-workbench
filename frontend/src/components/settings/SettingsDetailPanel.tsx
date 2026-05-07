@@ -1,14 +1,14 @@
-import { Database, Info, RefreshCw, Save, Search, Settings, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { Activity, Database, RefreshCw, Save, Search, Settings, Trash2 } from 'lucide-react';
+import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, GeneralSettings, HealthDetails, LlmProfile, StorageStats } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, StorageStats } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
-import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
+import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import type { SettingsSection } from './SettingsNav';
 
 export function SettingsDetailPanel({
@@ -107,9 +107,17 @@ export function SettingsDetailPanel({
     );
   }
 
+  if (section === 'diagnostics') {
+    return (
+      <section className="settings-detail-panel">
+        <DiagnosticsDetail />
+      </section>
+    );
+  }
+
   return (
     <section className="settings-detail-panel">
-      <PlaceholderDetail section={section} health={health} />
+      <PlaceholderDetail section={section} />
     </section>
   );
 }
@@ -397,6 +405,153 @@ function DataDetail({ health }: { health?: HealthDetails }) {
   );
 }
 
+function DiagnosticsDetail() {
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<string>('');
+
+  async function refresh() {
+    setBusy(true);
+    try {
+      setLocalError(null);
+      setDiagnostics(await api.getDiagnostics());
+      setLastRefreshed(new Date().toLocaleTimeString());
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to refresh diagnostics.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  return (
+    <div className="settings-detail-form">
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">
+            <Activity size={18} />
+          </div>
+          <div>
+            <h2>Diagnostics</h2>
+            <p>Local runtime health and configuration readiness.</p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {lastRefreshed ? <span className="settings-muted-text">Last refreshed {lastRefreshed}</span> : null}
+          <button className="settings-secondary-button" type="button" onClick={refresh} disabled={busy}>
+            <RefreshCw size={14} />
+            {busy ? 'Refreshing...' : 'Refresh diagnostics'}
+          </button>
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {localError ? <SettingsApiError error={localError} /> : null}
+        {!diagnostics ? (
+          <EmptyDetail title="Diagnostics" message={busy ? 'Loading diagnostics.' : 'Diagnostics unavailable.'} />
+        ) : (
+          <>
+            <div className="settings-diagnostics-grid">
+              <DiagnosticsCard title="System">
+                <Metric label="Backend status" value={diagnostics.backend.status} />
+                <Metric label="Version" value={diagnostics.backend.version || 'unknown'} />
+                <Metric label="Python" value={diagnostics.backend.python_version || 'unknown'} />
+                <Metric label="Uptime" value={formatDuration(diagnostics.backend.uptime_seconds || 0)} />
+              </DiagnosticsCard>
+              <DiagnosticsCard title="Database">
+                <Metric label="Status" value={diagnostics.database.status} />
+                <Metric label="Schema version" value={diagnostics.database.schema_version || 'unknown'} />
+                <Metric label="DB size" value={formatBytes(diagnostics.database.size_bytes || 0)} />
+              </DiagnosticsCard>
+              <DiagnosticsCard title="Attachments">
+                <Metric label="Status" value={diagnostics.attachments.status} />
+                <Metric label="Count" value={String(diagnostics.attachments.count ?? 0)} />
+                <Metric label="Total size" value={formatBytes(diagnostics.attachments.total_size_bytes || 0)} />
+                <Metric label="Writable" value={diagnostics.attachments.writable ? 'Yes' : 'No'} />
+              </DiagnosticsCard>
+              <DiagnosticsCard title="Realtime">
+                <Metric label="EventBus subscribers" value={String(diagnostics.event_bus.subscriber_count ?? 0)} />
+                <Metric label="WebSocket connections" value={String(diagnostics.event_bus.active_websocket_connections ?? 0)} />
+                <Metric label="Active runs" value={String(diagnostics.runs.active_count)} />
+                <Metric label="Active tasks" value={String(diagnostics.runs.active_task_count ?? 0)} />
+              </DiagnosticsCard>
+              <DiagnosticsCard title="LLM">
+                <Metric label="Profiles" value={`${diagnostics.llm.profiles_enabled} / ${diagnostics.llm.profiles_total} enabled`} />
+                <Metric label="Resolved model" value={diagnostics.llm.default_resolved?.model_id || 'Not selected'} />
+                <Metric label="Base URL" value={diagnostics.llm.default_resolved?.base_url || 'Unavailable'} />
+                <Metric label="API key set" value={diagnostics.llm.default_resolved?.api_key_set ? 'Yes' : 'No'} />
+              </DiagnosticsCard>
+              <DiagnosticsCard title="Capabilities">
+                <Metric label="File" value={`${diagnostics.capabilities.file.enabled ? 'Enabled' : 'Disabled'} / ${diagnostics.capabilities.file.status}`} />
+                <Metric label="Allowed dirs" value={String(diagnostics.capabilities.file.allowed_directories_count ?? 0)} />
+                <Metric label="Max file read" value={formatBytes(diagnostics.capabilities.file.max_read_file_size_bytes || 0)} />
+                <Metric label="HTTP" value={`${diagnostics.capabilities.http.enabled ? 'Enabled' : 'Disabled'} / ${diagnostics.capabilities.http.status}`} />
+              </DiagnosticsCard>
+            </div>
+            <div className="detail-section">
+              <div className="detail-section-heading">
+                <h3>Recent failures</h3>
+              </div>
+              {diagnostics.runs.recent_failures.length ? (
+                <div className="settings-table-wrap">
+                  <table className="settings-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Target</th>
+                        <th>Error</th>
+                        <th>Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagnostics.runs.recent_failures.map((failure) => (
+                        <tr key={failure.run_id}>
+                          <td>{formatDateTime(failure.created_at)}</td>
+                          <td>{failure.agent_id || failure.command_name || 'run'}</td>
+                          <td>{failure.error_code}</td>
+                          <td>{failure.message || 'No error message.'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="settings-empty-state compact">No recent failed runs.</div>
+              )}
+            </div>
+            <div className="detail-section">
+              <div className="detail-section-heading">
+                <h3>Warnings</h3>
+              </div>
+              {diagnostics.warnings.length ? (
+                <ul className="settings-warning-list">
+                  {diagnostics.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="settings-empty-state compact">No warnings.</div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiagnosticsCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="settings-diagnostics-card">
+      <h3>{title}</h3>
+      <dl className="settings-definition-grid compact">{children}</dl>
+    </div>
+  );
+}
+
 function Metric({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
   return (
     <div className={wide ? 'wide' : ''}>
@@ -413,37 +568,20 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function PlaceholderDetail({ section, health }: { section: SettingsSection; health?: HealthDetails }) {
-  if (section === 'diagnostics') {
-    return (
-      <div className="settings-placeholder">
-        <Info size={22} />
-        <h2>Diagnostics</h2>
-        <dl className="settings-definition-grid">
-          <div>
-            <dt>Backend</dt>
-            <dd>{health?.status || 'Unavailable'}</dd>
-          </div>
-          <div>
-            <dt>Schema version</dt>
-            <dd>{health?.schema_version || 'Unavailable'}</dd>
-          </div>
-          <div>
-            <dt>Agents</dt>
-            <dd>{displayValue(health?.registries?.agents)}</dd>
-          </div>
-          <div>
-            <dt>Capabilities</dt>
-            <dd>{displayValue(health?.registries?.capabilities)}</dd>
-          </div>
-          <div>
-            <dt>Commands</dt>
-            <dd>{displayValue(health?.registries?.commands)}</dd>
-          </div>
-        </dl>
-      </div>
-    );
-  }
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function PlaceholderDetail({ section }: { section: SettingsSection }) {
   if (section === 'developer') {
     return (
       <div className="settings-placeholder">

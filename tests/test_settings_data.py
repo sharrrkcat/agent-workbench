@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from ai_workbench.api.main import create_app
 from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.schema.run import RunStatus
 from scripts.cleanup_attachments import main as cleanup_main
 from tests.test_api import create_session
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, run
@@ -149,6 +150,80 @@ def test_data_storage_stats_scan_and_cleanup(monkeypatch, tmp_path: Path) -> Non
     assert referenced.exists()
     assert not orphan.exists()
     assert outside.exists()
+
+
+def test_diagnostics_returns_runtime_sections_and_masks_secrets(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    (tmp_path / "attachments" / "files").mkdir(parents=True)
+    db_url = f"sqlite:///{tmp_path / 'diagnostics.db'}"
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
+    client.patch("/api/capability-configs/llm", json={"user_config": {"api_key": "secret-token", "model": "local-model"}})
+
+    response = client.get("/api/diagnostics")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert {"backend", "database", "attachments", "event_bus", "runs", "llm", "capabilities"}.issubset(payload)
+    assert payload["backend"]["version"] == "0.1.0-alpha"
+    assert payload["database"]["status"] == "ok"
+    assert payload["database"]["schema_version"] == "1"
+    assert payload["attachments"]["status"] == "ok"
+    assert payload["attachments"]["writable"] is True
+    assert payload["event_bus"]["subscriber_count"] == 0
+    assert payload["llm"]["default_resolved"]["api_key_set"] is True
+    assert payload["llm"]["default_resolved"]["model_id"] == "local-model"
+    assert "secret-token" not in str(payload)
+
+
+def test_diagnostics_recent_failures_are_limited_and_truncated(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'failures.db'}"))
+    state = client.app.state.runtime_state
+    session = state.sessions.create_session()
+    long_error = "x" * 500
+    for index in range(7):
+        run_record = state.runs.create_run(kind="agent", target_id="chat", session_id=session.session_id)
+        state.runs.update_status(run_record.run_id, RunStatus.FAILED, error=f"{index}:{long_error}")
+
+    response = client.get("/api/diagnostics")
+
+    assert response.status_code == 200
+    runs = response.json()["runs"]
+    assert runs["recent_failed_count"] == 7
+    assert len(runs["recent_failures"]) == 5
+    assert all(len(item["message"]) <= 300 for item in runs["recent_failures"])
+    assert all(item["error_code"] == "RUN_FAILED" for item in runs["recent_failures"])
+
+
+def test_diagnostics_does_not_call_llm_model_listing(monkeypatch, tmp_path: Path) -> None:
+    class NoModelListingRuntime(FakeLLMRuntime):
+        def list_models(self, model_config=None):
+            raise AssertionError("diagnostics must not call /models")
+
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    (tmp_path / "attachments").mkdir()
+    client = TestClient(create_app(llm_runtime=NoModelListingRuntime(), use_memory=True))
+
+    response = client.get("/api/diagnostics")
+
+    assert response.status_code == 200
+    assert "llm" in response.json()
+
+
+def test_diagnostics_subitem_failure_returns_degraded_not_500(monkeypatch, tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'degraded.db'}"))
+
+    def fail_sessions():
+        raise RuntimeError("database offline\nprivate stack")
+
+    monkeypatch.setattr(client.app.state.runtime_state.sessions, "list_sessions", fail_sessions)
+
+    response = client.get("/api/diagnostics")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database"]["status"] == "degraded"
+    assert any("database offline" in warning for warning in payload["warnings"])
+    assert "private stack" not in str(payload)
 
 
 def test_cleanup_attachments_script_still_runs(monkeypatch, tmp_path: Path, capsys) -> None:

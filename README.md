@@ -301,9 +301,22 @@ Health endpoints:
 ```text
 GET /api/health
 GET /api/health/details
+GET /api/diagnostics
 ```
 
 `/api/health` returns version, database status, and schema version. `/api/health/details` adds registry counts and a non-secret LLM config summary. It reports whether an API key is set, but never returns the plaintext key.
+
+Settings -> Diagnostics calls `GET /api/diagnostics` and shows local runtime health without external probes:
+
+- backend version, Python version, and uptime
+- SQLite database status, schema version, and size
+- attachment storage status, count, total size, and writability
+- EventBus subscriber count, active WebSocket connections, active runs, and active tasks
+- recent failed runs with short, truncated error messages
+- LLM profile/config health without calling `/models`
+- File and HTTP capability readiness from local configuration only
+
+Diagnostics does not send telemetry, does not contact cloud services, does not expose API keys, and does not read file contents or make HTTP requests. LLM connection testing remains in Settings -> LLM through the explicit Test connection button.
 
 Runs also have a lightweight event timeline:
 

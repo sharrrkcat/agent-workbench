@@ -12,10 +12,11 @@ import { createWebSocketUrl } from './api/client';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 import type { ImagePreview } from './utils/images';
 import type { FilePreview } from './components/MessageBubble';
+import type { SettingsSection } from './components/settings/SettingsNav';
 
 export default function App() {
   const { currentSession, initialize, refreshCurrent, applyRuntimeEvent } = useWorkbenchStore();
-  const [path, setPath] = useState(() => window.location.pathname);
+  const [, setLocationKey] = useState(() => currentLocationKey());
   const [wsUnavailable, setWsUnavailable] = useState(false);
   const [previewImage, setPreviewImage] = useState<ImagePreview | null>(null);
   const [previewFile, setPreviewFile] = useState<FilePreview | null>(null);
@@ -25,7 +26,7 @@ export default function App() {
   }, [initialize]);
 
   useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname);
+    const onPopState = () => setLocationKey(currentLocationKey());
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -86,11 +87,12 @@ export default function App() {
 
   function navigate(nextPath: string) {
     window.history.pushState({}, '', nextPath);
-    setPath(nextPath);
+    setLocationKey(currentLocationKey());
   }
 
-  if (path === '/settings') {
-    return <SettingsPage onBack={() => navigate('/')} />;
+  const settingsSection = explicitSettingsSection();
+  if (window.location.pathname === '/settings' || window.location.hash.startsWith('#settings')) {
+    return <SettingsPage initialSection={settingsSection || 'general'} onBack={() => navigate('/')} />;
   }
 
   return (
@@ -107,4 +109,17 @@ export default function App() {
       <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
     </div>
   );
+}
+
+function currentLocationKey(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}:${JSON.stringify(window.history.state || {})}`;
+}
+
+function explicitSettingsSection(): SettingsSection | null {
+  const sections: SettingsSection[] = ['general', 'llm', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
+  const queryTab = new URLSearchParams(window.location.search).get('tab');
+  const hashMatch = window.location.hash.match(/^#settings:([a-z-]+)$/);
+  const stateTab = window.history.state?.settingsTab;
+  const candidate = queryTab || hashMatch?.[1] || stateTab;
+  return sections.includes(candidate as SettingsSection) ? (candidate as SettingsSection) : null;
 }

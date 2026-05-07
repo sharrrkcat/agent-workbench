@@ -238,6 +238,9 @@ class RunStore:
     def list_runs(self, session_id: str) -> List[RunSchema]:
         return [self._runs[run_id] for run_id in self._session_run_ids.get(session_id, [])]
 
+    def list_all_runs(self) -> List[RunSchema]:
+        return sorted(self._runs.values(), key=lambda run: run.created_at)
+
     def delete_session(self, session_id: str) -> None:
         run_ids = self._session_run_ids.pop(session_id, [])
         for run_id in run_ids:

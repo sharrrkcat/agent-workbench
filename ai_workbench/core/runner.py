@@ -36,6 +36,9 @@ class ActiveRunRegistry:
         task.cancel()
         return True
 
+    def active_count(self) -> int:
+        return sum(1 for task in self._tasks.values() if not task.done())
+
     async def cancel_all(self, timeout: float = 2.0) -> None:
         tasks = [task for task in self._tasks.values() if not task.done()]
         for task in tasks:
