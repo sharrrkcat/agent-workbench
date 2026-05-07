@@ -434,12 +434,20 @@ export type Diagnostics = {
       status: string;
       allowed_directories_count?: number;
       max_read_file_size_bytes?: number;
+      max_local_text_read_size_mb?: number;
+      max_local_image_read_size_mb?: number;
+      read_file_enabled?: boolean;
+      read_image_enabled?: boolean;
     };
     http: {
       enabled: boolean;
       status: string;
       timeout_seconds?: number;
       max_response_size_bytes?: number;
+      max_text_response_size_mb?: number;
+      max_image_response_size_mb?: number;
+      http_get_enabled?: boolean;
+      fetch_image_enabled?: boolean;
       allow_redirects?: boolean;
     };
   };

@@ -8,6 +8,7 @@ from ai_workbench.core.attachments import ImageAttachment, is_text_attachment, l
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
+from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
@@ -1216,7 +1217,7 @@ class CommandRunner:
 
         try:
             method = self.runtime_registry.get_method(command.capability_id, command.method)
-            data = self._call_method(method, args, self._command_context(session_id, input_message_id))
+            data = self._call_method(method, args, self._command_context(session_id, input_message_id, command.capability_id))
             output_type = self._normalize_output_type(command, data)
             self._validate_output_payload(output_type, data)
         except Exception as exc:
@@ -1269,7 +1270,7 @@ class CommandRunner:
         )
         return CommandResult(success=True, run_id=done_run.run_id, data=data, output_type=output_type)
 
-    def _command_context(self, session_id: str, input_message_id: str) -> dict:
+    def _command_context(self, session_id: str, input_message_id: str, capability_id: str) -> dict:
         attachments = []
         if input_message_id:
             try:
@@ -1277,10 +1278,20 @@ class CommandRunner:
                 attachments = list((message.metadata or {}).get("attachments") or [])
             except KeyError:
                 attachments = []
+        capability_config = {}
+        if self.capability_config_store is not None and self.capability_registry is not None:
+            try:
+                capability = self.capability_registry.get(capability_id)
+                stored = self.capability_config_store.get_config(capability_id)
+                capability_config = resolve_config(capability.config_schema, stored.get("user_config") or {})
+            except Exception:
+                capability_config = {}
         return {
             "session_id": session_id,
             "input_message_id": input_message_id or "",
             "attachments": attachments,
+            "capability_id": capability_id,
+            "capability_config": capability_config,
         }
 
     def _call_method(self, method, args: str, context: dict):

@@ -119,12 +119,7 @@ export function CapabilityDetail({
         {localError ? <SettingsApiError error={localError} /> : null}
         {normalizedActiveTab === 'commands' ? <CommandsTab commands={visibleCommands} capabilityEnabled={enabled} /> : null}
         {normalizedActiveTab === 'config' ? (
-          <ConfigForm
-            fields={config.config_schema || []}
-            values={values}
-            onChange={setValues}
-            emptyMessage="This capability has no configurable fields."
-          />
+          <CapabilityConfigTab config={config} values={values} onChange={setValues} />
         ) : null}
         {normalizedActiveTab === 'health' ? (
           config.capability_id === 'llm' ? (
@@ -139,6 +134,90 @@ export function CapabilityDetail({
         ) : null}
       </div>
     </form>
+  );
+}
+
+function CapabilityConfigTab({
+  config,
+  values,
+  onChange,
+}: {
+  config: CapabilityConfig;
+  values: ConfigValues;
+  onChange: (values: ConfigValues) => void;
+}) {
+  const fields = config.config_schema || [];
+  if (config.capability_id === 'file') {
+    return (
+      <div className="settings-config-sections">
+        <p className="settings-helper-text">
+          File Capability settings apply only to <code>/read-file</code> and <code>/read-image</code>. General upload limits are configured in General.
+        </p>
+        <ConfigSection title="Permissions" fieldNames={['allowed_directories']} fields={fields} values={values} onChange={onChange} />
+        <ConfigSection
+          title="Read limits"
+          fieldNames={['max_local_text_read_size_mb', 'max_local_image_read_size_mb', 'allowed_text_extensions']}
+          fields={fields}
+          values={values}
+          onChange={onChange}
+        />
+        <ConfigSection title="Commands" fieldNames={['enable_read_file', 'enable_read_image']} fields={fields} values={values} onChange={onChange} />
+      </div>
+    );
+  }
+  if (config.capability_id === 'http') {
+    return (
+      <div className="settings-config-sections">
+        <p className="settings-helper-text">
+          HTTP settings apply only to <code>/http-get</code>, <code>/fetch-page</code>, and <code>/fetch-image</code>. They do not affect chat uploads.
+        </p>
+        <ConfigSection
+          title="Network access"
+          fieldNames={['enable_http_get', 'enable_fetch_image', 'allowed_schemes', 'timeout_seconds', 'allow_redirects', 'max_redirects']}
+          fields={fields}
+          values={values}
+          onChange={onChange}
+        />
+        <ConfigSection
+          title="Response limits"
+          fieldNames={['max_text_response_size_mb', 'max_image_response_size_mb']}
+          fields={fields}
+          values={values}
+          onChange={onChange}
+        />
+      </div>
+    );
+  }
+  return (
+    <ConfigForm
+      fields={fields}
+      values={values}
+      onChange={onChange}
+      emptyMessage="This capability has no configurable fields."
+    />
+  );
+}
+
+function ConfigSection({
+  title,
+  fieldNames,
+  fields,
+  values,
+  onChange,
+}: {
+  title: string;
+  fieldNames: string[];
+  fields: CapabilityConfig['config_schema'];
+  values: ConfigValues;
+  onChange: (values: ConfigValues) => void;
+}) {
+  const sectionFields = fields.filter((field) => fieldNames.includes(field.name));
+  if (!sectionFields.length) return null;
+  return (
+    <section className="settings-config-section">
+      <h3>{title}</h3>
+      <ConfigForm fields={sectionFields} values={values} onChange={onChange} emptyMessage="No configurable fields." />
+    </section>
   );
 }
 

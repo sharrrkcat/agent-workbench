@@ -451,11 +451,13 @@ uv run python scripts/cleanup_attachments.py --apply
 
 ## File And HTTP Capabilities
 
-The `file` capability exposes `/read-file <path>` and `/read-image <path>`. It can read only files inside allowed directories. Defaults are `./data`, `./examples`, `./agents`, and `./capabilities`; add more with `AGENT_WORKBENCH_FILE_ALLOWED_DIRS` using the platform path separator. `/read-file` returns `file_content`, which is rendered as raw file text instead of Markdown. It preserves indentation, line breaks, and spaces for source files, config files, logs, and text files. UTF-8 text reads are limited to the first 1 MB; larger files return `truncated=true`, and Copy copies the returned content only. Image reads support PNG, JPEG, WebP, GIF, and SVG up to 10 MB, returning normal image output with a data URL.
+Settings -> General controls chat attachment uploads: maximum image upload size, maximum file upload size, maximum attachments per message, whether uploaded text files enter LLM context, and per-file/per-message LLM file context limits. Those settings apply to composer upload, drag-and-drop, paste, attachment serving, Prompt Agent file context, vision input, `file_content`, and the Echo Attachment Agent.
 
-The `http` capability exposes `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It only uses GET, only allows `http://` and `https://`, follows redirects with a small limit, uses a 10 second timeout, and does not use private browser cookies. Text/page responses are limited to 1 MB and allowed content types are `text/plain`, `text/html`, and `application/json`. Image responses are limited to 10 MB and must return an image MIME type.
+Settings -> Capabilities -> File Capability controls only active local path reads through `/read-file <path>` and `/read-image <path>`. It does not reuse or synchronize General upload limits. File Capability settings include allowed directories, maximum local text read size, maximum local image read size, allowed text extensions, and command toggles for `/read-file` and `/read-image`. Relative allowed directories resolve from the project root. Empty allowed directories can be saved and cause file read commands to reject every path. `/read-file` returns `file_content`, which preserves raw file text instead of rendering it as Markdown. `/read-image` returns normal image output with a data URL.
 
-Permission hints are declared in capability manifests and shown in Settings. They are documentation and operator warnings, not an authorization system.
+Settings -> Capabilities -> HTTP Capability controls only active network GET commands: `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It does not affect chat uploads. HTTP settings include command toggles, allowed URL schemes, timeout seconds, text and image response size limits, redirect enablement, and maximum redirects. The runtime uses GET only. Text/page responses accept `text/*`, `application/json`, `application/xml`, `application/yaml`, and `application/x-yaml`; image fetches require `image/*`. No HTTP POST, PUT, or DELETE support is provided.
+
+Permission hints and CapabilityConfig settings are local alpha safety controls and operator documentation, not a sandbox or full authorization system. Script Agents remain trusted local Python code and can call capabilities.
 
 ## Security Notes
 

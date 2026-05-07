@@ -25,6 +25,8 @@ class ConfigFieldSchema(BaseModel):
     description: str = ""
     options: List[str] = Field(default_factory=list)
     secret: bool = False
+    minimum: float | None = None
+    maximum: float | None = None
 
     @model_validator(mode="after")
     def validate_field(self) -> "ConfigFieldSchema":
@@ -128,11 +130,14 @@ def _validate_value(field: ConfigFieldSchema, value: Any) -> Any:
     if field.type == "integer":
         if isinstance(value, bool) or not isinstance(value, int):
             raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must be an integer", field.name)
+        _validate_numeric_bounds(field, float(value))
         return value
     if field.type == "float":
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must be a number", field.name)
-        return float(value)
+        parsed = float(value)
+        _validate_numeric_bounds(field, parsed)
+        return parsed
     if field.type == "boolean":
         if not isinstance(value, bool):
             raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must be a boolean", field.name)
@@ -146,5 +151,24 @@ def _validate_value(field: ConfigFieldSchema, value: Any) -> Any:
     if field.type == "json":
         if isinstance(value, (str, int, float, bool)) or value is None:
             raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must be JSON object or array", field.name)
+        if isinstance(field.default, list) and not isinstance(value, list):
+            raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must be an array", field.name)
+        if isinstance(field.default, dict) and not isinstance(value, dict):
+            raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must be a JSON object", field.name)
         return value
     raise ConfigValidationError("CONFIG_VALIDATION_ERROR", f"Unsupported config field type: {field.type}", field.name)
+
+
+def _validate_numeric_bounds(field: ConfigFieldSchema, value: float) -> None:
+    if field.minimum is not None and value < field.minimum:
+        raise ConfigValidationError(
+            "INVALID_CONFIG_VALUE",
+            f"Config field '{field.name}' must be at least {field.minimum:g}",
+            field.name,
+        )
+    if field.maximum is not None and value > field.maximum:
+        raise ConfigValidationError(
+            "INVALID_CONFIG_VALUE",
+            f"Config field '{field.name}' must be at most {field.maximum:g}",
+            field.name,
+        )

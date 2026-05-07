@@ -3174,6 +3174,29 @@ input:disabled {
   gap: 12px;
 }
 
+.settings-config-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-config-section {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-config-section h3 {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.settings-helper-text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .llm-profile-layout {
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);

@@ -6,6 +6,65 @@ permissions:
   network:
     http: true
 
+config_schema:
+  - name: enable_http_get
+    type: boolean
+    label: Enable HTTP GET commands
+    default: true
+    description: Enable /http-get and /fetch-page.
+
+  - name: enable_fetch_image
+    type: boolean
+    label: Enable /fetch-image
+    default: true
+    description: Enable /fetch-image.
+
+  - name: allowed_schemes
+    type: json
+    label: Allowed schemes
+    default:
+      - http
+      - https
+    description: URL schemes allowed by /http-get, /fetch-page, and /fetch-image. Supported values are http and https.
+
+  - name: timeout_seconds
+    type: float
+    label: Timeout seconds
+    default: 10
+    minimum: 1
+    maximum: 120
+    description: HTTP request timeout in seconds.
+
+  - name: max_text_response_size_mb
+    type: float
+    label: Max text response size
+    default: 1
+    minimum: 0.1
+    maximum: 50
+    description: Maximum text response size for /http-get and /fetch-page.
+
+  - name: max_image_response_size_mb
+    type: float
+    label: Max image response size
+    default: 10
+    minimum: 0.1
+    maximum: 100
+    description: Maximum image response size for /fetch-image.
+
+  - name: allow_redirects
+    type: boolean
+    label: Allow redirects
+    default: true
+    description: Follow HTTP redirects.
+
+  - name: max_redirects
+    type: integer
+    label: Max redirects
+    default: 5
+    minimum: 0
+    maximum: 10
+    description: Maximum redirects when redirects are enabled.
+
 methods:
   - id: get_text
     description: Fetch plain text, HTML, or JSON from an HTTP or HTTPS URL

@@ -427,3 +427,158 @@ def test_http_capability_timeout() -> None:
         assert "timed out" in str(exc)
     else:
         raise AssertionError("expected timeout rejection")
+
+
+def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    allowed = tmp_path / "allowed"
+
+    defaults = client.get("/api/capability-configs/file")
+    assert defaults.status_code == 200
+    resolved = defaults.json()["resolved_config"]
+    assert resolved["allowed_directories"] == ["./data", "./examples", "./agents", "./capabilities"]
+    assert resolved["max_local_text_read_size_mb"] == 2.0
+    assert resolved["max_local_image_read_size_mb"] == 10.0
+
+    patched = client.patch(
+        "/api/capability-configs/file",
+        json={
+            "user_config": {
+                "allowed_directories": [str(allowed)],
+                "max_local_text_read_size_mb": 0.5,
+                "max_local_image_read_size_mb": 0.5,
+            }
+        },
+    )
+    assert patched.status_code == 200
+    assert patched.json()["resolved_config"]["allowed_directories"] == [str(allowed)]
+    assert patched.json()["resolved_config"]["max_local_text_read_size_mb"] == 0.5
+    assert patched.json()["resolved_config"]["max_local_image_read_size_mb"] == 0.5
+
+    assert client.patch("/api/capability-configs/file", json={"user_config": {"unknown": True}}).status_code == 400
+    assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_file": "yes"}}).status_code == 400
+
+
+def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    client = TestClient(app)
+    session = create_session(client)
+    allowed = tmp_path / "allowed"
+    denied = tmp_path / "denied"
+    allowed.mkdir()
+    denied.mkdir()
+    note = allowed / "note.txt"
+    note.write_text("hello", encoding="utf-8")
+    denied_note = denied / "note.txt"
+    denied_note.write_text("secret", encoding="utf-8")
+    blocked = allowed / "blocked.exe"
+    blocked.write_text("no", encoding="utf-8")
+    large = allowed / "large.txt"
+    large.write_bytes(b"x" * (200 * 1024))
+    image = allowed / "cat.png"
+    image.write_bytes(b"hello")
+    large_image = allowed / "large.png"
+    large_image.write_bytes(b"x" * (200 * 1024))
+
+    client.patch(
+        "/api/capability-configs/file",
+        json={
+            "user_config": {
+                "allowed_directories": [str(allowed)],
+                "max_local_text_read_size_mb": 0.1,
+                "max_local_image_read_size_mb": 0.1,
+                "allowed_text_extensions": [".txt"],
+                "enable_read_file": True,
+                "enable_read_image": True,
+            }
+        },
+    )
+
+    accepted = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
+    outside = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {denied_note}"})
+    too_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large}"})
+    bad_ext = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {blocked}"})
+    image_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
+    image_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {large_image}"})
+
+    assert accepted.json()["run"]["status"] == "DONE"
+    assert accepted.json()["run"]["target_id"] == "/read-file"
+    assert accepted.json()["messages"][-1]["output_type"] == "file_content"
+    assert outside.json()["run"]["status"] == "FAILED"
+    assert "Path outside allowed directories" in outside.json()["run"]["error"]
+    assert "File too large" in too_large.json()["run"]["error"]
+    assert "Extension not allowed" in bad_ext.json()["run"]["error"]
+    assert image_ok.json()["run"]["status"] == "DONE"
+    assert image_ok.json()["messages"][-1]["output_type"] == "image"
+    assert "File too large" in image_large.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_file": False}})
+    disabled_file = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
+    assert "Command disabled" in disabled_file.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_image": False}})
+    disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
+    assert "Command disabled" in disabled_image.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": []}})
+    empty_dirs = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
+    assert "Path outside allowed directories" in empty_dirs.json()["run"]["error"]
+
+
+def test_http_capability_config_defaults_patch_and_runtime_enforcement() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeout = request.extensions.get("timeout") or {}
+        if request.url.path == "/timeout":
+            return httpx.Response(200, headers={"content-type": "application/json"}, json=timeout, request=request)
+        if request.url.path == "/image":
+            return httpx.Response(200, headers={"content-type": "image/png"}, content=b"hello", request=request)
+        if request.url.path == "/binary":
+            return httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"binary", request=request)
+        if request.url.path == "/large":
+            return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"x" * (200 * 1024), request=request)
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"hello text", request=request)
+
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    app.state.runtime_state.runtimes.replace("http", HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler))))
+    client = TestClient(app)
+    session = create_session(client)
+
+    defaults = client.get("/api/capability-configs/http")
+    assert defaults.status_code == 200
+    assert defaults.json()["resolved_config"]["timeout_seconds"] == 10.0
+    assert defaults.json()["resolved_config"]["allowed_schemes"] == ["http", "https"]
+
+    client.patch(
+        "/api/capability-configs/http",
+        json={
+            "user_config": {
+                "timeout_seconds": 3,
+                "max_text_response_size_mb": 0.1,
+                "max_image_response_size_mb": 0.1,
+                "allow_redirects": False,
+                "max_redirects": 0,
+            }
+        },
+    )
+    timed = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/timeout"})
+    large_text = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/large"})
+    image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-image https://example.test/image"})
+    binary = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/binary"})
+
+    assert timed.json()["run"]["status"] == "DONE"
+    assert '"connect":3.0' in timed.json()["messages"][-1]["content"].replace(" ", "")
+    assert "Response too large" in large_text.json()["run"]["error"]
+    assert image.json()["messages"][-1]["output_type"] == "image"
+    assert "Content type not allowed" in binary.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/http", json={"user_config": {"allowed_schemes": ["https"]}})
+    scheme = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get http://example.test/text"})
+    assert "Scheme not allowed" in scheme.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/http", json={"user_config": {"enable_http_get": False}})
+    disabled_get = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-page https://example.test/text"})
+    assert "Command disabled" in disabled_get.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/http", json={"user_config": {"enable_fetch_image": False}})
+    disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-image https://example.test/image"})
+    assert "Command disabled" in disabled_image.json()["run"]["error"]

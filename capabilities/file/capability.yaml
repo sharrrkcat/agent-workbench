@@ -6,6 +6,74 @@ permissions:
   filesystem:
     read: true
 
+config_schema:
+  - name: allowed_directories
+    type: json
+    label: Allowed directories
+    default:
+      - ./data
+      - ./examples
+      - ./agents
+      - ./capabilities
+    description: Directories that /read-file and /read-image are allowed to read. Relative paths resolve from the project root.
+
+  - name: max_local_text_read_size_mb
+    type: float
+    label: Max local text read size
+    default: 2
+    minimum: 0.1
+    maximum: 100
+    description: Maximum local text file size for /read-file.
+
+  - name: max_local_image_read_size_mb
+    type: float
+    label: Max local image read size
+    default: 10
+    minimum: 0.1
+    maximum: 100
+    description: Maximum local image size for /read-image.
+
+  - name: allowed_text_extensions
+    type: json
+    label: Allowed text extensions
+    default:
+      - .txt
+      - .md
+      - .py
+      - .js
+      - .ts
+      - .tsx
+      - .jsx
+      - .json
+      - .yaml
+      - .yml
+      - .toml
+      - .xml
+      - .html
+      - .css
+      - .env
+      - .log
+      - .csv
+      - .sql
+      - .sh
+      - .ps1
+      - .bat
+      - .ini
+      - .cfg
+    description: Text file extensions allowed by /read-file.
+
+  - name: enable_read_file
+    type: boolean
+    label: Enable /read-file
+    default: true
+    description: Enable /read-file.
+
+  - name: enable_read_image
+    type: boolean
+    label: Enable /read-image
+    default: true
+    description: Enable /read-image.
+
 methods:
   - id: read_text
     description: Read a UTF-8 text file from an allowed local directory

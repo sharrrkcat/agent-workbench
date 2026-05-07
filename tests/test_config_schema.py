@@ -90,6 +90,40 @@ def test_config_validation_rejects_invalid_integer_and_boolean_types() -> None:
     assert boolean_exc.value.code == "INVALID_CONFIG_TYPE"
 
 
+def test_config_validation_rejects_numeric_values_outside_bounds() -> None:
+    schema = parse_config_schema(
+        [
+            {"name": "small", "type": "float", "label": "Small", "minimum": 0.1, "maximum": 1},
+            {"name": "count", "type": "integer", "label": "Count", "minimum": 1, "maximum": 3},
+        ]
+    )
+
+    with pytest.raises(ConfigValidationError) as low_exc:
+        validate_user_config(schema, {"small": 0.01})
+    with pytest.raises(ConfigValidationError) as high_exc:
+        validate_user_config(schema, {"count": 4})
+
+    assert low_exc.value.code == "INVALID_CONFIG_VALUE"
+    assert high_exc.value.code == "INVALID_CONFIG_VALUE"
+
+
+def test_json_config_validation_preserves_default_container_shape() -> None:
+    schema = parse_config_schema(
+        [
+            {"name": "items", "type": "json", "label": "Items", "default": []},
+            {"name": "options", "type": "json", "label": "Options", "default": {}},
+        ]
+    )
+
+    with pytest.raises(ConfigValidationError) as array_exc:
+        validate_user_config(schema, {"items": {"not": "an array"}})
+    with pytest.raises(ConfigValidationError) as object_exc:
+        validate_user_config(schema, {"options": ["not", "an", "object"]})
+
+    assert array_exc.value.code == "INVALID_CONFIG_TYPE"
+    assert object_exc.value.code == "INVALID_CONFIG_TYPE"
+
+
 def test_secret_masking_and_patch_preserve_mask() -> None:
     schema = parse_config_schema([{"name": "api_key", "type": "string", "label": "API key", "secret": True}])
 

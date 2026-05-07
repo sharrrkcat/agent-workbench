@@ -487,8 +487,16 @@ function DiagnosticsDetail() {
               <DiagnosticsCard title="Capabilities">
                 <Metric label="File" value={`${diagnostics.capabilities.file.enabled ? 'Enabled' : 'Disabled'} / ${diagnostics.capabilities.file.status}`} />
                 <Metric label="Allowed dirs" value={String(diagnostics.capabilities.file.allowed_directories_count ?? 0)} />
-                <Metric label="Max file read" value={formatBytes(diagnostics.capabilities.file.max_read_file_size_bytes || 0)} />
+                <Metric label="/read-file" value={diagnostics.capabilities.file.read_file_enabled ? 'Enabled' : 'Disabled'} />
+                <Metric label="/read-image" value={diagnostics.capabilities.file.read_image_enabled ? 'Enabled' : 'Disabled'} />
+                <Metric label="Max text read" value={`${diagnostics.capabilities.file.max_local_text_read_size_mb ?? 0} MB`} />
+                <Metric label="Max image read" value={`${diagnostics.capabilities.file.max_local_image_read_size_mb ?? 0} MB`} />
                 <Metric label="HTTP" value={`${diagnostics.capabilities.http.enabled ? 'Enabled' : 'Disabled'} / ${diagnostics.capabilities.http.status}`} />
+                <Metric label="HTTP GET" value={diagnostics.capabilities.http.http_get_enabled ? 'Enabled' : 'Disabled'} />
+                <Metric label="Fetch image" value={diagnostics.capabilities.http.fetch_image_enabled ? 'Enabled' : 'Disabled'} />
+                <Metric label="Max text response" value={`${diagnostics.capabilities.http.max_text_response_size_mb ?? 0} MB`} />
+                <Metric label="Max image response" value={`${diagnostics.capabilities.http.max_image_response_size_mb ?? 0} MB`} />
+                <Metric label="Redirects" value={diagnostics.capabilities.http.allow_redirects ? 'Allowed' : 'Disabled'} />
               </DiagnosticsCard>
             </div>
             <div className="detail-section">

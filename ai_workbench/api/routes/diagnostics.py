@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 from ai_workbench import __version__
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.core.attachments import attachments_root
+from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.llm_config import public_llm_config_status, resolve_llm_config
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.storage_maintenance import storage_stats
@@ -164,28 +165,36 @@ def _capabilities(state: RuntimeState) -> dict[str, Any]:
 def _file_capability(state: RuntimeState) -> dict[str, Any]:
     import capabilities.file as file_runtime
 
-    config = state.capability_configs.get_config("file")
-    allowed_dirs = file_runtime._allowed_dirs()
+    stored = state.capability_configs.get_config("file")
+    capability = state.capabilities.get("file")
+    resolved = resolve_config(capability.config_schema, stored.get("user_config") or {})
+    allowed_dirs = file_runtime._allowed_dirs(resolved)
     status = "ok" if allowed_dirs else "degraded"
     return {
-        "enabled": bool(config.get("enabled", True)),
+        "enabled": bool(stored.get("enabled", True)),
         "status": status,
         "allowed_directories_count": len(allowed_dirs),
-        "max_read_file_size_bytes": file_runtime.MAX_TEXT_BYTES,
+        "max_local_text_read_size_mb": resolved.get("max_local_text_read_size_mb"),
+        "max_local_image_read_size_mb": resolved.get("max_local_image_read_size_mb"),
+        "read_file_enabled": bool(resolved.get("enable_read_file", True)),
+        "read_image_enabled": bool(resolved.get("enable_read_image", True)),
         **({"warning": "No allowed directories are configured."} if not allowed_dirs else {}),
     }
 
 
 def _http_capability(state: RuntimeState) -> dict[str, Any]:
-    import capabilities.http as http_runtime
-
-    config = state.capability_configs.get_config("http")
+    stored = state.capability_configs.get_config("http")
+    capability = state.capabilities.get("http")
+    resolved = resolve_config(capability.config_schema, stored.get("user_config") or {})
     return {
-        "enabled": bool(config.get("enabled", True)),
+        "enabled": bool(stored.get("enabled", True)),
         "status": "ok",
-        "timeout_seconds": http_runtime.TIMEOUT_SECONDS,
-        "max_response_size_bytes": http_runtime.TEXT_LIMIT_BYTES,
-        "allow_redirects": True,
+        "http_get_enabled": bool(resolved.get("enable_http_get", True)),
+        "fetch_image_enabled": bool(resolved.get("enable_fetch_image", True)),
+        "timeout_seconds": resolved.get("timeout_seconds"),
+        "max_text_response_size_mb": resolved.get("max_text_response_size_mb"),
+        "max_image_response_size_mb": resolved.get("max_image_response_size_mb"),
+        "allow_redirects": bool(resolved.get("allow_redirects", True)),
     }
 
 

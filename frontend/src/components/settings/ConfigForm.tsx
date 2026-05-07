@@ -101,6 +101,17 @@ function renderInput(field: ConfigFieldSchema, id: string, value: unknown, onCha
     );
   }
   if (field.type === 'json') {
+    if (Array.isArray(field.default)) {
+      return (
+        <textarea
+          id={id}
+          rows={Math.min(10, Math.max(4, Array.isArray(value) ? value.length : 4))}
+          value={Array.isArray(value) ? value.join('\n') : String(value ?? '')}
+          onChange={(event) => onChange(event.target.value)}
+          spellCheck={false}
+        />
+      );
+    }
     return (
       <textarea
         id={id}

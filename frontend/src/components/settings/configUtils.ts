@@ -5,8 +5,8 @@ export type EditableConfig = AgentConfig | CapabilityConfig;
 export type ConfigValues = Record<string, unknown>;
 
 export function initialConfigValues(config: EditableConfig): ConfigValues {
-  const source = config.user_config || {};
-  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, source[field.name] ?? '']));
+  const source = { ...(config.resolved_config || {}), ...(config.user_config || {}) };
+  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, source[field.name] ?? field.default ?? '']));
 }
 
 export function buildUserConfig(fields: ConfigFieldSchema[], values: ConfigValues): Record<string, unknown> {
@@ -28,7 +28,12 @@ export function buildUserConfig(fields: ConfigFieldSchema[], values: ConfigValue
       if (Number.isNaN(parsed)) throw new Error(`${field.label || field.name} must be a number.`);
       userConfig[field.name] = parsed;
     } else if (field.type === 'json') {
-      if (typeof value === 'string') {
+      if (Array.isArray(field.default) && typeof value === 'string') {
+        userConfig[field.name] = value
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      } else if (typeof value === 'string') {
         userConfig[field.name] = JSON.parse(value);
       } else {
         userConfig[field.name] = value;
@@ -44,25 +49,10 @@ export function isConfigDirty(config: EditableConfig, enabled: boolean, values: 
   if (enabled !== config.enabled) return true;
   try {
     const fields = config.config_schema || [];
-    return stableConfigString(buildUserConfig(fields, values)) !== stableConfigString(normalizeStoredConfigForDirty(fields, config.user_config || {}, values));
+    return stableConfigString(buildUserConfig(fields, values)) !== stableConfigString(buildUserConfig(fields, initialConfigValues(config)));
   } catch {
     return true;
   }
-}
-
-function normalizeStoredConfigForDirty(
-  fields: ConfigFieldSchema[],
-  stored: Record<string, unknown>,
-  values: ConfigValues,
-): Record<string, unknown> {
-  const normalized = { ...stored };
-  for (const field of fields) {
-    if (!field.secret) continue;
-    if (stored[field.name] === MASKED_SECRET_VALUE && (!values[field.name] || values[field.name] === MASKED_SECRET_VALUE)) {
-      delete normalized[field.name];
-    }
-  }
-  return normalized;
 }
 
 export function stableConfigString(value: Record<string, unknown>): string {
