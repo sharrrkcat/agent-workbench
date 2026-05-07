@@ -12,7 +12,7 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
-from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
+from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
@@ -1174,3 +1174,5 @@ class CommandRunner:
             ImageGalleryPayload.model_validate(data)
         elif output_type == "rich_content":
             RichContentPayload.model_validate(data)
+        elif output_type == "file_content":
+            FileContentPayload.model_validate(data)

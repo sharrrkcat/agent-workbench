@@ -185,13 +185,62 @@ def test_file_capability_reads_allowed_text_and_rejects_outside(monkeypatch, tmp
     monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
     runtime = FileRuntime()
 
-    assert runtime.read_text(str(text_file)) == "hello"
+    payload = runtime.read_text(str(text_file))
+    assert payload["filename"] == "note.txt"
+    assert payload["language"] == "text"
+    assert payload["mime_type"] == "text/plain"
+    assert payload["content"] == "hello"
+    assert payload["size"] == 5
+    assert payload["truncated"] is False
     try:
         runtime.read_text(str(denied_file))
     except ValueError as exc:
         assert "File access denied" in str(exc)
     else:
         raise AssertionError("expected denied path")
+
+
+def test_file_capability_returns_language_and_preserves_content(monkeypatch, tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    source = allowed / "tool.py"
+    source.write_bytes(b"def main():\n    return 'ok'\n")
+    config = allowed / "agent.yaml"
+    config.write_bytes(b"id: chat\nname: Chat\n")
+    env_file = allowed / ".env.example"
+    env_file.write_bytes(b"API_KEY=value\n")
+    markdown = allowed / "README.md"
+    markdown.write_bytes(b"# Title\n\n- item\n")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    py_payload = runtime.read_text(str(source))
+    yaml_payload = runtime.read_text(str(config))
+    env_payload = runtime.read_text(str(env_file))
+    md_payload = runtime.read_text(str(markdown))
+
+    assert py_payload["language"] == "python"
+    assert py_payload["content"] == "def main():\n    return 'ok'\n"
+    assert yaml_payload["language"] == "yaml"
+    assert env_payload["language"] == "dotenv"
+    assert md_payload["language"] == "markdown"
+    assert md_payload["content"] == "# Title\n\n- item\n"
+
+
+def test_file_capability_truncates_large_utf8_text(monkeypatch, tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    large = allowed / "large.log"
+    large.write_bytes(("a" * (1024 * 1024) + "界").encode("utf-8"))
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    payload = runtime.read_text(str(large))
+
+    assert payload["language"] == "log"
+    assert payload["size"] == 1024 * 1024 + len("界".encode("utf-8"))
+    assert payload["truncated"] is True
+    assert payload["content"] == "a" * (1024 * 1024)
 
 
 def test_file_capability_reads_image_and_rejects_non_image(monkeypatch, tmp_path: Path) -> None:

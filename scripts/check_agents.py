@@ -21,7 +21,7 @@ from ai_workbench.core.script import _load_module
 ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 PROFILE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_\-]*$")
 ALLOWED_AGENT_TYPES = {"prompt", "script"}
-ALLOWED_OUTPUT_TYPES = {"text", "markdown", "json", "image", "image_gallery", "rich_content"}
+ALLOWED_OUTPUT_TYPES = {"text", "markdown", "json", "image", "image_gallery", "rich_content", "file_content"}
 
 
 @dataclass

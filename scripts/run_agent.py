@@ -179,6 +179,14 @@ def _format_content(content: Any, output_type: str) -> str:
         blocks = content.get("blocks", []) if isinstance(content, dict) else []
         types = [str(block.get("type", "unknown")) for block in blocks if isinstance(block, dict)]
         return f"rich_content: {len(blocks)} block(s); types={', '.join(types) if types else 'none'}"
+    if output_type == "file_content":
+        if not isinstance(content, dict):
+            return str(content)
+        body = str(content.get("content") or "")
+        label = content.get("filename") or "file"
+        language = content.get("language") or "text"
+        suffix = " (truncated)" if content.get("truncated") else ""
+        return f"file_content: {label} [{language}] {len(body)} chars{suffix}\n{body}"
     if output_type == "json":
         parsed = _parse_json_like(content)
         if isinstance(parsed, (dict, list)):

@@ -8,6 +8,7 @@ from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.invocation import ActionInvocationRequest
 from ai_workbench.core.schema.message import (
     ChatContentBlock,
+    FileContentPayload,
     ImageGalleryPayload,
     ImagePayload,
     MessageSchema,
@@ -30,6 +31,7 @@ __all__ = [
     "ContextPolicy",
     "CommandResult",
     "ChatContentBlock",
+    "FileContentPayload",
     "ImageGalleryPayload",
     "ImagePayload",
     "MessageSchema",

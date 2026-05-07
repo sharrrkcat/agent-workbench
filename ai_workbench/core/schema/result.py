@@ -2,7 +2,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
+from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 
 
 class CommandResult(BaseModel):

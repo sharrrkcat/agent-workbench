@@ -234,10 +234,21 @@ export type ImageAttachment = {
   height?: number;
 };
 
+export type FileContentPayload = {
+  filename?: string | null;
+  language?: string | null;
+  mime_type?: string | null;
+  content: string;
+  size?: number | null;
+  truncated?: boolean;
+  path?: string | null;
+};
+
 export type ChatContentBlock =
   | { type: 'text'; text: string }
   | { type: 'markdown'; text: string }
-  | ({ type: 'image' } & ImagePayload);
+  | ({ type: 'image' } & ImagePayload)
+  | ({ type: 'file_content' } & FileContentPayload);
 
 export type Message = {
   message_id: string;

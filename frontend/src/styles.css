@@ -1025,6 +1025,103 @@ input:disabled {
   word-break: normal;
 }
 
+.file-content-card {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  background: #171717;
+}
+
+.file-content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-content-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.file-content-title strong {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-content-title span {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.file-content-title .file-content-truncated {
+  border-color: rgba(250, 204, 21, 0.2);
+  background: rgba(250, 204, 21, 0.1);
+  color: #fde68a;
+}
+
+.file-content-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.file-content-copy:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.file-content-notice {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(250, 204, 21, 0.14);
+  background: rgba(250, 204, 21, 0.08);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-content-body {
+  max-width: 100%;
+  max-height: 520px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .image-content {
   display: grid;
   gap: 7px;

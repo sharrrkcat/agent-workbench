@@ -14,7 +14,7 @@ methods:
         type: string
         required: true
     output:
-      type: markdown
+      type: file_content
 
   - id: read_image
     description: Read a local image file from an allowed local directory

@@ -155,7 +155,8 @@ Supported rendered output types are:
 - `json`: structured objects and arrays.
 - `image`: one renderable image payload.
 - `image_gallery`: a list of image payloads.
-- `rich_content`: ordered text, markdown, and image blocks.
+- `file_content`: raw file text shown without Markdown rendering.
+- `rich_content`: ordered text, markdown, image, and file content blocks.
 
 Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
 

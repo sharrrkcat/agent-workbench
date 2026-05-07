@@ -10,6 +10,7 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.capability import CapabilitySchema
+from ai_workbench.core.schema.message import FileContentPayload
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 
@@ -290,6 +291,74 @@ def test_dict_command_without_image_shape_falls_back_to_json_output() -> None:
     assert result.output_type == "json"
     assert message.output_type == "json"
     assert message.content == {"ok": True, "items": [1, 2]}
+
+
+def test_file_content_payload_schema_accepts_expected_shape() -> None:
+    payload = FileContentPayload.model_validate(
+        {
+            "filename": "agent.yaml",
+            "language": "yaml",
+            "mime_type": "text/yaml",
+            "content": "id: chat\nname: Chat Agent\n",
+            "size": 1234,
+            "truncated": False,
+        }
+    )
+
+    assert payload.content == "id: chat\nname: Chat Agent\n"
+    assert payload.truncated is False
+
+
+def test_declared_file_content_output_is_preserved_and_validated() -> None:
+    data = {
+        "filename": "tool.py",
+        "language": "python",
+        "mime_type": "text/x-python",
+        "content": "def main():\n    return 'ok'\n",
+        "size": 27,
+        "truncated": False,
+    }
+    fixture = command_fixture_from_manifest(
+        {
+            "id": "file_result",
+            "name": "File Result",
+            "methods": [{"id": "make", "output": {"type": "file_content"}}],
+            "commands": [{"name": "/file-result", "method": "make"}],
+        },
+        runtime=RuntimeWithResult(data),
+    )
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/file-result ignored"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert result.output_type == "file_content"
+    assert message.output_type == "file_content"
+    assert message.content == data
+
+
+def test_read_file_command_returns_file_content_for_source_yaml_env_and_markdown(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(ROOT))
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    py_result = run(fixture.runtime.handle_input(session, "/read-file agents/echo_script/agent.py"))
+    yaml_result = run(fixture.runtime.handle_input(session, "/read-file agents/chat/agent.yaml"))
+    env_result = run(fixture.runtime.handle_input(session, "/read-file .env.example"))
+    md_result = run(fixture.runtime.handle_input(session, "/read-file README.md"))
+    messages = fixture.messages.list_messages(session.session_id)
+
+    assert py_result.output_type == "file_content"
+    assert py_result.data["language"] == "python"
+    assert "\n    " in py_result.data["content"]
+    assert yaml_result.output_type == "file_content"
+    assert yaml_result.data["language"] == "yaml"
+    assert env_result.output_type == "file_content"
+    assert env_result.data["language"] == "dotenv"
+    assert md_result.output_type == "file_content"
+    assert md_result.data["language"] == "markdown"
+    assert messages[-1].output_type == "file_content"
 
 
 def test_success_event_bus_records_started_and_done() -> None:

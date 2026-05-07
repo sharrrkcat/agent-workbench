@@ -96,7 +96,7 @@ Message hover actions are available in Chat:
 - User messages: Copy, Edit, Delete.
 - Agent messages: Copy, Retry, Delete.
 
-Copy uses the raw message content. Markdown replies copy Markdown source, and JSON messages copy pretty JSON.
+Copy uses the raw message content. Markdown replies copy Markdown source, JSON messages copy pretty JSON, and file content messages copy the returned file body only.
 
 Delete only removes the selected message. It does not remove later messages and does not cascade-delete runs.
 
@@ -332,7 +332,7 @@ See [docs/AGENT_DEVELOPMENT.md](docs/AGENT_DEVELOPMENT.md) for Prompt Agent and 
 
 See [docs/CAPABILITY_DEVELOPMENT.md](docs/CAPABILITY_DEVELOPMENT.md) for Capability templates, command mapping, runtime method checks, `scripts/create_capability.py`, and command-line testing with `scripts/run_command.py`.
 
-The development guides cover output rendering for `text`, `markdown`, `json`, `image`, `image_gallery`, and `rich_content`, plus common strict-check failures and a practical CLI debug workflow.
+The development guides cover output rendering for `text`, `markdown`, `json`, `image`, `image_gallery`, `file_content`, and `rich_content`, plus common strict-check failures and a practical CLI debug workflow.
 
 ## Image Input Alpha
 
@@ -383,7 +383,7 @@ uv run python scripts/cleanup_attachments.py --apply
 
 ## File And HTTP Capabilities
 
-The `file` capability exposes `/read-file <path>` and `/read-image <path>`. It can read only files inside allowed directories. Defaults are `./data`, `./examples`, `./agents`, and `./capabilities`; add more with `AGENT_WORKBENCH_FILE_ALLOWED_DIRS` using the platform path separator. Text reads are UTF-8 only and limited to 1 MB. Image reads support PNG, JPEG, WebP, GIF, and SVG up to 10 MB, returning normal image output with a data URL.
+The `file` capability exposes `/read-file <path>` and `/read-image <path>`. It can read only files inside allowed directories. Defaults are `./data`, `./examples`, `./agents`, and `./capabilities`; add more with `AGENT_WORKBENCH_FILE_ALLOWED_DIRS` using the platform path separator. `/read-file` returns `file_content`, which is rendered as raw file text instead of Markdown. It preserves indentation, line breaks, and spaces for source files, config files, logs, and text files. UTF-8 text reads are limited to the first 1 MB; larger files return `truncated=true`, and Copy copies the returned content only. Image reads support PNG, JPEG, WebP, GIF, and SVG up to 10 MB, returning normal image output with a data URL.
 
 The `http` capability exposes `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It only uses GET, only allows `http://` and `https://`, follows redirects with a small limit, uses a 10 second timeout, and does not use private browser cookies. Text/page responses are limited to 1 MB and allowed content types are `text/plain`, `text/html`, and `application/json`. Image responses are limited to 10 MB and must return an image MIME type.
 

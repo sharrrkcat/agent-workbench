@@ -73,8 +73,9 @@ Allowed method output types:
 - `image`
 - `image_gallery`
 - `rich_content`
+- `file_content`
 
-The command runner validates image, image gallery, and rich content payload shapes. If a command returns a dict and the method has no declared output type, it falls back to `json`.
+Use `file_content` for source files, config files, logs, and other raw text that must not be interpreted as Markdown. Its payload includes `content` plus optional `filename`, `language`, `mime_type`, `size`, and `truncated` fields. The command runner validates image, image gallery, rich content, and file content payload shapes. If a command returns a dict and the method has no declared output type, it falls back to `json`.
 
 ## CLI Workflow
 

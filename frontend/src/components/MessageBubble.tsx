@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import type { Agent, ChatContentBlock, ImageAttachment, ImagePayload, Message } from '../types';
+import type { Agent, ChatContentBlock, FileContentPayload, ImageAttachment, ImagePayload, Message } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -243,6 +243,9 @@ function MessageContent({ message, kind, onPreviewImage }: { message: Message; k
   if (message.output_type === 'json') {
     return <JsonRenderer content={message.content} />;
   }
+  if (message.output_type === 'file_content') {
+    return <FileContentRenderer payload={normalizeFileContentPayload(message.content)} />;
+  }
   if (message.output_type === 'image') {
     return <ImageRenderer image={normalizeImagePayload(message.content)} onPreviewImage={onPreviewImage} />;
   }
@@ -316,6 +319,45 @@ export function JsonRenderer({ content }: { content: unknown }) {
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
 }
 
+function FileContentRenderer({ payload }: { payload: FileContentPayload }) {
+  const setError = useWorkbenchStore((state) => state.setError);
+  const [copied, setCopied] = useState(false);
+  const filename = payload.filename?.trim() || 'File content';
+  const language = payload.language?.trim() || 'text';
+  const size = typeof payload.size === 'number' && Number.isFinite(payload.size) ? formatBytes(payload.size) : '';
+
+  async function copyFileContent() {
+    try {
+      await navigator.clipboard.writeText(payload.content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1300);
+    } catch (error) {
+      setError(error, 'Failed to copy file content');
+    }
+  }
+
+  return (
+    <section className="message-content file-content-card">
+      <header className="file-content-header">
+        <div className="file-content-title">
+          <strong title={filename}>{filename}</strong>
+          <span>{language}</span>
+          {size ? <span>{size}</span> : null}
+          {payload.truncated ? <span className="file-content-truncated">Truncated</span> : null}
+        </div>
+        <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title="Copy file content">
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </header>
+      {payload.truncated ? <div className="file-content-notice">Content truncated · showing first 1 MB</div> : null}
+      <pre className="file-content-body">
+        <code>{payload.content}</code>
+      </pre>
+    </section>
+  );
+}
+
 function ImageRenderer({ image, onPreviewImage }: { image: ImagePayload | null; onPreviewImage: (image: ImagePreview) => void }) {
   if (!image) {
     return <PlainTextRenderer content="" />;
@@ -361,6 +403,9 @@ function RichContentRenderer({ blocks, onPreviewImage }: { blocks: ChatContentBl
         if (block.type === 'image') {
           return <ImageRenderer key={index} image={block} onPreviewImage={onPreviewImage} />;
         }
+        if (block.type === 'file_content') {
+          return <FileContentRenderer key={index} payload={block} />;
+        }
         return <PlainTextRenderer key={index} content={block.text} />;
       })}
     </div>
@@ -381,6 +426,9 @@ export function contentToText(content: unknown): string {
 }
 
 function copyableMessageContent(message: Message): string {
+  if (message.output_type === 'file_content') {
+    return normalizeFileContentPayload(message.content).content;
+  }
   if (message.output_type === 'json') {
     return JSON.stringify(normalizeJsonContent(message.content), null, 2);
   }
@@ -433,6 +481,22 @@ function normalizeImageGallery(content: unknown): ImagePayload[] {
   return value.images.map(normalizeImagePayload).filter((image): image is ImagePayload => image !== null);
 }
 
+function normalizeFileContentPayload(content: unknown): FileContentPayload {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) {
+    return { content: contentToText(content), language: 'text', truncated: false };
+  }
+  const value = content as Record<string, unknown>;
+  return {
+    filename: optionalString(value.filename) || basename(optionalString(value.path)),
+    language: optionalString(value.language) || 'text',
+    mime_type: optionalString(value.mime_type),
+    content: typeof value.content === 'string' ? value.content : contentToText(value.content),
+    size: numberValue(value.size),
+    truncated: value.truncated === true,
+    path: optionalString(value.path),
+  };
+}
+
 function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
   if (!content || typeof content !== 'object' || Array.isArray(content)) return [];
   const value = content as Record<string, unknown>;
@@ -448,6 +512,9 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
     } else if (item.type === 'image') {
       const image = normalizeImagePayload(item);
       if (image) blocks.push({ type: 'image', ...image });
+    } else if (item.type === 'file_content') {
+      const fileContent = normalizeFileContentPayload(item);
+      blocks.push({ type: 'file_content', ...fileContent });
     }
   }
   return blocks;
@@ -455,6 +522,11 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function basename(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.split(/[\\/]/).filter(Boolean).pop() || value;
 }
 
 function extractReasoningContent(metadata: Record<string, unknown> | undefined): string {
@@ -545,6 +617,12 @@ function numberValue(value: unknown): number | undefined {
 
 function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(ms < 1000 ? 1 : 1)}s`;
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(value < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
 function truncateLabel(value: string): string {

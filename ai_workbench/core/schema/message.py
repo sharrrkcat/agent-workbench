@@ -27,6 +27,18 @@ class ImageGalleryPayload(BaseModel):
     images: list[ImagePayload]
 
 
+class FileContentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: Optional[str] = None
+    language: Optional[str] = None
+    mime_type: Optional[str] = None
+    content: str
+    size: Optional[int] = None
+    truncated: bool = False
+    path: Optional[str] = None
+
+
 class TextContentBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -45,8 +57,12 @@ class ImageContentBlock(ImagePayload):
     type: Literal["image"]
 
 
+class FileContentBlock(FileContentPayload):
+    type: Literal["file_content"]
+
+
 ChatContentBlock = Annotated[
-    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock],
+    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock, FileContentBlock],
     Field(discriminator="type"),
 ]
 
