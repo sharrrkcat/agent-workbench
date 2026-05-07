@@ -2639,6 +2639,11 @@ input:disabled {
   background: #1c1c1c;
 }
 
+.settings-nav-group {
+  display: grid;
+  gap: 3px;
+}
+
 .settings-nav button {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
@@ -2664,6 +2669,25 @@ input:disabled {
 .settings-nav button.active {
   border-color: rgba(255, 255, 255, 0.1);
   box-shadow: inset 3px 0 0 #22a06b;
+}
+
+.settings-subnav {
+  display: grid;
+  gap: 3px;
+  padding: 0 0 5px 25px;
+}
+
+.settings-subnav button {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.settings-subnav button.active {
+  box-shadow: inset 2px 0 0 #22a06b;
 }
 
 .settings-object-list {

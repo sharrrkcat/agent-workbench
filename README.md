@@ -134,7 +134,11 @@ http://localhost:1234/v1
 
 Set `AGENT_WORKBENCH_LLM_MODEL` in `.env`, or configure the `llm` capability in Settings. Local LM Studio setups often do not require an API key; an empty key is allowed.
 
-In Settings, LLM configuration is split into Provider Profiles and Model Profiles.
+In Settings, LLM configuration is split under `LLM`:
+
+- Defaults.
+- Provider Profiles.
+- Model Profiles.
 
 ## LLM Provider And Model Profiles
 
@@ -150,13 +154,18 @@ Model Profiles hold model selection and behavior defaults:
 
 - Name: the display name shown in Settings, such as `My Qwen3 Local`.
 - Provider Profile: the connection used for the model.
-- Model ID: the real provider model id, such as `ascat/Ministral-3-3b-it-ad`.
+- Selected provider model: refresh models from the selected Provider Profile when the provider can list models.
+- Manual Model ID override: the editable fallback field used as the real request model id, such as `ascat/Ministral-3-3b-it-ad`.
 - Profile key: the stable key used by Agent manifests. In the current API this maps to the stored `alias` field.
 - Capabilities: Vision, Tools, Reasoning, Streaming.
 - Generation defaults: Temperature, Top P, Top K, Max tokens.
 - Notes and enabled state.
 
-Settings -> LLM follows the Settings Console three-column structure. The middle object list contains:
+Prefer choosing a refreshed provider model when available. Model ID remains editable for cases where the provider is offline, does not support model listing, or you need a custom alias.
+
+LM Studio can list locally available models through its native provider API, falling back to OpenAI-compatible `/v1/models` when needed. llama.cpp commonly reports the currently served model; use `--alias` for stable IDs when needed. Full model status and `MODEL_NOT_LOADED` handling are intentionally deferred.
+
+Settings -> LLM follows the Settings Console three-column structure. The left Settings nav expands `LLM` into subpages, and the middle object list only shows the selected subpage:
 
 - Defaults: choose the Default model profile.
 - Provider Profiles, backed by `llm_provider_profiles`.

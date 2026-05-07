@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.api.routes.configs import _runtime_list_models, _safe_llm_error
+from ai_workbench.api.routes.configs import _runtime_list_models, _runtime_model_items, _safe_llm_error
 from ai_workbench.core.config_schema import MASKED_SECRET
 from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
 
@@ -98,13 +98,31 @@ def duplicate_provider_profile(profile_id: str, state: RuntimeState = Depends(ge
 
 @router.get("/{profile_id}/models")
 def list_provider_models(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    return refresh_provider_models(profile_id, state)
+
+
+@router.post("/{profile_id}/refresh-models")
+def refresh_provider_models(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     profile = _get_provider_or_404(state, profile_id)
+    if not profile.enabled:
+        raise_error(400, "LLM_PROVIDER_PROFILE_DISABLED", f"Provider profile is disabled: {profile.name}", {"provider_profile_id": profile.id})
     try:
         runtime = state.runtimes.get_runtime("llm")
-        models = _runtime_list_models(runtime, _provider_model_config(profile))
-        return {"success": True, "models": [{"id": model_id} for model_id in models]}
+        models = _runtime_model_items(runtime, _provider_model_config(profile))
+        return {
+            "success": True,
+            "provider_profile_id": profile.id,
+            "provider": profile.provider,
+            "models": models,
+            "warnings": _provider_model_warnings(profile),
+        }
     except Exception as exc:
-        raise_error(502, "LLM_MODEL_LIST_FAILED", _safe_llm_error(exc, "Provider model list failed."))
+        raise_error(
+            502,
+            "LLM_MODEL_LIST_FAILED",
+            _safe_llm_error(exc, "Provider model list failed."),
+            {"provider_profile_id": profile.id, "provider": profile.provider},
+        )
 
 
 @router.post("/{profile_id}/test")
@@ -139,6 +157,12 @@ def _provider_model_config(profile: ProviderProfileSchema) -> Dict[str, Any]:
         "api_key": profile.api_key,
         "timeout": profile.timeout_seconds or 60,
     }
+
+
+def _provider_model_warnings(profile: ProviderProfileSchema) -> list[str]:
+    if profile.provider == "llama_cpp":
+        return ["llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed."]
+    return []
 
 
 def _validation_message(exc: ValidationError) -> str:

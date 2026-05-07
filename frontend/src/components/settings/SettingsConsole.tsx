@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { LlmProfile, LlmProviderProfile } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
-import { SettingsNav, type SettingsSection } from './SettingsNav';
+import { SettingsNav, type LlmSettingsSubsection, type SettingsSection } from './SettingsNav';
 import { SettingsObjectList } from './SettingsObjectList';
 
 export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
@@ -14,6 +14,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);
   const [llmProviderProfiles, setLlmProviderProfiles] = useState<LlmProviderProfile[]>([]);
   const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('global');
+  const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('defaults');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
 
@@ -52,6 +53,10 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
       setSelectedCapabilityId(capabilityConfigs[0].capability_id);
     }
     if (section === 'llm' && !selectedLlmItemId) {
+      setSelectedLlmItemId('global');
+    }
+    if (section === 'llm') {
+      setSelectedLlmSubsection('defaults');
       setSelectedLlmItemId('global');
     }
   }
@@ -97,6 +102,24 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
   }
 
+  function changeLlmSubsection(subsection: LlmSettingsSubsection) {
+    if (subsection === selectedLlmSubsection) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedLlmSubsection(subsection);
+    if (subsection === 'defaults') {
+      setSelectedLlmItemId('global');
+    } else if (subsection === 'providers') {
+      const providerId = selectedLlmItemId.startsWith('provider:') ? selectedLlmItemId : llmProviderProfiles[0] ? `provider:${llmProviderProfiles[0].id}` : '';
+      setSelectedLlmItemId(providerId);
+    } else {
+      const modelId = selectedLlmItemId && !selectedLlmItemId.startsWith('provider:') && selectedLlmItemId !== 'global' && selectedLlmItemId !== 'new-provider'
+        ? selectedLlmItemId
+        : llmProfiles[0]?.id || '';
+      setSelectedLlmItemId(modelId);
+    }
+  }
+
   function selectLlmItem(itemId: string) {
     if (itemId === selectedLlmItemId) return;
     if (!confirmDirtyNavigation()) return;
@@ -115,9 +138,15 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
 
   return (
     <div className="settings-console">
-      <SettingsNav activeSection={activeSection} onChange={changeSection} />
+      <SettingsNav
+        activeSection={activeSection}
+        activeLlmSubsection={selectedLlmSubsection}
+        onChange={changeSection}
+        onLlmSubsectionChange={changeLlmSubsection}
+      />
       <SettingsObjectList
         section={activeSection}
+        llmSubsection={selectedLlmSubsection}
         agentConfigs={agentConfigs}
         capabilityConfigs={capabilityConfigs}
         selectedAgentId={selectedAgentConfig?.agent_id}
@@ -139,6 +168,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         llmProfiles={llmProfiles}
         llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
+        llmSubsection={selectedLlmSubsection}
         onLlmProfilesChanged={refreshLlmProfiles}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}

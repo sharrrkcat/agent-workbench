@@ -138,12 +138,16 @@ def test_local_attachment_is_sent_to_vision_model(monkeypatch, tmp_path: Path) -
     app = create_app(llm_runtime=llm, use_memory=True)
     client = TestClient(app)
     session = create_session(client)
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Vision Provider", "provider": "openai_compatible", "base_url": "http://localhost:1234/v1"},
+    ).json()
     profile = client.post(
         "/api/llm-profiles",
         json={
             "alias": "vision_profile",
             "name": "Vision Profile",
-            "base_url": "http://localhost:1234/v1",
+            "provider_profile_id": provider["id"],
             "model_id": "fake-vision",
             "supports_streaming": False,
             "supports_vision": True,

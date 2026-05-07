@@ -346,6 +346,10 @@ def _enrich_resolved_runtime(state: RuntimeState, resolved: Dict[str, Any]) -> N
 
 
 def _runtime_list_models(runtime, model_config: Dict[str, Any]) -> list[str]:
+    return [item["id"] for item in _runtime_model_items(runtime, model_config) if item.get("id")]
+
+
+def _runtime_model_items(runtime, model_config: Dict[str, Any]) -> list[dict]:
     if hasattr(runtime, "list_models") and callable(runtime.list_models):
         models = runtime.list_models(model_config=model_config)
     elif hasattr(runtime, "test_connection") and callable(runtime.test_connection):
@@ -353,9 +357,29 @@ def _runtime_list_models(runtime, model_config: Dict[str, Any]) -> list[str]:
         models = result.get("models", [])
     else:
         raise RuntimeError("LLM runtime does not support model listing.")
-    if models and isinstance(models[0], dict):
-        return [item.get("id", "") for item in models if item.get("id")]
-    return [str(item) for item in models]
+    items = []
+    for model in models or []:
+        if isinstance(model, dict):
+            model_id = model.get("id") or model.get("name")
+            if not model_id:
+                continue
+            item = {
+                "id": str(model_id),
+                "name": model.get("name") or model.get("display_name") or str(model_id),
+                "capabilities": model.get("capabilities") if isinstance(model.get("capabilities"), dict) else None,
+                "raw": _safe_model_raw(model),
+            }
+            items.append(item)
+        else:
+            value = str(model)
+            if value:
+                items.append({"id": value, "name": value, "capabilities": None, "raw": {}})
+    return items
+
+
+def _safe_model_raw(model: dict) -> dict:
+    blocked = {"api_key", "authorization", "token", "secret", "password"}
+    return {str(key): value for key, value in model.items() if str(key).lower() not in blocked}
 
 
 def _safe_llm_error(exc: Exception, fallback: str) -> str:

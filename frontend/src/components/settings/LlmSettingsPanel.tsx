@@ -2,7 +2,7 @@ import { Brain, Eye, Hammer, Plus, Radio, RefreshCw, Save, Settings, Trash2, Zap
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { CapabilityConfig, LlmDefaults, LlmProfile, LlmProfileInput, LlmProviderProfile, LlmProviderProfileInput, LlmResolvedConfig, LlmTestResult } from '../../types';
+import type { CapabilityConfig, LlmDefaults, LlmProfile, LlmProfileInput, LlmProviderModel, LlmProviderProfile, LlmProviderProfileInput, LlmResolvedConfig, LlmTestResult } from '../../types';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import { ConfigForm } from './ConfigForm';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
@@ -423,9 +423,11 @@ function ResolvedLlmConfig({ status }: { status: LlmResolvedConfig }) {
 
 export function LlmDefaultsDetail({
   profiles,
+  providerProfiles,
   onDirtyChange,
 }: {
   profiles: LlmProfile[];
+  providerProfiles: LlmProviderProfile[];
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [defaults, setDefaults] = useState<LlmDefaults | null>(null);
@@ -433,6 +435,8 @@ export function LlmDefaultsDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
   const dirty = Boolean(defaults && selected !== (defaults.default_model_profile_id || ''));
+  const selectedProfile = profiles.find((profile) => profile.id === selected);
+  const selectedProvider = providerProfiles.find((provider) => provider.id === selectedProfile?.provider_profile_id);
 
   useEffect(() => {
     let cancelled = false;
@@ -492,15 +496,43 @@ export function LlmDefaultsDetail({
           <label className="config-field settings-config-field">
             <span>Default model profile</span>
             <select value={selected} onChange={(event) => setSelected(event.target.value)} disabled={busy}>
-              <option value="">Legacy fallback / environment</option>
+              <option value="">None / Unset</option>
               {profiles.map((profile) => (
                 <option key={profile.id} value={profile.id} disabled={!profile.enabled}>
                   {profile.name} ({profile.model_id || profile.alias}){profile.enabled ? '' : ' - disabled'}
                 </option>
               ))}
             </select>
-            <small>Legacy fallback is used only when no model profile is resolved.</small>
+            <small>Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.</small>
           </label>
+          {selectedProfile ? (
+            <dl className="settings-definition-grid compact">
+              <div>
+                <dt>Provider profile</dt>
+                <dd>{selectedProvider?.name || 'Missing provider profile'}</dd>
+              </div>
+              <div>
+                <dt>Model ID</dt>
+                <dd>{selectedProfile.model_id || 'Unset'}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{selectedProfile.enabled ? 'Enabled' : 'Disabled'}</dd>
+              </div>
+              <div>
+                <dt>Capabilities</dt>
+                <dd><ModelCapabilityIcons capabilities={capabilitiesFromProfile(selectedProfile)} className="settings-capability-icons" /></dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="settings-empty-state compact">No default model profile selected.</div>
+          )}
+        </section>
+        <section className="detail-section">
+          <h3>Advanced</h3>
+          <p className="settings-muted-copy">
+            Legacy provider, base URL, and model fields are retained only as readonly fallback config when no model profile is resolved.
+          </p>
         </section>
       </div>
     </form>
@@ -524,11 +556,13 @@ export function LlmProviderProfileDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
   const [result, setResult] = useState<LlmTestResult | null>(null);
+  const [models, setModels] = useState<string[]>([]);
 
   useEffect(() => {
     setDraft(selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults);
     setError(null);
     setResult(null);
+    setModels([]);
   }, [selectedProfile, selectedProfileId]);
 
   const baseDraft = selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults;
@@ -594,6 +628,26 @@ export function LlmProviderProfileDetail({
     }
   }
 
+  async function refreshProviderModels() {
+    if (!selectedProfile) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.listLlmProviderModels(selectedProfile.id);
+      setModels(response.models.map((model) => model.id).filter(Boolean));
+      setResult({
+        success: true,
+        message: response.models.length ? `Found ${response.models.length} model${response.models.length === 1 ? '' : 's'}.` : 'Provider returned no models.',
+        base_url: selectedProfile.base_url,
+        models: response.models.map((model) => model.id).filter(Boolean),
+      });
+    } catch (caught) {
+      setError(toSettingsError(caught, 'Failed to refresh provider models.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!selectedProfile && !isNew) {
     return <div className="settings-placeholder"><h2>Provider Profile</h2><p>Select a provider profile or create a new one.</p></div>;
   }
@@ -620,7 +674,12 @@ export function LlmProviderProfileDetail({
         <section className="detail-section">
           <div className="detail-section-heading">
             <h3>Connection</h3>
-            {selectedProfile ? <button className="settings-secondary-button" type="button" onClick={() => void testProvider()} disabled={busy}><Zap size={14} />Test connection</button> : null}
+            {selectedProfile ? (
+              <div className="settings-button-row">
+                <button className="settings-secondary-button" type="button" onClick={() => void testProvider()} disabled={busy}><Zap size={14} />Test connection</button>
+                <button className="settings-secondary-button" type="button" onClick={() => void refreshProviderModels()} disabled={busy}><RefreshCw size={14} className={busy ? 'spin' : ''} />Refresh models</button>
+              </div>
+            ) : null}
           </div>
           <div className="settings-config-form llm-profile-form">
             <TextField label="Name" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} disabled={busy} />
@@ -635,6 +694,11 @@ export function LlmProviderProfileDetail({
             <NumberField label="Timeout" value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
           </div>
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
+          {models.length ? (
+            <div className="settings-chip-row">
+              {models.map((model) => <span key={model}>{model}</span>)}
+            </div>
+          ) : null}
         </section>
       </div>
     </form>
@@ -658,7 +722,9 @@ export function LlmProfileDetail({
   const isNew = selectedProfileId === 'new';
   const [draft, setDraft] = useState<LlmProfileInput>(() => (selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults));
   const [keyTouched, setKeyTouched] = useState(false);
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<LlmProviderModel[]>([]);
+  const [selectedProviderModelId, setSelectedProviderModelId] = useState('');
+  const [capabilitiesTouched, setCapabilitiesTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
   const [result, setResult] = useState<LlmTestResult | null>(null);
@@ -666,6 +732,8 @@ export function LlmProfileDetail({
   useEffect(() => {
     setDraft(selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults);
     setKeyTouched(false);
+    setSelectedProviderModelId('');
+    setCapabilitiesTouched(false);
     setModels([]);
     setBusy(false);
     setError(null);
@@ -687,6 +755,11 @@ export function LlmProfileDetail({
     setDraft(next);
   }
 
+  function updateCapabilityDraft(patch: LlmProfileInput) {
+    setCapabilitiesTouched(true);
+    updateDraft(patch);
+  }
+
   async function saveProfile() {
     setBusy(true);
     setError(null);
@@ -697,6 +770,12 @@ export function LlmProfileDetail({
       });
       if (!String(payload.name || '').trim()) {
         throw new Error('Name is required.');
+      }
+      if (!String(payload.provider_profile_id || '').trim()) {
+        throw new Error('Provider profile is required.');
+      }
+      if (!String(payload.model_id || '').trim()) {
+        throw new Error('Model ID is required.');
       }
       const saved = selectedProfile
         ? await api.patchLlmProfile(selectedProfile.id, payload)
@@ -749,7 +828,7 @@ export function LlmProfileDetail({
       if (!testResult.success) {
         setError({ code: testResult.error_code || 'LLM_CONNECTION_FAILED', message: testResult.message });
       }
-      if (testResult.models?.length) setModels(testResult.models);
+      if (testResult.models?.length) setModels(testResult.models.map((id) => ({ id })));
     } catch (caught) {
       setError(toSettingsError(caught, 'LLM profile connection test failed.'));
     } finally {
@@ -764,12 +843,33 @@ export function LlmProfileDetail({
     setError(null);
     try {
       const response = await api.listLlmProviderModels(providerId);
-      setModels(response.models.map((model) => model.id).filter(Boolean));
+      setModels(response.models.filter((model) => Boolean(model.id)));
     } catch (caught) {
       setError(toSettingsError(caught, 'Failed to list profile models.'));
     } finally {
       setBusy(false);
     }
+  }
+
+  function selectProviderModel(modelId: string) {
+    setSelectedProviderModelId(modelId);
+    const model = models.find((item) => item.id === modelId);
+    if (!model) return;
+    const modelName = String(model.name || model.id);
+    const next: LlmProfileInput = { model_id: model.id };
+    if (!String(draft.name || '').trim()) {
+      next.name = modelName;
+      if (!keyTouched && isNew) {
+        next.alias = uniqueProfileKey(modelName, profiles, selectedProfile?.id);
+      }
+    }
+    if (!capabilitiesTouched && model.capabilities) {
+      if (typeof model.capabilities.vision === 'boolean') next.supports_vision = model.capabilities.vision;
+      if (typeof model.capabilities.tools === 'boolean') next.supports_tools = model.capabilities.tools;
+      if (typeof model.capabilities.reasoning === 'boolean') next.supports_reasoning = model.capabilities.reasoning;
+      if (typeof model.capabilities.json_mode === 'boolean') next.supports_json_mode = model.capabilities.json_mode;
+    }
+    updateDraft(next);
   }
 
   if (!selectedProfile && !isNew) {
@@ -816,38 +916,46 @@ export function LlmProfileDetail({
           <div className="detail-section-heading">
             <h3>Model</h3>
             <div className="settings-button-row">
-              {selectedProfile ? (
-                <>
-                  <button className="settings-secondary-button" type="button" onClick={() => void refreshProfileModels()} disabled={busy || !draft.provider_profile_id}>
-                    <RefreshCw size={14} className={busy ? 'spin' : ''} />
-                    Refresh models
-                  </button>
-                </>
-              ) : null}
+              <button className="settings-secondary-button" type="button" onClick={() => void refreshProfileModels()} disabled={busy || !draft.provider_profile_id}>
+                <RefreshCw size={14} className={busy ? 'spin' : ''} />
+                Refresh models
+              </button>
             </div>
           </div>
           <div className="settings-config-form llm-profile-form">
             <TextField label="Name" value={draft.name} onChange={(name) => updateDraft({ name })} disabled={busy} />
             <label className="config-field settings-config-field">
               <span>Provider profile</span>
-              <select value={String(draft.provider_profile_id || '')} onChange={(event) => updateDraft({ provider_profile_id: event.target.value || null })} disabled={busy}>
-                <option value="">Missing provider profile</option>
+              <select
+                value={String(draft.provider_profile_id || '')}
+                onChange={(event) => {
+                  updateDraft({ provider_profile_id: event.target.value || null });
+                  setModels([]);
+                  setSelectedProviderModelId('');
+                }}
+                disabled={busy}
+              >
+                <option value="">Select provider profile</option>
                 {providerProfiles.map((provider) => (
                   <option key={provider.id} value={provider.id} disabled={!provider.enabled}>
                     {provider.name}{provider.enabled ? '' : ' - disabled'}
                   </option>
                 ))}
               </select>
+              {!draft.provider_profile_id ? <small>Select a provider profile first.</small> : providerHelperText(draft.provider_profile_id, providerProfiles)}
             </label>
             <label className="config-field settings-config-field">
-              <span>Model ID</span>
+              <span>Choose from provider</span>
+              <select value={selectedProviderModelId} onChange={(event) => selectProviderModel(event.target.value)} disabled={busy || !models.length}>
+                <option value="">{models.length ? 'Select refreshed model' : 'No refreshed models'}</option>
+                {models.map((model) => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
+              </select>
+              <small>Prefer selecting a refreshed provider model when available.</small>
+            </label>
+            <label className="config-field settings-config-field">
+              <span>Manual model ID override</span>
               <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy} />
-              {models.length ? (
-                <select value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy}>
-                  <option value="">Select refreshed model</option>
-                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
-                </select>
-              ) : null}
+              <small>Use manual Model ID when the provider is offline, does not support listing models, or when you need a custom alias.</small>
             </label>
             <TextField label="Notes" value={draft.notes} onChange={(notes) => updateDraft({ notes })} disabled={busy} textarea />
           </div>
@@ -868,10 +976,10 @@ export function LlmProfileDetail({
             Reasoning output declares expected output behavior only. It does not change provider request parameters.
           </p>
           <div className="llm-profile-flags">
-            <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(supports_vision) => updateDraft({ supports_vision })} label={<CapabilityToggleLabel kind="vision" label="Vision" />} disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(supports_tools) => updateDraft({ supports_tools })} label={<CapabilityToggleLabel kind="tools" label="Tools" />} disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateDraft({ supports_reasoning })} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning output" />} disabled={busy} />
-            <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(supports_streaming) => updateDraft({ supports_streaming })} label={<CapabilityToggleLabel kind="streaming" label="Streaming" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_vision)} onChange={(supports_vision) => updateCapabilityDraft({ supports_vision })} label={<CapabilityToggleLabel kind="vision" label="Vision" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_tools)} onChange={(supports_tools) => updateCapabilityDraft({ supports_tools })} label={<CapabilityToggleLabel kind="tools" label="Tools" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_reasoning)} onChange={(supports_reasoning) => updateCapabilityDraft({ supports_reasoning })} label={<CapabilityToggleLabel kind="reasoning" label="Reasoning output" />} disabled={busy} />
+            <ToggleSwitch checked={Boolean(draft.supports_streaming)} onChange={(supports_streaming) => updateCapabilityDraft({ supports_streaming })} label={<CapabilityToggleLabel kind="streaming" label="Streaming" />} disabled={busy} />
           </div>
         </section>
         <section className="detail-section">
@@ -1116,6 +1224,14 @@ function providerProfileLabel(providerProfileId: string, providers: LlmProviderP
   if (!providerProfileId) return 'Missing provider profile';
   const provider = providers.find((item) => item.id === providerProfileId);
   return provider ? provider.name : 'Missing provider profile';
+}
+
+function providerHelperText(providerProfileId: string | undefined | null, providers: LlmProviderProfile[]) {
+  const provider = providers.find((item) => item.id === providerProfileId);
+  if (provider?.provider === 'llama_cpp') {
+    return <small>llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.</small>;
+  }
+  return null;
 }
 
 export function sanitizeProfileKey(value: string): string {

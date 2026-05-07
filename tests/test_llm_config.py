@@ -29,6 +29,19 @@ class InspectableLLMRuntime(FakeLLMRuntime):
         return ["fake-a", "fake-b"]
 
 
+class ProviderModelRuntime(InspectableLLMRuntime):
+    def list_models(self, model_config=None):
+        self.model_calls.append(model_config or {})
+        return [
+            {
+                "id": "provider-model",
+                "name": "Provider Model",
+                "capabilities": {"vision": True, "tools": False, "reasoning": False},
+                "api_key": "must-not-leak",
+            }
+        ]
+
+
 def llm_capability():
     return load_capability_manifest(ROOT / "capabilities" / "llm" / "capability.yaml")
 
@@ -200,6 +213,160 @@ def test_llm_models_endpoint_failure_path() -> None:
 
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "LLM_MODEL_LIST_FAILED"
+
+
+def test_provider_refresh_models_uses_provider_profile_id_without_model_profile() -> None:
+    llm = ProviderModelRuntime()
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": "OpenAI-compatible local",
+            "provider": "openai_compatible",
+            "base_url": "http://provider/v1",
+            "api_key": "secret",
+        },
+    ).json()
+
+    response = client.post(f"/api/llm-provider-profiles/{provider['id']}/refresh-models")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_profile_id"] == provider["id"]
+    assert payload["provider"] == "openai_compatible"
+    assert payload["models"][0]["id"] == "provider-model"
+    assert payload["models"][0]["capabilities"]["vision"] is True
+    assert "must-not-leak" not in str(payload)
+    assert llm.model_calls[-1]["base_url"] == "http://provider/v1"
+    assert llm.model_calls[-1]["provider"] == "openai_compatible"
+
+
+def test_provider_refresh_models_missing_and_disabled_errors() -> None:
+    client = TestClient(create_app(llm_runtime=ProviderModelRuntime(), use_memory=True))
+
+    missing = client.post("/api/llm-provider-profiles/missing/refresh-models")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "LLM_PROVIDER_PROFILE_NOT_FOUND"
+
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Disabled", "provider": "llama_cpp", "base_url": "http://local/v1", "enabled": False},
+    ).json()
+    disabled = client.post(f"/api/llm-provider-profiles/{provider['id']}/refresh-models")
+    assert disabled.status_code == 400
+    assert disabled.json()["error"]["code"] == "LLM_PROVIDER_PROFILE_DISABLED"
+
+
+def test_provider_refresh_models_passes_provider_kind_to_runtime() -> None:
+    llm = ProviderModelRuntime()
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    for provider_kind in ("openai_compatible", "lm_studio", "llama_cpp"):
+        provider = client.post(
+            "/api/llm-provider-profiles",
+            json={"name": provider_kind, "provider": provider_kind, "base_url": "http://local/v1"},
+        ).json()
+        response = client.post(f"/api/llm-provider-profiles/{provider['id']}/refresh-models")
+        assert response.status_code == 200
+        assert llm.model_calls[-1]["provider"] == provider_kind
+    assert response.json()["warnings"]
+
+
+def test_builtin_llm_runtime_model_listing_provider_urls(monkeypatch) -> None:
+    from capabilities.llm import CapabilityRuntime
+    import capabilities.llm as llm_module
+
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload, fail: bool = False) -> None:
+            self.payload = payload
+            self.fail = fail
+
+        def raise_for_status(self) -> None:
+            if self.fail:
+                raise llm_module.httpx.ConnectError("offline")
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, timeout) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def get(self, url, headers=None):
+            calls.append(url)
+            return FakeResponse({"data": [{"id": "model-a"}]})
+
+    monkeypatch.setattr(llm_module.httpx, "Client", FakeClient)
+    runtime = CapabilityRuntime()
+
+    assert runtime.list_models({"provider": "openai_compatible", "base_url": "http://local/v1"}) == ["model-a"]
+    assert calls[-1] == "http://local/v1/models"
+    assert runtime.list_models({"provider": "llama_cpp", "base_url": "http://llama/v1"}) == ["model-a"]
+    assert calls[-1] == "http://llama/v1/models"
+    assert runtime.list_models({"provider": "lm_studio", "base_url": "http://studio/v1"}) == ["model-a"]
+    assert calls[-1] == "http://studio/api/v1/models"
+
+
+def test_builtin_llm_runtime_lm_studio_falls_back_to_openai_models(monkeypatch) -> None:
+    from capabilities.llm import CapabilityRuntime
+    import capabilities.llm as llm_module
+
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload, fail: bool = False) -> None:
+            self.payload = payload
+            self.fail = fail
+
+        def raise_for_status(self) -> None:
+            if self.fail:
+                raise llm_module.httpx.ConnectError("offline")
+
+        def json(self):
+            return self.payload
+
+    class FakeClient:
+        def __init__(self, timeout) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def get(self, url, headers=None):
+            calls.append(url)
+            if url.endswith("/api/v1/models"):
+                return FakeResponse({}, fail=True)
+            return FakeResponse({"data": [{"id": "fallback-model"}]})
+
+    monkeypatch.setattr(llm_module.httpx, "Client", FakeClient)
+
+    assert CapabilityRuntime().list_models({"provider": "lm_studio", "base_url": "http://studio/v1"}) == ["fallback-model"]
+    assert calls == ["http://studio/api/v1/models", "http://studio/v1/models"]
+
+
+def test_new_model_profile_create_requires_provider_profile_and_model_id() -> None:
+    client = TestClient(create_app(llm_runtime=ProviderModelRuntime(), use_memory=True))
+    missing_provider = client.post("/api/llm-profiles", json={"alias": "draft", "name": "Draft", "model_id": "model"})
+    assert missing_provider.status_code == 400
+    assert missing_provider.json()["error"]["code"] == "LLM_PROFILE_INVALID"
+
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Provider", "provider": "openai_compatible", "base_url": "http://local/v1"},
+    ).json()
+    missing_model = client.post("/api/llm-profiles", json={"alias": "draft", "name": "Draft", "provider_profile_id": provider["id"]})
+    assert missing_model.status_code == 400
+    assert missing_model.json()["error"]["code"] == "LLM_PROFILE_INVALID"
 
 
 def test_saved_model_is_used_by_resolved_config(monkeypatch) -> None:

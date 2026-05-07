@@ -207,6 +207,19 @@ export type LlmProfile = {
   updated_at: string;
 };
 
+export type LlmProviderModel = {
+  id: string;
+  name?: string | null;
+  capabilities?: {
+    vision?: boolean;
+    tools?: boolean;
+    reasoning?: boolean;
+    streaming?: boolean;
+    json_mode?: boolean;
+  } | null;
+  raw?: Record<string, unknown>;
+};
+
 export type LlmProviderProfile = {
   id: string;
   name: string;

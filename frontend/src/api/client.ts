@@ -10,6 +10,7 @@ import type {
   LlmDefaults,
   LlmProfile,
   LlmProfileInput,
+  LlmProviderModel,
   LlmProviderProfile,
   LlmProviderProfileInput,
   LlmTestResult,
@@ -113,7 +114,7 @@ export const api = {
   testLlmProviderProfile: (profileId: string) =>
     request<LlmTestResult>(`/api/llm-provider-profiles/${profileId}/test`, { method: 'POST' }),
   listLlmProviderModels: (profileId: string) =>
-    request<{ success: boolean; models: { id: string }[] }>(`/api/llm-provider-profiles/${profileId}/models`),
+    request<{ success: boolean; provider_profile_id: string; provider: string; models: LlmProviderModel[]; warnings: string[] }>(`/api/llm-provider-profiles/${profileId}/refresh-models`, { method: 'POST' }),
   createLlmProfile: (profile: LlmProfileInput) =>
     request<LlmProfile>('/api/llm-profiles', {
       method: 'POST',

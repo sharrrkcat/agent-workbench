@@ -71,13 +71,15 @@ def list_llm_profiles(state: RuntimeState = Depends(get_state)) -> list:
 @router.post("")
 def create_llm_profile(payload: LLMProfileCreateRequest, state: RuntimeState = Depends(get_state)) -> dict:
     try:
+        _validate_model_profile_create(payload, state)
         profile = LLMProfileSchema(id=str(uuid4()), created_at=datetime.utcnow(), updated_at=datetime.utcnow(), **payload.model_dump())
         created = state.llm_profiles.create(profile)
         return _serialize_profile(created)
     except ValidationError as exc:
         raise_error(400, "LLM_PROFILE_INVALID", _validation_message(exc))
     except ValueError as exc:
-        raise_error(409, "LLM_PROFILE_ALIAS_CONFLICT", str(exc) or "LLM profile alias already exists.")
+        code = "LLM_PROFILE_INVALID" if "required" in str(exc).lower() or "provider profile" in str(exc).lower() else "LLM_PROFILE_ALIAS_CONFLICT"
+        raise_error(400 if code == "LLM_PROFILE_INVALID" else 409, code, str(exc) or "LLM profile alias already exists.")
 
 
 @router.get("/{profile_id_or_alias}")
@@ -154,7 +156,7 @@ def test_llm_profile(profile_id_or_alias: str, state: RuntimeState = Depends(get
 def list_llm_profile_models(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
     profile = _get_profile_or_404(state, profile_id_or_alias)
     try:
-        if not profile.base_url:
+        if not profile.provider_profile_id and not profile.base_url:
             raise ValueError(f"LLM profile '{profile.alias}' must define base_url.")
         runtime = state.runtimes.get_runtime("llm")
         models = _runtime_list_models(runtime, _profile_model_config(profile, state))
@@ -203,6 +205,19 @@ def _validate_profile_for_runtime(profile: LLMProfileSchema) -> None:
         raise ValueError(f"Model profile '{profile.alias}' must define a provider profile or legacy base_url.")
     if not profile.model_id:
         raise ValueError(f"Model profile '{profile.alias}' must define model_id.")
+
+
+def _validate_model_profile_create(payload: LLMProfileCreateRequest, state: RuntimeState) -> None:
+    if not str(payload.name or "").strip():
+        raise ValueError("name is required.")
+    if not str(payload.provider_profile_id or "").strip():
+        raise ValueError("provider_profile_id is required.")
+    if not str(payload.model_id or "").strip():
+        raise ValueError("model_id is required.")
+    try:
+        state.provider_profiles.get(str(payload.provider_profile_id))
+    except KeyError as exc:
+        raise ValueError(f"Provider profile not found: {payload.provider_profile_id}") from exc
 
 
 def _validation_message(exc: ValidationError) -> str:

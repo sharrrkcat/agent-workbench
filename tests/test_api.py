@@ -46,12 +46,13 @@ def image_attachment(name: str = "image.svg", data_url: str = SVG_DATA_URL, size
 
 
 def create_llm_profile(client: TestClient, alias: str = "myqwen3", enabled: bool = True) -> dict:
+    provider = create_provider_profile(client, name=f"{alias} Provider")
     response = client.post(
         "/api/llm-profiles",
         json={
             "alias": alias,
             "name": alias.replace("-", " ").title(),
-            "base_url": f"http://{alias}/v1",
+            "provider_profile_id": provider["id"],
             "model_id": f"{alias}-model",
             "enabled": enabled,
         },
@@ -826,12 +827,14 @@ def test_capability_config_secret_new_value_updates_store() -> None:
 
 def test_llm_profile_api_create_list_get_patch_delete_and_masks_secret() -> None:
     client = make_client()
+    provider = create_provider_profile(client)
 
     created = client.post(
         "/api/llm-profiles",
         json={
             "alias": "myqwen3",
             "name": "My Qwen3",
+            "provider_profile_id": provider["id"],
             "provider": "llama_cpp",
             "base_url": "http://localhost:8080/v1",
             "api_key": "secret-token",
@@ -872,7 +875,8 @@ def test_llm_profile_api_create_list_get_patch_delete_and_masks_secret() -> None
 
 def test_llm_profile_api_rejects_alias_conflict_and_invalid_alias() -> None:
     client = make_client()
-    body = {"alias": "myqwen3", "name": "My Qwen3", "model_id": "qwen3", "base_url": "http://local/v1"}
+    provider = create_provider_profile(client)
+    body = {"alias": "myqwen3", "name": "My Qwen3", "model_id": "qwen3", "provider_profile_id": provider["id"]}
 
     assert client.post("/api/llm-profiles", json=body).status_code == 200
     conflict = client.post("/api/llm-profiles", json={**body, "name": "Duplicate"})
@@ -887,9 +891,10 @@ def test_llm_profile_api_rejects_alias_conflict_and_invalid_alias() -> None:
 def test_llm_profile_test_and_models_use_profile_config() -> None:
     llm = FakeDiagnosticLLMRuntime()
     client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    provider = create_provider_profile(client)
     created = client.post(
         "/api/llm-profiles",
-        json={"alias": "profile1", "name": "Profile 1", "base_url": "http://profile/v1", "model_id": "profile-model"},
+        json={"alias": "profile1", "name": "Profile 1", "provider_profile_id": provider["id"], "model_id": "profile-model"},
     ).json()
 
     test_response = client.post(f"/api/llm-profiles/{created['id']}/test")

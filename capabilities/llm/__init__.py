@@ -118,11 +118,21 @@ class CapabilityRuntime:
 
     def list_models(self, model_config: Optional[Dict[str, Any]] = None) -> List[str]:
         config = _resolve_config(model_config or {}, require_model=False)
+        provider = (model_config or {}).get("provider") or "openai_compatible"
         headers = {}
         if config.get("api_key"):
             headers["Authorization"] = f"Bearer {config['api_key']}"
 
         with httpx.Client(timeout=float(config.get("timeout", 60))) as client:
+            if provider == "lm_studio":
+                try:
+                    response = client.get(_lm_studio_native_models_url(config["base_url"]), headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    models = data.get("data") or data.get("models") or []
+                    return [item.get("id") or item.get("name") or "" for item in models if isinstance(item, dict) and (item.get("id") or item.get("name"))]
+                except httpx.HTTPError:
+                    pass
             response = client.get(f"{config['base_url'].rstrip('/')}/models", headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -148,6 +158,13 @@ def _resolve_config(model_config: Dict[str, Any], require_model: bool = True) ->
         "api_key": api_key,
         "timeout": timeout,
     }
+
+
+def _lm_studio_native_models_url(base_url: str) -> str:
+    trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/v1"):
+        trimmed = trimmed[:-3]
+    return f"{trimmed}/api/v1/models"
 
 
 async def _stream_chat_completion(config: Dict[str, Any], headers: Dict[str, str], payload: Dict[str, Any]):

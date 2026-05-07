@@ -9,7 +9,7 @@ import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSetti
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
-import type { SettingsSection } from './SettingsNav';
+import type { LlmSettingsSubsection, SettingsSection } from './SettingsNav';
 
 export function SettingsDetailPanel({
   section,
@@ -21,6 +21,7 @@ export function SettingsDetailPanel({
   llmProfiles = [],
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
+  llmSubsection = 'defaults',
   onLlmProfilesChanged,
   activeTab,
   onTabChange,
@@ -35,6 +36,7 @@ export function SettingsDetailPanel({
   llmProfiles?: LlmProfile[];
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
+  llmSubsection?: LlmSettingsSubsection;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -79,9 +81,9 @@ export function SettingsDetailPanel({
   if (section === 'llm') {
     return (
       <section className="settings-detail-panel">
-        {selectedLlmItemId === 'global' ? (
-          <LlmDefaultsDetail profiles={llmProfiles} onDirtyChange={onDirtyChange} />
-        ) : selectedLlmItemId.startsWith('provider:') || selectedLlmItemId === 'new-provider' ? (
+        {llmSubsection === 'defaults' ? (
+          <LlmDefaultsDetail profiles={llmProfiles} providerProfiles={llmProviderProfiles} onDirtyChange={onDirtyChange} />
+        ) : llmSubsection === 'providers' ? (
           <LlmProviderProfileDetail
             profiles={llmProviderProfiles}
             selectedProfileId={selectedLlmItemId === 'new-provider' ? 'new' : selectedLlmItemId.replace(/^provider:/, '')}
