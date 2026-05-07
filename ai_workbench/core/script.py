@@ -10,13 +10,13 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_runtime_override
+from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_model_lifecycle, resolved_runtime_override
 from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_bytes, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
-from ai_workbench.core.provider_status import unload_model
+from ai_workbench.core.provider_status import unload_model_for_profile
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
@@ -87,11 +87,14 @@ class LLMProxy:
         default_model_config: Optional[Dict[str, Any]] = None,
         provider_profile_store: Any = None,
         llm_profile_store: Any = None,
+        default_llm_resolution: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
         self.provider_profile_store = provider_profile_store
         self.llm_profile_store = llm_profile_store
+        self.default_llm_resolution = default_llm_resolution or {}
+        self.used = False
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -108,6 +111,7 @@ class LLMProxy:
         return parsed
 
     async def chat(self, messages: List[Dict[str, Any]], **options) -> str:
+        self.used = True
         chat = getattr(self.llm_runtime, "chat", None)
         model_config = options.pop("model_config", None) or self.default_model_config
         if callable(chat):
@@ -138,6 +142,7 @@ class LLMProxy:
                 generate = getattr(self.llm_runtime, "generate", None)
                 resolved_prompt = prompt if prompt is not None else options.pop("prompt", "")
                 if callable(generate):
+                    self.used = True
                     data = generate(
                         prompt=resolved_prompt,
                         model_config=model_config or self.default_model_config,
@@ -181,17 +186,22 @@ class LLMProxy:
                     "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "Provider stores are not available."}],
                 }
             else:
-                profiles = self.llm_profile_store.list()
                 resolved_provider_id = provider_profile_id
-                if model_profile_id and not resolved_provider_id:
-                    for profile in profiles:
-                        if profile.id == model_profile_id:
-                            resolved_provider_id = profile.provider_profile_id
-                            break
                 if not resolved_provider_id:
-                    resolved_provider_id = self.default_model_config.get("provider_profile_id")
-                provider = self.provider_profile_store.get(str(resolved_provider_id or ""))
-                data = unload_model(provider, profiles, model_profile_id=model_profile_id, model_id=model_id)
+                    resolved_provider_id = (
+                        self.default_llm_resolution.get("provider_profile_id")
+                        or self.default_model_config.get("provider_profile_id")
+                    )
+                resolved_model_profile_id = model_profile_id or self.default_llm_resolution.get("profile_id")
+                resolved_model_id = model_id or self.default_llm_resolution.get("model_id") or self.default_model_config.get("model_id") or self.default_model_config.get("model")
+                data = unload_model_for_profile(
+                    provider_profile_store=self.provider_profile_store,
+                    llm_profile_store=self.llm_profile_store,
+                    provider_profile_id=resolved_provider_id,
+                    model_profile_id=resolved_model_profile_id,
+                    model_id=resolved_model_id,
+                    reason="script",
+                )
             return CapabilityCallResult(success=bool(data.get("ok")), data=data, error=_first_unload_error(data))
         except Exception as exc:
             return CapabilityCallResult(
@@ -246,6 +256,7 @@ class AgentContext:
             default_model_config=llm_model_config,
             provider_profile_store=provider_profile_store,
             llm_profile_store=llm_profile_store,
+            default_llm_resolution=llm_resolution,
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -440,9 +451,11 @@ class ScriptAgentRunner:
                 "source_message_id": source_message_id or None,
             },
         )
+        agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
+        lifecycle = resolved_model_lifecycle(agent, agent_config)
         if self.agent_config_store is not None:
             metadata = dict(run.metadata)
-            metadata["resolved_runtime"] = resolved_agent_settings(agent, self.agent_config_store.get_config(agent.id))["runtime"]
+            metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config)["runtime"]
             run = self.run_store.update_metadata(run.run_id, metadata)
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
@@ -486,7 +499,9 @@ class ScriptAgentRunner:
         try:
             await script_run(ctx)
         except Exception as exc:
-            return self._fail(run.run_id, session_id, str(exc) or "Script agent failed.")
+            result = self._fail(run.run_id, session_id, str(exc) or "Script agent failed.")
+            self._apply_model_lifecycle(ctx, lifecycle)
+            return result
 
         final_run = self.run_store.get_run(run.run_id)
         if final_run.status == RunStatus.WAITING_FOR_USER:
@@ -494,6 +509,7 @@ class ScriptAgentRunner:
 
         done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
+        self._apply_model_lifecycle(ctx, lifecycle)
         return RunResult(success=True, run_id=done_run.run_id, data=None)
 
     def _load_script_run(self, agent: AgentSchema):
@@ -551,6 +567,45 @@ class ScriptAgentRunner:
             payload["error_code"] = error_code
         self.event_bus.emit("run_failed", session_id=session_id, run_id=run_id, payload=payload)
         return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=error_code)
+
+    def _apply_model_lifecycle(self, ctx: AgentContext, lifecycle) -> None:
+        if lifecycle.unload != "after_run" or not ctx.llm.used:
+            return
+        result = unload_model_for_profile(
+            provider_profile_store=self.provider_profile_store,
+            llm_profile_store=self.llm_profile_store,
+            provider_profile_id=ctx.llm_resolution.get("provider_profile_id"),
+            model_profile_id=ctx.llm_resolution.get("profile_id"),
+            model_id=ctx.llm_resolution.get("model_id") or ctx.llm.default_model_config.get("model_id") or ctx.llm.default_model_config.get("model"),
+            reason="after_run",
+        )
+        run = self.run_store.get_run(ctx.run_id)
+        metadata = dict(run.metadata)
+        metadata["llm_unload"] = {
+            "policy": lifecycle.unload,
+            "attempted": not bool(result.get("skipped")),
+            "ok": bool(result.get("ok")),
+            "provider": result.get("provider"),
+            "provider_profile_id": result.get("provider_profile_id"),
+            "model_id": result.get("model_id"),
+            "unloaded_count": len(result.get("unloaded") or []),
+            "skipped": bool(result.get("skipped")),
+            "skip_reason": result.get("skip_reason"),
+            "code": result.get("code"),
+            "errors": result.get("errors") or [],
+            "result": result,
+        }
+        if not result.get("ok") and lifecycle.unload_failure == "warn":
+            warnings = list(metadata.get("warnings", []))
+            warnings.append(_first_unload_error(result) or "Model unload failed or is unsupported.")
+            metadata["warnings"] = warnings
+            self.event_bus.emit(
+                "run_warning",
+                session_id=ctx.session.session_id,
+                run_id=ctx.run_id,
+                payload={"warning": warnings[-1]},
+            )
+        self.run_store.update_metadata(ctx.run_id, metadata)
 
 
 def _load_module(path: Path, module_name: str) -> ModuleType:

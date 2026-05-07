@@ -14,7 +14,7 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
-from ai_workbench.core.provider_status import MODEL_MISMATCH, MODEL_NOT_AVAILABLE, MODEL_STATUS_UNKNOWN, PROVIDER_UNREACHABLE
+from ai_workbench.core.provider_status import MODEL_MISMATCH, MODEL_NOT_AVAILABLE, MODEL_STATUS_UNKNOWN, PROVIDER_UNREACHABLE, unload_model_for_profile
 from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
@@ -54,6 +54,31 @@ class ActiveRunRegistry:
         self._tasks.clear()
 
 
+class ActiveLLMUseRegistry:
+    def __init__(self) -> None:
+        self._counts: dict[tuple[str, str], int] = {}
+
+    def acquire(self, provider_profile_id: str, model_id: str) -> tuple[str, str] | None:
+        if not provider_profile_id or not model_id:
+            return None
+        key = (provider_profile_id, model_id)
+        self._counts[key] = self._counts.get(key, 0) + 1
+        return key
+
+    def release(self, key: tuple[str, str] | None) -> int:
+        if key is None:
+            return 0
+        count = max(0, self._counts.get(key, 0) - 1)
+        if count:
+            self._counts[key] = count
+        else:
+            self._counts.pop(key, None)
+        return count
+
+    def active_count(self, provider_profile_id: str, model_id: str) -> int:
+        return self._counts.get((provider_profile_id, model_id), 0)
+
+
 class AgentRunner:
     def __init__(
         self,
@@ -89,6 +114,7 @@ class AgentRunner:
         self.llm_defaults_store = llm_defaults_store
         self.app_settings_store = app_settings_store
         self.active_runs = active_runs or ActiveRunRegistry()
+        self.active_llm_uses = ActiveLLMUseRegistry()
         self.script_runner = None
         if session_store is not None and runtime_registry is not None:
             self.script_runner = ScriptAgentRunner(
@@ -264,6 +290,7 @@ class AgentRunner:
         run: RunSchema,
     ) -> RunResult:
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
+        lifecycle = resolved_model_lifecycle(agent, agent_config)
         run_metadata = dict(self.run_store.get_run(run.run_id).metadata)
         run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config)["runtime"]
         self.run_store.update_metadata(run.run_id, run_metadata)
@@ -300,6 +327,10 @@ class AgentRunner:
             messages.append({"role": "system", "content": prompt})
         messages.extend(context.messages)
 
+        llm_config = None
+        llm_use_key = None
+        llm_started = False
+        cleanup_done = False
         try:
             llm_config = self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
@@ -321,7 +352,10 @@ class AgentRunner:
             self._record_llm_resolution(run.run_id, llm_config)
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
+            llm_use_key = self._begin_llm_use(llm_config)
+            llm_started = True
             if _streaming_enabled(llm_config):
+                cleanup_done = True
                 return await self._run_prompt_agent_streaming(
                     agent=agent,
                     action_id=action_id,
@@ -336,6 +370,8 @@ class AgentRunner:
                     llm_config=llm_config,
                     vision_input=vision_input["metadata"],
                     file_context=file_context["metadata"],
+                    lifecycle=lifecycle,
+                    llm_use_key=llm_use_key,
                 )
             metrics_recorder = LLMMetricsRecorder(streamed=False)
             raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
@@ -356,6 +392,11 @@ class AgentRunner:
                 payload={"error": exc.message, "error_code": exc.code},
             )
             return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
+        except asyncio.CancelledError:
+            if llm_started and not cleanup_done and llm_config is not None:
+                self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
+                cleanup_done = True
+            raise
         except Exception as exc:
             friendly = _friendly_llm_error(exc, locals().get("llm_config", None))
             error = friendly["message"]
@@ -372,6 +413,9 @@ class AgentRunner:
                 run_id=failed_run.run_id,
                 payload={"error": error, "error_code": friendly["code"], "details": friendly.get("details", {})},
             )
+            if llm_started and not cleanup_done and llm_config is not None:
+                self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, failed_run.run_id, session_id)
+                cleanup_done = True
             return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         if self._is_cancelled(run.run_id):
@@ -433,11 +477,8 @@ class AgentRunner:
             payload={"available_actions": message.available_actions},
         )
 
-        lifecycle_result = self._apply_model_lifecycle(resolved_model_lifecycle(agent, agent_config), llm_config.values, done_run.run_id, session_id)
-        if lifecycle_result:
-            done_run = self.run_store.get_run(done_run.run_id)
-            if done_run.status == RunStatus.FAILED:
-                return RunResult(success=False, run_id=done_run.run_id, data=content, error=done_run.error)
+        if llm_started and not cleanup_done:
+            self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, done_run.run_id, session_id)
 
         return RunResult(success=True, run_id=done_run.run_id, data=content)
 
@@ -456,6 +497,8 @@ class AgentRunner:
         llm_config,
         vision_input: dict,
         file_context: dict,
+        lifecycle,
+        llm_use_key: tuple[str, str] | None,
     ) -> RunResult:
         draft_message_id = f"draft-{run.run_id}"
         resolution = _public_llm_resolution(llm_config)
@@ -552,6 +595,7 @@ class AgentRunner:
                 payload={"metrics": llm_metrics},
             )
             self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
+            self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, cancelled_run.run_id, session_id)
             return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", data=content)
         except Exception as exc:
             friendly = _friendly_llm_error(exc, llm_config)
@@ -565,6 +609,7 @@ class AgentRunner:
                 message_id=draft_message_id,
                 payload={"error": error, "error_code": friendly["code"], "details": friendly.get("details", {})},
             )
+            self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, failed_run.run_id, session_id)
             return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         content = "".join(content_parts)
@@ -610,11 +655,7 @@ class AgentRunner:
             message_id=message.message_id,
             payload={"available_actions": message.available_actions},
         )
-        lifecycle_result = self._apply_model_lifecycle(agent.model_lifecycle, llm_config.values, done_run.run_id, session_id)
-        if lifecycle_result:
-            done_run = self.run_store.get_run(done_run.run_id)
-            if done_run.status == RunStatus.FAILED:
-                return RunResult(success=False, run_id=done_run.run_id, data=content, error=done_run.error)
+        self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, done_run.run_id, session_id)
         return RunResult(success=True, run_id=done_run.run_id, data=content)
 
     def _persist_prompt_message(
@@ -771,6 +812,114 @@ class AgentRunner:
             return None
         return source.parent_message_id
 
+    def _begin_llm_use(self, llm_config) -> tuple[str, str] | None:
+        target = _llm_unload_target(llm_config)
+        return self.active_llm_uses.acquire(target["provider_profile_id"], target["model_id"])
+
+    def _finish_llm_use_and_apply_lifecycle(self, lifecycle, llm_config, llm_use_key: tuple[str, str] | None, run_id: str, session_id: str) -> bool:
+        remaining = self.active_llm_uses.release(llm_use_key)
+        if lifecycle.unload != "after_run":
+            return False
+        target = _llm_unload_target(llm_config)
+        if remaining > 0:
+            result = {
+                "ok": True,
+                "provider": target["provider"],
+                "provider_profile_id": target["provider_profile_id"],
+                "model_id": target["model_id"],
+                "unloaded": [],
+                "skipped": True,
+                "skip_reason": "model still in use by another active run",
+                "errors": [],
+                "reason": "after_run",
+            }
+        else:
+            result = self._unload_model_for_llm_config(llm_config, reason="after_run")
+        self._record_llm_unload_metadata(run_id, lifecycle, result)
+        if not result.get("ok") and lifecycle.unload_failure == "warn":
+            self.event_bus.emit(
+                "run_warning",
+                session_id=session_id,
+                run_id=run_id,
+                payload={"warning": _first_unload_message(result)},
+            )
+        return True
+
+    def _unload_model_for_llm_config(self, llm_config, reason: str = "after_run") -> dict:
+        target = _llm_unload_target(llm_config)
+        if self.provider_profile_store is not None and self.llm_profile_store is not None:
+            return unload_model_for_profile(
+                provider_profile_store=self.provider_profile_store,
+                llm_profile_store=self.llm_profile_store,
+                provider_profile_id=target["provider_profile_id"],
+                model_profile_id=target["model_profile_id"],
+                model_id=target["model_id"],
+                reason=reason,
+            )
+        unload = getattr(self.llm_runtime, "unload", None)
+        if callable(unload):
+            try:
+                legacy = unload(model_config=getattr(llm_config, "values", {}) or {})
+                ok = bool(legacy.get("success")) if isinstance(legacy, dict) else bool(legacy)
+                return {
+                    "ok": ok,
+                    "provider": target["provider"],
+                    "provider_profile_id": target["provider_profile_id"],
+                    "model_id": target["model_id"],
+                    "unloaded": [],
+                    "skipped": False,
+                    "skip_reason": None,
+                    "errors": [] if ok else [{"code": "MODEL_UNLOAD_FAILED", "message": str((legacy or {}).get("message") or "Model unload failed.")}],
+                    "reason": reason,
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "provider": target["provider"],
+                    "provider_profile_id": target["provider_profile_id"],
+                    "model_id": target["model_id"],
+                    "unloaded": [],
+                    "skipped": False,
+                    "skip_reason": None,
+                    "errors": [{"code": "MODEL_UNLOAD_FAILED", "message": str(exc) or "Model unload failed."}],
+                    "reason": reason,
+                }
+        return {
+            "ok": False,
+            "code": "MODEL_UNLOAD_UNSUPPORTED",
+            "provider": target["provider"],
+            "provider_profile_id": target["provider_profile_id"],
+            "model_id": target["model_id"],
+            "unloaded": [],
+            "skipped": False,
+            "skip_reason": None,
+            "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "Model unload is not supported by this runtime."}],
+            "reason": reason,
+        }
+
+    def _record_llm_unload_metadata(self, run_id: str, lifecycle, result: dict) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["llm_unload"] = {
+            "policy": lifecycle.unload,
+            "attempted": not bool(result.get("skipped")),
+            "ok": bool(result.get("ok")),
+            "provider": result.get("provider"),
+            "provider_profile_id": result.get("provider_profile_id"),
+            "model_id": result.get("model_id"),
+            "unloaded_count": len(result.get("unloaded") or []),
+            "skipped": bool(result.get("skipped")),
+            "skip_reason": result.get("skip_reason"),
+            "code": result.get("code"),
+            "errors": result.get("errors") or [],
+            "result": result,
+        }
+        if not result.get("ok") and lifecycle.unload_failure == "warn":
+            warnings = list(metadata.get("warnings", []))
+            warnings.append(_first_unload_message(result))
+            metadata["warnings"] = warnings
+        self.run_store.update_metadata(run_id, metadata)
+
     def _apply_model_lifecycle(self, lifecycle, model_config, run_id: str, session_id: str) -> bool:
         if lifecycle.unload != "after_run":
             return False
@@ -833,6 +982,30 @@ def _public_llm_resolution(llm_config) -> dict:
         "supports_streaming": bool(values.get("supports_streaming", False)),
         "supports_json_mode": bool(values.get("supports_json_mode", False)),
     }
+
+
+def _llm_unload_target(llm_config) -> dict:
+    metadata = dict(getattr(llm_config, "metadata", {}) or {})
+    values = getattr(llm_config, "values", {}) or {}
+    return {
+        "provider": metadata.get("provider") or values.get("provider") or "",
+        "provider_profile_id": metadata.get("provider_profile_id") or values.get("provider_profile_id") or "",
+        "model_profile_id": metadata.get("profile_id") or values.get("model_profile_id") or "",
+        "model_id": values.get("model_id") or values.get("model") or "",
+    }
+
+
+def _first_unload_message(result: dict) -> str:
+    errors = result.get("errors")
+    if isinstance(errors, list) and errors:
+        first = errors[0]
+        if isinstance(first, dict):
+            return str(first.get("message") or first.get("code") or "Model unload failed.")
+    if result.get("skip_reason"):
+        return str(result["skip_reason"])
+    if result.get("message"):
+        return str(result["message"])
+    return "Model unload failed or is unsupported."
 
 
 def _llm_message_metadata(llm_config, raw: dict | None = None) -> dict:

@@ -126,12 +126,16 @@ def unload_model(
     model_id: str | None = None,
 ) -> Dict[str, Any]:
     if provider.provider != "lm_studio":
-        return _unsupported_unload(provider)
+        return _unsupported_unload(provider, model_id=model_id)
     if not provider.enabled:
         return {
             "ok": False,
             "provider": provider.provider,
+            "provider_profile_id": provider.id,
+            "model_id": model_id or "",
             "unloaded": [],
+            "skipped": False,
+            "skip_reason": None,
             "errors": [{"code": "LLM_PROVIDER_PROFILE_DISABLED", "message": f"Provider profile is disabled: {provider.name}"}],
         }
 
@@ -145,7 +149,11 @@ def unload_model(
         return {
             "ok": False,
             "provider": provider.provider,
+            "provider_profile_id": provider.id,
+            "model_id": requested_model_id,
             "unloaded": [],
+            "skipped": False,
+            "skip_reason": None,
             "errors": [{"code": MODEL_NOT_AVAILABLE, "message": "model_id is required for unload."}],
         }
 
@@ -162,10 +170,27 @@ def unload_model(
                 return {
                     "ok": False,
                     "provider": provider.provider,
+                    "provider_profile_id": provider.id,
+                    "model_id": requested_model_id,
                     "unloaded": [],
+                    "skipped": False,
+                    "skip_reason": None,
                     "errors": [{"code": MODEL_NOT_AVAILABLE, "message": "The requested model is not available from this provider."}],
                 }
-            for instance in _loaded_instances(target):
+            instances = _loaded_instances(target)
+            if not instances:
+                return {
+                    "ok": True,
+                    "provider": provider.provider,
+                    "provider_profile_id": provider.id,
+                    "model_id": requested_model_id,
+                    "unloaded": [],
+                    "skipped": False,
+                    "skip_reason": None,
+                    "message": "model already unloaded",
+                    "errors": [],
+                }
+            for instance in instances:
                 instance_id = str(instance.get("id") or "").strip()
                 if not instance_id:
                     continue
@@ -183,10 +208,81 @@ def unload_model(
         return {
             "ok": False,
             "provider": provider.provider,
+            "provider_profile_id": provider.id,
+            "model_id": requested_model_id,
             "unloaded": unloaded,
+            "skipped": False,
+            "skip_reason": None,
             "errors": [{"code": PROVIDER_UNREACHABLE, "message": _connect_error_message(provider), "raw": _safe_error(exc)}],
         }
-    return {"ok": not errors, "provider": provider.provider, "unloaded": unloaded, "errors": errors}
+    return {
+        "ok": not errors,
+        "provider": provider.provider,
+        "provider_profile_id": provider.id,
+        "model_id": requested_model_id,
+        "unloaded": unloaded,
+        "skipped": False,
+        "skip_reason": None,
+        "errors": errors,
+    }
+
+
+def unload_model_for_profile(
+    provider_profile_store: Any,
+    llm_profile_store: Any,
+    provider_profile_id: str | None = None,
+    model_profile_id: str | None = None,
+    model_id: str | None = None,
+    reason: str = "manual",
+) -> Dict[str, Any]:
+    profiles = llm_profile_store.list() if llm_profile_store is not None else []
+    resolved_provider_id = provider_profile_id or ""
+    resolved_model_id = model_id or ""
+    if model_profile_id:
+        for profile in profiles:
+            if profile.id == model_profile_id:
+                resolved_provider_id = resolved_provider_id or (profile.provider_profile_id or "")
+                resolved_model_id = resolved_model_id or profile.model_id
+                break
+    if not resolved_provider_id:
+        return {
+            "ok": False,
+            "code": MODEL_UNLOAD_UNSUPPORTED,
+            "provider": "",
+            "provider_profile_id": "",
+            "model_id": resolved_model_id,
+            "unloaded": [],
+            "skipped": False,
+            "skip_reason": None,
+            "reason": reason,
+            "errors": [{"code": MODEL_UNLOAD_UNSUPPORTED, "message": "Provider profile is required for unload."}],
+        }
+    try:
+        provider = provider_profile_store.get(resolved_provider_id)
+    except Exception:
+        return {
+            "ok": False,
+            "code": "LLM_PROVIDER_PROFILE_NOT_FOUND",
+            "provider": "",
+            "provider_profile_id": resolved_provider_id,
+            "model_id": resolved_model_id,
+            "unloaded": [],
+            "skipped": False,
+            "skip_reason": None,
+            "reason": reason,
+            "errors": [{"code": "LLM_PROVIDER_PROFILE_NOT_FOUND", "message": f"Provider profile not found: {resolved_provider_id}"}],
+        }
+    result = unload_model(provider, profiles, model_profile_id=model_profile_id, model_id=resolved_model_id)
+    result.setdefault("provider_profile_id", provider.id)
+    result.setdefault("model_id", resolved_model_id)
+    result.setdefault("skipped", False)
+    result.setdefault("skip_reason", None)
+    result["reason"] = reason
+    if not result.get("ok") and result.get("errors"):
+        first = result["errors"][0]
+        if isinstance(first, dict) and first.get("code"):
+            result.setdefault("code", first["code"])
+    return result
 
 
 def dedupe_providers(providers: Iterable[ProviderProfileSchema]) -> list[ProviderProfileSchema]:
@@ -595,10 +691,15 @@ def _safe_error(exc: Exception) -> str:
     return str(exc) or exc.__class__.__name__
 
 
-def _unsupported_unload(provider: ProviderProfileSchema) -> Dict[str, Any]:
+def _unsupported_unload(provider: ProviderProfileSchema, model_id: str | None = None) -> Dict[str, Any]:
     return {
         "ok": False,
+        "code": MODEL_UNLOAD_UNSUPPORTED,
         "provider": provider.provider,
+        "provider_profile_id": provider.id,
+        "model_id": model_id or "",
         "unloaded": [],
+        "skipped": False,
+        "skip_reason": None,
         "errors": [{"code": MODEL_UNLOAD_UNSUPPORTED, "message": "Model unload is not supported by this provider."}],
     }

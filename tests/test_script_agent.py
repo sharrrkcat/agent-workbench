@@ -10,9 +10,10 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.agent import AgentSchema
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+from ai_workbench.core.stores import LLMProfileStore, MessageStore, ProviderProfileStore, RunStore, SessionStore
 from tests.test_prompt_agent_execution import FakeLLMRuntime, run
 
 
@@ -36,6 +37,8 @@ class ScriptRuntimeFixture:
         self.messages = MessageStore()
         self.runs = RunStore()
         self.events = EventBus()
+        self.llm_profiles = LLMProfileStore()
+        self.provider_profiles = ProviderProfileStore()
         self.llm = llm or FakeLLMRuntime(response="llm reply")
         self.router = Router(agent_registry=self.agents, command_registry=commands)
         self.command_runner = CommandRunner(
@@ -54,6 +57,9 @@ class ScriptRuntimeFixture:
             llm_runtime=self.llm,
             session_store=self.sessions,
             runtime_registry=self.runtimes,
+            capability_registry=capabilities,
+            llm_profile_store=self.llm_profiles,
+            provider_profile_store=self.provider_profiles,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -62,26 +68,27 @@ class ScriptRuntimeFixture:
         )
 
 
-def script_agent_schema(agent_id: str, entry: str) -> AgentSchema:
+def script_agent_schema(agent_id: str, entry: str, unload: str = "manual", capabilities: list[str] | None = None) -> AgentSchema:
     return AgentSchema.model_validate(
         {
             "id": agent_id,
             "name": agent_id,
             "type": "script",
             "entry": entry,
+            "capabilities": capabilities or [],
             "actions": [{"id": "default"}],
             "context_policy": {"mode": "current_message"},
-            "model_lifecycle": {"load": "on_demand", "unload": "manual", "unload_failure": "warn"},
+            "model_lifecycle": {"load": "on_demand", "unload": unload, "unload_failure": "warn"},
         }
     )
 
 
-def write_script_agent(tmp_path: Path, agent_id: str, code: str, entry: str = "agent.py") -> AgentRegistry:
+def write_script_agent(tmp_path: Path, agent_id: str, code: str, entry: str = "agent.py", unload: str = "manual", capabilities: list[str] | None = None) -> AgentRegistry:
     agent_dir = tmp_path / agent_id
     agent_dir.mkdir()
     (agent_dir / entry).write_text(code, encoding="utf-8")
     registry = AgentRegistry()
-    registry.register(script_agent_schema(agent_id, entry), agent_dir=agent_dir)
+    registry.register(script_agent_schema(agent_id, entry, unload=unload, capabilities=capabilities), agent_dir=agent_dir)
     return registry
 
 
@@ -226,6 +233,54 @@ def test_script_agent_can_call_llm_generate(tmp_path: Path) -> None:
 
     assert result.success is True
     assert fixture.messages.list_messages(session.session_id)[-1].content == "generated"
+
+
+def test_script_agent_without_llm_does_not_after_run_unload(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.script.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "unloaded": [], "errors": []})
+    registry = write_script_agent(
+        tmp_path,
+        "no_llm_after_run",
+        "async def run(ctx):\n"
+        "    await ctx.reply_text(ctx.input.text)\n",
+        unload="after_run",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@no_llm_after_run hello"))
+
+    assert result.success is True
+    assert calls == []
+    assert "llm_unload" not in fixture.runs.get_run(result.run_id).metadata
+
+
+def test_script_agent_after_run_unloads_when_llm_used(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.script.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []})
+    registry = write_script_agent(
+        tmp_path,
+        "llm_after_run_script",
+        "async def run(ctx):\n"
+        "    generated = await ctx.llm.generate(prompt=ctx.input.text)\n"
+        "    await ctx.reply_text(generated.data)\n",
+        unload="after_run",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response="generated"))
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a"))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@llm_after_run_script hello"))
+
+    assert result.success is True
+    assert calls[0]["provider_profile_id"] == provider.id
+    assert calls[0]["model_profile_id"] == profile.id
+    assert calls[0]["model_id"] == "model-a"
+    assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["ok"] is True
 
 
 def test_script_agent_with_dataclass_and_future_annotations_loads(tmp_path: Path) -> None:

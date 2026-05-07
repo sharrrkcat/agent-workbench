@@ -11,9 +11,9 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner, _extract_llm_result, _friendly_llm_error, _normalize_stream_chunk
 from ai_workbench.core.runtime import WorkbenchRuntime
-from ai_workbench.core.schema.llm_profile import LLMProfileSchema
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.stores import LLMProfileStore, MessageStore, RunStore, SessionStore
+from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunStore, SessionStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +92,8 @@ class PromptRuntimeFixture:
         self.runs = RunStore()
         self.events = EventBus()
         self.llm_profiles = LLMProfileStore()
+        self.provider_profiles = ProviderProfileStore()
+        self.agent_configs = AgentConfigStore()
         self.llm = llm or FakeLLMRuntime()
         self.router = Router(agent_registry=agents, command_registry=commands)
         self.command_runner = CommandRunner(
@@ -112,6 +114,8 @@ class PromptRuntimeFixture:
             runtime_registry=runtimes,
             capability_registry=capabilities,
             llm_profile_store=self.llm_profiles,
+            provider_profile_store=self.provider_profiles,
+            agent_config_store=self.agent_configs,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -279,15 +283,170 @@ def test_prompt_agent_failure_marks_run_failed() -> None:
     assert prompt_run.error == "LLM failed"
 
 
-def test_after_run_lifecycle_attempts_unload() -> None:
+def test_after_run_lifecycle_attempts_unload(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []})
     llm = FakeLLMRuntime(response="hello")
     fixture = PromptRuntimeFixture(llm=llm)
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
     session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
 
     result = run(fixture.runtime.handle_input(session, "@translate 你好"))
 
     assert result.success is True
-    assert len(llm.unload_calls) == 1
+    assert len(calls) == 1
+
+
+def test_default_never_lifecycle_does_not_unload_provider(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "unloaded": [], "errors": []})
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is True
+    assert calls == []
+    assert "llm_unload" not in fixture.runs.get_run(result.run_id).metadata
+
+
+def test_manifest_after_run_lifecycle_unloads_resolved_provider_model(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [{"instance_id": "i1", "model_id": kwargs["model_id"]}], "errors": []})
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@translate hola"))
+    metadata = fixture.runs.get_run(result.run_id).metadata
+
+    assert result.success is True
+    assert calls[0]["provider_profile_id"] == profile.provider_profile_id
+    assert calls[0]["model_profile_id"] == profile.id
+    assert calls[0]["model_id"] == "fake-model"
+    assert metadata["llm_unload"]["policy"] == "after_run"
+    assert metadata["llm_unload"]["ok"] is True
+    assert metadata["llm_unload"]["unloaded_count"] == 1
+
+
+def test_agent_config_after_run_override_wins_over_manifest_never(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []})
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
+    fixture.agent_configs.set_config("chat", runtime={"model_lifecycle": {"load": "on_demand", "unload": "after_run", "unload_failure": "warn"}})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is True
+    assert len(calls) == 1
+
+
+def test_agent_config_never_override_wins_over_manifest_after_run(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "unloaded": [], "errors": []})
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
+    fixture.agent_configs.set_config("translate", runtime={"model_lifecycle": {"load": "on_demand", "unload": "never", "unload_failure": "warn"}})
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@translate hola"))
+
+    assert result.success is True
+    assert calls == []
+
+
+def test_streaming_after_run_uses_resolved_override_lifecycle(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []})
+    fixture = PromptRuntimeFixture(llm=FakeStreamingLLMRuntime(chunks=["stream"]))
+    profile = add_profile(fixture, supports_streaming=True, with_provider=True)
+    fixture.agent_configs.set_config("chat", runtime={"model_lifecycle": {"load": "on_demand", "unload": "after_run", "unload_failure": "warn"}})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is True
+    assert len(calls) == 1
+
+
+def test_llm_config_failure_does_not_attempt_after_run_unload(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "unloaded": [], "errors": []})
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    fixture.agent_configs.set_config("chat", runtime={"llm_profile_id": "missing", "model_lifecycle": {"load": "on_demand", "unload": "after_run", "unload_failure": "warn"}})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is False
+    assert result.error_code == "LLM_PROFILE_NOT_FOUND"
+    assert calls == []
+
+
+def test_after_run_unload_unsupported_does_not_fail_successful_run(monkeypatch) -> None:
+    def unsupported(**kwargs):
+        return {
+            "ok": False,
+            "code": "MODEL_UNLOAD_UNSUPPORTED",
+            "provider": "openai_compatible",
+            "provider_profile_id": kwargs["provider_profile_id"],
+            "model_id": kwargs["model_id"],
+            "unloaded": [],
+            "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "unsupported"}],
+        }
+
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", unsupported)
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True, provider_kind="openai_compatible")
+    fixture.agent_configs.set_config("chat", runtime={"model_lifecycle": {"load": "on_demand", "unload": "after_run", "unload_failure": "warn"}})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    prompt_run = fixture.runs.get_run(result.run_id)
+
+    assert result.success is True
+    assert prompt_run.status == RunStatus.DONE
+    assert prompt_run.metadata["llm_unload"]["ok"] is False
+    assert prompt_run.metadata["llm_unload"]["code"] == "MODEL_UNLOAD_UNSUPPORTED"
+
+
+def test_after_run_refcount_skips_until_last_active_use(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []})
+    fixture = PromptRuntimeFixture()
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    llm_config = fixture.agent_runner._resolve_llm_model_config(fixture.agent_runner.agent_registry.get("chat"), fixture.agent_runner.agent_registry.get("chat").actions[0], session.session_id)
+    lifecycle = fixture.agent_runner.agent_registry.get("chat").model_lifecycle.model_copy(update={"unload": "after_run"})
+    first = fixture.agent_runner._begin_llm_use(llm_config)
+    second = fixture.agent_runner._begin_llm_use(llm_config)
+    run1 = fixture.runs.create_run(kind="agent", target_id="chat", session_id=session.session_id)
+    run2 = fixture.runs.create_run(kind="agent", target_id="chat", session_id=session.session_id)
+
+    fixture.agent_runner._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, first, run1.run_id, session.session_id)
+    fixture.agent_runner._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, second, run2.run_id, session.session_id)
+
+    assert calls == [{"provider_profile_store": fixture.provider_profiles, "llm_profile_store": fixture.llm_profiles, "provider_profile_id": profile.provider_profile_id, "model_profile_id": profile.id, "model_id": "fake-model", "reason": "after_run"}]
+    assert fixture.runs.get_run(run1.run_id).metadata["llm_unload"]["skipped"] is True
+    assert fixture.runs.get_run(run2.run_id).metadata["llm_unload"]["skipped"] is False
 
 
 def test_unload_unsupported_warn_does_not_fail_run_and_records_warning() -> None:
@@ -303,7 +462,7 @@ def test_unload_unsupported_warn_does_not_fail_run_and_records_warning() -> None
 
     assert result.success is True
     assert prompt_run.status == RunStatus.DONE
-    assert prompt_run.metadata["warnings"] == ["unsupported unload"]
+    assert prompt_run.metadata["warnings"] == ["Provider profile is required for unload."]
     assert "run_warning" in [event.type for event in fixture.events.list_events()]
 
 
@@ -338,11 +497,27 @@ def add_profile(
     supports_streaming: bool = True,
     supports_reasoning: bool = False,
     supports_vision: bool = False,
+    with_provider: bool = False,
+    provider_kind: str = "lm_studio",
 ) -> LLMProfileSchema:
+    provider_profile_id = None
+    provider = provider_kind
+    base_url = "http://localhost:1234/v1"
+    if with_provider:
+        provider_record = ProviderProfileSchema(
+            id=f"provider-{provider_kind}-{supports_streaming}-{supports_reasoning}-{supports_vision}",
+            name="Provider",
+            provider=provider_kind,
+            base_url=base_url,
+        )
+        fixture.provider_profiles.create(provider_record)
+        provider_profile_id = provider_record.id
     profile = LLMProfileSchema(
         id=f"profile-{supports_streaming}-{supports_reasoning}-{supports_vision}",
         alias=f"profile_{supports_streaming}_{supports_reasoning}_{supports_vision}",
         name="Streaming profile" if supports_streaming else "Non-streaming profile",
+        provider_profile_id=provider_profile_id,
+        provider=provider,
         base_url="http://localhost:1234/v1",
         model_id="fake-model",
         supports_streaming=supports_streaming,

@@ -260,6 +260,31 @@ def test_lm_studio_unload_uses_loaded_instance_ids() -> None:
     assert ("POST", "http://studio/api/v1/models/unload", {"instance_id": "i2"}) in FakeClient.calls
 
 
+def test_lm_studio_unload_existing_model_without_instances_is_ok() -> None:
+    provider = ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio")
+    profile = LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id="provider", model_id="model-a")
+    FakeClient.routes["http://studio/api/v1/models"] = FakeResponse({"models": [{"key": "model-a", "loaded_instances": []}]})
+
+    result = unload_model(provider, [profile], model_profile_id="profile")
+
+    assert result["ok"] is True
+    assert result["unloaded"] == []
+    assert result["message"] == "model already unloaded"
+    assert [call[0] for call in FakeClient.calls] == ["GET"]
+
+
+def test_lm_studio_unload_missing_model_returns_not_available() -> None:
+    provider = ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio")
+    profile = LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id="provider", model_id="model-a")
+    FakeClient.routes["http://studio/api/v1/models"] = FakeResponse({"models": [{"key": "other", "loaded_instances": [{"id": "i1"}]}]})
+
+    result = unload_model(provider, [profile], model_profile_id="profile")
+
+    assert result["ok"] is False
+    assert result["errors"][0]["code"] == "MODEL_NOT_AVAILABLE"
+    assert [call[0] for call in FakeClient.calls] == ["GET"]
+
+
 def test_llama_cpp_router_and_single_status_modes() -> None:
     client = TestClient(create_app(use_memory=True))
     provider, _, _ = create_provider_and_models(client, "llama_cpp", "http://localhost:8080/v1")
