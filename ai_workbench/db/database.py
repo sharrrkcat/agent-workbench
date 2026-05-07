@@ -29,6 +29,7 @@ def get_engine(database_url: Optional[str] = None):
 def init_db(engine) -> None:
     SQLModel.metadata.create_all(engine)
     ensure_session_model_columns(engine)
+    ensure_agent_config_columns(engine)
     ensure_schema_version(engine)
 
 
@@ -42,6 +43,17 @@ def ensure_session_model_columns(engine) -> None:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN llm_profile_id VARCHAR"))
         if "last_announced_llm_profile_id" not in columns:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN last_announced_llm_profile_id VARCHAR"))
+
+
+def ensure_agent_config_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(agentconfigrecord)").fetchall()}
+        if "display_json" not in columns:
+            connection.execute(text("ALTER TABLE agentconfigrecord ADD COLUMN display_json VARCHAR DEFAULT '{}'"))
+        if "runtime_json" not in columns:
+            connection.execute(text("ALTER TABLE agentconfigrecord ADD COLUMN runtime_json VARCHAR DEFAULT '{}'"))
 
 
 def ensure_schema_version(engine, expected_version: str = SCHEMA_VERSION) -> None:

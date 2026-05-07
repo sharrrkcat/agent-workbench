@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_runtime_override
 from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_bytes, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
@@ -318,6 +319,7 @@ class ScriptAgentRunner:
         capability_registry: CapabilityRegistry = None,
         capability_config_store=None,
         llm_profile_store=None,
+        agent_config_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -329,6 +331,7 @@ class ScriptAgentRunner:
         self.capability_registry = capability_registry
         self.capability_config_store = capability_config_store
         self.llm_profile_store = llm_profile_store
+        self.agent_config_store = agent_config_store
 
     async def run(
         self,
@@ -383,6 +386,10 @@ class ScriptAgentRunner:
                 "source_message_id": source_message_id or None,
             },
         )
+        if self.agent_config_store is not None:
+            metadata = dict(run.metadata)
+            metadata["resolved_runtime"] = resolved_agent_settings(agent, self.agent_config_store.get_config(agent.id))["runtime"]
+            run = self.run_store.update_metadata(run.run_id, metadata)
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
 
@@ -468,6 +475,7 @@ class ScriptAgentRunner:
             capability_config=capability_config,
             llm_profile_store=self.llm_profile_store,
             session_llm_profile_id=session_llm_profile_id,
+            agent_runtime=resolved_runtime_override(self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}),
         )
 
     def _record_llm_resolution(self, run_id: str, llm_config) -> None:

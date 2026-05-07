@@ -2,6 +2,10 @@ id: llm
 name: LLM Capability
 description: OpenAI-compatible local LLM runtime
 
+agent_overrides:
+  enabled: true
+  section: llm_runtime
+
 config_schema:
   - name: base_url
     type: string

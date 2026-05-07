@@ -445,6 +445,8 @@ class SqlAgentConfigStore:
         agent_id: str,
         enabled: Optional[bool] = None,
         user_config: Optional[Dict[str, Any]] = None,
+        display: Optional[Dict[str, Any]] = None,
+        runtime: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         with DbSession(self.engine) as session:
             record = session.get(AgentConfigRecord, agent_id)
@@ -454,6 +456,10 @@ class SqlAgentConfigStore:
                 record.enabled = enabled
             if user_config is not None:
                 record.user_config_json = _dumps(user_config)
+            if display is not None:
+                record.display_json = _dumps(display)
+            if runtime is not None:
+                record.runtime_json = _dumps(runtime)
             record.updated_at = datetime.utcnow()
             session.add(record)
             session.commit()
@@ -698,6 +704,8 @@ def _agent_config_from_record(record: AgentConfigRecord) -> Dict[str, Any]:
     return {
         "agent_id": record.agent_id,
         "enabled": record.enabled,
+        "display": _loads(getattr(record, "display_json", "{}") or "{}", {}),
+        "runtime": _loads(getattr(record, "runtime_json", "{}") or "{}", {}),
         "user_config": _loads(record.user_config_json, {}),
         "created_at": record.created_at,
         "updated_at": record.updated_at,

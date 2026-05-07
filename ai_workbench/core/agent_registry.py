@@ -36,6 +36,15 @@ class AgentRegistry:
         except KeyError as exc:
             raise KeyError(f"unknown agent directory for id: {agent_id}") from exc
 
+    def reload_agent(self, agent_id: str) -> AgentSchema:
+        agent_dir = self.get_agent_dir(agent_id)
+        manifest_path = agent_dir / "agent.yaml"
+        agent = load_agent_manifest(manifest_path)
+        if agent.id != agent_id:
+            raise ValueError(f"reloaded agent id '{agent.id}' does not match '{agent_id}'")
+        self._agents[agent_id] = agent
+        return agent
+
 
 def _iter_agent_manifests(root: str | Path) -> Iterable[Path]:
     path = Path(root)

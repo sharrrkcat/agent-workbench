@@ -3,6 +3,8 @@ name: Chat Agent
 type: prompt
 description: Default chat agent
 avatar: ""
+capabilities:
+  - llm
 
 config_schema:
   - name: temperature

@@ -3174,6 +3174,89 @@ input:disabled {
   gap: 12px;
 }
 
+.settings-override-section {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-override-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.settings-override-field.overridden {
+  border-color: rgba(34, 160, 107, 0.28);
+  background: rgba(34, 160, 107, 0.075);
+}
+
+.settings-override-field > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.settings-override-field input,
+.settings-override-field select,
+.settings-override-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #202020;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.settings-override-field textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.settings-override-field input:disabled {
+  opacity: 0.5;
+}
+
+.settings-override-input-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.settings-avatar-preview {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #3a3a3a;
+  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.settings-override-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  flex-wrap: wrap;
+}
+
 .settings-config-sections {
   display: grid;
   gap: 14px;

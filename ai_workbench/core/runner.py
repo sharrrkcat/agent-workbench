@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
+from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_context_policy, resolved_model_lifecycle, resolved_runtime_override
 from ai_workbench.core.attachments import ImageAttachment, is_text_attachment, language_for_filename, read_attachment_as_data_url, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
@@ -96,6 +97,7 @@ class AgentRunner:
                 capability_registry=capability_registry,
                 capability_config_store=capability_config_store,
                 llm_profile_store=llm_profile_store,
+                agent_config_store=agent_config_store,
             )
 
     async def run(
@@ -254,7 +256,11 @@ class AgentRunner:
         prefill: dict,
         run: RunSchema,
     ) -> RunResult:
-        context_policy = action.context_policy or agent.context_policy
+        agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
+        run_metadata = dict(self.run_store.get_run(run.run_id).metadata)
+        run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config)["runtime"]
+        self.run_store.update_metadata(run.run_id, run_metadata)
+        context_policy = resolved_context_policy(agent, action, agent_config)
         try:
             context = self.context_builder.build(
                 session_id=session_id,
@@ -417,7 +423,7 @@ class AgentRunner:
             payload={"available_actions": message.available_actions},
         )
 
-        lifecycle_result = self._apply_model_lifecycle(agent.model_lifecycle, llm_config.values, done_run.run_id, session_id)
+        lifecycle_result = self._apply_model_lifecycle(resolved_model_lifecycle(agent, agent_config), llm_config.values, done_run.run_id, session_id)
         if lifecycle_result:
             done_run = self.run_store.get_run(done_run.run_id)
             if done_run.status == RunStatus.FAILED:
@@ -669,6 +675,7 @@ class AgentRunner:
             capability_config=capability_config,
             llm_profile_store=self.llm_profile_store,
             session_llm_profile_id=session_llm_profile_id,
+            agent_runtime=resolved_runtime_override(self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}),
         )
 
     def _record_llm_resolution(self, run_id: str, llm_config) -> None:

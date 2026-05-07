@@ -14,6 +14,12 @@ from ai_workbench.core.config_schema import (
     resolve_config,
     validate_user_config,
 )
+from ai_workbench.core.agent_settings import (
+    normalize_display_override,
+    normalize_runtime_override,
+    resolved_agent_settings,
+    write_overrides_to_manifest,
+)
 from ai_workbench.core.llm_config import LLMConfigError, public_llm_config_status, resolve_llm_config
 
 
@@ -24,6 +30,8 @@ class UpdateConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: Optional[bool] = None
+    display: Optional[Dict[str, Any]] = None
+    runtime: Optional[Dict[str, Any]] = None
     user_config: Optional[Dict[str, Any]] = Field(default=None)
 
     @field_validator("user_config", mode="before")
@@ -54,7 +62,48 @@ def update_agent_config(agent_id: str, payload: UpdateConfigRequest, state: Runt
     if payload.user_config is not None:
         existing = state.agent_configs.get_config(agent_id)["user_config"]
         user_config = _validate_config_patch(agent.config_schema, existing, payload.user_config)
-    state.agent_configs.set_config(agent_id, enabled=payload.enabled, user_config=user_config)
+    try:
+        display = normalize_display_override(payload.display) if payload.display is not None else None
+        runtime = normalize_runtime_override(payload.runtime) if payload.runtime is not None else None
+        _validate_runtime_profile(state, runtime or {})
+    except LLMConfigError as exc:
+        raise_error(400, exc.code, exc.message)
+    except ValueError as exc:
+        raise_error(400, "INVALID_AGENT_OVERRIDE", str(exc))
+    state.agent_configs.set_config(agent_id, enabled=payload.enabled, user_config=user_config, display=display, runtime=runtime)
+    return _serialize_agent_config(state, agent_id)
+
+
+class WriteManifestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: bool = False
+
+
+@router.post("/api/agent-configs/{agent_id}/reset-overrides")
+def reset_agent_overrides(agent_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    _get_agent_or_404(state, agent_id)
+    state.agent_configs.set_config(agent_id, display={}, runtime={})
+    return _serialize_agent_config(state, agent_id)
+
+
+@router.post("/api/agent-configs/{agent_id}/write-manifest")
+def write_agent_manifest(agent_id: str, payload: WriteManifestRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    agent = _get_agent_or_404(state, agent_id)
+    if not payload.confirm:
+        raise_error(400, "AGENT_MANIFEST_WRITE_CONFIRM_REQUIRED", "confirm=true is required to write agent overrides to manifest.")
+    config = state.agent_configs.get_config(agent_id)
+    try:
+        agent_dir = state.agents.get_agent_dir(agent_id)
+        write_overrides_to_manifest(agent, agent_dir, config)
+        agent = state.agents.reload_agent(agent_id)
+        state.agent_configs.set_config(agent_id, display={}, runtime={})
+    except PermissionError as exc:
+        raise_error(400, "AGENT_MANIFEST_NOT_WRITABLE", str(exc) or f"Agent manifest is not writable: {agent_id}")
+    except FileNotFoundError as exc:
+        raise_error(404, "AGENT_MANIFEST_NOT_WRITABLE", str(exc))
+    except Exception as exc:
+        raise_error(400, "AGENT_MANIFEST_WRITE_FAILED", str(exc) or "Failed to write agent manifest.")
     return _serialize_agent_config(state, agent_id)
 
 
@@ -156,6 +205,12 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
     agent = state.agents.get(agent_id)
     config = state.agent_configs.get_config(agent_id)
     masked_user_config = mask_config(agent.config_schema, config["user_config"])
+    agent_dir = None
+    try:
+        agent_dir = state.agents.get_agent_dir(agent.id)
+    except KeyError:
+        pass
+    resolved = resolved_agent_settings(agent, config, agent_dir=agent_dir)
     avatar = resolve_avatar_for_response(state, agent).public_dict()
     return {
         **config,
@@ -168,8 +223,29 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
             "type": agent.type,
             "description": agent.description,
             "avatar": agent.avatar,
+            "capabilities": agent.capabilities,
             **avatar,
         },
+        "manifest": {
+            "name": agent.name,
+            "description": agent.description,
+            "avatar": agent.avatar,
+            "capabilities": agent.capabilities,
+            "llm": agent.llm,
+            "context_policy": agent.context_policy.model_dump(exclude_none=True),
+            "model_lifecycle": agent.model_lifecycle.model_dump(),
+            "timeout_seconds": agent.timeout_seconds,
+        },
+        "overrides": {
+            "display": config.get("display", {}),
+            "runtime": config.get("runtime", {}),
+            "user_config": masked_user_config,
+        },
+        "resolved": {
+            **resolved,
+            "config": mask_config(agent.config_schema, _resolve_for_response(agent.config_schema, config["user_config"])),
+        },
+        "field_sources": resolved["field_sources"],
     }
 
 
@@ -216,6 +292,20 @@ def _resolve_llm_capability_config(state: RuntimeState):
     capability = _get_capability_or_404(state, "llm")
     stored = state.capability_configs.get_config("llm")
     return resolve_llm_config(capability_schema=capability, capability_config=stored)
+
+
+def _validate_runtime_profile(state: RuntimeState, runtime: Dict[str, Any]) -> None:
+    profile_id = runtime.get("llm_profile_id")
+    if not profile_id:
+        return
+    if state.llm_profiles is None:
+        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_id}")
+    try:
+        profile = state.llm_profiles.get_by_id_or_alias(profile_id)
+    except KeyError as exc:
+        raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_id}") from exc
+    if not profile.enabled:
+        raise LLMConfigError("LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
 
 
 def _runtime_list_models(runtime, model_config: Dict[str, Any]) -> list[str]:

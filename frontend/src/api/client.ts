@@ -62,10 +62,19 @@ export const api = {
   listCommands: () => request<Command[]>('/api/commands'),
   listAgentConfigs: () => request<AgentConfig[]>('/api/agent-configs'),
   getAgentConfig: (agentId: string) => request<AgentConfig>(`/api/agent-configs/${agentId}`),
-  updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config'>>) =>
+  updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config' | 'display' | 'runtime'>>) =>
     request<AgentConfig>(`/api/agent-configs/${agentId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    }),
+  resetAgentOverrides: (agentId: string) =>
+    request<AgentConfig>(`/api/agent-configs/${agentId}/reset-overrides`, {
+      method: 'POST',
+    }),
+  writeAgentOverridesToManifest: (agentId: string) =>
+    request<AgentConfig>(`/api/agent-configs/${agentId}/write-manifest`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
     }),
   listCapabilityConfigs: () => request<CapabilityConfig[]>('/api/capability-configs'),
   getCapabilityConfig: (capabilityId: string) => request<CapabilityConfig>(`/api/capability-configs/${capabilityId}`),

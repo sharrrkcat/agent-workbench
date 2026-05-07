@@ -3,6 +3,8 @@ name: Translate Agent
 type: prompt
 description: Translate the current input
 avatar: ""
+capabilities:
+  - llm
 
 actions:
   - id: default

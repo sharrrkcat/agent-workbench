@@ -37,6 +37,7 @@ def resolve_llm_config(
     capability_config: Optional[Dict[str, Any]] = None,
     llm_profile_store: Any = None,
     session_llm_profile_id: Optional[str] = None,
+    agent_runtime: Optional[Dict[str, Any]] = None,
     explicit_override: Optional[Dict[str, Any]] = None,
     env: Optional[Dict[str, str]] = None,
 ) -> LLMRuntimeConfig:
@@ -104,6 +105,13 @@ def resolve_llm_config(
     if profile_ref:
         profile = _get_enabled_profile(llm_profile_store, str(profile_ref))
         _apply_profile(values, sources, metadata, profile, "agent_llm_profile")
+
+    runtime = agent_runtime if isinstance(agent_runtime, dict) else {}
+    if "allow_session_override" in runtime:
+        metadata["allow_session_override"] = bool(runtime.get("allow_session_override"))
+    if runtime.get("llm_profile_id"):
+        profile = _get_enabled_profile(llm_profile_store, str(runtime["llm_profile_id"]))
+        _apply_profile(values, sources, metadata, profile, "agent_config_llm_profile")
 
     if session_llm_profile_id and metadata["allow_session_override"]:
         profile = _get_enabled_profile(llm_profile_store, str(session_llm_profile_id))

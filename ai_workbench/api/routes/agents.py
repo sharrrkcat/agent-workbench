@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from ai_workbench.api.avatar import resolve_avatar_for_response
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.core.agent_settings import resolved_agent_settings
 
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
@@ -11,19 +12,28 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 def serialize_agent(state: RuntimeState, agent, enabled: bool = True) -> dict:
     avatar = resolve_avatar_for_response(state, agent).public_dict()
+    config = state.agent_configs.get_config(agent.id)
+    agent_dir = None
+    try:
+        agent_dir = state.agents.get_agent_dir(agent.id)
+    except KeyError:
+        pass
+    resolved = resolved_agent_settings(agent, config, agent_dir=agent_dir)
+    display = resolved["display"]
     return {
         "id": agent.id,
-        "name": agent.name,
+        "name": display["name"],
         "type": agent.type,
-        "description": agent.description,
-        "avatar": agent.avatar,
-        **avatar,
+        "description": display["description"],
+        "avatar": display["avatar"],
+        **({"avatar_type": "text", "avatar_url": None} if config.get("display", {}).get("avatar") else avatar),
         "entry": agent.entry,
         "actions": [action.model_dump() for action in agent.actions],
         "model": agent.model,
         "llm": agent.llm,
         "context_policy": agent.context_policy.model_dump(),
         "model_lifecycle": agent.model_lifecycle.model_dump(),
+        "resolved_runtime": resolved["runtime"],
         "capabilities": agent.capabilities,
         "enabled": enabled,
     }

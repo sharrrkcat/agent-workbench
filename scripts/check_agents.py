@@ -140,7 +140,7 @@ def _check_agents(agents_path: Path, result: CheckResult, strict: bool, capabili
                 _check_script_agent(agent.id, agent.entry or "", manifest_path.parent, manifest_path, result)
             continue
 
-        _require_fields(manifest_path, raw, ["id", "name", "type", "actions", "context_policy", "model_lifecycle"], result)
+        _require_fields(manifest_path, raw, ["id", "name", "type", "actions"], result)
         if agent.id != manifest_path.parent.name:
             result.errors.append(f"{manifest_path}: agent id '{agent.id}' must match directory '{manifest_path.parent.name}'")
         if not ID_RE.fullmatch(agent.id):
@@ -149,6 +149,8 @@ def _check_agents(agents_path: Path, result: CheckResult, strict: bool, capabili
             result.errors.append(f"{manifest_path}: agent '{agent.id}' has unsupported type '{agent.type}'")
         _check_actions(manifest_path, agent.id, agent.actions, result)
         _check_llm_profile(manifest_path, agent.id, raw, result)
+        if agent.type == "prompt" and "llm" not in agent.capabilities:
+            result.warnings.append(f"{manifest_path}: prompt agent '{agent.id}' should declare llm capability")
 
         if agent.type == "script":
             _check_script_agent(agent.id, agent.entry or "", manifest_path.parent, manifest_path, result)

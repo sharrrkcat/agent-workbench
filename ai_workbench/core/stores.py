@@ -313,6 +313,8 @@ class ConfigStore:
         item_id: str,
         enabled: Optional[bool] = None,
         user_config: Optional[Dict[str, Any]] = None,
+        display: Optional[Dict[str, Any]] = None,
+        runtime: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         now = datetime.utcnow()
         record = self._records.get(item_id)
@@ -320,6 +322,8 @@ class ConfigStore:
             record = {
                 self.id_field: item_id,
                 "enabled": True,
+                "display": {},
+                "runtime": {},
                 "user_config": {},
                 "created_at": now,
                 "updated_at": now,
@@ -328,6 +332,10 @@ class ConfigStore:
             record["enabled"] = enabled
         if user_config is not None:
             record["user_config"] = user_config
+        if display is not None:
+            record["display"] = display
+        if runtime is not None:
+            record["runtime"] = runtime
         record["updated_at"] = now
         self._records[item_id] = record
         return dict(record)
@@ -352,6 +360,14 @@ class AgentConfigStore(ConfigStore):
 class CapabilityConfigStore(ConfigStore):
     def __init__(self) -> None:
         super().__init__("capability_id")
+
+    def set_config(
+        self,
+        item_id: str,
+        enabled: Optional[bool] = None,
+        user_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return super().set_config(item_id=item_id, enabled=enabled, user_config=user_config)
 
 
 class LLMProfileStore:

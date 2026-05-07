@@ -144,6 +144,122 @@ def test_health_details_returns_registry_counts_and_masks_llm_secret() -> None:
     assert "secret-token" not in str(payload)
 
 
+def test_agent_config_returns_resolved_defaults_and_llm_section() -> None:
+    client = make_client()
+
+    response = client.get("/api/agent-configs/chat")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resolved"]["runtime"]["timeout_seconds"] == 120
+    assert payload["field_sources"]["runtime.timeout_seconds"] == "default"
+    assert {"id": "llm_runtime", "label": "LLM Runtime Settings", "capability_id": "llm"} in payload["resolved"]["sections"]
+
+
+def test_agent_config_display_override_updates_resolved_agent_list() -> None:
+    client = make_client()
+
+    response = client.patch("/api/agent-configs/chat", json={"display": {"name": "My Chat", "avatar": "MC"}})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resolved"]["display"]["name"] == "My Chat"
+    assert payload["field_sources"]["display.name"] == "override"
+    agents = client.get("/api/agents").json()
+    chat = next(agent for agent in agents if agent["id"] == "chat")
+    assert chat["name"] == "My Chat"
+    assert chat["avatar"] == "MC"
+
+
+def test_agent_config_empty_display_clears_override() -> None:
+    client = make_client()
+    client.patch("/api/agent-configs/chat", json={"display": {"name": "My Chat"}})
+
+    response = client.patch("/api/agent-configs/chat", json={"display": {"name": ""}})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["display"] == {}
+    assert payload["resolved"]["display"]["name"] == "Chat Agent"
+    assert payload["field_sources"]["display.name"] == "manifest"
+
+
+def test_reset_overrides_keeps_user_config() -> None:
+    client = make_client()
+    client.patch(
+        "/api/agent-configs/chat",
+        json={"display": {"name": "My Chat"}, "runtime": {"timeout_seconds": 90}, "user_config": {"temperature": 0.2}},
+    )
+
+    response = client.post("/api/agent-configs/chat/reset-overrides")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["display"] == {}
+    assert payload["runtime"] == {}
+    assert payload["user_config"]["temperature"] == 0.2
+
+
+def test_non_llm_agent_does_not_expose_llm_section() -> None:
+    client = make_client()
+
+    response = client.get("/api/agent-configs/echo_script")
+
+    assert response.status_code == 200
+    section_ids = [section["id"] for section in response.json()["resolved"]["sections"]]
+    assert "basic" in section_ids
+    assert "llm_runtime" not in section_ids
+
+
+def test_agent_config_llm_profile_override_and_session_precedence() -> None:
+    client = make_client()
+    profile_a = create_llm_profile(client, alias="profile-a")
+    profile_b = create_llm_profile(client, alias="profile-b")
+    client.patch("/api/agent-configs/chat", json={"runtime": {"llm_profile_id": profile_a["id"], "allow_session_override": True}})
+    session = create_session(client)
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile_b["id"]})
+
+    result = post_message(client, session["session_id"], "hello")
+
+    assert result["success"] is True
+    message = result["messages"][-1]
+    assert message["metadata"]["llm_resolution"]["profile_id"] == profile_b["id"]
+
+
+def test_agent_config_disallows_session_override() -> None:
+    client = make_client()
+    profile_a = create_llm_profile(client, alias="profile-c")
+    profile_b = create_llm_profile(client, alias="profile-d")
+    client.patch("/api/agent-configs/chat", json={"runtime": {"llm_profile_id": profile_a["id"], "allow_session_override": False}})
+    session = create_session(client)
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile_b["id"]})
+
+    result = post_message(client, session["session_id"], "hello")
+
+    assert result["success"] is True
+    message = result["messages"][-1]
+    assert message["metadata"]["llm_resolution"]["profile_id"] == profile_a["id"]
+
+
+def test_disabled_llm_profile_override_returns_clear_error() -> None:
+    client = make_client()
+    profile = create_llm_profile(client, alias="disabled-profile", enabled=False)
+
+    response = client.patch("/api/agent-configs/chat", json={"runtime": {"llm_profile_id": profile["id"]}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "LLM_PROFILE_DISABLED"
+
+
+def test_write_manifest_requires_confirm() -> None:
+    client = make_client()
+
+    response = client.post("/api/agent-configs/chat/write-manifest", json={"confirm": False})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "AGENT_MANIFEST_WRITE_CONFIRM_REQUIRED"
+
+
 def test_list_agents_returns_builtin_agents() -> None:
     response = make_client().get("/api/agents")
 

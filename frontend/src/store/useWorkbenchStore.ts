@@ -56,7 +56,9 @@ type WorkbenchState = {
   updateDefaultAgent: (agentId: string) => Promise<void>;
   updateSessionLlmProfile: (profileId: string | null) => Promise<void>;
   refreshConfigs: () => Promise<void>;
-  updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config'>>) => Promise<void>;
+  updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config' | 'display' | 'runtime'>>) => Promise<void>;
+  resetAgentOverrides: (agentId: string) => Promise<void>;
+  writeAgentOverridesToManifest: (agentId: string) => Promise<void>;
   updateCapabilityConfig: (
     capabilityId: string,
     patch: Partial<Pick<CapabilityConfig, 'enabled' | 'user_config'>>,
@@ -305,6 +307,30 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ savingConfigId: undefined });
     } catch (error) {
       set({ ...formatError(error, 'Failed to update agent config'), savingConfigId: undefined });
+      throw error;
+    }
+  },
+
+  resetAgentOverrides: async (agentId) => {
+    set({ savingConfigId: `agent:${agentId}`, error: undefined, lastError: undefined });
+    try {
+      await api.resetAgentOverrides(agentId);
+      await get().refreshConfigs();
+      set({ savingConfigId: undefined });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to reset agent overrides'), savingConfigId: undefined });
+      throw error;
+    }
+  },
+
+  writeAgentOverridesToManifest: async (agentId) => {
+    set({ savingConfigId: `agent:${agentId}`, error: undefined, lastError: undefined });
+    try {
+      await api.writeAgentOverridesToManifest(agentId);
+      await get().refreshConfigs();
+      set({ savingConfigId: undefined });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to write agent manifest'), savingConfigId: undefined });
       throw error;
     }
   },

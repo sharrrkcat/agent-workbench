@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai_workbench.core.config_schema import ConfigFieldSchema, parse_config_schema
+from ai_workbench.core.agent_defaults import DEFAULT_CONTEXT_POLICY, DEFAULT_MODEL_LIFECYCLE
 from ai_workbench.core.schema.action import ActionSchema
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
@@ -36,8 +37,9 @@ class AgentSchema(BaseModel):
     model: Optional[Dict[str, Any]] = None
     llm: Optional[Dict[str, Any]] = None
     prompt: Optional[str] = None
-    context_policy: ContextPolicy
-    model_lifecycle: ModelLifecyclePolicy
+    context_policy: Optional[ContextPolicy] = None
+    model_lifecycle: Optional[ModelLifecyclePolicy] = None
+    timeout_seconds: Optional[int] = None
     capabilities: List[str] = Field(default_factory=list)
     config_schema: List[ConfigFieldSchema] = Field(default_factory=list)
 
@@ -74,5 +76,9 @@ class AgentSchema(BaseModel):
 
         if self.type == "script" and not self.entry:
             raise ValueError("script agents require an entry field")
+        if self.context_policy is None:
+            self.context_policy = DEFAULT_CONTEXT_POLICY
+        if self.model_lifecycle is None:
+            self.model_lifecycle = DEFAULT_MODEL_LIFECYCLE
 
         return self

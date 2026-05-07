@@ -56,6 +56,48 @@ llm:
   allow_session_override: true
 ```
 
+Declare the `llm` capability for agents that use the LLM runtime. Settings uses the capability declaration to decide whether to show LLM Runtime Settings in the Overrides tab:
+
+```yaml
+capabilities:
+  - llm
+```
+
+## Agent Overrides
+
+Agent manifests are package defaults. `AgentConfig` stores local user overrides and normal saves do not modify `agent.yaml`.
+
+Settings > Agents has two separate surfaces:
+
+- `Config` is for agent-defined business fields from `config_schema`.
+- `Overrides` is for Workbench display and runtime settings shared across agents.
+
+Every agent can override display name, avatar, and description. Capability-declared sections appear when the agent manifest declares that capability. The first built-in section is `LLM Runtime Settings`, shown only for agents that declare `llm`.
+
+Display resolution:
+
+```text
+AgentConfig display override > manifest/package avatar > generated fallback
+```
+
+LLM resolution:
+
+```text
+session override, when allowed > AgentConfig runtime llm_profile_id > manifest llm.profile > global fallback > environment fallback
+```
+
+Context and lifecycle resolution:
+
+```text
+action context_policy, where present > AgentConfig runtime > manifest > system default
+```
+
+System defaults are centralized in `ai_workbench/core/agent_defaults.py`. If a manifest omits context policy, model lifecycle, timeout, or session override fields, the Settings UI and runtime resolver still return complete defaults.
+
+`Reset overrides` clears display/runtime overrides only; it keeps `user_config` from the Config tab. `Write overrides to manifest` physically edits `agents/<id>/agent.yaml` and is intended for local agent development. It writes only overridden display/runtime fields, not `user_config` or untouched defaults, and may rewrite YAML formatting/comments.
+
+Script Agents remain trusted local Python code. Writing overrides to a manifest modifies local package files.
+
 ## Script Agent Manifest
 
 Minimal `agents/my_script/agent.yaml`:

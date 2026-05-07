@@ -10,7 +10,7 @@ export type AgentAction = {
 };
 
 export type ContextPolicy = {
-  mode: 'none' | 'current_message' | 'recent_messages' | 'session' | 'selected_message';
+  mode: 'none' | 'current_message' | 'recent_messages' | 'last_n' | 'session' | 'selected_message';
   max_messages?: number | null;
   max_chars?: number | null;
   include_system_prompt?: boolean;
@@ -41,6 +41,7 @@ export type Agent = {
   llm?: AgentLlmConfig | null;
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
+  resolved_runtime?: AgentRuntimeOverrides;
   capabilities?: string[];
   enabled: boolean;
 };
@@ -73,6 +74,30 @@ export type ManifestSummary = {
   avatar?: string | null;
   avatar_type?: AvatarType;
   avatar_url?: string | null;
+  capabilities?: string[];
+};
+
+export type AgentDisplayOverrides = {
+  name?: string;
+  description?: string;
+  avatar?: string;
+};
+
+export type AgentRuntimeOverrides = {
+  llm_profile_id?: string | null;
+  llm_profile_key?: string | null;
+  allow_session_override?: boolean;
+  context_policy?: ContextPolicy;
+  model_lifecycle?: ModelLifecyclePolicy;
+  timeout_seconds?: number;
+};
+
+export type AgentResolvedSettings = {
+  display: Required<AgentDisplayOverrides>;
+  runtime: AgentRuntimeOverrides;
+  sections: { id: string; label: string; capability_id?: string }[];
+  field_sources: Record<string, 'default' | 'manifest' | 'override' | string>;
+  config?: Record<string, unknown>;
 };
 
 export type ConfigFieldSchema = {
@@ -89,8 +114,27 @@ export type ConfigFieldSchema = {
 export type AgentConfig = {
   agent_id: string;
   enabled: boolean;
+  display?: AgentDisplayOverrides;
+  runtime?: AgentRuntimeOverrides;
   user_config: Record<string, unknown>;
   resolved_config: Record<string, unknown>;
+  overrides?: {
+    display: AgentDisplayOverrides;
+    runtime: AgentRuntimeOverrides;
+    user_config: Record<string, unknown>;
+  };
+  manifest?: {
+    name: string;
+    description: string;
+    avatar?: string | null;
+    capabilities?: string[];
+    llm?: AgentLlmConfig | null;
+    context_policy?: ContextPolicy;
+    model_lifecycle?: ModelLifecyclePolicy;
+    timeout_seconds?: number | null;
+  };
+  resolved?: AgentResolvedSettings;
+  field_sources?: Record<string, 'default' | 'manifest' | 'override' | string>;
   config_schema: ConfigFieldSchema[];
   manifest_summary: ManifestSummary;
   created_at: string;
