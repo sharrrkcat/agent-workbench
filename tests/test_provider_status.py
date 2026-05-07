@@ -105,10 +105,29 @@ def test_lm_studio_status_uses_native_models_and_loaded_instances() -> None:
     assert payload["models"][0]["id"] == "model-a"
     assert payload["models"][0]["available"] is True
     assert payload["models"][0]["loaded"] is True
+    assert payload["models"][0]["status"] == "READY"
     assert payload["models"][0]["loaded_instance_ids"] == ["instance-1"]
     assert payload["models"][1]["status"] == "MODEL_NOT_AVAILABLE"
     assert "secret" not in str(payload)
     assert FakeClient.calls[0][1] == "http://localhost:1234/api/v1/models"
+
+
+def test_lm_studio_existing_unloaded_model_reports_not_loaded() -> None:
+    client = TestClient(create_app(use_memory=True))
+    provider, _, _ = create_provider_and_models(client, "lm_studio", "http://localhost:1234/v1")
+    FakeClient.routes["http://localhost:1234/api/v1/models"] = FakeResponse(
+        {"data": [{"id": "model-a", "display_name": "Model A", "loaded_instances": []}]}
+    )
+
+    response = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh")
+
+    payload = response.json()["providers"][0]
+    assert response.status_code == 200
+    assert payload["reachable"] is True
+    assert payload["models"][0]["available"] is True
+    assert payload["models"][0]["loaded"] is False
+    assert payload["models"][0]["status"] == "MODEL_NOT_LOADED"
+    assert payload["status"] == "MODEL_NOT_AVAILABLE"
 
 
 def test_lm_studio_native_models_key_response_is_normalized() -> None:
@@ -252,6 +271,13 @@ def test_llama_cpp_router_and_single_status_modes() -> None:
     assert router_response["models"][0]["status"] == "READY"
     assert router_response["models"][1]["status"] == "MODEL_NOT_AVAILABLE"
 
+    FakeClient.routes = {"http://localhost:8080/models": FakeResponse({"data": [{"id": "model-a", "status": {"value": "not-loaded"}}]})}
+    unloaded_response = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert unloaded_response["mode"] == "llama_cpp_router"
+    assert unloaded_response["models"][0]["loaded"] is False
+    assert unloaded_response["models"][0]["status"] == "MODEL_NOT_LOADED"
+
     FakeClient.routes = {"http://localhost:8080/v1/models": FakeResponse({"data": [{"id": "different"}]})}
     single_response = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
 
@@ -273,7 +299,7 @@ def test_openai_compatible_status_and_unreachable() -> None:
     response = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
 
     assert response["mode"] == "openai_compatible"
-    assert response["models"][0]["status"] == "READY"
+    assert response["models"][0]["status"] == "MODEL_STATUS_UNKNOWN"
     assert response["models"][1]["status"] == "MODEL_NOT_AVAILABLE"
 
     FakeClient.routes = {}

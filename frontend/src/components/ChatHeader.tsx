@@ -1,14 +1,13 @@
 import { Settings } from 'lucide-react';
 import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { LlmProviderStatus } from '../types';
+import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const state = useWorkbenchStore();
   const currentProfile = resolveCurrentLlmProfile(state);
-  const providerStatus = currentProfile?.provider_profile_id ? state.llmProviderStatuses[currentProfile.provider_profile_id] : undefined;
-  const modelStatus = statusForModel(providerStatus, currentProfile?.model_id || '');
+  const modelStatus = getModelProfileStatus(currentProfile, state.llmProviderStatuses);
 
   return (
     <header className="topbar">
@@ -20,10 +19,10 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
       </div>
       <div className="topbar-actions">
         <button
-          className={`status-pill ${statusClass(modelStatus.code)}`}
+          className={`status-pill ${statusClass(modelStatus)}`}
           type="button"
           onClick={() => void state.refreshProviderStatuses()}
-          title={statusTitle(providerStatus, currentProfile?.model_id || '')}
+          title={statusTitle(modelStatus, currentProfile)}
         >
           <span />
           {modelStatus.label}
@@ -37,37 +36,15 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
-function statusForModel(providerStatus: LlmProviderStatus | undefined, modelId: string): { code: string; label: string } {
-  if (!providerStatus) return { code: 'MODEL_STATUS_UNKNOWN', label: 'Unknown' };
-  const model = providerStatus.models.find((item) => item.id === modelId);
-  const code = model?.status || providerStatus.status || 'MODEL_STATUS_UNKNOWN';
-  return { code, label: statusLabel(code) };
-}
-
-function statusLabel(code: string): string {
-  if (code === 'READY') return 'Ready';
-  if (code === 'PROVIDER_UNREACHABLE') return 'Unreachable';
-  if (code === 'MODEL_NOT_AVAILABLE') return 'Model not available';
-  if (code === 'MODEL_MISMATCH') return 'Mismatch';
-  return 'Unknown';
-}
-
-function statusClass(code: string): string {
-  if (code === 'READY') return 'ok';
-  if (code === 'MODEL_MISMATCH') return 'warn';
-  if (code === 'PROVIDER_UNREACHABLE' || code === 'MODEL_NOT_AVAILABLE') return 'error';
-  return '';
-}
-
-function statusTitle(providerStatus: LlmProviderStatus | undefined, requestedModelId: string): string {
-  if (!providerStatus) return 'Provider status unknown. Click to refresh all enabled provider profiles.';
-  const warning = providerStatus.error?.message || providerStatus.warnings[0] || '';
+function statusTitle(modelStatus: ReturnType<typeof getModelProfileStatus>, currentProfile: ReturnType<typeof resolveCurrentLlmProfile>): string {
   return [
-    providerStatus.provider_profile_name,
-    providerStatus.provider,
-    `Requested: ${requestedModelId || 'none'}`,
-    `Status: ${statusLabel(statusForModel(providerStatus, requestedModelId).code)}`,
-    `Last checked: ${providerStatus.checked_at}`,
-    warning,
+    currentProfile?.name || currentProfile?.alias || 'Default',
+    `Requested: ${currentProfile?.model_id || 'none'}`,
+    `Status: ${modelStatus.label}`,
+    modelStatus.title,
   ].filter(Boolean).join('\n');
+}
+
+function statusClass(modelStatus: ReturnType<typeof getModelProfileStatus>): string {
+  return statusPillClass(modelStatus);
 }

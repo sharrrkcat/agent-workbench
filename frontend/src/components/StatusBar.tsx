@@ -1,9 +1,9 @@
-import { CircleAlert, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function StatusBar() {
   const state = useWorkbenchStore();
-  const { loading, sending, savingConfigId, testingLlm, pendingActionKey, error, currentSession, health } = state;
+  const { loading, sending, savingConfigId, testingLlm, pendingActionKey, currentSession, health } = state;
   const resolvedProfile = resolveCurrentLlmProfile(state);
   const llmStatus = formatResolvedLlmStatus(state);
   const busy = loading || sending || Boolean(savingConfigId) || testingLlm || Boolean(pendingActionKey);
@@ -22,23 +22,17 @@ export function StatusBar() {
           {sending ? 'Sending' : testingLlm ? 'Testing LLM' : savingConfigId ? 'Saving' : pendingActionKey ? 'Running action' : 'Working'}
         </span>
       ) : null}
-      {error ? (
-        <span className="status-error">
-          <CircleAlert size={14} />
-          {error}
-        </span>
-      ) : null}
     </footer>
   );
 }
 
 function formatResolvedLlmStatus(state: ReturnType<typeof useWorkbenchStore.getState>): string {
   const profile = resolveCurrentLlmProfile(state);
-  if (!profile) return 'LLM · No model profile selected';
-  if (!profile.enabled) return 'LLM · Model disabled';
+  if (!profile) return 'LLM - No model profile';
+  if (!profile.enabled) return 'LLM - Model disabled';
   const provider = profile.provider_profile_id ? state.llmProviderProfiles.find((item) => item.id === profile.provider_profile_id) : undefined;
-  if (!provider) return 'LLM · Missing provider profile';
+  if (!provider) return 'LLM - Missing provider profile';
   const sessionProfileId = state.currentSession?.llm_profile_id;
-  const prefix = sessionProfileId ? 'LLM' : `LLM · Default: ${profile.name || profile.alias}`;
-  return `${prefix} · ${provider.name} · ${profile.model_id || 'No model ID'}`;
+  const prefix = sessionProfileId ? 'LLM' : `LLM - Default: ${profile.name || profile.alias}`;
+  return `${prefix} - ${provider.name} - ${profile.model_id || 'No model ID'}`;
 }

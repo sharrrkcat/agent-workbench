@@ -12,6 +12,7 @@ from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfi
 READY = "READY"
 PROVIDER_UNREACHABLE = "PROVIDER_UNREACHABLE"
 MODEL_NOT_AVAILABLE = "MODEL_NOT_AVAILABLE"
+MODEL_NOT_LOADED = "MODEL_NOT_LOADED"
 MODEL_MISMATCH = "MODEL_MISMATCH"
 MODEL_STATUS_UNKNOWN = "MODEL_STATUS_UNKNOWN"
 UNSUPPORTED = "UNSUPPORTED"
@@ -376,7 +377,9 @@ def _map_model_profiles(model_profiles: list[LLMProfileSchema], provider_models:
     for profile in model_profiles:
         match = by_id.get(profile.model_id)
         if match:
-            result.append({**match, "available": True, "status": READY})
+            loaded = match.get("loaded")
+            status = READY if loaded is True else MODEL_NOT_LOADED if loaded is False else MODEL_STATUS_UNKNOWN
+            result.append({**match, "available": True, "status": status})
         elif reliable:
             result.append(
                 {
@@ -429,6 +432,8 @@ def _aggregate_model_status(models: list[dict[str, Any]]) -> str:
         return MODEL_MISMATCH
     if MODEL_NOT_AVAILABLE in statuses:
         return MODEL_NOT_AVAILABLE
+    if MODEL_NOT_LOADED in statuses:
+        return MODEL_NOT_LOADED
     if MODEL_STATUS_UNKNOWN in statuses:
         return MODEL_STATUS_UNKNOWN
     return READY

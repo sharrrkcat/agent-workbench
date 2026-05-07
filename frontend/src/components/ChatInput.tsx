@@ -5,7 +5,7 @@ import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, 
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
-import { resolvedAgentProfileLabel } from '../utils/agents';
+import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
 
 export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
   const [value, setValue] = useState('');
@@ -21,7 +21,6 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
-  const currentResolvedProfile = useWorkbenchStore(resolveCurrentLlmProfile);
 
   const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
 
@@ -220,7 +219,8 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   }
 
   const currentAgent = agents.find((agent) => agent.id === currentSession?.default_agent_id);
-  const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles, currentAgent);
+  const agentDefaultProfile = resolveAgentDefaultLlmProfile({ agents, capabilityConfigs, currentSession, llmDefaults, llmProfiles });
+  const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles, currentAgent, agentDefaultProfile);
   const enabledProfiles = llmProfiles.filter((profile) => profile.enabled);
   const capabilities = getCurrentComposerCapabilities({
     session: currentSession,
@@ -305,9 +305,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
                     aria-checked={!currentSession?.llm_profile_id}
                     className={!currentSession?.llm_profile_id ? 'selected' : ''}
                     onClick={() => selectModel(null)}
-                    title={statusDotTitle(currentResolvedProfile, llmProviderStatuses)}
+                    title={defaultModelTitle(agentDefaultProfile, llmProviderStatuses)}
                   >
-                    <span className={`model-status-dot ${statusDotClass(currentResolvedProfile, llmProviderStatuses)}`} aria-hidden="true" />
+                    <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
                     <span>Default</span>
                     {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
                   </button>
@@ -453,47 +453,34 @@ function firstStringValue(source: Record<string, unknown> | undefined, key: stri
 }
 
 function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[]): string {
-  if (!profileId) return 'Default uses the resolved agent model profile or global default';
+  if (!profileId) return 'Default uses the current agent model profile';
   const profile = profiles.find((item) => item.id === profileId);
   if (!profile) return 'Missing model profile';
   return `${profile.name || profile.alias} - ${profile.model_id}`;
 }
 
-function modelSelectorLabel(profileId: string | null, profiles: LlmProfile[], agent?: Agent): string {
+function modelSelectorLabel(profileId: string | null, profiles: LlmProfile[], agent?: Agent, agentDefaultProfile?: LlmProfile): string {
   if (agent?.resolved_runtime?.allow_session_override === false || agent?.llm?.allow_session_override === false) {
-    const resolved = resolvedAgentProfileLabel(agent, profiles).replace(/ - locked$/, '');
-    return resolved ? `Locked: ${resolved}` : 'Locked';
+    return agentDefaultProfile ? `Locked: ${agentDefaultProfile.name || agentDefaultProfile.alias}` : 'Locked';
   }
   if (!profileId) {
-    const resolved = resolvedAgentProfileLabel(agent, profiles).replace(/ - locked$/, '');
-    return resolved ? `Default: ${resolved}` : 'Default';
+    return agentDefaultProfile ? `Default: ${agentDefaultProfile.name || agentDefaultProfile.alias}` : 'Default';
   }
   const profile = profiles.find((item) => item.id === profileId);
   return profile ? profile.name || profile.alias : 'Missing profile';
 }
 
 function statusDotClass(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
-  const code = modelStatusCode(profile, statuses);
-  if (code === 'READY') return 'ready';
-  if (code === 'MODEL_MISMATCH') return 'warning';
-  if (code === 'PROVIDER_UNREACHABLE' || code === 'MODEL_NOT_AVAILABLE') return 'error';
-  return 'unknown';
+  return modelStatusClass(getModelProfileStatus(profile, statuses));
 }
 
 function statusDotTitle(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
-  const code = modelStatusCode(profile, statuses);
-  if (code === 'READY') return 'Ready';
-  if (code === 'PROVIDER_UNREACHABLE') return 'Provider unreachable';
-  if (code === 'MODEL_NOT_AVAILABLE') return 'Model not available';
-  if (code === 'MODEL_MISMATCH') return 'Mismatch';
-  return 'Unknown';
+  return getModelProfileStatus(profile, statuses).title;
 }
 
-function modelStatusCode(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
-  if (!profile?.enabled) return 'MODEL_NOT_AVAILABLE';
-  const status = profile.provider_profile_id ? statuses[profile.provider_profile_id] : undefined;
-  if (!status) return 'MODEL_STATUS_UNKNOWN';
-  return status.models.find((item) => item.id === profile.model_id)?.status || status.status || 'MODEL_STATUS_UNKNOWN';
+function defaultModelTitle(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
+  if (!profile) return 'Default: this agent has no model profile.';
+  return `Default: ${profile.name || profile.alias}\n${statusDotTitle(profile, statuses)}`;
 }
 
 function getActiveToken(value: string, cursorPosition: number): { token: string; start: number; end: number } | null {

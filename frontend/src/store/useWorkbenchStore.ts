@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ApiError, api } from '../api/client';
+import { resolveEffectiveInputLlmProfile } from '../utils/modelStatus';
 import { parseServerTime } from '../utils/time';
 import type {
   Agent,
@@ -1060,30 +1061,7 @@ function chooseEnabledDefaultAgent(agents: Agent[], preferredAgentId?: string | 
 }
 
 export function resolveCurrentLlmProfile(state: Pick<WorkbenchState, 'currentSession' | 'agents' | 'llmProfiles' | 'llmDefaults' | 'capabilityConfigs'>): LlmProfile | undefined {
-  const session = state.currentSession;
-  const agent = state.agents.find((item) => item.id === session?.default_agent_id);
-  const sessionAllowed = agent?.resolved_runtime?.allow_session_override !== false && agent?.llm?.allow_session_override !== false;
-  if (sessionAllowed && session?.llm_profile_id) {
-    const profile = findProfile(state.llmProfiles, session.llm_profile_id);
-    if (profile) return profile;
-  }
-  const agentProfileRef = agent?.resolved_runtime?.llm_profile_id || agent?.llm?.profile;
-  const agentProfile = findProfile(state.llmProfiles, agentProfileRef);
-  if (agentProfile) return agentProfile;
-  const defaultProfile = findProfile(state.llmProfiles, state.llmDefaults?.default_model_profile_id);
-  if (defaultProfile) return defaultProfile;
-  const llmConfig = state.capabilityConfigs.find((config) => config.capability_id === 'llm');
-  const fallbackRef = stringValue(llmConfig?.resolved_config?.default_profile) || stringValue(llmConfig?.user_config?.default_profile);
-  return findProfile(state.llmProfiles, fallbackRef);
-}
-
-function findProfile(profiles: LlmProfile[], ref?: string | null): LlmProfile | undefined {
-  if (!ref) return undefined;
-  return profiles.find((profile) => profile.enabled && (profile.id === ref || profile.alias === ref));
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  return resolveEffectiveInputLlmProfile(state);
 }
 
 function sortSessionsByRecent(sessions: Session[]): Session[] {
