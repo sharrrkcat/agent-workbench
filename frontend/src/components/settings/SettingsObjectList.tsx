@@ -4,6 +4,7 @@ import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import type { SettingsSection } from './SettingsNav';
 import { initials } from './configUtils';
+import { getResolvedAgentDisplay } from '../../utils/agents';
 
 export function SettingsObjectList({
   section,
@@ -142,16 +143,14 @@ function ProfileListItem({ profile, active, onClick }: { profile: LlmProfile; ac
 }
 
 function AgentListItem({ config, active, onClick }: { config: AgentConfig; active: boolean; onClick: () => void }) {
-  const summary = config.manifest_summary;
-  const display = config.resolved?.display;
-  const label = display?.name || summary.name || config.agent_id;
-  const avatarSource = display ? { ...summary, name: display.name, avatar: display.avatar, avatar_type: 'text' as const, avatar_url: null } : summary;
+  const display = getResolvedAgentDisplay(config);
+  const label = display.name || config.agent_id;
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${config.enabled ? '' : 'disabled'}`} onClick={onClick}>
-      <AgentAvatar agent={avatarSource} label={label} className="settings-object-avatar" iconSize={16} />
+      <AgentAvatar agent={display} label={label} className="settings-object-avatar" iconSize={16} />
       <div className="settings-object-copy">
         <strong>{label}</strong>
-        <small>{display?.description || config.agent_id}</small>
+        <small>{display.description || config.agent_id}</small>
       </div>
       <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>

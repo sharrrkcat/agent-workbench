@@ -35,13 +35,14 @@ export type Agent = {
   avatar?: string | null;
   avatar_type?: AvatarType;
   avatar_url?: string | null;
+  resolved_display?: ResolvedAgentDisplay;
   entry?: string | null;
   actions: AgentAction[];
   model?: Record<string, unknown> | null;
   llm?: AgentLlmConfig | null;
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
-  resolved_runtime?: AgentRuntimeOverrides;
+  resolved_runtime?: AgentResolvedRuntime;
   capabilities?: string[];
   enabled: boolean;
 };
@@ -93,9 +94,22 @@ export type AgentRuntimeOverrides = {
   timeout_seconds?: number;
 };
 
+export type ResolvedAgentDisplay = Required<AgentDisplayOverrides> & {
+  avatar_type?: AvatarType;
+  avatar_url?: string | null;
+};
+
+export type AgentResolvedRuntime = AgentRuntimeOverrides & {
+  llm_profile_name?: string | null;
+  llm_profile_label?: string | null;
+  llm_profile_model_id?: string | null;
+  llm_profile_source?: string | null;
+  llm_profile_status?: 'default' | 'enabled' | 'disabled' | 'missing' | string;
+};
+
 export type AgentResolvedSettings = {
-  display: Required<AgentDisplayOverrides>;
-  runtime: AgentRuntimeOverrides;
+  display: ResolvedAgentDisplay;
+  runtime: AgentResolvedRuntime;
   sections: { id: string; label: string; capability_id?: string }[];
   field_sources: Record<string, 'default' | 'manifest' | 'override' | string>;
   config?: Record<string, unknown>;

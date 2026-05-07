@@ -5,6 +5,7 @@ import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, 
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
+import { resolvedAgentProfileLabel } from '../utils/agents';
 
 export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
   const [value, setValue] = useState('');
@@ -213,7 +214,8 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     void updateSessionLlmProfile(profileId);
   }
 
-  const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles);
+  const currentAgent = agents.find((agent) => agent.id === currentSession?.default_agent_id);
+  const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles, currentAgent);
   const enabledProfiles = llmProfiles.filter((profile) => profile.enabled);
   const capabilities = getCurrentComposerCapabilities({
     session: currentSession,
@@ -408,11 +410,12 @@ export function getCurrentComposerCapabilities({
   selectedAgentId,
 }: ComposerCapabilitySource): ModelCapabilities {
   const empty = { vision: false, tools: false, reasoning: false, streaming: false };
-  const sessionProfile = findEnabledProfile(llmProfiles, session?.llm_profile_id);
+  const agent = agents.find((item) => item.id === (selectedAgentId || session?.default_agent_id));
+  const sessionAllowed = agent?.resolved_runtime?.allow_session_override !== false && agent?.llm?.allow_session_override !== false;
+  const sessionProfile = sessionAllowed ? findEnabledProfile(llmProfiles, session?.llm_profile_id) : undefined;
   if (sessionProfile) return profileCapabilities(sessionProfile);
 
-  const agent = agents.find((item) => item.id === (selectedAgentId || session?.default_agent_id));
-  const agentProfile = findEnabledProfile(llmProfiles, agent?.llm?.profile);
+  const agentProfile = findEnabledProfile(llmProfiles, agent?.resolved_runtime?.llm_profile_id || agent?.llm?.profile);
   if (agentProfile) return profileCapabilities(agentProfile);
 
   const llmConfig = capabilityConfigs.find((config) => config.capability_id === 'llm');
@@ -436,14 +439,21 @@ function firstStringValue(source: Record<string, unknown> | undefined, key: stri
 }
 
 function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[]): string {
-  if (!profileId) return 'Default uses the agent manifest or global LLM fallback';
+  if (!profileId) return 'Default uses the resolved agent profile or global LLM fallback';
   const profile = profiles.find((item) => item.id === profileId);
   if (!profile) return 'Missing profile';
   return `${profile.name || profile.alias} - ${profile.model_id}`;
 }
 
-function modelSelectorLabel(profileId: string | null, profiles: { id: string; name: string; alias: string }[]): string {
-  if (!profileId) return 'Default';
+function modelSelectorLabel(profileId: string | null, profiles: LlmProfile[], agent?: Agent): string {
+  if (agent?.resolved_runtime?.allow_session_override === false || agent?.llm?.allow_session_override === false) {
+    const resolved = resolvedAgentProfileLabel(agent, profiles).replace(/ - locked$/, '');
+    return resolved ? `Locked: ${resolved}` : 'Locked';
+  }
+  if (!profileId) {
+    const resolved = resolvedAgentProfileLabel(agent, profiles).replace(/ - locked$/, '');
+    return resolved ? `Default: ${resolved}` : 'Default';
+  }
   const profile = profiles.find((item) => item.id === profileId);
   return profile ? profile.name || profile.alias : 'Missing profile';
 }

@@ -211,6 +211,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
     except KeyError:
         pass
     resolved = resolved_agent_settings(agent, config, agent_dir=agent_dir)
+    _enrich_resolved_runtime(state, resolved)
     avatar = resolve_avatar_for_response(state, agent).public_dict()
     return {
         **config,
@@ -307,6 +308,35 @@ def _validate_runtime_profile(state: RuntimeState, runtime: Dict[str, Any]) -> N
         raise LLMConfigError("LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_id}") from exc
     if not profile.enabled:
         raise LLMConfigError("LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
+
+
+def _enrich_resolved_runtime(state: RuntimeState, resolved: Dict[str, Any]) -> None:
+    runtime = resolved.get("runtime")
+    if not isinstance(runtime, dict):
+        return
+    profile_ref = runtime.get("llm_profile_id")
+    source = resolved.get("field_sources", {}).get("runtime.llm_profile_id", "default")
+    runtime["llm_profile_source"] = source
+    runtime["llm_profile_name"] = None
+    runtime["llm_profile_label"] = None
+    runtime["llm_profile_model_id"] = None
+    runtime["llm_profile_status"] = "default" if not profile_ref else "missing"
+    if not profile_ref:
+        return
+    if state.llm_profiles is None:
+        runtime["llm_profile_label"] = f"Missing: {profile_ref}"
+        return
+    try:
+        profile = state.llm_profiles.get_by_id_or_alias(str(profile_ref))
+    except KeyError:
+        runtime["llm_profile_label"] = f"Missing: {profile_ref}"
+        return
+    runtime["llm_profile_name"] = profile.name
+    runtime["llm_profile_label"] = profile.name or profile.alias
+    runtime["llm_profile_model_id"] = profile.model_id
+    runtime["llm_profile_status"] = "enabled" if profile.enabled else "disabled"
+    if not profile.enabled:
+        runtime["llm_profile_label"] = f"Disabled: {profile.name or profile.alias}"
 
 
 def _runtime_list_models(runtime, model_config: Dict[str, Any]) -> list[str]:

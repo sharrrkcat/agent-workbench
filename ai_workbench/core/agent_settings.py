@@ -9,7 +9,7 @@ from ai_workbench.core.agent_defaults import (
     DEFAULT_MODEL_LIFECYCLE,
     DEFAULT_TIMEOUT_SECONDS,
 )
-from ai_workbench.core.avatar import resolve_agent_avatar
+from ai_workbench.core.avatar import resolve_agent_avatar, resolve_agent_avatar_value
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
@@ -169,16 +169,18 @@ def write_overrides_to_manifest(agent: AgentSchema, agent_dir: Path, config: dic
 
 
 def _resolve_display(agent: AgentSchema, override: dict[str, str], agent_dir: Path | None) -> tuple[dict[str, str], dict[str, str]]:
-    avatar = resolve_agent_avatar(agent, agent_dir)
+    avatar = resolve_agent_avatar_value(agent.id, override["avatar"], agent_dir) if "avatar" in override else resolve_agent_avatar(agent, agent_dir)
     display = {
         "name": override.get("name") or agent.name or agent.id,
         "description": override.get("description") or agent.description or "",
-        "avatar": override.get("avatar") or agent.avatar or avatar.avatar or "",
+        "avatar": avatar.avatar or override.get("avatar") or agent.avatar or "",
+        "avatar_type": avatar.avatar_type,
+        "avatar_url": avatar.avatar_url,
     }
     sources = {
         "display.name": "override" if "name" in override else ("manifest" if agent.name else "default"),
         "display.description": "override" if "description" in override else ("manifest" if agent.description else "default"),
-        "display.avatar": "override" if "avatar" in override else ("manifest" if agent.avatar else "default"),
+        "display.avatar": "override" if "avatar" in override else ("manifest" if agent.avatar or avatar.avatar_type == "image" else "default"),
     }
     return display, sources
 

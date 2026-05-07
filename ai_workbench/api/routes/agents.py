@@ -5,6 +5,7 @@ from ai_workbench.api.avatar import resolve_avatar_for_response
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.agent_settings import resolved_agent_settings
+from ai_workbench.api.routes.configs import _enrich_resolved_runtime
 
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
@@ -19,14 +20,19 @@ def serialize_agent(state: RuntimeState, agent, enabled: bool = True) -> dict:
     except KeyError:
         pass
     resolved = resolved_agent_settings(agent, config, agent_dir=agent_dir)
+    _enrich_resolved_runtime(state, resolved)
     display = resolved["display"]
+    avatar_type = display.get("avatar_type", avatar.get("avatar_type"))
+    avatar_url = display.get("avatar_url", avatar.get("avatar_url"))
+    avatar_value = display.get("avatar") if avatar_type in {"emoji", "text"} else None
     return {
         "id": agent.id,
         "name": display["name"],
         "type": agent.type,
         "description": display["description"],
-        "avatar": display["avatar"],
-        **({"avatar_type": "text", "avatar_url": None} if config.get("display", {}).get("avatar") else avatar),
+        "avatar": avatar_value,
+        "avatar_type": avatar_type,
+        "avatar_url": avatar_url,
         "entry": agent.entry,
         "actions": [action.model_dump() for action in agent.actions],
         "model": agent.model,
@@ -34,6 +40,7 @@ def serialize_agent(state: RuntimeState, agent, enabled: bool = True) -> dict:
         "context_policy": agent.context_policy.model_dump(),
         "model_lifecycle": agent.model_lifecycle.model_dump(),
         "resolved_runtime": resolved["runtime"],
+        "resolved_display": display,
         "capabilities": agent.capabilities,
         "enabled": enabled,
     }

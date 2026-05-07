@@ -8,6 +8,7 @@ import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
 import { formatMessageTime } from '../utils/time';
 import { resolveAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
+import { getResolvedAgentDisplay } from '../utils/agents';
 
 export type FilePreview = {
   url: string;
@@ -37,6 +38,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   }
 
   const agent = message.agent_id ? agents.find((item) => item.id === message.agent_id) : undefined;
+  const agentDisplay = getResolvedAgentDisplay(agent);
   const isUser = message.role === 'user';
   const isCommand = message.role === 'command' || Boolean(message.command_name);
   const kind = isUser ? 'user' : isCommand ? 'command' : 'agent';
@@ -81,9 +83,9 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
 
   return (
     <article className={`message-row ${kind}`}>
-      {!isUser ? <AgentAvatar agent={agent} label={message.command_name || undefined} /> : null}
+      {!isUser ? <AgentAvatar agent={agentDisplay} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
-        <MessageHeader message={message} agent={agent} kind={kind} modelLabel={resolvedModelLabel(message)} />
+        <MessageHeader message={message} agent={agent} agentName={agentDisplay.name} kind={kind} modelLabel={resolvedModelLabel(message)} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
           {editing ? (
             <div className="message-edit-form">
@@ -194,15 +196,17 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
 function MessageHeader({
   message,
   agent,
+  agentName,
   kind,
   modelLabel,
 }: {
   message: Message;
   agent?: Agent;
+  agentName?: string;
   kind: 'user' | 'agent' | 'command';
   modelLabel?: string;
 }) {
-  const name = kind === 'user' ? 'You' : message.command_name || agent?.name || message.agent_id || 'Assistant';
+  const name = kind === 'user' ? 'You' : message.command_name || agentName || agent?.name || message.agent_id || 'Assistant';
   const action = message.action_id && message.action_id !== 'default' ? message.action_id : '';
   const secondary = modelLabel || action;
 

@@ -51,23 +51,28 @@ def resolve_agent_avatar(agent: AgentSchema, agent_dir: str | Path | None = None
         if discovered is not None:
             return discovered
 
-    manifest_avatar = (agent.avatar or "").strip()
-    if not manifest_avatar:
+    return resolve_agent_avatar_value(agent.id, agent.avatar, directory)
+
+
+def resolve_agent_avatar_value(agent_id: str, value: str | None, agent_dir: str | Path | None = None) -> ResolvedAvatar:
+    directory = Path(agent_dir).resolve() if agent_dir is not None else None
+    avatar_value = (value or "").strip()
+    if not avatar_value:
         return ResolvedAvatar(avatar=None, avatar_type="initials")
 
-    if _is_http_url(manifest_avatar):
-        return ResolvedAvatar(avatar=None, avatar_type="image", avatar_url=manifest_avatar)
+    if _is_http_url(avatar_value):
+        return ResolvedAvatar(avatar=None, avatar_type="image", avatar_url=avatar_value)
 
-    if directory is not None and _looks_like_local_image_path(manifest_avatar):
-        local = _resolve_manifest_avatar_path(agent.id, directory, manifest_avatar)
+    if directory is not None and _looks_like_local_image_path(avatar_value):
+        local = _resolve_manifest_avatar_path(agent_id, directory, avatar_value)
         if local is not None:
             return local
         return ResolvedAvatar(avatar=None, avatar_type="initials")
 
-    if _looks_like_emoji(manifest_avatar):
-        return ResolvedAvatar(avatar=manifest_avatar, avatar_type="emoji")
+    if _looks_like_emoji(avatar_value):
+        return ResolvedAvatar(avatar=avatar_value, avatar_type="emoji")
 
-    return ResolvedAvatar(avatar=manifest_avatar, avatar_type="text")
+    return ResolvedAvatar(avatar=avatar_value, avatar_type="text")
 
 
 def _resolve_discovered_avatar(agent_id: str, agent_dir: Path) -> ResolvedAvatar | None:

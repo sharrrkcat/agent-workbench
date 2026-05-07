@@ -9,6 +9,7 @@ import { DetailTabs } from './DetailTabs';
 import { ManifestViewer } from './ManifestViewer';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
+import { getResolvedAgentDisplay, resolvedAgentProfileLabel } from '../../utils/agents';
 
 const baseTabs = [
   { id: 'overview', label: 'Overview' },
@@ -44,7 +45,8 @@ export function AgentDetail({
     JSON.stringify(runtimeDraft) !== JSON.stringify(config.runtime || config.overrides?.runtime || {});
   const hasSavedOverrides = Boolean(Object.keys(config.display || {}).length || Object.keys(config.runtime || {}).length);
   const summary = config.manifest_summary;
-  const name = config.resolved?.display?.name || summary.name || agent?.name || config.agent_id;
+  const display = getResolvedAgentDisplay(config);
+  const name = display.name || summary.name || agent?.name || config.agent_id;
   const hasActions = Boolean(agent?.actions?.length);
   const hasConfigFields = Boolean(config.config_schema?.length);
   const hasRuntime = Boolean(agent?.context_policy || agent?.model_lifecycle || agent?.llm || agent?.model || agent?.type === 'script');
@@ -64,6 +66,8 @@ export function AgentDetail({
     [hasActions, hasConfigFields, hasRuntime],
   );
   const normalizedActiveTab = tabs.some((tab) => tab.id === activeTab && tab.enabled !== false) ? activeTab : 'overview';
+  const showOverridesSave = overridesDirty;
+  const showConfigSave = dirty && !showOverridesSave;
 
   useEffect(() => {
     setEnabled(config.enabled);
@@ -142,7 +146,7 @@ export function AgentDetail({
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
         <div className="settings-detail-title">
-          <AgentAvatar agent={agent || { ...summary, ...config.resolved?.display }} label={name} className="settings-detail-avatar" iconSize={18} />
+          <AgentAvatar agent={display} label={name} className="settings-detail-avatar" iconSize={18} />
           <div>
             <h2>{name}</h2>
             <p>
@@ -152,13 +156,13 @@ export function AgentDetail({
           </div>
         </div>
         <div className="settings-detail-actions">
-          {normalizedActiveTab === 'overrides' && (overridesDirty || dirty) ? (
+          {showOverridesSave ? (
             <button className="settings-primary-button" type="button" disabled={isSaving} onClick={saveOverrides}>
               <Save size={14} />
               {isSaving ? 'Saving...' : 'Save'}
             </button>
           ) : null}
-          {normalizedActiveTab !== 'overrides' && dirty ? (
+          {showConfigSave ? (
             <button className="settings-primary-button" type="submit" disabled={isSaving}>
               <Save size={14} />
               {isSaving ? 'Saving...' : 'Save'}
@@ -260,7 +264,7 @@ function OverridesTab({
           config={config}
           savedValue={config.display?.avatar}
           onChange={(avatar) => onDisplayChange({ ...displayDraft, avatar })}
-          previewLabel={displayDraft.avatar || resolved?.display?.avatar || resolved?.display?.name || config.agent_id}
+          previewAgent={avatarPreviewAgent(config, displayDraft)}
         />
         <OverrideTextField
           label="Description"
@@ -430,7 +434,7 @@ function OverrideTextField(props: {
   savedValue?: string;
   onChange: (value: string) => void;
   textarea?: boolean;
-  previewLabel?: string;
+  previewAgent?: ReturnType<typeof getResolvedAgentDisplay>;
 }) {
   const badge = sourceBadge(props.config, props.field, props.value, props.savedValue);
   return (
@@ -441,7 +445,7 @@ function OverrideTextField(props: {
         <SourceBadge value={badge} />
       </span>
       <div className="settings-override-input-row">
-        {props.previewLabel ? <div className="settings-avatar-preview">{props.previewLabel.slice(0, 3)}</div> : null}
+        {props.previewAgent ? <AgentAvatar agent={props.previewAgent} label={props.previewAgent.name} className="settings-avatar-preview" iconSize={14} /> : null}
         {props.textarea ? (
           <textarea value={props.value} placeholder={props.placeholder} onChange={(event) => props.onChange(event.target.value)} />
         ) : (
@@ -519,18 +523,30 @@ function normalizedDisplayDraft(display: AgentDisplayOverrides, config: AgentCon
   };
 }
 
+function avatarPreviewAgent(config: AgentConfig, displayDraft: AgentDisplayOverrides): ReturnType<typeof getResolvedAgentDisplay> {
+  const resolved = getResolvedAgentDisplay(config);
+  if (!displayDraft.avatar?.trim()) return resolved;
+  const avatar = displayDraft.avatar.trim();
+  const isImage = /^https?:\/\//i.test(avatar) || avatar.startsWith('/');
+  return {
+    ...resolved,
+    avatar: isImage ? null : avatar,
+    avatar_type: isImage ? 'image' : 'text',
+    avatar_url: isImage ? avatar : null,
+  };
+}
+
 function normalizedRuntimeDraft(runtime: AgentRuntimeOverrides, config: AgentConfig): AgentRuntimeOverrides {
-  const resolved = config.resolved?.runtime || {};
   const result: AgentRuntimeOverrides = {};
   if (runtime.llm_profile_id) result.llm_profile_id = runtime.llm_profile_id;
   const manifestPrompt = config.manifest?.prompt || '';
   if (runtime.prompt && runtime.prompt !== manifestPrompt) {
     result.prompt = runtime.prompt;
   }
-  if (runtime.allow_session_override !== undefined && runtime.allow_session_override !== resolved.allow_session_override) result.allow_session_override = runtime.allow_session_override;
+  if (runtime.allow_session_override !== undefined) result.allow_session_override = runtime.allow_session_override;
   if (runtime.context_policy) result.context_policy = runtime.context_policy;
   if (runtime.model_lifecycle) result.model_lifecycle = runtime.model_lifecycle;
-  if (runtime.timeout_seconds !== undefined && runtime.timeout_seconds !== resolved.timeout_seconds) result.timeout_seconds = runtime.timeout_seconds;
+  if (runtime.timeout_seconds !== undefined) result.timeout_seconds = runtime.timeout_seconds;
   return result;
 }
 
@@ -664,6 +680,26 @@ function PolicyGrid({ policy }: { policy?: ContextPolicy | null }) {
 }
 
 function LlmRuntimeSummary({ agent }: { agent?: Agent }) {
+  const profiles = useWorkbenchStore((state) => state.llmProfiles);
+  const resolvedLabel = resolvedAgentProfileLabel(agent, profiles);
+  if (agent?.resolved_runtime?.llm_profile_id || agent?.resolved_runtime?.llm_profile_status === 'missing' || agent?.resolved_runtime?.llm_profile_status === 'disabled') {
+    return (
+      <dl className="settings-definition-grid">
+        <div>
+          <dt>LLM profile</dt>
+          <dd>{resolvedLabel || agent.resolved_runtime.llm_profile_id || 'Default'}</dd>
+        </div>
+        <div>
+          <dt>Session override</dt>
+          <dd>{agent.resolved_runtime.allow_session_override === false ? 'no' : 'yes'}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{agent.resolved_runtime.llm_profile_source || 'default'}</dd>
+        </div>
+      </dl>
+    );
+  }
   if (agent?.llm?.profile) {
     const overrides = ['temperature', 'top_p', 'top_k', 'max_tokens']
       .map((key) => [key, agent.llm?.[key as keyof NonNullable<Agent['llm']>]])
