@@ -232,6 +232,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
             "avatar": agent.avatar,
             "capabilities": agent.capabilities,
             "llm": agent.llm,
+            "prompt": agent.prompt,
             "context_policy": agent.context_policy.model_dump(exclude_none=True),
             "model_lifecycle": agent.model_lifecycle.model_dump(),
             "timeout_seconds": agent.timeout_seconds,

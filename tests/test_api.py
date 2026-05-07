@@ -153,6 +153,9 @@ def test_agent_config_returns_resolved_defaults_and_llm_section() -> None:
     payload = response.json()
     assert payload["resolved"]["runtime"]["timeout_seconds"] == 120
     assert payload["field_sources"]["runtime.timeout_seconds"] == "default"
+    assert payload["resolved"]["runtime"]["prompt"] == "You are a concise, reliable assistant.\n"
+    assert payload["field_sources"]["runtime.prompt"] == "manifest"
+    assert {"id": "prompt", "label": "Prompt"} in payload["resolved"]["sections"]
     assert {"id": "llm_runtime", "label": "LLM Runtime Settings", "capability_id": "llm"} in payload["resolved"]["sections"]
 
 
@@ -258,6 +261,18 @@ def test_write_manifest_requires_confirm() -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "AGENT_MANIFEST_WRITE_CONFIRM_REQUIRED"
+
+
+def test_prompt_override_affects_prompt_agent_runtime() -> None:
+    runtime = FakeLLMRuntime(response="ok")
+    client = TestClient(create_app(llm_runtime=runtime, use_memory=True))
+    client.patch("/api/agent-configs/chat", json={"runtime": {"prompt": "Custom system prompt"}})
+    session = create_session(client)
+
+    result = post_message(client, session["session_id"], "hello")
+
+    assert result["success"] is True
+    assert runtime.calls[0]["messages"][0] == {"role": "system", "content": "Custom system prompt"}
 
 
 def test_list_agents_returns_builtin_agents() -> None:

@@ -97,6 +97,7 @@ export function AgentDetail({
     try {
       setLocalError('');
       await updateAgentConfig(config.agent_id, {
+        ...(dirty ? { enabled, user_config: buildUserConfig(config.config_schema || [], values) } : {}),
         display: normalizedDisplayDraft(displayDraft, config),
         runtime: normalizedRuntimeDraft(runtimeDraft, config),
       });
@@ -151,7 +152,13 @@ export function AgentDetail({
           </div>
         </div>
         <div className="settings-detail-actions">
-          {dirty ? (
+          {normalizedActiveTab === 'overrides' && (overridesDirty || dirty) ? (
+            <button className="settings-primary-button" type="button" disabled={isSaving} onClick={saveOverrides}>
+              <Save size={14} />
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
+          {normalizedActiveTab !== 'overrides' && dirty ? (
             <button className="settings-primary-button" type="submit" disabled={isSaving}>
               <Save size={14} />
               {isSaving ? 'Saving...' : 'Save'}
@@ -185,7 +192,6 @@ export function AgentDetail({
             saving={isSaving}
             dirty={overridesDirty}
             hasSavedOverrides={hasSavedOverrides}
-            onSave={saveOverrides}
             onReset={resetOverrides}
             onWriteManifest={writeManifest}
           />
@@ -209,7 +215,6 @@ function OverridesTab({
   saving,
   dirty,
   hasSavedOverrides,
-  onSave,
   onReset,
   onWriteManifest,
 }: {
@@ -223,17 +228,17 @@ function OverridesTab({
   saving: boolean;
   dirty: boolean;
   hasSavedOverrides: boolean;
-  onSave: () => void;
   onReset: () => void;
   onWriteManifest: () => void;
 }) {
   const resolved = config.resolved;
   const sections = resolved?.sections || [];
   const hasLlmSection = sections.some((section) => section.id === 'llm_runtime') || agent?.capabilities?.includes('llm') || config.manifest_summary.capabilities?.includes('llm');
+  const isPromptAgent = (agent?.type || config.manifest_summary.type) === 'prompt';
   const runtime = resolved?.runtime || {};
   return (
     <div className="settings-runtime-stack">
-      <section className="detail-section settings-override-section">
+      <section className="settings-override-section">
         <div className="detail-section-heading">
           <h3>Basic information</h3>
           <span className="settings-badge muted">{overrideCount(displayDraft)} overrides</span>
@@ -269,11 +274,30 @@ function OverridesTab({
         />
       </section>
 
+      {isPromptAgent ? (
+        <section className="settings-override-section">
+          <div className="detail-section-heading">
+            <h3>Prompt</h3>
+            <span className="settings-badge muted">{runtimeDraft.prompt ? 1 : 0} overrides</span>
+          </div>
+          <OverrideTextField
+            label="System prompt"
+            field="runtime.prompt"
+            value={runtimeDraft.prompt || ''}
+            placeholder={String(runtime.prompt || 'No manifest prompt')}
+            config={config}
+            savedValue={config.runtime?.prompt}
+            onChange={(prompt) => onRuntimeChange({ ...runtimeDraft, prompt })}
+            textarea
+          />
+        </section>
+      ) : null}
+
       {hasLlmSection ? (
-        <section className="detail-section settings-override-section">
+        <section className="settings-override-section">
           <div className="detail-section-heading">
             <h3>LLM Runtime Settings</h3>
-            <span className="settings-badge muted">{overrideCount(runtimeDraft)} overrides</span>
+            <span className="settings-badge muted">{overrideCount(omitKeys(runtimeDraft, ['prompt']))} overrides</span>
           </div>
           <OverrideSelect
             label="LLM profile"
@@ -381,15 +405,9 @@ function OverridesTab({
             onChange={(timeout_seconds) => onRuntimeChange({ ...runtimeDraft, timeout_seconds: timeout_seconds === '' ? undefined : Number(timeout_seconds) })}
           />
         </section>
-      ) : (
-        <div className="settings-empty-state">This agent does not declare the llm capability.</div>
-      )}
+      ) : null}
 
       <div className="settings-override-footer">
-        <button className="settings-primary-button" type="button" disabled={!dirty || saving} onClick={onSave}>
-          <Save size={14} />
-          {saving ? 'Saving...' : 'Save'}
-        </button>
         <button className="settings-secondary-button" type="button" disabled={!hasSavedOverrides || saving} onClick={onReset}>
           <RotateCcw size={14} />
           Reset overrides
@@ -489,7 +507,7 @@ function sourceBadge(config: AgentConfig, field: string, draftValue: unknown, sa
 }
 
 function overrideCount(value: Record<string, unknown>): number {
-  return Object.values(value).filter((item) => item !== undefined && item !== null && item !== '').length;
+  return Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== '').length;
 }
 
 function normalizedDisplayDraft(display: AgentDisplayOverrides, config: AgentConfig): AgentDisplayOverrides {
@@ -505,11 +523,19 @@ function normalizedRuntimeDraft(runtime: AgentRuntimeOverrides, config: AgentCon
   const resolved = config.resolved?.runtime || {};
   const result: AgentRuntimeOverrides = {};
   if (runtime.llm_profile_id) result.llm_profile_id = runtime.llm_profile_id;
+  const manifestPrompt = config.manifest?.prompt || '';
+  if (runtime.prompt && runtime.prompt !== manifestPrompt) {
+    result.prompt = runtime.prompt;
+  }
   if (runtime.allow_session_override !== undefined && runtime.allow_session_override !== resolved.allow_session_override) result.allow_session_override = runtime.allow_session_override;
   if (runtime.context_policy) result.context_policy = runtime.context_policy;
   if (runtime.model_lifecycle) result.model_lifecycle = runtime.model_lifecycle;
   if (runtime.timeout_seconds !== undefined && runtime.timeout_seconds !== resolved.timeout_seconds) result.timeout_seconds = runtime.timeout_seconds;
   return result;
+}
+
+function omitKeys<T extends Record<string, unknown>>(value: T, keys: string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
 
 function OverviewTab({ config, agent }: { config: AgentConfig; agent?: Agent }) {

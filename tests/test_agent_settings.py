@@ -36,6 +36,7 @@ def test_write_overrides_to_manifest_writes_only_display_runtime_not_user_config
                 "name": "Chat Agent",
                 "type": "prompt",
                 "description": "Default chat",
+                "prompt": "Original prompt",
                 "actions": [{"id": "default", "description": "Default"}],
                 "capabilities": ["llm"],
             },
@@ -50,7 +51,7 @@ def test_write_overrides_to_manifest_writes_only_display_runtime_not_user_config
         agent_dir,
         {
             "display": {"name": "Custom Chat"},
-            "runtime": {"timeout_seconds": 88, "llm_profile_id": "local", "allow_session_override": False},
+            "runtime": {"timeout_seconds": 88, "llm_profile_id": "local", "allow_session_override": False, "prompt": "Custom prompt"},
             "user_config": {"temperature": 0.1},
         },
     )
@@ -58,7 +59,7 @@ def test_write_overrides_to_manifest_writes_only_display_runtime_not_user_config
     raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert raw["name"] == "Custom Chat"
     assert raw["timeout_seconds"] == 88
+    assert raw["prompt"] == "Custom prompt"
     assert raw["llm"] == {"profile": "local", "allow_session_override": False}
     assert "user_config" not in raw
     assert "config" not in raw
-

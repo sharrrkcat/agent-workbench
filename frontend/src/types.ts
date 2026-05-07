@@ -87,6 +87,7 @@ export type AgentRuntimeOverrides = {
   llm_profile_id?: string | null;
   llm_profile_key?: string | null;
   allow_session_override?: boolean;
+  prompt?: string;
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
   timeout_seconds?: number;
@@ -129,6 +130,7 @@ export type AgentConfig = {
     avatar?: string | null;
     capabilities?: string[];
     llm?: AgentLlmConfig | null;
+    prompt?: string | null;
     context_policy?: ContextPolicy;
     model_lifecycle?: ModelLifecyclePolicy;
     timeout_seconds?: number | null;

@@ -16,7 +16,7 @@ from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
 
 
 DISPLAY_KEYS = {"name", "description", "avatar"}
-RUNTIME_KEYS = {"llm_profile_id", "allow_session_override", "context_policy", "model_lifecycle", "timeout_seconds"}
+RUNTIME_KEYS = {"llm_profile_id", "allow_session_override", "context_policy", "model_lifecycle", "timeout_seconds", "prompt"}
 
 
 def normalize_display_override(value: Any) -> dict[str, str]:
@@ -74,6 +74,12 @@ def normalize_runtime_override(value: Any) -> dict[str, Any]:
             if timeout < 1 or timeout > 3600:
                 raise ValueError("runtime.timeout_seconds must be between 1 and 3600")
             result[key] = timeout
+        elif key == "prompt":
+            if raw in (None, ""):
+                continue
+            if not isinstance(raw, str):
+                raise ValueError("runtime.prompt must be a string")
+            result[key] = raw
     return result
 
 
@@ -84,6 +90,8 @@ def resolved_agent_settings(agent: AgentSchema, config: dict[str, Any] | None = 
     display, display_sources = _resolve_display(agent, display_override, agent_dir)
     runtime, runtime_sources = _resolve_runtime(agent, runtime_override)
     sections = [{"id": "basic", "label": "Basic information"}]
+    if agent.type == "prompt":
+        sections.append({"id": "prompt", "label": "Prompt"})
     if "llm" in (agent.capabilities or []):
         sections.append({"id": "llm_runtime", "label": "LLM Runtime Settings", "capability_id": "llm"})
     return {
@@ -108,6 +116,13 @@ def resolved_model_lifecycle(agent: AgentSchema, config: dict[str, Any] | None =
     if "model_lifecycle" in runtime:
         return ModelLifecyclePolicy.model_validate(runtime["model_lifecycle"])
     return agent.model_lifecycle or DEFAULT_MODEL_LIFECYCLE
+
+
+def resolved_prompt(agent: AgentSchema, config: dict[str, Any] | None = None) -> str:
+    runtime = normalize_runtime_override((config or {}).get("runtime", {}))
+    if "prompt" in runtime:
+        return runtime["prompt"]
+    return agent.prompt or ""
 
 
 def resolved_runtime_override(config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -146,6 +161,8 @@ def write_overrides_to_manifest(agent: AgentSchema, agent_dir: Path, config: dic
         raw["model_lifecycle"] = runtime["model_lifecycle"]
     if "timeout_seconds" in runtime:
         raw["timeout_seconds"] = runtime["timeout_seconds"]
+    if "prompt" in runtime:
+        raw["prompt"] = runtime["prompt"]
 
     manifest_path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return raw
@@ -210,5 +227,10 @@ def _resolve_runtime(agent: AgentSchema, override: dict[str, Any]) -> tuple[dict
     else:
         runtime["timeout_seconds"] = DEFAULT_TIMEOUT_SECONDS
         sources["runtime.timeout_seconds"] = "default"
+    if "prompt" in override:
+        runtime["prompt"] = override["prompt"]
+        sources["runtime.prompt"] = "override"
+    else:
+        runtime["prompt"] = agent.prompt or ""
+        sources["runtime.prompt"] = "manifest" if agent.prompt else "default"
     return runtime, sources
-

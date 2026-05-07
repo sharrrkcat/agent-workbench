@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_context_policy, resolved_model_lifecycle, resolved_runtime_override
+from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_context_policy, resolved_model_lifecycle, resolved_prompt, resolved_runtime_override
 from ai_workbench.core.attachments import ImageAttachment, is_text_attachment, language_for_filename, read_attachment_as_data_url, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
@@ -286,8 +286,8 @@ class AgentRunner:
             return RunResult(success=False, run_id=failed_run.run_id, error=error)
 
         messages = []
-        if agent.prompt:
-            prompt = agent.prompt
+        prompt = resolved_prompt(agent, agent_config)
+        if prompt:
             if action.instruction:
                 prompt = f"{prompt.rstrip()}\n\n{action.instruction}"
             messages.append({"role": "system", "content": prompt})

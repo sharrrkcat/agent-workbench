@@ -74,6 +74,8 @@ Settings > Agents has two separate surfaces:
 
 Every agent can override display name, avatar, and description. Capability-declared sections appear when the agent manifest declares that capability. The first built-in section is `LLM Runtime Settings`, shown only for agents that declare `llm`.
 
+Prompt Agents also get a `Prompt` override section. The prompt override is stored in `AgentConfig.runtime.prompt`, affects runtime execution immediately after saving, and is not part of `user_config`.
+
 Display resolution:
 
 ```text
