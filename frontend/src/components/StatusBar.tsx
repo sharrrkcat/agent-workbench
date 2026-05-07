@@ -27,12 +27,16 @@ export function StatusBar() {
 }
 
 function formatResolvedLlmStatus(state: ReturnType<typeof useWorkbenchStore.getState>): string {
+  const agent = state.agents.find((item) => item.id === state.currentSession?.default_agent_id);
+  if (agent && !agentUsesLlm(agent)) return 'LLM - No LLM';
   const profile = resolveCurrentLlmProfile(state);
-  if (!profile) return 'LLM - No model profile';
+  if (!profile) return 'LLM - No model profile selected';
   if (!profile.enabled) return 'LLM - Model disabled';
   const provider = profile.provider_profile_id ? state.llmProviderProfiles.find((item) => item.id === profile.provider_profile_id) : undefined;
   if (!provider) return 'LLM - Missing provider profile';
-  const sessionProfileId = state.currentSession?.llm_profile_id;
-  const prefix = sessionProfileId ? 'LLM' : `LLM - Default: ${profile.name || profile.alias}`;
-  return `${prefix} - ${provider.name} - ${profile.model_id || 'No model ID'}`;
+  return `LLM - ${provider.name} - ${profile.model_id || 'No model ID'}`;
+}
+
+function agentUsesLlm(agent: ReturnType<typeof useWorkbenchStore.getState>['agents'][number]): boolean {
+  return agent.type === 'prompt' || Boolean(agent.llm) || agent.capabilities?.includes('llm') === true;
 }

@@ -17,6 +17,16 @@ def test_status_bar_does_not_render_global_error_text() -> None:
     assert "{error}" not in source
 
 
+def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:
+    source = read_frontend("components/StatusBar.tsx")
+
+    assert "Default:" not in source
+    assert "return `LLM - ${provider.name} - ${profile.model_id || 'No model ID'}`;" in source
+    assert "LLM - Missing provider profile" in source
+    assert "LLM - No model profile selected" in source
+    assert "LLM - No LLM" in source
+
+
 def test_default_model_menu_uses_agent_default_profile_not_effective_override() -> None:
     source = read_frontend("components/ChatInput.tsx")
 
