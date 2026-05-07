@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -10,13 +11,23 @@ from ai_workbench.api.routes import agents, attachments, commands, configs, heal
 from ai_workbench.api.ws import router as ws_router
 
 
+@asynccontextmanager
+async def runtime_lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        state = app.state.runtime_state
+        state.events.close()
+        await state.active_runs.cancel_all()
+
+
 def create_app(
     runtime_state: RuntimeState = None,
     llm_runtime: Any = None,
     database_url: str = None,
     use_memory: bool = False,
 ) -> FastAPI:
-    app = FastAPI(title="Agent Workbench")
+    app = FastAPI(title="Agent Workbench", lifespan=runtime_lifespan)
     app.state.runtime_state = runtime_state or build_runtime_state(
         llm_runtime=llm_runtime,
         database_url=database_url,

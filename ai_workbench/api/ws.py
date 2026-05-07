@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 
@@ -17,7 +19,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 continue
             if message.get("type") == "next_event":
                 event = await queue.get()
+                if event is None:
+                    return
                 if event.session_id == session_id:
                     await websocket.send_json(event.model_dump(mode="json"))
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        return
+    finally:
         state.events.unsubscribe(queue)

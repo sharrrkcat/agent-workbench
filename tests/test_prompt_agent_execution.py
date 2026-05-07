@@ -1,4 +1,5 @@
 import asyncio
+from threading import Event as ThreadingEvent
 from pathlib import Path
 
 from ai_workbench.core.agent_registry import AgentRegistry
@@ -7,7 +8,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
-from ai_workbench.core.runner import AgentRunner, CommandRunner, _extract_llm_result, _normalize_stream_chunk
+from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner, _extract_llm_result, _normalize_stream_chunk
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -707,6 +708,68 @@ def test_cancel_streaming_run_persists_partial_message() -> None:
     assert prompt_run.status == RunStatus.CANCELLED
     assert messages[-1].content == "part"
     assert messages[-1].metadata["interrupted"] is True
+    assert "run_cancelled" in [event.type for event in fixture.events.list_events()]
+
+
+def test_active_run_registry_cancel_all_cancels_and_unregisters_tasks() -> None:
+    async def scenario():
+        registry = ActiveRunRegistry()
+        cancelled = asyncio.Event()
+
+        async def wait_forever():
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        task = asyncio.create_task(wait_forever())
+        registry.register("run-1", task)
+        await asyncio.sleep(0)
+
+        await registry.cancel_all()
+
+        assert cancelled.is_set()
+        assert task.cancelled()
+        assert registry.cancel("run-1") is False
+
+    run(scenario())
+
+
+def test_cancel_nonstreaming_run_marks_run_cancelled() -> None:
+    class BlockingLLMRuntime(FakeLLMRuntime):
+        def __init__(self) -> None:
+            super().__init__(response="late reply")
+            self.started = ThreadingEvent()
+            self.release = ThreadingEvent()
+
+        def chat(self, messages, model_config=None, stream=False):
+            self.started.set()
+            self.release.wait(timeout=1)
+            return super().chat(messages, model_config=model_config, stream=stream)
+
+    async def scenario():
+        llm = BlockingLLMRuntime()
+        fixture = PromptRuntimeFixture(llm=llm)
+        session = fixture.sessions.create_session(default_agent_id="chat")
+        task = asyncio.create_task(fixture.runtime.handle_input(session, "hello"))
+        for _ in range(50):
+            if llm.started.is_set() and fixture.runs.list_runs(session.session_id):
+                break
+            await asyncio.sleep(0.01)
+        run_id = fixture.runs.list_runs(session.session_id)[0].run_id
+
+        assert fixture.agent_runner.active_runs.cancel(run_id) is True
+        result = await task
+        llm.release.set()
+
+        return fixture, result, run_id
+
+    fixture, result, run_id = run(scenario())
+    prompt_run = fixture.runs.get_run(run_id)
+
+    assert result.success is False
+    assert prompt_run.status == RunStatus.CANCELLED
     assert "run_cancelled" in [event.type for event in fixture.events.list_events()]
 
 

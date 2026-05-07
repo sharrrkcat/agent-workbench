@@ -1297,10 +1297,13 @@ def test_missing_run_events_returns_structured_404() -> None:
 def test_websocket_ping_pong() -> None:
     client = make_client()
     session = create_session(client)
+    state = client.app.state.runtime_state
 
     with client.websocket_connect(f"/api/ws/{session['session_id']}") as websocket:
         websocket.send_json({"type": "ping"})
         assert websocket.receive_json() == {"type": "pong"}
+
+    assert state.events._subscribers == []
 
 
 def test_websocket_can_receive_eventbus_event() -> None:
@@ -1315,3 +1318,25 @@ def test_websocket_can_receive_eventbus_event() -> None:
 
     assert event["type"] == "run_started"
     assert event["run_id"] == "run-1"
+    assert app.state.runtime_state.events._subscribers == []
+
+
+def test_app_shutdown_closes_events_and_cancels_active_runs() -> None:
+    class FakeActiveRuns:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        async def cancel_all(self) -> None:
+            self.cancelled = True
+
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    fake_active_runs = FakeActiveRuns()
+    app.state.runtime_state.active_runs = fake_active_runs
+    queue = app.state.runtime_state.events.subscribe()
+
+    with TestClient(app):
+        pass
+
+    assert fake_active_runs.cancelled is True
+    assert queue.get_nowait() is None
+    assert app.state.runtime_state.events._subscribers == []

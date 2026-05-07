@@ -21,6 +21,7 @@ class EventBus:
         self._events: List[Event] = []
         self._subscribers: List[asyncio.Queue] = []
         self.run_event_store = run_event_store
+        self._closed = False
 
     def emit(
         self,
@@ -46,8 +47,9 @@ class EventBus:
                 message=_event_message(event),
                 payload=event.payload,
             )
-        for queue in list(self._subscribers):
-            queue.put_nowait(event)
+        if not self._closed:
+            for queue in list(self._subscribers):
+                queue.put_nowait(event)
         return event
 
     def list_events(self) -> List[Event]:
@@ -55,12 +57,21 @@ class EventBus:
 
     def subscribe(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
+        if self._closed:
+            queue.put_nowait(None)
+            return queue
         self._subscribers.append(queue)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> None:
         if queue in self._subscribers:
             self._subscribers.remove(queue)
+
+    def close(self) -> None:
+        self._closed = True
+        for queue in list(self._subscribers):
+            queue.put_nowait(None)
+        self._subscribers.clear()
 
 
 def _event_message(event: Event) -> str:

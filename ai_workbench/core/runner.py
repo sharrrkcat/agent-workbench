@@ -36,6 +36,16 @@ class ActiveRunRegistry:
         task.cancel()
         return True
 
+    async def cancel_all(self) -> None:
+        tasks = [task for task in self._tasks.values() if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for run_id, task in list(self._tasks.items()):
+            if task.done():
+                self.unregister(run_id)
+
 
 class AgentRunner:
     def __init__(
@@ -211,6 +221,15 @@ class AgentRunner:
                 prefill=prefill or {},
                 run=run,
             )
+        except asyncio.CancelledError:
+            try:
+                current_run = self.run_store.get_run(run.run_id)
+                if current_run.status in {RunStatus.PENDING, RunStatus.RUNNING, RunStatus.WAITING_FOR_USER}:
+                    cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
+                    self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
+            except KeyError:
+                pass
+            return RunResult(success=False, run_id=run.run_id, error="Run was cancelled.", data=None)
         finally:
             self.active_runs.unregister(run.run_id)
 
