@@ -1,7 +1,7 @@
 import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, Session } from '../types';
+import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
+import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
 import { CommandPalette } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
@@ -19,8 +19,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, setError } = useWorkbenchStore();
+  const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
+  const currentResolvedProfile = useWorkbenchStore(resolveCurrentLlmProfile);
 
   const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
 
@@ -212,7 +213,10 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
 
   function selectModel(profileId: string | null) {
     setModelMenuOpen(false);
-    void updateSessionLlmProfile(profileId);
+    void updateSessionLlmProfile(profileId).then(() => {
+      const selected = profileId ? llmProfiles.find((profile) => profile.id === profileId) : resolveCurrentLlmProfile(useWorkbenchStore.getState());
+      if (selected?.provider_profile_id) void refreshProviderStatuses([selected.provider_profile_id]);
+    });
   }
 
   const currentAgent = agents.find((agent) => agent.id === currentSession?.default_agent_id);
@@ -301,7 +305,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
                     aria-checked={!currentSession?.llm_profile_id}
                     className={!currentSession?.llm_profile_id ? 'selected' : ''}
                     onClick={() => selectModel(null)}
+                    title={statusDotTitle(currentResolvedProfile, llmProviderStatuses)}
                   >
+                    <span className={`model-status-dot ${statusDotClass(currentResolvedProfile, llmProviderStatuses)}`} aria-hidden="true" />
                     <span>Default</span>
                     {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
                   </button>
@@ -315,7 +321,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
                         aria-checked={selected}
                         className={selected ? 'selected' : ''}
                         onClick={() => selectModel(profile.id)}
+                        title={statusDotTitle(profile, llmProviderStatuses)}
                       >
+                        <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
                         <span>{profile.name || profile.alias}</span>
                         {selected ? <Check size={14} /> : null}
                       </button>
@@ -462,6 +470,30 @@ function modelSelectorLabel(profileId: string | null, profiles: LlmProfile[], ag
   }
   const profile = profiles.find((item) => item.id === profileId);
   return profile ? profile.name || profile.alias : 'Missing profile';
+}
+
+function statusDotClass(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
+  const code = modelStatusCode(profile, statuses);
+  if (code === 'READY') return 'ready';
+  if (code === 'MODEL_MISMATCH') return 'warning';
+  if (code === 'PROVIDER_UNREACHABLE' || code === 'MODEL_NOT_AVAILABLE') return 'error';
+  return 'unknown';
+}
+
+function statusDotTitle(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
+  const code = modelStatusCode(profile, statuses);
+  if (code === 'READY') return 'Ready';
+  if (code === 'PROVIDER_UNREACHABLE') return 'Provider unreachable';
+  if (code === 'MODEL_NOT_AVAILABLE') return 'Model not available';
+  if (code === 'MODEL_MISMATCH') return 'Mismatch';
+  return 'Unknown';
+}
+
+function modelStatusCode(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
+  if (!profile?.enabled) return 'MODEL_NOT_AVAILABLE';
+  const status = profile.provider_profile_id ? statuses[profile.provider_profile_id] : undefined;
+  if (!status) return 'MODEL_STATUS_UNKNOWN';
+  return status.models.find((item) => item.id === profile.model_id)?.status || status.status || 'MODEL_STATUS_UNKNOWN';
 }
 
 function getActiveToken(value: string, cursorPosition: number): { token: string; start: number; end: number } | null {

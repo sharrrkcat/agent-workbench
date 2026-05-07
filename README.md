@@ -163,7 +163,13 @@ Model Profiles hold model selection and behavior defaults:
 
 Prefer choosing a refreshed provider model when available. Model ID remains editable for cases where the provider is offline, does not support model listing, or you need a custom alias.
 
-LM Studio can list locally available models through its native provider API, falling back to OpenAI-compatible `/v1/models` when needed. llama.cpp commonly reports the currently served model; use `--alias` for stable IDs when needed. Full model status and `MODEL_NOT_LOADED` handling are intentionally deferred.
+Provider Profile status is available through `POST /api/llm-provider-profiles/status/refresh` or `POST /api/llm-provider-profiles/{id}/status/refresh`. Status is refreshed per Provider Profile, then mapped to every Model Profile that references it. Results include `checked_at`, provider reachability, model availability, warnings, and structured status codes such as `READY`, `PROVIDER_UNREACHABLE`, `MODEL_NOT_AVAILABLE`, `MODEL_MISMATCH`, and `MODEL_STATUS_UNKNOWN`. API keys are never returned.
+
+Provider status behavior:
+
+- LM Studio uses the native REST API derived from the Provider Profile base URL, for example `http://localhost:1234/v1` -> `http://localhost:1234/api/v1/models`. It parses model ids, display names, loaded instances, and capabilities. If the native API is unavailable, it falls back to OpenAI-compatible `/v1/models` as a partial/unknown status instead of incorrectly reporting a missing model.
+- llama.cpp first probes router mode at the base origin `/models`. If that works, the router model list determines availability. If router mode is unavailable, it falls back to `/v1/models` single-server mode and treats a different served model as `MODEL_MISMATCH`; use `llama-server --alias <model_id>` for stable API model names.
+- OpenAI-compatible providers use `/v1/models` to determine reachability and model id availability. They do not support unload.
 
 Settings -> LLM follows the Settings Console three-column structure. The left Settings nav expands `LLM` into subpages, and the middle object list only shows the selected subpage:
 
@@ -182,7 +188,7 @@ The default model profile replaces the old editable Global fallback UI. Runtime 
 5. Legacy global fallback from the `llm` CapabilityConfig.
 6. Environment fallback.
 
-The legacy global fallback and environment variables remain as compatibility fallback only. Provider-specific model status, LM Studio native load/unload, llama.cpp status detection, desktop packaging changes, and ComfyUI integration are not part of this round.
+The legacy global fallback and environment variables remain as compatibility fallback only. Desktop packaging changes and ComfyUI integration are not part of this round.
 
 Reasoning is a profile-level output declaration. If Reasoning is enabled, Agent Workbench expects the profile to return reasoning content when available and may display it as a collapsed Thought section. If Reasoning is disabled, the profile is treated as a direct-answer model. This flag does not change model behavior by itself and does not inject provider-specific reasoning request parameters; those may be added later.
 
@@ -202,7 +208,16 @@ llm:
 
 `allow_session_override` defaults to `true`. If it is `false`, the session model selector does not override that Agent; the Agent keeps using its manifest profile/model or fallback. The Agent dropdown marks these Agents as locked.
 
-Agent replies store resolved model metadata in run metadata and assistant message metadata under `llm_resolution`. The Chat UI displays the model used for that specific reply, preferring profile name, then profile key, then model id. The API never returns plaintext API keys in this metadata.
+Agent replies store resolved request metadata under `llm_resolution` and response model metadata under `llm`. Assistant message badges prefer the actual model returned by the provider. If the actual model differs from the requested model id, the badge is marked as a mismatch and its title shows Provider, Requested, and Actual values. Old messages without actual model metadata still fall back to the previous profile/model label behavior.
+
+Chat model status:
+
+- The top status dot shows availability for the current resolved model. Clicking it refreshes all enabled Provider Profiles.
+- Switching the active Agent or composer Model Profile refreshes the corresponding Provider Profile status.
+- Opening the composer model dropdown does not perform network refresh. It only shows cached status dots.
+- The bottom status bar shows the Provider Profile and requested model id that will be used for the next request. This is intentionally separate from the actual model recorded on a completed assistant message.
+
+Model unload is only exposed to trusted script agent runtime through `ctx.llm.unload_model(...)`. There is no user-facing unload button or slash command. LM Studio unload uses native loaded instance ids from `/api/v1/models` and posts each instance to `/api/v1/models/unload`. llama.cpp single mode and OpenAI-compatible providers return `MODEL_UNLOAD_UNSUPPORTED`.
 
 Prompt Agent replies also store `llm_metrics` in run and assistant message metadata. The Chat UI shows a compact line with output tokens, tokens per second, first-token latency for streaming responses, or total duration when first-token timing is unavailable. When a provider returns usage, those token counts are used. When usage is absent, completion tokens are estimated from output characters and displayed with a `~` prefix.
 

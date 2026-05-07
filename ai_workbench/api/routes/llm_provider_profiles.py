@@ -9,6 +9,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.configs import _runtime_list_models, _runtime_model_items, _safe_llm_error
 from ai_workbench.core.config_schema import MASKED_SECRET
+from ai_workbench.core.provider_status import ProviderStatusError, refresh_provider_status, refresh_provider_statuses
 from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
 
 
@@ -39,9 +40,30 @@ class ProviderProfilePatchRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class ProviderStatusRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_profile_ids: Optional[list[str]] = None
+    force: bool = True
+
+
 @router.get("")
 def list_provider_profiles(state: RuntimeState = Depends(get_state)) -> list:
     return [_serialize_provider(profile) for profile in state.provider_profiles.list()]
+
+
+@router.post("/status/refresh")
+def refresh_all_provider_status(payload: ProviderStatusRefreshRequest = None, state: RuntimeState = Depends(get_state)) -> dict:
+    payload = payload or ProviderStatusRefreshRequest()
+    try:
+        return refresh_provider_statuses(
+            provider_profiles=state.provider_profiles.list(),
+            model_profiles=state.llm_profiles.list(),
+            provider_profile_ids=payload.provider_profile_ids,
+            force=payload.force,
+        )
+    except ProviderStatusError as exc:
+        raise_error(404 if exc.code == "LLM_PROVIDER_PROFILE_NOT_FOUND" else 400, exc.code, exc.message, exc.details)
 
 
 @router.post("")
@@ -58,6 +80,12 @@ def create_provider_profile(payload: ProviderProfileCreateRequest, state: Runtim
 @router.get("/{profile_id}")
 def get_provider_profile(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     return _serialize_provider(_get_provider_or_404(state, profile_id))
+
+
+@router.post("/{profile_id}/status/refresh")
+def refresh_one_provider_status(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    profile = _get_provider_or_404(state, profile_id)
+    return {"providers": [refresh_provider_status(profile, [item for item in state.llm_profiles.list() if item.provider_profile_id == profile.id])]}
 
 
 @router.patch("/{profile_id}")

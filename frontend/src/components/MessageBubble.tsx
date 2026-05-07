@@ -85,7 +85,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
     <article className={`message-row ${kind}`}>
       {!isUser ? <AgentAvatar agent={agentDisplay} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
-        <MessageHeader message={message} agent={agent} agentName={agentDisplay.name} kind={kind} modelLabel={resolvedModelLabel(message)} />
+        <MessageHeader message={message} agent={agent} agentName={agentDisplay.name} kind={kind} modelLabel={resolvedModelLabel(message)} modelMismatch={hasModelMismatch(message)} />
         <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
           {editing ? (
             <div className="message-edit-form">
@@ -199,12 +199,14 @@ function MessageHeader({
   agentName,
   kind,
   modelLabel,
+  modelMismatch,
 }: {
   message: Message;
   agent?: Agent;
   agentName?: string;
   kind: 'user' | 'agent' | 'command';
   modelLabel?: string;
+  modelMismatch?: boolean;
 }) {
   const name = kind === 'user' ? 'You' : message.command_name || agentName || agent?.name || message.agent_id || 'Assistant';
   const action = message.action_id && message.action_id !== 'default' ? message.action_id : '';
@@ -214,7 +216,7 @@ function MessageHeader({
     <div className="message-meta">
       <div className="message-title">
         <span>{name}</span>
-        {secondary ? <small title={secondary}>{truncateLabel(secondary)}</small> : null}
+        {secondary ? <small className={modelMismatch ? 'model-mismatch' : undefined} title={modelTitle(message) || secondary}>{modelMismatch ? '! ' : ''}{truncateLabel(secondary)}</small> : null}
       </div>
       <time>{formatMessageTime(message.created_at)}</time>
     </div>
@@ -711,9 +713,36 @@ function normalizeError(message: Message): { code?: string; message?: string } {
 }
 
 function resolvedModelLabel(message: Message): string | undefined {
+  const actual = extractActualModelLabel(message.metadata?.llm);
+  if (actual) return actual;
   const fromMessage = extractResolutionLabel(message.metadata?.llm_resolution);
   if (fromMessage) return fromMessage;
   return undefined;
+}
+
+function extractActualModelLabel(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const llm = value as Record<string, unknown>;
+  for (const key of ['actual_model_id', 'model_profile_name', 'requested_model_id']) {
+    const item = llm[key];
+    if (typeof item === 'string' && item.trim()) return item.trim();
+  }
+  return undefined;
+}
+
+function hasModelMismatch(message: Message): boolean {
+  const llm = message.metadata?.llm;
+  return Boolean(llm && typeof llm === 'object' && !Array.isArray(llm) && (llm as Record<string, unknown>).model_mismatch === true);
+}
+
+function modelTitle(message: Message): string | undefined {
+  const llm = message.metadata?.llm;
+  if (!llm || typeof llm !== 'object' || Array.isArray(llm)) return undefined;
+  const value = llm as Record<string, unknown>;
+  const requested = typeof value.requested_model_id === 'string' ? value.requested_model_id : '';
+  const actual = typeof value.actual_model_id === 'string' ? value.actual_model_id : '';
+  const provider = typeof value.provider_profile_name === 'string' ? value.provider_profile_name : '';
+  return [`Provider: ${provider || 'Unknown'}`, `Requested: ${requested || 'Unknown'}`, `Actual: ${actual || 'Unknown'}`].join('\n');
 }
 
 function extractResolutionLabel(value: unknown): string | undefined {

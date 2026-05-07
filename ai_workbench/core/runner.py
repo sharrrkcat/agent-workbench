@@ -14,6 +14,7 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
+from ai_workbench.core.provider_status import MODEL_MISMATCH, MODEL_NOT_AVAILABLE, MODEL_STATUS_UNKNOWN, PROVIDER_UNREACHABLE
 from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
@@ -356,20 +357,22 @@ class AgentRunner:
             )
             return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
         except Exception as exc:
-            error = str(exc) or "Prompt agent failed."
+            friendly = _friendly_llm_error(exc, locals().get("llm_config", None))
+            error = friendly["message"]
             failed_run = self.run_store.update_status(
                 run.run_id,
                 RunStatus.FAILED,
                 current_step="failed",
                 error=error,
             )
+            self._record_run_error_metadata(run.run_id, friendly)
             self.event_bus.emit(
                 "run_failed",
                 session_id=session_id,
                 run_id=failed_run.run_id,
-                payload={"error": error},
+                payload={"error": error, "error_code": friendly["code"], "details": friendly.get("details", {})},
             )
-            return RunResult(success=False, run_id=failed_run.run_id, error=error)
+            return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         if self._is_cancelled(run.run_id):
             cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
@@ -389,10 +392,11 @@ class AgentRunner:
             "vision_input": vision_input["metadata"],
             "file_context": file_context["metadata"],
             "reasoning": _reasoning_metadata(llm_config, llm_result.reasoning_content),
+            "llm": _llm_message_metadata(llm_config, llm_result.raw),
         }
         if llm_result.reasoning_content:
             metadata["reasoning_content"] = llm_result.reasoning_content
-        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"], file_context["metadata"])
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"], file_context["metadata"], llm_raw=llm_result.raw)
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
@@ -473,9 +477,12 @@ class AgentRunner:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         usage = None
+        actual_raw = None
         try:
             async for chunk in _call_chat_stream(self.llm_runtime, messages, llm_config.values):
                 normalized = _normalize_stream_chunk(chunk)
+                if normalized.raw:
+                    actual_raw = _merge_stream_metadata(actual_raw, normalized.raw)
                 if normalized.usage:
                     usage = normalized.usage
                 if normalized.reasoning_delta:
@@ -520,6 +527,7 @@ class AgentRunner:
                     file_context=file_context,
                     reasoning_content="".join(reasoning_parts),
                     interrupted=True,
+                    llm_raw=actual_raw,
                 )
                 self.event_bus.emit(
                     "message_completed",
@@ -536,7 +544,7 @@ class AgentRunner:
                     payload={"available_actions": message.available_actions},
                 )
             cancelled_run = self.run_store.update_status(run.run_id, RunStatus.CANCELLED, current_step="cancelled")
-            self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context)
+            self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context, llm_raw=actual_raw)
             self.event_bus.emit(
                 "run_metrics",
                 session_id=session_id,
@@ -546,16 +554,18 @@ class AgentRunner:
             self.event_bus.emit("run_cancelled", session_id=session_id, run_id=cancelled_run.run_id)
             return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", data=content)
         except Exception as exc:
-            error = str(exc) or "Prompt agent failed."
+            friendly = _friendly_llm_error(exc, llm_config)
+            error = friendly["message"]
             failed_run = self.run_store.update_status(run.run_id, RunStatus.FAILED, current_step="failed", error=error)
+            self._record_run_error_metadata(run.run_id, friendly)
             self.event_bus.emit(
                 "run_failed",
                 session_id=session_id,
                 run_id=failed_run.run_id,
                 message_id=draft_message_id,
-                payload={"error": error},
+                payload={"error": error, "error_code": friendly["code"], "details": friendly.get("details", {})},
             )
-            return RunResult(success=False, run_id=failed_run.run_id, error=error)
+            return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         content = "".join(content_parts)
         llm_metrics = metrics_recorder.complete(content, usage)
@@ -575,9 +585,10 @@ class AgentRunner:
             vision_input=vision_input,
             file_context=file_context,
             reasoning_content="".join(reasoning_parts),
+            llm_raw=actual_raw,
         )
         done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
-        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context)
+        self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context, llm_raw=actual_raw)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
             "run_metrics",
@@ -624,6 +635,7 @@ class AgentRunner:
         file_context: dict,
         reasoning_content: str = "",
         interrupted: bool = False,
+        llm_raw: dict | None = None,
     ):
         original_user_message_id = self._find_original_user_message_id(source_message_id)
         source_user_message_id = current_user_message_id or original_user_message_id
@@ -638,6 +650,7 @@ class AgentRunner:
             "vision_input": vision_input,
             "file_context": file_context,
             "reasoning": _reasoning_metadata(llm_config, reasoning_content),
+            "llm": _llm_message_metadata(llm_config, llm_raw),
         }
         if reasoning_content:
             metadata["reasoning_content"] = reasoning_content
@@ -704,15 +717,22 @@ class AgentRunner:
         metadata["file_context"] = file_context
         self.run_store.update_metadata(run_id, metadata)
 
-    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict, vision_input: dict | None = None, file_context: dict | None = None) -> None:
+    def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict, vision_input: dict | None = None, file_context: dict | None = None, llm_raw: dict | None = None) -> None:
         run = self.run_store.get_run(run_id)
         metadata = dict(run.metadata)
         metadata["llm_resolution"] = _public_llm_resolution(llm_config)
+        metadata["llm"] = _llm_message_metadata(llm_config, llm_raw)
         metadata["llm_metrics"] = llm_metrics
         if vision_input is not None:
             metadata["vision_input"] = vision_input
         if file_context is not None:
             metadata["file_context"] = file_context
+        self.run_store.update_metadata(run_id, metadata)
+
+    def _record_run_error_metadata(self, run_id: str, friendly: dict) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["error"] = friendly
         self.run_store.update_metadata(run_id, metadata)
 
     def _app_settings(self):
@@ -812,6 +832,96 @@ def _public_llm_resolution(llm_config) -> dict:
         "supports_reasoning": bool(values.get("supports_reasoning", False)),
         "supports_streaming": bool(values.get("supports_streaming", False)),
         "supports_json_mode": bool(values.get("supports_json_mode", False)),
+    }
+
+
+def _llm_message_metadata(llm_config, raw: dict | None = None) -> dict:
+    resolution = _public_llm_resolution(llm_config)
+    requested = str(resolution.get("model_id") or "")
+    actual = _actual_model_id(raw) or requested
+    actual_missing = not bool(_actual_model_id(raw))
+    system_fingerprint = _system_fingerprint(raw)
+    return {
+        "provider_profile_id": resolution.get("provider_profile_id"),
+        "provider_profile_name": resolution.get("provider_profile_name"),
+        "model_profile_id": resolution.get("profile_id"),
+        "model_profile_name": resolution.get("profile_name"),
+        "requested_model_id": requested,
+        "actual_model_id": actual,
+        "actual_model_missing": actual_missing,
+        "system_fingerprint": system_fingerprint,
+        "model_mismatch": bool(actual and requested and actual != requested),
+        "resolution_source": resolution.get("source"),
+    }
+
+
+def _actual_model_id(raw: dict | None) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    direct = raw.get("model")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    for key in ("response", "final", "metadata"):
+        nested = raw.get(key)
+        if isinstance(nested, dict):
+            value = nested.get("model")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _system_fingerprint(raw: dict | None) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("system_fingerprint")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _merge_stream_metadata(current: dict | None, raw: dict) -> dict:
+    result = dict(current or {})
+    if _actual_model_id(raw) and not _actual_model_id(result):
+        result["model"] = _actual_model_id(raw)
+    if _system_fingerprint(raw) and not _system_fingerprint(result):
+        result["system_fingerprint"] = _system_fingerprint(raw)
+    if isinstance(raw.get("usage"), dict):
+        result["usage"] = raw.get("usage")
+    return result
+
+
+def _friendly_llm_error(exc: Exception, llm_config=None) -> dict:
+    values = getattr(llm_config, "values", {}) or {}
+    resolution = _public_llm_resolution(llm_config) if llm_config is not None else {}
+    raw = str(exc) or exc.__class__.__name__
+    provider_name = resolution.get("provider_profile_name") or values.get("provider") or "provider"
+    base_url = values.get("base_url") or resolution.get("base_url") or ""
+    requested = values.get("model_id") or values.get("model") or resolution.get("model_id") or ""
+    lowered = raw.lower()
+    code = "RUN_FAILED"
+    message = raw or "Prompt agent failed."
+    if "connect" in lowered or "connection" in lowered or "unreachable" in lowered or "refused" in lowered:
+        code = PROVIDER_UNREACHABLE
+        message = f"Cannot connect to {provider_name} at {base_url}."
+    elif "model_not_available" in lowered or "model not available" in lowered or "not found" in lowered:
+        code = MODEL_NOT_AVAILABLE
+        message = "The requested model is not available from this provider.\nChoose a model from the refreshed provider model list or update the Model ID."
+    elif "model_mismatch" in lowered or "different model" in lowered:
+        code = MODEL_MISMATCH
+        message = f"The provider replied with a different model than requested.\nRequested: {requested}"
+    elif "model_status_unknown" in lowered:
+        code = MODEL_STATUS_UNKNOWN
+        message = "The provider status is unknown. Refresh the provider status and try again."
+    return {
+        "code": code,
+        "message": message,
+        "details": {
+            "raw_error": raw,
+            "provider_profile_id": resolution.get("provider_profile_id"),
+            "provider_profile_name": resolution.get("provider_profile_name"),
+            "requested_model_id": requested,
+            "base_url": base_url,
+        },
     }
 
 
@@ -1117,7 +1227,7 @@ def _extract_llm_result(value: Any) -> LLMResult:
             content=content,
             reasoning_content=reasoning_content,
             usage=_extract_usage(value),
-            raw=value,
+            raw=value.get("raw") if isinstance(value.get("raw"), dict) else value,
         )
     return LLMResult(content="" if value is None else str(value))
 

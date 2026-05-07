@@ -1,9 +1,11 @@
 import { CircleAlert, Loader2 } from 'lucide-react';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function StatusBar() {
-  const { loading, sending, savingConfigId, testingLlm, pendingActionKey, error, currentSession, health } = useWorkbenchStore();
-  const llmModel = health?.llm?.model || '';
+  const state = useWorkbenchStore();
+  const { loading, sending, savingConfigId, testingLlm, pendingActionKey, error, currentSession, health } = state;
+  const resolvedProfile = resolveCurrentLlmProfile(state);
+  const llmStatus = formatResolvedLlmStatus(state);
   const busy = loading || sending || Boolean(savingConfigId) || testingLlm || Boolean(pendingActionKey);
 
   return (
@@ -13,7 +15,7 @@ export function StatusBar() {
       </span>
       <span>{health?.version || 'version unknown'}</span>
       <span>{currentSession ? `Session ${currentSession.session_id.slice(0, 8)}` : 'No session'}</span>
-      {llmModel ? <span>LLM {llmModel}</span> : null}
+      <span title={resolvedProfile?.model_id || ''}>{llmStatus}</span>
       {busy ? (
         <span className="status-item">
           <Loader2 size={14} className="spin" />
@@ -28,4 +30,15 @@ export function StatusBar() {
       ) : null}
     </footer>
   );
+}
+
+function formatResolvedLlmStatus(state: ReturnType<typeof useWorkbenchStore.getState>): string {
+  const profile = resolveCurrentLlmProfile(state);
+  if (!profile) return 'LLM · No model profile selected';
+  if (!profile.enabled) return 'LLM · Model disabled';
+  const provider = profile.provider_profile_id ? state.llmProviderProfiles.find((item) => item.id === profile.provider_profile_id) : undefined;
+  if (!provider) return 'LLM · Missing provider profile';
+  const sessionProfileId = state.currentSession?.llm_profile_id;
+  const prefix = sessionProfileId ? 'LLM' : `LLM · Default: ${profile.name || profile.alias}`;
+  return `${prefix} · ${provider.name} · ${profile.model_id || 'No model ID'}`;
 }

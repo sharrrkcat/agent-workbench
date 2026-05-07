@@ -1,0 +1,530 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlsplit, urlunsplit
+
+import httpx
+
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
+
+
+READY = "READY"
+PROVIDER_UNREACHABLE = "PROVIDER_UNREACHABLE"
+MODEL_NOT_AVAILABLE = "MODEL_NOT_AVAILABLE"
+MODEL_MISMATCH = "MODEL_MISMATCH"
+MODEL_STATUS_UNKNOWN = "MODEL_STATUS_UNKNOWN"
+UNSUPPORTED = "UNSUPPORTED"
+UNLOADING = "UNLOADING"
+UNLOAD_FAILED = "MODEL_UNLOAD_FAILED"
+MODEL_UNLOAD_UNSUPPORTED = "MODEL_UNLOAD_UNSUPPORTED"
+
+
+class ProviderStatusError(Exception):
+    def __init__(self, code: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+
+def refresh_provider_statuses(
+    provider_profiles: Iterable[ProviderProfileSchema],
+    model_profiles: Iterable[LLMProfileSchema],
+    provider_profile_ids: Optional[Iterable[str]] = None,
+    force: bool = True,
+) -> Dict[str, Any]:
+    del force
+    requested_ids = set(provider_profile_ids or [])
+    providers = list(provider_profiles)
+    if requested_ids:
+        known_ids = {provider.id for provider in providers}
+        missing = sorted(requested_ids - known_ids)
+        if missing:
+            raise ProviderStatusError(
+                "LLM_PROVIDER_PROFILE_NOT_FOUND",
+                f"Provider profile not found: {missing[0]}",
+                {"provider_profile_id": missing[0]},
+            )
+        providers = [provider for provider in providers if provider.id in requested_ids]
+    else:
+        providers = [provider for provider in providers if provider.enabled]
+
+    model_profiles_by_provider: Dict[str, List[LLMProfileSchema]] = {}
+    for profile in model_profiles:
+        if profile.provider_profile_id:
+            model_profiles_by_provider.setdefault(profile.provider_profile_id, []).append(profile)
+
+    return {
+        "providers": [
+            refresh_provider_status(provider, model_profiles_by_provider.get(provider.id, []))
+            for provider in dedupe_providers(providers)
+        ]
+    }
+
+
+def refresh_provider_status(provider: ProviderProfileSchema, model_profiles: Iterable[LLMProfileSchema]) -> Dict[str, Any]:
+    checked_at = datetime.utcnow().isoformat()
+    if not provider.enabled:
+        return _provider_payload(
+            provider=provider,
+            reachable=False,
+            status=PROVIDER_UNREACHABLE,
+            mode="disabled",
+            checked_at=checked_at,
+            models=[],
+            warnings=["Provider profile is disabled."],
+            error={"code": "LLM_PROVIDER_PROFILE_DISABLED", "message": f"Provider profile is disabled: {provider.name}"},
+        )
+
+    model_profiles = list(model_profiles)
+    try:
+        if provider.provider == "lm_studio":
+            return _refresh_lm_studio(provider, model_profiles, checked_at)
+        if provider.provider == "llama_cpp":
+            return _refresh_llama_cpp(provider, model_profiles, checked_at)
+        if provider.provider == "openai_compatible":
+            return _refresh_openai_compatible(provider, model_profiles, checked_at)
+        return _provider_payload(
+            provider=provider,
+            reachable=False,
+            status=UNSUPPORTED,
+            mode=provider.provider or "custom",
+            checked_at=checked_at,
+            models=_unknown_model_statuses(model_profiles),
+            warnings=[f"Provider status is unsupported for provider: {provider.provider}"],
+        )
+    except httpx.HTTPError as exc:
+        return _provider_payload(
+            provider=provider,
+            reachable=False,
+            status=PROVIDER_UNREACHABLE,
+            mode=provider.provider,
+            checked_at=checked_at,
+            models=_unknown_model_statuses(model_profiles),
+            warnings=[],
+            error={"code": PROVIDER_UNREACHABLE, "message": _connect_error_message(provider), "raw": _safe_error(exc)},
+        )
+    except Exception as exc:
+        return _provider_payload(
+            provider=provider,
+            reachable=False,
+            status=MODEL_STATUS_UNKNOWN,
+            mode=provider.provider,
+            checked_at=checked_at,
+            models=_unknown_model_statuses(model_profiles),
+            warnings=["Provider status could not be determined."],
+            error={"code": MODEL_STATUS_UNKNOWN, "message": "Provider status could not be determined.", "raw": _safe_error(exc)},
+        )
+
+
+def unload_model(
+    provider: ProviderProfileSchema,
+    model_profiles: Iterable[LLMProfileSchema],
+    model_profile_id: str | None = None,
+    model_id: str | None = None,
+) -> Dict[str, Any]:
+    if provider.provider != "lm_studio":
+        return _unsupported_unload(provider)
+    if not provider.enabled:
+        return {
+            "ok": False,
+            "provider": provider.provider,
+            "unloaded": [],
+            "errors": [{"code": "LLM_PROVIDER_PROFILE_DISABLED", "message": f"Provider profile is disabled: {provider.name}"}],
+        }
+
+    requested_model_id = model_id or ""
+    if model_profile_id and not requested_model_id:
+        for profile in model_profiles:
+            if profile.id == model_profile_id:
+                requested_model_id = profile.model_id
+                break
+    if not requested_model_id:
+        return {
+            "ok": False,
+            "provider": provider.provider,
+            "unloaded": [],
+            "errors": [{"code": MODEL_NOT_AVAILABLE, "message": "model_id is required for unload."}],
+        }
+
+    headers = _headers(provider)
+    unloaded: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+    try:
+        with httpx.Client(timeout=float(provider.timeout_seconds or 60)) as client:
+            response = client.get(_lm_studio_native_models_url(provider.base_url), headers=headers)
+            response.raise_for_status()
+            models = _extract_models(response.json())
+            target = next((item for item in models if _model_identifier(item) == requested_model_id), None)
+            if target is None:
+                return {
+                    "ok": False,
+                    "provider": provider.provider,
+                    "unloaded": [],
+                    "errors": [{"code": MODEL_NOT_AVAILABLE, "message": "The requested model is not available from this provider."}],
+                }
+            for instance in _loaded_instances(target):
+                instance_id = str(instance.get("id") or "").strip()
+                if not instance_id:
+                    continue
+                unload_response = client.post(
+                    _lm_studio_native_unload_url(provider.base_url),
+                    headers=headers,
+                    json={"instance_id": instance_id},
+                )
+                try:
+                    unload_response.raise_for_status()
+                    unloaded.append({"model_id": requested_model_id, "instance_id": instance_id})
+                except httpx.HTTPError as exc:
+                    errors.append({"code": UNLOAD_FAILED, "message": "Model unload failed.", "raw": _safe_error(exc)})
+    except httpx.HTTPError as exc:
+        return {
+            "ok": False,
+            "provider": provider.provider,
+            "unloaded": unloaded,
+            "errors": [{"code": PROVIDER_UNREACHABLE, "message": _connect_error_message(provider), "raw": _safe_error(exc)}],
+        }
+    return {"ok": not errors, "provider": provider.provider, "unloaded": unloaded, "errors": errors}
+
+
+def dedupe_providers(providers: Iterable[ProviderProfileSchema]) -> list[ProviderProfileSchema]:
+    seen: set[str] = set()
+    result: list[ProviderProfileSchema] = []
+    for provider in providers:
+        if provider.id in seen:
+            continue
+        seen.add(provider.id)
+        result.append(provider)
+    return result
+
+
+def _refresh_lm_studio(provider: ProviderProfileSchema, model_profiles: list[LLMProfileSchema], checked_at: str) -> Dict[str, Any]:
+    headers = _headers(provider)
+    with httpx.Client(timeout=float(provider.timeout_seconds or 60)) as client:
+        try:
+            response = client.get(_lm_studio_native_models_url(provider.base_url), headers=headers)
+            response.raise_for_status()
+            native_models = _extract_models(response.json())
+            model_items = [_lm_studio_model_item(item) for item in native_models]
+            models = _map_model_profiles(model_profiles, model_items, reliable=True)
+            return _provider_payload(
+                provider=provider,
+                reachable=True,
+                status=_aggregate_model_status(models),
+                mode="lm_studio_native",
+                checked_at=checked_at,
+                models=models,
+                warnings=[],
+            )
+        except httpx.HTTPError:
+            response = client.get(f"{provider.base_url.rstrip('/')}/models", headers=headers)
+            response.raise_for_status()
+            fallback_models = [_openai_model_item(item) for item in _extract_models(response.json())]
+            models = _map_model_profiles(model_profiles, fallback_models, reliable=False)
+            return _provider_payload(
+                provider=provider,
+                reachable=True,
+                status=MODEL_STATUS_UNKNOWN,
+                mode="lm_studio_openai_compatible_partial",
+                checked_at=checked_at,
+                models=models,
+                warnings=["LM Studio native API was unavailable; model availability is partial."],
+            )
+
+
+def _refresh_llama_cpp(provider: ProviderProfileSchema, model_profiles: list[LLMProfileSchema], checked_at: str) -> Dict[str, Any]:
+    headers = _headers(provider)
+    with httpx.Client(timeout=float(provider.timeout_seconds or 60)) as client:
+        try:
+            response = client.get(f"{_base_origin(provider.base_url)}/models", headers=headers)
+            response.raise_for_status()
+            router_models = [_llama_router_model_item(item) for item in _extract_models(response.json())]
+            models = _map_model_profiles(model_profiles, router_models, reliable=True)
+            return _provider_payload(
+                provider=provider,
+                reachable=True,
+                status=_aggregate_model_status(models),
+                mode="llama_cpp_router",
+                checked_at=checked_at,
+                models=models,
+                warnings=[],
+            )
+        except httpx.HTTPError:
+            response = client.get(f"{provider.base_url.rstrip('/')}/models", headers=headers)
+            response.raise_for_status()
+            served_models = [_openai_model_item(item) for item in _extract_models(response.json())]
+            served_id = served_models[0]["id"] if served_models else ""
+            models = []
+            warnings = ["llama.cpp single-server mode reports only the currently served model. Use --alias for a stable model ID if needed."]
+            for profile in model_profiles:
+                requested = profile.model_id
+                if not requested:
+                    status = MODEL_STATUS_UNKNOWN
+                    available = False
+                elif served_id and requested == served_id:
+                    status = READY
+                    available = True
+                elif served_id:
+                    status = MODEL_MISMATCH
+                    available = False
+                else:
+                    status = MODEL_STATUS_UNKNOWN
+                    available = False
+                models.append(
+                    {
+                        "id": requested,
+                        "available": available,
+                        "loaded": available,
+                        "status": status,
+                        "actual_model_id": served_id or None,
+                        "loaded_instance_ids": [],
+                        "capabilities": {},
+                        "raw": {},
+                    }
+                )
+            return _provider_payload(
+                provider=provider,
+                reachable=True,
+                status=_aggregate_model_status(models),
+                mode="llama_cpp_single",
+                checked_at=checked_at,
+                models=models,
+                warnings=warnings,
+            )
+
+
+def _refresh_openai_compatible(provider: ProviderProfileSchema, model_profiles: list[LLMProfileSchema], checked_at: str) -> Dict[str, Any]:
+    headers = _headers(provider)
+    with httpx.Client(timeout=float(provider.timeout_seconds or 60)) as client:
+        response = client.get(f"{provider.base_url.rstrip('/')}/models", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+    if not _has_model_list(data):
+        models = _unknown_model_statuses(model_profiles)
+        status = MODEL_STATUS_UNKNOWN
+    else:
+        provider_models = [_openai_model_item(item) for item in _extract_models(data)]
+        models = _map_model_profiles(model_profiles, provider_models, reliable=True)
+        status = _aggregate_model_status(models)
+    return _provider_payload(
+        provider=provider,
+        reachable=True,
+        status=status,
+        mode="openai_compatible",
+        checked_at=checked_at,
+        models=models,
+        warnings=[] if status != MODEL_STATUS_UNKNOWN else ["Provider returned an incomplete model list."],
+    )
+
+
+def _provider_payload(
+    provider: ProviderProfileSchema,
+    reachable: bool,
+    status: str,
+    mode: str,
+    checked_at: str,
+    models: list[dict[str, Any]],
+    warnings: list[str],
+    error: Optional[dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload = {
+        "provider_profile_id": provider.id,
+        "provider_profile_name": provider.name,
+        "provider": provider.provider,
+        "reachable": reachable,
+        "status": status,
+        "mode": mode,
+        "checked_at": checked_at,
+        "models": models,
+        "warnings": warnings,
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
+def _map_model_profiles(model_profiles: list[LLMProfileSchema], provider_models: list[dict[str, Any]], reliable: bool) -> list[dict[str, Any]]:
+    by_id = {item["id"]: item for item in provider_models if item.get("id")}
+    result: list[dict[str, Any]] = []
+    for profile in model_profiles:
+        match = by_id.get(profile.model_id)
+        if match:
+            result.append({**match, "available": True, "status": READY})
+        elif reliable:
+            result.append(
+                {
+                    "id": profile.model_id,
+                    "available": False,
+                    "loaded": False,
+                    "status": MODEL_NOT_AVAILABLE,
+                    "loaded_instance_ids": [],
+                    "capabilities": {},
+                    "raw": {},
+                }
+            )
+        else:
+            result.append(
+                {
+                    "id": profile.model_id,
+                    "available": None,
+                    "loaded": None,
+                    "status": MODEL_STATUS_UNKNOWN,
+                    "loaded_instance_ids": [],
+                    "capabilities": {},
+                    "raw": {},
+                }
+            )
+    if not model_profiles:
+        return provider_models
+    return result
+
+
+def _unknown_model_statuses(model_profiles: Iterable[LLMProfileSchema]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": profile.model_id,
+            "available": None,
+            "loaded": None,
+            "status": MODEL_STATUS_UNKNOWN,
+            "loaded_instance_ids": [],
+            "capabilities": {},
+            "raw": {},
+        }
+        for profile in model_profiles
+    ]
+
+
+def _aggregate_model_status(models: list[dict[str, Any]]) -> str:
+    statuses = {str(item.get("status") or MODEL_STATUS_UNKNOWN) for item in models}
+    if not statuses:
+        return READY
+    if MODEL_MISMATCH in statuses:
+        return MODEL_MISMATCH
+    if MODEL_NOT_AVAILABLE in statuses:
+        return MODEL_NOT_AVAILABLE
+    if MODEL_STATUS_UNKNOWN in statuses:
+        return MODEL_STATUS_UNKNOWN
+    return READY
+
+
+def _lm_studio_model_item(item: dict[str, Any]) -> dict[str, Any]:
+    instances = _loaded_instances(item)
+    return {
+        "id": _model_identifier(item),
+        "name": item.get("display_name") or item.get("name") or item.get("id"),
+        "available": True,
+        "loaded": bool(instances),
+        "loaded_instance_ids": [str(instance.get("id")) for instance in instances if instance.get("id")],
+        "capabilities": _capabilities(item),
+        "raw": item,
+    }
+
+
+def _llama_router_model_item(item: dict[str, Any]) -> dict[str, Any]:
+    status_value = ""
+    status = item.get("status")
+    if isinstance(status, dict):
+        status_value = str(status.get("value") or "").lower()
+    loaded = status_value in {"loaded", "ready", "running"}
+    return {
+        "id": _model_identifier(item),
+        "name": item.get("name") or item.get("id"),
+        "available": True,
+        "loaded": loaded if status_value else None,
+        "loaded_instance_ids": [],
+        "capabilities": _capabilities(item),
+        "raw": item,
+    }
+
+
+def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": _model_identifier(item),
+        "name": item.get("name") or item.get("display_name") or item.get("id"),
+        "available": True,
+        "loaded": None,
+        "loaded_instance_ids": [],
+        "capabilities": _capabilities(item),
+        "raw": item,
+    }
+
+
+def _extract_models(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        return []
+    models = data.get("data")
+    if models is None:
+        models = data.get("models")
+    if not isinstance(models, list):
+        return []
+    return [item for item in models if isinstance(item, dict) and _model_identifier(item)]
+
+
+def _has_model_list(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return isinstance(data.get("data"), list) or isinstance(data.get("models"), list)
+
+
+def _model_identifier(item: dict[str, Any]) -> str:
+    return str(item.get("id") or item.get("model_key") or item.get("key") or item.get("name") or "").strip()
+
+
+def _loaded_instances(item: dict[str, Any]) -> list[dict[str, Any]]:
+    instances = item.get("loaded_instances")
+    if not isinstance(instances, list):
+        return []
+    return [instance for instance in instances if isinstance(instance, dict)]
+
+
+def _capabilities(item: dict[str, Any]) -> dict[str, bool]:
+    raw = item.get("capabilities")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "vision": bool(raw.get("vision")),
+        "tools": bool(raw.get("tools")),
+        "reasoning": bool(raw.get("reasoning")),
+    }
+
+
+def _headers(provider: ProviderProfileSchema) -> dict[str, str]:
+    return {"Authorization": f"Bearer {provider.api_key}"} if provider.api_key else {}
+
+
+def _lm_studio_native_models_url(base_url: str) -> str:
+    return f"{_without_trailing_v1(base_url)}/api/v1/models"
+
+
+def _lm_studio_native_unload_url(base_url: str) -> str:
+    return f"{_without_trailing_v1(base_url)}/api/v1/models/unload"
+
+
+def _without_trailing_v1(base_url: str) -> str:
+    trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/v1"):
+        trimmed = trimmed[:-3]
+    return trimmed
+
+
+def _base_origin(base_url: str) -> str:
+    parsed = urlsplit(base_url)
+    return urlunsplit((parsed.scheme, parsed.netloc, "", "", "")).rstrip("/")
+
+
+def _connect_error_message(provider: ProviderProfileSchema) -> str:
+    return f"Cannot connect to {provider.name} at {provider.base_url}."
+
+
+def _safe_error(exc: Exception) -> str:
+    return str(exc) or exc.__class__.__name__
+
+
+def _unsupported_unload(provider: ProviderProfileSchema) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "provider": provider.provider,
+        "unloaded": [],
+        "errors": [{"code": MODEL_UNLOAD_UNSUPPORTED, "message": "Model unload is not supported by this provider."}],
+    }

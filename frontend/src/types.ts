@@ -220,6 +220,45 @@ export type LlmProviderModel = {
   raw?: Record<string, unknown>;
 };
 
+export type LlmProviderStatusCode =
+  | 'READY'
+  | 'PROVIDER_UNREACHABLE'
+  | 'MODEL_NOT_AVAILABLE'
+  | 'MODEL_MISMATCH'
+  | 'MODEL_STATUS_UNKNOWN'
+  | 'UNSUPPORTED'
+  | 'UNLOADING'
+  | 'UNLOAD_FAILED'
+  | 'MODEL_UNLOAD_FAILED';
+
+export type LlmProviderStatusModel = {
+  id: string;
+  available?: boolean | null;
+  loaded?: boolean | null;
+  status?: LlmProviderStatusCode | string;
+  actual_model_id?: string | null;
+  loaded_instance_ids?: string[];
+  capabilities?: Record<string, boolean>;
+  raw?: Record<string, unknown>;
+};
+
+export type LlmProviderStatus = {
+  provider_profile_id: string;
+  provider_profile_name: string;
+  provider: string;
+  reachable: boolean;
+  status: LlmProviderStatusCode | string;
+  mode: string;
+  checked_at: string;
+  models: LlmProviderStatusModel[];
+  warnings: string[];
+  error?: { code?: string; message?: string; raw?: string };
+};
+
+export type LlmProviderStatusRefreshResponse = {
+  providers: LlmProviderStatus[];
+};
+
 export type LlmProviderProfile = {
   id: string;
   name: string;

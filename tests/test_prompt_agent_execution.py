@@ -9,7 +9,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
-from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner, _extract_llm_result, _normalize_stream_chunk
+from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner, _extract_llm_result, _friendly_llm_error, _normalize_stream_chunk
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -63,6 +63,16 @@ class FakeStreamingLLMRuntime(FakeLLMRuntime):
                 await self.release_next.wait()
                 continue
             yield chunk
+
+
+class RawLLMRuntime(FakeLLMRuntime):
+    def __init__(self, payload) -> None:
+        super().__init__(response="")
+        self.payload = payload
+
+    def chat_raw(self, messages, model_config=None, stream=False):
+        self.calls.append({"messages": messages, "model_config": model_config or {}, "stream": stream})
+        return self.payload
 
 
 class PromptRuntimeFixture:
@@ -198,6 +208,62 @@ def test_prompt_agent_success_creates_done_run() -> None:
 
     assert prompt_run.kind == "agent"
     assert prompt_run.status == RunStatus.DONE
+
+
+def test_actual_model_metadata_from_nonstream_response() -> None:
+    fixture = PromptRuntimeFixture(
+        llm=RawLLMRuntime(
+            {
+                "content": "hello",
+                "usage": {"total_tokens": 3},
+                "raw": {"model": "actual-model", "system_fingerprint": "fp-1"},
+            }
+        )
+    )
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    message = [item for item in fixture.messages.list_messages(session.session_id) if item.role == "assistant"][0]
+
+    assert result.success is True
+    assert message.metadata["llm"]["actual_model_id"] == "actual-model"
+    assert message.metadata["llm"]["system_fingerprint"] == "fp-1"
+    assert message.metadata["llm"]["actual_model_missing"] is False
+
+
+def test_actual_model_metadata_from_streaming_chunk_and_mismatch() -> None:
+    fixture = PromptRuntimeFixture(
+        llm=FakeStreamingLLMRuntime(
+            chunks=[
+                {"model": "actual-stream-model", "choices": [{"delta": {"content": "he"}}]},
+                {"choices": [{"delta": {"content": "llo"}}], "usage": {"total_tokens": 4}},
+            ]
+        )
+    )
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session()
+    session = fixture.sessions.set_llm_profile(session.session_id, profile.id)
+
+    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    message = [item for item in fixture.messages.list_messages(session.session_id) if item.role == "assistant"][0]
+
+    assert result.success is True
+    assert message.metadata["llm"]["actual_model_id"] == "actual-stream-model"
+    assert message.metadata["llm"]["requested_model_id"] == "fake-model"
+    assert message.metadata["llm"]["model_mismatch"] is True
+
+
+def test_streaming_actual_model_falls_back_to_requested_when_missing() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeStreamingLLMRuntime(chunks=[{"choices": [{"delta": {"content": "hello"}}]}]))
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session()
+    session = fixture.sessions.set_llm_profile(session.session_id, profile.id)
+
+    run(fixture.runtime.handle_input(session, "@chat hello"))
+    message = [item for item in fixture.messages.list_messages(session.session_id) if item.role == "assistant"][0]
+
+    assert message.metadata["llm"]["actual_model_id"] == "fake-model"
+    assert message.metadata["llm"]["actual_model_missing"] is True
 
 
 def test_prompt_agent_failure_marks_run_failed() -> None:
@@ -760,8 +826,36 @@ def test_streaming_failure_marks_run_failed() -> None:
     prompt_run = fixture.runs.get_run(result.run_id)
 
     assert result.success is False
+    assert result.error_code == "RUN_FAILED"
     assert prompt_run.status == RunStatus.FAILED
-    assert "run_failed" in [event.type for event in fixture.events.list_events()]
+
+
+def test_friendly_error_mapping_for_provider_unreachable() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(fail=True))
+    fixture.llm.response = ""
+    fixture.llm.fail = False
+
+    def fail_connect(messages, model_config=None, stream=False):
+        raise RuntimeError("connection refused")
+
+    fixture.llm.chat = fail_connect
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    prompt_run = fixture.runs.get_run(result.run_id)
+
+    assert result.success is False
+    assert result.error_code == "PROVIDER_UNREACHABLE"
+    assert prompt_run.metadata["error"]["code"] == "PROVIDER_UNREACHABLE"
+
+
+def test_friendly_error_mapping_for_model_not_available_and_mismatch() -> None:
+    not_available = _friendly_llm_error(RuntimeError("model not available"))
+    mismatch = _friendly_llm_error(RuntimeError("different model"))
+
+    assert not_available["code"] == "MODEL_NOT_AVAILABLE"
+    assert "requested model is not available" in not_available["message"]
+    assert mismatch["code"] == "MODEL_MISMATCH"
 
 
 def test_cancel_streaming_run_persists_partial_message() -> None:

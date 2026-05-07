@@ -16,6 +16,7 @@ from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
+from ai_workbench.core.provider_status import unload_model
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
@@ -80,9 +81,17 @@ class CapabilityProxy:
 
 
 class LLMProxy:
-    def __init__(self, llm_runtime: Any, default_model_config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        llm_runtime: Any,
+        default_model_config: Optional[Dict[str, Any]] = None,
+        provider_profile_store: Any = None,
+        llm_profile_store: Any = None,
+    ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
+        self.provider_profile_store = provider_profile_store
+        self.llm_profile_store = llm_profile_store
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -157,6 +166,40 @@ class LLMProxy:
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM unload failed.")
 
+    async def unload_model(
+        self,
+        model_profile_id: Optional[str] = None,
+        provider_profile_id: Optional[str] = None,
+        model_id: Optional[str] = None,
+    ) -> CapabilityCallResult:
+        try:
+            if self.provider_profile_store is None or self.llm_profile_store is None:
+                data = {
+                    "ok": False,
+                    "provider": "",
+                    "unloaded": [],
+                    "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "Provider stores are not available."}],
+                }
+            else:
+                profiles = self.llm_profile_store.list()
+                resolved_provider_id = provider_profile_id
+                if model_profile_id and not resolved_provider_id:
+                    for profile in profiles:
+                        if profile.id == model_profile_id:
+                            resolved_provider_id = profile.provider_profile_id
+                            break
+                if not resolved_provider_id:
+                    resolved_provider_id = self.default_model_config.get("provider_profile_id")
+                provider = self.provider_profile_store.get(str(resolved_provider_id or ""))
+                data = unload_model(provider, profiles, model_profile_id=model_profile_id, model_id=model_id)
+            return CapabilityCallResult(success=bool(data.get("ok")), data=data, error=_first_unload_error(data))
+        except Exception as exc:
+            return CapabilityCallResult(
+                success=False,
+                data={"ok": False, "unloaded": [], "errors": [{"code": "MODEL_UNLOAD_FAILED", "message": str(exc) or "Model unload failed."}]},
+                error=str(exc) or "Model unload failed.",
+            )
+
 
 class AgentContext:
     def __init__(
@@ -178,6 +221,8 @@ class AgentContext:
         llm_runtime: Any,
         llm_model_config: Optional[Dict[str, Any]] = None,
         llm_resolution: Optional[Dict[str, Any]] = None,
+        provider_profile_store: Any = None,
+        llm_profile_store: Any = None,
         attachments: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         self.agent = agent
@@ -196,7 +241,12 @@ class AgentContext:
         self.session_store = session_store
         self.event_bus = event_bus
         self.runtime_registry = runtime_registry
-        self.llm = LLMProxy(llm_runtime, default_model_config=llm_model_config)
+        self.llm = LLMProxy(
+            llm_runtime,
+            default_model_config=llm_model_config,
+            provider_profile_store=provider_profile_store,
+            llm_profile_store=llm_profile_store,
+        )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
         self.waiting = False
@@ -428,6 +478,8 @@ class ScriptAgentRunner:
             llm_runtime=self.llm_runtime,
             llm_model_config=llm_config.values if llm_config is not None else {},
             llm_resolution=self.run_store.get_run(run.run_id).metadata.get("llm_resolution"),
+            provider_profile_store=self.provider_profile_store,
+            llm_profile_store=self.llm_profile_store,
             attachments=attachments,
         )
 
@@ -520,6 +572,15 @@ def _extract_json_text(content: str) -> str:
     if match:
         return match.group(1).strip()
     return content.strip()
+
+
+def _first_unload_error(data: Dict[str, Any]) -> Optional[str]:
+    errors = data.get("errors")
+    if isinstance(errors, list) and errors:
+        first = errors[0]
+        if isinstance(first, dict):
+            return str(first.get("message") or first.get("code") or "Model unload failed.")
+    return None
 
 
 def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:

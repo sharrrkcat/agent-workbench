@@ -13,6 +13,7 @@ import type {
   GeneralSettings,
   LlmProfile,
   LlmProviderProfile,
+  LlmProviderStatus,
   LlmTestResult,
   Message,
   Run,
@@ -30,6 +31,7 @@ type WorkbenchState = {
   capabilityConfigs: CapabilityConfig[];
   llmProfiles: LlmProfile[];
   llmProviderProfiles: LlmProviderProfile[];
+  llmProviderStatuses: Record<string, LlmProviderStatus>;
   llmDefaults?: LlmDefaults;
   sessions: Session[];
   currentSession?: Session;
@@ -59,6 +61,8 @@ type WorkbenchState = {
   renameSession: (sessionId: string, title: string) => Promise<void>;
   updateDefaultAgent: (agentId: string) => Promise<void>;
   updateSessionLlmProfile: (profileId: string | null) => Promise<void>;
+  refreshProviderStatuses: (providerProfileIds?: string[]) => Promise<void>;
+  refreshCurrentResolvedProviderStatus: () => Promise<void>;
   refreshConfigs: () => Promise<void>;
   updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config' | 'display' | 'runtime'>>) => Promise<void>;
   resetAgentOverrides: (agentId: string) => Promise<void>;
@@ -92,6 +96,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   capabilityConfigs: [],
   llmProfiles: [],
   llmProviderProfiles: [],
+  llmProviderStatuses: {},
   sessions: [],
   messages: [],
   runs: [],
@@ -123,6 +128,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, loading: false });
       if (currentSession) {
         await get().refreshCurrent();
+        void get().refreshCurrentResolvedProviderStatus();
       }
       await get().refreshHealth();
     } catch (error) {
@@ -265,6 +271,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         error: undefined,
         lastError: undefined,
       });
+      void get().refreshCurrentResolvedProviderStatus();
     } catch (error) {
       set(formatError(error, 'Failed to update default agent'));
     }
@@ -291,9 +298,33 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         error: undefined,
         lastError: undefined,
       });
+      void get().refreshCurrentResolvedProviderStatus();
     } catch (error) {
       set(formatError(error, 'Failed to update session model'));
     }
+  },
+
+  refreshProviderStatuses: async (providerProfileIds?: string[]) => {
+    try {
+      const result = await api.refreshLlmProviderStatuses(providerProfileIds);
+      set({
+        llmProviderStatuses: {
+          ...get().llmProviderStatuses,
+          ...Object.fromEntries(result.providers.map((provider) => [provider.provider_profile_id, provider])),
+        },
+        error: undefined,
+        lastError: undefined,
+      });
+    } catch (error) {
+      set(formatError(error, 'Failed to refresh provider status'));
+    }
+  },
+
+  refreshCurrentResolvedProviderStatus: async () => {
+    const profile = resolveCurrentLlmProfile(get());
+    const providerId = profile?.provider_profile_id;
+    if (!providerId) return;
+    await get().refreshProviderStatuses([providerId]);
   },
 
   refreshConfigs: async () => {
@@ -492,11 +523,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       return;
     }
     if (event.type === 'run_failed') {
+      const code = typeof event.payload.error_code === 'string' ? event.payload.error_code : 'RUN_FAILED';
       const error = {
-        code: 'RUN_FAILED',
+        code,
         message: typeof event.payload.error === 'string' ? event.payload.error : 'Run failed.',
       };
-      const runs = upsertRun(get().runs, failedRunFromEvent(event, session.session_id, error.message));
+      const runs = upsertRun(get().runs, failedRunFromEvent(event, session.session_id, error));
       set({
         sending: false,
         activeRunId: undefined,
@@ -724,7 +756,7 @@ function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): M
         message_id: runErrorMessageId(run.run_id),
         session_id: run.session_id,
         role: 'system',
-        content: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
+        content: { code: failedRunCode(run), message: run.error || 'Run failed.' },
         agent_id: null,
         command_name: null,
         action_id: run.action_id,
@@ -735,7 +767,7 @@ function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): M
         available_actions: [],
         created_at: run.created_at || run.updated_at || relatedMessage?.created_at || stableNotificationFallback(run),
         client_status: 'failed',
-        client_error: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
+        client_error: { code: failedRunCode(run), message: run.error || 'Run failed.' },
       } satisfies Message;
     });
 }
@@ -847,6 +879,12 @@ function isRunFailedErrorMessage(message: Message): boolean {
 
 function runErrorMessageId(runId: string): string {
   return `run-error:${runId}`;
+}
+
+function failedRunCode(run: Run): string {
+  const error = run.metadata?.error;
+  if (isRecord(error) && typeof error.code === 'string') return error.code;
+  return 'RUN_FAILED';
 }
 
 function hasFetchedReplacementUser(fetched: Message[], pending: Message): boolean {
@@ -963,8 +1001,8 @@ function dedupeRuns(runs: Run[]): Run[] {
   return [...byId.values()];
 }
 
-function failedRunFromEvent(event: RuntimeEvent, sessionId: string, error: string): Run {
-  const runId = event.run_id || fallbackRunId(sessionId, event.created_at, error);
+function failedRunFromEvent(event: RuntimeEvent, sessionId: string, error: AppError): Run {
+  const runId = event.run_id || fallbackRunId(sessionId, event.created_at, error.message);
   const existing = getCurrentRun(runId);
   return {
     run_id: runId,
@@ -974,9 +1012,10 @@ function failedRunFromEvent(event: RuntimeEvent, sessionId: string, error: strin
     target_id: existing?.target_id || stringPayload(event.payload, 'target_id') || 'unknown',
     action_id: existing?.action_id || stringPayload(event.payload, 'action_id') || null,
     current_step: 'failed',
-    error,
+    error: error.message,
     metadata: {
       ...(existing?.metadata || {}),
+      error: { code: error.code, message: error.message, details: event.payload.details },
       parent_message_id: stringPayload(event.payload, 'parent_message_id') || existing?.metadata?.parent_message_id,
       input_message_id: stringPayload(event.payload, 'input_message_id') || existing?.metadata?.input_message_id,
       source_message_id: stringPayload(event.payload, 'source_message_id') || existing?.metadata?.source_message_id,
@@ -1018,6 +1057,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function chooseEnabledDefaultAgent(agents: Agent[], preferredAgentId?: string | null): string | undefined {
   const preferred = agents.find((agent) => agent.id === preferredAgentId && agent.enabled);
   return preferred?.id || agents.find((agent) => agent.enabled)?.id;
+}
+
+export function resolveCurrentLlmProfile(state: Pick<WorkbenchState, 'currentSession' | 'agents' | 'llmProfiles' | 'llmDefaults' | 'capabilityConfigs'>): LlmProfile | undefined {
+  const session = state.currentSession;
+  const agent = state.agents.find((item) => item.id === session?.default_agent_id);
+  const sessionAllowed = agent?.resolved_runtime?.allow_session_override !== false && agent?.llm?.allow_session_override !== false;
+  if (sessionAllowed && session?.llm_profile_id) {
+    const profile = findProfile(state.llmProfiles, session.llm_profile_id);
+    if (profile) return profile;
+  }
+  const agentProfileRef = agent?.resolved_runtime?.llm_profile_id || agent?.llm?.profile;
+  const agentProfile = findProfile(state.llmProfiles, agentProfileRef);
+  if (agentProfile) return agentProfile;
+  const defaultProfile = findProfile(state.llmProfiles, state.llmDefaults?.default_model_profile_id);
+  if (defaultProfile) return defaultProfile;
+  const llmConfig = state.capabilityConfigs.find((config) => config.capability_id === 'llm');
+  const fallbackRef = stringValue(llmConfig?.resolved_config?.default_profile) || stringValue(llmConfig?.user_config?.default_profile);
+  return findProfile(state.llmProfiles, fallbackRef);
+}
+
+function findProfile(profiles: LlmProfile[], ref?: string | null): LlmProfile | undefined {
+  if (!ref) return undefined;
+  return profiles.find((profile) => profile.enabled && (profile.id === ref || profile.alias === ref));
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function sortSessionsByRecent(sessions: Session[]): Session[] {

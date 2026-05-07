@@ -14,6 +14,7 @@ import type {
   LlmProviderModel,
   LlmProviderProfile,
   LlmProviderProfileInput,
+  LlmProviderStatusRefreshResponse,
   LlmTestResult,
   Message,
   Run,
@@ -116,6 +117,13 @@ export const api = {
     request<LlmTestResult>(`/api/llm-provider-profiles/${profileId}/test`, { method: 'POST' }),
   listLlmProviderModels: (profileId: string) =>
     request<{ success: boolean; provider_profile_id: string; provider: string; models: LlmProviderModel[]; warnings: string[] }>(`/api/llm-provider-profiles/${profileId}/refresh-models`, { method: 'POST' }),
+  refreshLlmProviderStatuses: (providerProfileIds?: string[]) =>
+    request<LlmProviderStatusRefreshResponse>('/api/llm-provider-profiles/status/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ provider_profile_ids: providerProfileIds, force: true }),
+    }),
+  refreshLlmProviderStatus: (profileId: string) =>
+    request<LlmProviderStatusRefreshResponse>(`/api/llm-provider-profiles/${profileId}/status/refresh`, { method: 'POST' }),
   createLlmProfile: (profile: LlmProfileInput) =>
     request<LlmProfile>('/api/llm-profiles', {
       method: 'POST',
