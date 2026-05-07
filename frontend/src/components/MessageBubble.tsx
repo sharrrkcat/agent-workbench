@@ -231,14 +231,43 @@ function SystemEventSeparator({ message }: { message: Message }) {
 
 function InlineErrorBlock({ message }: { message: Message }) {
   const error = normalizeError(message);
+  const dismissNotification = useWorkbenchStore((state) => state.dismissNotification);
+  const setError = useWorkbenchStore((state) => state.setError);
+  const pendingMessageActionId = useWorkbenchStore((state) => state.pendingMessageActionId);
+  const [copied, setCopied] = useState(false);
+  const operationPending = pendingMessageActionId === message.message_id;
+  const canDismiss = message.message_id.startsWith('run-error:') || message.metadata?.notification === true;
+
+  async function copyNotification() {
+    try {
+      await navigator.clipboard.writeText(`${error.code || 'Notification'}: ${error.message || ''}`.trim());
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1300);
+    } catch (copyError) {
+      setError(copyError, 'Failed to copy notification');
+    }
+  }
 
   return (
     <article className="message-row system">
-      <div className="inline-error-block">
-        <CircleAlert size={16} />
-        <div>
-          <strong>{error.code || 'Agent failed'}</strong>
-          <p>{error.message || 'The run failed.'}</p>
+      <div className="system-notification-stack">
+        <div className="inline-error-block">
+          <CircleAlert size={16} />
+          <div>
+            <strong>{error.code || 'Agent failed'}</strong>
+            <p>{error.message || 'The run failed.'}</p>
+          </div>
+        </div>
+        <div className="message-hover-actions system-notification-actions" aria-label="Notification actions">
+          <button type="button" onClick={() => void copyNotification()} disabled={operationPending} title="Copy">
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? <span>Copied</span> : ''}
+          </button>
+          {canDismiss ? (
+            <button type="button" className="danger" onClick={() => void dismissNotification(message.message_id)} disabled={operationPending} title="Delete">
+              <Trash2 size={13} />
+            </button>
+          ) : null}
         </div>
       </div>
     </article>

@@ -78,6 +78,7 @@ type WorkbenchState = {
   cancelActiveRun: () => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
+  dismissNotification: (notificationId: string) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
 };
@@ -574,6 +575,28 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
+  dismissNotification: async (notificationId: string) => {
+    const session = get().currentSession;
+    if (!session) return;
+    set({ pendingMessageActionId: notificationId, error: undefined, lastError: undefined });
+    try {
+      await api.dismissNotification(session.session_id, notificationId);
+      set({
+        pendingMessageActionId: undefined,
+        messages: get().messages.filter((message) => message.message_id !== notificationId),
+        runs: get().runs.map((run) =>
+          runErrorMessageId(run.run_id) === notificationId
+            ? { ...run, metadata: { ...(run.metadata || {}), notification_dismissed: true } }
+            : run,
+        ),
+        error: undefined,
+        lastError: undefined,
+      });
+    } catch (error) {
+      set({ ...formatError(error, 'Failed to delete notification'), pendingMessageActionId: undefined });
+    }
+  },
+
   retryMessage: async (messageId: string) => {
     const session = get().currentSession;
     if (!session) return;
@@ -671,22 +694,32 @@ function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Me
 
 function buildTimeline(fetchedMessages: Message[], runs: Run[], current: Message[], sessionId: string): Message[] {
   const baseMessages = sortMessagesByCreatedAt(removeSupersededFailedDrafts(fetchedMessages, runs));
-  const messages = insertFailedRunErrors(baseMessages, failedRunErrors(baseMessages, runs));
+  const messages = sortTimelineItems(baseMessages, failedRunErrors(baseMessages, runs, sessionId));
   return mergeTransientMessages(messages, current, sessionId);
 }
 
-function failedRunErrors(messages: Message[], runs: Run[]): Message[] {
+function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): Message[] {
   const messageRunIds = new Set(messages.filter((message) => !isTransientMessage(message)).map((message) => message.run_id).filter(isNonEmptyString));
   const seenRunIds = new Set<string>();
   return dedupeRuns(runs)
     .filter((run) => {
-      if (run.session_id !== messages[0]?.session_id && messages.length) return false;
-      if (run.status !== 'FAILED' || !run.error || !run.run_id || messageRunIds.has(run.run_id) || seenRunIds.has(run.run_id)) return false;
+      if (run.session_id !== sessionId) return false;
+      if (
+        run.status !== 'FAILED' ||
+        !run.error ||
+        !run.run_id ||
+        run.metadata?.notification_dismissed === true ||
+        messageRunIds.has(run.run_id) ||
+        seenRunIds.has(run.run_id)
+      ) {
+        return false;
+      }
       seenRunIds.add(run.run_id);
       return true;
     })
     .map((run) => {
       const parentMessageId = firstString(run.metadata, ['parent_message_id', 'input_message_id', 'source_message_id']);
+      const relatedMessage = parentMessageId ? messages.find((message) => message.message_id === parentMessageId) : undefined;
       return {
         message_id: runErrorMessageId(run.run_id),
         session_id: run.session_id,
@@ -698,9 +731,9 @@ function failedRunErrors(messages: Message[], runs: Run[]): Message[] {
         run_id: run.run_id,
         output_type: 'error',
         parent_message_id: parentMessageId,
-        metadata: { synthetic: true, run_kind: run.kind, target_id: run.target_id },
+        metadata: { synthetic: true, notification: true, severity: 'error', run_kind: run.kind, target_id: run.target_id },
         available_actions: [],
-        created_at: run.updated_at || run.created_at,
+        created_at: run.created_at || run.updated_at || relatedMessage?.created_at || stableNotificationFallback(run),
         client_status: 'failed',
         client_error: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
       } satisfies Message;
@@ -716,30 +749,6 @@ function removeSupersededFailedDrafts(messages: Message[], runs: Run[]): Message
   });
 }
 
-function insertFailedRunErrors(messages: Message[], errors: Message[]): Message[] {
-  if (!errors.length) return messages;
-  const remainingErrors = [...errors];
-  const timeline: Message[] = [];
-
-  for (const message of messages) {
-    timeline.push(message);
-    const related = takeRelatedErrors(remainingErrors, message.message_id);
-    if (related.length) timeline.push(...sortMessagesByCreatedAt(related));
-  }
-
-  return [...timeline, ...remainingErrors];
-}
-
-function takeRelatedErrors(errors: Message[], parentMessageId: string): Message[] {
-  const related: Message[] = [];
-  for (let index = errors.length - 1; index >= 0; index -= 1) {
-    if (errors[index].parent_message_id !== parentMessageId) continue;
-    related.unshift(errors[index]);
-    errors.splice(index, 1);
-  }
-  return related;
-}
-
 function sortMessagesByCreatedAt(messages: Message[]): Message[] {
   return messages
     .map((message, index) => ({ message, index }))
@@ -749,9 +758,51 @@ function sortMessagesByCreatedAt(messages: Message[]): Message[] {
       const normalizedLeft = Number.isNaN(leftTime) ? 0 : leftTime;
       const normalizedRight = Number.isNaN(rightTime) ? 0 : rightTime;
       if (normalizedLeft !== normalizedRight) return normalizedLeft - normalizedRight;
+      const leftRank = timelineTieRank(left.message);
+      const rightRank = timelineTieRank(right.message);
+      if (leftRank !== rightRank) return leftRank - rightRank;
       return left.index - right.index;
     })
     .map((item) => item.message);
+}
+
+function sortTimelineItems(messages: Message[], notifications: Message[]): Message[] {
+  if (!notifications.length) return messages;
+  const sequence = new Map<string, number>();
+  messages.forEach((message, index) => sequence.set(message.message_id, index * 2));
+  const sortable = [
+    ...messages.map((message) => ({ message, sequence: sequence.get(message.message_id) || 0 })),
+    ...notifications.map((message, index) => ({
+      message,
+      sequence:
+        (message.parent_message_id && sequence.has(message.parent_message_id)
+          ? Number(sequence.get(message.parent_message_id)) + 1
+          : undefined) ?? (messages.length + index) * 2 + 1,
+    })),
+  ];
+  return sortable
+    .sort((left, right) => {
+      const leftTime = parseServerTime(left.message.created_at || '').getTime();
+      const rightTime = parseServerTime(right.message.created_at || '').getTime();
+      const normalizedLeft = Number.isNaN(leftTime) ? 0 : leftTime;
+      const normalizedRight = Number.isNaN(rightTime) ? 0 : rightTime;
+      if (normalizedLeft !== normalizedRight) return normalizedLeft - normalizedRight;
+      if (left.sequence !== right.sequence) return left.sequence - right.sequence;
+      return timelineTieRank(left.message) - timelineTieRank(right.message);
+    })
+    .map((item) => item.message);
+}
+
+function timelineTieRank(message: Message): number {
+  if (message.role === 'user') return 0;
+  if (message.role === 'assistant' || message.role === 'agent') return 1;
+  if (isRunFailedErrorMessage(message)) return 2;
+  return 3;
+}
+
+function stableNotificationFallback(run: Run): string {
+  const offset = parseInt(hashString(run.run_id || `${run.session_id}:${run.error || ''}`), 36) % (365 * 24 * 60 * 60 * 1000);
+  return new Date(Date.UTC(2000, 0, 1) + offset).toISOString();
 }
 
 function firstString(source: Record<string, unknown> | undefined, keys: string[]): string | null {

@@ -4,6 +4,7 @@ import type {
   CapabilityConfig,
   Command,
   DeleteMessageResponse,
+  DismissNotificationResponse,
   DeleteSessionResponse,
   Diagnostics,
   LlmResolvedConfig,
@@ -181,6 +182,10 @@ export const api = {
   deleteMessage: (messageId: string) =>
     request<DeleteMessageResponse>(`/api/messages/${messageId}`, {
       method: 'DELETE',
+    }),
+  dismissNotification: (sessionId: string, notificationId: string) =>
+    request<DismissNotificationResponse>(`/api/sessions/${sessionId}/notifications/${encodeURIComponent(notificationId)}/dismiss`, {
+      method: 'POST',
     }),
   retryMessage: (messageId: string) =>
     request<RuntimeResponse>(`/api/messages/${messageId}/retry`, {

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Message } from '../types';
+import type { Message, SystemNotification, TimelineItem } from '../types';
 import { MessageBubble, type FilePreview } from './MessageBubble';
 import type { ImagePreview } from '../utils/images';
 
@@ -73,7 +73,13 @@ export function ChatView({ onPreviewImage, onPreviewFile }: { onPreviewImage: (i
           </div>
         </div>
       ) : (
-        messages.map((message) => <MessageBubble key={message.message_id} message={message} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />)
+        toTimelineItems(messages).map((item) =>
+          item.kind === 'message' ? (
+            <MessageBubble key={item.message.message_id} message={item.message} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
+          ) : (
+            <MessageBubble key={item.notification.id} message={notificationToMessage(item.notification)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
+          ),
+        )
       )}
     </section>
   );
@@ -100,4 +106,55 @@ function messagesSignature(messages: Message[]): string {
       return `${message.message_id}:${message.client_status || ''}:${text.length}:${reasoning.length}`;
     })
     .join('|');
+}
+
+function toTimelineItems(messages: Message[]): TimelineItem[] {
+  return messages.map((message) => {
+    if (isSystemNotificationMessage(message)) {
+      return { kind: 'notification', notification: messageToNotification(message) };
+    }
+    return { kind: 'message', message };
+  });
+}
+
+function isSystemNotificationMessage(message: Message): boolean {
+  return message.role === 'system' && (message.output_type === 'error' || message.metadata?.notification === true);
+}
+
+function messageToNotification(message: Message): SystemNotification {
+  const content = isRecord(message.content) ? message.content : {};
+  return {
+    id: message.message_id,
+    session_id: message.session_id,
+    run_id: message.run_id,
+    severity: typeof message.metadata?.severity === 'string' ? message.metadata.severity : 'error',
+    code: typeof message.client_error?.code === 'string' ? message.client_error.code : typeof content.code === 'string' ? content.code : null,
+    message: typeof message.client_error?.message === 'string' ? message.client_error.message : typeof content.message === 'string' ? content.message : String(message.content || ''),
+    created_at: message.created_at,
+    metadata: message.metadata,
+  };
+}
+
+function notificationToMessage(notification: SystemNotification): Message {
+  return {
+    message_id: notification.id,
+    session_id: notification.session_id,
+    role: 'system',
+    content: { code: notification.code, message: notification.message },
+    agent_id: null,
+    command_name: null,
+    action_id: null,
+    run_id: notification.run_id || null,
+    output_type: 'error',
+    parent_message_id: typeof notification.metadata?.parent_message_id === 'string' ? notification.metadata.parent_message_id : null,
+    available_actions: [],
+    metadata: { ...(notification.metadata || {}), notification: true, severity: notification.severity },
+    created_at: notification.created_at,
+    client_status: 'failed',
+    client_error: { code: notification.code || 'NOTIFICATION', message: notification.message },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

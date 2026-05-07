@@ -733,6 +733,13 @@ input:disabled {
   margin-bottom: 14px;
 }
 
+.system-notification-stack {
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  max-width: min(720px, 100%);
+}
+
 .agent-avatar {
   display: inline-flex;
   flex: 0 0 34px;
@@ -1603,6 +1610,10 @@ input:disabled {
 
 .message-row.user .message-hover-actions {
   justify-self: end;
+}
+
+.system-notification-actions {
+  justify-self: center;
 }
 
 .message-hover-actions button {

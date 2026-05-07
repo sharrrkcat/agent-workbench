@@ -380,6 +380,21 @@ export type Message = {
   client_error?: AppError;
 };
 
+export type SystemNotification = {
+  id: string;
+  session_id: string;
+  run_id?: string | null;
+  severity: 'info' | 'warning' | 'error' | string;
+  code?: string | null;
+  message: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type TimelineItem =
+  | { kind: 'message'; message: Message }
+  | { kind: 'notification'; notification: SystemNotification };
+
 export type SendMessageAttachment = Attachment;
 
 export type AppError = {
@@ -454,6 +469,12 @@ export type DeleteSessionResponse = {
 export type DeleteMessageResponse = {
   deleted: boolean;
   message_id: string;
+};
+
+export type DismissNotificationResponse = {
+  ok: boolean;
+  notification_id: string;
+  dismissed: boolean;
 };
 
 export type GeneralSettings = {

@@ -1112,6 +1112,107 @@ def test_list_messages_shows_user_and_output_messages() -> None:
     assert roles == ["user", "assistant"]
 
 
+def test_session_timeline_includes_failed_run_notification_with_stable_created_at() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    user = state.messages.add_message(session_id=session["session_id"], role="user", content="hello")
+    run_record = state.runs.create_run(
+        kind="agent",
+        target_id="chat",
+        session_id=session["session_id"],
+        metadata={"input_message_id": user.message_id},
+    )
+    failed_run = state.runs.update_status(run_record.run_id, RunStatus.FAILED, error="boom")
+
+    response = client.get(f"/api/sessions/{session['session_id']}/timeline")
+
+    assert response.status_code == 200
+    notification = [item["notification"] for item in response.json() if item["kind"] == "notification"][0]
+    assert notification["id"] == f"run-error:{failed_run.run_id}"
+    assert notification["code"] == "RUN_FAILED"
+    assert notification["message"] == "boom"
+    assert notification["created_at"] == failed_run.created_at.isoformat()
+
+
+def test_session_timeline_sorts_notifications_by_created_at() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    first_user = state.messages.add_message(session_id=session["session_id"], role="user", content="first")
+    run_record = state.runs.create_run(
+        kind="agent",
+        target_id="chat",
+        session_id=session["session_id"],
+        metadata={"input_message_id": first_user.message_id},
+    )
+    failed_run = state.runs.update_status(run_record.run_id, RunStatus.FAILED, error="boom")
+    second_user = state.messages.add_message(session_id=session["session_id"], role="user", content="second")
+
+    response = client.get(f"/api/sessions/{session['session_id']}/timeline")
+
+    assert response.status_code == 200
+    ids = [
+        item["message"]["message_id"] if item["kind"] == "message" else item["notification"]["id"]
+        for item in response.json()
+    ]
+    assert ids == [first_user.message_id, f"run-error:{failed_run.run_id}", second_user.message_id]
+
+
+def test_dismiss_notification_hides_timeline_item_and_preserves_run() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    message = state.messages.add_message(session_id=session["session_id"], role="user", content="hello")
+    run_record = state.runs.create_run(
+        kind="agent",
+        target_id="chat",
+        session_id=session["session_id"],
+        metadata={"input_message_id": message.message_id},
+    )
+    failed_run = state.runs.update_status(run_record.run_id, RunStatus.FAILED, error="boom")
+    notification_id = f"run-error:{failed_run.run_id}"
+
+    response = client.post(f"/api/sessions/{session['session_id']}/notifications/{notification_id}/dismiss")
+    timeline = client.get(f"/api/sessions/{session['session_id']}/timeline").json()
+    preserved_run = state.runs.get_run(failed_run.run_id)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "notification_id": notification_id, "dismissed": True}
+    assert [item for item in timeline if item["kind"] == "notification"] == []
+    assert preserved_run.status == RunStatus.FAILED
+    assert preserved_run.error == "boom"
+    assert preserved_run.metadata["notification_dismissed"] is True
+
+
+def test_dismiss_notification_is_idempotent_and_does_not_affect_messages() -> None:
+    client = make_client()
+    session = create_session(client)
+    state = client.app.state.runtime_state
+    message = state.messages.add_message(session_id=session["session_id"], role="user", content="hello")
+    run_record = state.runs.create_run(kind="agent", target_id="chat", session_id=session["session_id"])
+    failed_run = state.runs.update_status(run_record.run_id, RunStatus.FAILED, error="boom")
+    notification_id = f"run-error:{failed_run.run_id}"
+
+    first = client.post(f"/api/sessions/{session['session_id']}/notifications/{notification_id}/dismiss")
+    second = client.post(f"/api/sessions/{session['session_id']}/notifications/{notification_id}/dismiss")
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert messages[0]["message_id"] == message.message_id
+
+
+def test_dismiss_missing_notification_returns_clear_error() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    response = client.post(f"/api/sessions/{session['session_id']}/notifications/run-error:missing/dismiss")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOTIFICATION_NOT_FOUND"
+
+
 def test_user_message_can_save_single_image_attachment() -> None:
     client = make_client(response="chat reply")
     session = create_session(client)
