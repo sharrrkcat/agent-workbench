@@ -436,10 +436,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         code: 'RUN_FAILED',
         message: typeof event.payload.error === 'string' ? event.payload.error : 'Run failed.',
       };
+      const runs = upsertRun(get().runs, failedRunFromEvent(event, session.session_id, error.message));
       set({
         sending: false,
         activeRunId: undefined,
-        messages: removeDraftAndAppendError(get().messages, session.session_id, event.run_id || '', error),
+        runs,
+        messages: buildTimeline(get().messages, runs, get().messages, session.session_id),
       });
       return;
     }
@@ -609,18 +611,25 @@ function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Me
 }
 
 function buildTimeline(fetchedMessages: Message[], runs: Run[], current: Message[], sessionId: string): Message[] {
-  const messages = [...fetchedMessages, ...failedRunErrors(fetchedMessages, runs)];
-  return mergeTransientMessages(sortMessagesByCreatedAt(messages), current, sessionId);
+  const baseMessages = sortMessagesByCreatedAt(removeSupersededFailedDrafts(fetchedMessages, runs));
+  const messages = insertFailedRunErrors(baseMessages, failedRunErrors(baseMessages, runs));
+  return mergeTransientMessages(messages, current, sessionId);
 }
 
 function failedRunErrors(messages: Message[], runs: Run[]): Message[] {
-  const messageRunIds = new Set(messages.map((message) => message.run_id).filter(Boolean));
-  return runs
-    .filter((run) => run.status === 'FAILED' && run.error && !messageRunIds.has(run.run_id))
+  const messageRunIds = new Set(messages.filter((message) => !isTransientMessage(message)).map((message) => message.run_id).filter(isNonEmptyString));
+  const seenRunIds = new Set<string>();
+  return dedupeRuns(runs)
+    .filter((run) => {
+      if (run.session_id !== messages[0]?.session_id && messages.length) return false;
+      if (run.status !== 'FAILED' || !run.error || !run.run_id || messageRunIds.has(run.run_id) || seenRunIds.has(run.run_id)) return false;
+      seenRunIds.add(run.run_id);
+      return true;
+    })
     .map((run) => {
       const parentMessageId = firstString(run.metadata, ['parent_message_id', 'input_message_id', 'source_message_id']);
       return {
-        message_id: `run-error-${run.run_id}`,
+        message_id: runErrorMessageId(run.run_id),
         session_id: run.session_id,
         role: 'system',
         content: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
@@ -637,6 +646,39 @@ function failedRunErrors(messages: Message[], runs: Run[]): Message[] {
         client_error: { code: 'RUN_FAILED', message: run.error || 'Run failed.' },
       } satisfies Message;
     });
+}
+
+function removeSupersededFailedDrafts(messages: Message[], runs: Run[]): Message[] {
+  const failedRunIds = new Set(runs.filter((run) => run.status === 'FAILED').map((run) => run.run_id).filter(isNonEmptyString));
+  if (!failedRunIds.size) return messages;
+  return messages.filter((message) => {
+    if (!message.run_id || !failedRunIds.has(message.run_id) || !message.message_id.startsWith('draft-')) return true;
+    return Boolean(contentToDraftText(message.content));
+  });
+}
+
+function insertFailedRunErrors(messages: Message[], errors: Message[]): Message[] {
+  if (!errors.length) return messages;
+  const remainingErrors = [...errors];
+  const timeline: Message[] = [];
+
+  for (const message of messages) {
+    timeline.push(message);
+    const related = takeRelatedErrors(remainingErrors, message.message_id);
+    if (related.length) timeline.push(...sortMessagesByCreatedAt(related));
+  }
+
+  return [...timeline, ...remainingErrors];
+}
+
+function takeRelatedErrors(errors: Message[], parentMessageId: string): Message[] {
+  const related: Message[] = [];
+  for (let index = errors.length - 1; index >= 0; index -= 1) {
+    if (errors[index].parent_message_id !== parentMessageId) continue;
+    related.unshift(errors[index]);
+    errors.splice(index, 1);
+  }
+  return related;
 }
 
 function sortMessagesByCreatedAt(messages: Message[]): Message[] {
@@ -669,7 +711,10 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
   if (!transient.length) return fetched;
 
   const fetchedRunIds = new Set(fetched.map((message) => message.run_id).filter(Boolean));
+  const fetchedMessageIds = new Set(fetched.map((message) => message.message_id));
   const remaining = transient.filter((message) => {
+    if (fetchedMessageIds.has(message.message_id)) return false;
+    if (isRunFailedErrorMessage(message)) return false;
     if (message.run_id && fetchedRunIds.has(message.run_id)) return false;
     if (message.role === 'user' && message.client_status === 'pending' && hasFetchedReplacementUser(fetched, message)) return false;
     if (message.role !== 'user') return true;
@@ -680,7 +725,18 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
 }
 
 function isTransientMessage(message: Message): boolean {
-  return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-') || message.message_id.startsWith('draft-');
+  return message.message_id.startsWith('optimistic-') || message.message_id.startsWith('error-') || message.message_id.startsWith('draft-') || message.message_id.startsWith('run-error:');
+}
+
+function isRunFailedErrorMessage(message: Message): boolean {
+  if (message.message_id.startsWith('run-error:')) return true;
+  if (message.client_error?.code === 'RUN_FAILED') return true;
+  if (!isRecord(message.content)) return false;
+  return message.content.code === 'RUN_FAILED';
+}
+
+function runErrorMessageId(runId: string): string {
+  return `run-error:${runId}`;
 }
 
 function hasFetchedReplacementUser(fetched: Message[], pending: Message): boolean {
@@ -780,6 +836,69 @@ function contentToDraftText(content: unknown): string {
 
 function runningRunId(runs: Run[]): string | undefined {
   return [...runs].reverse().find((run) => run.status === 'RUNNING' || run.status === 'PENDING')?.run_id;
+}
+
+function upsertRun(runs: Run[], run: Run): Run[] {
+  const index = runs.findIndex((item) => item.run_id === run.run_id);
+  if (index === -1) return [...runs, run];
+  return runs.map((item, itemIndex) => (itemIndex === index ? { ...item, ...run, metadata: { ...(item.metadata || {}), ...(run.metadata || {}) } } : item));
+}
+
+function dedupeRuns(runs: Run[]): Run[] {
+  const byId = new Map<string, Run>();
+  for (const run of runs) {
+    if (!run.run_id) continue;
+    byId.set(run.run_id, { ...(byId.get(run.run_id) || {}), ...run, metadata: { ...(byId.get(run.run_id)?.metadata || {}), ...(run.metadata || {}) } });
+  }
+  return [...byId.values()];
+}
+
+function failedRunFromEvent(event: RuntimeEvent, sessionId: string, error: string): Run {
+  const runId = event.run_id || fallbackRunId(sessionId, event.created_at, error);
+  const existing = getCurrentRun(runId);
+  return {
+    run_id: runId,
+    session_id: sessionId,
+    kind: existing?.kind || 'agent',
+    status: 'FAILED',
+    target_id: existing?.target_id || stringPayload(event.payload, 'target_id') || 'unknown',
+    action_id: existing?.action_id || stringPayload(event.payload, 'action_id') || null,
+    current_step: 'failed',
+    error,
+    metadata: {
+      ...(existing?.metadata || {}),
+      parent_message_id: stringPayload(event.payload, 'parent_message_id') || existing?.metadata?.parent_message_id,
+      input_message_id: stringPayload(event.payload, 'input_message_id') || existing?.metadata?.input_message_id,
+      source_message_id: stringPayload(event.payload, 'source_message_id') || existing?.metadata?.source_message_id,
+    },
+    created_at: existing?.created_at || stringPayload(event.payload, 'created_at') || event.created_at,
+    updated_at: event.created_at,
+  };
+}
+
+function getCurrentRun(runId: string): Run | undefined {
+  return useWorkbenchStore.getState().runs.find((run) => run.run_id === runId);
+}
+
+function stringPayload(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+function fallbackRunId(sessionId: string, createdAt: string, error: string): string {
+  return `${sessionId}:${createdAt}:${hashString(error)}`;
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && Boolean(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
