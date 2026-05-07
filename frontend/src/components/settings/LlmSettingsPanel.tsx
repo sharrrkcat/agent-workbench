@@ -521,7 +521,9 @@ export function LlmDefaultsDetail({
               </div>
               <div>
                 <dt>Capabilities</dt>
-                <dd><ModelCapabilityIcons capabilities={capabilitiesFromProfile(selectedProfile)} className="settings-capability-icons" /></dd>
+                <dd className="settings-definition-capabilities">
+                  <DefaultProfileCapabilityIcons profile={selectedProfile} />
+                </dd>
               </div>
             </dl>
           ) : (
@@ -537,6 +539,13 @@ export function LlmDefaultsDetail({
       </div>
     </form>
   );
+}
+
+function DefaultProfileCapabilityIcons({ profile }: { profile: LlmProfile }) {
+  const capabilities = capabilitiesFromProfile(profile);
+  const hasCapabilities = capabilities.vision || capabilities.tools || capabilities.reasoning || capabilities.streaming;
+  if (!hasCapabilities) return <span className="settings-muted-text">No capabilities</span>;
+  return <ModelCapabilityIcons capabilities={capabilities} className="settings-capability-icons" />;
 }
 
 export function LlmProviderProfileDetail({

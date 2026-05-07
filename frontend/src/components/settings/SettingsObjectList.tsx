@@ -123,7 +123,7 @@ export function SettingsObjectList({
     return (
       <aside className="settings-object-list" aria-label="LLM model profiles">
         <ObjectListHeader title="Model Profiles" count={llmProfiles.length} actionLabel="New model" onAction={() => onSelectLlmItem?.('new')} />
-        <div className="settings-list-scroll">
+        <div className="settings-list-scroll llm-model-profile-list">
           {llmProfiles.length ? (
             llmProfiles.map((profile) => (
               <ProfileListItem
@@ -185,14 +185,16 @@ function ProfileListItem({
 }) {
   const providerName = providerProfiles.find((provider) => provider.id === profile.provider_profile_id)?.name || 'No provider';
   return (
-    <button type="button" className={`settings-object-row llm-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+    <button type="button" className={`settings-object-row llm-object-row llm-model-profile-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
       <div className="settings-object-copy">
-        <strong>{profile.name}</strong>
+        <div className="settings-object-title-row">
+          <strong>{profile.name}</strong>
+          <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+        </div>
         <small>{providerName} / {profile.model_id || 'No model ID'}</small>
         <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons" />
       </div>
-      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>
   );
 }
