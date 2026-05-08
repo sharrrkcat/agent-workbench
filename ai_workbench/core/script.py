@@ -17,7 +17,7 @@ from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
-from ai_workbench.core.provider_status import unload_model_for_profile
+from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
@@ -232,6 +232,9 @@ class LLMProxy:
         llm_profile_store: Any = None,
         default_llm_resolution: Optional[Dict[str, Any]] = None,
         output: Any = None,
+        event_bus: EventBus = None,
+        session_id: str = "",
+        run_id: str = "",
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -239,6 +242,9 @@ class LLMProxy:
         self.llm_profile_store = llm_profile_store
         self.default_llm_resolution = default_llm_resolution or {}
         self.output = output
+        self.event_bus = event_bus
+        self.session_id = session_id
+        self.run_id = run_id
         self.used = False
 
     async def text(self, system: str, user: str, **options) -> str:
@@ -360,10 +366,14 @@ class LLMProxy:
 
     async def unload(self, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
         try:
-            unload = getattr(self.llm_runtime, "unload")
-            data = unload(model_config=model_config or self.default_model_config)
-            if inspect.isawaitable(data):
-                data = await data
+            unload = getattr(self.llm_runtime, "unload", None)
+            if callable(unload):
+                data = unload(model_config=model_config or self.default_model_config)
+                if inspect.isawaitable(data):
+                    data = await data
+            else:
+                data = {"success": False, "unsupported": True, "message": "LLM runtime does not support unload."}
+            self._refresh_provider_status_after_unload(data)
             return CapabilityCallResult(success=bool(data.get("success")), data=data, error=data.get("message"))
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM unload failed.")
@@ -399,6 +409,7 @@ class LLMProxy:
                     model_id=resolved_model_id,
                     reason="script",
                 )
+                self._refresh_provider_status_after_unload(data)
             return CapabilityCallResult(success=bool(data.get("ok")), data=data, error=_first_unload_error(data))
         except Exception as exc:
             return CapabilityCallResult(
@@ -406,6 +417,35 @@ class LLMProxy:
                 data={"ok": False, "unloaded": [], "errors": [{"code": "MODEL_UNLOAD_FAILED", "message": str(exc) or "Model unload failed."}]},
                 error=str(exc) or "Model unload failed.",
             )
+
+    def _refresh_provider_status_after_unload(self, data: Dict[str, Any]) -> None:
+        provider_profile_id = str(
+            data.get("provider_profile_id")
+            or self.default_llm_resolution.get("provider_profile_id")
+            or self.default_model_config.get("provider_profile_id")
+            or ""
+        )
+        status_refresh = {
+            "attempted": False,
+            "ok": False,
+            "provider_profile_id": provider_profile_id,
+        }
+        data["status_refresh"] = status_refresh
+        if not provider_profile_id or self.provider_profile_store is None or self.llm_profile_store is None:
+            status_refresh["error"] = "Provider stores are not available."
+            return
+        try:
+            status = refresh_provider_status_for_profile(self.provider_profile_store, self.llm_profile_store, provider_profile_id)
+            status_refresh.update({"attempted": True, "ok": True, "status": status})
+            if self.event_bus is not None and self.session_id:
+                self.event_bus.emit(
+                    "llm_provider_status_updated",
+                    session_id=self.session_id,
+                    run_id=self.run_id or None,
+                    payload={"provider": status},
+                )
+        except Exception as exc:
+            status_refresh.update({"attempted": True, "ok": False, "error": str(exc) or "Provider status refresh failed."})
 
 
 class AgentContext:
@@ -465,6 +505,9 @@ class AgentContext:
             llm_profile_store=llm_profile_store,
             default_llm_resolution=llm_resolution,
             output=self.output,
+            event_bus=event_bus,
+            session_id=session.session_id,
+            run_id=run_id,
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -851,12 +894,17 @@ class ScriptAgentRunner:
             model_id=ctx.llm_resolution.get("model_id") or ctx.llm.default_model_config.get("model_id") or ctx.llm.default_model_config.get("model"),
             reason="after_run",
         )
+        ctx.llm._refresh_provider_status_after_unload(result)
         run = self.run_store.get_run(ctx.run_id)
         metadata = dict(run.metadata)
+        status_refresh = result.get("status_refresh") if isinstance(result.get("status_refresh"), dict) else {}
         metadata["llm_unload"] = {
             "policy": lifecycle.unload,
             "attempted": not bool(result.get("skipped")),
             "ok": bool(result.get("ok")),
+            "status_refresh_attempted": bool(status_refresh.get("attempted")),
+            "status_refresh_ok": bool(status_refresh.get("ok")),
+            "status_refresh_error": status_refresh.get("error"),
             "provider": result.get("provider"),
             "provider_profile_id": result.get("provider_profile_id"),
             "model_id": result.get("model_id"),

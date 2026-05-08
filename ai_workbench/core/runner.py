@@ -13,7 +13,14 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
-from ai_workbench.core.provider_status import MODEL_MISMATCH, MODEL_NOT_AVAILABLE, MODEL_STATUS_UNKNOWN, PROVIDER_UNREACHABLE, unload_model_for_profile
+from ai_workbench.core.provider_status import (
+    MODEL_MISMATCH,
+    MODEL_NOT_AVAILABLE,
+    MODEL_STATUS_UNKNOWN,
+    PROVIDER_UNREACHABLE,
+    refresh_provider_status_for_profile,
+    unload_model_for_profile,
+)
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
@@ -844,6 +851,7 @@ class AgentRunner:
             }
         else:
             result = self._unload_model_for_llm_config(llm_config, reason="after_run")
+            self._refresh_provider_status_after_unload(result, session_id=session_id, run_id=run_id)
         self._record_llm_unload_metadata(run_id, lifecycle, result)
         if not result.get("ok") and lifecycle.unload_failure == "warn":
             self.event_bus.emit(
@@ -906,13 +914,40 @@ class AgentRunner:
             "reason": reason,
         }
 
+    def _refresh_provider_status_after_unload(self, result: dict, session_id: str, run_id: str) -> None:
+        provider_profile_id = str(result.get("provider_profile_id") or "")
+        status_refresh = {
+            "attempted": False,
+            "ok": False,
+            "provider_profile_id": provider_profile_id,
+        }
+        result["status_refresh"] = status_refresh
+        if not provider_profile_id or self.provider_profile_store is None or self.llm_profile_store is None:
+            status_refresh["error"] = "Provider stores are not available."
+            return
+        try:
+            status = refresh_provider_status_for_profile(self.provider_profile_store, self.llm_profile_store, provider_profile_id)
+            status_refresh.update({"attempted": True, "ok": True, "status": status})
+            self.event_bus.emit(
+                "llm_provider_status_updated",
+                session_id=session_id,
+                run_id=run_id,
+                payload={"provider": status},
+            )
+        except Exception as exc:
+            status_refresh.update({"attempted": True, "ok": False, "error": str(exc) or "Provider status refresh failed."})
+
     def _record_llm_unload_metadata(self, run_id: str, lifecycle, result: dict) -> None:
         run = self.run_store.get_run(run_id)
         metadata = dict(run.metadata)
+        status_refresh = result.get("status_refresh") if isinstance(result.get("status_refresh"), dict) else {}
         metadata["llm_unload"] = {
             "policy": lifecycle.unload,
             "attempted": not bool(result.get("skipped")),
             "ok": bool(result.get("ok")),
+            "status_refresh_attempted": bool(status_refresh.get("attempted")),
+            "status_refresh_ok": bool(status_refresh.get("ok")),
+            "status_refresh_error": status_refresh.get("error"),
             "provider": result.get("provider"),
             "provider_profile_id": result.get("provider_profile_id"),
             "model_id": result.get("model_id"),

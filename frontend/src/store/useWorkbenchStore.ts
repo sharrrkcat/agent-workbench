@@ -524,6 +524,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   applyRuntimeEvent: (event: RuntimeEvent) => {
     const session = get().currentSession;
     if (!session || event.session_id !== session.session_id) return;
+    if (event.type === 'llm_provider_status_updated') {
+      const provider = parseLlmProviderStatusPayload(event.payload.provider);
+      if (!provider) return;
+      set({
+        llmProviderStatuses: {
+          ...get().llmProviderStatuses,
+          [provider.provider_profile_id]: provider,
+        },
+      });
+      return;
+    }
     if (event.type === 'run_started' && event.run_id) {
       set({ activeRunId: event.run_id, sending: true });
       return;
@@ -1200,6 +1211,11 @@ function pruneCompletedMessageState(current: Record<string, boolean>, messages: 
 function parseMessagePayload(value: unknown): Message | null {
   if (!isRecord(value)) return null;
   return value as Message;
+}
+
+function parseLlmProviderStatusPayload(value: unknown): LlmProviderStatus | null {
+  if (!isRecord(value) || typeof value.provider_profile_id !== 'string') return null;
+  return value as LlmProviderStatus;
 }
 
 function contentToDraftText(content: unknown): string {

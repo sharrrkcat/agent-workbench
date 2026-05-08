@@ -415,6 +415,12 @@ def test_default_never_lifecycle_does_not_unload_provider(monkeypatch) -> None:
 def test_manifest_after_run_lifecycle_unloads_resolved_provider_model(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [{"instance_id": "i1", "model_id": kwargs["model_id"]}], "errors": []})
+    refresh_calls = []
+    monkeypatch.setattr(
+        "ai_workbench.core.runner.refresh_provider_status_for_profile",
+        lambda provider_profile_store, llm_profile_store, provider_profile_id: refresh_calls.append(provider_profile_id)
+        or {"provider_profile_id": provider_profile_id, "reachable": True, "status": "MODEL_NOT_LOADED", "models": []},
+    )
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
     profile = add_profile(fixture, supports_streaming=False, with_provider=True)
     session = fixture.sessions.create_session()
@@ -431,6 +437,11 @@ def test_manifest_after_run_lifecycle_unloads_resolved_provider_model(monkeypatc
     assert metadata["llm_unload"]["policy"] == "after_run"
     assert metadata["llm_unload"]["ok"] is True
     assert metadata["llm_unload"]["unloaded_count"] == 1
+    assert metadata["llm_unload"]["status_refresh_attempted"] is True
+    assert metadata["llm_unload"]["status_refresh_ok"] is True
+    assert refresh_calls == [profile.provider_profile_id]
+    event = next(event for event in fixture.events.list_events() if event.type == "llm_provider_status_updated")
+    assert event.payload["provider"]["provider_profile_id"] == profile.provider_profile_id
 
 
 def test_agent_config_after_run_override_wins_over_manifest_never(monkeypatch) -> None:
@@ -508,6 +519,10 @@ def test_after_run_unload_unsupported_does_not_fail_successful_run(monkeypatch) 
         }
 
     monkeypatch.setattr("ai_workbench.core.runner.unload_model_for_profile", unsupported)
+    monkeypatch.setattr(
+        "ai_workbench.core.runner.refresh_provider_status_for_profile",
+        lambda provider_profile_store, llm_profile_store, provider_profile_id: {"provider_profile_id": provider_profile_id, "reachable": True, "status": "READY", "models": []},
+    )
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
     profile = add_profile(fixture, supports_streaming=False, with_provider=True, provider_kind="openai_compatible")
     fixture.agent_configs.set_config("chat", runtime={"model_lifecycle": {"load": "on_demand", "unload": "after_run", "unload_failure": "warn"}})
@@ -522,6 +537,35 @@ def test_after_run_unload_unsupported_does_not_fail_successful_run(monkeypatch) 
     assert prompt_run.status == RunStatus.DONE
     assert prompt_run.metadata["llm_unload"]["ok"] is False
     assert prompt_run.metadata["llm_unload"]["code"] == "MODEL_UNLOAD_UNSUPPORTED"
+    assert prompt_run.metadata["llm_unload"]["status_refresh_ok"] is True
+
+
+def test_after_run_unload_status_refresh_failure_does_not_fail_successful_run(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ai_workbench.core.runner.unload_model_for_profile",
+        lambda **kwargs: {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []},
+    )
+
+    def fail_refresh(*args, **kwargs):
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr("ai_workbench.core.runner.refresh_provider_status_for_profile", fail_refresh)
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
+    profile = add_profile(fixture, supports_streaming=False, with_provider=True)
+    fixture.agent_configs.set_config("chat", runtime={"model_lifecycle": {"load": "on_demand", "unload": "after_run", "unload_failure": "warn"}})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    metadata = fixture.runs.get_run(result.run_id).metadata
+
+    assert result.success is True
+    assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
+    assert metadata["llm_unload"]["ok"] is True
+    assert metadata["llm_unload"]["status_refresh_attempted"] is True
+    assert metadata["llm_unload"]["status_refresh_ok"] is False
+    assert metadata["llm_unload"]["status_refresh_error"] == "refresh failed"
 
 
 def test_after_run_refcount_skips_until_last_active_use(monkeypatch) -> None:

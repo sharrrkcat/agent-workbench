@@ -64,6 +64,12 @@ def refresh_provider_statuses(
     }
 
 
+def refresh_provider_status_for_profile(provider_profile_store: Any, llm_profile_store: Any, provider_profile_id: str) -> Dict[str, Any]:
+    provider = provider_profile_store.get(provider_profile_id)
+    profiles = [item for item in llm_profile_store.list() if item.provider_profile_id == provider.id]
+    return refresh_provider_status(provider, profiles)
+
+
 def refresh_provider_status(provider: ProviderProfileSchema, model_profiles: Iterable[LLMProfileSchema]) -> Dict[str, Any]:
     checked_at = isoformat_utc(utc_now())
     if not provider.enabled:
@@ -428,7 +434,7 @@ def _refresh_openai_compatible(provider: ProviderProfileSchema, model_profiles: 
         status = MODEL_STATUS_UNKNOWN
     else:
         provider_models = [_openai_model_item(item) for item in _extract_models(data)]
-        models = _map_model_profiles(model_profiles, provider_models, reliable=True)
+        models = _map_model_profiles(model_profiles, provider_models, reliable=True, ready_when_available=True)
         status = _aggregate_model_status(models)
     return _provider_payload(
         provider=provider,
@@ -467,14 +473,22 @@ def _provider_payload(
     return payload
 
 
-def _map_model_profiles(model_profiles: list[LLMProfileSchema], provider_models: list[dict[str, Any]], reliable: bool) -> list[dict[str, Any]]:
+def _map_model_profiles(
+    model_profiles: list[LLMProfileSchema],
+    provider_models: list[dict[str, Any]],
+    reliable: bool,
+    ready_when_available: bool = False,
+) -> list[dict[str, Any]]:
     by_id = {item["id"]: item for item in provider_models if item.get("id")}
     result: list[dict[str, Any]] = []
     for profile in model_profiles:
         match = by_id.get(profile.model_id)
         if match:
             loaded = match.get("loaded")
-            status = READY if loaded is True else MODEL_NOT_LOADED if loaded is False else MODEL_STATUS_UNKNOWN
+            status = READY if ready_when_available else READY if loaded is True else MODEL_NOT_LOADED if loaded is False else MODEL_STATUS_UNKNOWN
+            loaded_value = None if ready_when_available else loaded
+            if ready_when_available:
+                match = {**match, "loaded": loaded_value}
             result.append({**match, "available": True, "status": status})
         elif reliable:
             result.append(
@@ -500,6 +514,8 @@ def _map_model_profiles(model_profiles: list[LLMProfileSchema], provider_models:
                     "raw": {},
                 }
             )
+    if not model_profiles and ready_when_available:
+        return [{**item, "available": True, "loaded": None, "status": READY} for item in provider_models]
     if not model_profiles:
         return provider_models
     return result

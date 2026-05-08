@@ -96,6 +96,7 @@ Related events:
 - `run_cancelled` marks terminal cancellation.
 - `run_warning` carries non-fatal lifecycle warnings.
 - `message_done` is a compatibility completion signal; do not use it as streaming source of truth.
+- `llm_provider_status_updated` carries a refreshed provider status payload after runtime-triggered model status changes.
 
 Cancel API:
 
@@ -195,16 +196,23 @@ Status values:
 Provider behavior:
 - LM Studio first uses native `/api/v1/models` when available.
 - LM Studio native responses can include `loaded_instances`; unload targets loaded matching instances.
+- LM Studio model status is green `READY` when the model exists and has loaded instances, yellow `MODEL_NOT_LOADED` when it exists without loaded instances, and red for missing or unreachable providers.
 - LM Studio falls back to OpenAI-compatible model listing when native status is unavailable.
 - llama.cpp router mode reports a list of models.
 - llama.cpp single-server mode reports only the currently served model; use `--alias` for a stable id.
 - OpenAI-compatible providers support basic reachability/model-list status when the API exposes models.
+- OpenAI-compatible model status is green `READY` when the provider is reachable, `/v1/models` returns a parseable list, and the configured model id exists in that list.
+- OpenAI-compatible model status is red when the provider is unreachable, the provider/model profile cannot be resolved, the target model id is missing, or the parseable model list does not contain the configured model id.
+- OpenAI-compatible providers do not expose portable loaded/unloaded pool semantics, so they should not produce yellow unloaded status.
 
 Status usage:
 - Provider-level status is an aggregate across configured model profiles.
 - Model-level status is more specific and should be preferred for user-facing model badges.
 - A reachable provider with an incomplete model list should not be treated as ready without model evidence.
 - Unload support is provider-specific; unsupported unload should be reported as a warning unless policy says fail.
+- Unload is available to trusted script/runtime paths only, not as a normal user-facing action.
+- After an unload attempt finishes, refresh the affected provider profile status and emit `llm_provider_status_updated` when refresh succeeds.
+- Unsupported unload and unload-triggered status refresh failures are cleanup outcomes and must not overwrite an otherwise successful main run.
 
 ## Attachments and Vision
 

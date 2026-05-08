@@ -46,6 +46,14 @@ def test_model_status_helper_has_four_ui_tones_and_unloaded_yellow() -> None:
     assert "READY', tone: 'green'" in source
 
 
+def test_store_applies_provider_status_update_events_to_status_cache() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "llm_provider_status_updated" in source
+    assert "parseLlmProviderStatusPayload(event.payload.provider)" in source
+    assert "[provider.provider_profile_id]: provider" in source
+
+
 def test_chat_renders_run_steps_panel_and_step_statuses() -> None:
     source = read_frontend("components/MessageBubble.tsx")
 

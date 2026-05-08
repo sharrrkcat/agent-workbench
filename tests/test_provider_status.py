@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.events import EventBus
 from ai_workbench.core.provider_status import _lm_studio_native_models_url, unload_model
 from ai_workbench.core.script import LLMProxy
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
@@ -324,13 +325,28 @@ def test_openai_compatible_status_and_unreachable() -> None:
     response = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
 
     assert response["mode"] == "openai_compatible"
-    assert response["models"][0]["status"] == "MODEL_STATUS_UNKNOWN"
+    assert response["models"][0]["status"] == "READY"
+    assert response["models"][0]["available"] is True
+    assert response["models"][0]["loaded"] is None
     assert response["models"][1]["status"] == "MODEL_NOT_AVAILABLE"
 
     FakeClient.routes = {}
     unreachable = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
     assert unreachable["status"] == "PROVIDER_UNREACHABLE"
     assert unreachable["error"]["code"] == "PROVIDER_UNREACHABLE"
+
+
+def test_openai_compatible_found_models_are_ready_not_unknown() -> None:
+    client = TestClient(create_app(use_memory=True))
+    provider, model, _ = create_provider_and_models(client, "openai_compatible", "http://openai/v1")
+    FakeClient.routes["http://openai/v1/models"] = FakeResponse({"data": [{"id": model["model_id"], "object": "model"}]})
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["reachable"] is True
+    assert payload["models"][0]["id"] == "model-a"
+    assert payload["models"][0]["status"] == "READY"
+    assert payload["status"] == "MODEL_NOT_AVAILABLE"
 
 
 def test_status_refresh_all_only_enabled_and_missing_is_clear() -> None:
@@ -358,16 +374,30 @@ def test_unload_unsupported_provider_returns_structured_error() -> None:
     assert result["errors"][0]["code"] == "MODEL_UNLOAD_UNSUPPORTED"
 
 
-def test_script_runtime_unload_unsupported_provider_returns_structured_error() -> None:
+def test_script_runtime_unload_unsupported_provider_returns_structured_error_and_refreshes_status() -> None:
     providers = ProviderProfileStore()
     profiles = LLMProfileStore()
     provider = providers.create(ProviderProfileSchema(id="provider", name="OpenAI", provider="openai_compatible", base_url="http://openai/v1"))
     profile = profiles.create(
         LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a", created_at=datetime.utcnow())
     )
-    proxy = LLMProxy(object(), provider_profile_store=providers, llm_profile_store=profiles)
+    events = EventBus()
+    FakeClient.routes["http://openai/v1/models"] = FakeResponse({"data": [{"id": "model-a"}]})
+    proxy = LLMProxy(
+        object(),
+        provider_profile_store=providers,
+        llm_profile_store=profiles,
+        event_bus=events,
+        session_id="session",
+        run_id="run",
+    )
 
     result = asyncio.run(proxy.unload_model(model_profile_id=profile.id))
 
     assert result.success is False
     assert result.data["errors"][0]["code"] == "MODEL_UNLOAD_UNSUPPORTED"
+    assert result.data["status_refresh"]["ok"] is True
+    assert result.data["status_refresh"]["status"]["models"][0]["status"] == "READY"
+    event = events.list_events()[-1]
+    assert event.type == "llm_provider_status_updated"
+    assert event.payload["provider"]["provider_profile_id"] == provider.id

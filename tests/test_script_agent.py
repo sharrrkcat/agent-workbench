@@ -502,6 +502,12 @@ def test_script_agent_without_llm_does_not_after_run_unload(tmp_path: Path, monk
 def test_script_agent_after_run_unloads_when_llm_used(tmp_path: Path, monkeypatch) -> None:
     calls = []
     monkeypatch.setattr("ai_workbench.core.script.unload_model_for_profile", lambda **kwargs: calls.append(kwargs) or {"ok": True, "provider": "lm_studio", "provider_profile_id": kwargs["provider_profile_id"], "model_id": kwargs["model_id"], "unloaded": [], "errors": []})
+    refresh_calls = []
+    monkeypatch.setattr(
+        "ai_workbench.core.script.refresh_provider_status_for_profile",
+        lambda provider_profile_store, llm_profile_store, provider_profile_id: refresh_calls.append(provider_profile_id)
+        or {"provider_profile_id": provider_profile_id, "reachable": True, "status": "MODEL_NOT_LOADED", "models": []},
+    )
     registry = write_script_agent(
         tmp_path,
         "llm_after_run_script",
@@ -525,6 +531,53 @@ def test_script_agent_after_run_unloads_when_llm_used(tmp_path: Path, monkeypatc
     assert calls[0]["model_profile_id"] == profile.id
     assert calls[0]["model_id"] == "model-a"
     assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["ok"] is True
+    assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["status_refresh_ok"] is True
+    assert refresh_calls == [provider.id]
+    event = next(event for event in fixture.events.list_events() if event.type == "llm_provider_status_updated")
+    assert event.payload["provider"]["provider_profile_id"] == provider.id
+
+
+def test_ctx_llm_unload_model_refreshes_provider_status(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ai_workbench.core.script.unload_model_for_profile",
+        lambda **kwargs: {
+            "ok": True,
+            "provider": "lm_studio",
+            "provider_profile_id": kwargs["provider_profile_id"],
+            "model_id": kwargs["model_id"],
+            "unloaded": [],
+            "errors": [],
+        },
+    )
+    refresh_calls = []
+    monkeypatch.setattr(
+        "ai_workbench.core.script.refresh_provider_status_for_profile",
+        lambda provider_profile_store, llm_profile_store, provider_profile_id: refresh_calls.append(provider_profile_id)
+        or {"provider_profile_id": provider_profile_id, "reachable": True, "status": "MODEL_NOT_LOADED", "models": []},
+    )
+    registry = write_script_agent(
+        tmp_path,
+        "manual_unload_script",
+        "async def run(ctx):\n"
+        "    result = await ctx.llm.unload_model()\n"
+        "    await ctx.reply_json(result.data)\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a"))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@manual_unload_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.content["status_refresh"]["ok"] is True
+    assert refresh_calls == [provider.id]
+    event = next(event for event in fixture.events.list_events() if event.type == "llm_provider_status_updated")
+    assert event.payload["provider"]["provider_profile_id"] == provider.id
 
 
 def test_script_agent_with_dataclass_and_future_annotations_loads(tmp_path: Path) -> None:
