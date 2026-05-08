@@ -1,0 +1,182 @@
+id: comfyui
+name: ComfyUI Capability
+description: Submit ComfyUI workflows, poll history, normalize outputs, fetch images, interrupt jobs, and upload input images over REST.
+
+permissions:
+  network:
+    http: true
+
+config_schema:
+  - name: base_url
+    type: string
+    label: Base URL
+    default: http://127.0.0.1:8188
+    description: ComfyUI server base URL.
+
+  - name: timeout_seconds
+    type: float
+    label: Request timeout seconds
+    default: 30
+    minimum: 1
+    maximum: 300
+    description: HTTP request timeout for ComfyUI REST calls.
+
+  - name: poll_interval_seconds
+    type: float
+    label: Poll interval seconds
+    default: 1.0
+    minimum: 0.1
+    maximum: 30
+    description: Default interval between history polls.
+
+  - name: max_wait_seconds
+    type: float
+    label: Max wait seconds
+    default: 300
+    minimum: 1
+    maximum: 3600
+    description: Default maximum wait time for prompt completion.
+
+  - name: verify_ssl
+    type: boolean
+    label: Verify SSL
+    default: true
+    description: Verify TLS certificates for HTTPS ComfyUI endpoints.
+
+  - name: default_image_response_mode
+    type: enum
+    label: Default image response mode
+    default: base64
+    options:
+      - base64
+      - bytes_metadata
+    description: Default fetch_image response mode when the caller does not specify as_base64.
+
+  - name: enable_upload
+    type: boolean
+    label: Enable upload
+    default: true
+    description: Enable upload_image for ComfyUI input images.
+
+methods:
+  - id: test_connection
+    description: Test whether the ComfyUI REST service is reachable and report lightweight endpoint availability.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: get_queue
+    description: Return normalized running and pending ComfyUI queue entries.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: get_history
+    description: Return raw ComfyUI history plus normalized output references, optionally for one prompt id.
+    input_schema:
+      prompt_id:
+        type: string
+        required: false
+    output:
+      type: json
+
+  - id: submit_workflow
+    description: Submit a workflow JSON object to ComfyUI /prompt.
+    input_schema:
+      workflow:
+        type: json
+        required: true
+      client_id:
+        type: string
+        required: false
+      extra_data:
+        type: json
+        required: false
+    output:
+      type: json
+
+  - id: wait_for_prompt
+    description: Poll ComfyUI history until a prompt completes or the timeout is reached.
+    input_schema:
+      prompt_id:
+        type: string
+        required: true
+      timeout_seconds:
+        type: float
+        required: false
+      poll_interval_seconds:
+        type: float
+        required: false
+    output:
+      type: json
+
+  - id: extract_outputs
+    description: Normalize image, file, and text output references from a ComfyUI history payload.
+    input_schema:
+      history:
+        type: json
+        required: true
+    output:
+      type: json
+
+  - id: fetch_image
+    description: Fetch a ComfyUI image by filename, subfolder, and type.
+    input_schema:
+      filename:
+        type: string
+        required: true
+      subfolder:
+        type: string
+        required: false
+      type:
+        type: string
+        required: false
+      as_base64:
+        type: boolean
+        required: false
+    output:
+      type: json
+
+  - id: collect_images_for_prompt
+    description: Get prompt history, extract image references, and optionally fetch image bytes as base64.
+    input_schema:
+      prompt_id:
+        type: string
+        required: true
+      include_binary:
+        type: boolean
+        required: false
+    output:
+      type: json
+
+  - id: interrupt
+    description: Best-effort ComfyUI interrupt request.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: upload_image
+    description: Upload an input image to ComfyUI for future img2img or control workflows.
+    input_schema:
+      filename:
+        type: string
+        required: true
+      data_base64:
+        type: string
+        required: false
+      overwrite:
+        type: boolean
+        required: false
+      type:
+        type: string
+        required: false
+    output:
+      type: json
+
+  - id: get_object_info
+    description: Fetch ComfyUI node definition metadata from /object_info.
+    input_schema: {}
+    output:
+      type: json
+
+commands: []

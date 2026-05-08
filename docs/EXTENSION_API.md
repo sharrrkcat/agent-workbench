@@ -268,6 +268,8 @@ Runtime call rules:
 - Script Agents call capabilities through `await ctx.capability("id").method(...)`.
 - Capability methods should return plain Python values matching declared output.
 
+Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, queue/history reads, prompt polling, output extraction, image fetching, interrupt, upload, and object-info methods. It returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, and final rendering.
+
 ## Capability Config
 
 - `config_schema` declares Settings fields.

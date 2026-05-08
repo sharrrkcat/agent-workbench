@@ -1,0 +1,270 @@
+import base64
+
+import httpx
+import pytest
+
+from capabilities.comfyui import CapabilityRuntime, ComfyUIError
+
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\nfake"
+
+
+def runtime_with(handler) -> CapabilityRuntime:
+    return CapabilityRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def sample_history(prompt_id: str = "prompt-1") -> dict:
+    return {
+        prompt_id: {
+            "prompt": [
+                1,
+                prompt_id,
+                {
+                    "9": {
+                        "class_type": "SaveImage",
+                        "_meta": {"title": "Final image"},
+                    }
+                },
+                {},
+            ],
+            "outputs": {
+                "9": {
+                    "images": [
+                        {
+                            "filename": "Workbench_00001_.png",
+                            "subfolder": "",
+                            "type": "output",
+                        }
+                    ],
+                    "text": ["done"],
+                }
+            },
+        }
+    }
+
+
+def test_connection_success_reports_endpoint_availability() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/queue":
+            return httpx.Response(200, json={"queue_running": [], "queue_pending": []}, request=request)
+        if request.url.path == "/object_info":
+            return httpx.Response(200, json={"KSampler": {}, "SaveImage": {}}, request=request)
+        if request.url.path == "/system_stats":
+            return httpx.Response(200, json={"system": {}}, request=request)
+        return httpx.Response(404, request=request)
+
+    result = runtime_with(handler).test_connection()
+
+    assert result["reachable"] is True
+    assert result["queue_available"] is True
+    assert result["object_info_available"] is True
+    assert result["system_stats_available"] is True
+    assert result["node_count"] == 2
+
+
+def test_connection_unreachable_returns_structured_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    result = runtime_with(handler).test_connection()
+
+    assert result["reachable"] is False
+    assert result["error"]["code"] == "COMFYUI_UNREACHABLE"
+    assert "unreachable" in result["summary"]
+
+
+def test_submit_workflow_success_posts_prompt_payload() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["json"] = request.read()
+        return httpx.Response(200, json={"prompt_id": "abc", "number": 7, "node_errors": {}}, request=request)
+
+    result = runtime_with(handler).submit_workflow({"1": {"class_type": "CheckpointLoaderSimple"}}, client_id="client-1")
+
+    assert seen["path"] == "/prompt"
+    assert b'"client_id":"client-1"' in seen["json"].replace(b" ", b"")
+    assert result == {
+        "prompt_id": "abc",
+        "number": 7,
+        "node_errors": {},
+        "accepted": True,
+        "raw": {"prompt_id": "abc", "number": 7, "node_errors": {}},
+    }
+
+
+def test_submit_workflow_rejects_invalid_workflow_locally() -> None:
+    runtime = CapabilityRuntime()
+
+    with pytest.raises(ComfyUIError) as exc:
+        runtime.submit_workflow([])
+
+    assert exc.value.code == "COMFYUI_WORKFLOW_INVALID"
+
+
+def test_submit_workflow_preserves_node_errors_as_rejected_result() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"prompt_id": "abc", "number": 1, "node_errors": {"3": "bad node"}}, request=request)
+
+    result = runtime_with(handler).submit_workflow({"3": {"class_type": "BadNode"}})
+
+    assert result["accepted"] is False
+    assert result["node_errors"] == {"3": "bad node"}
+    assert result["error"]["code"] == "COMFYUI_PROMPT_REJECTED"
+
+
+def test_get_queue_normalizes_running_and_pending() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"queue_running": [["run"]], "queue_pending": [["wait"]]}, request=request)
+
+    result = runtime_with(handler).get_queue()
+
+    assert result["running"] == [["run"]]
+    assert result["pending"] == [["wait"]]
+    assert result["summary"] == {"running_count": 1, "pending_count": 1}
+
+
+def test_get_history_success_includes_normalized_outputs() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/history/prompt-1"
+        return httpx.Response(200, json=sample_history(), request=request)
+
+    result = runtime_with(handler).get_history("prompt-1")
+
+    assert result["found"] is True
+    assert result["outputs"]["summary"] == {"image_count": 1, "file_count": 0, "text_count": 1}
+    assert result["outputs"]["images"][0]["node_label"] == "Final image"
+
+
+def test_get_history_missing_prompt_returns_not_found_contract() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, request=request)
+
+    result = runtime_with(handler).get_history("missing")
+
+    assert result["prompt_id"] == "missing"
+    assert result["found"] is False
+    assert result["outputs"]["summary"]["image_count"] == 0
+
+
+def test_extract_outputs_normalizes_typical_history() -> None:
+    result = CapabilityRuntime().extract_outputs(sample_history())
+
+    assert result["images"][0] == {
+        "filename": "Workbench_00001_.png",
+        "subfolder": "",
+        "type": "output",
+        "node_id": "9",
+        "node_label": "Final image",
+        "format": "png",
+        "display_name": "Workbench_00001_.png",
+        "kind": "image",
+    }
+    assert result["text"] == [{"node_id": "9", "node_label": "Final image", "text": "done"}]
+
+
+def test_fetch_image_success_returns_base64_and_metadata() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/view"
+        assert request.url.params["filename"] == "cat.png"
+        return httpx.Response(200, headers={"content-type": "image/png"}, content=PNG_BYTES, request=request)
+
+    result = runtime_with(handler).fetch_image("cat.png")
+
+    assert result["mime_type"] == "image/png"
+    assert result["size_bytes"] == len(PNG_BYTES)
+    assert result["data_base64"] == base64.b64encode(PNG_BYTES).decode("ascii")
+
+
+def test_fetch_image_404_maps_to_output_not_found() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, request=request)
+
+    with pytest.raises(ComfyUIError) as exc:
+        runtime_with(handler).fetch_image("missing.png")
+
+    assert exc.value.code == "COMFYUI_OUTPUT_NOT_FOUND"
+
+
+def test_wait_for_prompt_success_polls_until_history_exists() -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if calls["count"] < 3:
+            return httpx.Response(200, json={}, request=request)
+        return httpx.Response(200, json=sample_history(), request=request)
+
+    result = runtime_with(handler).wait_for_prompt("prompt-1", timeout_seconds=1, poll_interval_seconds=0.01)
+
+    assert calls["count"] == 3
+    assert result["completed"] is True
+    assert result["timed_out"] is False
+    assert result["outputs"]["summary"]["image_count"] == 1
+
+
+def test_wait_for_prompt_timeout_has_prompt_and_elapsed_detail() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, request=request)
+
+    with pytest.raises(ComfyUIError) as exc:
+        runtime_with(handler).wait_for_prompt("slow", timeout_seconds=0.01, poll_interval_seconds=0)
+
+    assert exc.value.code == "COMFYUI_TIMEOUT"
+    assert exc.value.detail["prompt_id"] == "slow"
+    assert exc.value.detail["timeout_seconds"] == 0.01
+    assert "elapsed_seconds" in exc.value.detail
+
+
+def test_collect_images_for_prompt_can_include_binary_payloads() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/history"):
+            return httpx.Response(200, json=sample_history(), request=request)
+        if request.url.path == "/view":
+            return httpx.Response(200, headers={"content-type": "image/png"}, content=PNG_BYTES, request=request)
+        return httpx.Response(404, request=request)
+
+    result = runtime_with(handler).collect_images_for_prompt("prompt-1", include_binary=True)
+
+    assert result["summary"] == {"image_count": 1}
+    assert result["images"][0]["filename"] == "Workbench_00001_.png"
+    assert result["images"][0]["data_base64"] == base64.b64encode(PNG_BYTES).decode("ascii")
+
+
+def test_interrupt_success_and_failure_are_structured() -> None:
+    ok_runtime = runtime_with(lambda request: httpx.Response(200, json={}, request=request))
+    fail_runtime = runtime_with(lambda request: httpx.Response(500, text="nope", request=request))
+
+    assert ok_runtime.interrupt()["ok"] is True
+    failed = fail_runtime.interrupt()
+    assert failed["ok"] is False
+    assert failed["error"]["code"] == "COMFYUI_INTERRUPT_FAILED"
+
+
+def test_upload_image_builds_multipart_request() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["content_type"] = request.headers["content-type"]
+        seen["body"] = request.read()
+        return httpx.Response(200, json={"name": "input.png", "subfolder": "refs", "type": "input"}, request=request)
+
+    result = runtime_with(handler).upload_image("input.png", data_base64=base64.b64encode(PNG_BYTES).decode("ascii"), subfolder="refs")
+
+    assert seen["path"] == "/upload/image"
+    assert "multipart/form-data" in seen["content_type"]
+    assert b'filename="input.png"' in seen["body"]
+    assert result["uploaded"] is True
+    assert result["name"] == "input.png"
+
+
+def test_get_object_info_returns_node_count_and_keys() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"SaveImage": {}, "KSampler": {}}, request=request)
+
+    result = runtime_with(handler).get_object_info()
+
+    assert result["node_count"] == 2
+    assert result["keys"] == ["KSampler", "SaveImage"]

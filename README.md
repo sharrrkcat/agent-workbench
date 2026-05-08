@@ -366,7 +366,7 @@ Prompt agents record the default path: Resolving agent, Building context, Resolv
 
 `POST /api/runs/{run_id}/cancel` marks active runs as cancelling, requests cancellation from the active task registry, and leaves completed or failed runs unchanged. WebSocket events include run and step updates (`run_updated`, `run_step_created`, `run_step_updated`, `run_cancel_requested`, `run_completed`, `run_failed`) so chat can update the timeline live. Session message loads include related run and step payloads so completed, failed, or refreshed runs can still display their timeline.
 
-This MVP intentionally does not include ComfyUI integration, a full Diagnostics/Run Trace page, a background job queue, priority/retry/pause/resume controls, or complex command diff UI.
+This MVP intentionally does not include a ComfyUI Agent, workflow editor, full Diagnostics/Run Trace page, background job queue, priority/retry/pause/resume controls, or complex command diff UI.
 
 API errors use a structured shape:
 
@@ -499,13 +499,15 @@ uv run python scripts/cleanup_attachments.py
 uv run python scripts/cleanup_attachments.py --apply
 ```
 
-## File And HTTP Capabilities
+## File, HTTP, And ComfyUI Capabilities
 
 Settings -> General controls chat attachment uploads: maximum image upload size, maximum file upload size, maximum attachments per message, whether uploaded text files enter LLM context, and per-file/per-message LLM file context limits. Those settings apply to composer upload, drag-and-drop, paste, attachment serving, Prompt Agent file context, vision input, `file_content`, and the Echo Attachment Agent.
 
 Settings -> Capabilities -> File Capability controls only active local path reads through `/read-file <path>` and `/read-image <path>`. It does not reuse or synchronize General upload limits. File Capability settings include allowed directories, maximum local text read size, maximum local image read size, allowed text extensions, and command toggles for `/read-file` and `/read-image`. Relative allowed directories resolve from the project root. Empty allowed directories can be saved and cause file read commands to reject every path. `/read-file` returns `file_content`, which preserves raw file text instead of rendering it as Markdown. `/read-image` returns normal image output with a data URL.
 
 Settings -> Capabilities -> HTTP Capability controls only active network GET commands: `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It does not affect chat uploads. HTTP settings include command toggles, allowed URL schemes, timeout seconds, text and image response size limits, redirect enablement, and maximum redirects. The runtime uses GET only. Text/page responses accept `text/*`, `application/json`, `application/xml`, `application/yaml`, and `application/x-yaml`; image fetches require `image/*`. No HTTP POST, PUT, or DELETE support is provided.
+
+Settings -> Capabilities -> ComfyUI Capability stores a local ComfyUI REST base URL, request timeout, polling defaults, SSL verification, default image response mode, and upload enablement. It exposes reusable runtime methods for connection tests, workflow submission, queue/history reads, prompt polling, output extraction, image fetching, interrupt, upload, and object info. It does not provide slash commands, a ComfyUI Agent, a workflow editor, attachment saving, prompt enhancement, WebSocket progress, or real-service setup scripts.
 
 Permission hints and CapabilityConfig settings are local alpha safety controls and operator documentation, not a sandbox or full authorization system. Script Agents remain trusted local Python code and can call capabilities.
 
@@ -519,7 +521,7 @@ This is a local trusted-user alpha. File and HTTP capabilities are powerful: the
 - No auth, users, roles, or permissions.
 - No Alembic migrations.
 - No secret encryption.
-- No external app integrations.
+- No user-facing external app workflow integrations.
 - No function calling, MCP, or LLM automatic tool selection.
 - No attachment thumbnails, cloud upload, file search, file editing, OCR, PDF/Office parsing, archive extraction, or historical image resend yet.
 - File and HTTP capabilities have lightweight allowlists and size limits, not a full sandbox or permission system.

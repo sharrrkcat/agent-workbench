@@ -82,6 +82,8 @@ Allowed method output types:
 
 Use `file_content` for source files, config files, logs, and other raw text that must not be interpreted as Markdown. Its payload includes `content` plus optional `filename`, `language`, `mime_type`, `size`, and `truncated` fields. The command runner validates image, image gallery, rich content, and file content payload shapes. If a command returns a dict and the method has no declared output type, it falls back to `json`.
 
+For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, fetch, interrupt, upload, and object info; helper methods normalize outputs and collect images for a prompt. It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results.
+
 ## CLI Workflow
 
 Create and test a Capability:
