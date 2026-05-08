@@ -401,6 +401,7 @@ uv run python scripts/check.py
 Developer docs:
 
 - [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) for AI/Codex task routing.
+- [docs/EXTENSION_ARCHITECTURE.md](docs/EXTENSION_ARCHITECTURE.md) for designing complex integrations and workflow agents.
 - [docs/EXTENSION_API.md](docs/EXTENSION_API.md) for Agent, Capability, Script ctx, and output contracts.
 - [docs/RUNTIME_PROTOCOLS.md](docs/RUNTIME_PROTOCOLS.md) for streaming, run lifecycle, and LLM protocols.
 - [docs/generated/REGISTRY.md](docs/generated/REGISTRY.md) for the generated Agent/Capability registry.

@@ -4,6 +4,8 @@
 
 This document is the compact contract for writing Agents, Capabilities, Script Agent code, and output payloads.
 
+For architecture decisions about whether to build an Agent, a Capability, or both, read `docs/EXTENSION_ARCHITECTURE.md` first.
+
 ## Agent Manifest
 
 | field | applies to | meaning | notes |

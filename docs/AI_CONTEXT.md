@@ -68,6 +68,41 @@ Tests:
 Avoid unless needed:
 - Do not add slash command aliases to Agents.
 
+### Create or modify an external integration / workflow agent
+
+Read:
+- `docs/EXTENSION_ARCHITECTURE.md`
+- `docs/EXTENSION_API.md#script-agents`
+- `docs/EXTENSION_API.md#capabilities`
+- `docs/EXTENSION_API.md#output-payloads`
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+- `docs/RUNTIME_PROTOCOLS.md#message-streaming`
+- `docs/RUNTIME_PROTOCOLS.md#attachments-and-vision`
+- `docs/generated/REGISTRY.md`
+
+Likely source:
+- `agents/<integration_agent>/agent.yaml`
+- `agents/<integration_agent>/agent.py`
+- `capabilities/<integration_name>/capability.yaml`
+- `capabilities/<integration_name>/__init__.py`
+- `tests/test_<integration_name>*.py`
+- `ai_workbench/core/capability_runtime.py` only if capability runtime behavior changes
+- `ai_workbench/core/script.py` only if ctx API behavior changes
+- frontend message rendering files only if output renderer changes
+
+Tests:
+- `uv run python scripts/check_agents.py --strict`
+- `uv run pytest tests/test_script_agent.py`
+- `uv run pytest tests/test_<integration_name>*.py`
+- `cd frontend && npm run build` if renderer changes
+
+Avoid unless needed:
+- Do not change Script ctx API for one integration.
+- Do not change message streaming protocol for one integration.
+- Do not rely on real external services in tests.
+- Do not store durable outputs only as remote temporary URLs.
+- Do not add product-specific blueprint docs unless the integration has special operator setup that cannot fit this general architecture.
+
 ### Change Script Agent ctx API
 
 Read:
@@ -204,4 +239,6 @@ Avoid unless needed:
 - If WebSocket event protocol changes, update `RUNTIME_PROTOCOLS`.
 - If run or run_step fields change, update `RUNTIME_PROTOCOLS`.
 - If LLM resolution changes, update `RUNTIME_PROTOCOLS`.
+- If adding a new complex integration pattern, update `EXTENSION_ARCHITECTURE.md` rather than creating a product-specific recipe first.
+- If an integration requires a new output shape or streaming behavior, update `EXTENSION_API.md` or `RUNTIME_PROTOCOLS.md`.
 - If only UI style changes, docs usually do not need updating.
