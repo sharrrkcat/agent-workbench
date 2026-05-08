@@ -25,6 +25,7 @@ from ai_workbench.core.stores import (
     RunStore,
     SessionStore,
 )
+from ai_workbench.core.time import utc_now
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.db.stores import (
     SqlAgentConfigStore,
@@ -62,7 +63,7 @@ class RuntimeState:
     llm_defaults: Any = None
     app_settings: Any = None
     database_url: str | None = None
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=utc_now)
     active_websockets: int = 0
 
 

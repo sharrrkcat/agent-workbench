@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -8,6 +9,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.schema.run import RunSchema, RunStatus
+from ai_workbench.core.time import ensure_utc, utc_now
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -103,7 +105,7 @@ def dismiss_session_notification(session_id: str, notification_id: str, state: R
     if not run.metadata.get("notification_dismissed"):
         metadata = dict(run.metadata or {})
         metadata["notification_dismissed"] = True
-        metadata["notification_dismissed_at"] = datetime.utcnow().isoformat()
+        metadata["notification_dismissed_at"] = utc_now().isoformat()
         state.runs.update_metadata(run.run_id, metadata)
     return {"ok": True, "notification_id": notification_id, "dismissed": True}
 
@@ -183,7 +185,7 @@ def _notification_from_failed_run(run: RunSchema, message_by_id: dict[str, objec
     parent_message_id = _first_string(run.metadata, ["parent_message_id", "input_message_id", "source_message_id"])
     related_message = message_by_id.get(parent_message_id or "")
     related_created_at = getattr(related_message, "created_at", None)
-    created_at = run.created_at or run.updated_at or related_created_at or datetime.utcnow()
+    created_at = run.created_at or run.updated_at or related_created_at or utc_now()
     return {
         "id": _notification_id_for_run(run.run_id),
         "session_id": run.session_id,
@@ -203,7 +205,15 @@ def _notification_from_failed_run(run: RunSchema, message_by_id: dict[str, objec
 
 def _timeline_created_at(item: dict) -> datetime:
     value = item["message"]["created_at"] if item["kind"] == "message" else item["notification"]["created_at"]
-    return value if isinstance(value, datetime) else datetime.min
+    if isinstance(value, datetime):
+        return ensure_utc(value) or datetime.min
+    if isinstance(value, str):
+        normalized = value if value.endswith("Z") or re.search(r"[+-]\d{2}:\d{2}$", value) else f"{value}Z"
+        try:
+            return ensure_utc(datetime.fromisoformat(normalized.replace("Z", "+00:00"))) or datetime.min
+        except ValueError:
+            return datetime.min
+    return datetime.min
 
 
 def _is_visible_failed_run_notification(run: RunSchema) -> bool:

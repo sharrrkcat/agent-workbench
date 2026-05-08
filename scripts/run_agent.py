@@ -236,6 +236,14 @@ def _safe_preview(value: Any) -> Any:
 
 
 def _safe_preview_value(key: str, value: Any) -> Any:
+    if key == "message" and isinstance(value, dict):
+        return {
+            "message_id": value.get("message_id"),
+            "role": value.get("role"),
+            "output_type": value.get("output_type"),
+            "run_id": value.get("run_id"),
+            "content_length": len(str(value.get("content") or "")),
+        }
     if isinstance(value, str) and (key in {"url", "data_url", "base64"} or value.startswith("data:image/")):
         return {"prefix": value[:32], "length": len(value)}
     return _safe_preview(value)

@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Annotated, Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+
+from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 class ImagePayload(BaseModel):
@@ -88,4 +90,8 @@ class MessageSchema(BaseModel):
     parent_message_id: Optional[str] = None
     available_actions: list = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_serializer("created_at", when_used="json")
+    def serialize_datetime(self, value: datetime) -> str:
+        return isoformat_utc(value) or ""

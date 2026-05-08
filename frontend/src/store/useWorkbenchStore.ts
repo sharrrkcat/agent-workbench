@@ -1082,7 +1082,7 @@ function markDraftInterrupted(messages: Message[], runId: string): Message[] {
 }
 
 function isMatchingDraft(message: Message, runId: string, messageId: string): boolean {
-  if (!message.message_id.startsWith('draft-')) return false;
+  if (!message.message_id.startsWith('draft-') && message.client_status !== 'streaming') return false;
   if (messageId && message.message_id === messageId) return true;
   return Boolean(runId && message.run_id === runId);
 }

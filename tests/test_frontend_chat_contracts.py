@@ -82,10 +82,28 @@ def test_run_steps_expansion_is_scoped_by_run_id() -> None:
 
 def test_run_steps_duration_and_running_tick_are_rendered() -> None:
     source = read_frontend("components/MessageBubble.tsx")
+    time = read_frontend("utils/time.ts")
 
     assert "stepDurationLabel" in source
     assert "formatDurationMs" in source
+    assert "parseServerTime" in source
+    assert "Date.parse" not in source
     assert "window.setInterval" in source
     assert "window.clearInterval" in source
     assert "hasRunningStep" in source
     assert "stepsByRunId[message.run_id]" in source
+    assert "`${value}Z`" in time
+
+
+def test_empty_running_script_placeholder_remains_visible() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "hasVisibleRun(messageRun)" in source
+    assert "isActiveRunStatus(run.status)" in source
+
+
+def test_non_draft_streaming_placeholder_accepts_deltas() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "message.client_status !== 'streaming'" in source
+    assert "message_id: typeof event.message_id === 'string'" in source

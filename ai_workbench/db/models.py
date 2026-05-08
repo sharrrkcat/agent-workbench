@@ -3,6 +3,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
+from ai_workbench.core.time import utc_now
+
 
 class SessionRecord(SQLModel, table=True):
     session_id: str = Field(primary_key=True)
@@ -11,8 +13,8 @@ class SessionRecord(SQLModel, table=True):
     waiting_run_id: Optional[str] = None
     llm_profile_id: Optional[str] = None
     last_announced_llm_profile_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class MessageRecord(SQLModel, table=True):
@@ -28,7 +30,7 @@ class MessageRecord(SQLModel, table=True):
     parent_message_id: Optional[str] = None
     available_actions_json: str = "[]"
     metadata_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class RunRecord(SQLModel, table=True):
@@ -50,8 +52,8 @@ class RunRecord(SQLModel, table=True):
     error_message: Optional[str] = None
     error: Optional[str] = None
     metadata_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class RunStepRecord(SQLModel, table=True):
@@ -66,8 +68,8 @@ class RunStepRecord(SQLModel, table=True):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     metadata_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class RunEventRecord(SQLModel, table=True):
@@ -77,7 +79,7 @@ class RunEventRecord(SQLModel, table=True):
     type: str
     message: str = ""
     payload_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class AgentConfigRecord(SQLModel, table=True):
@@ -86,16 +88,16 @@ class AgentConfigRecord(SQLModel, table=True):
     display_json: str = "{}"
     runtime_json: str = "{}"
     user_config_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class CapabilityConfigRecord(SQLModel, table=True):
     capability_id: str = Field(primary_key=True)
     enabled: bool = True
     user_config_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class LLMProfileRecord(SQLModel, table=True):
@@ -121,8 +123,8 @@ class LLMProfileRecord(SQLModel, table=True):
     supports_streaming: bool = True
     supports_json_mode: bool = False
     notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class ProviderProfileRecord(SQLModel, table=True):
@@ -136,11 +138,11 @@ class ProviderProfileRecord(SQLModel, table=True):
     timeout_seconds: Optional[int] = 60
     enabled: bool = True
     metadata_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class AppMetadataRecord(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=utc_now)

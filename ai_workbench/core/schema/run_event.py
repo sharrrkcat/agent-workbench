@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any, Dict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from ai_workbench.core.time import isoformat_utc
 
 
 class RunEventSchema(BaseModel):
@@ -14,3 +16,7 @@ class RunEventSchema(BaseModel):
     message: str = ""
     payload: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
+    @field_serializer("created_at", when_used="json")
+    def serialize_datetime(self, value: datetime) -> str:
+        return isoformat_utc(value) or ""

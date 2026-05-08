@@ -13,6 +13,7 @@ from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, Ru
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch
+from ai_workbench.core.time import ensure_utc, utc_now
 from ai_workbench.db.models import (
     AgentConfigRecord,
     AppMetadataRecord,
@@ -65,7 +66,7 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.default_agent_id = agent_id
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -77,7 +78,7 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.title = title
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -89,7 +90,7 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.waiting_run_id = run_id
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -101,7 +102,7 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.llm_profile_id = profile_id
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -113,7 +114,7 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.last_announced_llm_profile_id = profile_id
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -126,7 +127,7 @@ class SqlSessionStore:
             records = session.exec(select(SessionRecord).where(SessionRecord.waiting_run_id.in_(interrupted_run_ids))).all()
             for record in records:
                 record.waiting_run_id = None
-                record.updated_at = datetime.utcnow()
+                record.updated_at = utc_now()
                 session.add(record)
             session.commit()
 
@@ -182,7 +183,7 @@ class SqlMessageStore:
             session.add(record)
             session_record = session.get(SessionRecord, session_id)
             if session_record is not None:
-                session_record.updated_at = datetime.utcnow()
+                session_record.updated_at = utc_now()
                 session.add(session_record)
             session.commit()
             session.refresh(record)
@@ -212,7 +213,7 @@ class SqlMessageStore:
             session.add(record)
             session_record = session.get(SessionRecord, message.session_id)
             if session_record is not None:
-                session_record.updated_at = datetime.utcnow()
+                session_record.updated_at = utc_now()
                 session.add(session_record)
             session.commit()
             session.refresh(record)
@@ -227,7 +228,7 @@ class SqlMessageStore:
             session.delete(record)
             session_record = session.get(SessionRecord, message.session_id)
             if session_record is not None:
-                session_record.updated_at = datetime.utcnow()
+                session_record.updated_at = utc_now()
                 session.add(session_record)
             session.commit()
             return message
@@ -248,7 +249,7 @@ class SqlMessageStore:
             if deleted_records:
                 session_record = session.get(SessionRecord, session_id)
                 if session_record is not None:
-                    session_record.updated_at = datetime.utcnow()
+                    session_record.updated_at = utc_now()
                     session.add(session_record)
             session.commit()
             return deleted
@@ -330,7 +331,7 @@ class SqlRunStore:
             if record is None:
                 raise KeyError(f"unknown run id: {run_id}")
             record.status = status.value if isinstance(status, RunStatus) else str(status)
-            now = datetime.utcnow()
+            now = utc_now()
             if record.status == RunStatus.RUNNING.value and record.started_at is None:
                 record.started_at = now
             if record.status in {RunStatus.DONE.value, RunStatus.FAILED.value, RunStatus.CANCELLED.value, RunStatus.INTERRUPTED.value}:
@@ -375,7 +376,7 @@ class SqlRunStore:
                 record.progress_current = current
             if total is not None:
                 record.progress_total = total
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -387,7 +388,7 @@ class SqlRunStore:
             if record is None:
                 raise KeyError(f"unknown run id: {run_id}")
             record.metadata_json = _dumps(metadata)
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -423,7 +424,7 @@ class SqlRunStore:
                 record.status = RunStatus.CANCELLED.value
                 record.current_step = "cancelled"
                 record.error = reason
-                record.updated_at = datetime.utcnow()
+                record.updated_at = utc_now()
                 session.add(record)
                 cancelled.append(_run_from_record(record))
             session.commit()
@@ -437,7 +438,7 @@ class SqlRunStore:
         metadata: Optional[Dict[str, Any]] = None,
         status: RunStepStatus = RunStepStatus.RUNNING,
     ) -> RunStepSchema:
-        now = datetime.utcnow()
+        now = utc_now()
         status_value = status.value if isinstance(status, RunStepStatus) else str(status)
         with DbSession(self.engine) as session:
             if session.get(RunRecord, run_id) is None:
@@ -471,7 +472,7 @@ class SqlRunStore:
             record = session.get(RunStepRecord, step_id)
             if record is None:
                 raise KeyError(f"unknown run step id: {step_id}")
-            now = datetime.utcnow()
+            now = utc_now()
             if status is not None:
                 record.status = status.value if isinstance(status, RunStepStatus) else str(status)
                 if record.status == RunStepStatus.RUNNING.value and record.started_at is None:
@@ -514,7 +515,7 @@ class SqlRunStore:
                 record.status = RunStatus.INTERRUPTED.value
                 record.error = "Server restarted before this run completed."
                 record.current_step = "interrupted"
-                record.updated_at = datetime.utcnow()
+                record.updated_at = utc_now()
                 interrupted.append(record.run_id)
                 session.add(record)
             session.commit()
@@ -584,7 +585,7 @@ class SqlAgentConfigStore:
                 record.display_json = _dumps(display)
             if runtime is not None:
                 record.runtime_json = _dumps(runtime)
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -624,7 +625,7 @@ class SqlCapabilityConfigStore:
                 record.enabled = enabled
             if user_config is not None:
                 record.user_config_json = _dumps(user_config)
-            record.updated_at = datetime.utcnow()
+            record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -695,7 +696,7 @@ class SqlLLMProfileStore:
                 conflict = _find_profile_record_by_alias(session, str(alias))
                 if conflict is not None and conflict.id != record.id:
                     raise ValueError(f"LLM profile alias already exists: {alias}")
-            candidate = _profile_from_record(record).model_copy(update={**values, "updated_at": datetime.utcnow()})
+            candidate = _profile_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
             profile = LLMProfileSchema.model_validate(candidate.model_dump())
             _apply_profile_to_record(record, profile)
             session.add(record)
@@ -747,7 +748,7 @@ class SqlProviderProfileStore:
             record = session.get(ProviderProfileRecord, profile_id)
             if record is None:
                 raise KeyError(f"unknown provider profile id: {profile_id}")
-            candidate = _provider_from_record(record).model_copy(update={**values, "updated_at": datetime.utcnow()})
+            candidate = _provider_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
             profile = ProviderProfileSchema.model_validate(candidate.model_dump())
             _apply_provider_to_record(record, profile)
             session.add(record)
@@ -809,7 +810,7 @@ class SqlAppSettingsStore:
                 record = AppMetadataRecord(key=self.SETTINGS_KEY, value=_dumps(next_settings.model_dump()))
             else:
                 record.value = _dumps(next_settings.model_dump())
-                record.updated_at = datetime.utcnow()
+                record.updated_at = utc_now()
             session.add(record)
             session.commit()
             return next_settings
@@ -844,7 +845,7 @@ class SqlLLMDefaultsStore:
                 record = AppMetadataRecord(key=self.SETTINGS_KEY, value=_dumps(next_values))
             else:
                 record.value = _dumps(next_values)
-                record.updated_at = datetime.utcnow()
+                record.updated_at = utc_now()
             session.add(record)
             session.commit()
         return next_values
@@ -858,8 +859,8 @@ def _session_from_record(record: SessionRecord) -> Session:
         waiting_run_id=record.waiting_run_id,
         llm_profile_id=record.llm_profile_id,
         last_announced_llm_profile_id=record.last_announced_llm_profile_id,
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
     )
 
 
@@ -877,7 +878,7 @@ def _message_from_record(record: MessageRecord) -> MessageSchema:
         parent_message_id=record.parent_message_id,
         available_actions=_loads(record.available_actions_json, []),
         metadata=_loads(record.metadata_json, {}),
-        created_at=record.created_at,
+        created_at=ensure_utc(record.created_at),
     )
 
 
@@ -895,14 +896,14 @@ def _run_from_record(record: RunRecord) -> RunSchema:
         progress_current=getattr(record, "progress_current", None),
         progress_total=getattr(record, "progress_total", None),
         cancel_requested=bool(getattr(record, "cancel_requested", False)),
-        started_at=getattr(record, "started_at", None),
-        finished_at=getattr(record, "finished_at", None),
+        started_at=ensure_utc(getattr(record, "started_at", None)),
+        finished_at=ensure_utc(getattr(record, "finished_at", None)),
         error_code=getattr(record, "error_code", None),
         error_message=getattr(record, "error_message", None),
         error=record.error,
         metadata=_loads(record.metadata_json, {}),
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
     )
 
 
@@ -914,13 +915,13 @@ def _run_step_from_record(record: RunStepRecord) -> RunStepSchema:
         status=RunStepStatus(record.status),
         message=record.message,
         order=record.order,
-        started_at=record.started_at,
-        finished_at=record.finished_at,
+        started_at=ensure_utc(record.started_at),
+        finished_at=ensure_utc(record.finished_at),
         error_code=record.error_code,
         error_message=record.error_message,
         metadata=_loads(record.metadata_json, {}),
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
     )
 
 
@@ -932,7 +933,7 @@ def _run_event_from_record(record: RunEventRecord) -> RunEventSchema:
         type=record.type,
         message=record.message,
         payload=_loads(record.payload_json, {}),
-        created_at=record.created_at,
+        created_at=ensure_utc(record.created_at),
     )
 
 
@@ -943,8 +944,8 @@ def _agent_config_from_record(record: AgentConfigRecord) -> Dict[str, Any]:
         "display": _loads(getattr(record, "display_json", "{}") or "{}", {}),
         "runtime": _loads(getattr(record, "runtime_json", "{}") or "{}", {}),
         "user_config": _loads(record.user_config_json, {}),
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
+        "created_at": ensure_utc(record.created_at),
+        "updated_at": ensure_utc(record.updated_at),
     }
 
 
@@ -953,8 +954,8 @@ def _capability_config_from_record(record: CapabilityConfigRecord) -> Dict[str, 
         "capability_id": record.capability_id,
         "enabled": record.enabled,
         "user_config": _loads(record.user_config_json, {}),
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
+        "created_at": ensure_utc(record.created_at),
+        "updated_at": ensure_utc(record.updated_at),
     }
 
 
@@ -993,8 +994,8 @@ def _profile_from_record(record: LLMProfileRecord) -> LLMProfileSchema:
         supports_streaming=record.supports_streaming,
         supports_json_mode=record.supports_json_mode,
         notes=record.notes,
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
     )
 
 
@@ -1022,6 +1023,6 @@ def _provider_from_record(record: ProviderProfileRecord) -> ProviderProfileSchem
         timeout_seconds=record.timeout_seconds,
         enabled=record.enabled,
         metadata=_loads(record.metadata_json, {}),
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
     )

@@ -3,6 +3,7 @@ import inspect
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,15 @@ from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.session import Session
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+from ai_workbench.core.time import isoformat_utc
+
+
+@dataclass
+class ScriptLLMStreamChunk:
+    text: str = ""
+    raw: Any = None
+    finish_reason: Optional[str] = None
+    model: Optional[str] = None
 
 
 class ScriptInput(BaseModel):
@@ -97,6 +107,118 @@ class CapabilityProxy:
         return call
 
 
+class ScriptOutputProxy:
+    def __init__(self, message_store: MessageStore, event_bus: EventBus, session_id: str, run_id: str, message_id: Optional[str]) -> None:
+        self.message_store = message_store
+        self.event_bus = event_bus
+        self.session_id = session_id
+        self.run_id = run_id
+        self.message_id = message_id
+        self.completed = False
+        self._content = ""
+        self._output_type = "text"
+
+    async def set_output_type(self, output_type: str) -> None:
+        self._output_type = output_type or self._output_type
+        if not self.message_id:
+            return
+        message = self.message_store.get_message(self.message_id)
+        self.message_store.update_message(message.model_copy(update={"output_type": self._output_type}))
+
+    async def write_delta(self, text: str) -> None:
+        if not text:
+            return
+        self._content += text
+        if self.message_id:
+            message = self.message_store.get_message(self.message_id)
+            self.message_store.update_message(
+                message.model_copy(
+                    update={
+                        "content": self._content,
+                        "output_type": self._output_type,
+                        "metadata": {**(message.metadata or {}), "streaming": True},
+                    }
+                )
+            )
+        self.event_bus.emit(
+            "message_delta",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            message_id=self.message_id,
+            payload={"delta": text, "reasoning_delta": None},
+        )
+
+    async def finish(
+        self,
+        final_content: Any = None,
+        output_type: Optional[str] = None,
+        actions=None,
+        metadata: Optional[Dict[str, Any]] = None,
+        agent_id: Optional[str] = None,
+        action_id: Optional[str] = None,
+        parent_message_id: Optional[str] = None,
+    ):
+        if self.completed:
+            if final_content is None and output_type is None and actions is None and metadata is None:
+                return self.message_store.get_message(self.message_id)
+            message = self.message_store.add_message(
+                session_id=self.session_id,
+                role="agent",
+                content=final_content if final_content is not None else "",
+                agent_id=agent_id,
+                action_id=action_id,
+                run_id=self.run_id,
+                output_type=output_type or self._output_type,
+                parent_message_id=parent_message_id,
+                available_actions=actions or [],
+                metadata=metadata or {"success": True},
+            )
+            self.event_bus.emit(
+                "message_done",
+                session_id=self.session_id,
+                run_id=self.run_id,
+                message_id=message.message_id,
+                payload={"available_actions": message.available_actions},
+            )
+            return message
+        if output_type:
+            self._output_type = output_type
+        if final_content is not None:
+            self._content = final_content if isinstance(final_content, str) else final_content
+        if not self.message_id:
+            raise RuntimeError("Output message is not configured.")
+        message = self.message_store.get_message(self.message_id)
+        next_metadata = {**(message.metadata or {}), **(metadata or {}), "streaming": False, "placeholder": False}
+        message = message.model_copy(
+            update={
+                "content": self._content,
+                "output_type": self._output_type,
+                "available_actions": actions or message.available_actions,
+                "metadata": next_metadata,
+                "agent_id": agent_id or message.agent_id,
+                "action_id": action_id or message.action_id,
+                "parent_message_id": parent_message_id or message.parent_message_id,
+            }
+        )
+        message = self.message_store.update_message(message)
+        self.completed = True
+        self.event_bus.emit(
+            "message_completed",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            message_id=message.message_id,
+            payload={"message": message.model_dump(mode="json"), "draft_message_id": message.message_id},
+        )
+        self.event_bus.emit(
+            "message_done",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            message_id=message.message_id,
+            payload={"available_actions": message.available_actions},
+        )
+        return message
+
+
 class LLMProxy:
     def __init__(
         self,
@@ -105,12 +227,14 @@ class LLMProxy:
         provider_profile_store: Any = None,
         llm_profile_store: Any = None,
         default_llm_resolution: Optional[Dict[str, Any]] = None,
+        output: Any = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
         self.provider_profile_store = provider_profile_store
         self.llm_profile_store = llm_profile_store
         self.default_llm_resolution = default_llm_resolution or {}
+        self.output = output
         self.used = False
 
     async def text(self, system: str, user: str, **options) -> str:
@@ -140,6 +264,58 @@ class LLMProxy:
         if inspect.isawaitable(data):
             data = await data
         return str(data)
+
+    async def stream(
+        self,
+        system: Optional[str] = None,
+        user: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        response_format: Optional[Any] = None,
+        **options,
+    ):
+        self.used = True
+        resolved_messages = _resolve_llm_messages(system=system, user=user, messages=messages)
+        model_config = options.pop("model_config", None) or self.default_model_config
+        if response_format is not None:
+            options["response_format"] = response_format
+        if model_config.get("supports_streaming") is False:
+            text = await self.chat(messages=resolved_messages, model_config=model_config, **options)
+            yield ScriptLLMStreamChunk(text=text, raw=None, model=_model_from_config(model_config))
+            return
+        try:
+            from ai_workbench.core.runner import _call_chat_stream, _normalize_stream_chunk
+
+            async for chunk in _call_chat_stream(self.llm_runtime, resolved_messages, model_config):
+                normalized = _normalize_stream_chunk(chunk)
+                yield ScriptLLMStreamChunk(
+                    text=normalized.content_delta or "",
+                    raw=normalized.raw,
+                    finish_reason=normalized.finish_reason,
+                    model=_model_from_config(model_config),
+                )
+        except Exception:
+            raise
+
+    async def stream_to_output(
+        self,
+        system: Optional[str] = None,
+        user: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        output_type: str = "markdown",
+        **options,
+    ) -> str:
+        if self.output is None:
+            raise RuntimeError("Output streaming is not configured.")
+        await self.output.set_output_type(output_type)
+        parts: list[str] = []
+        async for chunk in self.stream(system=system, user=user, messages=messages, **options):
+            if not chunk.text:
+                continue
+            parts.append(chunk.text)
+            await self.output.write_delta(chunk.text)
+        text = "".join(parts)
+        await self.output.finish()
+        return text
 
     async def generate(
         self,
@@ -252,6 +428,7 @@ class AgentContext:
         llm_profile_store: Any = None,
         attachments: Optional[list[dict[str, Any]]] = None,
         run_lifecycle: RunLifecycle = None,
+        output_message_id: Optional[str] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -269,12 +446,20 @@ class AgentContext:
         self.session_store = session_store
         self.event_bus = event_bus
         self.runtime_registry = runtime_registry
+        self.output = ScriptOutputProxy(
+            message_store=message_store,
+            event_bus=event_bus,
+            session_id=session.session_id,
+            run_id=run_id,
+            message_id=output_message_id,
+        )
         self.llm = LLMProxy(
             llm_runtime,
             default_model_config=llm_model_config,
             provider_profile_store=provider_profile_store,
             llm_profile_store=llm_profile_store,
             default_llm_resolution=llm_resolution,
+            output=self.output,
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -283,24 +468,14 @@ class AgentContext:
 
     async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None):
         resolved_output_type = output_type or type
-        message = self.message_store.add_message(
-            session_id=self.session.session_id,
-            role="agent",
-            content=content,
+        message = await self.output.finish(
+            final_content=content,
+            output_type=resolved_output_type,
+            actions=actions or [],
+            metadata={"success": True, **({"llm_resolution": self.llm_resolution} if self.llm_resolution else {})},
             agent_id=self.agent.id,
             action_id=self.action_id,
-            run_id=self.run_id,
-            output_type=resolved_output_type,
             parent_message_id=self.parent_message_id,
-            available_actions=actions or [],
-            metadata={"success": True, **({"llm_resolution": self.llm_resolution} if self.llm_resolution else {})},
-        )
-        self.event_bus.emit(
-            "message_done",
-            session_id=self.session.session_id,
-            run_id=self.run_id,
-            message_id=message.message_id,
-            payload={"available_actions": message.available_actions},
         )
         return message
 
@@ -474,6 +649,33 @@ class ScriptAgentRunner:
                 "source_message_id": source_message_id or None,
             },
         )
+        output_message = self.message_store.add_message(
+            session_id=session_id,
+            role="assistant",
+            content="",
+            agent_id=agent.id,
+            action_id=action_id,
+            run_id=run.run_id,
+            output_type="text",
+            parent_message_id=parent_id or None,
+            metadata={"success": True, "streaming": True, "placeholder": True},
+        )
+        run = self.run_store.update_metadata(run.run_id, {**run.metadata, "message_id": output_message.message_id})
+        self.event_bus.emit(
+            "message_started",
+            session_id=session_id,
+            run_id=run.run_id,
+            message_id=output_message.message_id,
+            payload={
+                "message_id": output_message.message_id,
+                "role": "assistant",
+                "agent_id": agent.id,
+                "agent_name": agent.name,
+                "action_id": action_id,
+                "parent_message_id": parent_id or None,
+                "created_at": isoformat_utc(output_message.created_at),
+            },
+        )
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
         lifecycle = resolved_model_lifecycle(agent, agent_config)
         if self.agent_config_store is not None:
@@ -524,15 +726,24 @@ class ScriptAgentRunner:
             llm_profile_store=self.llm_profile_store,
             attachments=attachments,
             run_lifecycle=self.run_lifecycle,
+            output_message_id=output_message.message_id,
         )
 
         starting_step = self.run_lifecycle.start_step(run.run_id, "Starting script")
         self.run_lifecycle.complete_step(starting_step.step_id)
         running_step = self.run_lifecycle.start_step(run.run_id, "Running script")
         try:
-            await script_run(ctx)
+            script_result = await script_run(ctx)
         except Exception as exc:
             self.run_lifecycle.fail_step(running_step.step_id, error_message=str(exc) or "Script agent failed.")
+            await ctx.output.finish(
+                final_content={"code": "RUN_FAILED", "message": str(exc) or "Script agent failed."},
+                output_type="error",
+                metadata={"success": False, "error": str(exc) or "Script agent failed."},
+                agent_id=agent.id,
+                action_id=action_id,
+                parent_message_id=parent_id,
+            )
             result = self._fail(run.run_id, session_id, str(exc) or "Script agent failed.")
             self._apply_model_lifecycle(ctx, lifecycle)
             return result
@@ -543,6 +754,15 @@ class ScriptAgentRunner:
             return RunResult(success=False, run_id=run.run_id, error="Waiting for user input.")
 
         saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
+        if not ctx.output.completed:
+            await ctx.output.finish(
+                final_content="" if script_result is None else script_result,
+                output_type="text",
+                metadata={"success": True, **({"llm_resolution": ctx.llm_resolution} if ctx.llm_resolution else {})},
+                agent_id=agent.id,
+                action_id=action_id,
+                parent_message_id=parent_id,
+            )
         self.run_lifecycle.complete_step(saving_step.step_id)
         cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
         self._apply_model_lifecycle(ctx, lifecycle)
@@ -678,6 +898,26 @@ def _first_unload_error(data: Dict[str, Any]) -> Optional[str]:
 
 def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:
     return "\n\n".join(f"{message.get('role', 'user')}: {message.get('content', '')}" for message in messages)
+
+
+def _resolve_llm_messages(
+    system: Optional[str] = None,
+    user: Optional[str] = None,
+    messages: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    if messages is not None:
+        return messages
+    resolved: List[Dict[str, Any]] = []
+    if system is not None:
+        resolved.append({"role": "system", "content": system})
+    if user is not None:
+        resolved.append({"role": "user", "content": user})
+    return resolved or [{"role": "user", "content": ""}]
+
+
+def _model_from_config(model_config: Dict[str, Any]) -> Optional[str]:
+    value = model_config.get("model_id") or model_config.get("model")
+    return str(value) if value else None
 
 
 def _agent_uses_llm(agent: AgentSchema) -> bool:

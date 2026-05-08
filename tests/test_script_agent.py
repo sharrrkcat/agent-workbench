@@ -14,7 +14,7 @@ from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfi
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import LLMProfileStore, MessageStore, ProviderProfileStore, RunStore, SessionStore
-from tests.test_prompt_agent_execution import FakeLLMRuntime, run
+from tests.test_prompt_agent_execution import FakeLLMRuntime, FakeStreamingLLMRuntime, run
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -119,7 +119,7 @@ def test_script_agent_reply_writes_agent_message() -> None:
     result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
     messages = fixture.messages.list_messages(session.session_id)
 
-    assert messages[-1].role == "agent"
+    assert messages[-1].role == "assistant"
     assert messages[-1].content == "aGVsbG8="
     assert messages[-1].agent_id == "echo_script"
     assert messages[-1].action_id == "default"
@@ -141,6 +141,46 @@ def test_script_agent_step_emits_run_step_event() -> None:
         "Saving response",
         "Cleanup",
     ]
+
+
+def test_script_agent_emits_placeholder_before_steps_and_binds_run_id() -> None:
+    fixture = ScriptRuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    events = fixture.events.list_events()
+    started = next(event for event in events if event.type == "message_started")
+    first_step_index = next(index for index, event in enumerate(events) if event.type == "run_step_created")
+    started_index = events.index(started)
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert started_index < first_step_index
+    assert started.run_id == result.run_id
+    assert started.message_id == message.message_id
+    assert message.run_id == result.run_id
+    assert fixture.runs.get_run(result.run_id).metadata["message_id"] == message.message_id
+
+
+def test_script_agent_failure_reuses_placeholder_and_preserves_steps(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "bad_script",
+        "async def run(ctx):\n"
+        "    async with ctx.step('before fail'):\n"
+        "        raise RuntimeError('script exploded')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@bad_script hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+    steps = fixture.runs.list_steps(result.run_id)
+
+    assert result.success is False
+    assert len([message for message in messages if message.run_id == result.run_id]) == 1
+    assert messages[-1].output_type == "error"
+    assert "before fail" in [step.label for step in steps]
+    assert any(event.type == "run_step_updated" for event in fixture.events.list_events())
 
 
 def test_script_agent_can_call_base64_capability() -> None:
@@ -411,6 +451,102 @@ def test_ctx_llm_json_invalid_json_fails_clearly(tmp_path: Path) -> None:
     assert "LLM response did not contain valid JSON" in result.error
 
 
+def test_ctx_llm_stream_can_be_consumed_without_public_delta(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_stream_internal_script",
+        "async def run(ctx):\n"
+        "    parts = []\n"
+        "    async for chunk in ctx.llm.stream(system='System.', user=ctx.input.text):\n"
+        "        parts.append(chunk.text)\n"
+        "    await ctx.reply_text(''.join(parts).upper())\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeStreamingLLMRuntime(chunks=["hel", "lo"]))
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a", supports_streaming=True))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@llm_stream_internal_script hello"))
+
+    assert result.success is True
+    assert fixture.messages.list_messages(session.session_id)[-1].content == "HELLO"
+    assert [event.type for event in fixture.events.list_events()].count("message_delta") == 0
+    assert fixture.llm.calls[0]["stream"] is True
+
+
+def test_ctx_output_write_delta_updates_script_placeholder(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "output_delta_script",
+        "async def run(ctx):\n"
+        "    await ctx.output.write_delta('hel')\n"
+        "    await ctx.output.write_delta('lo')\n"
+        "    await ctx.output.finish()\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@output_delta_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.run_id == result.run_id
+    assert message.content == "hello"
+    assert [event.type for event in fixture.events.list_events()].count("message_delta") == 2
+
+
+def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_stream_output_script",
+        "async def run(ctx):\n"
+        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, output_type='markdown')\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeStreamingLLMRuntime(chunks=["hel", "lo"]))
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a", supports_streaming=True))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@llm_stream_output_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.content == "hello"
+    assert message.output_type == "markdown"
+    assert [event.type for event in fixture.events.list_events()].count("message_delta") == 2
+
+
+def test_ctx_llm_stream_falls_back_to_single_chunk_when_profile_streaming_disabled(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_stream_fallback_script",
+        "async def run(ctx):\n"
+        "    parts = []\n"
+        "    async for chunk in ctx.llm.stream(system='System.', user=ctx.input.text):\n"
+        "        parts.append(chunk.text)\n"
+        "    await ctx.reply_text('|'.join(parts))\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response="single"))
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a", supports_streaming=False))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@llm_stream_fallback_script hello"))
+
+    assert result.success is True
+    assert fixture.messages.list_messages(session.session_id)[-1].content == "single"
+    assert fixture.llm.calls[0]["stream"] is False
+
+
 def test_ctx_llm_generate_accepts_system_and_user(tmp_path: Path) -> None:
     registry = write_script_agent(
         tmp_path,
@@ -577,7 +713,7 @@ def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> No
     assert messages[0].content == "@render_test:text hello"
     assert messages[0].metadata["invocation"]["raw_text"] == "@render_test:text hello"
     assert messages[0].metadata["invocation"]["args"] == "hello"
-    assert messages[-1].role == "agent"
+    assert messages[-1].role == "assistant"
     assert messages[-1].content == "hello"
 
 

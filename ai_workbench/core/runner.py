@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-from datetime import datetime
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
@@ -21,6 +20,7 @@ from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 class ActiveRunRegistry:
@@ -488,7 +488,7 @@ class AgentRunner:
                 "agent_name": agent.name,
                 "action_id": action_id,
                 "parent_message_id": parent_id or None,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": isoformat_utc(utc_now()),
                 "llm_resolution": llm_resolution or None,
             },
         )

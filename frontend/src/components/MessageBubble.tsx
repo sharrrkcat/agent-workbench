@@ -6,7 +6,7 @@ import type { Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPa
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
-import { formatMessageTime } from '../utils/time';
+import { formatMessageTime, parseServerTime } from '../utils/time';
 import { resolveAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
 import { getResolvedAgentDisplay } from '../utils/agents';
 
@@ -50,7 +50,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
   const runSteps = storeRunSteps || messageRunSteps(message);
   const messageRun = storeRun || message.run;
-  if (!editing && !message.client_status && !hasRenderableMessage(message, reasoningContent)) {
+  if (!editing && !message.client_status && !hasVisibleRun(messageRun) && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
 
@@ -312,7 +312,7 @@ function formatDurationMs(ms: number): string {
 }
 
 function parseDateMs(value: string): number {
-  const ms = Date.parse(value);
+  const ms = parseServerTime(value).getTime();
   return Number.isNaN(ms) ? 0 : ms;
 }
 
@@ -755,6 +755,10 @@ function hasRenderableMessage(message: Message, reasoningContent: string): boole
   if (message.output_type === 'file_content') return Boolean(normalizeFileContentPayload(message.content).content.trim());
   if (message.role === 'user' && messageAttachments(message).length) return true;
   return Boolean(contentToText(message.content).trim());
+}
+
+function hasVisibleRun(run: Run | undefined): boolean {
+  return Boolean(run && isActiveRunStatus(run.status));
 }
 
 function optionalString(value: unknown): string | undefined {

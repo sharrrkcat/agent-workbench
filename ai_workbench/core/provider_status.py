@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
+from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 READY = "READY"
@@ -65,7 +65,7 @@ def refresh_provider_statuses(
 
 
 def refresh_provider_status(provider: ProviderProfileSchema, model_profiles: Iterable[LLMProfileSchema]) -> Dict[str, Any]:
-    checked_at = datetime.utcnow().isoformat()
+    checked_at = isoformat_utc(utc_now())
     if not provider.enabled:
         return _provider_payload(
             provider=provider,

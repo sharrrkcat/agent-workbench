@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 
+from ai_workbench.core.time import utc_now
+
 
 class AppSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -45,7 +47,7 @@ class AppSettingsPatch(BaseModel):
 class AppSettingsStore:
     def __init__(self) -> None:
         self._settings = AppSettings()
-        self.updated_at = datetime.utcnow()
+        self.updated_at = utc_now()
 
     def get(self) -> AppSettings:
         return self._settings
@@ -56,7 +58,7 @@ class AppSettingsStore:
         if not updates:
             return self._settings
         self._settings = AppSettings.model_validate({**self._settings.model_dump(), **updates})
-        self.updated_at = datetime.utcnow()
+        self.updated_at = utc_now()
         return self._settings
 
 

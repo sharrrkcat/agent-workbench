@@ -3,6 +3,8 @@ from datetime import datetime
 from math import ceil
 from typing import Any, Dict, Optional
 
+from ai_workbench.core.time import isoformat_utc, utc_now
+
 
 @dataclass
 class LLMStreamChunk:
@@ -24,16 +26,16 @@ class LLMResult:
 class LLMMetricsRecorder:
     def __init__(self, streamed: bool) -> None:
         self.streamed = streamed
-        self.request_started_at = datetime.utcnow()
+        self.request_started_at = utc_now()
         self.first_token_at: Optional[datetime] = None
         self.completed_at: Optional[datetime] = None
 
     def mark_first_token(self) -> None:
         if self.first_token_at is None:
-            self.first_token_at = datetime.utcnow()
+            self.first_token_at = utc_now()
 
     def complete(self, output: str, usage: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now()
         return build_llm_metrics(
             streamed=self.streamed,
             request_started_at=self.request_started_at,
@@ -79,9 +81,9 @@ def build_llm_metrics(
 
     return {
         "streamed": streamed,
-        "request_started_at": request_started_at.isoformat(),
-        "first_token_at": first_token_at.isoformat() if first_token_at else None,
-        "completed_at": completed_at.isoformat(),
+        "request_started_at": isoformat_utc(request_started_at),
+        "first_token_at": isoformat_utc(first_token_at) if first_token_at else None,
+        "completed_at": isoformat_utc(completed_at),
         "duration_ms": duration_ms,
         "time_to_first_token_ms": first_token_ms,
         "prompt_tokens": prompt_tokens,

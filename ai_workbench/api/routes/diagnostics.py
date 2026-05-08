@@ -14,6 +14,7 @@ from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.llm_config import public_llm_config_status, resolve_llm_config
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.storage_maintenance import storage_stats
+from ai_workbench.core.time import ensure_utc, utc_now
 from ai_workbench.db.database import SCHEMA_VERSION
 
 
@@ -50,12 +51,12 @@ def get_diagnostics(state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
 
 
 def _backend(state: RuntimeState) -> dict[str, Any]:
-    started_at = getattr(state, "started_at", datetime.utcnow())
+    started_at = ensure_utc(getattr(state, "started_at", utc_now())) or utc_now()
     return {
         "status": "ok",
         "version": __version__,
         "python_version": ".".join(str(part) for part in sys.version_info[:3]),
-        "uptime_seconds": max(0, int((datetime.utcnow() - started_at).total_seconds())),
+        "uptime_seconds": max(0, int((utc_now() - started_at).total_seconds())),
     }
 
 

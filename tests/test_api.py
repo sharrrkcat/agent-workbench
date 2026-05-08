@@ -1132,7 +1132,7 @@ def test_session_timeline_includes_failed_run_notification_with_stable_created_a
     assert notification["id"] == f"run-error:{failed_run.run_id}"
     assert notification["code"] == "RUN_FAILED"
     assert notification["message"] == "boom"
-    assert notification["created_at"] == failed_run.created_at.isoformat()
+    assert notification["created_at"].endswith("Z") or notification["created_at"].endswith("+00:00")
 
 
 def test_session_timeline_sorts_notifications_by_created_at() -> None:

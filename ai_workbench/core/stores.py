@@ -7,6 +7,7 @@ from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfi
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
+from ai_workbench.core.time import utc_now
 
 
 class SessionStore:
@@ -30,32 +31,32 @@ class SessionStore:
 
     def set_default_agent(self, session_id: str, agent_id: str) -> Session:
         session = self.get_session(session_id)
-        updated = session.model_copy(update={"default_agent_id": agent_id, "updated_at": datetime.utcnow()})
+        updated = session.model_copy(update={"default_agent_id": agent_id, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
     def set_title(self, session_id: str, title: str) -> Session:
         session = self.get_session(session_id)
-        updated = session.model_copy(update={"title": title, "updated_at": datetime.utcnow()})
+        updated = session.model_copy(update={"title": title, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
     def set_waiting_run(self, session_id: str, run_id: Optional[str]) -> Session:
         session = self.get_session(session_id)
-        updated = session.model_copy(update={"waiting_run_id": run_id, "updated_at": datetime.utcnow()})
+        updated = session.model_copy(update={"waiting_run_id": run_id, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
     def set_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
         session = self.get_session(session_id)
-        updated = session.model_copy(update={"llm_profile_id": profile_id, "updated_at": datetime.utcnow()})
+        updated = session.model_copy(update={"llm_profile_id": profile_id, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
     def set_last_announced_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
         session = self.get_session(session_id)
         updated = session.model_copy(
-            update={"last_announced_llm_profile_id": profile_id, "updated_at": datetime.utcnow()}
+            update={"last_announced_llm_profile_id": profile_id, "updated_at": utc_now()}
         )
         self._sessions[session_id] = updated
         return updated
@@ -73,7 +74,7 @@ class SessionStore:
 
     def touch_session(self, session_id: str) -> Session:
         session = self.get_session(session_id)
-        updated = session.model_copy(update={"updated_at": datetime.utcnow()})
+        updated = session.model_copy(update={"updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
@@ -225,7 +226,7 @@ class RunStore:
         cancel_requested: Optional[bool] = None,
     ) -> RunSchema:
         run = self.get_run(run_id)
-        updates: Dict[str, Any] = {"status": status, "updated_at": datetime.utcnow()}
+        updates: Dict[str, Any] = {"status": status, "updated_at": utc_now()}
         if status == RunStatus.RUNNING and run.started_at is None:
             updates["started_at"] = updates["updated_at"]
         if status in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
@@ -256,7 +257,7 @@ class RunStore:
         total: Optional[int] = None,
     ) -> RunSchema:
         run = self.get_run(run_id)
-        updates: Dict[str, Any] = {"updated_at": datetime.utcnow()}
+        updates: Dict[str, Any] = {"updated_at": utc_now()}
         if stage is not None:
             updates["stage"] = stage
             updates["current_step"] = stage
@@ -272,7 +273,7 @@ class RunStore:
 
     def update_metadata(self, run_id: str, metadata: Dict[str, Any]) -> RunSchema:
         run = self.get_run(run_id)
-        updated = run.model_copy(update={"metadata": metadata, "updated_at": datetime.utcnow()})
+        updated = run.model_copy(update={"metadata": metadata, "updated_at": utc_now()})
         self._runs[run_id] = updated
         return updated
 
@@ -296,7 +297,7 @@ class RunStore:
             if run is None or run.status in {RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
                 continue
             updated = run.model_copy(
-                update={"status": RunStatus.CANCELLED, "current_step": "cancelled", "error": reason, "updated_at": datetime.utcnow()}
+                update={"status": RunStatus.CANCELLED, "current_step": "cancelled", "error": reason, "updated_at": utc_now()}
             )
             self._runs[run_id] = updated
             cancelled.append(updated)
@@ -312,7 +313,7 @@ class RunStore:
     ) -> RunStepSchema:
         self.get_run(run_id)
         order = len(self._run_step_ids.get(run_id, []))
-        now = datetime.utcnow()
+        now = utc_now()
         step = RunStepSchema(
             step_id=str(uuid4()),
             run_id=run_id,
@@ -342,7 +343,7 @@ class RunStore:
             step = self._steps[step_id]
         except KeyError as exc:
             raise KeyError(f"unknown run step id: {step_id}") from exc
-        now = datetime.utcnow()
+        now = utc_now()
         updates: Dict[str, Any] = {"updated_at": now}
         if status is not None:
             updates["status"] = status
@@ -392,7 +393,7 @@ class RunEventStore:
             type=type,
             message=message,
             payload=payload or {},
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
         )
         self._events[event.event_id] = event
         self._run_event_ids.setdefault(run_id, []).append(event.event_id)
@@ -428,7 +429,7 @@ class ConfigStore:
         display: Optional[Dict[str, Any]] = None,
         runtime: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        now = datetime.utcnow()
+        now = utc_now()
         record = self._records.get(item_id)
         if record is None:
             record = {
@@ -521,7 +522,7 @@ class LLMProfileStore:
             conflict = self.find_by_alias(str(alias))
             if conflict is not None and conflict.id != existing.id:
                 raise ValueError(f"LLM profile alias already exists: {alias}")
-        updated = existing.model_copy(update={**values, "updated_at": datetime.utcnow()})
+        updated = existing.model_copy(update={**values, "updated_at": utc_now()})
         updated = LLMProfileSchema.model_validate(updated.model_dump())
         self._records[existing.id] = updated
         return updated
@@ -553,7 +554,7 @@ class ProviderProfileStore:
 
     def update(self, profile_id: str, values: Dict[str, Any]) -> ProviderProfileSchema:
         existing = self.get(profile_id)
-        updated = existing.model_copy(update={**values, "updated_at": datetime.utcnow()})
+        updated = existing.model_copy(update={**values, "updated_at": utc_now()})
         updated = ProviderProfileSchema.model_validate(updated.model_dump())
         self._records[existing.id] = updated
         return updated

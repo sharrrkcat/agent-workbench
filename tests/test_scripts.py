@@ -320,7 +320,7 @@ def test_run_agent_script_runs_echo_script() -> None:
 
     assert result.returncode == 0
     assert "run status: done" in result.stdout
-    assert "agent [text]:" in result.stdout
+    assert "assistant [text]:" in result.stdout
     assert "aGVsbG8=" in result.stdout
 
 
@@ -351,7 +351,7 @@ def test_run_agent_script_markdown_message_has_no_extra_json_quotes() -> None:
     )
 
     assert result.returncode == 0
-    assert "agent [markdown]:" in result.stdout
+    assert "assistant [markdown]:" in result.stdout
     assert "# Render Test" in result.stdout
     assert '"# Render Test' not in result.stdout
 
@@ -366,7 +366,7 @@ def test_run_agent_script_json_message_pretty_prints() -> None:
     )
 
     assert result.returncode == 0
-    assert "agent [json]:" in result.stdout
+    assert "assistant [json]:" in result.stdout
     assert '{\n  "echo": "hello",\n  "items": [' in result.stdout
 
 
@@ -380,7 +380,7 @@ def test_run_agent_supports_action_argument() -> None:
     )
 
     assert result.returncode == 0
-    assert "agent [json]:" in result.stdout
+    assert "assistant [json]:" in result.stdout
     assert '"echo": "hello"' in result.stdout
 
 
@@ -394,7 +394,7 @@ def test_run_agent_summarizes_image_and_rich_content_outputs() -> None:
     )
 
     assert result.returncode == 0
-    assert "agent [image]:" in result.stdout
+    assert "assistant [image]:" in result.stdout
     assert "url_prefix=" in result.stdout
     assert "agent [rich_content]:" in result.stdout
     assert "rich_content: 3 block(s)" in result.stdout

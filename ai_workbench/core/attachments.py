@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ai_workbench.core.time import isoformat_utc, utc_now
+
 
 ALLOWED_IMAGE_MIME_TYPES = {
     "image/png",
@@ -261,7 +263,7 @@ def save_attachment_from_data_url(attachment: dict[str, Any], settings: Any = No
             "mime_type": mime_type,
             "size": len(attachment_bytes),
             "uri": f"local://attachments/{filename}",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": isoformat_utc(utc_now()),
         }
     )
     return data
@@ -300,7 +302,7 @@ def _store_attachment_bytes(name: str, mime_type: str, data: bytes, attachment_t
         "name": name or filename,
         "size": len(data),
         "uri": f"local://attachments/{filename}",
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": isoformat_utc(utc_now()),
     }
 
 

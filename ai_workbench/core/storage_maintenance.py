@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_workbench.core.attachments import attachments_root
+from ai_workbench.core.time import isoformat_utc, utc_now
 from ai_workbench.db.database import SCHEMA_VERSION, get_database_url
 
 
@@ -56,7 +57,7 @@ def storage_stats(message_store: Any, database_url: str | None = None) -> dict[s
             "total_size_bytes": attachment_size,
             "orphan_count": orphan_count,
             "orphan_size_bytes": orphan_size,
-            "last_scan_time": datetime.utcnow().isoformat(),
+            "last_scan_time": isoformat_utc(utc_now()),
         },
     }
     if warnings:

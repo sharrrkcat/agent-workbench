@@ -2,7 +2,9 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+
+from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 LLM_PROFILE_ALIAS_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -32,8 +34,12 @@ class LLMProfileSchema(BaseModel):
     supports_streaming: bool = True
     supports_json_mode: bool = False
     notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def serialize_datetime(self, value: datetime) -> str:
+        return isoformat_utc(value) or ""
 
     @field_validator("alias")
     @classmethod
@@ -61,8 +67,12 @@ class ProviderProfileSchema(BaseModel):
     timeout_seconds: Optional[int] = 60
     enabled: bool = True
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def serialize_datetime(self, value: datetime) -> str:
+        return isoformat_utc(value) or ""
 
     @field_validator("name")
     @classmethod

@@ -2,7 +2,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 class RunStatus(str, Enum):
@@ -45,8 +47,12 @@ class RunSchema(BaseModel):
     error_message: Optional[str] = None
     error: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_serializer("started_at", "finished_at", "created_at", "updated_at", when_used="json")
+    def serialize_datetime(self, value: datetime | None) -> str | None:
+        return isoformat_utc(value)
 
 
 class RunStepSchema(BaseModel):
@@ -63,5 +69,9 @@ class RunStepSchema(BaseModel):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_serializer("started_at", "finished_at", "created_at", "updated_at", when_used="json")
+    def serialize_datetime(self, value: datetime | None) -> str | None:
+        return isoformat_utc(value)

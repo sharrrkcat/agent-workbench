@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
@@ -10,6 +9,7 @@ from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.configs import _runtime_list_models, _safe_llm_error
 from ai_workbench.core.config_schema import MASKED_SECRET
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema
+from ai_workbench.core.time import utc_now
 
 
 router = APIRouter(prefix="/api/llm-profiles", tags=["llm-profiles"])
@@ -72,7 +72,7 @@ def list_llm_profiles(state: RuntimeState = Depends(get_state)) -> list:
 def create_llm_profile(payload: LLMProfileCreateRequest, state: RuntimeState = Depends(get_state)) -> dict:
     try:
         _validate_model_profile_create(payload, state)
-        profile = LLMProfileSchema(id=str(uuid4()), created_at=datetime.utcnow(), updated_at=datetime.utcnow(), **payload.model_dump())
+        profile = LLMProfileSchema(id=str(uuid4()), created_at=utc_now(), updated_at=utc_now(), **payload.model_dump())
         created = state.llm_profiles.create(profile)
         return _serialize_profile(created)
     except ValidationError as exc:
@@ -122,8 +122,8 @@ def duplicate_llm_profile(profile_id_or_alias: str, state: RuntimeState = Depend
     data["id"] = str(uuid4())
     data["alias"] = _copy_alias(profile.alias, state.llm_profiles)
     data["name"] = f"{profile.name} copy"
-    data["created_at"] = datetime.utcnow()
-    data["updated_at"] = datetime.utcnow()
+    data["created_at"] = utc_now()
+    data["updated_at"] = utc_now()
     created = state.llm_profiles.create(LLMProfileSchema.model_validate(data))
     return _serialize_profile(created)
 

@@ -10,6 +10,7 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
+from ai_workbench.core.time import utc_now
 from ai_workbench.db.models import AppMetadataRecord, LLMProfileRecord, ProviderProfileRecord
 
 
@@ -111,7 +112,7 @@ def migrate_llm_provider_profiles(engine) -> None:
                 continue
             provider = _find_or_create_provider_profile(session, profile)
             profile.provider_profile_id = provider.id
-            profile.updated_at = datetime.utcnow()
+            profile.updated_at = utc_now()
             session.add(profile)
             changed = True
         if changed:
