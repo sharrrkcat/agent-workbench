@@ -882,17 +882,30 @@ function normalizeError(message: Message): { code?: string; message?: string } {
 }
 
 function resolvedModelLabel(message: Message): string | undefined {
-  const actual = extractActualModelLabel(message.metadata?.llm);
-  if (actual) return actual;
+  const badge = resolveMessageModelBadge(message);
+  if (badge.label) return badge.label;
   const fromMessage = extractResolutionLabel(message.metadata?.llm_resolution);
   if (fromMessage) return fromMessage;
   return undefined;
 }
 
+function resolveMessageModelBadge(message: Message): { label?: string; title?: string } {
+  const llm = isPlainRecord(message.metadata?.llm) ? message.metadata?.llm as Record<string, unknown> : undefined;
+  const resolution = isPlainRecord(message.metadata?.llm_resolution) ? message.metadata?.llm_resolution as Record<string, unknown> : undefined;
+  const label = firstText([
+    llm?.model_profile_name,
+    resolution?.profile_name,
+    llm?.requested_model_id,
+    resolution?.model_id,
+    llm?.actual_model_id,
+  ]);
+  return { label, title: modelTitle(message) || label };
+}
+
 function extractActualModelLabel(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const llm = value as Record<string, unknown>;
-  for (const key of ['actual_model_id', 'model_profile_name', 'requested_model_id']) {
+  for (const key of ['model_profile_name', 'requested_model_id', 'actual_model_id']) {
     const item = llm[key];
     if (typeof item === 'string' && item.trim()) return item.trim();
   }
@@ -905,13 +918,27 @@ function hasModelMismatch(message: Message): boolean {
 }
 
 function modelTitle(message: Message): string | undefined {
-  const llm = message.metadata?.llm;
-  if (!llm || typeof llm !== 'object' || Array.isArray(llm)) return undefined;
-  const value = llm as Record<string, unknown>;
-  const requested = typeof value.requested_model_id === 'string' ? value.requested_model_id : '';
-  const actual = typeof value.actual_model_id === 'string' ? value.actual_model_id : '';
-  const provider = typeof value.provider_profile_name === 'string' ? value.provider_profile_name : '';
-  return [`Provider: ${provider || 'Unknown'}`, `Requested: ${requested || 'Unknown'}`, `Actual: ${actual || 'Unknown'}`].join('\n');
+  const value = isPlainRecord(message.metadata?.llm) ? message.metadata?.llm as Record<string, unknown> : {};
+  const resolution = isPlainRecord(message.metadata?.llm_resolution) ? message.metadata?.llm_resolution as Record<string, unknown> : {};
+  const modelProfileName = textValue(value.model_profile_name) || textValue(resolution.profile_name);
+  const modelProfileId = textValue(value.model_profile_id) || textValue(resolution.profile_id);
+  const providerProfileName = textValue(value.provider_profile_name) || textValue(resolution.provider_profile_name);
+  const providerProfileId = textValue(value.provider_profile_id) || textValue(resolution.provider_profile_id);
+  const requested = textValue(value.requested_model_id) || textValue(resolution.model_id);
+  const actual = textValue(value.actual_model_id);
+  const provider = textValue(value.provider) || textValue(resolution.provider);
+  const status = textValue(value.status) || textValue(resolution.status);
+  if (![modelProfileName, modelProfileId, providerProfileName, providerProfileId, requested, actual, provider, status].some(Boolean)) return undefined;
+  return [
+    `Model profile: ${modelProfileName || 'Unknown'}`,
+    `Model profile ID: ${modelProfileId || 'Unknown'}`,
+    `Provider profile: ${providerProfileName || 'Unknown'}`,
+    `Provider profile ID: ${providerProfileId || 'Unknown'}`,
+    `Requested model: ${requested || 'Unknown'}`,
+    `Actual model: ${actual || 'Unknown'}`,
+    `Provider: ${provider || 'Unknown'}`,
+    `Status: ${status || 'Unknown'}`,
+  ].join('\n');
 }
 
 function extractResolutionLabel(value: unknown): string | undefined {
@@ -954,6 +981,22 @@ function formatMetrics(value: unknown, interrupted: boolean): string {
 function numberValue(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   return undefined;
+}
+
+function textValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function firstText(values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = textValue(value);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function formatSeconds(ms: number): string {

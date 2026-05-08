@@ -460,9 +460,11 @@ class AgentRunner:
             self.message_store.update_message(message)
         self.run_lifecycle.complete_step(saving_step.step_id)
         cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
+        unload_message = None
         if llm_started and not cleanup_done:
-            self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
-        self.run_lifecycle.complete_step(cleanup_step.step_id)
+            unload_result = self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
+            unload_message = _llm_unload_message(unload_result) if unload_result else None
+        self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
         done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
@@ -647,8 +649,9 @@ class AgentRunner:
         self.run_lifecycle.complete_step(saving_step.step_id)
         self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input, file_context, llm_raw=actual_raw)
         cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
-        self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
-        self.run_lifecycle.complete_step(cleanup_step.step_id)
+        unload_result = self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
+        unload_message = _llm_unload_message(unload_result) if unload_result else None
+        self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
         done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
@@ -832,16 +835,20 @@ class AgentRunner:
         target = _llm_unload_target(llm_config)
         return self.active_llm_uses.acquire(target["provider_profile_id"], target["model_id"])
 
-    def _finish_llm_use_and_apply_lifecycle(self, lifecycle, llm_config, llm_use_key: tuple[str, str] | None, run_id: str, session_id: str) -> bool:
+    def _finish_llm_use_and_apply_lifecycle(self, lifecycle, llm_config, llm_use_key: tuple[str, str] | None, run_id: str, session_id: str) -> dict | None:
         remaining = self.active_llm_uses.release(llm_use_key)
         if lifecycle.unload != "after_run":
-            return False
+            return None
         target = _llm_unload_target(llm_config)
         if remaining > 0:
             result = {
                 "ok": True,
                 "provider": target["provider"],
                 "provider_profile_id": target["provider_profile_id"],
+                "provider_profile_name": target["provider_profile_name"],
+                "model_profile_id": target["model_profile_id"],
+                "model_profile_name": target["model_profile_name"],
+                "requested_model_id": target["model_id"],
                 "model_id": target["model_id"],
                 "unloaded": [],
                 "skipped": True,
@@ -851,6 +858,7 @@ class AgentRunner:
             }
         else:
             result = self._unload_model_for_llm_config(llm_config, reason="after_run")
+            _enrich_unload_result(result, target)
             self._refresh_provider_status_after_unload(result, session_id=session_id, run_id=run_id)
         self._record_llm_unload_metadata(run_id, lifecycle, result)
         if not result.get("ok") and lifecycle.unload_failure == "warn":
@@ -860,7 +868,7 @@ class AgentRunner:
                 run_id=run_id,
                 payload={"warning": _first_unload_message(result)},
             )
-        return True
+        return result
 
     def _unload_model_for_llm_config(self, llm_config, reason: str = "after_run") -> dict:
         target = _llm_unload_target(llm_config)
@@ -950,6 +958,11 @@ class AgentRunner:
             "status_refresh_error": status_refresh.get("error"),
             "provider": result.get("provider"),
             "provider_profile_id": result.get("provider_profile_id"),
+            "provider_profile_name": result.get("provider_profile_name"),
+            "model_profile_id": result.get("model_profile_id"),
+            "model_profile_name": result.get("model_profile_name"),
+            "requested_model_id": result.get("requested_model_id") or result.get("model_id"),
+            "actual_model_id": result.get("actual_model_id"),
             "model_id": result.get("model_id"),
             "unloaded_count": len(result.get("unloaded") or []),
             "skipped": bool(result.get("skipped")),
@@ -1035,8 +1048,21 @@ def _llm_unload_target(llm_config) -> dict:
         "provider": metadata.get("provider") or values.get("provider") or "",
         "provider_profile_id": metadata.get("provider_profile_id") or values.get("provider_profile_id") or "",
         "model_profile_id": metadata.get("profile_id") or values.get("model_profile_id") or "",
+        "model_profile_name": metadata.get("profile_name") or values.get("model_profile_name") or "",
+        "provider_profile_name": metadata.get("provider_profile_name") or values.get("provider_profile_name") or "",
         "model_id": values.get("model_id") or values.get("model") or "",
     }
+
+
+def _enrich_unload_result(result: dict, target: dict) -> dict:
+    result.setdefault("provider", target.get("provider") or "")
+    result.setdefault("provider_profile_id", target.get("provider_profile_id") or "")
+    result.setdefault("provider_profile_name", target.get("provider_profile_name") or "")
+    result.setdefault("model_profile_id", target.get("model_profile_id") or "")
+    result.setdefault("model_profile_name", target.get("model_profile_name") or "")
+    result.setdefault("requested_model_id", target.get("model_id") or "")
+    result.setdefault("model_id", target.get("model_id") or "")
+    return result
 
 
 def _first_unload_message(result: dict) -> str:
@@ -1050,6 +1076,40 @@ def _first_unload_message(result: dict) -> str:
     if result.get("message"):
         return str(result["message"])
     return "Model unload failed or is unsupported."
+
+
+def _llm_display_name(result: dict | None) -> str:
+    if not isinstance(result, dict):
+        return "model"
+    return str(
+        result.get("model_profile_name")
+        or result.get("requested_model_id")
+        or result.get("model_id")
+        or result.get("actual_model_id")
+        or "model"
+    )
+
+
+def _llm_unload_message(result: dict | None) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    if result.get("skipped"):
+        return "Unload skipped: model still in use."
+    code = result.get("code") or _first_error_code(result)
+    if code == "MODEL_UNLOAD_UNSUPPORTED":
+        return "Unload unsupported by provider."
+    if result.get("ok"):
+        return f"Unloaded local LLM: {_llm_display_name(result)}"
+    return f"Unload failed: {_first_unload_message(result)}"
+
+
+def _first_error_code(result: dict) -> str:
+    errors = result.get("errors")
+    if isinstance(errors, list) and errors:
+        first = errors[0]
+        if isinstance(first, dict):
+            return str(first.get("code") or "")
+    return ""
 
 
 def _llm_message_metadata(llm_config, raw: dict | None = None) -> dict:

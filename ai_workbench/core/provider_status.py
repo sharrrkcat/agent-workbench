@@ -244,9 +244,11 @@ def unload_model_for_profile(
     profiles = llm_profile_store.list() if llm_profile_store is not None else []
     resolved_provider_id = provider_profile_id or ""
     resolved_model_id = model_id or ""
+    resolved_model_profile = None
     if model_profile_id:
         for profile in profiles:
             if profile.id == model_profile_id:
+                resolved_model_profile = profile
                 resolved_provider_id = resolved_provider_id or (profile.provider_profile_id or "")
                 resolved_model_id = resolved_model_id or profile.model_id
                 break
@@ -280,6 +282,10 @@ def unload_model_for_profile(
         }
     result = unload_model(provider, profiles, model_profile_id=model_profile_id, model_id=resolved_model_id)
     result.setdefault("provider_profile_id", provider.id)
+    result.setdefault("provider_profile_name", provider.name)
+    result.setdefault("model_profile_id", getattr(resolved_model_profile, "id", None) or model_profile_id)
+    result.setdefault("model_profile_name", getattr(resolved_model_profile, "name", None))
+    result.setdefault("requested_model_id", resolved_model_id)
     result.setdefault("model_id", resolved_model_id)
     result.setdefault("skipped", False)
     result.setdefault("skip_reason", None)

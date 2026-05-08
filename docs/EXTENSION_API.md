@@ -156,8 +156,9 @@ async with ctx.step("Parse JSON"):
 - `ctx.llm.stream_to_output(...)` is public output streaming.
 - `ctx.output.write_delta(...)` explicitly appends visible public content.
 - `ctx.output.finish(...)` completes the public streaming message.
-- `ctx.llm.unload_model(...)` is trusted script-only model unload through provider/model profiles.
-- `ctx.llm.unload()` is legacy capability-runtime unload if the LLM runtime supports it.
+- `ctx.llm.unload_model(...)` is trusted script-only model unload through provider/model profiles and returns a structured `CapabilityCallResult` with unload outcome data.
+- `ctx.llm.unload()` is legacy capability-runtime unload if the LLM runtime supports it and also returns structured outcome data when available.
+- Script manual unload records run metadata, refreshes affected provider status when possible, and should surface success through the current run step rather than creating another assistant message.
 
 Internal JSON streaming, hidden from chat:
 

@@ -525,13 +525,19 @@ def test_script_agent_after_run_unloads_when_llm_used(tmp_path: Path, monkeypatc
     session = fixture.sessions.get_session(session.session_id)
 
     result = run(fixture.runtime.handle_input(session, "@llm_after_run_script hello"))
+    cleanup_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Cleanup")
+    metadata = fixture.runs.get_run(result.run_id).metadata
 
     assert result.success is True
     assert calls[0]["provider_profile_id"] == provider.id
     assert calls[0]["model_profile_id"] == profile.id
     assert calls[0]["model_id"] == "model-a"
-    assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["ok"] is True
-    assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["status_refresh_ok"] is True
+    assert metadata["llm"]["model_profile_name"] == "P"
+    assert metadata["llm"]["requested_model_id"] == "model-a"
+    assert metadata["llm"]["actual_model_id"] == "model-a"
+    assert metadata["llm_unload"]["ok"] is True
+    assert metadata["llm_unload"]["status_refresh_ok"] is True
+    assert cleanup_step.message == "Unloaded local LLM: P"
     assert refresh_calls == [provider.id]
     event = next(event for event in fixture.events.list_events() if event.type == "llm_provider_status_updated")
     assert event.payload["provider"]["provider_profile_id"] == provider.id
@@ -575,6 +581,9 @@ def test_ctx_llm_unload_model_refreshes_provider_status(tmp_path: Path, monkeypa
 
     assert result.success is True
     assert message.content["status_refresh"]["ok"] is True
+    assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["ok"] is True
+    unload_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Unload model")
+    assert unload_step.message == "Unloaded local LLM: P"
     assert refresh_calls == [provider.id]
     event = next(event for event in fixture.events.list_events() if event.type == "llm_provider_status_updated")
     assert event.payload["provider"]["provider_profile_id"] == provider.id

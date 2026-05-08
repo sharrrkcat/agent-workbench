@@ -321,13 +321,20 @@ def test_actual_model_metadata_from_nonstream_response() -> None:
             }
         )
     )
+    profile = add_profile(fixture, supports_streaming=False)
     session = fixture.sessions.create_session()
+    session = fixture.sessions.set_llm_profile(session.session_id, profile.id)
 
     result = run(fixture.runtime.handle_input(session, "@chat hello"))
     message = [item for item in fixture.messages.list_messages(session.session_id) if item.role == "assistant"][0]
 
     assert result.success is True
+    run_metadata = fixture.runs.get_run(result.run_id).metadata
+    assert run_metadata["llm"]["model_profile_name"] == "Non-streaming profile"
+    assert run_metadata["llm"]["requested_model_id"] == "fake-model"
+    assert run_metadata["llm"]["actual_model_id"] == "actual-model"
     assert message.metadata["llm"]["actual_model_id"] == "actual-model"
+    assert message.metadata["llm"]["model_profile_name"] == "Non-streaming profile"
     assert message.metadata["llm"]["system_fingerprint"] == "fp-1"
     assert message.metadata["llm"]["actual_model_missing"] is False
 
@@ -440,6 +447,8 @@ def test_manifest_after_run_lifecycle_unloads_resolved_provider_model(monkeypatc
     assert metadata["llm_unload"]["status_refresh_attempted"] is True
     assert metadata["llm_unload"]["status_refresh_ok"] is True
     assert refresh_calls == [profile.provider_profile_id]
+    cleanup_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Cleanup")
+    assert cleanup_step.message == "Unloaded local LLM: Non-streaming profile"
     event = next(event for event in fixture.events.list_events() if event.type == "llm_provider_status_updated")
     assert event.payload["provider"]["provider_profile_id"] == profile.provider_profile_id
 
@@ -538,6 +547,8 @@ def test_after_run_unload_unsupported_does_not_fail_successful_run(monkeypatch) 
     assert prompt_run.metadata["llm_unload"]["ok"] is False
     assert prompt_run.metadata["llm_unload"]["code"] == "MODEL_UNLOAD_UNSUPPORTED"
     assert prompt_run.metadata["llm_unload"]["status_refresh_ok"] is True
+    cleanup_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Cleanup")
+    assert cleanup_step.message == "Unload unsupported by provider."
 
 
 def test_after_run_unload_status_refresh_failure_does_not_fail_successful_run(monkeypatch) -> None:

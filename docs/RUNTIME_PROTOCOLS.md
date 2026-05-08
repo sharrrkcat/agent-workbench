@@ -74,12 +74,13 @@ Run steps:
 - Prompt Agent default top-level steps include `Resolving agent`, `Building context`, `Resolving model`, `Calling LLM`, `Saving response`, and `Cleanup`.
 - Script Agent default top-level steps include `Resolving agent`, optional `Resolving model`, `Starting script`, `Running script`, `Saving response`, and `Cleanup`.
 - Script custom steps created with `ctx.step` default under `Running script`.
+- Model lifecycle unload outcomes are shown on the `Cleanup` step when cleanup attempts unload.
 - Session load returns runs and steps attached to messages.
 
 Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
-- Model lifecycle unload attempts are recorded under `llm_unload`.
+- Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
 - Failures should set both run status and user-visible error metadata where applicable.
 - Cancellation sets `cancel_requested` before terminal cancellation when possible.
 
@@ -148,12 +149,15 @@ Semantics:
 - Model Profile means model id, capabilities, and generation defaults.
 - Actual model metadata comes from provider response.
 - Composer `Default` means agent default resolved model.
-- Message badge can show actual model from run metadata/provider response.
+- Assistant message header model badges prefer Model Profile display name/name, then requested model id, then actual model id.
+- Actual model id is preserved in message/run metadata and debug details/tooltips even when the short badge shows the Model Profile name.
+- The bottom status bar may keep its debug-oriented provider profile plus model target/actual display and does not need to match chat message badges.
 - `supports_streaming` controls visible Prompt Agent streaming.
 - Script Agent public streaming requires explicit `ctx.output.write_delta` or `ctx.llm.stream_to_output`.
 - `supports_vision` controls image input to Prompt Agent LLM calls.
 - `supports_reasoning` is an output declaration and does not force provider behavior.
 - Unload is trusted script-only for manual script calls, and best-effort for lifecycle policies.
+- Successful, skipped, unsupported, and failed unload attempts remain cleanup outcomes in run metadata; unsupported unload and status refresh failure do not overwrite an otherwise successful run unless the lifecycle policy explicitly fails on unload failure.
 
 Current implementation note: `resolve_llm_config` applies defaults first and then overrides later sources, so later sources win. Keep user-facing behavior aligned with the order above when changing it.
 

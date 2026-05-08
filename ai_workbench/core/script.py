@@ -5,7 +5,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -235,6 +235,9 @@ class LLMProxy:
         event_bus: EventBus = None,
         session_id: str = "",
         run_id: str = "",
+        run_store: RunStore = None,
+        run_lifecycle: RunLifecycle = None,
+        parent_step_id: str = "",
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -245,7 +248,11 @@ class LLMProxy:
         self.event_bus = event_bus
         self.session_id = session_id
         self.run_id = run_id
+        self.run_store = run_store
+        self.run_lifecycle = run_lifecycle
+        self.parent_step_id = parent_step_id
         self.used = False
+        self.last_raw: Dict[str, Any] | None = None
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -273,6 +280,14 @@ class LLMProxy:
             data = generate(prompt=prompt, model_config=model_config, stream=options.pop("stream", False), **options)
         if inspect.isawaitable(data):
             data = await data
+        if isinstance(data, dict):
+            self.last_raw = data
+            try:
+                from ai_workbench.core.runner import _extract_content
+
+                return _extract_content(data)
+            except Exception:
+                return str(data)
         return str(data)
 
     async def stream(
@@ -294,9 +309,12 @@ class LLMProxy:
             return
         try:
             from ai_workbench.core.runner import _call_chat_stream, _normalize_stream_chunk
+            from ai_workbench.core.runner import _merge_stream_metadata
 
             async for chunk in _call_chat_stream(self.llm_runtime, resolved_messages, model_config):
                 normalized = _normalize_stream_chunk(chunk)
+                if normalized.raw:
+                    self.last_raw = _merge_stream_metadata(self.last_raw, normalized.raw)
                 yield ScriptLLMStreamChunk(
                     text=normalized.content_delta or "",
                     raw=normalized.raw,
@@ -324,7 +342,8 @@ class LLMProxy:
             parts.append(chunk.text)
             await self.output.write_delta(chunk.text)
         text = "".join(parts)
-        await self.output.finish()
+        await self.output.finish(metadata=self.message_metadata())
+        self.record_run_llm_metadata()
         return text
 
     async def generate(
@@ -354,12 +373,15 @@ class LLMProxy:
                     )
                     if inspect.isawaitable(data):
                         data = await data
+                    if isinstance(data, dict):
+                        self.last_raw = data
                 else:
                     data = await self.chat(
                         messages=[{"role": "user", "content": resolved_prompt}],
                         model_config=model_config,
                         **options,
                     )
+            self.record_run_llm_metadata()
             return CapabilityCallResult(success=True, data=data)
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM generate failed.")
@@ -374,6 +396,7 @@ class LLMProxy:
             else:
                 data = {"success": False, "unsupported": True, "message": "LLM runtime does not support unload."}
             self._refresh_provider_status_after_unload(data)
+            self._record_unload_result(data, legacy=True)
             return CapabilityCallResult(success=bool(data.get("success")), data=data, error=data.get("message"))
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM unload failed.")
@@ -409,7 +432,9 @@ class LLMProxy:
                     model_id=resolved_model_id,
                     reason="script",
                 )
+                _enrich_script_unload_result(data, self.default_llm_resolution, self.default_model_config)
                 self._refresh_provider_status_after_unload(data)
+            self._record_unload_result(data)
             return CapabilityCallResult(success=bool(data.get("ok")), data=data, error=_first_unload_error(data))
         except Exception as exc:
             return CapabilityCallResult(
@@ -417,6 +442,67 @@ class LLMProxy:
                 data={"ok": False, "unloaded": [], "errors": [{"code": "MODEL_UNLOAD_FAILED", "message": str(exc) or "Model unload failed."}]},
                 error=str(exc) or "Model unload failed.",
             )
+
+    def message_metadata(self) -> Dict[str, Any]:
+        if not self.default_llm_resolution:
+            return {}
+        try:
+            from ai_workbench.core.runner import _llm_message_metadata
+
+            llm_config = SimpleNamespace(values=self.default_model_config, metadata=_resolution_as_config_metadata(self.default_llm_resolution))
+            return {
+                "llm_resolution": self.default_llm_resolution,
+                "llm": _llm_message_metadata(llm_config, self.last_raw),
+            }
+        except Exception:
+            return {"llm_resolution": self.default_llm_resolution}
+
+    def record_run_llm_metadata(self) -> None:
+        if self.run_store is None or not self.run_id or not self.default_llm_resolution:
+            return
+        metadata = dict(self.run_store.get_run(self.run_id).metadata)
+        metadata.update(self.message_metadata())
+        self.run_store.update_metadata(self.run_id, metadata)
+
+    def _record_unload_result(self, data: Dict[str, Any], legacy: bool = False) -> None:
+        if self.run_store is None or not self.run_id:
+            return
+        try:
+            from ai_workbench.core.runner import _llm_unload_message
+
+            result = data if not legacy else _legacy_unload_result(data, self.default_llm_resolution, self.default_model_config)
+            run = self.run_store.get_run(self.run_id)
+            metadata = dict(run.metadata)
+            status_refresh = result.get("status_refresh") if isinstance(result.get("status_refresh"), dict) else {}
+            metadata["llm_unload"] = {
+                "policy": "script",
+                "attempted": not bool(result.get("skipped")),
+                "ok": bool(result.get("ok")),
+                "status_refresh_attempted": bool(status_refresh.get("attempted")),
+                "status_refresh_ok": bool(status_refresh.get("ok")),
+                "status_refresh_error": status_refresh.get("error"),
+                "provider": result.get("provider"),
+                "provider_profile_id": result.get("provider_profile_id"),
+                "provider_profile_name": result.get("provider_profile_name"),
+                "model_profile_id": result.get("model_profile_id"),
+                "model_profile_name": result.get("model_profile_name"),
+                "requested_model_id": result.get("requested_model_id") or result.get("model_id"),
+                "actual_model_id": result.get("actual_model_id"),
+                "model_id": result.get("model_id"),
+                "unloaded_count": len(result.get("unloaded") or []),
+                "skipped": bool(result.get("skipped")),
+                "skip_reason": result.get("skip_reason"),
+                "code": result.get("code"),
+                "errors": result.get("errors") or [],
+                "result": result,
+            }
+            self.run_store.update_metadata(self.run_id, metadata)
+            message = _llm_unload_message(result)
+            if message and self.run_lifecycle is not None:
+                step = self.run_lifecycle.start_step(self.run_id, "Unload model", parent_step_id=self.parent_step_id, metadata={"llm_unload": result})
+                self.run_lifecycle.complete_step(step.step_id, message=message, metadata={"llm_unload": result})
+        except Exception:
+            return
 
     def _refresh_provider_status_after_unload(self, data: Dict[str, Any]) -> None:
         provider_profile_id = str(
@@ -508,6 +594,9 @@ class AgentContext:
             event_bus=event_bus,
             session_id=session.session_id,
             run_id=run_id,
+            run_store=run_store,
+            run_lifecycle=run_lifecycle,
+            parent_step_id=current_parent_step_id or "",
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -517,11 +606,13 @@ class AgentContext:
 
     async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None):
         resolved_output_type = output_type or type
+        metadata = {"success": True, **self.llm.message_metadata()}
+        self.llm.record_run_llm_metadata()
         message = await self.output.finish(
             final_content=content,
             output_type=resolved_output_type,
             actions=actions or [],
-            metadata={"success": True, **({"llm_resolution": self.llm_resolution} if self.llm_resolution else {})},
+            metadata=metadata,
             agent_id=self.agent.id,
             action_id=self.action_id,
             parent_message_id=self.parent_message_id,
@@ -815,15 +906,18 @@ class ScriptAgentRunner:
             await ctx.output.finish(
                 final_content="" if script_result is None else script_result,
                 output_type="text",
-                metadata={"success": True, **({"llm_resolution": ctx.llm_resolution} if ctx.llm_resolution else {})},
+                metadata={"success": True, **ctx.llm.message_metadata()},
                 agent_id=agent.id,
                 action_id=action_id,
                 parent_message_id=parent_id,
             )
         self.run_lifecycle.complete_step(saving_step.step_id)
         cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
-        self._apply_model_lifecycle(ctx, lifecycle)
-        self.run_lifecycle.complete_step(cleanup_step.step_id)
+        unload_result = self._apply_model_lifecycle(ctx, lifecycle)
+        from ai_workbench.core.runner import _llm_unload_message
+
+        unload_message = _llm_unload_message(unload_result) if unload_result else None
+        self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
         done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         return RunResult(success=True, run_id=done_run.run_id, data=None)
@@ -883,9 +977,9 @@ class ScriptAgentRunner:
             payload["error_code"] = error_code
         return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=error_code)
 
-    def _apply_model_lifecycle(self, ctx: AgentContext, lifecycle) -> None:
+    def _apply_model_lifecycle(self, ctx: AgentContext, lifecycle) -> dict | None:
         if lifecycle.unload != "after_run" or not ctx.llm.used:
-            return
+            return None
         result = unload_model_for_profile(
             provider_profile_store=self.provider_profile_store,
             llm_profile_store=self.llm_profile_store,
@@ -894,6 +988,7 @@ class ScriptAgentRunner:
             model_id=ctx.llm_resolution.get("model_id") or ctx.llm.default_model_config.get("model_id") or ctx.llm.default_model_config.get("model"),
             reason="after_run",
         )
+        _enrich_script_unload_result(result, ctx.llm_resolution, ctx.llm.default_model_config)
         ctx.llm._refresh_provider_status_after_unload(result)
         run = self.run_store.get_run(ctx.run_id)
         metadata = dict(run.metadata)
@@ -926,6 +1021,7 @@ class ScriptAgentRunner:
                 payload={"warning": warnings[-1]},
             )
         self.run_store.update_metadata(ctx.run_id, metadata)
+        return result
 
 
 def _load_module(path: Path, module_name: str) -> ModuleType:
@@ -956,6 +1052,56 @@ def _first_unload_error(data: Dict[str, Any]) -> Optional[str]:
         if isinstance(first, dict):
             return str(first.get("message") or first.get("code") or "Model unload failed.")
     return None
+
+
+def _resolution_as_config_metadata(resolution: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source": resolution.get("source"),
+        "profile_id": resolution.get("profile_id"),
+        "profile_alias": resolution.get("profile_alias"),
+        "profile_key": resolution.get("profile_key") or resolution.get("profile_alias"),
+        "profile_name": resolution.get("profile_name"),
+        "provider_profile_id": resolution.get("provider_profile_id"),
+        "provider_profile_name": resolution.get("provider_profile_name"),
+        "provider": resolution.get("provider"),
+        "session_override_requested": resolution.get("session_override_requested"),
+        "session_override_applied": resolution.get("session_override_applied"),
+        "allow_session_override": resolution.get("allow_session_override"),
+    }
+
+
+def _legacy_unload_result(data: Dict[str, Any], resolution: Dict[str, Any], model_config: Dict[str, Any]) -> Dict[str, Any]:
+    ok = bool(data.get("success"))
+    model_id = str(resolution.get("model_id") or model_config.get("model_id") or model_config.get("model") or "")
+    return {
+        "ok": ok,
+        "code": "MODEL_UNLOAD_UNSUPPORTED" if data.get("unsupported") else None,
+        "provider": resolution.get("provider") or model_config.get("provider"),
+        "provider_profile_id": resolution.get("provider_profile_id") or model_config.get("provider_profile_id"),
+        "provider_profile_name": resolution.get("provider_profile_name") or model_config.get("provider_profile_name"),
+        "model_profile_id": resolution.get("profile_id") or model_config.get("model_profile_id"),
+        "model_profile_name": resolution.get("profile_name") or model_config.get("model_profile_name"),
+        "requested_model_id": model_id,
+        "model_id": model_id,
+        "unloaded": data.get("unloaded") or [],
+        "skipped": False,
+        "skip_reason": None,
+        "errors": [] if ok else [{"code": "MODEL_UNLOAD_UNSUPPORTED" if data.get("unsupported") else "MODEL_UNLOAD_FAILED", "message": data.get("message") or "Model unload failed."}],
+        "status_refresh": data.get("status_refresh"),
+        "result": data,
+    }
+
+
+def _enrich_script_unload_result(result: Dict[str, Any], resolution: Dict[str, Any], model_config: Dict[str, Any]) -> Dict[str, Any]:
+    model_id = str(resolution.get("model_id") or model_config.get("model_id") or model_config.get("model") or result.get("model_id") or "")
+    result.setdefault("provider", resolution.get("provider") or model_config.get("provider"))
+    result.setdefault("provider_profile_id", resolution.get("provider_profile_id") or model_config.get("provider_profile_id"))
+    result.setdefault("provider_profile_name", resolution.get("provider_profile_name") or model_config.get("provider_profile_name"))
+    result.setdefault("model_profile_id", resolution.get("profile_id") or model_config.get("model_profile_id"))
+    result.setdefault("model_profile_name", resolution.get("profile_name") or model_config.get("model_profile_name"))
+    result.setdefault("requested_model_id", model_id)
+    result.setdefault("model_id", model_id)
+    return result
 
 
 def _messages_to_prompt(messages: List[Dict[str, Any]]) -> str:

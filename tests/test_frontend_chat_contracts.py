@@ -160,3 +160,26 @@ def test_streaming_store_replaces_final_and_dedupes_by_run_or_draft() -> None:
     assert "replaceDraftWithFinal(get().messages, finalMessage, draftMessageId)" in source
     assert "message.message_id.startsWith('draft-') && message.run_id && message.run_id === finalMessage.run_id" in source
     assert "resolveMessageSeqKey" in source
+
+
+def test_message_badge_prefers_profile_name_before_model_ids() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "resolveMessageModelBadge" in source
+    assert "llm?.model_profile_name" in source
+    assert "resolution?.profile_name" in source
+    assert "llm?.requested_model_id" in source
+    assert "llm?.actual_model_id" in source
+    assert source.index("llm?.model_profile_name") < source.index("llm?.requested_model_id")
+    assert source.index("llm?.requested_model_id") < source.index("llm?.actual_model_id")
+
+
+def test_message_badge_tooltip_keeps_actual_model_debug_details() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "Model profile ID:" in source
+    assert "Provider profile ID:" in source
+    assert "Requested model:" in source
+    assert "Actual model:" in source
+    assert "Provider:" in source
+    assert "Status:" in source
