@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from ai_workbench.core.agent_registry import AgentRegistry
@@ -92,6 +93,25 @@ def write_script_agent(tmp_path: Path, agent_id: str, code: str, entry: str = "a
     return registry
 
 
+def configure_llm_profile(fixture: ScriptRuntimeFixture, supports_streaming: bool = True):
+    provider = fixture.provider_profiles.create(
+        ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1")
+    )
+    profile = fixture.llm_profiles.create(
+        LLMProfileSchema(
+            id="profile",
+            alias="p",
+            name="P",
+            provider_profile_id=provider.id,
+            model_id="model-a",
+            supports_streaming=supports_streaming,
+        )
+    )
+    session = fixture.sessions.create_session(title="Lifecycle lab test")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    return fixture.sessions.get_session(session.session_id)
+
+
 def test_script_agent_manifest_loads() -> None:
     agents = AgentRegistry()
     agents.load_from_directory(ROOT / "agents")
@@ -100,6 +120,124 @@ def test_script_agent_manifest_loads() -> None:
 
     assert agent.type == "script"
     assert agent.entry == "agent.py"
+
+
+def test_script_lifecycle_lab_manifest_loads() -> None:
+    agents = AgentRegistry()
+    agents.load_from_directory(ROOT / "agents")
+
+    agent = agents.get("script_lifecycle_lab")
+
+    assert agent.type == "script"
+    assert agent.entry == "agent.py"
+    assert "llm" in agent.capabilities
+    assert {action.id for action in agent.actions} == {"default", "steps", "hidden_json", "public_stream"}
+
+
+def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
+    async def fast_sleep(seconds):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+    fixture = ScriptRuntimeFixture(llm=FakeLLMRuntime(response="should not be called"))
+    session = fixture.sessions.create_session(title="Lifecycle lab LLM test")
+
+    result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:steps inspect lifecycle"))
+    messages = fixture.messages.list_messages(session.session_id)
+    steps = fixture.runs.list_steps(result.run_id)
+
+    assert result.success is True
+    assert fixture.llm.calls == []
+    assert messages[-1].output_type == "markdown"
+    assert messages[-1].content == (
+        "# Step Test Complete\n\n"
+        "- Input: inspect lifecycle\n"
+        "- Steps: 4\n"
+        "- Simulated work: about 6.5 seconds"
+    )
+    assert len([message for message in messages if message.role == "assistant" and message.run_id == result.run_id]) == 1
+    lab_steps = [step for step in steps if step.label in {"Prepare input", "Simulate data read", "Simulate processing", "Render final report"}]
+    assert [step.label for step in lab_steps] == [
+        "Prepare input",
+        "Simulate data read",
+        "Simulate processing",
+        "Render final report",
+    ]
+    assert [step.status.value for step in lab_steps] == ["completed"] * 4
+    assert [step.message for step in lab_steps] == [
+        "Capturing user input.",
+        "Pretending to read local data.",
+        "Processing the input.",
+        "Building final markdown.",
+    ]
+
+
+def test_script_lifecycle_lab_hidden_json_uses_internal_stream_without_public_delta() -> None:
+    fixture = ScriptRuntimeFixture(
+        llm=FakeStreamingLLMRuntime(
+            chunks=[
+                "```json\n",
+                '{"title":"Lifecycle Lab","summary":"A script runtime test.",',
+                '"features":["Steps","Internal stream"],"risks":["Bad JSON"],"next_steps":["Run strict checks"]}',
+                "\n```",
+            ]
+        )
+    )
+    session = configure_llm_profile(fixture, supports_streaming=True)
+
+    result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:hidden_json test brief"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    events = fixture.events.list_events()
+
+    assert result.success is True
+    assert fixture.llm.calls[0]["stream"] is True
+    assert [event.type for event in events].count("message_delta") == 0
+    assert message.output_type == "markdown"
+    assert message.content == (
+        "# Lifecycle Lab\n\n"
+        "## Summary\nA script runtime test.\n\n"
+        "## Features\n- Steps\n- Internal stream\n\n"
+        "## Risks\n- Bad JSON\n\n"
+        "## Next steps\n- Run strict checks"
+    )
+    assert "```json" not in message.content
+    assert '"features"' not in message.content
+
+
+def test_script_lifecycle_lab_hidden_json_parse_error_returns_friendly_markdown() -> None:
+    fixture = ScriptRuntimeFixture(llm=FakeStreamingLLMRuntime(chunks=["not json"]))
+    session = configure_llm_profile(fixture, supports_streaming=True)
+
+    result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:hidden_json test brief"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    parse_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Parse JSON")
+
+    assert result.success is True
+    assert parse_step.status.value == "failed"
+    assert message.output_type == "markdown"
+    assert message.content == (
+        "# JSON extraction failed\n\n"
+        "The model response could not be parsed as JSON."
+    )
+
+
+def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplicate_message() -> None:
+    fixture = ScriptRuntimeFixture(llm=FakeStreamingLLMRuntime(chunks=["First paragraph.\n\n", "Second paragraph."]))
+    session = configure_llm_profile(fixture, supports_streaming=True)
+
+    result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:public_stream lifecycle streaming"))
+    messages = fixture.messages.list_messages(session.session_id)
+    message = messages[-1]
+    events = fixture.events.list_events()
+    stream_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Stream response to chat")
+
+    assert result.success is True
+    assert fixture.llm.calls[0]["stream"] is True
+    assert [event.type for event in events].count("message_delta") == 2
+    assert message.output_type == "markdown"
+    assert message.content == "First paragraph.\n\nSecond paragraph."
+    assert stream_step.status.value == "completed"
+    assert len([item for item in messages if item.role == "assistant" and item.run_id == result.run_id]) == 1
 
 
 def test_echo_script_executes_through_runtime() -> None:

@@ -1,0 +1,33 @@
+id: script_lifecycle_lab
+name: Script Lifecycle Lab
+type: script
+description: Test agent for script runtime steps, internal LLM streaming, and public output streaming.
+avatar: "SL"
+entry: agent.py
+
+actions:
+  - id: default
+    label: Steps
+    description: Alias for the steps lifecycle test.
+  - id: steps
+    label: Steps
+    description: Test realtime run steps without LLM.
+  - id: hidden_json
+    label: Hidden JSON
+    description: Test internal LLM streaming without public output.
+  - id: public_stream
+    label: Public Stream
+    description: Test public output streaming from a script agent.
+
+capabilities:
+  - llm
+
+context_policy:
+  mode: current_message
+  max_messages: 1
+  max_chars: 4000
+
+model_lifecycle:
+  load: on_demand
+  unload: manual
+  unload_failure: warn

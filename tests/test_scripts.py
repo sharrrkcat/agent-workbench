@@ -170,6 +170,18 @@ def test_check_agents_strict_passes_current_repo() -> None:
     assert "[OK] Agent checks passed" in result.stdout
 
 
+def test_check_agents_strict_recognizes_script_lifecycle_lab() -> None:
+    module = load_script_module("check_agents")
+    result = module.check_agents(
+        agents_root=ROOT / "agents",
+        capabilities_root=ROOT / "capabilities",
+        strict=True,
+    )
+
+    assert result.ok is True
+    assert "script_lifecycle_lab" in {agent["id"] for agent in result.agents}
+
+
 def test_check_agents_detects_script_agent_without_run(tmp_path: Path) -> None:
     module = load_script_module("check_agents")
     agents_root = tmp_path / "agents"

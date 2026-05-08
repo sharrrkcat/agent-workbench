@@ -14,11 +14,21 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_agent_manifests_load() -> None:
     chat = load_agent_manifest(ROOT / "agents" / "chat" / "agent.yaml")
     translate = load_agent_manifest(ROOT / "agents" / "translate" / "agent.yaml")
+    script_lifecycle_lab = load_agent_manifest(ROOT / "agents" / "script_lifecycle_lab" / "agent.yaml")
 
     assert isinstance(chat, AgentSchema)
     assert chat.id == "chat"
     assert chat.context_policy.mode == "session"
     assert {action.id for action in translate.actions} == {"default", "formal", "casual", "retry"}
+    assert script_lifecycle_lab.type == "script"
+    assert script_lifecycle_lab.entry == "agent.py"
+    assert "llm" in script_lifecycle_lab.capabilities
+    assert {action.id for action in script_lifecycle_lab.actions} == {
+        "default",
+        "steps",
+        "hidden_json",
+        "public_stream",
+    }
 
 
 def test_capability_manifest_loads() -> None:
