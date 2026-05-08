@@ -6,6 +6,10 @@
 - During streaming, visible content is updated by `message_delta`.
 - `message_updated` must not replace streaming content.
 - `message_completed` is the final authoritative content.
+- `message_delta` is a realtime transport event. By default it is sent over WebSocket but is not persisted to the SQLite event log.
+- `message_completed` persists the final assistant message content.
+- Settings -> Data -> `Persist streaming message deltas` makes `message_delta` persist for debugging.
+- Run steps, errors, warnings, and other diagnostic events are not affected by the streaming delta persistence setting.
 - `message_delta` carries `message_id`, `run_id`, `seq`, `delta`, and optional `reasoning_delta`.
 - `message_completed` carries `message_id`, `run_id`, `seq`, and final `message`.
 - `seq` is monotonic per message.
@@ -176,7 +180,7 @@ Fallback notes:
 
 Prompt Agent LLM calls:
 - Non-streaming calls store one final assistant message.
-- Streaming calls store deltas, then final content on completion.
+- Streaming calls emit deltas, then store final content on completion. Deltas are persisted only when Settings -> Data enables `Persist streaming message deltas`.
 - Context warnings may be attached to message metadata.
 - Image vision metadata records supported, attached, sent, and ignored counts.
 - File context metadata records included text attachment details and warnings.

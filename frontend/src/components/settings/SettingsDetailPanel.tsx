@@ -114,7 +114,7 @@ export function SettingsDetailPanel({
   if (section === 'data') {
     return (
       <section className="settings-detail-panel">
-        <DataDetail health={health} />
+        <DataDetail health={health} onDirtyChange={onDirtyChange} />
       </section>
     );
   }
@@ -302,11 +302,15 @@ function NumberField({ label, value, min, max, onChange }: { label: string; valu
   );
 }
 
-function DataDetail({ health }: { health?: HealthDetails }) {
+function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirtyChange: (dirty: boolean) => void }) {
+  const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [busy, setBusy] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [confirmClean, setConfirmClean] = useState(false);
+  const [persistDeltas, setPersistDeltas] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const dirty = Boolean(generalSettings && persistDeltas !== generalSettings.persist_streaming_message_deltas);
 
   async function refresh() {
     setBusy('refresh');
@@ -322,7 +326,27 @@ function DataDetail({ health }: { health?: HealthDetails }) {
 
   useEffect(() => {
     void refresh();
+    void refreshGeneralSettings();
   }, []);
+
+  useEffect(() => {
+    if (generalSettings) setPersistDeltas(generalSettings.persist_streaming_message_deltas);
+  }, [generalSettings]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function saveSettings() {
+    try {
+      setLocalError(null);
+      await updateGeneralSettings({ persist_streaming_message_deltas: persistDeltas });
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1400);
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to save data settings.'));
+    }
+  }
 
   async function scan() {
     setBusy('scan');
@@ -367,9 +391,31 @@ function DataDetail({ health }: { health?: HealthDetails }) {
             <p>SQLite local storage and attachment maintenance.</p>
           </div>
         </div>
+        <div className="settings-detail-actions">
+          {saved ? <span className="settings-badge success">Saved</span> : null}
+          {dirty ? (
+            <button className="settings-primary-button" type="button" onClick={saveSettings}>
+              <Save size={14} />
+              Save
+            </button>
+          ) : null}
+        </div>
       </header>
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
+        <div className="detail-section">
+          <div className="detail-section-heading">
+            <h3>Event log</h3>
+          </div>
+          <label className="config-field settings-config-field boolean-field">
+            <span>Persist streaming message deltas</span>
+            <ToggleSwitch checked={persistDeltas} onChange={setPersistDeltas} />
+            <small>
+              Store every streaming message_delta event in the local database for debugging. Disabled by default to keep the database smaller. Final
+              messages, run steps, errors, and warnings are still stored.
+            </small>
+          </label>
+        </div>
         <div className="detail-section">
           <div className="detail-section-heading">
             <h3>Database</h3>

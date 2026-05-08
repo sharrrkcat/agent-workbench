@@ -14,7 +14,8 @@ from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.stores import LLMProfileStore, MessageStore, ProviderProfileStore, RunStore, SessionStore
+from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.stores import LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
 from tests.test_prompt_agent_execution import FakeLLMRuntime, FakeStreamingLLMRuntime, run
 
 
@@ -766,6 +767,36 @@ def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
     assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
     assert {event.message_id for event in events if event.type == "message_delta"} == {message.message_id}
     assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
+
+
+def test_ctx_llm_stream_to_output_deltas_are_not_persisted_by_default(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "llm_stream_output_script",
+        "async def run(ctx):\n"
+        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, output_type='markdown')\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeStreamingLLMRuntime(chunks=["hel", "lo"]))
+    fixture.events.run_event_store = RunEventStore()
+    fixture.events.app_settings_store = AppSettingsStore()
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a", supports_streaming=True))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@llm_stream_output_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    emitted = [event.type for event in fixture.events.list_events() if event.run_id == result.run_id]
+    persisted = fixture.events.run_event_store.list_events(result.run_id)
+
+    assert result.success is True
+    assert message.content == "hello"
+    assert "message_delta" in emitted
+    assert "message_completed" in emitted
+    assert "message_delta" not in [event.type for event in persisted]
+    assert "message_completed" in [event.type for event in persisted]
 
 
 def test_ctx_llm_stream_to_output_failure_completes_partial_message(tmp_path: Path) -> None:

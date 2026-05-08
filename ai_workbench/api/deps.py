@@ -120,7 +120,7 @@ def build_runtime_state(
         resolved_database_url = get_database_url(database_url)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
-    events = EventBus(run_event_store=run_events)
+    events = EventBus(run_event_store=run_events, app_settings_store=app_settings)
     active_runs = ActiveRunRegistry()
     router = Router(agent_registry=agents, command_registry=commands)
     command_runner = CommandRunner(

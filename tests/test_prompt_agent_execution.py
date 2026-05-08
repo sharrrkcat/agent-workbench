@@ -13,7 +13,8 @@ from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunn
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
-from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunStore, SessionStore
+from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -752,6 +753,29 @@ def test_prompt_agent_uses_streaming_when_profile_supports_streaming() -> None:
     assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
     assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
     assert "message_completed" in [event.type for event in events]
+
+
+def test_prompt_agent_streaming_deltas_are_not_persisted_by_default() -> None:
+    llm = FakeStreamingLLMRuntime(chunks=["he", "llo"])
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.events.run_event_store = RunEventStore()
+    fixture.events.app_settings_store = AppSettingsStore()
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    emitted = [event.type for event in fixture.events.list_events() if event.run_id == result.run_id]
+    persisted = fixture.events.run_event_store.list_events(result.run_id)
+
+    assert result.success is True
+    assert message.content == "hello"
+    assert "message_delta" in emitted
+    assert "message_completed" in emitted
+    assert "message_delta" not in [event.type for event in persisted]
+    assert "message_completed" in [event.type for event in persisted]
 
 
 def test_prompt_agent_uses_non_streaming_when_profile_does_not_support_streaming() -> None:

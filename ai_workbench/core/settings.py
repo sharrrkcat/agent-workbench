@@ -15,6 +15,7 @@ class AppSettings(BaseModel):
     max_file_context_per_file_kb: int = Field(default=200, ge=1, le=2048)
     max_total_file_context_per_message_kb: int = Field(default=500, ge=1, le=8192)
     send_text_file_attachments_to_llm: StrictBool = True
+    persist_streaming_message_deltas: StrictBool = False
 
     @property
     def max_image_size_bytes(self) -> int:
@@ -42,6 +43,7 @@ class AppSettingsPatch(BaseModel):
     max_file_context_per_file_kb: int | None = Field(default=None, ge=1, le=2048)
     max_total_file_context_per_message_kb: int | None = Field(default=None, ge=1, le=8192)
     send_text_file_attachments_to_llm: StrictBool | None = None
+    persist_streaming_message_deltas: StrictBool | None = None
 
 
 class AppSettingsStore:

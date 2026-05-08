@@ -22,17 +22,23 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     response = client.get("/api/settings/general")
     assert response.status_code == 200
     assert response.json()["max_file_size_mb"] == 10
+    assert response.json()["persist_streaming_message_deltas"] is False
 
-    patched = client.patch("/api/settings/general", json={"max_file_size_mb": 20, "send_text_file_attachments_to_llm": False})
+    patched = client.patch(
+        "/api/settings/general",
+        json={"max_file_size_mb": 20, "send_text_file_attachments_to_llm": False, "persist_streaming_message_deltas": True},
+    )
     assert patched.status_code == 200
     assert patched.json()["max_file_size_mb"] == 20
     assert patched.json()["send_text_file_attachments_to_llm"] is False
+    assert patched.json()["persist_streaming_message_deltas"] is True
 
     assert client.patch("/api/settings/general", json={"unknown": 1}).status_code == 422
     assert client.patch("/api/settings/general", json={"max_file_size_mb": 0}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
+    assert restarted.get("/api/settings/general").json()["persist_streaming_message_deltas"] is True
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

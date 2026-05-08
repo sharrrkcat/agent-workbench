@@ -279,6 +279,7 @@ Settings -> General stores local app settings in SQLite and exposes:
 - max file context per file
 - max total file context per message
 - whether ordinary text file attachments are sent to Prompt Agent LLM context
+- whether streaming `message_delta` events are persisted for debugging
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
 
@@ -300,7 +301,7 @@ The current schema version is stored in app metadata as `schema_version`.
 
 This project still uses a lightweight schema version guard plus `SQLModel.metadata.create_all`. New tables can be created during startup, but there is no Alembic migration system yet.
 
-Settings -> Data shows the database path and size, the attachment directory, attachment count and size, orphan attachment count and size, and optional last scan time. Use:
+Settings -> Data shows the database path and size, the attachment directory, attachment count and size, orphan attachment count and size, optional last scan time, and the `Persist streaming message deltas` debugging toggle. The toggle is off by default; final messages, run steps, errors, and warnings are still stored. Use:
 
 ```text
 GET /api/data/storage-stats

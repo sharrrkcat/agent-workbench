@@ -23,10 +23,11 @@ class Event(BaseModel):
 
 
 class EventBus:
-    def __init__(self, run_event_store=None) -> None:
+    def __init__(self, run_event_store=None, app_settings_store=None) -> None:
         self._events: List[Event] = []
         self._subscribers: List[asyncio.Queue] = []
         self.run_event_store = run_event_store
+        self.app_settings_store = app_settings_store
         self._closed = False
 
     def emit(
@@ -45,7 +46,7 @@ class EventBus:
             payload=payload or {},
         )
         self._events.append(event)
-        if self.run_event_store is not None and event.run_id:
+        if self.run_event_store is not None and event.run_id and self.should_persist_event(event.type):
             self.run_event_store.add_event(
                 run_id=event.run_id,
                 session_id=event.session_id,
@@ -57,6 +58,17 @@ class EventBus:
             for queue in list(self._subscribers):
                 queue.put_nowait(event)
         return event
+
+    def should_persist_event(self, event_type: str) -> bool:
+        if event_type != "message_delta":
+            return True
+        if self.app_settings_store is None:
+            return False
+        try:
+            settings = self.app_settings_store.get()
+        except Exception:
+            return False
+        return bool(getattr(settings, "persist_streaming_message_deltas", False))
 
     def list_events(self) -> List[Event]:
         return list(self._events)
