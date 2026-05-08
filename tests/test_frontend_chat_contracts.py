@@ -183,3 +183,55 @@ def test_message_badge_tooltip_keeps_actual_model_debug_details() -> None:
     assert "Actual model:" in source
     assert "Provider:" in source
     assert "Status:" in source
+
+
+def test_session_type_includes_context_mode_and_speaker_fields() -> None:
+    source = read_frontend("types.ts")
+
+    assert "ContextMode = 'single_assistant' | 'group_transcript'" in source
+    assert "context_mode?: ContextMode" in source
+    assert "speaker_type?: 'user' | 'agent' | 'capability' | 'system' | null" in source
+    assert "speaker_id?: string | null" in source
+    assert "speaker_name?: string | null" in source
+    assert "origin?: string | null" in source
+
+
+def test_chat_header_displays_and_switches_conversation_mode() -> None:
+    source = read_frontend("components/ChatHeader.tsx")
+
+    assert "mode-switcher" in source
+    assert "aria-label=\"Conversation mode\"" in source
+    assert ">Mode</span>" in source
+    assert "Single" in source
+    assert "Group" in source
+    assert "contextMode === 'group_transcript'" in source
+    assert "changeContextMode('group_transcript')" in source
+    assert "changeContextMode('single_assistant')" in source
+    assert "Single assistant: Treat agent history like a normal assistant conversation." in source
+    assert "Group transcript: Label user, agents, and command results in context so agents can distinguish speakers." in source
+
+
+def test_store_patches_and_normalizes_session_context_mode() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+    client = read_frontend("api/client.ts")
+
+    assert "updateSessionContextMode: (contextMode: ContextMode) => Promise<void>" in source
+    assert "if (normalizeContextMode(session.context_mode) === contextMode) return" in source
+    assert "api.updateSession(session.session_id, { context_mode: contextMode })" in source
+    assert "await get().refreshCurrent()" in source
+    assert "Failed to update conversation mode" in source
+    assert "normalizeSession" in source
+    assert "context_mode: normalizeContextMode(session.context_mode)" in source
+    assert "contextMode === 'group_transcript' ? 'group_transcript' : 'single_assistant'" in source
+    assert "'title' | 'default_agent_id' | 'llm_profile_id' | 'context_mode'" in client
+
+
+def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    assert "message.output_type === 'event'" in source
+    assert "SystemEventSeparator" in source
+    assert "system-event-separator" in source
+    assert ".system-event-separator" in styles
+    assert ".mode-switcher" in styles

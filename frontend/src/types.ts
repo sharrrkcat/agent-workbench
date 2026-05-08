@@ -339,10 +339,13 @@ export type LlmResolvedConfig = {
   sources?: Record<string, string>;
 };
 
+export type ContextMode = 'single_assistant' | 'group_transcript';
+
 export type Session = {
   session_id: string;
   title: string;
   default_agent_id: string;
+  context_mode?: ContextMode;
   waiting_run_id?: string | null;
   llm_profile_id?: string | null;
   last_announced_llm_profile_id?: string | null;
@@ -412,6 +415,10 @@ export type Message = {
   session_id: string;
   role: 'user' | 'assistant' | 'agent' | 'system' | 'tool' | 'command';
   content: unknown;
+  speaker_type?: 'user' | 'agent' | 'capability' | 'system' | null;
+  speaker_id?: string | null;
+  speaker_name?: string | null;
+  origin?: string | null;
   agent_id?: string | null;
   command_name?: string | null;
   action_id?: string | null;

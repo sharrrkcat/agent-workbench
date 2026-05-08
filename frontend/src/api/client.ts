@@ -172,7 +172,7 @@ export const api = {
       body: JSON.stringify({ title, default_agent_id }),
     }),
   getSession: (sessionId: string) => request<Session>(`/api/sessions/${sessionId}`),
-  updateSession: (sessionId: string, patch: Partial<Pick<Session, 'title' | 'default_agent_id' | 'llm_profile_id'>>) =>
+  updateSession: (sessionId: string, patch: Partial<Pick<Session, 'title' | 'default_agent_id' | 'llm_profile_id' | 'context_mode'>>) =>
     request<Session>(`/api/sessions/${sessionId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),

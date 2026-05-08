@@ -200,6 +200,10 @@ Modes:
 - `single_assistant`: default mode. The core preserves the existing user/assistant-style chat history projection as closely as possible.
 - `group_transcript`: speaker-aware mode. The core renders historical messages into one transcript block and sends the current user input in a separate current-message block.
 
+New sessions default to `single_assistant`. Users can switch a session between `single_assistant` and `group_transcript` at any time; there is no auto mode.
+
+Changing `context_mode` persists a `context_mode_changed` separator message for timeline review. The separator is a system event, is not treated as user/assistant/agent speaker content, and is excluded from LLM context.
+
 Retry and edit reruns build context from the current session `context_mode`.
 
 ## Speaker Identity

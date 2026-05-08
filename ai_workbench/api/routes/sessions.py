@@ -142,7 +142,24 @@ def update_session(session_id: str, payload: UpdateSessionRequest, state: Runtim
         session = state.sessions.set_title(session_id, title)
 
     if payload.context_mode is not None:
-        session = state.sessions.set_context_mode(session_id, payload.context_mode)
+        previous_context_mode = session.context_mode or "single_assistant"
+        if payload.context_mode != previous_context_mode:
+            session = state.sessions.set_context_mode(session_id, payload.context_mode)
+            state.messages.add_message(
+                session_id=session_id,
+                role="system",
+                content=f"Conversation mode changed to {_context_mode_label(payload.context_mode)}",
+                output_type="event",
+                metadata={
+                    "event_type": "context_mode_changed",
+                    "context_mode": payload.context_mode,
+                    "previous_context_mode": previous_context_mode,
+                },
+                speaker_type="system",
+                speaker_id=None,
+                speaker_name="System",
+                origin="context_mode_changed",
+            )
 
     if "llm_profile_id" in payload.model_fields_set:
         if payload.llm_profile_id is not None:
@@ -250,3 +267,9 @@ def _first_string(source: dict | None, keys: list[str]) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
+
+
+def _context_mode_label(context_mode: str) -> str:
+    if context_mode == "group_transcript":
+        return "Group transcript"
+    return "Single assistant"

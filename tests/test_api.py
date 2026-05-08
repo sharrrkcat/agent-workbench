@@ -626,7 +626,7 @@ def test_patch_session_can_change_default_agent() -> None:
     assert response.json()["default_agent_id"] == "translate"
 
 
-def test_patch_session_can_change_context_mode_without_changing_messages() -> None:
+def test_patch_session_can_change_context_mode_and_persist_separator() -> None:
     client = make_client()
     session = create_session(client)
     client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
@@ -637,7 +637,31 @@ def test_patch_session_can_change_context_mode_without_changing_messages() -> No
 
     assert response.status_code == 200
     assert response.json()["context_mode"] == "group_transcript"
-    assert after == before
+    assert after[: len(before)] == before
+    assert len(after) == len(before) + 1
+    separator = after[-1]
+    assert separator["role"] == "system"
+    assert separator["speaker_type"] == "system"
+    assert separator["origin"] == "context_mode_changed"
+    assert separator["output_type"] == "event"
+    assert separator["content"] == "Conversation mode changed to Group transcript"
+    assert separator["metadata"]["event_type"] == "context_mode_changed"
+    assert separator["metadata"]["context_mode"] == "group_transcript"
+    assert separator["metadata"]["previous_context_mode"] == "single_assistant"
+
+
+def test_patch_session_same_context_mode_does_not_duplicate_separator() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    first = client.patch(f"/api/sessions/{session['session_id']}", json={"context_mode": "group_transcript"})
+    second = client.patch(f"/api/sessions/{session['session_id']}", json={"context_mode": "group_transcript"})
+    messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    separators = [message for message in messages if message["metadata"].get("event_type") == "context_mode_changed"]
+    assert len(separators) == 1
 
 
 def test_patch_session_can_change_llm_profile_id_and_default() -> None:

@@ -2,12 +2,19 @@ import { Settings } from 'lucide-react';
 import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
+import type { ContextMode } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const currentSession = useWorkbenchStore((state) => state.currentSession);
+  const updateSessionContextMode = useWorkbenchStore((state) => state.updateSessionContextMode);
   const state = useWorkbenchStore();
   const currentProfile = resolveCurrentLlmProfile(state);
   const modelStatus = getModelProfileStatus(currentProfile, state.llmProviderStatuses);
+  const contextMode = currentSession?.context_mode === 'group_transcript' ? 'group_transcript' : 'single_assistant';
+
+  function changeContextMode(nextMode: ContextMode) {
+    void updateSessionContextMode(nextMode);
+  }
 
   return (
     <header className="topbar">
@@ -18,6 +25,27 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
         </span>
       </div>
       <div className="topbar-actions">
+        <div className="mode-switcher" aria-label="Conversation mode">
+          <span>Mode</span>
+          <button
+            type="button"
+            className={contextMode === 'single_assistant' ? 'selected' : ''}
+            onClick={() => changeContextMode('single_assistant')}
+            disabled={!currentSession}
+            title="Single assistant: Treat agent history like a normal assistant conversation."
+          >
+            Single
+          </button>
+          <button
+            type="button"
+            className={contextMode === 'group_transcript' ? 'selected' : ''}
+            onClick={() => changeContextMode('group_transcript')}
+            disabled={!currentSession}
+            title="Group transcript: Label user, agents, and command results in context so agents can distinguish speakers."
+          >
+            Group
+          </button>
+        </div>
         <button
           className={`status-pill ${statusClass(modelStatus)}`}
           type="button"

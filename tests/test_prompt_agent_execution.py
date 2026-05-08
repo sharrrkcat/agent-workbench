@@ -239,6 +239,28 @@ def test_chat_agent_session_context_excludes_model_change_events() -> None:
     assert sent[-1] == {"role": "user", "content": "new user"}
 
 
+def test_chat_agent_session_context_excludes_context_mode_change_events() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat", context_mode="group_transcript")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="system",
+        content="Conversation mode changed to Group transcript",
+        output_type="event",
+        metadata={"event_type": "context_mode_changed", "context_mode": "group_transcript"},
+        speaker_type="system",
+        origin="context_mode_changed",
+    )
+
+    run(fixture.runtime.handle_input(session, "new user"))
+    sent = llm.calls[0]["messages"]
+    user_payload = sent[-1]["content"]
+
+    assert "Conversation mode changed to Group transcript" not in user_payload
+    assert "<current_user_message>\nnew user\n</current_user_message>" in user_payload
+
+
 def test_prompt_agent_after_slash_command_sends_only_chat_roles() -> None:
     llm = FakeLLMRuntime(response="summary")
     fixture = PromptRuntimeFixture(llm=llm)

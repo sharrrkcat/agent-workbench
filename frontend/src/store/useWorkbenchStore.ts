@@ -24,6 +24,7 @@ import type {
   RuntimeEvent,
   Session,
   SendMessageAttachment,
+  ContextMode,
 } from '../types';
 
 type WorkbenchState = {
@@ -67,6 +68,7 @@ type WorkbenchState = {
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   updateDefaultAgent: (agentId: string) => Promise<void>;
+  updateSessionContextMode: (contextMode: ContextMode) => Promise<void>;
   updateSessionLlmProfile: (profileId: string | null) => Promise<void>;
   refreshProviderStatuses: (providerProfileIds?: string[]) => Promise<void>;
   refreshCurrentResolvedProviderStatus: () => Promise<void>;
@@ -136,7 +138,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         api.getLlmDefaults(),
         api.getGeneralSettings(),
       ]);
-      const sortedSessions = sortSessionsByRecent(sessions);
+      const sortedSessions = sortSessionsByRecent(sessions.map(normalizeSession));
       const currentSession = sortedSessions[0];
       set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, loading: false });
       if (currentSession) {
@@ -152,13 +154,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   refreshCurrent: async () => {
     const session = get().currentSession;
     if (!session) return;
-    const [freshSession, messages, runs] = await Promise.all([
+    const [freshSessionResponse, messages, runs] = await Promise.all([
       api.getSession(session.session_id),
       api.listMessages(session.session_id),
       api.listRuns(session.session_id),
     ]);
+    const freshSession = normalizeSession(freshSessionResponse);
     if (get().currentSession?.session_id !== session.session_id) return;
-    const sessions = await api.listSessions();
+    const sessions = (await api.listSessions()).map(normalizeSession);
     if (get().currentSession?.session_id !== session.session_id) return;
     const mergedRunState = mergeRunsIntoState(get(), runs);
     set({
@@ -186,16 +189,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
     set({ creatingSession: true, error: undefined, lastError: undefined });
     try {
-      const session = await api.createSession(`Session ${get().sessions.length + 1}`, defaultAgentId);
+      const session = normalizeSession(await api.createSession(`Session ${get().sessions.length + 1}`, defaultAgentId));
       const sessions = sortSessionsByRecent(await api.listSessions());
-      set({ sessions, currentSession: session, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runStepsExpandedByRunId: {}, lastMessageSeqById: {}, completedMessageIds: {}, creatingSession: false });
+      set({ sessions: sessions.map(normalizeSession), currentSession: session, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runStepsExpandedByRunId: {}, lastMessageSeqById: {}, completedMessageIds: {}, creatingSession: false });
     } catch (error) {
       set({ ...formatError(error, 'Failed to create session'), creatingSession: false });
     }
   },
 
   selectSession: async (sessionId: string) => {
-    const session = await api.getSession(sessionId);
+    const session = normalizeSession(await api.getSession(sessionId));
     set({ currentSession: session, lastMessageSeqById: {}, completedMessageIds: {} });
     await get().refreshCurrent();
   },
@@ -210,7 +213,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       if (deletingCurrent) {
         set({ currentSession: nextSession, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runEvents: {}, runStepsExpandedByRunId: {}, lastMessageSeqById: {}, completedMessageIds: {} });
       }
-      const sessions = sortSessionsByRecent((await api.listSessions()).filter((session) => session.session_id !== sessionId));
+      const sessions = sortSessionsByRecent((await api.listSessions()).map(normalizeSession).filter((session) => session.session_id !== sessionId));
       if (!deletingCurrent) {
         set({
           sessions,
@@ -267,7 +270,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       throw new Error(emptyTitle.message);
     }
     try {
-      const updated = await api.updateSession(sessionId, { title: trimmed });
+      const updated = normalizeSession(await api.updateSession(sessionId, { title: trimmed }));
       set({
         currentSession: get().currentSession?.session_id === updated.session_id ? updated : get().currentSession,
         sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
@@ -292,7 +295,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       return;
     }
     try {
-      const updated = await api.updateSession(session.session_id, { default_agent_id: agentId });
+      const updated = normalizeSession(await api.updateSession(session.session_id, { default_agent_id: agentId }));
       set({
         currentSession: updated,
         sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
@@ -302,6 +305,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       void get().refreshCurrentResolvedProviderStatus();
     } catch (error) {
       set(formatError(error, 'Failed to update default agent'));
+    }
+  },
+
+  updateSessionContextMode: async (contextMode: ContextMode) => {
+    const session = get().currentSession;
+    if (!session) return;
+    if (normalizeContextMode(session.context_mode) === contextMode) return;
+    try {
+      const updated = normalizeSession(await api.updateSession(session.session_id, { context_mode: contextMode }));
+      set({
+        currentSession: updated,
+        sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
+        error: undefined,
+        lastError: undefined,
+      });
+      await get().refreshCurrent();
+    } catch (error) {
+      set(formatError(error, 'Failed to update conversation mode'));
+      throw error;
     }
   },
 
@@ -319,7 +341,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       }
     }
     try {
-      const updated = await api.updateSession(session.session_id, { llm_profile_id: profileId });
+      const updated = normalizeSession(await api.updateSession(session.session_id, { llm_profile_id: profileId }));
       set({
         currentSession: updated,
         sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updated.session_id ? updated : item))),
@@ -1379,6 +1401,14 @@ function sortSessionsByRecent(sessions: Session[]): Session[] {
       return left.index - right.index;
     })
     .map((item) => item.session);
+}
+
+function normalizeSession(session: Session): Session {
+  return { ...session, context_mode: normalizeContextMode(session.context_mode) };
+}
+
+function normalizeContextMode(contextMode?: string | null): ContextMode {
+  return contextMode === 'group_transcript' ? 'group_transcript' : 'single_assistant';
 }
 
 function sessionSortTime(session: Session): number {
