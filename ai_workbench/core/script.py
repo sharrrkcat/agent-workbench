@@ -103,6 +103,11 @@ class ScriptRunLifecycleProxy:
     def complete_step(self, step_id: str, message: str = None):
         return self.lifecycle.complete_step(step_id, message=message)
 
+    def update_step(self, step_id: str, message: str = None, metadata: Optional[dict[str, Any]] = None):
+        step = self.lifecycle.run_store.update_step(step_id, message=message, metadata=metadata)
+        self.lifecycle._emit_step("run_step_updated", step)
+        return step
+
     def fail_step(self, step_id: str, error_code: str = None, error_message: str = None):
         return self.lifecycle.fail_step(step_id, error_code=error_code, error_message=error_message)
 
@@ -657,37 +662,37 @@ class AgentContext:
         self.current_parent_step_id = current_parent_step_id
         self.run = ScriptRunLifecycleProxy(run_lifecycle, run_id, default_parent_step_id=current_parent_step_id) if run_lifecycle is not None else None
 
-    async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None):
+    async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         resolved_output_type = output_type or type
-        metadata = {"success": True, **self.llm.message_metadata()}
+        message_metadata = {"success": True, **self.llm.message_metadata(), **(metadata or {})}
         self.llm.record_run_llm_metadata()
         message = await self.output.finish(
             final_content=content,
             output_type=resolved_output_type,
             actions=actions or [],
-            metadata=metadata,
+            metadata=message_metadata,
             agent_id=self.agent.id,
             action_id=self.action_id,
             parent_message_id=self.parent_message_id,
         )
         return message
 
-    async def reply_text(self, text: str, actions=None):
-        return await self.reply(text, output_type="text", actions=actions)
+    async def reply_text(self, text: str, actions=None, metadata: Optional[Dict[str, Any]] = None):
+        return await self.reply(text, output_type="text", actions=actions, metadata=metadata)
 
-    async def reply_markdown(self, markdown: str, actions=None):
-        return await self.reply(markdown, output_type="markdown", actions=actions)
+    async def reply_markdown(self, markdown: str, actions=None, metadata: Optional[Dict[str, Any]] = None):
+        return await self.reply(markdown, output_type="markdown", actions=actions, metadata=metadata)
 
-    async def reply_json(self, data: dict | list, actions=None):
-        return await self.reply(data, output_type="json", actions=actions)
+    async def reply_json(self, data: dict | list, actions=None, metadata: Optional[Dict[str, Any]] = None):
+        return await self.reply(data, output_type="json", actions=actions, metadata=metadata)
 
-    async def reply_image(self, url: str, alt: str = None, title: str = None, caption: str = None, actions=None):
+    async def reply_image(self, url: str, alt: str = None, title: str = None, caption: str = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         payload = ImagePayload(url=url, alt=alt, title=title, caption=caption)
-        return await self.reply(payload.model_dump(exclude_none=True), output_type="image", actions=actions)
+        return await self.reply(payload.model_dump(exclude_none=True), output_type="image", actions=actions, metadata=metadata)
 
-    async def reply_images(self, images: list, actions=None):
+    async def reply_images(self, images: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
         payload = ImageGalleryPayload(images=[ImagePayload.model_validate(image) for image in images])
-        return await self.reply(payload.model_dump(exclude_none=True), output_type="image_gallery", actions=actions)
+        return await self.reply(payload.model_dump(exclude_none=True), output_type="image_gallery", actions=actions, metadata=metadata)
 
     async def reply_file_content(
         self,

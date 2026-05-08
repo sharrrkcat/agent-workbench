@@ -214,7 +214,9 @@ ComfyUI workflow library foundation:
 - Presets are durable mapping assets that reference workflow file basenames and optional canonical hashes.
 - A session recipe is a per-session, per-agent runtime copy of a preset plus user-edited values.
 - Editing a session recipe must not rewrite the preset file.
-- Generation requests should be built from the current session recipe, then submitted only by an explicit generation action.
+- Generation requests are built as `workflow file -> preset -> session recipe -> filled workflow request`.
+- Long-running generation submits the filled workflow, polls status, fetches output images, saves local attachments, and renders an attachment-backed image gallery.
+- Form submit saves only the session recipe; generation actions are `default`, `raw`, `llm`, and `run`.
 
 Obsidian or LLM Wiki:
 
@@ -387,7 +389,7 @@ Rules:
 
 Examples:
 
-- ComfyUI mapping: prepare workflow, submit, wait for queue, generate, fetch output, save attachment, render result.
+- ComfyUI mapping: prepare recipe, validate preset, fill workflow, optionally enhance prompt with an internal LLM call, submit workflow, poll status, fetch output, save attachments, render result.
 - Obsidian wiki mapping: scan candidate notes, extract concepts, build links, preview changes, write notes, render summary.
 
 ## LLM Usage Patterns

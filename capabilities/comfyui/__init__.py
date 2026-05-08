@@ -400,11 +400,18 @@ class CapabilityRuntime:
         result = {
             "workflows_dir": str(workflows_dir),
             "presets_dir": str(presets_dir),
+            "config": {
+                "poll_interval_seconds": float(config["poll_interval_seconds"]),
+                "max_wait_seconds": float(config["max_wait_seconds"]),
+                "auto_create_missing_presets": bool(config["auto_create_missing_presets"]),
+                "allow_preset_file_write": bool(config["allow_preset_file_write"]),
+            },
             "workflows": [],
             "duplicates": [],
             "presets": [],
             "missing_preset_workflows": [],
             "created_draft_presets": [],
+            "skipped_draft_presets": [],
             "errors": [],
             "warnings": [],
         }
@@ -431,20 +438,50 @@ class CapabilityRuntime:
 
         presets = _scan_presets(presets_dir, workflows_dir, workflows)
         result["presets"] = presets
-        referenced = {preset.get("workflow", {}).get("file_name") for preset in presets if isinstance(preset.get("workflow"), dict)}
-        missing = [workflow for workflow in workflows if workflow.get("valid") and workflow["file_name"] not in referenced]
-        result["missing_preset_workflows"] = [workflow["file_name"] for workflow in missing]
-        if missing and bool(config["auto_create_missing_presets"]) and bool(config["allow_preset_file_write"]):
-            for workflow in missing:
+        referenced_hashes = {
+            preset.get("workflow", {}).get("hash")
+            for preset in presets
+            if isinstance(preset.get("workflow"), dict) and preset.get("workflow", {}).get("hash")
+        }
+        for loaded in _load_preset_files(presets_dir):
+            data = loaded.get("data") if isinstance(loaded, dict) else {}
+            workflow_ref = data.get("workflow") if isinstance(data, dict) and isinstance(data.get("workflow"), dict) else {}
+            if workflow_ref.get("hash"):
+                referenced_hashes.add(workflow_ref["hash"])
+        for workflow in workflows:
+            reason = None
+            if not workflow.get("valid"):
+                reason = "unsupported_gui_format" if workflow.get("format") == "unsupported_gui_format" else "invalid_workflow"
+                workflow["status"] = reason
+                workflow["skipped_reason"] = reason
+                continue
+            if workflow.get("hash") in referenced_hashes:
+                reason = "preset_already_exists_for_workflow"
+                workflow["status"] = "mapped"
+                workflow["skipped_reason"] = reason
+                result["skipped_draft_presets"].append({"workflow_file_name": workflow["file_name"], "reason": reason})
+                continue
+
+            workflow["status"] = "missing_preset"
+            workflow["skipped_reason"] = None
+            missing_item = {"workflow_file_name": workflow["file_name"], "hash": workflow.get("hash"), "reason": "missing_preset"}
+            result["missing_preset_workflows"].append(missing_item)
+
+            if not bool(config["auto_create_missing_presets"]):
+                reason = "auto_create_disabled"
+            elif not bool(config["allow_preset_file_write"]):
+                reason = "preset_write_disabled"
+            elif not presets_dir.is_dir():
+                reason = "directory_not_writable"
+            else:
                 draft = _create_draft_preset(presets_dir, workflow, presets)
                 if draft:
                     result["created_draft_presets"].append(draft)
-            if result["created_draft_presets"]:
-                result["presets"] = _scan_presets(presets_dir, workflows_dir, workflows)
-                referenced = {preset.get("workflow", {}).get("file_name") for preset in result["presets"] if isinstance(preset.get("workflow"), dict)}
-                result["missing_preset_workflows"] = [workflow["file_name"] for workflow in missing if workflow["file_name"] not in referenced]
-        elif missing and not bool(config["allow_preset_file_write"]):
-            result["warnings"].append("allow_preset_file_write=false; draft presets were not created.")
+                    continue
+                reason = "preset_file_exists"
+            result["skipped_draft_presets"].append({"workflow_file_name": workflow["file_name"], "reason": reason})
+        if result["created_draft_presets"]:
+            result["presets"] = _scan_presets(presets_dir, workflows_dir, workflows)
         return result
 
     def list_workflows(self, context: dict | None = None) -> dict:

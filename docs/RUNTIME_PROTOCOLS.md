@@ -78,6 +78,7 @@ Run steps:
 - Prompt Agent default top-level steps include `Resolving agent`, `Building context`, `Resolving model`, `Calling LLM`, `Saving response`, and `Cleanup`.
 - Script Agent default top-level steps include `Resolving agent`, optional `Resolving model`, `Starting script`, `Running script`, `Saving response`, and `Cleanup`.
 - Script custom steps created with `ctx.step` default under `Running script`.
+- Script Agents may update long-running step messages while polling external jobs, for example queued, running, completed, failed, not_found, or timeout.
 - Model lifecycle unload outcomes are shown on the `Cleanup` step when cleanup attempts unload.
 - Session load returns runs and steps attached to messages.
 
@@ -85,6 +86,7 @@ Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
+- Generated image workflows may record compact recipe metadata under a domain key such as `comfyui_generation`; this metadata should include attachment ids and prompt/request ids, not full workflow JSON or large binary data.
 - Failures should set both run status and user-visible error metadata where applicable.
 - Cancellation sets `cancel_requested` before terminal cancellation when possible.
 
@@ -340,6 +342,7 @@ Status usage:
 Attachment metadata:
 - User message metadata keeps attachment refs rather than full base64 payloads.
 - Script-generated attachments are stored in the same local attachment store and linked from assistant message metadata so orphan cleanup can track them.
+- Generated attachment metadata may record source integration details such as ComfyUI prompt id, preset id, and workflow file name.
 - Prompt Agent vision resolves images to data URLs only for supported profiles.
 - Unsupported image input becomes a text placeholder or warning instead of a vision payload.
 - File attachment context obeys per-file and per-message byte limits.

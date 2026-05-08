@@ -26,6 +26,12 @@ def context(tmp_path: Path, allow_preset_write: bool = True) -> dict:
     }
 
 
+def context_with_options(tmp_path: Path, auto_create: bool = True, allow_preset_write: bool = True) -> dict:
+    ctx = context(tmp_path, allow_preset_write=allow_preset_write)
+    ctx["capability_config"]["auto_create_missing_presets"] = auto_create
+    return ctx
+
+
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -188,7 +194,9 @@ def test_missing_preset_workflow_auto_creates_stable_draft_once(tmp_path: Path) 
     first = runtime.scan_workflow_library(context=context(tmp_path))
     second = runtime.scan_workflow_library(context=context(tmp_path))
 
+    assert len(first["missing_preset_workflows"]) == 1
     assert first["created_draft_presets"][0]["id"] == "auto_txt2img"
+    assert second["missing_preset_workflows"] == []
     assert second["created_draft_presets"] == []
     draft = yaml.safe_load((tmp_path / "presets" / "auto_txt2img.yaml").read_text(encoding="utf-8"))
     assert draft["status"] == "needs_mapping"
@@ -200,9 +208,35 @@ def test_allow_preset_file_write_false_reports_missing_without_draft(tmp_path: P
 
     scan = CapabilityRuntime().scan_workflow_library(context=context(tmp_path, allow_preset_write=False))
 
-    assert scan["missing_preset_workflows"] == ["txt2img.workflow.json"]
+    assert scan["missing_preset_workflows"][0]["workflow_file_name"] == "txt2img.workflow.json"
     assert scan["created_draft_presets"] == []
+    assert scan["skipped_draft_presets"][0]["reason"] == "preset_write_disabled"
     assert not (tmp_path / "presets" / "auto_txt2img.yaml").exists()
+
+
+def test_auto_create_false_reports_missing_without_draft(tmp_path: Path) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+
+    scan = CapabilityRuntime().scan_workflow_library(context=context_with_options(tmp_path, auto_create=False))
+
+    assert scan["missing_preset_workflows"][0]["workflow_file_name"] == "txt2img.workflow.json"
+    assert scan["created_draft_presets"] == []
+    assert scan["skipped_draft_presets"][0]["reason"] == "auto_create_disabled"
+
+
+def test_scan_does_not_create_draft_when_preset_references_workflow_hash(tmp_path: Path) -> None:
+    workflow_path = tmp_path / "workflows" / "txt2img.workflow.json"
+    write_json(workflow_path, api_workflow())
+    scan = CapabilityRuntime().scan_workflow_library(context=context(tmp_path))
+    workflow_hash = scan["workflows"][0]["hash"]
+    (tmp_path / "presets" / "auto_txt2img.yaml").unlink()
+    write_preset(tmp_path / "presets" / "custom.yaml", id="custom", workflow={"file_name": "renamed.workflow.json", "hash": workflow_hash})
+
+    rescan = CapabilityRuntime().scan_workflow_library(context=context(tmp_path))
+
+    assert rescan["missing_preset_workflows"] == []
+    assert rescan["created_draft_presets"] == []
+    assert any(item["reason"] == "preset_already_exists_for_workflow" for item in rescan["skipped_draft_presets"])
 
 
 def test_workflow_and_preset_dirs_come_from_capability_config(tmp_path: Path) -> None:

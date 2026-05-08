@@ -1,7 +1,7 @@
 id: comfyui_agent
 name: ComfyUI Agent
 type: script
-description: Dry-run ComfyUI workflow/preset recipe agent.
+description: ComfyUI workflow/preset recipe and generation agent.
 entry: agent.py
 
 capabilities:
@@ -10,32 +10,32 @@ capabilities:
 
 actions:
   - id: default
-    label: Update Recipe
-    description: Update the current session recipe from normal user input without generating images.
+    label: Generate
+    description: Use the current session recipe input_mode to update the prompt, then generate images.
   - id: form
     label: Recipe Form
     description: Show the current session ComfyUI recipe form.
   - id: save_recipe_from_form
     label: Save Recipe
-    description: Save submitted form values into the current session recipe.
+    description: Save submitted form values into the current session recipe without generating images.
   - id: switch
     label: Switch Mode
     description: Switch the current recipe input_mode between llm and raw.
   - id: raw
     label: Raw Prompt
-    description: Save one raw positive prompt without changing input_mode.
+    description: Force raw for this request, write positive_prompt, keep the session input_mode unchanged, then generate images.
   - id: llm
     label: LLM Prompt
-    description: Save one LLM user request without calling the LLM.
+    description: Force LLM prompt enhancement for this request, keep the session input_mode unchanged, then generate images.
   - id: run
-    label: Dry Run
-    description: Validate and summarize the current recipe without submitting to ComfyUI.
+    label: Run Recipe
+    description: Generate images from the current session recipe without changing prompt or parameters.
   - id: presets
     label: Presets
     description: List local ComfyUI presets.
   - id: scan_workflows
     label: Scan Workflows
-    description: Scan local ComfyUI workflow and preset library.
+    description: Scan local ComfyUI workflow and preset library and create draft presets when enabled.
   - id: status
     label: Status
     description: Check ComfyUI connection, asset directories, and current recipe status.
@@ -61,7 +61,7 @@ config_schema:
       Convert the user's image request into a concise image generation prompt.
       Do not choose sampler, cfg, steps, size, model, workflow, or seed.
       Return only the improved positive prompt unless instructed otherwise.
-    description: Prompt used by the future LLM prompt enhancer.
+    description: Prompt used by the LLM prompt enhancer.
   - name: prompt_enhancer_user_template
     type: text
     label: Prompt enhancer user template
@@ -74,7 +74,7 @@ config_schema:
 
       Current negative prompt:
       {negative_prompt}
-    description: User template for the future prompt enhancer.
+    description: User template for the prompt enhancer.
   - name: default_seed_policy
     type: enum
     label: Default seed policy
@@ -83,12 +83,12 @@ config_schema:
       - fixed
       - reuse
     default: random
-    description: Seed policy for future generation.
+    description: Seed policy for generation.
   - name: unload_llm_before_generation
     type: boolean
     label: Unload LLM before generation
     default: true
-    description: Future generation may unload the prompt enhancer model before ComfyUI execution.
+    description: Unload the prompt enhancer model before ComfyUI execution when possible.
 
 context_policy:
   mode: current_message

@@ -213,6 +213,7 @@ await ctx.output.finish()
 - `reply_blocks`: send ordered rich content blocks.
 - `reply_form` / `reply_action_form`: validate and send one `action_form` block as `rich_content`.
 - `reply_file_content`: send raw file text, not markdown-rendered content.
+- Reply helpers accept optional message metadata for durable structured details such as generated image recipe metadata.
 
 ## Attachments in Script Agents
 
@@ -299,7 +300,7 @@ Runtime call rules:
 
 Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, and object-info methods. It returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, and final rendering.
 
-The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.
+The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, report per-workflow draft preset skip reasons, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.
 
 ## Capability Config
 
@@ -341,7 +342,7 @@ Submit declarations use optional `label`, optional `agent_id`, required `action_
 
 On submit, the frontend sends only `source_message_id`, `form_id`, and `values`. The backend reads the original message, finds the matching `action_form`, resolves the submit target from that original block, validates values against the original fields, creates a `form_submission` user message with a short summary body, and invokes the target Agent action. Request body `agent_id` or `action_id` cannot override the original form target.
 
-Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static for the rendered form; if a submitted preset change requires different fields, the target action should save the new state and return a fresh form.
+Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static for the rendered form; if a submitted preset change requires different fields, the target action should save the new state and return a fresh form. The ComfyUI Agent uses `action_form` as a recipe editor only; form submission does not submit generation.
 
 ## Validation and CLI
 

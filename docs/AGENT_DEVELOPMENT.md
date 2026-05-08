@@ -186,7 +186,15 @@ await ctx.llm.unload()
 
 Script Agents should parse and validate LLM output explicitly. Do not depend on model function-calling or automatic tool selection.
 
-The built-in `comfyui_agent` is a dry-run foundation Script Agent. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, and validate the selected preset. It does not submit workflows, poll ComfyUI jobs, fetch images, save generated attachments, or call the LLM prompt enhancer in this round.
+The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recipes and generation. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, fill API-format workflow JSON from preset mappings, submit workflows, poll status, fetch images, save local attachments, and return an `image_gallery`.
+
+ComfyUI Agent action semantics:
+- `default`: use the current session recipe `input_mode`; `llm` enhances the user request into `values.positive_prompt`, while `raw` writes the user text directly, then generation runs.
+- `raw`: force raw for this invocation, keep the stored `input_mode` unchanged, write `values.positive_prompt`, then generation runs.
+- `llm`: force LLM prompt enhancement for this invocation, keep the stored `input_mode` unchanged, write `user_prompt` and generated `values.positive_prompt`, then generation runs.
+- `run`: execute the current session recipe without changing prompt or parameters.
+- `form` and `save_recipe_from_form`: show and save the session recipe editor only; form submit does not generate.
+- `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
 Minimal interactive form Script Agent:
 
