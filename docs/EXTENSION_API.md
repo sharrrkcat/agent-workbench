@@ -133,9 +133,11 @@ async def run(ctx):
 ### `ctx.input`
 
 - `text`: routed argument text for this invocation.
+- `action_id`: current Agent action id.
+- `form_id`: submitted `action_form` id when the invocation came from a form submission.
 - `attachments`: current message attachment metadata.
 - `source_message_id`: source message for message-button/action invocations when available.
-- `prefill`: structured action prefill data when available.
+- `prefill`: structured action prefill data when available. Form submissions place validated field values here.
 
 ### `ctx.step` / `ctx.run`
 
@@ -202,6 +204,7 @@ await ctx.output.finish()
 - `reply_image`: send one image payload with `url`.
 - `reply_images`: send an ordered image gallery.
 - `reply_blocks`: send ordered rich content blocks.
+- `reply_form` / `reply_action_form`: validate and send one `action_form` block as `rich_content`.
 - `reply_file_content`: send raw file text, not markdown-rendered content.
 
 ## Attachments in Script Agents
@@ -306,9 +309,28 @@ Reusable integration Capabilities should expose narrow protocol methods plus sma
 | `image` | One renderable image. | `{"url": "data:image/png;base64,..."}` | Missing `url` fails validation. |
 | `image_gallery` | Multiple images. | `{"images": [{"url": "..."}]}` | Each image must satisfy image payload shape. |
 | `file_content` | Raw text file display. | `{"content": "...", "filename": "a.txt"}` | It is raw text and does not go through markdown rendering. |
-| `rich_content` | Ordered mixed blocks. | `{"blocks": [{"type": "markdown", "content": "..."}]}` | Keep block order explicit. |
+| `rich_content` | Ordered mixed blocks. | `{"blocks": [{"type": "markdown", "text": "..."}]}` | Keep block order explicit. |
+| `action_form` block | Declarative form inside `rich_content`. | `{"type": "action_form", "form_id": "demo", "title": "Demo", "fields": [{"name": "prompt", "type": "text"}], "submit": {"action_id": "run"}}` | Forms submit only to internal Agent actions. |
 
 If a command returns a dict with no declared output, the runner may infer `json`, `image`, `image_gallery`, or `rich_content`.
+
+### `action_form` rich content block
+
+`action_form` is a declarative JSON block. It supports `text`, `textarea`, `integer`, `float`, `boolean`, `enum`, and `json` fields. It does not support HTML, frontend custom JavaScript, arbitrary URLs, file uploads, password/secret fields, remote options, or automatic execution.
+
+Top-level fields:
+- `type`: must be `action_form`.
+- `form_id`: required string, unique within the message.
+- `title`: required display title.
+- `description`: optional help text.
+- `fields`: required array of field declarations.
+- `submit`: required object.
+
+Field declarations use `name`, `type`, optional `label`, `description`/`help`, `required`, `value`, `default`, `placeholder`, numeric bounds/`step`, text length bounds, and enum `options: [{"value": "...", "label": "..."}]`.
+
+Submit declarations use optional `label`, optional `agent_id`, required `action_id`, and optional `message`. If `agent_id` is omitted, the source message Agent is used.
+
+On submit, the frontend sends only `source_message_id`, `form_id`, and `values`. The backend reads the original message, finds the matching `action_form`, resolves the submit target from that original block, validates values against the original fields, creates a `form_submission` user message with a short summary body, and invokes the target Agent action. Request body `agent_id` or `action_id` cannot override the original form target.
 
 ## Validation and CLI
 

@@ -196,6 +196,29 @@ def test_session_type_includes_context_mode_and_speaker_fields() -> None:
     assert "origin?: string | null" in source
 
 
+def test_action_form_block_renderer_and_submission_contract_are_present() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    store = read_frontend("store/useWorkbenchStore.ts")
+    client = read_frontend("api/client.ts")
+    types = read_frontend("types.ts")
+    styles = read_frontend("styles.css")
+
+    assert "type: 'action_form'" in types
+    assert "ActionFormRenderer" in source
+    assert "ActionFormFieldControl" in source
+    assert "textarea" in source
+    assert "type=\"number\"" in source
+    assert "type=\"checkbox\"" in source
+    assert "<select" in source
+    assert "action-form-json" in source
+    assert "initialFormValues(form)" in source
+    assert "submitForm(messageId, form.form_id, values)" in source
+    assert "submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>)" in store
+    assert "/forms/submit" in client
+    assert ".action-form-card" in styles
+    assert ".action-form-error" in styles
+
+
 def test_chat_header_displays_and_switches_conversation_mode() -> None:
     source = read_frontend("components/ChatHeader.tsx")
 

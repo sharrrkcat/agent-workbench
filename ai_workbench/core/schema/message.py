@@ -3,6 +3,7 @@ from typing import Annotated, Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
+from ai_workbench.core.forms import ActionFormBlock
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
@@ -64,7 +65,7 @@ class FileContentBlock(FileContentPayload):
 
 
 ChatContentBlock = Annotated[
-    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock, FileContentBlock],
+    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock, FileContentBlock, ActionFormBlock],
     Field(discriminator="type"),
 ]
 

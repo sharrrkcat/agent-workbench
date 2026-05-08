@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, Trash2, XCircle } from 'lucide-react';
-import type { Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message, Run, RunStep } from '../types';
+import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Send, Trash2, XCircle } from 'lucide-react';
+import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message, Run, RunStep } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -464,7 +464,7 @@ function MessageContent({ message, kind, onPreviewImage, onPreviewFile }: { mess
     return <ImageGalleryRenderer images={normalizeImageGallery(message.content)} onPreviewImage={onPreviewImage} />;
   }
   if (message.output_type === 'rich_content') {
-    return <RichContentRenderer blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
+    return <RichContentRenderer messageId={message.message_id} blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
   }
   return <PlainTextRenderer content={message.content} />;
 }
@@ -639,7 +639,7 @@ function ImageGalleryRenderer({ images, onPreviewImage }: { images: ImagePayload
   );
 }
 
-function RichContentRenderer({ blocks, onPreviewImage }: { blocks: ChatContentBlock[]; onPreviewImage: (image: ImagePreview) => void }) {
+function RichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId: string; blocks: ChatContentBlock[]; onPreviewImage: (image: ImagePreview) => void }) {
   if (!blocks.length) {
     return <PlainTextRenderer content="" />;
   }
@@ -655,10 +655,146 @@ function RichContentRenderer({ blocks, onPreviewImage }: { blocks: ChatContentBl
         if (block.type === 'file_content') {
           return <FileContentRenderer key={index} payload={block} />;
         }
+        if (block.type === 'action_form') {
+          return <ActionFormRenderer key={index} form={block} messageId={messageId} />;
+        }
         return <PlainTextRenderer key={index} content={block.text} />;
       })}
     </div>
   );
+}
+
+function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messageId: string }) {
+  const submitForm = useWorkbenchStore((state) => state.submitForm);
+  const pendingActionKey = useWorkbenchStore((state) => state.pendingActionKey);
+  const [values, setValues] = useState<Record<string, unknown>>(() => initialFormValues(form));
+  const [error, setError] = useState<string>('');
+  const pending = pendingActionKey === `${messageId}:form:${form.form_id}`;
+
+  useEffect(() => {
+    setValues(initialFormValues(form));
+    setError('');
+  }, [form]);
+
+  function setFieldValue(field: ActionFormField, value: unknown) {
+    setValues((current) => ({ ...current, [field.name]: value }));
+  }
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!messageId || pending) return;
+    setError('');
+    try {
+      await submitForm(messageId, form.form_id, values);
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : 'Form submission failed';
+      setError(message);
+    }
+  }
+
+  return (
+    <form className="action-form-card" onSubmit={(event) => void onSubmit(event)}>
+      <header className="action-form-header">
+        <strong>{form.title}</strong>
+        {form.description ? <p>{form.description}</p> : null}
+      </header>
+      <div className="action-form-fields">
+        {form.fields.map((field) => (
+          <ActionFormFieldControl key={field.name} field={field} value={values[field.name]} onChange={(value) => setFieldValue(field, value)} />
+        ))}
+      </div>
+      {error ? <div className="action-form-error">{error}</div> : null}
+      <div className="action-form-actions">
+        <button type="button" onClick={() => setValues(initialFormValues(form))} disabled={pending}>
+          <RotateCcw size={14} />
+          <span>Reset</span>
+        </button>
+        <button type="submit" className="primary" disabled={pending || !messageId}>
+          {pending ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+          <span>{pending ? 'Submitting' : form.submit.label || 'Submit'}</span>
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ActionFormFieldControl({ field, value, onChange }: { field: ActionFormField; value: unknown; onChange: (value: unknown) => void }) {
+  const id = `form-field-${field.name}`;
+  const label = field.label || field.name;
+  const description = field.description || field.help || '';
+  const common = {
+    id,
+    name: field.name,
+    required: field.required,
+    placeholder: field.placeholder || undefined,
+  };
+  let control: ReactNode;
+  if (field.type === 'textarea') {
+    control = <textarea {...common} value={stringFormValue(value)} onChange={(event) => onChange(event.target.value)} rows={4} minLength={field.min_length ?? undefined} maxLength={field.max_length ?? undefined} />;
+  } else if (field.type === 'integer' || field.type === 'float') {
+    control = <input {...common} type="number" value={numberFormValue(value)} min={field.minimum ?? undefined} max={field.maximum ?? undefined} step={field.step ?? (field.type === 'integer' ? 1 : 'any')} onChange={(event) => onChange(event.target.value)} />;
+  } else if (field.type === 'boolean') {
+    control = (
+      <label className="action-form-checkbox">
+        <input type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} />
+        <span>{label}</span>
+      </label>
+    );
+  } else if (field.type === 'enum') {
+    control = (
+      <select {...common} value={stringFormValue(value)} onChange={(event) => onChange(enumOptionValue(field, event.target.value))}>
+        {(field.options || []).map((option) => (
+          <option key={String(option.value)} value={String(option.value)}>
+            {option.label || String(option.value)}
+          </option>
+        ))}
+      </select>
+    );
+  } else if (field.type === 'json') {
+    control = <textarea {...common} className="action-form-json" value={jsonFormValue(value)} onChange={(event) => onChange(event.target.value)} rows={5} />;
+  } else {
+    control = <input {...common} type="text" value={stringFormValue(value)} onChange={(event) => onChange(event.target.value)} minLength={field.min_length ?? undefined} maxLength={field.max_length ?? undefined} />;
+  }
+  return (
+    <label className={`action-form-field ${field.type === 'boolean' ? 'boolean' : ''}`} htmlFor={field.type === 'boolean' ? undefined : id}>
+      {field.type !== 'boolean' ? <span>{label}</span> : null}
+      {control}
+      {description ? <small>{description}</small> : null}
+    </label>
+  );
+}
+
+function initialFormValues(form: ActionFormBlock): Record<string, unknown> {
+  return Object.fromEntries(form.fields.map((field) => [field.name, field.value ?? field.default ?? defaultFormValue(field)]));
+}
+
+function defaultFormValue(field: ActionFormField): unknown {
+  if (field.type === 'boolean') return false;
+  if (field.type === 'json') return {};
+  if (field.type === 'integer' || field.type === 'float') return '';
+  return '';
+}
+
+function stringFormValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function numberFormValue(value: unknown): string | number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') return value;
+  return '';
+}
+
+function jsonFormValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value ?? {}, null, 2);
+}
+
+function enumOptionValue(field: ActionFormField, selected: string): string | number | boolean {
+  const option = (field.options || []).find((item) => String(item.value) === selected);
+  return option ? option.value : selected;
 }
 
 export function contentToText(content: unknown): string {
@@ -776,6 +912,8 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
     } else if (item.type === 'file_content') {
       const fileContent = normalizeFileContentPayload(item);
       blocks.push({ type: 'file_content', ...fileContent });
+    } else if (item.type === 'action_form' && typeof item.form_id === 'string' && typeof item.title === 'string' && Array.isArray(item.fields) && item.submit && typeof item.submit === 'object') {
+      blocks.push(item as ActionFormBlock);
     }
   }
   return blocks;

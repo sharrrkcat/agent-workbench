@@ -22,6 +22,7 @@ from ai_workbench.core.attachments import (
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
+from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
 from ai_workbench.core.run_lifecycle import RunLifecycle
@@ -46,6 +47,8 @@ class ScriptInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
+    action_id: Optional[str] = None
+    form_id: Optional[str] = None
     context: list = Field(default_factory=list)
     source_message_id: Optional[str] = None
     prefill: Dict[str, Any] = Field(default_factory=dict)
@@ -560,6 +563,7 @@ class AgentContext:
         run_id: str,
         input_text: str,
         source_message_id: Optional[str],
+        form_id: Optional[str],
         parent_message_id: Optional[str],
         prefill: Optional[Dict[str, Any]],
         config: Optional[Dict[str, Any]],
@@ -583,6 +587,8 @@ class AgentContext:
         self.run_id = run_id
         self.input = ScriptInput(
             text=input_text,
+            action_id=action_id,
+            form_id=form_id,
             source_message_id=source_message_id,
             prefill=prefill or {},
             attachments=list(attachments or []),
@@ -676,6 +682,16 @@ class AgentContext:
     async def reply_blocks(self, blocks: list, actions=None):
         payload = RichContentPayload.model_validate({"blocks": blocks})
         return await self.reply(payload.model_dump(exclude_none=True), output_type="rich_content", actions=actions)
+
+    async def reply_form(self, form: dict, title: str = None, actions=None):
+        block = dict(form or {})
+        if title is not None:
+            block["title"] = title
+        block = validate_action_form_block(block)
+        return await self.reply_blocks([block], actions=actions)
+
+    async def reply_action_form(self, form: dict, actions=None):
+        return await self.reply_form(form, actions=actions)
 
     def read_attachment_bytes(self, attachment: dict[str, Any] | str) -> bytes:
         return read_attachment_bytes(self._attachment_for_read(attachment))
@@ -815,6 +831,7 @@ class ScriptAgentRunner:
         source_message_id: str = "",
         parent_message_id: str = "",
         prefill=None,
+        form_id: str = "",
         input_message_id: str = "",
         create_user_message: bool = True,
         display_input: str = "",
@@ -861,6 +878,8 @@ class ScriptAgentRunner:
                 "input_message_id": user_message.message_id if user_message is not None else None,
                 "parent_message_id": parent_id or None,
                 "source_message_id": source_message_id or None,
+                "prefill": prefill or {},
+                "form_id": form_id or None,
             },
         )
         output_message = self.message_store.add_message(
@@ -933,6 +952,7 @@ class ScriptAgentRunner:
             run_id=run.run_id,
             input_text=args,
             source_message_id=source_message_id or None,
+            form_id=form_id or None,
             parent_message_id=parent_id,
             prefill=prefill or {},
             config={},

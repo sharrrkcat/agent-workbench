@@ -1376,6 +1376,134 @@ input:disabled {
   min-width: 0;
 }
 
+.action-form-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background: #171717;
+}
+
+.action-form-header {
+  display: grid;
+  gap: 4px;
+}
+
+.action-form-header strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+}
+
+.action-form-header p,
+.action-form-field small {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.action-form-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.action-form-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.action-form-field > span {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.action-form-field input,
+.action-form-field textarea,
+.action-form-field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+}
+
+.action-form-field input,
+.action-form-field select {
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.action-form-field textarea {
+  resize: vertical;
+  min-height: 88px;
+  padding: 8px 9px;
+}
+
+.action-form-field .action-form-json {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.action-form-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.action-form-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.action-form-error {
+  padding: 8px 10px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+  font-size: 12px;
+}
+
+.action-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.action-form-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.action-form-actions button.primary {
+  background: #f5f5f5;
+  color: #171717;
+}
+
+.action-form-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .image-preview-overlay {
   position: fixed;
   inset: 0;

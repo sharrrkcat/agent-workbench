@@ -91,6 +91,7 @@ type WorkbenchState = {
   sendMessage: (content: string, attachments?: SendMessageAttachment[]) => Promise<boolean>;
   cancelActiveRun: () => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
+  submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   dismissNotification: (notificationId: string) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
@@ -717,6 +718,34 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         pendingActionKey: undefined,
         messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, action.source_message_id)],
       });
+    }
+  },
+
+  submitForm: async (sourceMessageId: string, formId: string, values: Record<string, unknown>) => {
+    const session = get().currentSession;
+    if (!session) return;
+    const key = `${sourceMessageId}:form:${formId}`;
+    set({ pendingActionKey: key, error: undefined, lastError: undefined });
+    try {
+      const result = await api.submitForm(session.session_id, {
+        source_message_id: sourceMessageId,
+        form_id: formId,
+        values,
+      });
+      await get().refreshCurrent();
+      if (!result.success) {
+        set({ error: undefined, lastError: undefined });
+      }
+      set({ pendingActionKey: undefined });
+    } catch (error) {
+      const formatted = formatError(error, 'Form submission failed');
+      set({
+        error: undefined,
+        lastError: undefined,
+        pendingActionKey: undefined,
+        messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, sourceMessageId)],
+      });
+      throw error;
     }
   },
 

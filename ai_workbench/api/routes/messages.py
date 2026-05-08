@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_attachments
+from ai_workbench.core.forms import FormValidationError, find_action_form_block, validate_action_form_values
 from ai_workbench.core.llm_config import LLMConfigError
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunStatus
@@ -30,6 +31,14 @@ class InvokeActionRequest(BaseModel):
     source_message_id: Optional[str] = None
     input_text: str = ""
     prefill: dict = Field(default_factory=dict)
+
+
+class SubmitFormRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_message_id: str
+    form_id: str
+    values: dict[str, Any] = Field(default_factory=dict)
 
 
 class EditMessageRequest(BaseModel):
@@ -203,6 +212,88 @@ async def invoke_action(session_id: str, payload: InvokeActionRequest, state: Ru
             return _result_payload(state, session_id, result, before_ids)
         status_code = 404 if result.error_code in {"AGENT_NOT_FOUND", "ACTION_NOT_FOUND"} else 400
         raise_error(status_code, result.error_code or "ACTION_NOT_FOUND", result.error or "Action failed")
+    return _result_payload(state, session_id, result, before_ids)
+
+
+@router.post("/forms/submit")
+async def submit_form(session_id: str, payload: SubmitFormRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    _get_session_or_404(state, session_id)
+    before_ids = {message.message_id for message in state.messages.list_messages(session_id)}
+    source = _get_message_or_404(state, payload.source_message_id)
+    if source.session_id != session_id:
+        raise_error(404, "FORM_NOT_FOUND", f"Form source message not found in session: {payload.source_message_id}")
+    try:
+        form = find_action_form_block(source.content, payload.form_id)
+    except FormValidationError as exc:
+        raise_error(400, exc.code, exc.message, exc.details)
+    if form is None:
+        raise_error(404, "FORM_NOT_FOUND", f"Form not found: {payload.form_id}")
+
+    submit = form["submit"]
+    target_agent_id = submit.get("agent_id") or source.agent_id
+    target_action_id = submit.get("action_id")
+    if not target_agent_id or not target_action_id:
+        raise_error(400, "FORM_TARGET_INVALID", "Form submit target is incomplete.")
+    try:
+        target_agent = state.agents.get(target_agent_id)
+    except KeyError:
+        raise_error(404, "FORM_TARGET_INVALID", f"Form target agent not found: {target_agent_id}")
+    if hasattr(state, "agent_configs") and not state.agent_configs.is_enabled(target_agent_id):
+        raise_error(400, "FORM_TARGET_INVALID", f"Form target agent is disabled: {target_agent_id}")
+    if target_action_id not in {action.id for action in target_agent.actions}:
+        raise_error(400, "FORM_TARGET_INVALID", f"Form target action not found: {target_agent_id}:{target_action_id}")
+
+    try:
+        values = validate_action_form_values(form, payload.values)
+    except FormValidationError as exc:
+        raise_error(400, exc.code, exc.message, exc.details)
+
+    display_text = submit.get("message") or f"Submitted form: {form.get('title') or payload.form_id}"
+    user_message = state.messages.add_message(
+        session_id=session_id,
+        role="user",
+        content=display_text,
+        agent_id=target_agent_id,
+        action_id=target_action_id,
+        parent_message_id=source.message_id,
+        metadata={
+            "origin": "form_submission",
+            "input_source": "form_submission",
+            "source_message_id": source.message_id,
+            "form_id": payload.form_id,
+            "target_agent_id": target_agent_id,
+            "target_action_id": target_action_id,
+            "prefill": values,
+            "invocation": {
+                "route_type": "agent",
+                "agent_id": target_agent_id,
+                "action_id": target_action_id,
+                "raw_text": display_text,
+                "args": display_text,
+            },
+        },
+        speaker_type="user",
+        speaker_id="local_user",
+        speaker_name="User",
+        origin="form_submission",
+    )
+
+    result = await state.agent_runner.run(
+        agent_id=target_agent_id,
+        action_id=target_action_id,
+        args=display_text,
+        session_id=session_id,
+        source_message_id=source.message_id,
+        parent_message_id=source.message_id,
+        prefill=values,
+        form_id=payload.form_id,
+        input_message_id=user_message.message_id,
+        create_user_message=False,
+    )
+    if not result.success:
+        if result.run_id:
+            return _result_payload(state, session_id, result, before_ids)
+        raise_error(400, result.error_code or "FORM_SUBMISSION_FAILED", result.error or "Form submission failed.")
     return _result_payload(state, session_id, result, before_ids)
 
 

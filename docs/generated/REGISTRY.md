@@ -12,7 +12,7 @@ Do not edit manually.
 | chat | Chat Agent | prompt | default | llm | You are a concise, reliable assistant. |  | temperature |
 | echo_attachments | Echo Attachment Agent | script | default |  | agent.py |  |  |
 | echo_script | Echo Script Agent | script | default | base64 | agent.py |  |  |
-| render_test | Render Test Agent | script | default, json, text, llm, image |  | agent.py |  |  |
+| render_test | Render Test Agent | script | default, json, text, llm, image, form, form_submit |  | agent.py |  |  |
 | script_lifecycle_lab | Script Lifecycle Lab | script | default, steps, hidden_json, public_stream | llm | agent.py |  |  |
 | translate | Translate Agent | prompt | default, formal, casual, retry | llm | Translate the user input into natural, accurate English. ... |  |  |
 

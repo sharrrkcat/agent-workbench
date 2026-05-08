@@ -224,7 +224,38 @@ New Agent replies use `role="assistant"`, `speaker_type="agent"`, `speaker_id=<a
 
 New slash command results use `role="assistant"`, `speaker_type="capability"`, `speaker_id=<capability_id>`, a Capability or command display name as `speaker_name`, and `origin="command_result"`. Their metadata continues to include `metadata.kind="command_result"`, `metadata.command`, `metadata.capability_id`, and `metadata.output_type`.
 
+Interactive form submissions create user-origin messages with `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, and `origin="form_submission"`. Their visible `content` is the form submit message or `Submitted form: <title>`, not the full submitted JSON.
+
 Old messages may lack speaker fields. Context projection falls back from role, top-level `agent_id` / `command_name`, and command-result metadata. Old `role="tool"` command results are compatibility data only and are normalized or skipped before provider calls.
+
+## Interactive Forms
+
+`action_form` is a `rich_content` block that lets trusted Agents render declarative forms. The frontend must not execute form-provided HTML or JavaScript and must not submit to arbitrary URLs.
+
+Form submission protocol:
+- The frontend sends `source_message_id`, `form_id`, and `values` to the form submission endpoint.
+- The backend reads the original source message and resolves the target `agent_id` / `action_id` from the original `action_form` block.
+- Request body target fields cannot override the original form target.
+- Submitted values are validated against the original form field declarations before any Agent action is called.
+- Validation failure returns a structured error and does not create a run.
+- The source form message is not modified by submission; the same form can be submitted again.
+
+The backend creates a new user message with metadata like:
+
+```json
+{
+  "origin": "form_submission",
+  "source_message_id": "msg_1",
+  "form_id": "demo",
+  "target_agent_id": "render_test",
+  "target_action_id": "form_submit",
+  "prefill": {"prompt": "hello"}
+}
+```
+
+The target Script Agent receives the validated values in `ctx.input.prefill`, plus `ctx.input.source_message_id` and `ctx.input.form_id`. The form submission message may enter future LLM context as a normal user message, but only its short visible summary is projected by default. The full `prefill` JSON stays in metadata and is not automatically expanded into provider payloads.
+
+Provider-bound message roles remain limited to `system`, `user`, and `assistant`; form submissions do not introduce `tool`, `function`, or custom provider roles.
 
 ## Group Transcript Context
 

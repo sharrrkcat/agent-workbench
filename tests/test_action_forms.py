@@ -1,0 +1,257 @@
+import pytest
+
+from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.forms import FormValidationError, validate_action_form_block, validate_action_form_values
+from ai_workbench.core.schema.context_policy import ContextPolicy
+from tests.test_api import create_session, make_client, post_message
+
+
+def demo_form(**overrides):
+    form = {
+        "type": "action_form",
+        "form_id": "demo",
+        "title": "Demo Form",
+        "fields": [
+            {"name": "prompt", "type": "textarea", "required": True, "min_length": 2, "max_length": 20, "value": "hello"},
+            {"name": "count", "type": "integer", "minimum": 1, "maximum": 10, "step": 1, "value": 3},
+            {"name": "cfg", "type": "float", "minimum": 1, "maximum": 30, "step": 0.5, "value": 7.0},
+            {"name": "enabled", "type": "boolean", "value": True},
+            {"name": "mode", "type": "enum", "options": [{"value": "fast", "label": "Fast"}, {"value": "quality", "label": "Quality"}], "value": "fast"},
+            {"name": "config_json", "type": "json", "default": {"size": "small"}},
+        ],
+        "submit": {"label": "Run", "action_id": "form_submit"},
+    }
+    form.update(overrides)
+    return form
+
+
+def test_action_form_payload_shape_validation_success() -> None:
+    assert validate_action_form_block(demo_form())["form_id"] == "demo"
+
+
+@pytest.mark.parametrize("missing", ["form_id", "title", "fields", "submit"])
+def test_action_form_payload_shape_validation_requires_core_fields(missing: str) -> None:
+    form = demo_form()
+    form.pop(missing)
+    with pytest.raises(FormValidationError) as exc:
+        validate_action_form_block(form)
+    assert exc.value.code == "FORM_INVALID"
+
+
+def test_action_form_value_validation_success_and_optional_fallbacks() -> None:
+    values = validate_action_form_values(
+        demo_form(),
+        {
+            "prompt": "generate",
+            "count": "4",
+            "cfg": "8.5",
+            "enabled": False,
+            "mode": "quality",
+            "config_json": '{"ok": true}',
+        },
+    )
+    assert values == {
+        "prompt": "generate",
+        "count": 4,
+        "cfg": 8.5,
+        "enabled": False,
+        "mode": "quality",
+        "config_json": {"ok": True},
+    }
+
+
+@pytest.mark.parametrize(
+    ("patch", "submitted"),
+    [
+        ({}, {"prompt": ""}),
+        ({}, {"prompt": "x"}),
+        ({}, {"prompt": 123}),
+        ({}, {"count": 0}),
+        ({}, {"count": "1.5"}),
+        ({}, {"cfg": "bad"}),
+        ({}, {"enabled": "true"}),
+        ({}, {"mode": "missing"}),
+        ({}, {"config_json": "{bad"}),
+        ({}, {"extra": "nope"}),
+    ],
+)
+def test_action_form_value_validation_rejects_invalid_values(patch: dict, submitted: dict) -> None:
+    with pytest.raises(FormValidationError) as exc:
+        validate_action_form_values(demo_form(**patch), submitted)
+    assert exc.value.code == "FORM_VALIDATION_FAILED"
+
+
+def test_action_form_missing_optional_uses_value_default_none() -> None:
+    form = {
+        "type": "action_form",
+        "form_id": "fallbacks",
+        "title": "Fallbacks",
+        "fields": [
+            {"name": "with_value", "type": "text", "value": "value"},
+            {"name": "with_default", "type": "integer", "default": 2},
+            {"name": "empty", "type": "text"},
+        ],
+        "submit": {"action_id": "form_submit"},
+    }
+    assert validate_action_form_values(form, {}) == {"with_value": "value", "with_default": 2, "empty": None}
+
+
+def test_form_submit_uses_original_form_target_and_prefill() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    payload = post_message(client, session["session_id"], "@render_test:form")
+    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={
+            "source_message_id": form_message["message_id"],
+            "form_id": "demo",
+            "values": {
+                "prompt": "submitted",
+                "count": 5,
+                "mode": "quality",
+                "enabled": False,
+                "config_json": {"size": "medium"},
+            },
+            "agent_id": "chat",
+            "action_id": "default",
+        },
+    )
+    assert response.status_code == 422
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={
+            "source_message_id": form_message["message_id"],
+            "form_id": "demo",
+            "values": {
+                "prompt": "submitted",
+                "count": 5,
+                "mode": "quality",
+                "enabled": False,
+                "config_json": {"size": "medium"},
+            },
+        },
+    )
+    assert response.status_code == 200
+    messages = response.json()["messages"]
+    user_message = next(message for message in messages if message["role"] == "user")
+    assistant = messages[-1]
+    assert user_message["origin"] == "form_submission"
+    assert user_message["metadata"]["origin"] == "form_submission"
+    assert user_message["metadata"]["source_message_id"] == form_message["message_id"]
+    assert user_message["metadata"]["form_id"] == "demo"
+    assert user_message["metadata"]["target_agent_id"] == "render_test"
+    assert user_message["metadata"]["target_action_id"] == "form_submit"
+    assert user_message["metadata"]["prefill"]["prompt"] == "submitted"
+    assert user_message["content"] == "Submitted form: Demo Form"
+    assert assistant["output_type"] == "json"
+    assert assistant["content"]["received_prefill"]["prompt"] == "submitted"
+    assert assistant["content"]["source_message_id"] == form_message["message_id"]
+    assert assistant["role"] == "assistant"
+
+
+def test_form_submit_invalid_target_action_returns_structured_error() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    source = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content={
+            "blocks": [
+                {
+                    "type": "action_form",
+                    "form_id": "bad",
+                    "title": "Bad",
+                    "fields": [{"name": "prompt", "type": "text"}],
+                    "submit": {"action_id": "missing"},
+                }
+            ]
+        },
+        agent_id="render_test",
+        output_type="rich_content",
+    )
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={"source_message_id": source.message_id, "form_id": "bad", "values": {"prompt": "x"}},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "FORM_TARGET_INVALID"
+
+
+def test_form_submit_missing_target_agent_returns_structured_error() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    source = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content={
+            "blocks": [
+                {
+                    "type": "action_form",
+                    "form_id": "bad_agent",
+                    "title": "Bad Agent",
+                    "fields": [{"name": "prompt", "type": "text"}],
+                    "submit": {"agent_id": "missing_agent", "action_id": "default"},
+                }
+            ]
+        },
+        agent_id="render_test",
+        output_type="rich_content",
+    )
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={"source_message_id": source.message_id, "form_id": "bad_agent", "values": {"prompt": "x"}},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FORM_TARGET_INVALID"
+
+
+def test_form_submit_disabled_target_agent_returns_structured_error() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="chat")
+    client.patch("/api/agent-configs/render_test", json={"enabled": False})
+    source = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content={
+            "blocks": [
+                {
+                    "type": "action_form",
+                    "form_id": "disabled_agent",
+                    "title": "Disabled Agent",
+                    "fields": [{"name": "prompt", "type": "text"}],
+                    "submit": {"agent_id": "render_test", "action_id": "form_submit"},
+                }
+            ]
+        },
+        agent_id="chat",
+        output_type="rich_content",
+    )
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={"source_message_id": source.message_id, "form_id": "disabled_agent", "values": {"prompt": "x"}},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "FORM_TARGET_INVALID"
+
+
+def test_form_submission_context_uses_summary_not_prefill_json() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    message = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="user",
+        content="Submitted form: Demo Form",
+        metadata={"origin": "form_submission", "prefill": {"prompt": "hidden detailed value"}},
+        origin="form_submission",
+    )
+    context = ContextBuilder(client.app.state.runtime_state.messages).build(
+        session_id=session["session_id"],
+        args="",
+        policy=ContextPolicy(mode="current_message"),
+        current_message_id=message.message_id,
+    )
+    assert context.messages == [{"role": "user", "content": "Submitted form: Demo Form"}]
+    assert "hidden detailed value" not in str(context.messages)

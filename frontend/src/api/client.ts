@@ -212,6 +212,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ input_text: '', prefill: {}, ...payload }),
     }),
+  submitForm: (
+    sessionId: string,
+    payload: { source_message_id: string; form_id: string; values: Record<string, unknown> },
+  ) =>
+    request<RuntimeResponse>(`/api/sessions/${sessionId}/forms/submit`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listRuns: (sessionId: string) => request<Run[]>(`/api/sessions/${sessionId}/runs`),
   listRunEvents: (runId: string) => request<RunEvent[]>(`/api/runs/${runId}/events`),
   cancelRun: (runId: string) =>

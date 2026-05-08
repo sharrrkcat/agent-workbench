@@ -158,6 +158,13 @@ await ctx.reply_blocks([
     {"type": "markdown", "text": "## Result"},
     {"type": "text", "text": "Plain text block"},
 ])
+await ctx.reply_form({
+    "type": "action_form",
+    "form_id": "demo",
+    "title": "Demo Form",
+    "fields": [{"name": "prompt", "type": "textarea", "required": True}],
+    "submit": {"label": "Run", "action_id": "form_submit"},
+})
 await ctx.reply_images([
     {"url": "https://example.test/a.png", "alt": "A"},
     {"url": "https://example.test/b.png", "alt": "B"},
@@ -178,6 +185,32 @@ await ctx.llm.unload()
 ```
 
 Script Agents should parse and validate LLM output explicitly. Do not depend on model function-calling or automatic tool selection.
+
+Minimal interactive form Script Agent:
+
+```python
+async def run(ctx):
+    if ctx.action_id == "form_submit":
+        await ctx.reply_json({
+            "received_prefill": ctx.input.prefill,
+            "source_message_id": ctx.input.source_message_id,
+            "form_id": ctx.input.form_id,
+        })
+        return
+
+    await ctx.reply_form({
+        "type": "action_form",
+        "form_id": "demo",
+        "title": "Demo Form",
+        "description": "Collect a few values and invoke another action.",
+        "fields": [
+            {"name": "prompt", "type": "textarea", "label": "Prompt", "required": True},
+            {"name": "count", "type": "integer", "label": "Count", "minimum": 1, "maximum": 10, "value": 2},
+            {"name": "mode", "type": "enum", "options": [{"value": "fast", "label": "Fast"}, {"value": "quality", "label": "Quality"}]},
+        ],
+        "submit": {"label": "Run", "action_id": "form_submit"},
+    })
+```
 
 ## Actions
 
@@ -206,7 +239,7 @@ Supported rendered output types are:
 - `image`: one renderable image payload.
 - `image_gallery`: a list of image payloads.
 - `file_content`: raw file text shown without Markdown rendering.
-- `rich_content`: ordered text, markdown, image, and file content blocks.
+- `rich_content`: ordered text, markdown, image, file content, and `action_form` blocks.
 
 Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
 

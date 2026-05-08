@@ -361,6 +361,38 @@ export type AvailableAction = {
   prefill: Record<string, unknown>;
 };
 
+export type ActionFormField = {
+  name: string;
+  type: 'text' | 'textarea' | 'integer' | 'float' | 'boolean' | 'enum' | 'json';
+  label?: string | null;
+  description?: string | null;
+  help?: string | null;
+  required?: boolean;
+  value?: unknown;
+  default?: unknown;
+  placeholder?: string | null;
+  minimum?: number | null;
+  maximum?: number | null;
+  min_length?: number | null;
+  max_length?: number | null;
+  step?: number | null;
+  options?: { value: string | number | boolean; label?: string | null }[];
+};
+
+export type ActionFormBlock = {
+  type: 'action_form';
+  form_id: string;
+  title: string;
+  description?: string | null;
+  fields: ActionFormField[];
+  submit: {
+    label?: string | null;
+    agent_id?: string | null;
+    action_id: string;
+    message?: string | null;
+  };
+};
+
 export type ImagePayload = {
   url: string;
   alt?: string | null;
@@ -408,7 +440,8 @@ export type ChatContentBlock =
   | { type: 'text'; text: string }
   | { type: 'markdown'; text: string }
   | ({ type: 'image' } & ImagePayload)
-  | ({ type: 'file_content' } & FileContentPayload);
+  | ({ type: 'file_content' } & FileContentPayload)
+  | ActionFormBlock;
 
 export type Message = {
   message_id: string;

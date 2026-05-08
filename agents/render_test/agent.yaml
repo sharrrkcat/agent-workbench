@@ -19,6 +19,12 @@ actions:
   - id: image
     label: Images
     description: Reply with image, rich content, and image gallery messages
+  - id: form
+    label: Form
+    description: Reply with a generic interactive form
+  - id: form_submit
+    label: Form Submit
+    description: Echo submitted interactive form values
 
 context_policy:
   mode: current_message
