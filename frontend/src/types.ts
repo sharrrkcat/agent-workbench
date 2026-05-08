@@ -566,6 +566,12 @@ export type GeneralSettings = {
   max_total_file_context_per_message_kb: number;
   send_text_file_attachments_to_llm: boolean;
   persist_streaming_message_deltas: boolean;
+  group_transcript_system_instruction: string | null;
+  group_transcript_system_instruction_default: string;
+  group_transcript_system_instruction_effective: string;
+  command_result_context_instruction: string | null;
+  command_result_context_instruction_default: string;
+  command_result_context_instruction_effective: string;
 };
 
 export type StorageStats = {

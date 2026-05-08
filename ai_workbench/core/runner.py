@@ -26,6 +26,7 @@ from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPay
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
+from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc, utc_now
 
@@ -320,6 +321,7 @@ class AgentRunner:
         context_step = self.run_lifecycle.start_step(run.run_id, "Building context")
         session = self.session_store.get_session(session_id) if self.session_store is not None else None
         context_mode = getattr(session, "context_mode", "single_assistant") or "single_assistant"
+        app_settings = self._app_settings()
         try:
             context = self.context_builder.build(
                 session_id=session_id,
@@ -330,6 +332,7 @@ class AgentRunner:
                 context_mode=context_mode,
                 current_agent_id=agent.id,
                 current_agent_name=agent.name,
+                command_result_context_instruction=app_settings.command_result_context_instruction,
             )
         except KeyError as exc:
             error = str(exc)
@@ -344,7 +347,7 @@ class AgentRunner:
             if action.instruction:
                 prompt = f"{prompt.rstrip()}\n\n{action.instruction}"
             if context_mode == "group_transcript":
-                prompt = f"{prompt.rstrip()}\n\n{group_transcript_identity_instruction(agent.name)}"
+                prompt = f"{prompt.rstrip()}\n\n{group_transcript_identity_instruction(agent.name, agent.id, app_settings.group_transcript_system_instruction)}"
             messages.append({"role": "system", "content": prompt})
         messages.extend(context.messages)
 
@@ -821,7 +824,7 @@ class AgentRunner:
 
     def _app_settings(self):
         if self.app_settings_store is None:
-            return None
+            return AppSettings()
         return self.app_settings_store.get()
 
     def _is_cancelled(self, run_id: str) -> bool:

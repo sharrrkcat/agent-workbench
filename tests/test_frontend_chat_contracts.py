@@ -226,6 +226,24 @@ def test_store_patches_and_normalizes_session_context_mode() -> None:
     assert "'title' | 'default_agent_id' | 'llm_profile_id' | 'context_mode'" in client
 
 
+def test_general_settings_context_rendering_fields_are_exposed() -> None:
+    types = read_frontend("types.ts")
+    panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+
+    assert "group_transcript_system_instruction: string | null" in types
+    assert "group_transcript_system_instruction_default: string" in types
+    assert "group_transcript_system_instruction_effective: string" in types
+    assert "command_result_context_instruction: string | null" in types
+    assert "command_result_context_instruction_default: string" in types
+    assert "command_result_context_instruction_effective: string" in types
+    assert "Context Rendering" in panel
+    assert "Group transcript system instruction" in panel
+    assert "Command result context instruction" in panel
+    assert "Reset to default" in panel
+    assert "generalSettingsPatch(values)" in panel
+    assert "group_transcript_system_instruction_default" not in panel[panel.index("function generalSettingsPatch") :]
+
+
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")

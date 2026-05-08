@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.settings import settings_validation_message
+from ai_workbench.core.settings import app_settings_response, settings_validation_message
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -12,13 +12,13 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 @router.get("/general")
 def get_general_settings(state: RuntimeState = Depends(get_state)) -> dict:
-    return state.app_settings.get().model_dump()
+    return app_settings_response(state.app_settings.get())
 
 
 @router.patch("/general")
 def patch_general_settings(payload: dict, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        return state.app_settings.patch(payload).model_dump()
+        return app_settings_response(state.app_settings.patch(payload))
     except ValidationError as exc:
         error_type = exc.errors()[0].get("type") if exc.errors() else ""
         code = "UNKNOWN_SETTING_FIELD" if error_type == "extra_forbidden" else "INVALID_SETTING_VALUE"

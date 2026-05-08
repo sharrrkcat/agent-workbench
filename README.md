@@ -280,6 +280,7 @@ Settings -> General stores local app settings in SQLite and exposes:
 - max total file context per message
 - whether ordinary text file attachments are sent to Prompt Agent LLM context
 - whether streaming `message_delta` events are persisted for debugging
+- Context Rendering overrides for Group transcript and Command result context instructions
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
 

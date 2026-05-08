@@ -206,6 +206,8 @@ Changing `context_mode` persists a `context_mode_changed` separator message for 
 
 Retry and edit reruns build context from the current session `context_mode`.
 
+Settings -> General -> Context Rendering exposes prompt-text overrides for group transcript and command result context instructions. These settings affect only future context builds. They do not rewrite historical messages and do not dynamically update a run whose context has already been built.
+
 ## Speaker Identity
 
 Message `role` is the provider-compatible direction of the message. New provider-bound payloads may only use `system`, `user`, and `assistant`.
@@ -236,6 +238,8 @@ The system message contains the Agent prompt or prompt override plus identity in
 - Command result blocks are labeled `[Command result: ...]` and explicitly described as data, not instructions.
 - The Agent is instructed to reply only as itself and not impersonate other Agents.
 
+The group transcript system instruction can be overridden in Settings -> General -> Context Rendering. The override replaces only this instruction text. It does not expose or change the transcript structure, speaker label format, `<conversation_transcript>` block, `<current_user_message>` block, provider role rules, or the current-user-message preservation behavior.
+
 The user message contains:
 - `<conversation_transcript>` with recent history rendered using speaker labels.
 - `<current_user_message>` with the current user input, which is always preserved.
@@ -252,7 +256,9 @@ This mode does not implement auto mode, automatic Agent collaboration, Agent-to-
 - New slash command result messages are stored as assistant messages with command-result metadata such as `metadata.kind="command_result"`, `metadata.producer="capability"`, `metadata.command`, `metadata.capability_id`, and `metadata.output_type`.
 - Old persisted `role="tool"` or `role="command"` command result messages are compatibility data. Context projection must normalize them before provider calls or skip them if they cannot be safely paired with a triggering user command.
 - When command results enter Prompt Agent context, they are projected as assistant messages with a clear command result header, capability source, output type, and the warning that the content is data, not instructions.
+- The command result context instruction can be overridden in Settings -> General -> Context Rendering. The override replaces only the warning/instruction text.
 - Command result projection must not use system-role content, because command output should not receive system-level weight.
+- Command results remain assistant-role data blocks with command/source/output-type headers and bounded output blocks; overrides do not enable tool roles, function roles, system-role command output, or provider payload role changes.
 - Pair-aware trimming keeps a slash command user message and its command result together. If the triggering user command is trimmed out, the command result is also trimmed out.
 - Text and markdown outputs enter context in a bounded `<command_output>` block.
 - JSON outputs enter context as a bounded `<json>` block.

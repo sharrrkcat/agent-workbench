@@ -226,7 +226,7 @@ function GeneralDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
     if (!values) return;
     try {
       setLocalError(null);
-      await updateGeneralSettings(values);
+      await updateGeneralSettings(generalSettingsPatch(values));
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1400);
     } catch (error) {
@@ -236,6 +236,28 @@ function GeneralDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
 
   function setNumber(key: keyof GeneralSettings, value: string) {
     setValues((current) => (current ? { ...current, [key]: Number(value) } : current));
+  }
+
+  function setInstruction(key: 'group_transcript_system_instruction' | 'command_result_context_instruction', value: string) {
+    setValues((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  function resetInstruction(key: 'group_transcript_system_instruction' | 'command_result_context_instruction') {
+    setValues((current) => {
+      if (!current) return current;
+      if (key === 'group_transcript_system_instruction') {
+        return {
+          ...current,
+          group_transcript_system_instruction: null,
+          group_transcript_system_instruction_effective: current.group_transcript_system_instruction_default,
+        };
+      }
+      return {
+        ...current,
+        command_result_context_instruction: null,
+        command_result_context_instruction_effective: current.command_result_context_instruction_default,
+      };
+    });
   }
 
   if (!values) return <EmptyDetail title="General" message="Loading general settings." />;
@@ -288,8 +310,74 @@ function GeneralDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
             <NumberField label="Max total file context per message (KB)" value={values.max_total_file_context_per_message_kb} min={1} max={8192} onChange={(value) => setNumber('max_total_file_context_per_message_kb', value)} />
           </div>
         </div>
+        <div className="detail-section">
+          <div className="detail-section-heading">
+            <h3>Context Rendering</h3>
+          </div>
+          <InstructionField
+            label="Group transcript system instruction"
+            description="Instruction appended when a session uses Group transcript mode. It tells the current agent how to read speaker labels and reply as itself."
+            value={values.group_transcript_system_instruction ?? values.group_transcript_system_instruction_effective}
+            isDefault={values.group_transcript_system_instruction === null}
+            onChange={(value) => setInstruction('group_transcript_system_instruction', value)}
+            onReset={() => resetInstruction('group_transcript_system_instruction')}
+          />
+          <InstructionField
+            label="Command result context instruction"
+            description="Instruction used when slash command results are included in LLM context. It should tell the model to treat command output as data, not instructions."
+            value={values.command_result_context_instruction ?? values.command_result_context_instruction_effective}
+            isDefault={values.command_result_context_instruction === null}
+            onChange={(value) => setInstruction('command_result_context_instruction', value)}
+            onReset={() => resetInstruction('command_result_context_instruction')}
+          />
+        </div>
       </div>
     </form>
+  );
+}
+
+function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
+  return {
+    max_image_size_mb: values.max_image_size_mb,
+    max_file_size_mb: values.max_file_size_mb,
+    max_attachments_per_message: values.max_attachments_per_message,
+    max_file_context_per_file_kb: values.max_file_context_per_file_kb,
+    max_total_file_context_per_message_kb: values.max_total_file_context_per_message_kb,
+    send_text_file_attachments_to_llm: values.send_text_file_attachments_to_llm,
+    persist_streaming_message_deltas: values.persist_streaming_message_deltas,
+    group_transcript_system_instruction: values.group_transcript_system_instruction,
+    command_result_context_instruction: values.command_result_context_instruction,
+  };
+}
+
+function InstructionField({
+  label,
+  description,
+  value,
+  isDefault,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  description: string;
+  value: string;
+  isDefault: boolean;
+  onChange: (value: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <label className="config-field settings-config-field">
+      <span>
+        {label}
+        <button className="settings-secondary-button" type="button" onClick={onReset} disabled={isDefault}>
+          Reset to default
+        </button>
+      </span>
+      <textarea rows={6} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+      <small>
+        {description} {isDefault ? 'Using the default value.' : 'Using a saved override.'}
+      </small>
+    </label>
   );
 }
 

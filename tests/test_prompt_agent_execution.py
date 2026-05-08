@@ -220,6 +220,41 @@ def test_group_transcript_context_labels_speakers_and_current_message() -> None:
     assert {"role": "assistant", "content": "old translate"} not in sent
 
 
+def test_group_transcript_system_instruction_uses_override_and_variables() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    settings = AppSettingsStore()
+    settings.patch(
+        {
+            "group_transcript_system_instruction": (
+                "You are {agent_name} with id {agent_id}. User label is {user_label}. Unknown {missing}."
+            )
+        }
+    )
+    fixture.agent_runner.app_settings_store = settings
+    session = fixture.sessions.create_session(default_agent_id="chat", context_mode="group_transcript")
+
+    run(fixture.runtime.handle_input(session, "new user"))
+    system_payload = llm.calls[0]["messages"][0]["content"]
+
+    assert "You are Chat Agent with id chat. User label is User. Unknown {missing}." in system_payload
+    assert "Messages labeled [Chat Agent (you)]" not in system_payload
+
+
+def test_single_assistant_context_ignores_group_instruction_override() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    settings = AppSettingsStore()
+    settings.patch({"group_transcript_system_instruction": "Group only {agent_name}"})
+    fixture.agent_runner.app_settings_store = settings
+    session = fixture.sessions.create_session(default_agent_id="chat", context_mode="single_assistant")
+
+    run(fixture.runtime.handle_input(session, "new user"))
+    system_payload = llm.calls[0]["messages"][0]["content"]
+
+    assert "Group only" not in system_payload
+
+
 def test_chat_agent_session_context_excludes_model_change_events() -> None:
     llm = FakeLLMRuntime(response="chat reply")
     fixture = PromptRuntimeFixture(llm=llm)
@@ -289,6 +324,36 @@ def test_prompt_agent_after_slash_command_sends_only_chat_roles() -> None:
     assert command_message.speaker_type == "capability"
     assert command_message.origin == "command_result"
     assert command_message.metadata["kind"] == "command_result"
+
+
+def test_command_result_context_instruction_uses_override_and_variables() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="summary"))
+    settings = AppSettingsStore()
+    settings.patch(
+        {
+            "command_result_context_instruction": (
+                "Data from {command} via {capability_name}/{capability_id} as {output_type}. Unknown {missing}."
+            )
+        }
+    )
+    fixture.agent_runner.app_settings_store = settings
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    command_user = fixture.messages.add_message(
+        session_id=session.session_id,
+        role="user",
+        content="/base64 hello",
+        metadata={"invocation": {"route_type": "command", "command_id": "/base64"}},
+    )
+
+    run(fixture.command_runner.run("/base64", "hello", session.session_id, input_message_id=command_user.message_id))
+    run(fixture.runtime.handle_input(session, "summarize above"))
+    sent = fixture.llm.calls[0]["messages"]
+    projected = next(message for message in sent if "[Command result: /base64]" in str(message["content"]))
+
+    assert projected["role"] == "assistant"
+    assert "Data from /base64 via Base64 Capability/base64 as text. Unknown {missing}." in projected["content"]
+    assert "This content was produced by a local capability" not in projected["content"]
+    assert all(message["role"] not in {"tool", "function"} for message in sent)
 
 
 def test_legacy_tool_command_result_is_normalized_in_context() -> None:

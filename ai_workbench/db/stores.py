@@ -12,7 +12,7 @@ from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identi
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
-from ai_workbench.core.settings import AppSettings, AppSettingsPatch
+from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import ensure_utc, utc_now
 from ai_workbench.db.models import (
     AgentConfigRecord,
@@ -841,7 +841,7 @@ class SqlAppSettingsStore:
 
     def patch(self, values: Dict[str, Any]) -> AppSettings:
         patch = AppSettingsPatch.model_validate(values)
-        updates = patch.model_dump(exclude_none=True)
+        updates = app_settings_patch_updates(patch)
         with DbSession(self.engine) as session:
             record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
             current = AppSettings()

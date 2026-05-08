@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.attachments import save_attachment_from_upload
+from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.schema.run import RunStatus
 from scripts.cleanup_attachments import main as cleanup_main
@@ -23,15 +24,41 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.status_code == 200
     assert response.json()["max_file_size_mb"] == 10
     assert response.json()["persist_streaming_message_deltas"] is False
+    assert response.json()["group_transcript_system_instruction"] is None
+    assert response.json()["command_result_context_instruction"] is None
+    assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
+    assert response.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
+    assert response.json()["command_result_context_instruction_default"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
+    assert response.json()["command_result_context_instruction_effective"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
 
     patched = client.patch(
         "/api/settings/general",
-        json={"max_file_size_mb": 20, "send_text_file_attachments_to_llm": False, "persist_streaming_message_deltas": True},
+        json={
+            "max_file_size_mb": 20,
+            "send_text_file_attachments_to_llm": False,
+            "persist_streaming_message_deltas": True,
+            "group_transcript_system_instruction": "Group override for {agent_name}",
+            "command_result_context_instruction": "Command override for {command}",
+        },
     )
     assert patched.status_code == 200
     assert patched.json()["max_file_size_mb"] == 20
     assert patched.json()["send_text_file_attachments_to_llm"] is False
     assert patched.json()["persist_streaming_message_deltas"] is True
+    assert patched.json()["group_transcript_system_instruction"] == "Group override for {agent_name}"
+    assert patched.json()["group_transcript_system_instruction_effective"] == "Group override for {agent_name}"
+    assert patched.json()["command_result_context_instruction"] == "Command override for {command}"
+    assert patched.json()["command_result_context_instruction_effective"] == "Command override for {command}"
+
+    reset = client.patch(
+        "/api/settings/general",
+        json={"group_transcript_system_instruction": "", "command_result_context_instruction": None},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["group_transcript_system_instruction"] is None
+    assert reset.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
+    assert reset.json()["command_result_context_instruction"] is None
+    assert reset.json()["command_result_context_instruction_effective"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
 
     assert client.patch("/api/settings/general", json={"unknown": 1}).status_code == 422
     assert client.patch("/api/settings/general", json={"max_file_size_mb": 0}).status_code == 422
@@ -39,6 +66,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
     assert restarted.get("/api/settings/general").json()["persist_streaming_message_deltas"] is True
+    assert restarted.get("/api/settings/general").json()["group_transcript_system_instruction"] is None
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:
