@@ -694,6 +694,8 @@ def test_prompt_agent_uses_streaming_when_profile_supports_streaming() -> None:
     assert messages[-1].metadata["llm_metrics"]["completion_tokens"] == 2
     assert messages[-1].metadata["llm_metrics"]["time_to_first_token_ms"] is not None
     assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == ["he", "llo"]
+    assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
+    assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
     assert "message_completed" in [event.type for event in events]
 
 
@@ -1084,6 +1086,8 @@ def test_streaming_reasoning_delta_accumulates_to_final_metadata() -> None:
     assert message.metadata["reasoning"] == {"expected": True, "received": True, "content": "think more"}
     assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == ["", "visible ", "", "answer"]
     assert [event.payload.get("reasoning_delta") for event in events if event.type == "message_delta"] == ["think ", None, "more", None]
+    assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2, 3, 4]
+    assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [5]
 
 
 def test_streaming_failure_marks_run_failed() -> None:

@@ -241,8 +241,14 @@ def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplica
     assert result.success is True
     assert fixture.llm.calls[0]["stream"] is True
     assert [event.type for event in events].count("message_delta") == len(chunks)
-    assert [event.type for event in events].count("message_updated") == len(chunks)
+    assert [event.type for event in events].count("message_updated") == 0
     assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == chunks
+    assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2, 3]
+    assert {event.message_id for event in events if event.type == "message_delta"} == {message.message_id}
+    completed = [event for event in events if event.type == "message_completed"]
+    assert len(completed) == 1
+    assert completed[0].payload["seq"] == 4
+    assert completed[0].message_id == message.message_id
     assert message.output_type == "markdown"
     assert message.content == "".join(chunks)
     assert stream_step.status.value == "completed"
@@ -663,8 +669,12 @@ def test_ctx_output_write_delta_updates_script_placeholder(tmp_path: Path) -> No
     assert result.success is True
     assert message.run_id == result.run_id
     assert message.content == "hello"
-    assert [event.type for event in fixture.events.list_events()].count("message_delta") == 2
-    assert [event.type for event in fixture.events.list_events()].count("message_updated") == 2
+    events = fixture.events.list_events()
+    assert [event.type for event in events].count("message_delta") == 2
+    assert [event.type for event in events].count("message_updated") == 0
+    assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
+    assert {event.message_id for event in events if event.type == "message_delta"} == {message.message_id}
+    assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
 
 
 def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
@@ -688,8 +698,48 @@ def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
     assert result.success is True
     assert message.content == "hello"
     assert message.output_type == "markdown"
-    assert [event.type for event in fixture.events.list_events()].count("message_delta") == 2
-    assert [event.type for event in fixture.events.list_events()].count("message_updated") == 2
+    events = fixture.events.list_events()
+    assert [event.type for event in events].count("message_delta") == 2
+    assert [event.type for event in events].count("message_updated") == 0
+    assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
+    assert {event.message_id for event in events if event.type == "message_delta"} == {message.message_id}
+    assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
+
+
+def test_ctx_llm_stream_to_output_failure_completes_partial_message(tmp_path: Path) -> None:
+    class FailsAfterChunk(FakeStreamingLLMRuntime):
+        async def chat_stream(self, messages, model_config=None):
+            self.calls.append({"messages": messages, "model_config": model_config or {}, "stream": True})
+            yield "partial "
+            yield "answer"
+            raise RuntimeError("stream broke")
+
+    registry = write_script_agent(
+        tmp_path,
+        "llm_stream_output_failure_script",
+        "async def run(ctx):\n"
+        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, output_type='markdown')\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FailsAfterChunk())
+    provider = fixture.provider_profiles.create(ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1"))
+    profile = fixture.llm_profiles.create(LLMProfileSchema(id="profile", alias="p", name="P", provider_profile_id=provider.id, model_id="model-a", supports_streaming=True))
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
+
+    result = run(fixture.runtime.handle_input(session, "@llm_stream_output_failure_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    events = fixture.events.list_events()
+
+    assert result.success is False
+    assert fixture.runs.get_run(result.run_id).status == RunStatus.FAILED
+    assert message.content == "partial answer"
+    assert message.output_type == "markdown"
+    assert message.metadata["success"] is False
+    assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
+    assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
+    assert [event.type for event in events].count("message_updated") == 0
 
 
 def test_ctx_llm_stream_falls_back_to_single_chunk_when_profile_streaming_disabled(tmp_path: Path) -> None:

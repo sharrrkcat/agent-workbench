@@ -125,6 +125,11 @@ class ScriptOutputProxy:
         self.completed = False
         self._content = ""
         self._output_type = "text"
+        self._seq = 0
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self._content)
 
     async def set_output_type(self, output_type: str) -> None:
         self._output_type = output_type or self._output_type
@@ -137,33 +142,14 @@ class ScriptOutputProxy:
         if not text:
             return
         self._content += text
-        updated_message = None
-        if self.message_id:
-            message = self.message_store.get_message(self.message_id)
-            updated_message = self.message_store.update_message(
-                message.model_copy(
-                    update={
-                        "content": self._content,
-                        "output_type": self._output_type,
-                        "metadata": {**(message.metadata or {}), "streaming": True},
-                    }
-                )
-            )
+        self._seq += 1
         self.event_bus.emit(
             "message_delta",
             session_id=self.session_id,
             run_id=self.run_id,
             message_id=self.message_id,
-            payload={"delta": text, "reasoning_delta": None},
+            payload={"seq": self._seq, "delta": text, "reasoning_delta": None},
         )
-        if updated_message is not None:
-            self.event_bus.emit(
-                "message_updated",
-                session_id=self.session_id,
-                run_id=self.run_id,
-                message_id=self.message_id,
-                payload={"message": updated_message.model_dump(mode="json")},
-            )
 
     async def finish(
         self,
@@ -219,12 +205,13 @@ class ScriptOutputProxy:
         )
         message = self.message_store.update_message(message)
         self.completed = True
+        self._seq += 1
         self.event_bus.emit(
             "message_completed",
             session_id=self.session_id,
             run_id=self.run_id,
             message_id=message.message_id,
-            payload={"message": message.model_dump(mode="json"), "draft_message_id": message.message_id},
+            payload={"seq": self._seq, "message": message.model_dump(mode="json"), "draft_message_id": message.message_id},
         )
         self.event_bus.emit(
             "message_done",
@@ -757,9 +744,15 @@ class ScriptAgentRunner:
             script_result = await script_run(ctx)
         except Exception as exc:
             self.run_lifecycle.fail_step(running_step.step_id, error_message=str(exc) or "Script agent failed.")
+            if ctx.output.has_content:
+                final_content = None
+                output_type = None
+            else:
+                final_content = {"code": "RUN_FAILED", "message": str(exc) or "Script agent failed."}
+                output_type = "error"
             await ctx.output.finish(
-                final_content={"code": "RUN_FAILED", "message": str(exc) or "Script agent failed."},
-                output_type="error",
+                final_content=final_content,
+                output_type=output_type,
                 metadata={"success": False, "error": str(exc) or "Script agent failed."},
                 agent_id=agent.id,
                 action_id=action_id,

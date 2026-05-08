@@ -124,3 +124,31 @@ def test_non_draft_streaming_placeholder_accepts_deltas() -> None:
     assert "message_id: typeof event.message_id === 'string'" in source
     assert "message_updated" in source
     assert "mergeUpdatedMessage" in source
+
+
+def test_streaming_store_tracks_message_seq_and_completion() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "lastMessageSeqById" in source
+    assert "completedMessageIds" in source
+    assert "eventSeq(event)" in source
+    assert "seq <= lastSeq" in source
+    assert "markCompletedMessages" in source
+    assert "markMessageSeq" in source
+
+
+def test_streaming_store_ignores_message_updated_content_while_streaming() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "preserveStreamingContent" in source
+    assert "message.client_status === 'streaming'" in source
+    assert "completedMessageIds[updatedMessage.message_id]" in source
+    assert "content: preserveStreamingContent ? message.content : updatedMessage.content" in source
+
+
+def test_streaming_store_replaces_final_and_dedupes_by_run_or_draft() -> None:
+    source = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "replaceDraftWithFinal(get().messages, finalMessage, draftMessageId)" in source
+    assert "message.message_id.startsWith('draft-') && message.run_id && message.run_id === finalMessage.run_id" in source
+    assert "resolveMessageSeqKey" in source

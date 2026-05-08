@@ -43,6 +43,8 @@ type WorkbenchState = {
   stepsByRunId: Record<string, RunStep[]>;
   runStepsExpandedByRunId: Record<string, boolean>;
   runEvents: Record<string, RunEvent[]>;
+  lastMessageSeqById: Record<string, number>;
+  completedMessageIds: Record<string, boolean>;
   health?: HealthDetails;
   generalSettings?: GeneralSettings;
   runEventLoading?: string;
@@ -110,6 +112,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   stepsByRunId: {},
   runStepsExpandedByRunId: {},
   runEvents: {},
+  lastMessageSeqById: {},
+  completedMessageIds: {},
   loading: false,
   creatingSession: false,
   sending: false,
@@ -164,6 +168,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       runs: mergedRunState.runs,
       runsById: mergedRunState.runsById,
       stepsByRunId: mergedRunState.stepsByRunId,
+      lastMessageSeqById: pruneStreamingSeqState(get().lastMessageSeqById, messages),
+      completedMessageIds: pruneCompletedMessageState(get().completedMessageIds, messages),
     });
   },
 
@@ -182,7 +188,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     try {
       const session = await api.createSession(`Session ${get().sessions.length + 1}`, defaultAgentId);
       const sessions = sortSessionsByRecent(await api.listSessions());
-      set({ sessions, currentSession: session, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runStepsExpandedByRunId: {}, creatingSession: false });
+      set({ sessions, currentSession: session, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runStepsExpandedByRunId: {}, lastMessageSeqById: {}, completedMessageIds: {}, creatingSession: false });
     } catch (error) {
       set({ ...formatError(error, 'Failed to create session'), creatingSession: false });
     }
@@ -190,7 +196,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   selectSession: async (sessionId: string) => {
     const session = await api.getSession(sessionId);
-    set({ currentSession: session });
+    set({ currentSession: session, lastMessageSeqById: {}, completedMessageIds: {} });
     await get().refreshCurrent();
   },
 
@@ -202,7 +208,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     try {
       await api.deleteSession(sessionId);
       if (deletingCurrent) {
-        set({ currentSession: nextSession, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runEvents: {}, runStepsExpandedByRunId: {} });
+        set({ currentSession: nextSession, messages: [], runs: [], runsById: {}, stepsByRunId: {}, runEvents: {}, runStepsExpandedByRunId: {}, lastMessageSeqById: {}, completedMessageIds: {} });
       }
       const sessions = sortSessionsByRecent((await api.listSessions()).filter((session) => session.session_id !== sessionId));
       if (!deletingCurrent) {
@@ -224,6 +230,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
           stepsByRunId: {},
           runStepsExpandedByRunId: {},
           runEvents: {},
+          lastMessageSeqById: {},
+          completedMessageIds: {},
           error: undefined,
           lastError: undefined,
         });
@@ -240,6 +248,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         stepsByRunId: {},
         runStepsExpandedByRunId: {},
         runEvents: {},
+        lastMessageSeqById: {},
+        completedMessageIds: {},
         error: undefined,
         lastError: undefined,
       });
@@ -552,6 +562,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         activeRunId: event.run_id,
         sending: true,
         messages: upsertDraftMessage(get().messages, draft),
+        lastMessageSeqById: clearStreamingSeq(get().lastMessageSeqById, draft.message_id),
+        completedMessageIds: clearCompletedMessage(get().completedMessageIds, draft.message_id),
       });
       return;
     }
@@ -559,20 +571,39 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const delta = typeof event.payload.delta === 'string' ? event.payload.delta : '';
       const reasoningDelta = typeof event.payload.reasoning_delta === 'string' ? event.payload.reasoning_delta : '';
       if (!delta && !reasoningDelta) return;
-      set({ messages: appendDraftDelta(get().messages, event, delta, reasoningDelta) });
+      const seq = eventSeq(event);
+      if (seq === null) return;
+      const seqKey = resolveMessageSeqKey(get().messages, event);
+      if (!seqKey) return;
+      const lastSeq = get().lastMessageSeqById[seqKey] || 0;
+      if (get().completedMessageIds[seqKey] && seq <= lastSeq) return;
+      if (seq <= lastSeq) return;
+      set({
+        messages: appendDraftDelta(get().messages, event, delta, reasoningDelta),
+        lastMessageSeqById: { ...get().lastMessageSeqById, [seqKey]: seq },
+      });
       return;
     }
     if (event.type === 'message_updated') {
       const updatedMessage = parseMessagePayload(event.payload.message);
       if (updatedMessage) {
-        set({ messages: mergeUpdatedMessage(get().messages, updatedMessage) });
+        set({ messages: mergeUpdatedMessage(get().messages, updatedMessage, get().completedMessageIds) });
       }
       return;
     }
     if (event.type === 'message_completed') {
       const finalMessage = parseMessagePayload(event.payload.message);
       if (finalMessage) {
-        set({ messages: replaceDraftWithFinal(get().messages, finalMessage, String(event.payload.draft_message_id || '')) });
+        const seq = eventSeq(event);
+        const draftMessageId = String(event.payload.draft_message_id || '');
+        const lastSeq = Math.max(get().lastMessageSeqById[finalMessage.message_id] || 0, draftMessageId ? get().lastMessageSeqById[draftMessageId] || 0 : 0);
+        if (seq !== null && seq < lastSeq) return;
+        const nextSeq = seq ?? lastSeq;
+        set({
+          messages: replaceDraftWithFinal(get().messages, finalMessage, draftMessageId),
+          lastMessageSeqById: markMessageSeq(get().lastMessageSeqById, [finalMessage.message_id, draftMessageId], nextSeq),
+          completedMessageIds: markCompletedMessages(get().completedMessageIds, [finalMessage.message_id, draftMessageId]),
+        });
       }
       return;
     }
@@ -1071,16 +1102,18 @@ function replaceDraftWithFinal(messages: Message[], finalMessage: Message, draft
   return sortMessagesByCreatedAt([...withoutDuplicates, finalMessage]);
 }
 
-function mergeUpdatedMessage(messages: Message[], updatedMessage: Message): Message[] {
+function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, completedMessageIds: Record<string, boolean> = {}): Message[] {
   let replaced = false;
   const next = messages.map((message) => {
     const sameMessage = message.message_id === updatedMessage.message_id;
     const sameRunDraft = message.message_id.startsWith('draft-') && message.run_id && message.run_id === updatedMessage.run_id;
     if (!sameMessage && !sameRunDraft) return message;
     replaced = true;
+    const preserveStreamingContent = message.client_status === 'streaming' || completedMessageIds[message.message_id] || completedMessageIds[updatedMessage.message_id];
     return {
       ...message,
       ...updatedMessage,
+      content: preserveStreamingContent ? message.content : updatedMessage.content,
       run: message.run || updatedMessage.run,
       run_steps: mergeRunSteps(message.run_steps || [], updatedMessage.run_steps || updatedMessage.run?.steps || []),
       metadata: { ...(message.metadata || {}), ...(updatedMessage.metadata || {}) },
@@ -1111,6 +1144,57 @@ function isMatchingDraft(message: Message, runId: string, messageId: string): bo
   if (!message.message_id.startsWith('draft-') && message.client_status !== 'streaming') return false;
   if (messageId && message.message_id === messageId) return true;
   return Boolean(runId && message.run_id === runId);
+}
+
+function eventSeq(event: RuntimeEvent): number | null {
+  const seq = event.payload.seq;
+  return typeof seq === 'number' && Number.isFinite(seq) ? seq : null;
+}
+
+function resolveMessageSeqKey(messages: Message[], event: RuntimeEvent): string {
+  if (typeof event.message_id === 'string' && event.message_id) return event.message_id;
+  const match = messages.find((message) => isMatchingDraft(message, event.run_id || '', ''));
+  return match?.message_id || '';
+}
+
+function markMessageSeq(current: Record<string, number>, messageIds: string[], seq: number): Record<string, number> {
+  const next = { ...current };
+  for (const messageId of messageIds) {
+    if (messageId) next[messageId] = Math.max(next[messageId] || 0, seq);
+  }
+  return next;
+}
+
+function markCompletedMessages(current: Record<string, boolean>, messageIds: string[]): Record<string, boolean> {
+  const next = { ...current };
+  for (const messageId of messageIds) {
+    if (messageId) next[messageId] = true;
+  }
+  return next;
+}
+
+function clearStreamingSeq(current: Record<string, number>, messageId: string): Record<string, number> {
+  if (!messageId || !(messageId in current)) return current;
+  const next = { ...current };
+  delete next[messageId];
+  return next;
+}
+
+function clearCompletedMessage(current: Record<string, boolean>, messageId: string): Record<string, boolean> {
+  if (!messageId || !(messageId in current)) return current;
+  const next = { ...current };
+  delete next[messageId];
+  return next;
+}
+
+function pruneStreamingSeqState(current: Record<string, number>, messages: Message[]): Record<string, number> {
+  const messageIds = new Set(messages.map((message) => message.message_id));
+  return Object.fromEntries(Object.entries(current).filter(([messageId]) => messageIds.has(messageId)));
+}
+
+function pruneCompletedMessageState(current: Record<string, boolean>, messages: Message[]): Record<string, boolean> {
+  const messageIds = new Set(messages.map((message) => message.message_id));
+  return Object.fromEntries(Object.entries(current).filter(([messageId]) => messageIds.has(messageId)));
 }
 
 function parseMessagePayload(value: unknown): Message | null {

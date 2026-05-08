@@ -527,6 +527,7 @@ class AgentRunner:
         reasoning_parts: list[str] = []
         usage = None
         actual_raw = None
+        seq = 0
         try:
             async for chunk in _call_chat_stream(self.llm_runtime, messages, llm_config.values):
                 normalized = _normalize_stream_chunk(chunk)
@@ -537,22 +538,24 @@ class AgentRunner:
                 if normalized.reasoning_delta:
                     metrics_recorder.mark_first_token()
                     reasoning_parts.append(normalized.reasoning_delta)
+                    seq += 1
                     self.event_bus.emit(
                         "message_delta",
                         session_id=session_id,
                         run_id=run.run_id,
                         message_id=draft_message_id,
-                        payload={"delta": "", "reasoning_delta": normalized.reasoning_delta},
+                        payload={"seq": seq, "delta": "", "reasoning_delta": normalized.reasoning_delta},
                     )
                 if normalized.content_delta:
                     metrics_recorder.mark_first_token()
                     content_parts.append(normalized.content_delta)
+                    seq += 1
                     self.event_bus.emit(
                         "message_delta",
                         session_id=session_id,
                         run_id=run.run_id,
                         message_id=draft_message_id,
-                        payload={"delta": normalized.content_delta, "reasoning_delta": None},
+                        payload={"seq": seq, "delta": normalized.content_delta, "reasoning_delta": None},
                     )
         except asyncio.CancelledError:
             content = "".join(content_parts)
@@ -583,7 +586,7 @@ class AgentRunner:
                     session_id=session_id,
                     run_id=run.run_id,
                     message_id=message.message_id,
-                    payload={"message": message.model_dump(mode="json"), "draft_message_id": draft_message_id},
+                    payload={"seq": seq + 1, "message": message.model_dump(mode="json"), "draft_message_id": draft_message_id},
                 )
                 self.event_bus.emit(
                     "message_done",
@@ -652,7 +655,7 @@ class AgentRunner:
             session_id=session_id,
             run_id=done_run.run_id,
             message_id=message.message_id,
-            payload={"message": message.model_dump(mode="json"), "draft_message_id": draft_message_id},
+            payload={"seq": seq + 1, "message": message.model_dump(mode="json"), "draft_message_id": draft_message_id},
         )
         self.event_bus.emit(
             "message_done",
