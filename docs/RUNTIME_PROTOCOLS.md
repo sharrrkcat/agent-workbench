@@ -308,6 +308,7 @@ Status usage:
 
 Attachment metadata:
 - User message metadata keeps attachment refs rather than full base64 payloads.
+- Script-generated attachments are stored in the same local attachment store and linked from assistant message metadata so orphan cleanup can track them.
 - Prompt Agent vision resolves images to data URLs only for supported profiles.
 - Unsupported image input becomes a text placeholder or warning instead of a vision payload.
 - File attachment context obeys per-file and per-message byte limits.
@@ -318,6 +319,7 @@ Output rendering boundaries:
 - `markdown` content is rendered as markdown.
 - `file_content` content is rendered as raw text.
 - `image` and `image_gallery` payloads require renderable URLs.
+- Generated images should use local attachment URLs such as `/api/attachments/<id>.png` rather than durable message content containing base64.
 - `rich_content` preserves ordered blocks.
 - The frontend must not infer streaming state from content shape.
 - Renderer changes should update output payload contracts when shapes change.

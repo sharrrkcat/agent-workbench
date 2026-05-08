@@ -12,7 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_model_lifecycle, resolved_runtime_override
-from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_bytes, read_attachment_text
+from ai_workbench.core.attachments import (
+    read_attachment_as_data_url,
+    read_attachment_bytes,
+    read_attachment_text,
+    save_generated_attachment_base64,
+    save_generated_attachment_bytes,
+)
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.events import EventBus
@@ -680,6 +686,42 @@ class AgentContext:
     def attachment_as_data_url(self, attachment: dict[str, Any] | str) -> str:
         return read_attachment_as_data_url(self._attachment_for_read(attachment))
 
+    async def save_attachment_bytes(
+        self,
+        data: bytes,
+        filename: str,
+        mime_type: str,
+        kind: str = "file",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        attachment = save_generated_attachment_bytes(
+            data=data,
+            filename=filename,
+            mime_type=mime_type,
+            kind=kind,
+            metadata=metadata,
+        )
+        self._link_generated_attachment(attachment)
+        return attachment
+
+    async def save_attachment_base64(
+        self,
+        data_base64: str,
+        filename: str,
+        mime_type: str,
+        kind: str = "file",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        attachment = save_generated_attachment_base64(
+            data_base64=data_base64,
+            filename=filename,
+            mime_type=mime_type,
+            kind=kind,
+            metadata=metadata,
+        )
+        self._link_generated_attachment(attachment)
+        return attachment
+
     def _attachment_for_read(self, attachment: dict[str, Any] | str) -> dict[str, Any]:
         if isinstance(attachment, dict):
             return attachment
@@ -687,6 +729,23 @@ class AgentContext:
             if item.get("id") == attachment:
                 return item
         raise ValueError(f"Attachment not found: {attachment}")
+
+    def _link_generated_attachment(self, attachment: dict[str, Any]) -> None:
+        message_id = self.output.message_id
+        if message_id:
+            message = self.message_store.get_message(message_id)
+            metadata = dict(message.metadata or {})
+            attachments = list(metadata.get("attachments") or [])
+            attachments.append(attachment)
+            metadata["attachments"] = attachments
+            metadata["generated_attachments"] = attachments
+            self.message_store.update_message(message.model_copy(update={"metadata": metadata}))
+        run = self.run_store.get_run(self.run_id)
+        run_metadata = dict(run.metadata or {})
+        generated = list(run_metadata.get("generated_attachments") or [])
+        generated.append(attachment)
+        run_metadata["generated_attachments"] = generated
+        self.run_store.update_metadata(self.run_id, run_metadata)
 
     def step(self, name: str, parent_step_id: Optional[str] = None) -> ScriptStep:
         if self.run is None:

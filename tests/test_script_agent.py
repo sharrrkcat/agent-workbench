@@ -1,8 +1,9 @@
 import asyncio
+import base64
 from pathlib import Path
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.attachments import save_attachment_from_upload
+from ai_workbench.core.attachments import resolve_attachment_uri, save_attachment_from_upload
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
@@ -15,6 +16,7 @@ from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfi
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.storage_maintenance import scan_orphan_attachments
 from ai_workbench.core.stores import LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
 from tests.test_prompt_agent_execution import FakeLLMRuntime, FakeStreamingLLMRuntime, run
 
@@ -988,6 +990,107 @@ def test_script_agent_sees_and_reads_input_attachments(monkeypatch, tmp_path: Pa
     assert message.output_type == "file_content"
     assert message.content["filename"] == "config.yaml"
     assert message.content["content"] == "id: chat\n  enabled: true\n"
+
+
+def test_script_agent_save_attachment_bytes_writes_under_attachment_dir(monkeypatch, tmp_path: Path) -> None:
+    attachments_dir = tmp_path / "attachments"
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(attachments_dir))
+    registry = write_script_agent(
+        tmp_path,
+        "generated_attachment_writer",
+        "async def run(ctx):\n"
+        "    attachment = await ctx.save_attachment_bytes(\n"
+        "        b'generated text',\n"
+        "        filename='../unsafe report.txt',\n"
+        "        mime_type='text/plain',\n"
+        "        kind='file',\n"
+        "        metadata={'source': 'test'},\n"
+        "    )\n"
+        "    await ctx.reply_json(attachment)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@generated_attachment_writer create"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    attachment = message.content
+    path = resolve_attachment_uri(attachment["uri"])
+
+    assert result.success is True
+    assert path.is_file()
+    assert path.read_bytes() == b"generated text"
+    assert path.resolve().is_relative_to(attachments_dir.resolve())
+    assert attachment["type"] == "file"
+    assert attachment["mime_type"] == "text/plain"
+    assert attachment["name"] == "unsafe_report.txt"
+    assert attachment["size"] == len(b"generated text")
+    assert attachment["uri"].startswith("local://attachments/")
+    assert attachment["url"].startswith("/api/attachments/")
+    assert attachment["metadata"] == {"source": "test"}
+    assert fixture.runs.get_run(result.run_id).metadata["generated_attachments"][0]["id"] == attachment["id"]
+
+
+def test_script_agent_save_attachment_base64_supports_data_url_and_image_gallery(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    data_url = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode("ascii")
+    registry = write_script_agent(
+        tmp_path,
+        "generated_image_writer",
+        "async def run(ctx):\n"
+        f"    attachment = await ctx.save_attachment_base64({data_url!r}, filename='result.png', mime_type='image/png', kind='image')\n"
+        "    await ctx.reply_images([{'url': attachment['url'], 'alt': attachment['name']}])\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@generated_image_writer create"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    attachment = message.metadata["attachments"][0]
+
+    assert result.success is True
+    assert message.output_type == "image_gallery"
+    assert message.content == {"images": [{"url": attachment["url"], "alt": "result.png"}]}
+    assert attachment["type"] == "image"
+    assert attachment["mime_type"] == "image/png"
+    assert resolve_attachment_uri(attachment["uri"]).read_bytes() == b"\x89PNG\r\n\x1a\nfake"
+
+
+def test_script_agent_save_attachment_base64_rejects_invalid_data(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "bad_generated_attachment",
+        "async def run(ctx):\n"
+        "    await ctx.save_attachment_base64('not-base64', filename='bad.png', mime_type='image/png', kind='image')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@bad_generated_attachment create"))
+
+    assert result.success is False
+    assert "base64 is invalid" in result.error
+
+
+def test_generated_attachment_is_linked_for_cleanup(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    registry = write_script_agent(
+        tmp_path,
+        "linked_generated_attachment",
+        "async def run(ctx):\n"
+        "    attachment = await ctx.save_attachment_bytes(b'hello', filename='hello.txt', mime_type='text/plain')\n"
+        "    await ctx.reply_image(attachment['url'], alt='not really image')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@linked_generated_attachment create"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    attachment = message.metadata["attachments"][0]
+    path = resolve_attachment_uri(attachment["uri"])
+
+    assert result.success is True
+    assert path.exists()
+    assert scan_orphan_attachments(fixture.messages)["orphan_count"] == 0
 
 
 def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path: Path) -> None:

@@ -166,6 +166,24 @@ class CapabilityRuntime:
         outputs = normalize_history_outputs(entry if entry is not None else raw)
         return {"prompt_id": prompt_id or "", "raw": raw, "found": found, "outputs": outputs}
 
+    def get_prompt_status(self, prompt_id: str, context: dict | None = None) -> dict:
+        if not prompt_id:
+            raise ComfyUIError("COMFYUI_WORKFLOW_INVALID", "prompt_id is required.")
+        client = self._client_for(context)
+        history_raw: Any = {}
+        history_reachable = True
+        try:
+            history_raw = client.get_json(f"/history/{prompt_id}", not_found_code="COMFYUI_HISTORY_NOT_FOUND")
+        except ComfyUIError as exc:
+            if exc.code != "COMFYUI_HISTORY_NOT_FOUND":
+                raise
+            history_raw = {}
+
+        if _history_entry(history_raw, prompt_id) is not None:
+            return normalize_prompt_status(history_raw, {}, prompt_id, history_reachable=history_reachable)
+        queue_raw = client.get_json("/queue")
+        return normalize_prompt_status(history_raw, queue_raw, prompt_id, history_reachable=history_reachable)
+
     def submit_workflow(
         self,
         workflow: dict | None = None,
@@ -218,26 +236,39 @@ class CapabilityRuntime:
         poll_interval_seconds: float | None = None,
         context: dict | None = None,
     ) -> dict:
+        """Blocking convenience helper.
+
+        Script Agents that need live progress or cancellation should use
+        submit_workflow + get_prompt_status in their own async loop.
+        """
         if not prompt_id:
             raise ComfyUIError("COMFYUI_WORKFLOW_INVALID", "prompt_id is required.")
         config = _runtime_config(context)
         timeout = float(timeout_seconds if timeout_seconds is not None else config["max_wait_seconds"])
         interval = float(poll_interval_seconds if poll_interval_seconds is not None else config["poll_interval_seconds"])
         started = time.monotonic()
-        last_history: dict | None = None
+        last_status: dict | None = None
         while True:
-            history = self.get_history(prompt_id, context=context)
-            last_history = history
-            if history["found"]:
+            status = self.get_prompt_status(prompt_id, context=context)
+            last_status = status
+            if status["completed"]:
                 elapsed = time.monotonic() - started
                 return {
                     "prompt_id": prompt_id,
                     "completed": True,
                     "timed_out": False,
-                    "history": history,
-                    "outputs": history["outputs"],
+                    "status": status["status"],
+                    "outputs": status["outputs"],
                     "elapsed_seconds": round(elapsed, 3),
+                    "history": status["raw"].get("history"),
+                    "raw": status["raw"],
                 }
+            if status["failed"]:
+                raise ComfyUIError(
+                    "COMFYUI_PROMPT_FAILED",
+                    "ComfyUI prompt execution failed.",
+                    {"prompt_id": prompt_id, "status": status["status"], "error": status.get("error"), "raw": status.get("raw")},
+                )
             elapsed = time.monotonic() - started
             if elapsed >= timeout:
                 raise ComfyUIError(
@@ -247,7 +278,7 @@ class CapabilityRuntime:
                         "prompt_id": prompt_id,
                         "elapsed_seconds": round(elapsed, 3),
                         "timeout_seconds": timeout,
-                        "last_history": last_history,
+                        "last_status": last_status,
                     },
                 )
             time.sleep(max(0.0, interval))
@@ -389,6 +420,58 @@ def normalize_history_outputs(history: dict | None) -> dict:
     }
 
 
+def normalize_prompt_status(
+    history_payload: Any,
+    queue_payload: Any,
+    prompt_id: str,
+    history_reachable: bool = True,
+) -> dict:
+    entry = _history_entry(history_payload, prompt_id)
+    history_found = entry is not None
+    queue_info = _queue_prompt_info(queue_payload, prompt_id)
+    queue_complete = isinstance(queue_payload, dict)
+    outputs = normalize_history_outputs(entry if entry is not None else {})
+    error = _prompt_error(entry) if entry is not None else None
+
+    if history_found:
+        failed = bool(error)
+        status = "failed" if failed else "completed"
+        return {
+            "prompt_id": prompt_id,
+            "status": status,
+            "completed": not failed,
+            "failed": failed,
+            "queue_position": None,
+            "queue_state": "absent",
+            "history_found": True,
+            "outputs": outputs,
+            "error": error,
+            "raw": {"history": history_payload, "queue": queue_payload},
+        }
+
+    if queue_info["state"] == "running":
+        status = "running"
+    elif queue_info["state"] == "pending":
+        status = "queued"
+    elif history_reachable and queue_complete:
+        status = "not_found"
+    else:
+        status = "unknown"
+
+    return {
+        "prompt_id": prompt_id,
+        "status": status,
+        "completed": False,
+        "failed": False,
+        "queue_position": queue_info["position"],
+        "queue_state": queue_info["state"] if queue_info["state"] != "missing" else ("absent" if status == "not_found" else "unknown"),
+        "history_found": False,
+        "outputs": outputs,
+        "error": None,
+        "raw": {"history": history_payload, "queue": queue_payload},
+    }
+
+
 def _runtime_config(context: dict | None) -> dict:
     config = dict(DEFAULT_CONFIG)
     provided = (context or {}).get("capability_config") if isinstance(context, dict) else None
@@ -451,6 +534,88 @@ def _file_ref(value: dict, node_id: str, node_label: str, kind: str) -> dict:
         "display_name": "/".join(part for part in [subfolder, filename] if part),
         "kind": kind,
     }
+
+
+def _queue_prompt_info(queue_payload: Any, prompt_id: str) -> dict:
+    if not isinstance(queue_payload, dict):
+        return {"state": "missing", "position": None}
+    for entry in queue_payload.get("queue_running") or []:
+        if _queue_entry_prompt_id(entry) == prompt_id:
+            return {"state": "running", "position": None}
+    for index, entry in enumerate(queue_payload.get("queue_pending") or []):
+        if _queue_entry_prompt_id(entry) == prompt_id:
+            return {"state": "pending", "position": index}
+    return {"state": "missing", "position": None}
+
+
+def _queue_entry_prompt_id(entry: Any) -> str:
+    if isinstance(entry, dict):
+        for key in ("prompt_id", "id"):
+            if entry.get(key):
+                return str(entry[key])
+        prompt = entry.get("prompt")
+        if isinstance(prompt, dict) and prompt.get("prompt_id"):
+            return str(prompt["prompt_id"])
+    if isinstance(entry, (list, tuple)):
+        for value in entry:
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                nested = _queue_entry_prompt_id(value)
+                if nested:
+                    return nested
+    return ""
+
+
+def _prompt_error(entry: Any) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    candidates = []
+    status = entry.get("status")
+    candidates.append(entry)
+    if isinstance(status, dict):
+        candidates.append(status)
+    for candidate in candidates:
+        status_value = str(candidate.get("status_str") or candidate.get("status") or "").lower()
+        completed = candidate.get("completed")
+        has_error = any(candidate.get(key) for key in ("error", "exception_message", "node_errors"))
+        if "fail" in status_value or "error" in status_value or completed is False and has_error or has_error:
+            return _normalized_prompt_error(candidate)
+    messages = entry.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if _message_indicates_failure(message):
+                return _normalized_prompt_error({"messages": messages})
+    return None
+
+
+def _message_indicates_failure(message: Any) -> bool:
+    if isinstance(message, str):
+        value = message.lower()
+        return "error" in value or "fail" in value or "exception" in value
+    if isinstance(message, dict):
+        return any(str(message.get(key) or "").lower() in {"execution_error", "error", "failed"} for key in ("type", "event"))
+    if isinstance(message, (list, tuple)):
+        return any(_message_indicates_failure(item) for item in message)
+    return False
+
+
+def _normalized_prompt_error(source: dict) -> dict:
+    message = (
+        source.get("exception_message")
+        or source.get("error")
+        or source.get("status_str")
+        or source.get("status")
+        or "ComfyUI prompt failed."
+    )
+    if isinstance(message, dict):
+        message = message.get("message") or message.get("error") or "ComfyUI prompt failed."
+    detail = {
+        key: source.get(key)
+        for key in ("status", "status_str", "completed", "error", "exception_message", "node_errors", "messages")
+        if source.get(key) is not None
+    }
+    return {"message": str(message)[:500], "detail": detail}
 
 
 def _format_from_filename(filename: str) -> str:

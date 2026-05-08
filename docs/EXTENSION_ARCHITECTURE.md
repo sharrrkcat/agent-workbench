@@ -352,7 +352,7 @@ Cleanup
 For polling services:
 
 - Submit task.
-- Poll status at configured interval.
+- Poll non-blocking status methods at configured interval from Script Agent code.
 - Update `ctx.run` progress or `ctx.step` messages.
 - Stop polling on cancellation.
 - Fetch outputs only after completion.
@@ -374,6 +374,7 @@ Rules:
 - Cancellation should not corrupt already saved outputs.
 - Do not block the event loop with long synchronous loops.
 - Use async sleep and async HTTP where appropriate.
+- Blocking convenience helpers are acceptable for CLI or small tests, but long-running workflow Agents should prefer async polling through status methods.
 
 Examples:
 

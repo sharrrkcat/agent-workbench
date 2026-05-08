@@ -96,7 +96,7 @@ methods:
       type: json
 
   - id: wait_for_prompt
-    description: Poll ComfyUI history until a prompt completes or the timeout is reached.
+    description: Blocking convenience helper that polls prompt status until completion or timeout. Script Agents that need live progress or cancellation should use submit_workflow plus get_prompt_status in an async loop.
     input_schema:
       prompt_id:
         type: string
@@ -107,6 +107,15 @@ methods:
       poll_interval_seconds:
         type: float
         required: false
+    output:
+      type: json
+
+  - id: get_prompt_status
+    description: Return a non-blocking normalized status contract for one ComfyUI prompt using history and queue endpoints.
+    input_schema:
+      prompt_id:
+        type: string
+        required: true
     output:
       type: json
 
@@ -168,6 +177,9 @@ methods:
         type: boolean
         required: false
       type:
+        type: string
+        required: false
+      subfolder:
         type: string
         required: false
     output:

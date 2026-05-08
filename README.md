@@ -479,8 +479,12 @@ Script Agents can inspect the current input attachments through `ctx.input.attac
 ctx.read_attachment_text(attachment)
 ctx.read_attachment_bytes(attachment)
 ctx.attachment_as_data_url(attachment)
+await ctx.save_attachment_bytes(data, filename="result.txt", mime_type="text/plain")
+await ctx.save_attachment_base64(data_base64, filename="result.png", mime_type="image/png", kind="image")
 await ctx.reply_file_content(content, filename="agent.yaml", language="yaml")
 ```
+
+Generated images and files should be saved through the attachment helpers and rendered with their returned local `url`, for example `await ctx.reply_images([{"url": attachment["url"]}])`. This keeps large base64 payloads out of message content and lets the normal attachment cleanup path track generated outputs.
 
 The `echo_attachments` Script Agent is a small test agent for this API. Examples:
 
@@ -507,7 +511,9 @@ Settings -> Capabilities -> File Capability controls only active local path read
 
 Settings -> Capabilities -> HTTP Capability controls only active network GET commands: `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It does not affect chat uploads. HTTP settings include command toggles, allowed URL schemes, timeout seconds, text and image response size limits, redirect enablement, and maximum redirects. The runtime uses GET only. Text/page responses accept `text/*`, `application/json`, `application/xml`, `application/yaml`, and `application/x-yaml`; image fetches require `image/*`. No HTTP POST, PUT, or DELETE support is provided.
 
-Settings -> Capabilities -> ComfyUI Capability stores a local ComfyUI REST base URL, request timeout, polling defaults, SSL verification, default image response mode, and upload enablement. It exposes reusable runtime methods for connection tests, workflow submission, queue/history reads, prompt polling, output extraction, image fetching, interrupt, upload, and object info. It does not provide slash commands, a ComfyUI Agent, a workflow editor, attachment saving, prompt enhancement, WebSocket progress, or real-service setup scripts.
+Settings -> Capabilities -> ComfyUI Capability stores a local ComfyUI REST base URL, request timeout, polling defaults, SSL verification, default image response mode, and upload enablement. It exposes reusable runtime methods for connection tests, workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, and object info. It does not provide slash commands, a ComfyUI Agent, a workflow editor, prompt enhancement, WebSocket progress, or real-service setup scripts.
+
+ComfyUI Capability Alpha: automated tests use mocked REST responses and do not require ComfyUI to be installed or running. Real generation requires the user to run a ComfyUI service separately. A future Script Agent can use the stable chain `submit_workflow -> get_prompt_status -> fetch_image -> save attachment -> reply image_gallery`.
 
 Permission hints and CapabilityConfig settings are local alpha safety controls and operator documentation, not a sandbox or full authorization system. Script Agents remain trusted local Python code and can call capabilities.
 

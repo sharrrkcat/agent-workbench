@@ -1,4 +1,7 @@
 import base64
+from pathlib import Path
+
+import yaml
 
 import httpx
 import pytest
@@ -148,6 +151,93 @@ def test_get_history_missing_prompt_returns_not_found_contract() -> None:
     assert result["outputs"]["summary"]["image_count"] == 0
 
 
+def test_get_prompt_status_completed_includes_outputs() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/history/prompt-1"
+        return httpx.Response(200, json=sample_history(), request=request)
+
+    result = runtime_with(handler).get_prompt_status("prompt-1")
+
+    assert result["status"] == "completed"
+    assert result["completed"] is True
+    assert result["failed"] is False
+    assert result["history_found"] is True
+    assert result["outputs"]["summary"]["image_count"] == 1
+
+
+def test_get_prompt_status_failed_normalizes_history_error() -> None:
+    history = sample_history()
+    history["prompt-1"]["status"] = {"status_str": "error", "completed": False}
+    history["prompt-1"]["exception_message"] = "KSampler failed"
+    history["prompt-1"]["node_errors"] = {"9": "bad input"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=history, request=request)
+
+    result = runtime_with(handler).get_prompt_status("prompt-1")
+
+    assert result["status"] == "failed"
+    assert result["completed"] is False
+    assert result["failed"] is True
+    assert result["error"]["message"] == "KSampler failed"
+    assert result["error"]["detail"]["node_errors"] == {"9": "bad input"}
+
+
+def test_get_prompt_status_running_uses_queue_when_history_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/history"):
+            return httpx.Response(200, json={}, request=request)
+        return httpx.Response(200, json={"queue_running": [[3, "prompt-1", {}]], "queue_pending": []}, request=request)
+
+    result = runtime_with(handler).get_prompt_status("prompt-1")
+
+    assert result["status"] == "running"
+    assert result["queue_state"] == "running"
+    assert result["history_found"] is False
+
+
+def test_get_prompt_status_queued_infers_queue_position() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/history"):
+            return httpx.Response(200, json={}, request=request)
+        return httpx.Response(
+            200,
+            json={"queue_running": [], "queue_pending": [[1, "other", {}], [2, "prompt-1", {}]]},
+            request=request,
+        )
+
+    result = runtime_with(handler).get_prompt_status("prompt-1")
+
+    assert result["status"] == "queued"
+    assert result["queue_state"] == "pending"
+    assert result["queue_position"] == 1
+
+
+def test_get_prompt_status_not_found_when_history_and_queue_are_empty() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/history"):
+            return httpx.Response(200, json={}, request=request)
+        return httpx.Response(200, json={"queue_running": [], "queue_pending": []}, request=request)
+
+    result = runtime_with(handler).get_prompt_status("missing")
+
+    assert result["status"] == "not_found"
+    assert result["queue_state"] == "absent"
+    assert result["completed"] is False
+
+
+def test_get_prompt_status_unknown_when_queue_response_is_incomplete() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/history"):
+            return httpx.Response(200, json={}, request=request)
+        return httpx.Response(200, json=["unexpected"], request=request)
+
+    result = runtime_with(handler).get_prompt_status("prompt-1")
+
+    assert result["status"] == "unknown"
+    assert result["queue_state"] == "unknown"
+
+
 def test_extract_outputs_normalizes_typical_history() -> None:
     result = CapabilityRuntime().extract_outputs(sample_history())
 
@@ -201,6 +291,7 @@ def test_wait_for_prompt_success_polls_until_history_exists() -> None:
     assert calls["count"] == 3
     assert result["completed"] is True
     assert result["timed_out"] is False
+    assert result["status"] == "completed"
     assert result["outputs"]["summary"]["image_count"] == 1
 
 
@@ -215,6 +306,23 @@ def test_wait_for_prompt_timeout_has_prompt_and_elapsed_detail() -> None:
     assert exc.value.detail["prompt_id"] == "slow"
     assert exc.value.detail["timeout_seconds"] == 0.01
     assert "elapsed_seconds" in exc.value.detail
+    assert "last_status" in exc.value.detail
+
+
+def test_wait_for_prompt_failed_prompt_raises_structured_error() -> None:
+    history = sample_history()
+    history["prompt-1"]["status"] = {"status_str": "failed", "completed": False}
+    history["prompt-1"]["exception_message"] = "node failed"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=history, request=request)
+
+    with pytest.raises(ComfyUIError) as exc:
+        runtime_with(handler).wait_for_prompt("prompt-1", timeout_seconds=1, poll_interval_seconds=0)
+
+    assert exc.value.code == "COMFYUI_PROMPT_FAILED"
+    assert exc.value.detail["prompt_id"] == "prompt-1"
+    assert exc.value.detail["error"]["message"] == "node failed"
 
 
 def test_collect_images_for_prompt_can_include_binary_payloads() -> None:
@@ -256,8 +364,27 @@ def test_upload_image_builds_multipart_request() -> None:
     assert seen["path"] == "/upload/image"
     assert "multipart/form-data" in seen["content_type"]
     assert b'filename="input.png"' in seen["body"]
+    assert b'name="subfolder"' in seen["body"]
+    assert b"refs" in seen["body"]
     assert result["uploaded"] is True
     assert result["name"] == "input.png"
+
+
+def test_upload_image_manifest_declares_runtime_public_fields() -> None:
+    manifest = yaml.safe_load((Path(__file__).resolve().parents[1] / "capabilities" / "comfyui" / "capability.yaml").read_text())
+    upload = next(method for method in manifest["methods"] if method["id"] == "upload_image")
+
+    assert set(upload["input_schema"]) == {"filename", "data_base64", "overwrite", "type", "subfolder"}
+
+
+def test_comfyui_error_to_dict_stays_stable() -> None:
+    error = ComfyUIError("COMFYUI_BAD_RESPONSE", "Bad response.", {"status_code": 500})
+
+    assert error.to_dict() == {
+        "code": "COMFYUI_BAD_RESPONSE",
+        "message": "Bad response.",
+        "detail": {"status_code": 500},
+    }
 
 
 def test_get_object_info_returns_node_count_and_keys() -> None:

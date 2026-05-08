@@ -62,6 +62,7 @@ _MIME_EXTENSIONS = {
     "image/webp": ".webp",
     "image/gif": ".gif",
     "image/svg+xml": ".svg",
+    "application/octet-stream": ".bin",
 }
 _EXTENSION_MIME_TYPES = {
     ".png": "image/png",
@@ -93,6 +94,7 @@ _EXTENSION_MIME_TYPES = {
     ".bat": "application/bat",
     ".ini": "text/plain",
     ".cfg": "text/plain",
+    ".bin": "application/octet-stream",
 }
 
 
@@ -106,9 +108,11 @@ class ImageAttachment(BaseModel):
     size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
     data_url: str | None = Field(default=None, min_length=1)
     uri: str | None = Field(default=None, min_length=1)
+    url: str | None = Field(default=None, min_length=1)
     created_at: str | None = None
     width: int | None = Field(default=None, ge=1)
     height: int | None = Field(default=None, ge=1)
+    metadata: dict[str, Any] | None = None
 
     @field_validator("type")
     @classmethod
@@ -157,9 +161,11 @@ class Attachment(BaseModel):
     size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
     data_url: str | None = Field(default=None, min_length=1)
     uri: str | None = Field(default=None, min_length=1)
+    url: str | None = Field(default=None, min_length=1)
     created_at: str | None = None
     width: int | None = Field(default=None, ge=1)
     height: int | None = Field(default=None, ge=1)
+    metadata: dict[str, Any] | None = None
 
     @field_validator("mime_type")
     @classmethod
@@ -263,6 +269,7 @@ def save_attachment_from_data_url(attachment: dict[str, Any], settings: Any = No
             "mime_type": mime_type,
             "size": len(attachment_bytes),
             "uri": f"local://attachments/{filename}",
+            "url": f"/api/attachments/{filename}",
             "created_at": isoformat_utc(utc_now()),
         }
     )
@@ -287,6 +294,52 @@ def save_attachment_from_upload(name: str, mime_type: str, data: bytes, settings
     return _store_attachment_bytes(name, mime_type.strip().lower(), data, attachment_type)
 
 
+def save_generated_attachment_bytes(
+    data: bytes,
+    filename: str,
+    mime_type: str,
+    kind: Literal["image", "file"] = "file",
+    metadata: dict[str, Any] | None = None,
+    settings: Any = None,
+) -> dict[str, Any]:
+    if not isinstance(data, bytes):
+        raise ValueError("Generated attachment data must be bytes.")
+    if not data:
+        raise ValueError("Generated attachment is empty.")
+    attachment_type = _normalize_attachment_kind(kind)
+    safe_name = sanitize_attachment_filename(filename)
+    cleaned_mime = (mime_type or "").strip().lower()
+    if not cleaned_mime:
+        raise ValueError("Generated attachment MIME type is required.")
+    _validate_generated_attachment_payload(safe_name, cleaned_mime, data, attachment_type, settings=settings)
+    stored = _store_attachment_bytes(safe_name, cleaned_mime, data, attachment_type)
+    if metadata:
+        stored["metadata"] = dict(metadata)
+    return stored
+
+
+def save_generated_attachment_base64(
+    data_base64: str,
+    filename: str,
+    mime_type: str,
+    kind: Literal["image", "file"] = "file",
+    metadata: dict[str, Any] | None = None,
+    settings: Any = None,
+) -> dict[str, Any]:
+    data, detected_mime = _decode_base64_payload(data_base64)
+    cleaned_mime = (mime_type or detected_mime or "").strip().lower()
+    if detected_mime and cleaned_mime != detected_mime:
+        raise ValueError("Generated attachment MIME type does not match data URL MIME type.")
+    return save_generated_attachment_bytes(
+        data=data,
+        filename=filename,
+        mime_type=cleaned_mime,
+        kind=kind,
+        metadata=metadata,
+        settings=settings,
+    )
+
+
 def _store_attachment_bytes(name: str, mime_type: str, data: bytes, attachment_type: str) -> dict[str, Any]:
     attachment_id = str(uuid4())
     extension = _extension_for_attachment(name, mime_type)
@@ -295,13 +348,15 @@ def _store_attachment_bytes(name: str, mime_type: str, data: bytes, attachment_t
     target_dir.mkdir(parents=True, exist_ok=True)
     target = (target_dir / filename).resolve()
     target.write_bytes(data)
+    uri = f"local://attachments/{filename}"
     return {
         "id": attachment_id,
         "type": attachment_type,
         "mime_type": mime_type,
         "name": name or filename,
         "size": len(data),
-        "uri": f"local://attachments/{filename}",
+        "uri": uri,
+        "url": f"/api/attachments/{filename}",
         "created_at": isoformat_utc(utc_now()),
     }
 
@@ -393,6 +448,19 @@ def infer_attachment_type(name: str | None, mime_type: str | None) -> Literal["i
     return "file"
 
 
+def sanitize_attachment_filename(filename: str) -> str:
+    name = Path(str(filename or "")).name.strip()
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    name = name.strip("._-")
+    if not name:
+        name = "attachment"
+    if "." not in name:
+        name = f"{name}.bin"
+    stem = Path(name).stem[:80] or "attachment"
+    suffix = Path(name).suffix.lower()[:16]
+    return f"{stem}{suffix}"
+
+
 def is_text_attachment(attachment: dict[str, Any]) -> bool:
     suffix = Path(str(attachment.get("name") or attachment.get("uri") or "")).suffix.lower()
     mime_type = str(attachment.get("mime_type") or "").lower()
@@ -468,6 +536,25 @@ def _decode_data_url(data_url: str) -> tuple[bytes, str]:
     return data, mime_type
 
 
+def _decode_base64_payload(data_base64: str) -> tuple[bytes, str | None]:
+    value = str(data_base64 or "").strip()
+    if value.startswith("data:"):
+        return _decode_data_url(value)
+    try:
+        data = base64.b64decode(re.sub(r"\s+", "", value).encode("ascii"), validate=True)
+    except (binascii.Error, UnicodeEncodeError) as exc:
+        raise ValueError("Generated attachment base64 is invalid.") from exc
+    if not data:
+        raise ValueError("Generated attachment is empty.")
+    return data, None
+
+
+def _normalize_attachment_kind(kind: str) -> Literal["image", "file"]:
+    if kind not in {"image", "file"}:
+        raise ValueError("Generated attachment kind must be 'image' or 'file'.")
+    return kind  # type: ignore[return-value]
+
+
 def _mime_type_for_attachment_path(path: Path) -> str:
     mime_type = _EXTENSION_MIME_TYPES.get(path.suffix.lower(), "")
     if not mime_type:
@@ -506,6 +593,15 @@ def _validate_attachment_payload(name: str | None, mime_type: str, data: bytes, 
     suffix = Path(name or "").suffix.lower()
     if suffix not in ALLOWED_TEXT_EXTENSIONS:
         raise ValueError("Unsupported file type.")
+    _validate_attachment_size(len(data), attachment_type, settings=settings)
+
+
+def _validate_generated_attachment_payload(name: str, mime_type: str, data: bytes, attachment_type: str, settings: Any = None) -> None:
+    if attachment_type == "image" and mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+        raise ValueError("Unsupported image MIME type.")
+    if attachment_type == "file" and infer_attachment_type(name, mime_type) == "image":
+        raise ValueError("Generated image attachments must use kind='image'.")
+    _extension_for_attachment(name, mime_type)
     _validate_attachment_size(len(data), attachment_type, settings=settings)
 
 
