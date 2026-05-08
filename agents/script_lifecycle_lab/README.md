@@ -11,8 +11,9 @@ Script Lifecycle Lab is a development and test agent for validating Script Agent
 ## Expected behavior
 
 - Steps appear while the script is still running.
+- Script custom steps are nested under the `Running script` parent step.
 - `hidden_json` does not show raw JSON to chat.
-- `public_stream` streams text to the assistant message.
+- `public_stream` verifies continuous output deltas to the assistant message.
 - Completed runs collapse by default.
 
 ## Example calls

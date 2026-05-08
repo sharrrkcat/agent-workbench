@@ -54,12 +54,13 @@ class ScriptSession(BaseModel):
 
 
 class ScriptStep:
-    def __init__(self, ctx: "AgentContext", name: str) -> None:
+    def __init__(self, ctx: "AgentContext", name: str, parent_step_id: Optional[str] = None) -> None:
         self.ctx = ctx
         self.name = name
+        self.parent_step_id = parent_step_id
 
     async def __aenter__(self) -> "ScriptStep":
-        self.step = self.ctx.run.start_step(self.name)
+        self.step = self.ctx.run.start_step(self.name, parent_step_id=self.parent_step_id)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
@@ -71,15 +72,22 @@ class ScriptStep:
 
 
 class ScriptRunLifecycleProxy:
-    def __init__(self, lifecycle: RunLifecycle, run_id: str) -> None:
+    def __init__(self, lifecycle: RunLifecycle, run_id: str, default_parent_step_id: Optional[str] = None) -> None:
         self.lifecycle = lifecycle
         self.run_id = run_id
+        self.default_parent_step_id = default_parent_step_id
 
     def update_progress(self, message: str, current: int = None, total: int = None):
         return self.lifecycle.update_progress(self.run_id, message=message, current=current, total=total)
 
-    def start_step(self, label: str, message: str = None):
-        return self.lifecycle.start_step(self.run_id, label=label, message=message)
+    def start_step(self, label: str, message: str = None, metadata: Optional[dict[str, Any]] = None, parent_step_id: Optional[str] = None):
+        return self.lifecycle.start_step(
+            self.run_id,
+            label=label,
+            message=message,
+            metadata=metadata,
+            parent_step_id=parent_step_id if parent_step_id is not None else self.default_parent_step_id,
+        )
 
     def complete_step(self, step_id: str, message: str = None):
         return self.lifecycle.complete_step(step_id, message=message)
@@ -129,9 +137,10 @@ class ScriptOutputProxy:
         if not text:
             return
         self._content += text
+        updated_message = None
         if self.message_id:
             message = self.message_store.get_message(self.message_id)
-            self.message_store.update_message(
+            updated_message = self.message_store.update_message(
                 message.model_copy(
                     update={
                         "content": self._content,
@@ -147,6 +156,14 @@ class ScriptOutputProxy:
             message_id=self.message_id,
             payload={"delta": text, "reasoning_delta": None},
         )
+        if updated_message is not None:
+            self.event_bus.emit(
+                "message_updated",
+                session_id=self.session_id,
+                run_id=self.run_id,
+                message_id=self.message_id,
+                payload={"message": updated_message.model_dump(mode="json")},
+            )
 
     async def finish(
         self,
@@ -429,6 +446,7 @@ class AgentContext:
         attachments: Optional[list[dict[str, Any]]] = None,
         run_lifecycle: RunLifecycle = None,
         output_message_id: Optional[str] = None,
+        current_parent_step_id: Optional[str] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -464,7 +482,8 @@ class AgentContext:
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
         self.waiting = False
-        self.run = ScriptRunLifecycleProxy(run_lifecycle, run_id) if run_lifecycle is not None else None
+        self.current_parent_step_id = current_parent_step_id
+        self.run = ScriptRunLifecycleProxy(run_lifecycle, run_id, default_parent_step_id=current_parent_step_id) if run_lifecycle is not None else None
 
     async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None):
         resolved_output_type = output_type or type
@@ -537,10 +556,10 @@ class AgentContext:
                 return item
         raise ValueError(f"Attachment not found: {attachment}")
 
-    def step(self, name: str) -> ScriptStep:
+    def step(self, name: str, parent_step_id: Optional[str] = None) -> ScriptStep:
         if self.run is None:
             raise RuntimeError("Run lifecycle is not configured.")
-        return ScriptStep(self, name)
+        return ScriptStep(self, name, parent_step_id=parent_step_id)
 
     def capability(self, name: str) -> CapabilityProxy:
         return CapabilityProxy(self.runtime_registry.get_runtime(name))
@@ -704,6 +723,10 @@ class ScriptAgentRunner:
                 return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
             self.run_lifecycle.complete_step(model_step.step_id)
 
+        starting_step = self.run_lifecycle.start_step(run.run_id, "Starting script")
+        self.run_lifecycle.complete_step(starting_step.step_id)
+        running_step = self.run_lifecycle.start_step(run.run_id, "Running script")
+
         ctx = AgentContext(
             agent=agent,
             action_id=action_id,
@@ -727,11 +750,9 @@ class ScriptAgentRunner:
             attachments=attachments,
             run_lifecycle=self.run_lifecycle,
             output_message_id=output_message.message_id,
+            current_parent_step_id=running_step.step_id,
         )
 
-        starting_step = self.run_lifecycle.start_step(run.run_id, "Starting script")
-        self.run_lifecycle.complete_step(starting_step.step_id)
-        running_step = self.run_lifecycle.start_step(run.run_id, "Running script")
         try:
             script_result = await script_run(ctx)
         except Exception as exc:

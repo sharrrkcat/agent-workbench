@@ -437,16 +437,24 @@ class SqlRunStore:
         message: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         status: RunStepStatus = RunStepStatus.RUNNING,
+        parent_step_id: Optional[str] = None,
     ) -> RunStepSchema:
         now = utc_now()
         status_value = status.value if isinstance(status, RunStepStatus) else str(status)
         with DbSession(self.engine) as session:
             if session.get(RunRecord, run_id) is None:
                 raise KeyError(f"unknown run id: {run_id}")
+            if parent_step_id is not None:
+                parent = session.get(RunStepRecord, parent_step_id)
+                if parent is None:
+                    raise KeyError(f"unknown parent run step id: {parent_step_id}")
+                if parent.run_id != run_id:
+                    raise ValueError("parent_step_id must belong to the same run")
             order = len(session.exec(select(RunStepRecord).where(RunStepRecord.run_id == run_id)).all())
             record = RunStepRecord(
                 step_id=str(uuid4()),
                 run_id=run_id,
+                parent_step_id=parent_step_id,
                 label=label,
                 status=status_value,
                 message=message or "",
@@ -911,6 +919,7 @@ def _run_step_from_record(record: RunStepRecord) -> RunStepSchema:
     return RunStepSchema(
         step_id=record.step_id,
         run_id=record.run_id,
+        parent_step_id=getattr(record, "parent_step_id", None),
         label=record.label,
         status=RunStepStatus(record.status),
         message=record.message,

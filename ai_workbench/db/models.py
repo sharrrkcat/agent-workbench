@@ -59,6 +59,7 @@ class RunRecord(SQLModel, table=True):
 class RunStepRecord(SQLModel, table=True):
     step_id: str = Field(primary_key=True)
     run_id: str = Field(index=True)
+    parent_step_id: Optional[str] = Field(default=None, index=True)
     label: str
     status: str
     message: str = ""

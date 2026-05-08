@@ -42,8 +42,22 @@ class RunLifecycle:
         self._emit_run("run_updated", run)
         return run
 
-    def start_step(self, run_id: str, label: str, message: Optional[str] = None, metadata: Optional[dict[str, Any]] = None) -> RunStepSchema:
-        step = self.run_store.create_step(run_id=run_id, label=label, message=message, metadata=metadata, status=RunStepStatus.RUNNING)
+    def start_step(
+        self,
+        run_id: str,
+        label: str,
+        message: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        parent_step_id: Optional[str] = None,
+    ) -> RunStepSchema:
+        step = self.run_store.create_step(
+            run_id=run_id,
+            label=label,
+            message=message,
+            metadata=metadata,
+            status=RunStepStatus.RUNNING,
+            parent_step_id=parent_step_id,
+        )
         self.update_progress(run_id, stage=label, message=message)
         self._emit_step("run_step_created", step)
         return step

@@ -240,7 +240,7 @@ def test_run_lifecycle_steps_write_timestamps_and_emit_updates() -> None:
 
     started = lifecycle.start_step(run_record.run_id, "Resolving agent")
     completed = lifecycle.complete_step(started.step_id)
-    failed = lifecycle.start_step(run_record.run_id, "Calling LLM")
+    failed = lifecycle.start_step(run_record.run_id, "Calling LLM", parent_step_id=started.step_id)
     failed = lifecycle.fail_step(failed.step_id, error_message="Provider unreachable")
     skipped = fixture.runs.create_step(run_record.run_id, "Cleanup", status=RunStepStatus.PENDING)
     skipped = lifecycle.skip_step(skipped.step_id, message="Skipped after failure")
@@ -252,6 +252,8 @@ def test_run_lifecycle_steps_write_timestamps_and_emit_updates() -> None:
     assert skipped.finished_at is not None
     assert [event.type for event in events].count("run_step_created") == 2
     assert [event.type for event in events].count("run_step_updated") == 3
+    assert failed.parent_step_id == started.step_id
+    assert next(event for event in events if event.payload.get("step", {}).get("label") == "Calling LLM").payload["step"]["parent_step_id"] == started.step_id
     assert all(event.run_id == run_record.run_id for event in events)
 
 
@@ -305,6 +307,7 @@ def test_run_lifecycle_events_include_run_and_step_payloads() -> None:
     step_event = next(event for event in fixture.events.list_events() if event.type == "run_step_created")
     run_event = next(event for event in fixture.events.list_events() if event.type == "run_updated")
     assert step_event.payload["step"]["label"] == "Resolving agent"
+    assert "parent_step_id" in step_event.payload["step"]
     assert "run_id" in run_event.payload["run"]
 
 

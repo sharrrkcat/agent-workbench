@@ -60,6 +60,7 @@ class RunStepSchema(BaseModel):
 
     step_id: str
     run_id: str
+    parent_step_id: Optional[str] = None
     label: str
     status: RunStepStatus = RunStepStatus.PENDING
     message: str = ""

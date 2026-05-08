@@ -1698,6 +1698,7 @@ def test_session_messages_include_run_steps_after_prompt_run() -> None:
 
     assert assistant["run"]["status"] == "DONE"
     assert [step["label"] for step in assistant["run_steps"]][-2:] == ["Saving response", "Cleanup"]
+    assert "parent_step_id" in assistant["run_steps"][0]
 
 
 def test_run_steps_endpoint_returns_persisted_steps() -> None:
@@ -1709,6 +1710,7 @@ def test_run_steps_endpoint_returns_persisted_steps() -> None:
 
     assert response.status_code == 200
     assert response.json()[0]["label"] == "Resolving agent"
+    assert "parent_step_id" in response.json()[0]
 
 
 def test_cancel_waiting_run_clears_session_waiting_run() -> None:

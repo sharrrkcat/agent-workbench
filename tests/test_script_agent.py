@@ -170,6 +170,8 @@ def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
         "Processing the input.",
         "Building final markdown.",
     ]
+    running_step = next(step for step in steps if step.label == "Running script")
+    assert {step.parent_step_id for step in lab_steps} == {running_step.step_id}
 
 
 def test_script_lifecycle_lab_hidden_json_uses_internal_stream_without_public_delta() -> None:
@@ -202,6 +204,10 @@ def test_script_lifecycle_lab_hidden_json_uses_internal_stream_without_public_de
     )
     assert "```json" not in message.content
     assert '"features"' not in message.content
+    running_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Running script")
+    custom_steps = [step for step in fixture.runs.list_steps(result.run_id) if step.label in {"Build extraction prompt", "LLM extracts structured JSON", "Parse JSON", "Normalize fields", "Render final markdown"}]
+    assert custom_steps
+    assert {step.parent_step_id for step in custom_steps} == {running_step.step_id}
 
 
 def test_script_lifecycle_lab_hidden_json_parse_error_returns_friendly_markdown() -> None:
@@ -222,7 +228,8 @@ def test_script_lifecycle_lab_hidden_json_parse_error_returns_friendly_markdown(
 
 
 def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplicate_message() -> None:
-    fixture = ScriptRuntimeFixture(llm=FakeStreamingLLMRuntime(chunks=["First paragraph.\n\n", "Second paragraph."]))
+    chunks = ["First paragraph.\n\n", "Second paragraph.", "\n\nThird paragraph."]
+    fixture = ScriptRuntimeFixture(llm=FakeStreamingLLMRuntime(chunks=chunks))
     session = configure_llm_profile(fixture, supports_streaming=True)
 
     result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:public_stream lifecycle streaming"))
@@ -233,10 +240,16 @@ def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplica
 
     assert result.success is True
     assert fixture.llm.calls[0]["stream"] is True
-    assert [event.type for event in events].count("message_delta") == 2
+    assert [event.type for event in events].count("message_delta") == len(chunks)
+    assert [event.type for event in events].count("message_updated") == len(chunks)
+    assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == chunks
     assert message.output_type == "markdown"
-    assert message.content == "First paragraph.\n\nSecond paragraph."
+    assert message.content == "".join(chunks)
     assert stream_step.status.value == "completed"
+    running_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Running script")
+    assert stream_step.parent_step_id == running_step.step_id
+    assert next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Prepare streaming response").parent_step_id == running_step.step_id
+    assert next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Finalize").parent_step_id == running_step.step_id
     assert len([item for item in messages if item.role == "assistant" and item.run_id == result.run_id]) == 1
 
 
@@ -279,6 +292,13 @@ def test_script_agent_step_emits_run_step_event() -> None:
         "Saving response",
         "Cleanup",
     ]
+    running_step = next(event.payload["step"] for event in step_events if event.payload["step"]["label"] == "Running script")
+    encoding_step = next(event.payload["step"] for event in step_events if event.payload["step"]["label"] == "encoding")
+    saving_step = next(event.payload["step"] for event in step_events if event.payload["step"]["label"] == "Saving response")
+    cleanup_step = next(event.payload["step"] for event in step_events if event.payload["step"]["label"] == "Cleanup")
+    assert encoding_step["parent_step_id"] == running_step["step_id"]
+    assert saving_step["parent_step_id"] is None
+    assert cleanup_step["parent_step_id"] is None
 
 
 def test_script_agent_emits_placeholder_before_steps_and_binds_run_id() -> None:
@@ -317,7 +337,10 @@ def test_script_agent_failure_reuses_placeholder_and_preserves_steps(tmp_path: P
     assert result.success is False
     assert len([message for message in messages if message.run_id == result.run_id]) == 1
     assert messages[-1].output_type == "error"
-    assert "before fail" in [step.label for step in steps]
+    running_step = next(step for step in steps if step.label == "Running script")
+    before_fail = next(step for step in steps if step.label == "before fail")
+    assert before_fail.parent_step_id == running_step.step_id
+    assert before_fail.status.value == "failed"
     assert any(event.type == "run_step_updated" for event in fixture.events.list_events())
 
 
@@ -357,6 +380,13 @@ def test_script_agent_success_creates_default_run_steps() -> None:
     assert "Starting script" in [step.label for step in steps]
     assert "Running script" in [step.label for step in steps]
     assert "Saving response" in [step.label for step in steps]
+    running_step = next(step for step in steps if step.label == "Running script")
+    encoding_step = next(step for step in steps if step.label == "encoding")
+    saving_step = next(step for step in steps if step.label == "Saving response")
+    cleanup_step = next(step for step in steps if step.label == "Cleanup")
+    assert encoding_step.parent_step_id == running_step.step_id
+    assert saving_step.parent_step_id is None
+    assert cleanup_step.parent_step_id is None
 
 
 def test_script_agent_exception_marks_running_script_step_failed(tmp_path: Path) -> None:
@@ -634,6 +664,7 @@ def test_ctx_output_write_delta_updates_script_placeholder(tmp_path: Path) -> No
     assert message.run_id == result.run_id
     assert message.content == "hello"
     assert [event.type for event in fixture.events.list_events()].count("message_delta") == 2
+    assert [event.type for event in fixture.events.list_events()].count("message_updated") == 2
 
 
 def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
@@ -658,6 +689,7 @@ def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
     assert message.content == "hello"
     assert message.output_type == "markdown"
     assert [event.type for event in fixture.events.list_events()].count("message_delta") == 2
+    assert [event.type for event in fixture.events.list_events()].count("message_updated") == 2
 
 
 def test_ctx_llm_stream_falls_back_to_single_chunk_when_profile_streaming_disabled(tmp_path: Path) -> None:

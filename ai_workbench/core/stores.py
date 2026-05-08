@@ -310,13 +310,19 @@ class RunStore:
         message: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         status: RunStepStatus = RunStepStatus.RUNNING,
+        parent_step_id: Optional[str] = None,
     ) -> RunStepSchema:
         self.get_run(run_id)
+        if parent_step_id is not None:
+            parent = self.get_step(parent_step_id)
+            if parent.run_id != run_id:
+                raise ValueError("parent_step_id must belong to the same run")
         order = len(self._run_step_ids.get(run_id, []))
         now = utc_now()
         step = RunStepSchema(
             step_id=str(uuid4()),
             run_id=run_id,
+            parent_step_id=parent_step_id,
             label=label,
             status=status,
             message=message or "",

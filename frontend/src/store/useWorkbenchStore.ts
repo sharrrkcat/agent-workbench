@@ -562,6 +562,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ messages: appendDraftDelta(get().messages, event, delta, reasoningDelta) });
       return;
     }
+    if (event.type === 'message_updated') {
+      const updatedMessage = parseMessagePayload(event.payload.message);
+      if (updatedMessage) {
+        set({ messages: mergeUpdatedMessage(get().messages, updatedMessage) });
+      }
+      return;
+    }
     if (event.type === 'message_completed') {
       const finalMessage = parseMessagePayload(event.payload.message);
       if (finalMessage) {
@@ -1062,6 +1069,25 @@ function replaceDraftWithFinal(messages: Message[], finalMessage: Message, draft
     return true;
   });
   return sortMessagesByCreatedAt([...withoutDuplicates, finalMessage]);
+}
+
+function mergeUpdatedMessage(messages: Message[], updatedMessage: Message): Message[] {
+  let replaced = false;
+  const next = messages.map((message) => {
+    const sameMessage = message.message_id === updatedMessage.message_id;
+    const sameRunDraft = message.message_id.startsWith('draft-') && message.run_id && message.run_id === updatedMessage.run_id;
+    if (!sameMessage && !sameRunDraft) return message;
+    replaced = true;
+    return {
+      ...message,
+      ...updatedMessage,
+      run: message.run || updatedMessage.run,
+      run_steps: mergeRunSteps(message.run_steps || [], updatedMessage.run_steps || updatedMessage.run?.steps || []),
+      metadata: { ...(message.metadata || {}), ...(updatedMessage.metadata || {}) },
+      client_status: updatedMessage.metadata?.streaming === false ? undefined : message.client_status,
+    };
+  });
+  return replaced ? sortMessagesByCreatedAt(next) : sortMessagesByCreatedAt([...messages, updatedMessage]);
 }
 
 function removeDraftAndAppendError(messages: Message[], sessionId: string, runId: string, error: AppError): Message[] {

@@ -67,6 +67,7 @@ def test_store_merges_run_step_updates_by_step_id() -> None:
     assert "mergeRunStepIntoState" in source
     assert "mergeRunsIntoState" in source
     assert "parseRunStepPayload" in source
+    assert "parent_step_id" in read_frontend("types.ts")
 
 
 def test_run_steps_expansion_is_scoped_by_run_id() -> None:
@@ -85,7 +86,8 @@ def test_run_steps_duration_and_running_tick_are_rendered() -> None:
     time = read_frontend("utils/time.ts")
 
     assert "stepDurationLabel" in source
-    assert "formatDurationMs" in source
+    assert "formatDurationSeconds" in source
+    assert "seconds.toFixed(2)" in source
     assert "parseServerTime" in source
     assert "Date.parse" not in source
     assert "window.setInterval" in source
@@ -93,6 +95,19 @@ def test_run_steps_duration_and_running_tick_are_rendered() -> None:
     assert "hasRunningStep" in source
     assert "stepsByRunId[message.run_id]" in source
     assert "`${value}Z`" in time
+
+
+def test_run_steps_builds_nested_tree_and_renders_children() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    assert "buildRunStepTree" in source
+    assert "parent_step_id" in source
+    assert "RunStepTreeItem" in source
+    assert "run-step-children" in source
+    assert "byId.get(parentId)" in source
+    assert ".run-step-children" in styles
+    assert "margin: 5px 0 0 23px" in styles
 
 
 def test_empty_running_script_placeholder_remains_visible() -> None:
@@ -107,3 +122,5 @@ def test_non_draft_streaming_placeholder_accepts_deltas() -> None:
 
     assert "message.client_status !== 'streaming'" in source
     assert "message_id: typeof event.message_id === 'string'" in source
+    assert "message_updated" in source
+    assert "mergeUpdatedMessage" in source

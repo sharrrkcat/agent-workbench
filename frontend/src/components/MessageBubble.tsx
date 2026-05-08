@@ -18,6 +18,8 @@ export type FilePreview = {
   language?: string | null;
 };
 
+type RunStepNode = RunStep & { children: RunStepNode[] };
+
 export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { message: Message; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
   const agents = useWorkbenchStore((state) => state.agents);
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
@@ -223,6 +225,7 @@ function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps
   const stepSummary = progressSummary || (steps.length ? `${steps.length} steps` : runStatusLabel(run?.status));
   const displaySummary = `${stepSummary}${duration ? ` · ${duration}` : ''}`;
   const canCancel = Boolean(run?.run_id && (activeRunId === run.run_id || active) && !run.cancel_requested && run.status !== 'CANCELLING');
+  const stepTree = buildRunStepTree(steps);
 
   return (
     <section className={`run-steps-panel ${expanded ? 'expanded' : 'collapsed'} ${failed ? 'failed' : ''}`}>
@@ -240,18 +243,30 @@ function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps
       </div>
       {expanded && steps.length ? (
         <ol className="run-step-list">
-          {steps.map((step) => (
-            <li className={`run-step-item ${step.status}`} key={step.step_id}>
-              <RunStepIcon status={step.status} />
-              <span>
-                <strong>{step.label}{stepDurationLabel(step) ? ` · ${stepDurationLabel(step)}` : ''}</strong>
-                {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
-              </span>
-            </li>
-          ))}
+          {stepTree.map((step) => <RunStepTreeItem step={step} key={step.step_id} depth={0} />)}
         </ol>
       ) : null}
     </section>
+  );
+}
+
+function RunStepTreeItem({ step, depth }: { step: RunStepNode; depth: number }) {
+  const duration = stepDurationLabel(step);
+  return (
+    <li className={`run-step-item ${step.status} depth-${Math.min(depth, 4)}`}>
+      <div className="run-step-row">
+        <RunStepIcon status={step.status} />
+        <span>
+          <strong>{step.label}{duration ? ` · ${duration}` : ''}</strong>
+          {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
+        </span>
+      </div>
+      {step.children.length ? (
+        <ol className="run-step-children">
+          {step.children.map((child) => <RunStepTreeItem step={child} key={child.step_id} depth={depth + 1} />)}
+        </ol>
+      ) : null}
+    </li>
   );
 }
 
@@ -305,19 +320,38 @@ function stepDurationLabel(step: RunStep): string {
   return formatDurationMs(ms);
 }
 
+function formatDurationSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  return `${seconds.toFixed(2)}s`;
+}
+
 function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms < 10_000) return `${(ms / 1000).toFixed(1).replace(/\.0$/, '')}s`;
-  return `${Math.round(ms / 1000)}s`;
+  return formatDurationSeconds(ms / 1000);
 }
 
 function parseDateMs(value: string): number {
   const ms = parseServerTime(value).getTime();
-  return Number.isNaN(ms) ? 0 : ms;
+  return Number.isNaN(ms) ? Number.NaN : ms;
 }
 
 function sortRunSteps(steps: RunStep[]): RunStep[] {
   return steps.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || parseDateMs(a.started_at || a.created_at) - parseDateMs(b.started_at || b.created_at));
+}
+
+function buildRunStepTree(steps: RunStep[]): RunStepNode[] {
+  const nodes = sortRunSteps([...steps]).map((step) => ({ ...step, children: [] as RunStepNode[] }));
+  const byId = new Map(nodes.map((node) => [node.step_id, node]));
+  const roots: RunStepNode[] = [];
+  for (const node of nodes) {
+    const parentId = node.parent_step_id || '';
+    const parent = parentId ? byId.get(parentId) : undefined;
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
 }
 
 function MessageHeader({

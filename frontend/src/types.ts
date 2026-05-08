@@ -477,6 +477,7 @@ export type Run = {
 export type RunStep = {
   step_id: string;
   run_id: string;
+  parent_step_id?: string | null;
   label: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
   message?: string;

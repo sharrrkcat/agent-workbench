@@ -99,6 +99,11 @@ def ensure_run_lifecycle_columns(engine) -> None:
         for column, ddl in additions.items():
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE runrecord ADD COLUMN {column} {ddl}"))
+        if "runsteprecord" not in tables:
+            return
+        step_columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(runsteprecord)").fetchall()}
+        if "parent_step_id" not in step_columns:
+            connection.execute(text("ALTER TABLE runsteprecord ADD COLUMN parent_step_id VARCHAR"))
 
 
 def migrate_llm_provider_profiles(engine) -> None:
