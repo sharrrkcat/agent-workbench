@@ -1,0 +1,207 @@
+# AI Context
+
+## Rule
+
+Before searching the repository, identify the task type below and read the listed docs/source files first. Do not scan the whole repository unless these docs are insufficient.
+
+- Start here, then read the linked contract docs and generated registry for the task.
+- Prefer `docs/EXTENSION_API.md`, `docs/RUNTIME_PROTOCOLS.md`, and `docs/generated/REGISTRY.md` before broad source search.
+- Search source only when the listed docs and source pointers do not answer the question.
+- If an interface or protocol changes, update the relevant contract doc in the same change.
+- If an Agent or Capability manifest changes, run `uv run python scripts/generate_registry_docs.py`.
+
+## Task Map
+
+### Create or modify a Script Agent
+
+Read:
+- `docs/EXTENSION_API.md#script-agents`
+- `docs/generated/REGISTRY.md#agents`
+
+Likely source:
+- `agents/<agent_id>/agent.yaml`
+- `agents/<agent_id>/agent.py`
+- `ai_workbench/core/script.py` only if SDK behavior changes
+
+Tests:
+- `uv run python scripts/check_agents.py --strict`
+- `uv run pytest tests/test_script_agent.py`
+
+Avoid unless needed:
+- Do not inspect unrelated agents unless using them as examples.
+
+### Create or modify a Prompt Agent
+
+Read:
+- `docs/EXTENSION_API.md#agent-manifest`
+- `docs/EXTENSION_API.md#prompt-agents`
+- `docs/RUNTIME_PROTOCOLS.md#llm-resolution`
+- `docs/generated/REGISTRY.md#agents`
+
+Likely source:
+- `agents/<agent_id>/agent.yaml`
+- `ai_workbench/core/runner.py` only if runtime behavior changes
+
+Tests:
+- `uv run python scripts/check_agents.py --strict`
+- `uv run pytest tests/test_prompt_agent_execution.py`
+
+Avoid unless needed:
+- Do not change Script Agent runtime for prompt-only manifest edits.
+
+### Create or modify a Capability / slash command
+
+Read:
+- `docs/EXTENSION_API.md#capabilities`
+- `docs/EXTENSION_API.md#output-payloads`
+- `docs/generated/REGISTRY.md#capabilities`
+
+Likely source:
+- `capabilities/<capability_id>/capability.yaml`
+- `capabilities/<capability_id>/__init__.py`
+- `ai_workbench/core/capabilities.py` only if runtime behavior changes
+
+Tests:
+- `uv run python scripts/check_agents.py --strict`
+- `uv run pytest tests/test_capabilities.py` if present
+
+Avoid unless needed:
+- Do not add slash command aliases to Agents.
+
+### Change Script Agent ctx API
+
+Read:
+- `docs/EXTENSION_API.md#script-context-api`
+- `docs/RUNTIME_PROTOCOLS.md#message-streaming`
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+
+Likely source:
+- `ai_workbench/core/script.py`
+- `ai_workbench/core/runner.py`
+- `ai_workbench/core/run_lifecycle.py`
+
+Tests:
+- `uv run pytest tests/test_script_agent.py`
+- `uv run pytest tests/test_prompt_agent_execution.py`
+
+Avoid unless needed:
+- Do not change manifest schemas unless the API change requires new fields.
+
+### Change output rendering / output types
+
+Read:
+- `docs/EXTENSION_API.md#output-payloads`
+- `docs/RUNTIME_PROTOCOLS.md#message-streaming`
+
+Likely source:
+- `ai_workbench/core/script.py`
+- `ai_workbench/core/capabilities.py`
+- `frontend/src/components/MessageBubble.tsx`
+- `frontend/src/store/useWorkbenchStore.ts`
+
+Tests:
+- `uv run pytest`
+- `cd frontend && npm run build`
+
+Avoid unless needed:
+- Do not alter LLM resolution for pure rendering changes.
+
+### Change message streaming
+
+Read:
+- `docs/RUNTIME_PROTOCOLS.md#message-streaming`
+
+Likely source:
+- `ai_workbench/core/script.py`
+- `ai_workbench/core/runner.py`
+- `ai_workbench/core/events.py`
+- `frontend/src/store/useWorkbenchStore.ts`
+- `frontend/src/components/MessageBubble.tsx`
+
+Tests:
+- `uv run pytest tests/test_script_agent.py tests/test_prompt_agent_execution.py`
+- `cd frontend && npm run build`
+
+Avoid unless needed:
+- Do not make internal LLM streams visible unless routed through public output APIs.
+
+### Change run steps / long task lifecycle
+
+Read:
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+
+Likely source:
+- `ai_workbench/core/run_lifecycle.py`
+- `ai_workbench/core/runner.py`
+- `ai_workbench/core/script.py`
+- `ai_workbench/db/models.py`
+- `frontend/src/components/MessageBubble.tsx`
+
+Tests:
+- `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
+- `cd frontend && npm run build`
+
+Avoid unless needed:
+- Do not change routing or command registry for run-step display work.
+
+### Change LLM provider/model profile behavior
+
+Read:
+- `docs/RUNTIME_PROTOCOLS.md#llm-resolution`
+- `docs/RUNTIME_PROTOCOLS.md#provider-and-model-status`
+
+Likely source:
+- `ai_workbench/core/llm*.py` or existing LLM/provider files
+- `ai_workbench/api/routes/llm*.py`
+- frontend Settings LLM files
+
+Tests:
+- `uv run pytest tests/test_provider_status.py`
+- `uv run pytest tests/test_prompt_agent_execution.py`
+
+Avoid unless needed:
+- Do not update Agent manifest docs for provider-only behavior.
+
+### Change attachments / vision / file input
+
+Read:
+- `docs/EXTENSION_API.md#attachments-in-script-agents`
+- `docs/RUNTIME_PROTOCOLS.md#attachments-and-vision`
+
+Likely source:
+- attachment route/store files
+- `ai_workbench/core/runner.py`
+- frontend composer/message components
+
+Tests:
+- `uv run pytest tests/test_file_http_attachments.py`
+- `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
+
+Avoid unless needed:
+- Do not make file attachments part of Prompt Agent context without checking General settings.
+
+### Change Settings schema / overrides
+
+Read:
+- `docs/EXTENSION_API.md#agent-overrides`
+- `docs/EXTENSION_API.md#capability-config`
+
+Likely source:
+- agent/capability config routes/stores
+- frontend settings components
+
+Tests:
+- `uv run pytest tests/test_agent_settings.py tests/test_config_schema.py tests/test_settings_data.py`
+- `cd frontend && npm run build` if frontend changed
+
+Avoid unless needed:
+- Do not rewrite tutorial docs for Settings-only changes.
+
+## Documentation Update Rules
+
+- If `agent.yaml` or `capability.yaml` fields change, update `EXTENSION_API` and regenerate `REGISTRY`.
+- If `ctx` API changes, update `EXTENSION_API`.
+- If WebSocket event protocol changes, update `RUNTIME_PROTOCOLS`.
+- If run or run_step fields change, update `RUNTIME_PROTOCOLS`.
+- If LLM resolution changes, update `RUNTIME_PROTOCOLS`.
+- If only UI style changes, docs usually do not need updating.

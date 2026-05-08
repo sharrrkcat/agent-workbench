@@ -1,5 +1,11 @@
 # Agent Development
 
+For compact API contracts and AI-oriented routing, see:
+
+- [AI_CONTEXT.md](AI_CONTEXT.md)
+- [EXTENSION_API.md](EXTENSION_API.md)
+- [RUNTIME_PROTOCOLS.md](RUNTIME_PROTOCOLS.md)
+
 Agents live under `agents/<agent_id>/` with an `agent.yaml` manifest. Agent ids are global, lowercase snake_case, and unique. Every Agent must define a `default` action.
 
 Use the template generator for new Agents:

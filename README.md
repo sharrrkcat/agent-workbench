@@ -398,6 +398,13 @@ cd ..
 uv run python scripts/check.py
 ```
 
+Developer docs:
+
+- [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) for AI/Codex task routing.
+- [docs/EXTENSION_API.md](docs/EXTENSION_API.md) for Agent, Capability, Script ctx, and output contracts.
+- [docs/RUNTIME_PROTOCOLS.md](docs/RUNTIME_PROTOCOLS.md) for streaming, run lifecycle, and LLM protocols.
+- [docs/generated/REGISTRY.md](docs/generated/REGISTRY.md) for the generated Agent/Capability registry.
+
 ## Script Agents
 
 Script Agents are local trusted Python code. They can call core helpers through `AgentContext`, including LLM helpers and Capabilities, but they are not sandboxed as untrusted code.

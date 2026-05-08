@@ -1,5 +1,10 @@
 # Capability Development
 
+For compact API contracts and generated registry, see:
+
+- [EXTENSION_API.md](EXTENSION_API.md)
+- [generated/REGISTRY.md](generated/REGISTRY.md)
+
 Capabilities live under `capabilities/<capability_id>/` with a `capability.yaml` manifest and a Python runtime in `__init__.py`. Capability ids are global, lowercase snake_case, and unique.
 
 Use the template generator:
