@@ -21,6 +21,7 @@ from ai_workbench.core.attachments import (
 )
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
+from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
@@ -106,15 +107,38 @@ class ScriptRunLifecycleProxy:
         return self.lifecycle.fail_step(step_id, error_code=error_code, error_message=error_message)
 
 
+class ScriptStateProxy:
+    def __init__(self, store: Any, session_id: str, agent_id: str) -> None:
+        self.store = store
+        self.session_id = session_id
+        self.agent_id = agent_id
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if self.store is None:
+            return default
+        value = self.store.get_state(self.session_id, self.agent_id, key)
+        return default if value is None else value
+
+    def set(self, key: str, value: Any) -> Any:
+        if self.store is None:
+            return value
+        return self.store.set_state(self.session_id, self.agent_id, key, value)
+
+
 class CapabilityProxy:
-    def __init__(self, runtime: Any) -> None:
+    def __init__(self, runtime: Any, context: Optional[dict[str, Any]] = None) -> None:
         self.runtime = runtime
+        self.context = context or {}
 
     def __getattr__(self, method_name: str):
         method = getattr(self.runtime, method_name)
 
         async def call(*args, **kwargs) -> CapabilityCallResult:
             try:
+                if "context" not in kwargs:
+                    parameters = inspect.signature(method).parameters
+                    if "context" in parameters:
+                        kwargs["context"] = self.context
                 data = method(*args, **kwargs)
                 if inspect.isawaitable(data):
                     data = await data
@@ -581,6 +605,9 @@ class AgentContext:
         run_lifecycle: RunLifecycle = None,
         output_message_id: Optional[str] = None,
         current_parent_step_id: Optional[str] = None,
+        capability_registry: CapabilityRegistry = None,
+        capability_config_store: Any = None,
+        session_agent_state_store: Any = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -600,6 +627,9 @@ class AgentContext:
         self.session_store = session_store
         self.event_bus = event_bus
         self.runtime_registry = runtime_registry
+        self.capability_registry = capability_registry
+        self.capability_config_store = capability_config_store
+        self.state = ScriptStateProxy(session_agent_state_store, session.session_id, agent.id)
         self.output = ScriptOutputProxy(
             message_store=message_store,
             event_bus=event_bus,
@@ -769,7 +799,23 @@ class AgentContext:
         return ScriptStep(self, name, parent_step_id=parent_step_id)
 
     def capability(self, name: str) -> CapabilityProxy:
-        return CapabilityProxy(self.runtime_registry.get_runtime(name))
+        return CapabilityProxy(self.runtime_registry.get_runtime(name), context=self._capability_context(name))
+
+    def _capability_context(self, capability_id: str) -> dict[str, Any]:
+        capability_config = {}
+        if self.capability_registry is not None and self.capability_config_store is not None:
+            try:
+                capability = self.capability_registry.get(capability_id)
+                stored = self.capability_config_store.get_config(capability_id)
+                capability_config = resolve_config(capability.config_schema, stored.get("user_config") or {})
+            except Exception:
+                capability_config = {}
+        return {
+            "session_id": self.session.session_id,
+            "capability_id": capability_id,
+            "capability_config": capability_config,
+            "attachments": list(self.input.attachments or []),
+        }
 
     async def ask(self, prompt: str, timeout: int = 120) -> CapabilityCallResult:
         await self.reply(prompt, type="text")
@@ -805,6 +851,7 @@ class ScriptAgentRunner:
         provider_profile_store=None,
         llm_defaults_store=None,
         agent_config_store=None,
+        session_agent_state_store=None,
         run_lifecycle: RunLifecycle = None,
     ) -> None:
         self.agent_registry = agent_registry
@@ -820,6 +867,7 @@ class ScriptAgentRunner:
         self.provider_profile_store = provider_profile_store
         self.llm_defaults_store = llm_defaults_store
         self.agent_config_store = agent_config_store
+        self.session_agent_state_store = session_agent_state_store
         self.run_lifecycle = run_lifecycle or RunLifecycle(run_store, event_bus)
 
     async def run(
@@ -945,6 +993,13 @@ class ScriptAgentRunner:
         self.run_lifecycle.complete_step(starting_step.step_id)
         running_step = self.run_lifecycle.start_step(run.run_id, "Running script")
 
+        agent_user_config = {}
+        if self.agent_config_store is not None:
+            try:
+                agent_user_config = resolve_config(agent.config_schema, agent_config.get("user_config") or {})
+            except Exception:
+                agent_user_config = agent_config.get("user_config") or {}
+
         ctx = AgentContext(
             agent=agent,
             action_id=action_id,
@@ -955,7 +1010,7 @@ class ScriptAgentRunner:
             form_id=form_id or None,
             parent_message_id=parent_id,
             prefill=prefill or {},
-            config={},
+            config=agent_user_config,
             run_store=self.run_store,
             message_store=self.message_store,
             session_store=self.session_store,
@@ -970,6 +1025,9 @@ class ScriptAgentRunner:
             run_lifecycle=self.run_lifecycle,
             output_message_id=output_message.message_id,
             current_parent_step_id=running_step.step_id,
+            capability_registry=self.capability_registry,
+            capability_config_store=self.capability_config_store,
+            session_agent_state_store=self.session_agent_state_store,
         )
 
         try:
@@ -1227,4 +1285,6 @@ def _model_from_config(model_config: Dict[str, Any]) -> Optional[str]:
 
 
 def _agent_uses_llm(agent: AgentSchema) -> bool:
+    if agent.id == "comfyui_agent" and not (agent.llm or agent.model):
+        return False
     return bool(agent.llm or agent.model or "llm" in (agent.capabilities or []))

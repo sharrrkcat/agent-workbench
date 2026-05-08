@@ -58,6 +58,36 @@ config_schema:
     default: true
     description: Enable upload_image for ComfyUI input images.
 
+  - name: workflows_dir
+    type: string
+    label: Workflows directory
+    default: ./data/comfyui/workflows
+    description: Directory containing ComfyUI API-format workflow JSON files.
+
+  - name: presets_dir
+    type: string
+    label: Presets directory
+    default: ./data/comfyui/presets
+    description: Directory containing ComfyUI preset YAML files.
+
+  - name: auto_create_missing_presets
+    type: boolean
+    label: Auto-create missing presets
+    default: true
+    description: Create draft presets for workflow files that are not referenced by any preset.
+
+  - name: allow_workflow_file_write
+    type: boolean
+    label: Allow workflow file writes
+    default: true
+    description: Allow capability to write workflow files when future import actions are added. This round does not implement import.
+
+  - name: allow_preset_file_write
+    type: boolean
+    label: Allow preset file writes
+    default: true
+    description: Allow capability to write draft preset files.
+
 methods:
   - id: test_connection
     description: Test whether the ComfyUI REST service is reachable and report lightweight endpoint availability.
@@ -188,6 +218,51 @@ methods:
   - id: get_object_info
     description: Fetch ComfyUI node definition metadata from /object_info.
     input_schema: {}
+    output:
+      type: json
+
+  - id: scan_workflow_library
+    description: Scan local ComfyUI workflow and preset directories, validate presets, and optionally create draft presets for unmapped workflows.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: list_workflows
+    description: List scanned local API-format workflow files.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: list_presets
+    description: List local ComfyUI preset YAML files with validation status.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: validate_preset
+    description: Validate one local preset by id, file name, or preset object.
+    input_schema:
+      preset_id:
+        type: string
+        required: false
+      file_name:
+        type: string
+        required: false
+      preset:
+        type: json
+        required: false
+    output:
+      type: json
+
+  - id: load_preset
+    description: Load one local preset YAML file by id or file name and return validation details.
+    input_schema:
+      preset_id:
+        type: string
+        required: false
+      file_name:
+        type: string
+        required: false
     output:
       type: json
 

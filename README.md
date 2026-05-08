@@ -368,7 +368,7 @@ Prompt agents record the default path: Resolving agent, Building context, Resolv
 
 `POST /api/runs/{run_id}/cancel` marks active runs as cancelling, requests cancellation from the active task registry, and leaves completed or failed runs unchanged. WebSocket events include run and step updates (`run_updated`, `run_step_created`, `run_step_updated`, `run_cancel_requested`, `run_completed`, `run_failed`) so chat can update the timeline live. Session message loads include related run and step payloads so completed, failed, or refreshed runs can still display their timeline.
 
-This MVP intentionally does not include a ComfyUI Agent, workflow editor, full Diagnostics/Run Trace page, background job queue, priority/retry/pause/resume controls, or complex command diff UI.
+This MVP intentionally does not include real ComfyUI generation, a workflow editor, full Diagnostics/Run Trace page, background job queue, priority/retry/pause/resume controls, or complex command diff UI.
 
 API errors use a structured shape:
 
@@ -513,9 +513,11 @@ Settings -> Capabilities -> File Capability controls only active local path read
 
 Settings -> Capabilities -> HTTP Capability controls only active network GET commands: `/http-get <url>`, `/fetch-page <url>`, and `/fetch-image <url>`. It does not affect chat uploads. HTTP settings include command toggles, allowed URL schemes, timeout seconds, text and image response size limits, redirect enablement, and maximum redirects. The runtime uses GET only. Text/page responses accept `text/*`, `application/json`, `application/xml`, `application/yaml`, and `application/x-yaml`; image fetches require `image/*`. No HTTP POST, PUT, or DELETE support is provided.
 
-Settings -> Capabilities -> ComfyUI Capability stores a local ComfyUI REST base URL, request timeout, polling defaults, SSL verification, default image response mode, and upload enablement. It exposes reusable runtime methods for connection tests, workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, and object info. It does not provide slash commands, a ComfyUI Agent, a workflow editor, prompt enhancement, WebSocket progress, or real-service setup scripts.
+Settings -> Capabilities -> ComfyUI Capability stores a local ComfyUI REST base URL, request timeout, polling defaults, SSL verification, default image response mode, upload enablement, `workflows_dir`, `presets_dir`, and local write toggles for workflow/preset assets. It exposes reusable runtime methods for connection tests, workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, object info, workflow library scanning, preset listing/loading, and preset validation. It does not provide slash commands, a workflow editor, prompt enhancement, WebSocket progress, or real-service setup scripts.
 
-ComfyUI Capability Alpha: automated tests use mocked REST responses and do not require ComfyUI to be installed or running. Real generation requires the user to run a ComfyUI service separately. A future Script Agent can use the stable chain `submit_workflow -> get_prompt_status -> fetch_image -> save attachment -> reply image_gallery`.
+ComfyUI Capability Alpha: automated tests use mocked REST responses and local temporary workflow/preset directories; they do not require ComfyUI to be installed or running. Real generation requires the user to run a ComfyUI service separately.
+
+ComfyUI Agent Alpha: `@comfyui_agent` provides a workflow/preset library and session recipe foundation. The recipe form edits only the current session runtime recipe, supports preset switching, and stores `input_mode` as `llm` or `raw`. `@comfyui_agent:run` is currently a dry-run that validates and summarizes what would be used. Real generation, LLM prompt enhancement, workflow submission, polling, image fetching, and generated image attachments are planned for a later round.
 
 Permission hints and CapabilityConfig settings are local alpha safety controls and operator documentation, not a sandbox or full authorization system. Script Agents remain trusted local Python code and can call capabilities.
 

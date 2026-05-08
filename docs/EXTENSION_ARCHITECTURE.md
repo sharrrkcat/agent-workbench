@@ -208,6 +208,14 @@ ComfyUI:
 - `capabilities/comfyui`: submit workflow, poll status, fetch images, cancel.
 - `agents/comfyui_agent`: fill workflow, show progress, save outputs, return image gallery.
 
+ComfyUI workflow library foundation:
+
+- Workflow files and preset YAML files are local user assets managed by the ComfyUI Capability configuration.
+- Presets are durable mapping assets that reference workflow file basenames and optional canonical hashes.
+- A session recipe is a per-session, per-agent runtime copy of a preset plus user-edited values.
+- Editing a session recipe must not rewrite the preset file.
+- Generation requests should be built from the current session recipe, then submitted only by an explicit generation action.
+
 Obsidian or LLM Wiki:
 
 - `capabilities/obsidian_vault`: search/read/write notes, list links, create/update markdown.
@@ -273,14 +281,15 @@ ComfyUI CapabilityConfig:
 - `timeout_seconds`.
 - `poll_interval_seconds`.
 - `max_wait_seconds`.
+- `workflows_dir`.
+- `presets_dir`.
+- workflow/preset write toggles.
 
 ComfyUI AgentConfig:
 
-- `default_workflow`.
-- `default_negative_prompt`.
-- `width`.
-- `height`.
-- `steps`.
+- `default_preset_id`.
+- `default_input_mode`.
+- prompt enhancer templates.
 - Seed policy.
 
 Obsidian CapabilityConfig:

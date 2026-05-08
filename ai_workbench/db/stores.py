@@ -25,6 +25,7 @@ from ai_workbench.db.models import (
     RunRecord,
     RunStepRecord,
     SessionRecord,
+    SessionAgentStateRecord,
 )
 
 
@@ -687,6 +688,47 @@ class SqlCapabilityConfigStore:
 
     def is_enabled(self, capability_id: str) -> bool:
         return bool(self.get_config(capability_id)["enabled"])
+
+
+class SqlSessionAgentStateStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def get_state(self, session_id: str, agent_id: str, key: str) -> Any:
+        with DbSession(self.engine) as session:
+            record = session.exec(
+                select(SessionAgentStateRecord).where(
+                    SessionAgentStateRecord.session_id == session_id,
+                    SessionAgentStateRecord.agent_id == agent_id,
+                    SessionAgentStateRecord.key == key,
+                )
+            ).first()
+            if record is None:
+                return None
+            return _loads(record.value_json, None)
+
+    def set_state(self, session_id: str, agent_id: str, key: str, value: Any) -> Any:
+        with DbSession(self.engine) as session:
+            record = session.exec(
+                select(SessionAgentStateRecord).where(
+                    SessionAgentStateRecord.session_id == session_id,
+                    SessionAgentStateRecord.agent_id == agent_id,
+                    SessionAgentStateRecord.key == key,
+                )
+            ).first()
+            if record is None:
+                record = SessionAgentStateRecord(session_id=session_id, agent_id=agent_id, key=key)
+            record.value_json = _dumps(value)
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _loads(record.value_json, None)
+
+    def delete_session(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            session.exec(delete(SessionAgentStateRecord).where(SessionAgentStateRecord.session_id == session_id))
+            session.commit()
 
 
 class SqlLLMProfileStore:

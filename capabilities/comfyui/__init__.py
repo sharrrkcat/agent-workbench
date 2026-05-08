@@ -1,10 +1,16 @@
 import base64
+import hashlib
+import json
 import mimetypes
+import os
+import re
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+import yaml
 
 
 DEFAULT_CONFIG = {
@@ -15,7 +21,16 @@ DEFAULT_CONFIG = {
     "verify_ssl": True,
     "default_image_response_mode": "base64",
     "enable_upload": True,
+    "workflows_dir": "./data/comfyui/workflows",
+    "presets_dir": "./data/comfyui/presets",
+    "auto_create_missing_presets": True,
+    "allow_workflow_file_write": True,
+    "allow_preset_file_write": True,
 }
+
+SUPPORTED_PARAMETER_TYPES = {"text", "textarea", "integer", "float", "boolean", "enum", "json"}
+PRESET_STATUS_VALUES = {"ready", "needs_mapping", "disabled"}
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class ComfyUIError(ValueError):
@@ -378,6 +393,109 @@ class CapabilityRuntime:
             raise ComfyUIError("COMFYUI_BAD_RESPONSE", "ComfyUI object_info response was not an object.", {"raw": raw})
         return {"raw": raw, "node_count": len(raw), "keys": sorted(str(key) for key in raw.keys())}
 
+    def scan_workflow_library(self, context: dict | None = None) -> dict:
+        config = _runtime_config(context)
+        workflows_dir = _resolve_asset_dir(config["workflows_dir"])
+        presets_dir = _resolve_asset_dir(config["presets_dir"])
+        result = {
+            "workflows_dir": str(workflows_dir),
+            "presets_dir": str(presets_dir),
+            "workflows": [],
+            "duplicates": [],
+            "presets": [],
+            "missing_preset_workflows": [],
+            "created_draft_presets": [],
+            "errors": [],
+            "warnings": [],
+        }
+        _ensure_asset_dir(workflows_dir, bool(config["allow_workflow_file_write"]), result, "workflows_dir")
+        _ensure_asset_dir(presets_dir, bool(config["allow_preset_file_write"]), result, "presets_dir")
+
+        workflows = _scan_workflows(workflows_dir)
+        result["workflows"] = workflows
+        by_hash: dict[str, list[str]] = {}
+        for workflow in workflows:
+            if workflow.get("valid") and workflow.get("hash"):
+                by_hash.setdefault(workflow["hash"], []).append(workflow["file_name"])
+        result["duplicates"] = [
+            {"hash": hash_value, "file_names": names}
+            for hash_value, names in sorted(by_hash.items())
+            if len(names) > 1
+        ]
+        for duplicate in result["duplicates"]:
+            duplicate_of = duplicate["file_names"][0]
+            for workflow in workflows:
+                if workflow["file_name"] in duplicate["file_names"][1:]:
+                    workflow["duplicate_of"] = duplicate_of
+                    workflow["warnings"].append("duplicate workflow content")
+
+        presets = _scan_presets(presets_dir, workflows_dir, workflows)
+        result["presets"] = presets
+        referenced = {preset.get("workflow", {}).get("file_name") for preset in presets if isinstance(preset.get("workflow"), dict)}
+        missing = [workflow for workflow in workflows if workflow.get("valid") and workflow["file_name"] not in referenced]
+        result["missing_preset_workflows"] = [workflow["file_name"] for workflow in missing]
+        if missing and bool(config["auto_create_missing_presets"]) and bool(config["allow_preset_file_write"]):
+            for workflow in missing:
+                draft = _create_draft_preset(presets_dir, workflow, presets)
+                if draft:
+                    result["created_draft_presets"].append(draft)
+            if result["created_draft_presets"]:
+                result["presets"] = _scan_presets(presets_dir, workflows_dir, workflows)
+                referenced = {preset.get("workflow", {}).get("file_name") for preset in result["presets"] if isinstance(preset.get("workflow"), dict)}
+                result["missing_preset_workflows"] = [workflow["file_name"] for workflow in missing if workflow["file_name"] not in referenced]
+        elif missing and not bool(config["allow_preset_file_write"]):
+            result["warnings"].append("allow_preset_file_write=false; draft presets were not created.")
+        return result
+
+    def list_workflows(self, context: dict | None = None) -> dict:
+        scan = self.scan_workflow_library(context=context)
+        return {
+            "workflows_dir": scan["workflows_dir"],
+            "workflows": scan["workflows"],
+            "duplicates": scan["duplicates"],
+            "summary": {"workflow_count": len(scan["workflows"])},
+        }
+
+    def list_presets(self, context: dict | None = None) -> dict:
+        scan = self.scan_workflow_library(context=context)
+        return {
+            "presets_dir": scan["presets_dir"],
+            "presets": scan["presets"],
+            "summary": {"preset_count": len(scan["presets"])},
+        }
+
+    def validate_preset(
+        self,
+        preset_id: str | None = None,
+        file_name: str | None = None,
+        preset: dict | None = None,
+        context: dict | None = None,
+    ) -> dict:
+        config = _runtime_config(context)
+        workflows_dir = _resolve_asset_dir(config["workflows_dir"])
+        presets_dir = _resolve_asset_dir(config["presets_dir"])
+        workflows = _scan_workflows(workflows_dir)
+        presets = _load_preset_files(presets_dir)
+        if preset is None:
+            loaded = _find_loaded_preset(presets, preset_id=preset_id, file_name=file_name)
+            if loaded is None:
+                return _preset_validation_result(preset_id or "", None, workflows_dir, workflows, presets, ["Preset was not found."], [])
+            preset = loaded["data"]
+            file_name = loaded["file_name"]
+        return _validate_preset(preset, workflows_dir, workflows, presets, source_file_name=file_name)
+
+    def load_preset(self, preset_id: str | None = None, file_name: str | None = None, context: dict | None = None) -> dict:
+        config = _runtime_config(context)
+        workflows_dir = _resolve_asset_dir(config["workflows_dir"])
+        presets_dir = _resolve_asset_dir(config["presets_dir"])
+        workflows = _scan_workflows(workflows_dir)
+        presets = _load_preset_files(presets_dir)
+        loaded = _find_loaded_preset(presets, preset_id=preset_id, file_name=file_name)
+        if loaded is None:
+            return {"found": False, "preset": None, "validation": _preset_validation_result(preset_id or "", None, workflows_dir, workflows, presets, ["Preset was not found."], [])}
+        validation = _validate_preset(loaded["data"], workflows_dir, workflows, presets, source_file_name=loaded["file_name"])
+        return {"found": True, "file_name": loaded["file_name"], "preset": loaded["data"], "validation": validation}
+
     def _client_for(self, context: dict | None = None) -> ComfyUIClient:
         return ComfyUIClient(_runtime_config(context), self._client)
 
@@ -479,6 +597,310 @@ def _runtime_config(context: dict | None) -> dict:
         config.update({key: value for key, value in provided.items() if value is not None})
     config["base_url"] = str(config["base_url"] or DEFAULT_CONFIG["base_url"]).rstrip("/")
     return config
+
+
+def _resolve_asset_dir(value: str) -> Path:
+    path = Path(str(value or "")).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path.resolve()
+
+
+def _ensure_asset_dir(path: Path, allow_write: bool, result: dict, label: str) -> None:
+    if path.exists():
+        if not path.is_dir():
+            result["errors"].append(f"{label} is not a directory: {path}")
+        return
+    if not allow_write:
+        result["warnings"].append(f"{label} does not exist and write is disabled: {path}")
+        return
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _is_safe_basename(file_name: Any) -> bool:
+    if not isinstance(file_name, str) or not file_name.strip():
+        return False
+    name = file_name.strip()
+    return name == os.path.basename(name) and not os.path.isabs(name) and "/" not in name and "\\" not in name and ".." not in Path(name).parts
+
+
+def _workflow_hash(workflow: dict) -> str:
+    canonical = json.dumps(workflow, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _scan_workflows(workflows_dir: Path) -> list[dict]:
+    if not workflows_dir.is_dir():
+        return []
+    return [_inspect_workflow_file(path) for path in sorted(workflows_dir.glob("*.json"))]
+
+
+def _inspect_workflow_file(path: Path) -> dict:
+    item = {
+        "file_name": path.name,
+        "hash": "",
+        "valid": False,
+        "format": "unknown",
+        "node_count": 0,
+        "class_types": [],
+        "duplicate_of": None,
+        "errors": [],
+        "warnings": [],
+    }
+    try:
+        workflow = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        item["errors"].append(f"Invalid JSON: {exc}")
+        return item
+    if isinstance(workflow, dict) and {"nodes", "links", "widgets_values"}.intersection(workflow.keys()):
+        item["format"] = "unsupported_gui_format"
+        item["errors"].append("GUI-format workflow is unsupported; export an API-format workflow JSON file.")
+        return item
+    if not isinstance(workflow, dict) or not workflow:
+        item["errors"].append("Workflow must be a non-empty top-level object.")
+        return item
+    nodes = [value for value in workflow.values() if isinstance(value, dict)]
+    if not nodes or not any("class_type" in node or "inputs" in node for node in nodes):
+        item["errors"].append("Workflow does not look like ComfyUI API format.")
+        return item
+    item["valid"] = True
+    item["format"] = "api"
+    item["node_count"] = len(nodes)
+    item["class_types"] = sorted({str(node.get("class_type")) for node in nodes if node.get("class_type")})
+    item["hash"] = _workflow_hash(workflow)
+    return item
+
+
+def _load_workflow(workflows_dir: Path, file_name: str) -> tuple[dict | None, dict | None]:
+    if not _is_safe_basename(file_name):
+        return None, {"valid": False, "errors": ["workflow.file_name must be a basename."]}
+    path = workflows_dir / file_name
+    if not path.is_file():
+        return None, {"valid": False, "errors": ["Workflow file does not exist."]}
+    inspected = _inspect_workflow_file(path)
+    if not inspected["valid"]:
+        return None, inspected
+    return json.loads(path.read_text(encoding="utf-8")), inspected
+
+
+def _load_preset_files(presets_dir: Path) -> list[dict]:
+    if not presets_dir.is_dir():
+        return []
+    loaded = []
+    for path in sorted([*presets_dir.glob("*.yaml"), *presets_dir.glob("*.yml")]):
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            data = {"id": "", "_load_error": str(exc)}
+        loaded.append({"file_name": path.name, "data": data})
+    return loaded
+
+
+def _scan_presets(presets_dir: Path, workflows_dir: Path, workflows: list[dict]) -> list[dict]:
+    loaded = _load_preset_files(presets_dir)
+    return [_validate_preset(item["data"], workflows_dir, workflows, loaded, source_file_name=item["file_name"]) for item in loaded]
+
+
+def _find_loaded_preset(presets: list[dict], preset_id: str | None = None, file_name: str | None = None) -> dict | None:
+    for item in presets:
+        data = item.get("data") if isinstance(item, dict) else {}
+        if file_name and item.get("file_name") == file_name:
+            return item
+        if preset_id and isinstance(data, dict) and data.get("id") == preset_id:
+            return item
+    return None
+
+
+def _validate_preset(
+    preset: dict | None,
+    workflows_dir: Path,
+    workflows: list[dict],
+    loaded_presets: list[dict],
+    source_file_name: str | None = None,
+) -> dict:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(preset, dict):
+        return _preset_validation_result("", None, workflows_dir, workflows, loaded_presets, ["Preset must be a YAML object."], warnings, source_file_name)
+    if preset.get("_load_error"):
+        errors.append(f"Preset YAML could not be read: {preset['_load_error']}")
+    known = {"id", "name", "description", "status", "workflow", "parameters", "output"}
+    for key in sorted(set(preset) - known - {"_load_error"}):
+        warnings.append(f"Unknown preset field: {key}")
+    preset_id = str(preset.get("id") or "")
+    if not re.match(r"^[a-z0-9][a-z0-9_-]*$", preset_id):
+        errors.append("Preset id is required and must be lowercase slug-like text.")
+    ids = [item.get("data", {}).get("id") for item in loaded_presets if isinstance(item.get("data"), dict)]
+    if preset_id and ids.count(preset_id) > 1:
+        errors.append(f"Preset id is not unique: {preset_id}")
+    if not preset.get("name"):
+        errors.append("Preset name is required.")
+    status = str(preset.get("status") or "ready")
+    if status not in PRESET_STATUS_VALUES:
+        errors.append(f"Unsupported preset status: {status}")
+    workflow_ref = preset.get("workflow") if isinstance(preset.get("workflow"), dict) else {}
+    workflow_file = workflow_ref.get("file_name")
+    if not _is_safe_basename(workflow_file):
+        errors.append("workflow.file_name must be a basename.")
+        workflow_info = {"file_name": workflow_file or "", "exists": False, "hash": "", "hash_matches": False}
+        workflow = None
+        inspected = None
+    else:
+        workflow, inspected = _load_workflow(workflows_dir, workflow_file)
+        workflow_hash = inspected.get("hash") if inspected else ""
+        workflow_info = {
+            "file_name": workflow_file,
+            "exists": bool((workflows_dir / workflow_file).is_file()),
+            "hash": workflow_hash or "",
+            "hash_matches": True,
+        }
+        if inspected and not inspected.get("valid"):
+            errors.extend(inspected.get("errors") or ["Workflow is invalid."])
+        declared_hash = workflow_ref.get("hash")
+        if declared_hash and workflow_hash and declared_hash != workflow_hash:
+            workflow_info["hash_matches"] = False
+            warnings.append("workflow.hash does not match the current workflow file canonical hash.")
+    parameters = preset.get("parameters", [])
+    if parameters is None and status == "needs_mapping":
+        parameters = []
+    if not isinstance(parameters, list):
+        errors.append("parameters must be an array.")
+        parameters = []
+    names = []
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            errors.append("Each parameter must be an object.")
+            continue
+        p_name = str(parameter.get("name") or "")
+        if not p_name:
+            errors.append("Parameter name is required.")
+        names.append(p_name)
+        p_type = parameter.get("type")
+        if p_type not in SUPPORTED_PARAMETER_TYPES:
+            errors.append(f"Unsupported parameter type for {p_name}: {p_type}")
+        if p_type == "enum" and not parameter.get("options"):
+            errors.append(f"Enum parameter requires options: {p_name}")
+        if "default" in parameter and p_type in SUPPORTED_PARAMETER_TYPES and not _default_matches_type(parameter["default"], p_type):
+            errors.append(f"Default value type does not match parameter type: {p_name}")
+        if ("minimum" in parameter or "maximum" in parameter) and p_type not in {"integer", "float"}:
+            errors.append(f"minimum/maximum only apply to numeric parameters: {p_name}")
+        mapping = parameter.get("mapping")
+        if status == "ready" and parameter.get("required") and not mapping:
+            errors.append(f"Ready preset required parameter is missing mapping: {p_name}")
+        if mapping:
+            _validate_mapping(mapping, workflow, p_name, errors)
+    duplicates = sorted({name for name in names if name and names.count(name) > 1})
+    for name in duplicates:
+        errors.append(f"Parameter name is not unique: {name}")
+    output = preset.get("output") if isinstance(preset.get("output"), dict) else {}
+    for key in sorted(set(output) - {"images"}):
+        warnings.append(f"Unknown output field: {key}")
+    if output.get("images", "all") != "all":
+        errors.append("Only output.images=all is supported.")
+    return _preset_validation_result(preset_id, preset, workflows_dir, workflows, loaded_presets, errors, warnings, source_file_name, status, workflow_info, len(parameters))
+
+
+def _preset_validation_result(
+    preset_id: str,
+    preset: dict | None,
+    workflows_dir: Path,
+    workflows: list[dict],
+    loaded_presets: list[dict],
+    errors: list[str],
+    warnings: list[str],
+    source_file_name: str | None = None,
+    status: str | None = None,
+    workflow_info: dict | None = None,
+    parameter_count: int = 0,
+) -> dict:
+    workflow_ref = preset.get("workflow") if isinstance(preset, dict) and isinstance(preset.get("workflow"), dict) else {}
+    return {
+        "file_name": source_file_name or "",
+        "preset_id": preset_id,
+        "id": preset_id,
+        "name": preset.get("name", "") if isinstance(preset, dict) else "",
+        "valid": not errors,
+        "status": status or (str(preset.get("status") or "ready") if isinstance(preset, dict) else "invalid"),
+        "workflow": workflow_info or {
+            "file_name": workflow_ref.get("file_name", ""),
+            "exists": False,
+            "hash": "",
+            "hash_matches": False,
+        },
+        "parameter_count": parameter_count,
+        "parameters": list(preset.get("parameters") or []) if isinstance(preset, dict) else [],
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def _validate_mapping(mapping: dict, workflow: dict | None, parameter_name: str, errors: list[str]) -> None:
+    if not isinstance(mapping, dict):
+        errors.append(f"mapping must be an object: {parameter_name}")
+        return
+    node_id = str(mapping.get("node_id") or "")
+    input_path = mapping.get("input_path")
+    if not node_id or not isinstance(input_path, list) or not input_path:
+        errors.append(f"mapping requires node_id and input_path: {parameter_name}")
+        return
+    if not isinstance(workflow, dict):
+        return
+    if node_id not in workflow:
+        errors.append(f"mapping.node_id does not exist for {parameter_name}: {node_id}")
+        return
+    current: Any = workflow[node_id]
+    for segment in input_path:
+        if isinstance(current, dict) and segment in current:
+            current = current[segment]
+        else:
+            errors.append(f"mapping.input_path cannot be located for {parameter_name}: {input_path}")
+            return
+
+
+def _default_matches_type(value: Any, field_type: str) -> bool:
+    if field_type in {"text", "textarea"}:
+        return isinstance(value, str)
+    if field_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if field_type == "float":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if field_type == "boolean":
+        return isinstance(value, bool)
+    if field_type == "enum":
+        return isinstance(value, str)
+    if field_type == "json":
+        return isinstance(value, (dict, list))
+    return False
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug or "workflow"
+
+
+def _create_draft_preset(presets_dir: Path, workflow: dict, existing_presets: list[dict]) -> dict | None:
+    stem = Path(workflow["file_name"]).stem
+    if stem.endswith(".workflow"):
+        stem = stem[: -len(".workflow")]
+    base_id = "auto_" + _slug(stem)
+    existing_ids = {preset.get("id") for preset in existing_presets}
+    preset_id = base_id
+    if preset_id in existing_ids:
+        preset_id = f"{base_id}_{workflow['hash'].split(':', 1)[1][:8]}"
+    file_name = preset_id + ".yaml"
+    path = presets_dir / file_name
+    if path.exists():
+        return None
+    draft = {
+        "id": preset_id,
+        "name": f"{stem} (Unmapped)",
+        "status": "needs_mapping",
+        "workflow": {"file_name": workflow["file_name"], "hash": workflow["hash"]},
+        "parameters": [],
+        "output": {"images": "all"},
+    }
+    path.write_text(yaml.safe_dump(draft, sort_keys=False), encoding="utf-8")
+    return {"id": preset_id, "file_name": file_name, "workflow_file_name": workflow["file_name"]}
 
 
 def _try_json(fn) -> dict:

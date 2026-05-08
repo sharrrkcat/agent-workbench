@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from ai_workbench.core.time import utc_now
@@ -103,6 +104,17 @@ class CapabilityConfigRecord(SQLModel, table=True):
     enabled: bool = True
     user_config_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class SessionAgentStateRecord(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("session_id", "agent_id", "key"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str = Field(index=True)
+    agent_id: str = Field(index=True)
+    key: str = Field(index=True)
+    value_json: str = "{}"
     updated_at: datetime = Field(default_factory=utc_now)
 
 

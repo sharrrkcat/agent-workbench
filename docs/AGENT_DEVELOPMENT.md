@@ -186,6 +186,8 @@ await ctx.llm.unload()
 
 Script Agents should parse and validate LLM output explicitly. Do not depend on model function-calling or automatic tool selection.
 
+The built-in `comfyui_agent` is a dry-run foundation Script Agent. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, and validate the selected preset. It does not submit workflows, poll ComfyUI jobs, fetch images, save generated attachments, or call the LLM prompt enhancer in this round.
+
 Minimal interactive form Script Agent:
 
 ```python

@@ -24,6 +24,7 @@ from ai_workbench.core.stores import (
     RunEventStore,
     RunStore,
     SessionStore,
+    SessionAgentStateStore,
 )
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.database import get_engine, init_db
@@ -37,6 +38,7 @@ from ai_workbench.db.stores import (
     SqlRunEventStore,
     SqlRunStore,
     SqlSessionStore,
+    SqlSessionAgentStateStore,
 )
 
 
@@ -62,6 +64,7 @@ class RuntimeState:
     provider_profiles: Any = None
     llm_defaults: Any = None
     app_settings: Any = None
+    session_agent_states: Any = None
     database_url: str | None = None
     started_at: datetime = field(default_factory=utc_now)
     active_websockets: int = 0
@@ -100,6 +103,7 @@ def build_runtime_state(
         provider_profiles = ProviderProfileStore()
         llm_defaults = LLMDefaultsStore()
         app_settings = AppSettingsStore()
+        session_agent_states = SessionAgentStateStore()
         resolved_database_url = "sqlite:///:memory:"
     else:
         engine = get_engine(database_url)
@@ -117,6 +121,7 @@ def build_runtime_state(
         from ai_workbench.db.stores import SqlAppSettingsStore
 
         app_settings = SqlAppSettingsStore(engine)
+        session_agent_states = SqlSessionAgentStateStore(engine)
         resolved_database_url = get_database_url(database_url)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
@@ -147,6 +152,7 @@ def build_runtime_state(
         provider_profile_store=provider_profiles,
         llm_defaults_store=llm_defaults,
         app_settings_store=app_settings,
+        session_agent_state_store=session_agent_states,
         active_runs=active_runs,
     )
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
@@ -171,6 +177,7 @@ def build_runtime_state(
         provider_profiles=provider_profiles,
         llm_defaults=llm_defaults,
         app_settings=app_settings,
+        session_agent_states=session_agent_states,
         database_url=resolved_database_url,
     )
 

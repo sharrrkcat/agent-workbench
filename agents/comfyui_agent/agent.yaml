@@ -1,0 +1,101 @@
+id: comfyui_agent
+name: ComfyUI Agent
+type: script
+description: Dry-run ComfyUI workflow/preset recipe agent.
+entry: agent.py
+
+capabilities:
+  - comfyui
+  - llm
+
+actions:
+  - id: default
+    label: Update Recipe
+    description: Update the current session recipe from normal user input without generating images.
+  - id: form
+    label: Recipe Form
+    description: Show the current session ComfyUI recipe form.
+  - id: save_recipe_from_form
+    label: Save Recipe
+    description: Save submitted form values into the current session recipe.
+  - id: switch
+    label: Switch Mode
+    description: Switch the current recipe input_mode between llm and raw.
+  - id: raw
+    label: Raw Prompt
+    description: Save one raw positive prompt without changing input_mode.
+  - id: llm
+    label: LLM Prompt
+    description: Save one LLM user request without calling the LLM.
+  - id: run
+    label: Dry Run
+    description: Validate and summarize the current recipe without submitting to ComfyUI.
+  - id: presets
+    label: Presets
+    description: List local ComfyUI presets.
+  - id: scan_workflows
+    label: Scan Workflows
+    description: Scan local ComfyUI workflow and preset library.
+  - id: status
+    label: Status
+    description: Check ComfyUI connection, asset directories, and current recipe status.
+
+config_schema:
+  - name: default_preset_id
+    type: string
+    label: Default preset id
+    default: ""
+    description: Default preset id used when a session has no recipe.
+  - name: default_input_mode
+    type: enum
+    label: Default input mode
+    options:
+      - llm
+      - raw
+    default: llm
+    description: How normal user messages are interpreted by default.
+  - name: prompt_enhancer_system_prompt
+    type: text
+    label: Prompt enhancer system prompt
+    default: |
+      Convert the user's image request into a concise image generation prompt.
+      Do not choose sampler, cfg, steps, size, model, workflow, or seed.
+      Return only the improved positive prompt unless instructed otherwise.
+    description: Prompt used by the future LLM prompt enhancer.
+  - name: prompt_enhancer_user_template
+    type: text
+    label: Prompt enhancer user template
+    default: |
+      User request:
+      {user_input}
+
+      Current positive prompt:
+      {positive_prompt}
+
+      Current negative prompt:
+      {negative_prompt}
+    description: User template for the future prompt enhancer.
+  - name: default_seed_policy
+    type: enum
+    label: Default seed policy
+    options:
+      - random
+      - fixed
+      - reuse
+    default: random
+    description: Seed policy for future generation.
+  - name: unload_llm_before_generation
+    type: boolean
+    label: Unload LLM before generation
+    default: true
+    description: Future generation may unload the prompt enhancer model before ComfyUI execution.
+
+context_policy:
+  mode: current_message
+  max_messages: 1
+  max_chars: 4000
+
+model_lifecycle:
+  load: on_demand
+  unload: manual
+  unload_failure: warn

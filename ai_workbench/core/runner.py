@@ -105,6 +105,7 @@ class AgentRunner:
         provider_profile_store=None,
         llm_defaults_store=None,
         app_settings_store=None,
+        session_agent_state_store=None,
         active_runs: ActiveRunRegistry = None,
     ) -> None:
         self.agent_registry = agent_registry
@@ -122,6 +123,7 @@ class AgentRunner:
         self.provider_profile_store = provider_profile_store
         self.llm_defaults_store = llm_defaults_store
         self.app_settings_store = app_settings_store
+        self.session_agent_state_store = session_agent_state_store
         self.active_runs = active_runs or ActiveRunRegistry()
         self.run_lifecycle = RunLifecycle(run_store, event_bus)
         self.active_llm_uses = ActiveLLMUseRegistry()
@@ -141,6 +143,7 @@ class AgentRunner:
                 provider_profile_store=provider_profile_store,
                 llm_defaults_store=llm_defaults_store,
                 agent_config_store=agent_config_store,
+                session_agent_state_store=session_agent_state_store,
                 run_lifecycle=self.run_lifecycle,
             )
 

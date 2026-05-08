@@ -511,6 +511,22 @@ class CapabilityConfigStore(ConfigStore):
         return super().set_config(item_id=item_id, enabled=enabled, user_config=user_config)
 
 
+class SessionAgentStateStore:
+    def __init__(self) -> None:
+        self._records: Dict[tuple[str, str, str], Any] = {}
+
+    def get_state(self, session_id: str, agent_id: str, key: str) -> Any:
+        return self._records.get((session_id, agent_id, key))
+
+    def set_state(self, session_id: str, agent_id: str, key: str, value: Any) -> Any:
+        self._records[(session_id, agent_id, key)] = value
+        return value
+
+    def delete_session(self, session_id: str) -> None:
+        for record_key in [record_key for record_key in self._records if record_key[0] == session_id]:
+            self._records.pop(record_key, None)
+
+
 class LLMProfileStore:
     def __init__(self) -> None:
         self._records: Dict[str, LLMProfileSchema] = {}

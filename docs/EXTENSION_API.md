@@ -158,6 +158,13 @@ async with ctx.step("Parse JSON"):
 - `default_agent_id`: current default Agent id.
 - `context_mode`: current Session context projection mode. See `docs/RUNTIME_PROTOCOLS.md#conversation-context-modes` and `docs/RUNTIME_PROTOCOLS.md#group-transcript-context`.
 
+### `ctx.state`
+
+- `ctx.state.get(key, default=None)` reads per-session, per-agent JSON runtime state.
+- `ctx.state.set(key, value)` writes per-session, per-agent JSON runtime state.
+- State is intended for runtime copies such as a form-backed recipe. It should not replace user-owned source files such as Capability asset files or Agent manifests.
+- State is scoped by `session_id + agent_id + key`, so different sessions and Agents do not share values.
+
 ### `ctx.llm`
 
 - `ctx.llm.text(...)` returns final text as a string.
@@ -287,10 +294,12 @@ Runtime call rules:
 - Strict checks import runtime code and require every manifest method id to exist as a callable.
 - Command methods receive `(args, context)` when the runtime callable accepts two parameters.
 - Command methods receive only `(args)` when the runtime callable accepts one parameter.
-- Script Agents call capabilities through `await ctx.capability("id").method(...)`.
+- Script Agents call capabilities through `await ctx.capability("id").method(...)`. When the runtime method accepts a `context` keyword, Script Agent calls receive resolved CapabilityConfig, session id, capability id, and current attachments.
 - Capability methods should return plain Python values matching declared output.
 
 Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, and object-info methods. It returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, and final rendering.
+
+The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.
 
 ## Capability Config
 
@@ -331,6 +340,8 @@ Field declarations use `name`, `type`, optional `label`, `description`/`help`, `
 Submit declarations use optional `label`, optional `agent_id`, required `action_id`, and optional `message`. If `agent_id` is omitted, the source message Agent is used.
 
 On submit, the frontend sends only `source_message_id`, `form_id`, and `values`. The backend reads the original message, finds the matching `action_form`, resolves the submit target from that original block, validates values against the original fields, creates a `form_submission` user message with a short summary body, and invokes the target Agent action. Request body `agent_id` or `action_id` cannot override the original form target.
+
+Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static for the rendered form; if a submitted preset change requires different fields, the target action should save the new state and return a fresh form.
 
 ## Validation and CLI
 
