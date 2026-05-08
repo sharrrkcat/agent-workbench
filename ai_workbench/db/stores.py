@@ -8,7 +8,7 @@ from sqlmodel import delete
 from sqlmodel import select
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
-from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
@@ -45,8 +45,8 @@ class SqlSessionStore:
     def __init__(self, engine) -> None:
         self.engine = engine
 
-    def create_session(self, default_agent_id: str = "chat", title: str = "") -> Session:
-        record = SessionRecord(session_id=str(uuid4()), title=title, default_agent_id=default_agent_id)
+    def create_session(self, default_agent_id: str = "chat", title: str = "", context_mode: str = "single_assistant") -> Session:
+        record = SessionRecord(session_id=str(uuid4()), title=title, default_agent_id=default_agent_id, context_mode=context_mode)
         with DbSession(self.engine) as session:
             session.add(record)
             session.commit()
@@ -66,6 +66,18 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.default_agent_id = agent_id
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _session_from_record(record)
+
+    def set_context_mode(self, session_id: str, context_mode: str) -> Session:
+        with DbSession(self.engine) as session:
+            record = session.get(SessionRecord, session_id)
+            if record is None:
+                raise KeyError(f"unknown session id: {session_id}")
+            record.context_mode = context_mode
             record.updated_at = utc_now()
             session.add(record)
             session.commit()
@@ -164,12 +176,30 @@ class SqlMessageStore:
         available_actions: Optional[List[Dict[str, Any]]] = None,
         parent_message_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        speaker_type: Optional[str] = None,
+        speaker_id: Optional[str] = None,
+        speaker_name: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> MessageSchema:
+        speaker = infer_speaker_identity(
+            role,
+            agent_id=agent_id,
+            command_name=command_name,
+            metadata=metadata,
+            speaker_type=speaker_type,
+            speaker_id=speaker_id,
+            speaker_name=speaker_name,
+            origin=origin,
+        )
         record = MessageRecord(
             message_id=str(uuid4()),
             session_id=session_id,
             role=role,
             content_json=_dumps(content),
+            speaker_type=speaker["speaker_type"],
+            speaker_id=speaker["speaker_id"],
+            speaker_name=speaker["speaker_name"],
+            origin=speaker["origin"],
             output_type=output_type,
             agent_id=agent_id,
             command_name=command_name,
@@ -202,6 +232,10 @@ class SqlMessageStore:
             if record is None:
                 raise KeyError(f"unknown message id: {message.message_id}")
             record.content_json = _dumps(message.content)
+            record.speaker_type = message.speaker_type
+            record.speaker_id = message.speaker_id
+            record.speaker_name = message.speaker_name
+            record.origin = message.origin
             record.output_type = message.output_type
             record.agent_id = message.agent_id
             record.command_name = message.command_name
@@ -864,6 +898,7 @@ def _session_from_record(record: SessionRecord) -> Session:
         session_id=record.session_id,
         title=record.title,
         default_agent_id=record.default_agent_id,
+        context_mode=getattr(record, "context_mode", None) or "single_assistant",
         waiting_run_id=record.waiting_run_id,
         llm_profile_id=record.llm_profile_id,
         last_announced_llm_profile_id=record.last_announced_llm_profile_id,
@@ -878,6 +913,10 @@ def _message_from_record(record: MessageRecord) -> MessageSchema:
         session_id=record.session_id,
         role=record.role,
         content=_loads(record.content_json, ""),
+        speaker_type=getattr(record, "speaker_type", None),
+        speaker_id=getattr(record, "speaker_id", None),
+        speaker_name=getattr(record, "speaker_name", None),
+        origin=getattr(record, "origin", None),
         output_type=record.output_type,
         agent_id=record.agent_id,
         command_name=record.command_name,

@@ -1,6 +1,6 @@
 from datetime import datetime
 import re
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
@@ -21,6 +21,7 @@ class CreateSessionRequest(BaseModel):
 
     title: str = ""
     default_agent_id: str = "chat"
+    context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
 
 
 class UpdateSessionRequest(BaseModel):
@@ -29,6 +30,7 @@ class UpdateSessionRequest(BaseModel):
     title: Optional[str] = None
     default_agent_id: Optional[str] = None
     llm_profile_id: Optional[str] = None
+    context_mode: Optional[Literal["single_assistant", "group_transcript"]] = None
 
 
 @router.post("")
@@ -42,6 +44,7 @@ def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(
     return state.sessions.create_session(
         title=payload.title,
         default_agent_id=payload.default_agent_id,
+        context_mode=payload.context_mode,
     ).model_dump()
 
 
@@ -137,6 +140,9 @@ def update_session(session_id: str, payload: UpdateSessionRequest, state: Runtim
                 f"Session title must be {MAX_SESSION_TITLE_LENGTH} characters or fewer.",
             )
         session = state.sessions.set_title(session_id, title)
+
+    if payload.context_mode is not None:
+        session = state.sessions.set_context_mode(session_id, payload.context_mode)
 
     if "llm_profile_id" in payload.model_fields_set:
         if payload.llm_profile_id is not None:

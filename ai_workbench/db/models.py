@@ -10,6 +10,7 @@ class SessionRecord(SQLModel, table=True):
     session_id: str = Field(primary_key=True)
     title: str = ""
     default_agent_id: str = "chat"
+    context_mode: str = "single_assistant"
     waiting_run_id: Optional[str] = None
     llm_profile_id: Optional[str] = None
     last_announced_llm_profile_id: Optional[str] = None
@@ -22,6 +23,10 @@ class MessageRecord(SQLModel, table=True):
     session_id: str = Field(index=True)
     role: str
     content_json: str
+    speaker_type: Optional[str] = None
+    speaker_id: Optional[str] = None
+    speaker_name: Optional[str] = None
+    origin: Optional[str] = None
     output_type: str = "text"
     agent_id: Optional[str] = None
     command_name: Optional[str] = None

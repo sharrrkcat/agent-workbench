@@ -613,6 +613,7 @@ def test_create_session() -> None:
 
     assert session["session_id"]
     assert session["default_agent_id"] == "chat"
+    assert session["context_mode"] == "single_assistant"
 
 
 def test_patch_session_can_change_default_agent() -> None:
@@ -623,6 +624,20 @@ def test_patch_session_can_change_default_agent() -> None:
 
     assert response.status_code == 200
     assert response.json()["default_agent_id"] == "translate"
+
+
+def test_patch_session_can_change_context_mode_without_changing_messages() -> None:
+    client = make_client()
+    session = create_session(client)
+    client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
+    before = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+
+    response = client.patch(f"/api/sessions/{session['session_id']}", json={"context_mode": "group_transcript"})
+    after = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+
+    assert response.status_code == 200
+    assert response.json()["context_mode"] == "group_transcript"
+    assert after == before
 
 
 def test_patch_session_can_change_llm_profile_id_and_default() -> None:

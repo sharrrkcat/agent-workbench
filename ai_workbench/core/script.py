@@ -51,6 +51,7 @@ class ScriptSession(BaseModel):
 
     session_id: str
     default_agent_id: str
+    context_mode: str = "single_assistant"
 
 
 class ScriptStep:
@@ -175,6 +176,10 @@ class ScriptOutputProxy:
                 parent_message_id=parent_message_id,
                 available_actions=actions or [],
                 metadata=metadata or {"success": True},
+                speaker_type="agent",
+                speaker_id=agent_id,
+                speaker_name=None,
+                origin="agent_reply",
             )
             self.event_bus.emit(
                 "message_done",
@@ -270,6 +275,9 @@ class LLMProxy:
 
     async def chat(self, messages: List[Dict[str, Any]], **options) -> str:
         self.used = True
+        from ai_workbench.core.context import validate_llm_context_messages
+
+        messages = validate_llm_context_messages(messages)
         chat = getattr(self.llm_runtime, "chat", None)
         model_config = options.pop("model_config", None) or self.default_model_config
         if callable(chat):
@@ -300,6 +308,9 @@ class LLMProxy:
     ):
         self.used = True
         resolved_messages = _resolve_llm_messages(system=system, user=user, messages=messages)
+        from ai_workbench.core.context import validate_llm_context_messages
+
+        resolved_messages = validate_llm_context_messages(resolved_messages)
         model_config = options.pop("model_config", None) or self.default_model_config
         if response_format is not None:
             options["response_format"] = response_format
@@ -570,7 +581,7 @@ class AgentContext:
             prefill=prefill or {},
             attachments=list(attachments or []),
         )
-        self.session = ScriptSession(session_id=session.session_id, default_agent_id=session.default_agent_id)
+        self.session = ScriptSession(session_id=session.session_id, default_agent_id=session.default_agent_id, context_mode=session.context_mode)
         self.config = config or {}
         self.run_store = run_store
         self.message_store = message_store
@@ -775,6 +786,10 @@ class ScriptAgentRunner:
                         "args": args,
                     },
                 },
+                speaker_type="user",
+                speaker_id="local_user",
+                speaker_name="User",
+                origin="user_message",
             )
         parent_id = parent_message_id or source_message_id or (user_message.message_id if user_message is not None else "")
         run = self.run_store.create_run(
@@ -799,6 +814,10 @@ class ScriptAgentRunner:
             output_type="text",
             parent_message_id=parent_id or None,
             metadata={"success": True, "streaming": True, "placeholder": True},
+            speaker_type="agent",
+            speaker_id=agent.id,
+            speaker_name=agent.name,
+            origin="agent_reply",
         )
         run = self.run_store.update_metadata(run.run_id, {**run.metadata, "message_id": output_message.message_id})
         self.event_bus.emit(

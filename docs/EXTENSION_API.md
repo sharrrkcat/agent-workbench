@@ -150,6 +150,12 @@ async with ctx.step("Parse JSON"):
     ...
 ```
 
+### `ctx.session`
+
+- `session_id`: current Session id.
+- `default_agent_id`: current default Agent id.
+- `context_mode`: current Session context projection mode. See `docs/RUNTIME_PROTOCOLS.md#conversation-context-modes` and `docs/RUNTIME_PROTOCOLS.md#group-transcript-context`.
+
 ### `ctx.llm`
 
 - `ctx.llm.text(...)` returns final text as a string.

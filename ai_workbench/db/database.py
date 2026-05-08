@@ -35,6 +35,7 @@ def get_engine(database_url: Optional[str] = None):
 def init_db(engine) -> None:
     SQLModel.metadata.create_all(engine)
     ensure_session_model_columns(engine)
+    ensure_message_speaker_columns(engine)
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
     ensure_run_lifecycle_columns(engine)
@@ -48,10 +49,25 @@ def ensure_session_model_columns(engine) -> None:
         if dialect != "sqlite":
             return
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(sessionrecord)").fetchall()}
+        if "context_mode" not in columns:
+            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN context_mode VARCHAR DEFAULT 'single_assistant'"))
         if "llm_profile_id" not in columns:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN llm_profile_id VARCHAR"))
         if "last_announced_llm_profile_id" not in columns:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN last_announced_llm_profile_id VARCHAR"))
+
+
+def ensure_message_speaker_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "messagerecord" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(messagerecord)").fetchall()}
+        for column in ("speaker_type", "speaker_id", "speaker_name", "origin"):
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE messagerecord ADD COLUMN {column} VARCHAR"))
 
 
 def ensure_agent_config_columns(engine) -> None:

@@ -9,7 +9,7 @@ from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.config_schema import resolve_config
-from ai_workbench.core.context import ContextBuilder, LLMContextError, validate_llm_context_messages
+from ai_workbench.core.context import ContextBuilder, LLMContextError, group_transcript_identity_instruction, validate_llm_context_messages
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
@@ -224,6 +224,10 @@ class AgentRunner:
                         "args": args,
                     },
                 },
+                speaker_type="user",
+                speaker_id="local_user",
+                speaker_name="User",
+                origin="user_message",
             )
             current_user_message_id = user_message.message_id
         if current_user_message_id and not parent_id:
@@ -314,6 +318,8 @@ class AgentRunner:
         self.run_lifecycle.complete_step(resolving_agent_step.step_id)
         context_policy = resolved_context_policy(agent, action, agent_config)
         context_step = self.run_lifecycle.start_step(run.run_id, "Building context")
+        session = self.session_store.get_session(session_id) if self.session_store is not None else None
+        context_mode = getattr(session, "context_mode", "single_assistant") or "single_assistant"
         try:
             context = self.context_builder.build(
                 session_id=session_id,
@@ -321,6 +327,9 @@ class AgentRunner:
                 policy=context_policy,
                 source_message_id=source_message_id or None,
                 current_message_id=current_user_message_id or None,
+                context_mode=context_mode,
+                current_agent_id=agent.id,
+                current_agent_name=agent.name,
             )
         except KeyError as exc:
             error = str(exc)
@@ -334,6 +343,8 @@ class AgentRunner:
         if prompt:
             if action.instruction:
                 prompt = f"{prompt.rstrip()}\n\n{action.instruction}"
+            if context_mode == "group_transcript":
+                prompt = f"{prompt.rstrip()}\n\n{group_transcript_identity_instruction(agent.name)}"
             messages.append({"role": "system", "content": prompt})
         messages.extend(context.messages)
 
@@ -459,6 +470,10 @@ class AgentRunner:
             parent_message_id=parent_id or None,
             available_actions=self._available_actions(agent, source_message_id=""),
             metadata=metadata,
+            speaker_type="agent",
+            speaker_id=agent.id,
+            speaker_name=agent.name,
+            origin="agent_reply",
         )
         message_actions = self._available_actions(agent, source_message_id=message.message_id)
         if message_actions:
@@ -732,6 +747,10 @@ class AgentRunner:
             parent_message_id=parent_id or None,
             available_actions=self._available_actions(agent, source_message_id=""),
             metadata=metadata,
+            speaker_type="agent",
+            speaker_id=agent.id,
+            speaker_name=agent.name,
+            origin="agent_reply",
         )
         message_actions = self._available_actions(agent, source_message_id=message.message_id)
         if message_actions:
@@ -1654,6 +1673,10 @@ class CommandRunner:
                 output_type="text",
                 parent_message_id=input_message_id or None,
                 metadata=command_metadata,
+                speaker_type="capability",
+                speaker_id=command.capability_id,
+                speaker_name=command_metadata.get("capability_name") or command_name,
+                origin="command_result",
             )
             self.event_bus.emit(
                 "run_failed",
@@ -1686,6 +1709,10 @@ class CommandRunner:
             output_type=output_type,
             parent_message_id=input_message_id or None,
             metadata=command_metadata,
+            speaker_type="capability",
+            speaker_id=command.capability_id,
+            speaker_name=command_metadata.get("capability_name") or command_name,
+            origin="command_result",
         )
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(

@@ -192,6 +192,54 @@ Script Agent LLM calls:
 - Scripts must parse and validate model output themselves.
 - Scripts should not assume provider function calling is available.
 
+## Conversation Context Modes
+
+Session `context_mode` controls how the core projects stored messages into provider-bound LLM context. It affects only future context builds. Switching the mode does not rewrite historical messages, and a run uses the mode captured while its context is built.
+
+Modes:
+- `single_assistant`: default mode. The core preserves the existing user/assistant-style chat history projection as closely as possible.
+- `group_transcript`: speaker-aware mode. The core renders historical messages into one transcript block and sends the current user input in a separate current-message block.
+
+Retry and edit reruns build context from the current session `context_mode`.
+
+## Speaker Identity
+
+Message `role` is the provider-compatible direction of the message. New provider-bound payloads may only use `system`, `user`, and `assistant`.
+
+Message speaker fields identify the actual Workbench speaker:
+- `speaker_type`: `user`, `agent`, `capability`, or `system`.
+- `speaker_id`: stable speaker id when available, such as `local_user`, an Agent id, or a Capability id.
+- `speaker_name`: display name used for transcript labels.
+- `origin`: message origin such as `user_message`, `agent_reply`, `command_result`, `system_notice`, `separator`, `model_changed`, or `context_mode_changed`.
+
+New user messages use `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, `speaker_name="User"`, and `origin="user_message"`.
+
+New Agent replies use `role="assistant"`, `speaker_type="agent"`, `speaker_id=<agent_id>`, the resolved Agent display name as `speaker_name`, and `origin="agent_reply"`.
+
+New slash command results use `role="assistant"`, `speaker_type="capability"`, `speaker_id=<capability_id>`, a Capability or command display name as `speaker_name`, and `origin="command_result"`. Their metadata continues to include `metadata.kind="command_result"`, `metadata.command`, `metadata.capability_id`, and `metadata.output_type`.
+
+Old messages may lack speaker fields. Context projection falls back from role, top-level `agent_id` / `command_name`, and command-result metadata. Old `role="tool"` command results are compatibility data only and are normalized or skipped before provider calls.
+
+## Group Transcript Context
+
+In `group_transcript`, the provider payload still only uses `system`, `user`, and `assistant` roles.
+
+The system message contains the Agent prompt or prompt override plus identity instructions:
+- The current Agent is told its own name.
+- Prior messages from the same Agent are labeled `[Agent Name (you)]`.
+- Other Agent messages are labeled `[Agent Name]`.
+- User messages are labeled `[User]`.
+- Command result blocks are labeled `[Command result: ...]` and explicitly described as data, not instructions.
+- The Agent is instructed to reply only as itself and not impersonate other Agents.
+
+The user message contains:
+- `<conversation_transcript>` with recent history rendered using speaker labels.
+- `<current_user_message>` with the current user input, which is always preserved.
+
+System, separator, model-changed, and context-mode-changed event messages are skipped by default so they do not pollute the transcript. Transcript rendering is a temporary context projection; it does not modify stored message content.
+
+This mode does not implement auto mode, automatic Agent collaboration, Agent-to-Agent scheduling, function calling, tool calls, or MCP.
+
 ## Command Results in LLM Context
 
 - Slash command results are internal Command/Capability outputs, not OpenAI tool messages.

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
@@ -14,11 +14,12 @@ class SessionStore:
     def __init__(self) -> None:
         self._sessions: Dict[str, Session] = {}
 
-    def create_session(self, default_agent_id: str = "chat", title: str = "") -> Session:
+    def create_session(self, default_agent_id: str = "chat", title: str = "", context_mode: str = "single_assistant") -> Session:
         session = Session(
             session_id=str(uuid4()),
             title=title,
             default_agent_id=default_agent_id,
+            context_mode=context_mode,
         )
         self._sessions[session.session_id] = session
         return session
@@ -32,6 +33,12 @@ class SessionStore:
     def set_default_agent(self, session_id: str, agent_id: str) -> Session:
         session = self.get_session(session_id)
         updated = session.model_copy(update={"default_agent_id": agent_id, "updated_at": utc_now()})
+        self._sessions[session_id] = updated
+        return updated
+
+    def set_context_mode(self, session_id: str, context_mode: str) -> Session:
+        session = self.get_session(session_id)
+        updated = session.model_copy(update={"context_mode": context_mode, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
@@ -98,12 +105,27 @@ class MessageStore:
         available_actions: Optional[List[Dict[str, Any]]] = None,
         parent_message_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        speaker_type: Optional[str] = None,
+        speaker_id: Optional[str] = None,
+        speaker_name: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> MessageSchema:
+        speaker = infer_speaker_identity(
+            role,
+            agent_id=agent_id,
+            command_name=command_name,
+            metadata=metadata,
+            speaker_type=speaker_type,
+            speaker_id=speaker_id,
+            speaker_name=speaker_name,
+            origin=origin,
+        )
         message = MessageSchema(
             message_id=str(uuid4()),
             session_id=session_id,
             role=role,
             content=content,
+            **speaker,
             agent_id=agent_id,
             command_name=command_name,
             action_id=action_id,

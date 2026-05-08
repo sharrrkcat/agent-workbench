@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -12,6 +12,7 @@ class Session(BaseModel):
     session_id: str
     title: str = ""
     default_agent_id: str = "chat"
+    context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
     waiting_run_id: Optional[str] = None
     llm_profile_id: Optional[str] = None
     last_announced_llm_profile_id: Optional[str] = None

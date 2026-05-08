@@ -282,6 +282,10 @@ def test_script_agent_reply_writes_agent_message() -> None:
     assert messages[-1].agent_id == "echo_script"
     assert messages[-1].action_id == "default"
     assert messages[-1].run_id == result.run_id
+    assert messages[-1].speaker_type == "agent"
+    assert messages[-1].speaker_id == "echo_script"
+    assert messages[-1].speaker_name == "Echo Script Agent"
+    assert messages[-1].origin == "agent_reply"
 
 
 def test_script_agent_step_emits_run_step_event() -> None:
