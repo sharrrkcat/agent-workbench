@@ -122,7 +122,7 @@ def _print_human(payload: dict[str, Any]) -> None:
             print(f"- {event.get('type')}: {event_payload}")
 
     messages = payload.get("messages") or []
-    command_messages = [item for item in messages if item.get("role") == "command"]
+    command_messages = [item for item in messages if _is_command_result_message(item)]
     if command_messages:
         message = command_messages[-1]
         print("content:")
@@ -131,7 +131,7 @@ def _print_human(payload: dict[str, Any]) -> None:
 
 def _last_output_type(payload: dict[str, Any]) -> str:
     for message in reversed(payload.get("messages") or []):
-        if message.get("role") == "command":
+        if _is_command_result_message(message):
             return message.get("output_type") or "text"
     return "text"
 
@@ -158,6 +158,15 @@ def _format_content(content: Any, output_type: str) -> str:
     if isinstance(content, (dict, list)):
         return json.dumps(_safe_preview(content), ensure_ascii=False, indent=2)
     return "" if content is None else str(content)
+
+
+def _is_command_result_message(message: dict[str, Any]) -> bool:
+    metadata = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+    return (
+        message.get("role") == "command"
+        or bool(message.get("command_name"))
+        or metadata.get("kind") == "command_result"
+    )
 
 
 def _image_summary(content: Any) -> str:

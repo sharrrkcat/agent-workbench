@@ -9,7 +9,7 @@ from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.config_schema import resolve_config
-from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.context import ContextBuilder, LLMContextError, validate_llm_context_messages
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
@@ -361,6 +361,7 @@ class AgentRunner:
                 llm_config=llm_config,
             )
             messages = vision_input["messages"]
+            messages = validate_llm_context_messages(messages)
             context_warnings = [*context.warnings, *file_context["warnings"], *vision_input["warnings"]]
             self._record_llm_resolution(run.run_id, llm_config)
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
@@ -396,6 +397,11 @@ class AgentRunner:
             llm_metrics = metrics_recorder.complete(content, llm_result.usage)
             self.run_lifecycle.complete_step(calling_llm_step.step_id)
         except LLMConfigError as exc:
+            if resolving_model_step is not None:
+                self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=exc.code, error_message=exc.message)
+            failed_run = self.run_lifecycle.fail_run(run.run_id, exc.code, exc.message)
+            return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
+        except LLMContextError as exc:
             if resolving_model_step is not None:
                 self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=exc.code, error_message=exc.message)
             failed_run = self.run_lifecycle.fail_run(run.run_id, exc.code, exc.message)
@@ -1632,14 +1638,22 @@ class CommandRunner:
                 current_step="failed",
                 error=error,
             )
+            command_metadata = self._command_result_metadata(
+                command_name=command_name,
+                command=command,
+                output_type="text",
+                input_message_id=input_message_id,
+                success=False,
+            )
             message = self.message_store.add_message(
                 session_id=session_id,
-                role="command",
+                role="assistant",
                 content=error,
                 command_name=command_name,
                 run_id=failed_run.run_id,
                 output_type="text",
-                metadata={"success": False},
+                parent_message_id=input_message_id or None,
+                metadata=command_metadata,
             )
             self.event_bus.emit(
                 "run_failed",
@@ -1656,14 +1670,22 @@ class CommandRunner:
             return CommandResult(success=False, run_id=failed_run.run_id, error=error)
 
         done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
+        command_metadata = self._command_result_metadata(
+            command_name=command_name,
+            command=command,
+            output_type=output_type,
+            input_message_id=input_message_id,
+            success=True,
+        )
         message = self.message_store.add_message(
             session_id=session_id,
-            role="command",
+            role="assistant",
             content=data,
             command_name=command_name,
             run_id=done_run.run_id,
             output_type=output_type,
-            metadata={"success": True},
+            parent_message_id=input_message_id or None,
+            metadata=command_metadata,
         )
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
@@ -1673,6 +1695,25 @@ class CommandRunner:
             message_id=message.message_id,
         )
         return CommandResult(success=True, run_id=done_run.run_id, data=data, output_type=output_type)
+
+    def _command_result_metadata(self, command_name: str, command, output_type: str, input_message_id: str, success: bool) -> dict:
+        capability_name = command.capability_id
+        if self.capability_registry is not None:
+            try:
+                capability_name = self.capability_registry.get(command.capability_id).name or command.capability_id
+            except KeyError:
+                capability_name = command.capability_id
+        return {
+            "success": success,
+            "kind": "command_result",
+            "producer": "capability",
+            "command": command_name,
+            "capability_id": command.capability_id,
+            "capability_name": capability_name,
+            "output_type": output_type,
+            "source_user_message_id": input_message_id or None,
+            "parent_message_id": input_message_id or None,
+        }
 
     def _command_context(self, session_id: str, input_message_id: str, capability_id: str) -> dict:
         attachments = []

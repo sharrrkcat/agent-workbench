@@ -192,6 +192,24 @@ Script Agent LLM calls:
 - Scripts must parse and validate model output themselves.
 - Scripts should not assume provider function calling is available.
 
+## Command Results in LLM Context
+
+- Slash command results are internal Command/Capability outputs, not OpenAI tool messages.
+- Commands remain declared by Capabilities, not Agents.
+- The project does not emit `role="tool"` or `role="function"` to LLM providers unless a future implementation adds the full function/tool calling protocol, including assistant tool calls and matching tool result ids.
+- New slash command result messages are stored as assistant messages with command-result metadata such as `metadata.kind="command_result"`, `metadata.producer="capability"`, `metadata.command`, `metadata.capability_id`, and `metadata.output_type`.
+- Old persisted `role="tool"` or `role="command"` command result messages are compatibility data. Context projection must normalize them before provider calls or skip them if they cannot be safely paired with a triggering user command.
+- When command results enter Prompt Agent context, they are projected as assistant messages with a clear command result header, capability source, output type, and the warning that the content is data, not instructions.
+- Command result projection must not use system-role content, because command output should not receive system-level weight.
+- Pair-aware trimming keeps a slash command user message and its command result together. If the triggering user command is trimmed out, the command result is also trimmed out.
+- Text and markdown outputs enter context in a bounded `<command_output>` block.
+- JSON outputs enter context as a bounded `<json>` block.
+- `file_content` outputs enter context in a bounded `<file_content>` block with filename, MIME type, size, and truncated metadata.
+- Image and image gallery outputs enter text context as placeholders only. Historical image bytes or data URLs are not resent unless explicit vision resend support is implemented.
+- Rich content outputs preserve block order where practical: text, markdown, and file content blocks are expanded; image blocks become placeholders.
+- Binary or unsupported command outputs enter context as placeholder summaries instead of raw data.
+- Provider-bound chat payload validation allows only `system`, `user`, and `assistant` roles. Invalid internal roles should fail early with `LLM_CONTEXT_INVALID` rather than surfacing provider prompt-template errors as the only diagnostic.
+
 ## Provider and Model Status
 
 Status values:

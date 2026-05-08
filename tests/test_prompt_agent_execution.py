@@ -7,10 +7,12 @@ from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
+from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner, _extract_llm_result, _friendly_llm_error, _normalize_stream_chunk
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.settings import AppSettingsStore
@@ -189,6 +191,158 @@ def test_chat_agent_session_context_excludes_model_change_events() -> None:
 
     assert {"role": "system", "content": "Session model switched to My Qwen3"} not in sent
     assert sent[-1] == {"role": "user", "content": "new user"}
+
+
+def test_prompt_agent_after_slash_command_sends_only_chat_roles() -> None:
+    llm = FakeLLMRuntime(response="summary")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    command_user = fixture.messages.add_message(
+        session_id=session.session_id,
+        role="user",
+        content="/base64 hello",
+        metadata={"invocation": {"route_type": "command", "command_id": "/base64"}},
+    )
+
+    command_result = run(fixture.command_runner.run("/base64", "hello", session.session_id, input_message_id=command_user.message_id))
+    result = run(fixture.runtime.handle_input(session, "summarize above"))
+    sent = llm.calls[0]["messages"]
+
+    assert command_result.success is True
+    assert result.success is True
+    assert {message["role"] for message in sent} <= {"system", "user", "assistant"}
+    assert all(message["role"] not in {"tool", "function"} for message in sent)
+    projected = next(message for message in sent if "[Command result: /base64]" in str(message["content"]))
+    assert projected["role"] == "assistant"
+    assert "This content was produced by a local capability" in projected["content"]
+    assert "aGVsbG8=" in projected["content"]
+
+
+def test_legacy_tool_command_result_is_normalized_in_context() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="next"))
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    command_user = fixture.messages.add_message(session_id=session.session_id, role="user", content="/base64 hello")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="tool",
+        content="aGVsbG8=",
+        command_name="/base64",
+        output_type="text",
+        parent_message_id=command_user.message_id,
+        metadata={"kind": "command_result", "capability_id": "base64", "source_user_message_id": command_user.message_id},
+    )
+
+    run(fixture.runtime.handle_input(session, "summarize above"))
+    sent = fixture.llm.calls[0]["messages"]
+
+    assert {message["role"] for message in sent} <= {"system", "user", "assistant"}
+    assert any(message["role"] == "assistant" and "[Command result: /base64]" in message["content"] for message in sent)
+
+
+def test_command_result_output_types_project_as_bounded_assistant_data() -> None:
+    fixture = PromptRuntimeFixture()
+    session = fixture.sessions.create_session()
+    user = fixture.messages.add_message(session_id=session.session_id, role="user", content="/read-file notes.md")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content={"filename": "notes.md", "mime_type": "text/markdown", "size": 200, "content": "x" * 80, "truncated": False},
+        command_name="/read-file",
+        output_type="file_content",
+        parent_message_id=user.message_id,
+        metadata={"kind": "command_result", "capability_id": "file", "source_user_message_id": user.message_id},
+    )
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="/json")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content={"ok": True},
+        command_name="/json",
+        output_type="json",
+        metadata={"kind": "command_result", "capability_id": "demo"},
+    )
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="/fetch-image")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content={"url": PNG_DATA_URL, "alt": "sample"},
+        command_name="/fetch-image",
+        output_type="image",
+        metadata={"kind": "command_result", "capability_id": "http"},
+    )
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="/rich")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content={"blocks": [{"type": "markdown", "text": "# Title"}, {"type": "image", "url": PNG_DATA_URL, "alt": "plot"}, {"type": "file_content", "filename": "a.txt", "content": "body"}]},
+        command_name="/rich",
+        output_type="rich_content",
+        metadata={"kind": "command_result", "capability_id": "demo"},
+    )
+
+    context = ContextBuilder(fixture.messages).build(
+        session_id=session.session_id,
+        args="summarize",
+        policy=ContextPolicy(mode="session"),
+    )
+    text = "\n\n".join(str(message["content"]) for message in context.messages)
+
+    assert {message["role"] for message in context.messages} <= {"user", "assistant"}
+    assert '<file_content filename="notes.md" mime_type="text/markdown" size="200" truncated="false">' in text
+    assert '<json command="/json" truncated="false">' in text
+    assert "[Command result returned 1 image: sample. Image data is not resent in text context.]" in text
+    assert '<command_output type="markdown" truncated="false">' in text
+    assert "data:image/png;base64" not in text
+
+
+def test_file_content_command_result_is_truncated_by_context_limit() -> None:
+    fixture = PromptRuntimeFixture()
+    session = fixture.sessions.create_session()
+    user = fixture.messages.add_message(session_id=session.session_id, role="user", content="/read-file notes.md")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content={"filename": "notes.md", "mime_type": "text/markdown", "size": 200, "content": "x" * 80, "truncated": False},
+        command_name="/read-file",
+        output_type="file_content",
+        parent_message_id=user.message_id,
+        metadata={"kind": "command_result", "capability_id": "file", "source_user_message_id": user.message_id},
+    )
+
+    context = ContextBuilder(fixture.messages).build(
+        session_id=session.session_id,
+        args="summarize",
+        policy=ContextPolicy(mode="session", max_chars=50),
+    )
+    text = "\n\n".join(str(message["content"]) for message in context.messages)
+
+    assert '<file_content filename="notes.md" mime_type="text/markdown" size="200" truncated="true">' in text
+    assert "[Command result truncated for LLM context.]" in text
+
+
+def test_pair_aware_context_trimming_drops_orphan_command_result() -> None:
+    fixture = PromptRuntimeFixture()
+    session = fixture.sessions.create_session()
+    old_user = fixture.messages.add_message(session_id=session.session_id, role="user", content="/base64 hello")
+    fixture.messages.add_message(
+        session_id=session.session_id,
+        role="assistant",
+        content="aGVsbG8=",
+        command_name="/base64",
+        output_type="text",
+        parent_message_id=old_user.message_id,
+        metadata={"kind": "command_result", "source_user_message_id": old_user.message_id},
+    )
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="recent")
+
+    context = ContextBuilder(fixture.messages).build(
+        session_id=session.session_id,
+        args="next",
+        policy=ContextPolicy(mode="recent_messages", max_messages=2),
+    )
+
+    assert "[Command result: /base64]" not in "\n".join(str(message["content"]) for message in context.messages)
+    assert context.messages[-2:] == [{"role": "user", "content": "recent"}, {"role": "user", "content": "next"}]
 
 
 def test_translate_current_message_context_excludes_history() -> None:

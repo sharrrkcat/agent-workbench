@@ -279,8 +279,10 @@ def test_command_messages_persist_across_app_instances(tmp_path: Path) -> None:
     messages = second.get(f"/api/sessions/{session['session_id']}/messages").json()
     runs = second.get(f"/api/sessions/{session['session_id']}/runs").json()
 
-    assert [message["role"] for message in messages] == ["user", "command"]
+    assert [message["role"] for message in messages] == ["user", "assistant"]
     assert messages[-1]["content"] == "aGVsbG8="
+    assert messages[-1]["metadata"]["kind"] == "command_result"
+    assert messages[-1]["metadata"]["producer"] == "capability"
     assert runs[-1]["target_id"] == "/base64"
     assert runs[-1]["status"] == "DONE"
 

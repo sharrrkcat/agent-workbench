@@ -125,10 +125,12 @@ def test_base64_image_command_returns_image_output() -> None:
     assert result.output_type == "image"
     assert result.data["url"].startswith("data:image/svg+xml;base64,")
     assert set(result.data) == {"url", "alt", "title", "caption"}
-    assert messages[-1].role == "command"
+    assert messages[-1].role == "assistant"
     assert messages[-1].command_name == "/base64-image"
     assert messages[-1].output_type == "image"
     assert messages[-1].content == result.data
+    assert messages[-1].metadata["kind"] == "command_result"
+    assert messages[-1].metadata["producer"] == "capability"
 
 
 def test_base64_to_image_alias_returns_image_output() -> None:
@@ -243,11 +245,14 @@ def test_successful_command_writes_message_store() -> None:
     messages = fixture.messages.list_messages(session.session_id)
 
     assert len(messages) == 1
-    assert messages[0].role == "command"
+    assert messages[0].role == "assistant"
     assert messages[0].command_name == "/base64"
     assert messages[0].run_id == result.run_id
     assert messages[0].content == "aGVsbG8="
     assert messages[0].output_type == "text"
+    assert messages[0].metadata["kind"] == "command_result"
+    assert messages[0].metadata["producer"] == "capability"
+    assert messages[0].metadata["command"] == "/base64"
 
 
 def test_declared_image_output_validation_failure_fails_run() -> None:
