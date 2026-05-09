@@ -347,6 +347,39 @@ class CapabilityRuntime:
             images.append(item)
         return {"prompt_id": prompt_id, "images": images, "summary": {"image_count": len(images)}, "outputs": outputs}
 
+    def free_memory(self, unload_models: bool = True, free_memory: bool = True, context: dict | None = None) -> dict:
+        requested = {"unload_models": bool(unload_models), "free_memory": bool(free_memory)}
+        response = None
+        try:
+            response = self._client_for(context)._request("POST", "/free", json=requested)
+            if response.status_code >= 400:
+                raise ComfyUIError(
+                    "COMFYUI_BAD_RESPONSE",
+                    f"ComfyUI returned HTTP {response.status_code}.",
+                    {"status_code": response.status_code, "body": _safe_text(response)},
+                )
+            raw = {} if not response.content else response.json()
+            return {
+                "ok": True,
+                "requested": requested,
+                "status_code": response.status_code,
+                "response": raw,
+            }
+        except ComfyUIError as exc:
+            return {
+                "ok": False,
+                "requested": requested,
+                "status_code": exc.detail.get("status_code"),
+                "error": ComfyUIError("COMFYUI_FREE_MEMORY_FAILED", exc.message, exc.detail).to_dict(),
+            }
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "requested": requested,
+                "status_code": response.status_code if response is not None else None,
+                "error": ComfyUIError("COMFYUI_FREE_MEMORY_FAILED", "ComfyUI /free returned a non-JSON response.", {"error": str(exc)}).to_dict(),
+            }
+
     def interrupt(self, context: dict | None = None) -> dict:
         try:
             raw = self._client_for(context).post_json("/interrupt", {})

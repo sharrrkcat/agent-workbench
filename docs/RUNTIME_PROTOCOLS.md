@@ -88,7 +88,8 @@ Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
-- Generated image workflows may record compact recipe metadata under a domain key such as `comfyui_generation`; this metadata should include attachment ids and prompt/request ids, not full workflow JSON or large binary data.
+- Generated image workflows may record compact recipe metadata under a domain key such as `comfyui_generation`; this metadata should include attachment ids, prompt/request ids, image filtering counts, and output counts, not full workflow JSON or large binary data.
+- ComfyUI generation cleanup may record `comfyui_memory_release` with whether release was enabled, attempted, successful, requested flags, status code, and any structured error. ComfyUI memory release is separate from LLM provider unload; release failure is a cleanup/workflow warning and must not turn an already successful image generation into a failed run.
 - ComfyUI LLM prompt generation metadata may record `input_mode`, `llm_operation`, `llm_operation_requested`, `llm_operation_used`, `user_prompt`, and `positive_prompt` for the current request. Raw and run-only ComfyUI generation should not be labeled as `refine` or `fresh`.
 - Failures should set both run status and user-visible error metadata where applicable.
 - Cancellation sets `cancel_requested` before terminal cancellation when possible.
@@ -373,6 +374,7 @@ Attachment metadata:
 - User message metadata keeps attachment refs rather than full base64 payloads.
 - Script-generated attachments are stored in the same local attachment store and linked from assistant message metadata so orphan cleanup can track them.
 - Generated attachment metadata may record source integration details such as ComfyUI prompt id, preset id, and workflow file name.
+- ComfyUI generated image attachments should represent formal output images, such as SaveImage outputs. Temporary, preview, and input image refs are filtered before final `image_gallery` rendering.
 - Prompt Agent vision resolves images to data URLs only for supported profiles.
 - Unsupported image input becomes a text placeholder or warning instead of a vision payload.
 - File attachment context obeys per-file and per-message byte limits.

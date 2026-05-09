@@ -155,6 +155,8 @@ class FakeCapability:
 
     async def load_preset(self, preset_id=None, file_name=None):
         self.ctx.calls.append("load_preset")
+        if self.ctx.load_preset_result is not None:
+            return Result(self.ctx.load_preset_result)
         preset = OTHER_PRESET if preset_id == "other" else READY_PRESET
         return Result({"found": True, "preset": {"id": preset["preset_id"], "name": preset["name"], "status": preset["status"], "workflow": preset["workflow"], "parameters": preset["parameters"]}, "validation": preset})
 
@@ -179,6 +181,10 @@ class FakeCapability:
     async def fetch_image(self, **kwargs):
         self.ctx.calls.append(("fetch_image", kwargs))
         return Result({"filename": kwargs["filename"], "mime_type": "image/png", "data_base64": "ZmFrZQ=="})
+
+    async def free_memory(self, unload_models=True, free_memory=True):
+        self.ctx.calls.append(("free_memory", {"unload_models": unload_models, "free_memory": free_memory}))
+        return Result(self.ctx.free_memory_result)
 
     async def interrupt(self):
         self.ctx.calls.append("interrupt")
@@ -221,6 +227,8 @@ class FakeCtx:
         }
         self.statuses = []
         self.attachments = []
+        self.free_memory_result = {"ok": True, "requested": {"unload_models": True, "free_memory": True}, "status_code": 200, "response": {}}
+        self.load_preset_result = None
 
     def capability(self, name):
         assert name == "comfyui"
@@ -874,6 +882,165 @@ def test_generation_polls_fetches_saves_gallery_and_metadata(tmp_path: Path):
     assert "Save attachments" in labels
 
 
+def test_generation_filters_temp_and_input_images_from_gallery(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="raw", text="cat")
+    ctx.statuses = [
+        {
+            "prompt_id": "prompt-1",
+            "status": "completed",
+            "completed": True,
+            "failed": False,
+            "outputs": {
+                "images": [
+                    {"filename": "ComfyUI_temp_abc_00001_.png", "type": "temp", "subfolder": ""},
+                    {"filename": "input.png", "type": "input", "subfolder": ""},
+                    {"filename": "ComfyUI_temp_fallback_00002_.png", "type": "output", "subfolder": ""},
+                    {"filename": "out.png", "type": "output", "subfolder": ""},
+                ]
+            },
+        }
+    ]
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+
+    run(comfy_agent.run(ctx))
+
+    fetch_calls = [call for call in ctx.calls if isinstance(call, tuple) and call[0] == "fetch_image"]
+    assert [call[1]["filename"] for call in fetch_calls] == ["out.png"]
+    assert ctx.replies[-1][0] == "image_gallery"
+    assert len(ctx.replies[-1][1]) == 1
+    metadata = ctx.run_store.metadata["comfyui_generation"]
+    assert metadata["output_attachment_ids"] == ["att-0"]
+    assert metadata["output_image_count"] == 1
+    assert metadata["ignored_temp_image_count"] == 2
+    assert metadata["ignored_input_image_count"] == 1
+    assert metadata["image_filter"] == "output_only"
+    assert ctx.attachments[0]["metadata"]["comfyui_image_type"] == "output"
+    assert ctx.attachments[0]["metadata"]["source"] == "comfyui"
+    assert ctx.attachments[0]["metadata"]["prompt_id"] == "prompt-1"
+    assert ctx.attachments[0]["metadata"]["preset_id"] == "txt2img_basic"
+    assert ctx.attachments[0]["metadata"]["workflow_file_name"] == "txt2img.workflow.json"
+
+
+def test_generation_only_temp_images_fails_without_saving_gallery(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="raw", text="cat")
+    ctx.statuses = [
+        {
+            "prompt_id": "prompt-1",
+            "status": "completed",
+            "completed": True,
+            "failed": False,
+            "outputs": {"images": [{"filename": "ComfyUI_temp_abc_00001_.png", "type": "temp", "subfolder": ""}]},
+        }
+    ]
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        run(comfy_agent.run(ctx))
+
+    assert exc.value.code == "COMFYUI_ONLY_TEMP_IMAGES"
+    assert "SaveImage" in exc.value.message
+    assert ctx.attachments == []
+    assert all(reply[0] != "image_gallery" for reply in ctx.replies)
+    assert ctx.run_store.metadata["comfyui_generation"]["ignored_temp_image_count"] == 1
+
+
+def test_generation_missing_image_type_treats_as_output_with_warning(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="raw", text="cat")
+    ctx.statuses = [
+        {
+            "prompt_id": "prompt-1",
+            "status": "completed",
+            "completed": True,
+            "failed": False,
+            "outputs": {"images": [{"filename": "legacy.png", "subfolder": ""}]},
+        }
+    ]
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+
+    run(comfy_agent.run(ctx))
+
+    metadata = ctx.run_store.metadata["comfyui_generation"]
+    assert metadata["output_image_count"] == 1
+    assert "image_filter_warnings" in metadata
+    assert ctx.attachments[0]["metadata"]["comfyui_image_type"] == "output"
+
+
+def test_free_comfyui_memory_after_generation_runs_after_saving_and_is_best_effort(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="raw", text="cat", config={"free_comfyui_memory_after_generation": True})
+    ctx.free_memory_result = {
+        "ok": False,
+        "requested": {"unload_models": True, "free_memory": True},
+        "status_code": 404,
+        "error": {"code": "COMFYUI_FREE_MEMORY_FAILED", "message": "unsupported"},
+    }
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+
+    run(comfy_agent.run(ctx))
+
+    save_index = next(index for index, call in enumerate(ctx.calls) if isinstance(call, tuple) and call[0] == "fetch_image")
+    free_index = next(index for index, call in enumerate(ctx.calls) if isinstance(call, tuple) and call[0] == "free_memory")
+    assert free_index > save_index
+    assert ctx.replies[-1][0] == "image_gallery"
+    release = ctx.run_store.metadata["comfyui_memory_release"]
+    assert release["enabled"] is True
+    assert release["attempted"] is True
+    assert release["success"] is False
+    assert release["status_code"] == 404
+    labels = [step.label for step in ctx.run.steps]
+    assert "Free ComfyUI memory" in labels
+
+
+def test_free_comfyui_memory_not_called_for_prompt_inspection_or_validation_failure(tmp_path: Path):
+    inspect_ctx = FakeCtx(tmp_path, action_id="llm", text="cat", config={"auto_run_after_llm_prompt": False, "free_comfyui_memory_after_generation": True})
+    inspect_ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+
+    run(comfy_agent.run(inspect_ctx))
+
+    assert not any(isinstance(call, tuple) and call[0] == "free_memory" for call in inspect_ctx.calls)
+
+    invalid_ctx = FakeCtx(tmp_path, action_id="raw", text="cat", config={"free_comfyui_memory_after_generation": True})
+    invalid_ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+    invalid_ctx.load_preset_result = {
+        "found": True,
+        "preset": {"id": READY_PRESET["preset_id"], "name": READY_PRESET["name"], "status": READY_PRESET["status"], "workflow": READY_PRESET["workflow"], "parameters": READY_PRESET["parameters"]},
+        "validation": {**READY_PRESET, "valid": False, "errors": ["bad"]},
+    }
+
+    with pytest.raises(comfy_agent.ComfyAgentError):
+        run(comfy_agent.run(invalid_ctx))
+
+    assert not any(isinstance(call, tuple) and call[0] == "free_memory" for call in invalid_ctx.calls)
+
+
+def test_free_comfyui_memory_called_after_submitted_failure_but_not_timeout(tmp_path: Path):
+    failed = FakeCtx(tmp_path, action_id="raw", text="cat", config={"free_comfyui_memory_after_generation": True})
+    failed.statuses = [{"prompt_id": "prompt-1", "status": "failed", "completed": False, "failed": True, "error": {"message": "node failed"}, "outputs": {"images": []}}]
+    failed.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+    with pytest.raises(comfy_agent.ComfyAgentError):
+        run(comfy_agent.run(failed))
+    assert any(isinstance(call, tuple) and call[0] == "free_memory" for call in failed.calls)
+
+    timeout = FakeCtx(tmp_path, action_id="raw", text="cat", config={"free_comfyui_memory_after_generation": True})
+    timeout.scan["config"] = {"poll_interval_seconds": 0, "max_wait_seconds": 0.001}
+    timeout.statuses = [{"prompt_id": "prompt-1", "status": "running", "completed": False, "failed": False, "outputs": {"images": []}} for _ in range(100000)]
+    timeout.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        run(comfy_agent.run(timeout))
+    assert exc.value.code == "COMFYUI_TIMEOUT"
+    assert not any(isinstance(call, tuple) and call[0] == "free_memory" for call in timeout.calls)
+
+
+def test_llm_unload_and_comfyui_free_memory_order(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="llm", text="cat", config={"free_comfyui_memory_after_generation": True})
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+
+    run(comfy_agent.run(ctx))
+
+    labels = [step.label for step in ctx.run.steps]
+    assert labels.index("Unload prompt LLM") < labels.index("Submit workflow to ComfyUI")
+    assert labels.index("Save attachments") < labels.index("Free ComfyUI memory")
+
+
 def test_generation_failed_timeout_no_output_and_cancel_paths(tmp_path: Path):
     failed = FakeCtx(tmp_path, action_id="raw", text="cat")
     failed.statuses = [{"prompt_id": "prompt-1", "status": "failed", "completed": False, "failed": True, "error": {"message": "node failed"}, "outputs": {"images": []}}]
@@ -944,6 +1111,8 @@ def test_comfyui_manifest_declares_llm_operation_config_and_actions():
     assert {"fresh", "refine"}.issubset(actions)
     assert schema["llm_operation_default"]["default"] == "refine"
     assert schema["llm_operation_default"]["options"] == ["refine", "fresh"]
+    assert schema["free_comfyui_memory_after_generation"]["default"] is False
+    assert schema["free_comfyui_memory_after_generation"]["type"] == "boolean"
     for key in [
         "llm_refine_system_prompt",
         "llm_refine_user_template",

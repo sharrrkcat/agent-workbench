@@ -205,8 +205,8 @@ Examples:
 
 ComfyUI:
 
-- `capabilities/comfyui`: submit workflow, poll status, fetch images, cancel.
-- `agents/comfyui_agent`: fill workflow, show progress, save outputs, return image gallery.
+- `capabilities/comfyui`: submit workflow, poll status, fetch images, cancel, and request `POST /free`.
+- `agents/comfyui_agent`: fill workflow, show progress, save output images, optionally request memory release after generation, and return image gallery.
 
 ComfyUI workflow library foundation:
 
@@ -216,7 +216,7 @@ ComfyUI workflow library foundation:
 - A session recipe is a per-session, per-agent runtime copy of a preset plus user-edited values.
 - Editing a session recipe must not rewrite the preset file.
 - Generation requests are built as `workflow file -> preset -> session recipe -> filled workflow request`.
-- Long-running generation submits the filled workflow, polls status, fetches output images, saves local attachments, and renders an attachment-backed image gallery.
+- Long-running generation submits the filled workflow, polls status, fetches formal output images, filters temporary/preview images, saves local attachments, optionally requests ComfyUI memory release as best-effort cleanup, and renders an attachment-backed image gallery.
 - Forms edit only the current session recipe. They do not edit preset files, choose input mode, collect the LLM user request, or submit generation.
 - Form submit saves only the session recipe; generation actions are `default`, `raw`, `llm`, `fresh`, `refine`, and `run`.
 - LLM mode may either auto-run after saving the generated positive prompt or stop for user inspection depending on the ComfyUI AgentConfig.
@@ -302,6 +302,7 @@ ComfyUI AgentConfig:
 - refine/fresh prompt enhancer templates.
 - Whether LLM prompt enhancement auto-runs generation.
 - Seed policy.
+- Whether to request ComfyUI model unload and execution memory release after generation.
 
 Obsidian CapabilityConfig:
 
@@ -398,7 +399,7 @@ Rules:
 
 Examples:
 
-- ComfyUI mapping: prepare recipe, validate preset, fill workflow, optionally enhance prompt with an internal LLM call, submit workflow, poll status, fetch output, save attachments, render result.
+- ComfyUI mapping: prepare recipe, validate preset, fill workflow, optionally enhance prompt with an internal LLM call, submit workflow, poll status, fetch output images, save attachments, optionally request ComfyUI memory release, render result.
 - Obsidian wiki mapping: scan candidate notes, extract concepts, build links, preview changes, write notes, render summary.
 
 ## LLM Usage Patterns

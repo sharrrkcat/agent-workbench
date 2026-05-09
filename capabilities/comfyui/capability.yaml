@@ -188,6 +188,18 @@ methods:
     output:
       type: json
 
+  - id: free_memory
+    description: Request ComfyUI to unload models and/or free execution memory.
+    input_schema:
+      unload_models:
+        type: boolean
+        default: true
+      free_memory:
+        type: boolean
+        default: true
+    output:
+      type: json
+
   - id: interrupt
     description: Best-effort ComfyUI interrupt request.
     input_schema: {}

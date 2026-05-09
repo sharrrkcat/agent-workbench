@@ -139,6 +139,11 @@ config_schema:
     label: Unload LLM before generation
     default: true
     description: Unload the prompt enhancer model before ComfyUI execution when possible.
+  - name: free_comfyui_memory_after_generation
+    type: boolean
+    label: Free ComfyUI memory after generation
+    default: false
+    description: After a submitted ComfyUI generation finishes, request ComfyUI to unload models and free execution memory. This can reduce VRAM usage for local LLMs, but the next ComfyUI generation may be slower because models must reload.
 
 context_policy:
   mode: current_message

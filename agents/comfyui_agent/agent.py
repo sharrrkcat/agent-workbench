@@ -172,6 +172,7 @@ async def execute_generation(ctx, recipe: dict | None = None, mode_source: str =
         message = "Unload requested." if unload.get("ok") else f"Unload warning: {unload.get('error') or unload.get('message') or 'unsupported'}"
         _complete_step(ctx, step, message)
 
+    prompt_id = ""
     step = _start_step(ctx, "Submit workflow to ComfyUI", "Submitting workflow.")
     submitted = await call_comfy(ctx, "submit_workflow", workflow=workflow)
     if not submitted.get("accepted"):
@@ -181,37 +182,57 @@ async def execute_generation(ctx, recipe: dict | None = None, mode_source: str =
     prompt_id = submitted.get("prompt_id") or ""
     _complete_step(ctx, step, f"Submitted prompt `{prompt_id}`.")
 
-    status = await poll_prompt_status(ctx, prompt_id, scan)
-    images = collect_status_images(status)
-    if not images:
-        raise ComfyAgentError("COMFYUI_OUTPUT_NOT_FOUND", "ComfyUI completed but returned no image outputs.", {"prompt_id": prompt_id, "status": status})
+    try:
+        status = await poll_prompt_status(ctx, prompt_id, scan)
+        image_filter = filter_output_images(collect_status_images(status))
+        images = image_filter["images"]
+        step = _start_step(ctx, "Fetch output images", f"Fetching {len(images)} output image(s).")
+        if not images:
+            filter_metadata = image_filter_metadata(prompt_id, image_filter)
+            _record_run_metadata(ctx, filter_metadata)
+            code = "COMFYUI_ONLY_TEMP_IMAGES" if image_filter["ignored_temp_image_count"] else "COMFYUI_OUTPUT_NOT_FOUND"
+            message = (
+                "ComfyUI returned only temporary images. Add or verify a SaveImage output node in the workflow."
+                if code == "COMFYUI_ONLY_TEMP_IMAGES"
+                else "ComfyUI completed but returned no output images."
+            )
+            _fail_step(ctx, step, code, message)
+            raise ComfyAgentError(code, message, {"prompt_id": prompt_id, "status": status, "image_filter": filter_metadata})
 
-    step = _start_step(ctx, "Fetch output images", f"Fetching {len(images)} image output(s).")
-    fetched = []
-    for image in images:
-        fetched.append(await call_comfy(ctx, "fetch_image", filename=image["filename"], subfolder=image.get("subfolder", ""), type=image.get("type", "output"), as_base64=True))
-    _complete_step(ctx, step, f"Fetched {len(fetched)} image output(s).")
+        fetched = []
+        for image in images:
+            fetched.append(await call_comfy(ctx, "fetch_image", filename=image["filename"], subfolder=image.get("subfolder", ""), type=image.get("type", "output"), as_base64=True))
+        _complete_step(ctx, step, f"Fetched {len(fetched)} output image(s).")
 
-    step = _start_step(ctx, "Save attachments", "Saving generated images locally.")
-    attachments = []
-    for source, payload in zip(images, fetched):
-        attachments.append(await save_image_attachment(ctx, payload, source, recipe, prompt_id))
-    _complete_step(ctx, step, f"Saved {len(attachments)} local attachment(s).")
+        step = _start_step(ctx, "Save attachments", "Saving generated images locally.")
+        attachments = []
+        for source, payload in zip(images, fetched):
+            attachments.append(await save_image_attachment(ctx, payload, source, recipe, prompt_id))
+        _complete_step(ctx, step, f"Saved {len(attachments)} local attachment(s).")
 
-    metadata = generation_metadata(recipe, preset_data, prompt_id, attachments, llm_operation=llm_operation if action_mode == "llm" else None)
-    _record_run_metadata(ctx, metadata)
-    gallery = [
-        {
-            "url": attachment["url"],
-            "alt": f"ComfyUI image from {recipe.get('preset_id')}",
-            "title": attachment.get("name") or "ComfyUI output",
-        }
-        for attachment in attachments
-    ]
-    step = _start_step(ctx, "Render result", "Rendering image gallery.")
-    await _reply_images(ctx, gallery, metadata={"comfyui_generation": metadata})
-    _complete_step(ctx, step, "Image gallery rendered.")
-    return metadata
+        metadata = generation_metadata(recipe, preset_data, prompt_id, attachments, image_filter=image_filter, llm_operation=llm_operation if action_mode == "llm" else None)
+        _record_run_metadata(ctx, metadata)
+        memory_release = await _maybe_free_comfyui_memory(ctx)
+        if memory_release is not None:
+            _record_run_metadata_key(ctx, "comfyui_memory_release", memory_release)
+        gallery = [
+            {
+                "url": attachment["url"],
+                "alt": f"ComfyUI image from {recipe.get('preset_id')}",
+                "title": attachment.get("name") or "ComfyUI output",
+            }
+            for attachment in attachments
+        ]
+        step = _start_step(ctx, "Render result", "Rendering image gallery.")
+        await _reply_images(ctx, gallery, metadata={"comfyui_generation": metadata})
+        _complete_step(ctx, step, "Image gallery rendered.")
+        return metadata
+    except ComfyAgentError as exc:
+        if prompt_id and exc.code != "COMFYUI_TIMEOUT":
+            memory_release = await _maybe_free_comfyui_memory(ctx)
+            if memory_release is not None:
+                _record_run_metadata_key(ctx, "comfyui_memory_release", memory_release)
+        raise
 
 
 async def poll_prompt_status(ctx, prompt_id: str, scan: dict) -> dict:
@@ -369,6 +390,7 @@ async def save_image_attachment(ctx, payload: dict, image_ref: dict, recipe: dic
         "prompt_id": prompt_id,
         "preset_id": recipe.get("preset_id"),
         "workflow_file_name": recipe.get("workflow_file_name"),
+        "comfyui_image_type": image_ref.get("type") or "output",
         "comfyui_image": {key: image_ref.get(key) for key in ("filename", "subfolder", "type", "node_id", "node_label") if image_ref.get(key) is not None},
     }
     if payload.get("data_base64"):
@@ -706,8 +728,9 @@ def prompt_saved_metadata(recipe: dict, preset: dict, llm_operation: str, positi
     }
 
 
-def generation_metadata(recipe: dict, preset: dict, prompt_id: str, attachments: list[dict], llm_operation: str | None = None) -> dict:
+def generation_metadata(recipe: dict, preset: dict, prompt_id: str, attachments: list[dict], image_filter: dict | None = None, llm_operation: str | None = None) -> dict:
     values = copy.deepcopy(recipe.get("values") or {})
+    image_filter = image_filter or {}
     metadata = {
         "kind": "comfyui_generation",
         "preset_id": recipe.get("preset_id") or "",
@@ -721,8 +744,15 @@ def generation_metadata(recipe: dict, preset: dict, prompt_id: str, attachments:
         "negative_prompt": values.get("negative_prompt") or "",
         "values": values,
         "output_attachment_ids": [attachment.get("id") for attachment in attachments if attachment.get("id")],
+        "output_image_count": image_filter.get("output_image_count", len(attachments)),
+        "ignored_temp_image_count": image_filter.get("ignored_temp_image_count", 0),
+        "ignored_input_image_count": image_filter.get("ignored_input_image_count", 0),
+        "ignored_preview_image_count": image_filter.get("ignored_preview_image_count", 0),
+        "image_filter": "output_only",
         "created_at": _now(),
     }
+    if image_filter.get("warnings"):
+        metadata["image_filter_warnings"] = image_filter["warnings"]
     if llm_operation:
         operation = _resolve_llm_operation_value(llm_operation, default=None)
         metadata.update(
@@ -738,6 +768,62 @@ def generation_metadata(recipe: dict, preset: dict, prompt_id: str, attachments:
 def collect_status_images(status: dict) -> list[dict]:
     outputs = status.get("outputs") if isinstance(status.get("outputs"), dict) else {}
     return [image for image in outputs.get("images") or [] if image.get("filename")]
+
+
+def filter_output_images(images: list[dict]) -> dict:
+    kept: list[dict] = []
+    ignored_temp = 0
+    ignored_input = 0
+    ignored_preview = 0
+    warnings: list[str] = []
+    for image in images:
+        image_type = image.get("type")
+        filename = str(image.get("filename") or "")
+        normalized_type = str(image_type).strip().lower() if image_type is not None else ""
+        if filename.startswith("ComfyUI_temp_"):
+            ignored_temp += 1
+            continue
+        if normalized_type == "output":
+            kept.append(image)
+            continue
+        if normalized_type == "temp":
+            ignored_temp += 1
+            continue
+        if normalized_type == "input":
+            ignored_input += 1
+            continue
+        if normalized_type == "preview":
+            ignored_preview += 1
+            continue
+        if not normalized_type:
+            warnings.append(f"Image type missing for {filename}; treating as output.")
+            kept.append({**image, "type": "output"})
+            continue
+        ignored_preview += 1
+        warnings.append(f"Ignored unsupported ComfyUI image type `{normalized_type}` for {filename}.")
+    return {
+        "images": kept,
+        "total_image_count": len(images),
+        "output_image_count": len(kept),
+        "ignored_temp_image_count": ignored_temp,
+        "ignored_input_image_count": ignored_input,
+        "ignored_preview_image_count": ignored_preview,
+        "warnings": warnings,
+        "image_filter": "output_only",
+    }
+
+
+def image_filter_metadata(prompt_id: str, image_filter: dict) -> dict:
+    return {
+        "kind": "comfyui_generation",
+        "prompt_id": prompt_id,
+        "output_image_count": image_filter.get("output_image_count", 0),
+        "ignored_temp_image_count": image_filter.get("ignored_temp_image_count", 0),
+        "ignored_input_image_count": image_filter.get("ignored_input_image_count", 0),
+        "ignored_preview_image_count": image_filter.get("ignored_preview_image_count", 0),
+        "image_filter": "output_only",
+        "image_filter_warnings": image_filter.get("warnings") or [],
+    }
 
 
 def _generation_input_mode(recipe: dict, mode_source: str) -> str:
@@ -1116,6 +1202,33 @@ async def _unload_llm(ctx) -> dict:
     return getattr(result, "data", None) or {"ok": bool(getattr(result, "success", False)), "error": getattr(result, "error", "")}
 
 
+async def _maybe_free_comfyui_memory(ctx) -> dict | None:
+    if not bool(ctx.config.get("free_comfyui_memory_after_generation", False)):
+        return None
+    step = _start_step(ctx, "Free ComfyUI memory", "Requesting ComfyUI memory release.")
+    requested = {"unload_models": True, "free_memory": True}
+    try:
+        result = await ctx.capability("comfyui").free_memory(**requested)
+        data = result.data or {} if getattr(result, "success", False) else {}
+        if not getattr(result, "success", False):
+            data = {"ok": False, "error": {"code": "COMFYUI_FREE_MEMORY_FAILED", "message": result.error or "ComfyUI memory release failed."}}
+    except Exception as exc:
+        data = {"ok": False, "error": {"code": "COMFYUI_FREE_MEMORY_FAILED", "message": str(exc) or exc.__class__.__name__}}
+    metadata = {
+        "enabled": True,
+        "attempted": True,
+        "success": bool(data.get("ok")),
+        "requested": data.get("requested") or requested,
+        "status_code": data.get("status_code"),
+        "error": data.get("error"),
+    }
+    if metadata["success"]:
+        _complete_step(ctx, step, "ComfyUI memory release requested.")
+    else:
+        _fail_step(ctx, step, "COMFYUI_FREE_MEMORY_FAILED", "Failed to release ComfyUI memory; generation result preserved.")
+    return metadata
+
+
 async def _reply_images(ctx, gallery: list[dict], metadata: dict) -> None:
     try:
         await ctx.reply_images(gallery, metadata=metadata)
@@ -1124,10 +1237,14 @@ async def _reply_images(ctx, gallery: list[dict], metadata: dict) -> None:
 
 
 def _record_run_metadata(ctx, metadata: dict) -> None:
+    _record_run_metadata_key(ctx, "comfyui_generation", metadata)
+
+
+def _record_run_metadata_key(ctx, key: str, value: dict) -> None:
     try:
         run = ctx.run_store.get_run(ctx.run_id)
         next_metadata = dict(run.metadata or {})
-        next_metadata["comfyui_generation"] = metadata
+        next_metadata[key] = value
         ctx.run_store.update_metadata(ctx.run_id, next_metadata)
     except Exception:
         return

@@ -350,6 +350,50 @@ def test_interrupt_success_and_failure_are_structured() -> None:
     assert failed["error"]["code"] == "COMFYUI_INTERRUPT_FAILED"
 
 
+def test_free_memory_posts_default_payload_and_accepts_empty_success() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = request.read()
+        return httpx.Response(200, content=b"", request=request)
+
+    result = runtime_with(handler).free_memory()
+
+    assert seen["path"] == "/free"
+    assert b'"unload_models":true' in seen["body"].replace(b" ", b"")
+    assert b'"free_memory":true' in seen["body"].replace(b" ", b"")
+    assert result["ok"] is True
+    assert result["requested"] == {"unload_models": True, "free_memory": True}
+    assert result["status_code"] == 200
+    assert result["response"] == {}
+
+
+def test_free_memory_allows_independent_flags() -> None:
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.read())
+        return httpx.Response(200, json={"freed": True}, request=request)
+
+    runtime = runtime_with(handler)
+    unload_only = runtime.free_memory(free_memory=False)
+    free_only = runtime.free_memory(unload_models=False)
+
+    assert b'"free_memory":false' in seen[0].replace(b" ", b"")
+    assert unload_only["requested"] == {"unload_models": True, "free_memory": False}
+    assert b'"unload_models":false' in seen[1].replace(b" ", b"")
+    assert free_only["requested"] == {"unload_models": False, "free_memory": True}
+
+
+def test_free_memory_failure_is_structured() -> None:
+    failed = runtime_with(lambda request: httpx.Response(404, text="missing", request=request)).free_memory()
+
+    assert failed["ok"] is False
+    assert failed["status_code"] == 404
+    assert failed["error"]["code"] == "COMFYUI_FREE_MEMORY_FAILED"
+
+
 def test_upload_image_builds_multipart_request() -> None:
     seen = {}
 
@@ -373,8 +417,10 @@ def test_upload_image_builds_multipart_request() -> None:
 def test_upload_image_manifest_declares_runtime_public_fields() -> None:
     manifest = yaml.safe_load((Path(__file__).resolve().parents[1] / "capabilities" / "comfyui" / "capability.yaml").read_text())
     upload = next(method for method in manifest["methods"] if method["id"] == "upload_image")
+    free = next(method for method in manifest["methods"] if method["id"] == "free_memory")
 
     assert set(upload["input_schema"]) == {"filename", "data_base64", "overwrite", "type", "subfolder"}
+    assert set(free["input_schema"]) == {"unload_models", "free_memory"}
 
 
 def test_comfyui_error_to_dict_stays_stable() -> None:
