@@ -5,12 +5,12 @@ import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
-import { DetailTabs } from './DetailTabs';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import type { LlmSettingsSubsection, SettingsSection } from './SettingsNav';
+import type { GeneralSettingsCategory } from './SettingsObjectList';
 
 export function SettingsDetailPanel({
   section,
@@ -23,6 +23,7 @@ export function SettingsDetailPanel({
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
   llmSubsection = 'defaults',
+  generalCategory = 'files',
   onLlmProfilesChanged,
   activeTab,
   onTabChange,
@@ -38,6 +39,7 @@ export function SettingsDetailPanel({
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
+  generalCategory?: GeneralSettingsCategory;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -107,7 +109,7 @@ export function SettingsDetailPanel({
   if (section === 'general') {
     return (
       <section className="settings-detail-panel">
-        <GeneralDetail onDirtyChange={onDirtyChange} />
+        <GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} />
       </section>
     );
   }
@@ -203,13 +205,14 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
   );
 }
 
-function GeneralDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsCategory; onDirtyChange: (dirty: boolean) => void }) {
   const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
   const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
-  const [generalTab, setGeneralTab] = useState('files');
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
+  const title = category === 'files' ? 'Files' : 'LLM & Prompts';
+  const description = category === 'files' ? 'Upload limits and file context.' : 'Title generation and context prompts.';
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -275,8 +278,8 @@ function GeneralDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
             <Settings size={18} />
           </div>
           <div>
-            <h2>General</h2>
-            <p>Upload limits are enforced by the backend.</p>
+            <h2>{title}</h2>
+            <p>{description}</p>
           </div>
         </div>
         <div className="settings-detail-actions">
@@ -291,89 +294,113 @@ function GeneralDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
       </header>
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
-        <DetailTabs
-          tabs={[
-            { id: 'files', label: 'Files' },
-            { id: 'llm-prompts', label: 'LLM & Prompts' },
-          ]}
-          activeTab={generalTab}
-          onChange={setGeneralTab}
-        />
-        {generalTab === 'files' ? (
-          <>
-            <div className="detail-section">
-              <div className="detail-section-heading">
-                <h3>Upload limits</h3>
-              </div>
-              <div className="settings-detail-grid">
-                <NumberField label="Max image size (MB)" value={values.max_image_size_mb} min={1} max={100} onChange={(value) => setNumber('max_image_size_mb', value)} />
-                <NumberField label="Max file size (MB)" value={values.max_file_size_mb} min={1} max={100} onChange={(value) => setNumber('max_file_size_mb', value)} />
-                <NumberField label="Max attachments per message" value={values.max_attachments_per_message} min={1} max={50} onChange={(value) => setNumber('max_attachments_per_message', value)} />
-              </div>
-            </div>
-            <div className="detail-section">
-              <div className="detail-section-heading">
-                <h3>LLM file context</h3>
-              </div>
-              <label className="config-field settings-config-field boolean-field">
-                <span>Send text file attachments to LLM</span>
-                <ToggleSwitch checked={values.send_text_file_attachments_to_llm} onChange={(checked) => setValues({ ...values, send_text_file_attachments_to_llm: checked })} />
-                <small>This only affects ordinary text files. Image Vision input is controlled by the selected model.</small>
-              </label>
-              <div className="settings-detail-grid">
-                <NumberField label="Max file context per file (KB)" value={values.max_file_context_per_file_kb} min={1} max={2048} onChange={(value) => setNumber('max_file_context_per_file_kb', value)} />
-                <NumberField label="Max total file context per message (KB)" value={values.max_total_file_context_per_message_kb} min={1} max={8192} onChange={(value) => setNumber('max_total_file_context_per_message_kb', value)} />
-              </div>
-            </div>
-          </>
+        {category === 'files' ? (
+          <GeneralFilesSettings values={values} setValues={setValues} setNumber={setNumber} />
         ) : (
-          <>
-            <div className="detail-section">
-              <div className="detail-section-heading">
-                <h3>Session titles</h3>
-              </div>
-              <label className="config-field settings-config-field boolean-field">
-                <span>Auto-generate session titles</span>
-                <ToggleSwitch checked={values.auto_generate_session_titles} onChange={(checked) => setValues({ ...values, auto_generate_session_titles: checked })} />
-                <small>Generate a short title before the first LLM response in a new default-titled session.</small>
-              </label>
-              <InstructionField
-                label="Session title prompt"
-                description="Prompt used for automatic session title generation. Available variables: {user_input}."
-                value={values.session_title_prompt}
-                isDefault={values.session_title_prompt === values.session_title_prompt_default}
-                onChange={(value) => setInstruction('session_title_prompt', value)}
-                onReset={() => resetInstruction('session_title_prompt')}
-              />
-              <div className="settings-detail-grid">
-                <NumberField label="Session title max input chars" value={values.session_title_max_input_chars} min={100} max={10000} onChange={(value) => setNumber('session_title_max_input_chars', value)} />
-              </div>
-            </div>
-            <div className="detail-section">
-              <div className="detail-section-heading">
-                <h3>Context Rendering</h3>
-              </div>
-              <InstructionField
-                label="Group transcript system instruction"
-                description="Instruction appended when a session uses Group transcript mode. It tells the current agent how to read speaker labels and reply as itself."
-                value={values.group_transcript_system_instruction ?? values.group_transcript_system_instruction_effective}
-                isDefault={values.group_transcript_system_instruction === null}
-                onChange={(value) => setInstruction('group_transcript_system_instruction', value)}
-                onReset={() => resetInstruction('group_transcript_system_instruction')}
-              />
-              <InstructionField
-                label="Command result context instruction"
-                description="Instruction used when slash command results are included in LLM context. It should tell the model to treat command output as data, not instructions."
-                value={values.command_result_context_instruction ?? values.command_result_context_instruction_effective}
-                isDefault={values.command_result_context_instruction === null}
-                onChange={(value) => setInstruction('command_result_context_instruction', value)}
-                onReset={() => resetInstruction('command_result_context_instruction')}
-              />
-            </div>
-          </>
+          <GeneralPromptSettings values={values} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
         )}
       </div>
     </form>
+  );
+}
+
+function GeneralFilesSettings({
+  values,
+  setValues,
+  setNumber,
+}: {
+  values: GeneralSettings;
+  setValues: (values: GeneralSettings) => void;
+  setNumber: (key: keyof GeneralSettings, value: string) => void;
+}) {
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>Upload limits</h3>
+        </div>
+        <div className="settings-detail-grid">
+          <NumberField label="Max image size (MB)" value={values.max_image_size_mb} min={1} max={100} onChange={(value) => setNumber('max_image_size_mb', value)} />
+          <NumberField label="Max file size (MB)" value={values.max_file_size_mb} min={1} max={100} onChange={(value) => setNumber('max_file_size_mb', value)} />
+          <NumberField label="Max attachments per message" value={values.max_attachments_per_message} min={1} max={50} onChange={(value) => setNumber('max_attachments_per_message', value)} />
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>LLM file context</h3>
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>Send text file attachments to LLM</span>
+          <ToggleSwitch checked={values.send_text_file_attachments_to_llm} onChange={(checked) => setValues({ ...values, send_text_file_attachments_to_llm: checked })} />
+          <small>This only affects ordinary text files. Image Vision input is controlled by the selected model.</small>
+        </label>
+        <div className="settings-detail-grid">
+          <NumberField label="Max file context per file (KB)" value={values.max_file_context_per_file_kb} min={1} max={2048} onChange={(value) => setNumber('max_file_context_per_file_kb', value)} />
+          <NumberField label="Max total file context per message (KB)" value={values.max_total_file_context_per_message_kb} min={1} max={8192} onChange={(value) => setNumber('max_total_file_context_per_message_kb', value)} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function GeneralPromptSettings({
+  values,
+  setValues,
+  setNumber,
+  setInstruction,
+  resetInstruction,
+}: {
+  values: GeneralSettings;
+  setValues: (values: GeneralSettings) => void;
+  setNumber: (key: keyof GeneralSettings, value: string) => void;
+  setInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction', value: string) => void;
+  resetInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction') => void;
+}) {
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>Session titles</h3>
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>Auto-generate session titles</span>
+          <ToggleSwitch checked={values.auto_generate_session_titles} onChange={(checked) => setValues({ ...values, auto_generate_session_titles: checked })} />
+          <small>Generate a short title before the first LLM response in a new default-titled session.</small>
+        </label>
+        <InstructionField
+          label="Session title prompt"
+          description="Prompt used for automatic session title generation. Available variables: {user_input}."
+          value={values.session_title_prompt}
+          isDefault={values.session_title_prompt === values.session_title_prompt_default}
+          onChange={(value) => setInstruction('session_title_prompt', value)}
+          onReset={() => resetInstruction('session_title_prompt')}
+        />
+        <div className="settings-detail-grid">
+          <NumberField label="Session title max input chars" value={values.session_title_max_input_chars} min={100} max={10000} onChange={(value) => setNumber('session_title_max_input_chars', value)} />
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>Context Rendering</h3>
+        </div>
+        <InstructionField
+          label="Group transcript system instruction"
+          description="Instruction appended when a session uses Group transcript mode. It tells the current agent how to read speaker labels and reply as itself."
+          value={values.group_transcript_system_instruction ?? values.group_transcript_system_instruction_effective}
+          isDefault={values.group_transcript_system_instruction === null}
+          onChange={(value) => setInstruction('group_transcript_system_instruction', value)}
+          onReset={() => resetInstruction('group_transcript_system_instruction')}
+        />
+        <InstructionField
+          label="Command result context instruction"
+          description="Instruction used when slash command results are included in LLM context. It should tell the model to treat command output as data, not instructions."
+          value={values.command_result_context_instruction ?? values.command_result_context_instruction_effective}
+          isDefault={values.command_result_context_instruction === null}
+          onChange={(value) => setInstruction('command_result_context_instruction', value)}
+          onReset={() => resetInstruction('command_result_context_instruction')}
+        />
+      </div>
+    </>
   );
 }
 

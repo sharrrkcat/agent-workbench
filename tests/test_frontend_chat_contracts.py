@@ -394,6 +394,35 @@ def test_general_settings_context_rendering_fields_are_exposed() -> None:
     assert "group_transcript_system_instruction_default" not in panel[panel.index("function generalSettingsPatch") :]
 
 
+def test_general_settings_uses_middle_category_list() -> None:
+    console = read_frontend("components/settings/SettingsConsole.tsx")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+
+    assert "type GeneralSettingsCategory = 'files' | 'llm_prompts'" in object_list
+    assert "{ id: 'files', name: 'Files', description: 'Upload limits and file context.' }" in object_list
+    assert "{ id: 'llm_prompts', name: 'LLM & Prompts', description: 'Title generation and context prompts.' }" in object_list
+    assert "if (section === 'general')" in object_list
+    general_branch = object_list[object_list.index("if (section === 'general')") : object_list.index("if (section === 'agents')")]
+    assert '<ObjectListHeader title="Category" count={generalCategories.length} />' in general_branch
+    assert "No objects in this section." not in general_branch
+    assert "generalCategory === category.id ? 'active' : ''" in general_branch
+    assert "onSelectGeneralCategory?.(category.id)" in general_branch
+
+    assert "useState<GeneralSettingsCategory>('files')" in console
+    assert "setGeneralCategory('files')" in console
+    assert "generalCategory={generalCategory}" in console
+    assert "onSelectGeneralCategory={setGeneralCategory}" in console
+
+    assert "generalCategory = 'files'" in panel
+    assert "<GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} />" in panel
+    assert "function GeneralFilesSettings" in panel
+    assert "function GeneralPromptSettings" in panel
+    assert "category === 'files' ? (" in panel
+    assert "DetailTabs" not in panel
+    assert "generalTab" not in panel
+
+
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")

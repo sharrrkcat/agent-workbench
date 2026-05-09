@@ -6,9 +6,17 @@ import type { LlmSettingsSubsection, SettingsSection } from './SettingsNav';
 import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
 
+export type GeneralSettingsCategory = 'files' | 'llm_prompts';
+
+const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
+  { id: 'files', name: 'Files', description: 'Upload limits and file context.' },
+  { id: 'llm_prompts', name: 'LLM & Prompts', description: 'Title generation and context prompts.' },
+];
+
 export function SettingsObjectList({
   section,
   llmSubsection = 'defaults',
+  generalCategory = 'files',
   agentConfigs,
   capabilityConfigs,
   selectedAgentId,
@@ -16,12 +24,14 @@ export function SettingsObjectList({
   llmProfiles = [],
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
+  onSelectGeneralCategory,
   onSelectAgent,
   onSelectCapability,
   onSelectLlmItem,
 }: {
   section: SettingsSection;
   llmSubsection?: LlmSettingsSubsection;
+  generalCategory?: GeneralSettingsCategory;
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
   selectedAgentId?: string;
@@ -29,10 +39,37 @@ export function SettingsObjectList({
   llmProfiles?: LlmProfile[];
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
+  onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
   onSelectLlmItem?: (itemId: string) => void;
 }) {
+  if (section === 'general') {
+    return (
+      <aside className="settings-object-list" aria-label="General categories">
+        <ObjectListHeader title="Category" count={generalCategories.length} />
+        <div className="settings-list-scroll">
+          {generalCategories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`settings-object-row ${generalCategory === category.id ? 'active' : ''}`}
+              onClick={() => onSelectGeneralCategory?.(category.id)}
+            >
+              <div className="settings-object-avatar">
+                <SlidersHorizontal size={16} />
+              </div>
+              <div className="settings-object-copy">
+                <strong>{category.name}</strong>
+                <small>{category.description}</small>
+              </div>
+            </button>
+          ))}
+        </div>
+      </aside>
+    );
+  }
+
   if (section === 'agents') {
     return (
       <aside className="settings-object-list" aria-label="Agents">
