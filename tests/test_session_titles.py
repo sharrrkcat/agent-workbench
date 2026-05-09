@@ -80,6 +80,9 @@ def test_default_title_generates_before_first_prompt_llm_call() -> None:
     assert len(llm.calls) == 2
     assert "hello" in llm.calls[0]["messages"][0]["content"]
     assert "assistant reply" not in llm.calls[0]["messages"][0]["content"]
+    messages = fixture.messages.list_messages(session.session_id)
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert not [event for event in fixture.events.list_events() if event.type == "message_delta"]
 
 
 def test_title_generation_failure_does_not_fail_main_conversation() -> None:

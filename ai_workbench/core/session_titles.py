@@ -9,6 +9,7 @@ from ai_workbench.core.time import utc_now
 TITLE_MAX_LENGTH = 80
 TITLE_ELLIPSIS = "\n...\n"
 TITLE_STATES = {"pending", "done", "skipped", "failed", "manual"}
+TITLE_QUOTE_CHARS = "`\"'“”‘’"
 
 
 def is_default_session_title(title: str) -> bool:
@@ -40,10 +41,10 @@ def normalize_generated_title(title: str) -> str:
     value = str(title or "").strip()
     value = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", value)
     value = re.sub(r"\s*```$", "", value).strip()
-    value = re.sub(r"^[`\"'“”‘’\s]+|[`\"'“”‘’\s]+$", "", value).strip()
+    value = value.strip(TITLE_QUOTE_CHARS).strip()
     value = value.splitlines()[0].strip() if value else ""
     value = re.sub(r"^(?:title|chat title|session title|标题|会话标题)\s*[:：-]\s*", "", value, flags=re.IGNORECASE).strip()
-    value = re.sub(r"^[`\"'“”‘’\s]+|[`\"'“”‘’\s]+$", "", value).strip()
+    value = value.strip(TITLE_QUOTE_CHARS).strip()
     value = value.replace("\r", " ").replace("\n", " ")
     value = re.sub(r"\s+", " ", value).strip()
     value = re.sub(r"[.!?。！？]+$", "", value).strip()

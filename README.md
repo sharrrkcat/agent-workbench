@@ -273,7 +273,9 @@ Secret fields render as password inputs. API responses return the fixed mask `**
 
 Secret masking is API/UI masking only. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
 
-Settings -> General stores local app settings in SQLite and exposes:
+Settings -> General stores local app settings in SQLite. The General page is split into `Files` and `LLM & Prompts` sub-tabs. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides.
+
+The General settings API exposes:
 
 - max image size
 - max file size

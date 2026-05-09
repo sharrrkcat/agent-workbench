@@ -222,7 +222,8 @@ Session state:
 - Manual rename or an existing non-default title sets or behaves as `manual`.
 
 Lifecycle and metadata:
-- Title generation failure records `title_generation` metadata and a warning when tied to a run, but it does not fail the main task.
+- Title generation records compact `title_generation` metadata when tied to a run, including state, source message id, truncation counts, generated timestamp or error, and public model/profile identifiers. It must not store full long user input or secrets.
+- Title generation failure records a warning when tied to a run, but it does not fail the main task.
 - Title generation does not independently trigger model lifecycle unload. Prompt Agent and Script Agent cleanup/unload behavior remains tied to the main run.
 
 ## Conversation Context Modes
