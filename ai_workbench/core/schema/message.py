@@ -64,8 +64,22 @@ class FileContentBlock(FileContentPayload):
     type: Literal["file_content"]
 
 
+class CommandButton(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+
+
+class CommandButtonsBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["command_buttons"]
+    buttons: list[CommandButton]
+
+
 ChatContentBlock = Annotated[
-    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock, FileContentBlock, ActionFormBlock],
+    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock, FileContentBlock, ActionFormBlock, CommandButtonsBlock],
     Field(discriminator="type"),
 ]
 

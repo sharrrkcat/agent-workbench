@@ -322,6 +322,7 @@ The `comfyui` Capability also manages local workflow and preset library director
 | `file_content` | Raw text file display. | `{"content": "...", "filename": "a.txt"}` | It is raw text and does not go through markdown rendering. |
 | `rich_content` | Ordered mixed blocks. | `{"blocks": [{"type": "markdown", "text": "..."}]}` | Keep block order explicit. |
 | `action_form` block | Declarative form inside `rich_content`. | `{"type": "action_form", "form_id": "demo", "title": "Demo", "fields": [{"name": "prompt", "type": "text"}], "submit": {"action_id": "run", "visibility": "silent"}}` | Forms submit only to internal Agent actions. |
+| `command_buttons` block | Send-message shortcut buttons inside `rich_content`. | `{"type": "command_buttons", "buttons": [{"label": "Run recipe", "message": "@comfyui_agent:run"}]}` | Buttons send ordinary user messages only. |
 
 If a command returns a dict with no declared output, the runner may infer `json`, `image`, `image_gallery`, or `rich_content`.
 
@@ -348,6 +349,20 @@ With `visibility="message"`, the backend creates a `form_submission` user messag
 With `visibility="silent"`, the backend invokes the target Agent action without creating a visible user message and suppresses normal assistant output from reply helpers or public output streaming. The target Script Agent still receives validated values in `ctx.input.prefill`, `ctx.input.form_id`, `ctx.input.source_message_id`, and `ctx.input.is_silent_submission=true`, so it can save state, save a recipe, or update settings. Successful silent submissions return a structured response with `silent=true` and a user-facing message from `submit.success_message` or `"Saved"`. A Script Agent may return `{"updated_form": {"source_message_id": "...", "form_id": "...", "block": {...}}}` after it has rebuilt and persisted a replacement source `action_form`; the frontend can use that payload, or the corresponding `message_updated` event, to refresh the existing form without adding chat messages. Failed silent submissions return a structured error; `submit.failure_message` may be used as an error prefix.
 
 Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static while the user edits a rendered form; there is no dynamic onchange refresh. If a silent submit changes the saved state enough to require different fields, the target action can save the state and replace the source message form block from trusted backend code. The frontend still submits only `source_message_id`, `form_id`, and values; it must not submit a replacement form block. The ComfyUI Agent uses `action_form` as a recipe editor only; form submission does not submit generation, choose input mode, or collect the LLM user request.
+
+### `command_buttons` rich content block
+
+`command_buttons` renders trusted send-message shortcut buttons. It is not a message action, hidden Agent action, URL, JavaScript hook, or form submit.
+
+Top-level fields:
+- `type`: must be `command_buttons`.
+- `buttons`: required array of button declarations.
+
+Button declarations use:
+- `label`: required display text.
+- `message`: required user message text to send through the normal composer route.
+
+On click, the frontend sends `message` through the same ordinary user-message path as manual composer input. It creates a normal user message, uses normal routing, and does not send `prefill`, attachments, hidden action payloads, arbitrary URLs, or executable frontend code.
 
 ## Validation and CLI
 

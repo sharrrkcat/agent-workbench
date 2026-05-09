@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Send, Trash2, XCircle } from 'lucide-react';
-import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message, Run, RunStep } from '../types';
+import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message, Run, RunStep } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -658,8 +658,29 @@ function RichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId:
         if (block.type === 'action_form') {
           return <ActionFormRenderer key={index} form={block} messageId={messageId} />;
         }
+        if (block.type === 'command_buttons') {
+          return <CommandButtonsRenderer key={index} block={block} />;
+        }
         return <PlainTextRenderer key={index} content={block.text} />;
       })}
+    </div>
+  );
+}
+
+function CommandButtonsRenderer({ block }: { block: CommandButtonsBlock }) {
+  const sendMessage = useWorkbenchStore((state) => state.sendMessage);
+  const sending = useWorkbenchStore((state) => state.sending);
+  const buttons = block.buttons.filter((button) => button.label.trim() && button.message.trim());
+
+  if (!buttons.length) return null;
+  return (
+    <div className="command-buttons" aria-label="Command shortcuts">
+      {buttons.map((button) => (
+        <button key={`${button.label}:${button.message}`} type="button" onClick={() => void sendMessage(button.message)} disabled={sending} title={button.message}>
+          <Send size={14} />
+          <span>{button.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -925,6 +946,14 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
       blocks.push({ type: 'file_content', ...fileContent });
     } else if (item.type === 'action_form' && typeof item.form_id === 'string' && typeof item.title === 'string' && Array.isArray(item.fields) && item.submit && typeof item.submit === 'object') {
       blocks.push(item as ActionFormBlock);
+    } else if (item.type === 'command_buttons' && Array.isArray(item.buttons)) {
+      const buttons = item.buttons
+        .filter((button) => button && typeof button === 'object' && !Array.isArray(button) && typeof (button as Record<string, unknown>).label === 'string' && typeof (button as Record<string, unknown>).message === 'string')
+        .map((button) => {
+          const value = button as Record<string, unknown>;
+          return { label: value.label as string, message: value.message as string };
+        });
+      if (buttons.length) blocks.push({ type: 'command_buttons', buttons });
     }
   }
   return blocks;

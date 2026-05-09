@@ -396,6 +396,11 @@ export type ActionFormBlock = {
   };
 };
 
+export type CommandButtonsBlock = {
+  type: 'command_buttons';
+  buttons: { label: string; message: string }[];
+};
+
 export type ImagePayload = {
   url: string;
   alt?: string | null;
@@ -444,7 +449,8 @@ export type ChatContentBlock =
   | { type: 'markdown'; text: string }
   | ({ type: 'image' } & ImagePayload)
   | ({ type: 'file_content' } & FileContentPayload)
-  | ActionFormBlock;
+  | ActionFormBlock
+  | CommandButtonsBlock;
 
 export type Message = {
   message_id: string;

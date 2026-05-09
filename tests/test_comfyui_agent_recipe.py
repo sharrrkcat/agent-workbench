@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
+from ai_workbench.core.schema.message import RichContentPayload
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from agents.comfyui_agent import agent as comfy_agent
 from ai_workbench.core.stores import SessionAgentStateStore
@@ -416,15 +417,33 @@ def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submittin
     assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
     assert ctx.attachments == []
     assert all(reply[0] != "image_gallery" for reply in ctx.replies)
-    assert ctx.replies[-1][0] == "markdown"
-    body = ctx.replies[-1][1]
-    assert "## Positive prompt" in body
-    assert generated in body
-    assert "````text" in body
-    assert "Saved to the current session recipe." in body
-    assert "`@comfyui_agent:form`" in body
-    assert "`@comfyui_agent:run`" in body
+    assert ctx.replies[-1][0] == "rich_content"
+    blocks = ctx.replies[-1][1]["blocks"]
+    assert blocks[0] == {"type": "markdown", "text": "## Positive prompt"}
+    assert blocks[1] == {"type": "text", "text": generated}
+    assert blocks[2] == {"type": "markdown", "text": "Saved to the current session recipe."}
+    assert blocks[3] == {
+        "type": "command_buttons",
+        "buttons": [
+            {"label": "Edit recipe", "message": "@comfyui_agent:form"},
+            {"label": "Run recipe", "message": "@comfyui_agent:run"},
+        ],
+    }
+    body = json.dumps(blocks)
+    assert "```" in generated
+    assert "```text" not in body
+    assert "````text" not in body
     assert "Positive prompt saved" not in body
+
+
+def test_saved_positive_prompt_blocks_validate_as_rich_content() -> None:
+    payload = RichContentPayload.model_validate({"blocks": comfy_agent.saved_positive_prompt_blocks("wrapped prompt")})
+
+    blocks = payload.model_dump()["blocks"]
+    assert blocks[1] == {"type": "text", "text": "wrapped prompt"}
+    assert blocks[3]["type"] == "command_buttons"
+    assert blocks[3]["buttons"][0]["message"] == "@comfyui_agent:form"
+    assert blocks[3]["buttons"][1]["message"] == "@comfyui_agent:run"
 
 
 def test_default_respects_raw_and_llm_modes_and_generates(tmp_path: Path):

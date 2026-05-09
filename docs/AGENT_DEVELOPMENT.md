@@ -200,6 +200,8 @@ ComfyUI Agent action semantics:
 
 `switch` controls the stored recipe `input_mode`; `raw` and `llm` are one-shot modes for a single invocation. `auto_run_after_llm_prompt=false` makes LLM mode save the generated positive prompt for inspection or form editing before the user runs `@comfyui_agent:run`.
 
+When LLM prompt inspection stops before generation, the reply may include `command_buttons` that send `@comfyui_agent:form` and `@comfyui_agent:run` as normal user messages.
+
 Minimal interactive form Script Agent:
 
 ```python

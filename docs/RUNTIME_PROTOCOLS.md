@@ -19,6 +19,7 @@
 - Non-streaming source messages may use `message_updated` to persist backend-generated rich content changes such as replacing an `action_form` block after a silent save.
 - Internal `ctx.llm.stream` does not emit public `message_delta`.
 - `ctx.output.write_delta` and `ctx.llm.stream_to_output` emit public deltas.
+- `command_buttons` rich content blocks are rendered after message completion like other non-streaming rich content. Clicking a command button starts a new ordinary user message; it does not mutate the source assistant message.
 
 Producer rules:
 - Emit `message_started` before public deltas for a new assistant draft.
@@ -229,6 +230,8 @@ New slash command results use `role="assistant"`, `speaker_type="capability"`, `
 
 Interactive form submissions with `submit.visibility="message"` create user-origin messages with `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, and `origin="form_submission"`. Their visible `content` is the form submit message or `Submitted form: <title>`, not the full submitted JSON. Silent form submissions do not create a visible user message.
 
+`command_buttons` clicks create ordinary user messages with `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, and `origin="user_message"`. The message content is the button `message`, and provider-bound role remains `user`.
+
 Old messages may lack speaker fields. Context projection falls back from role, top-level `agent_id` / `command_name`, and command-result metadata. Old `role="tool"` command results are compatibility data only and are normalized or skipped before provider calls.
 
 ## Interactive Forms
@@ -262,6 +265,24 @@ The target Script Agent receives the validated values in `ctx.input.prefill`, pl
 For `submit.visibility="silent"`, the backend invokes the same target Agent action without creating the visible `form_submission` user message. Script Agents receive `ctx.input.prefill`, `ctx.input.source_message_id`, `ctx.input.form_id`, and `ctx.input.is_silent_submission=true`. Normal assistant replies and public output streams from the target action are suppressed, so successful save-only actions return a structured submission response instead of appending chat timeline messages. Silent submit may update the source form only when the target Agent persists a backend-generated replacement block and emits `message_updated`; the response may also include `updated_form` with `source_message_id`, `form_id`, and `block`. The full `prefill` still stays out of provider-bound LLM context unless an Agent explicitly uses it.
 
 Provider-bound message roles remain limited to `system`, `user`, and `assistant`; message-mode and silent form submissions do not introduce `tool`, `function`, or custom provider roles.
+
+## Command Button Shortcuts
+
+`command_buttons` is a `rich_content` block that renders shortcut buttons for trusted Agents to send fixed text through the normal user-message path.
+
+Click protocol:
+- The frontend calls the existing send-message flow with the button `message`.
+- The backend receives the same request shape as manual composer input.
+- Routing follows the normal priority order, so `@comfyui_agent:form` routes to `comfyui_agent.form` and `@comfyui_agent:run` routes to `comfyui_agent.run`.
+- A click creates a normal visible user message.
+- Provider-bound role remains `user`.
+
+Non-goals:
+- It is not an `action_form` submit.
+- It is not a hidden message action.
+- It does not send `source_message_id`, `form_id`, `prefill`, or attachments.
+- It does not call a backend Agent action API directly.
+- It does not execute arbitrary JavaScript or navigate to URLs.
 
 ## Group Transcript Context
 

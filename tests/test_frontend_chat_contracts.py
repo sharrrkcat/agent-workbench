@@ -227,6 +227,30 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert ".action-form-field select option" in styles
 
 
+def test_command_buttons_render_as_send_message_shortcuts() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    store = read_frontend("store/useWorkbenchStore.ts")
+    client = read_frontend("api/client.ts")
+    types = read_frontend("types.ts")
+    styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    assert "CommandButtonsBlock" in types
+    assert "type: 'command_buttons'" in types
+    assert "buttons: { label: string; message: string }[]" in types
+    assert "CommandButtonsRenderer" in source
+    assert "block.type === 'command_buttons'" in source
+    assert "useWorkbenchStore((state) => state.sendMessage)" in source
+    assert "sendMessage(button.message)" in source
+    assert "useWorkbenchStore((state) => state.sending)" in source
+    assert "title={button.message}" in source
+    assert "submitForm(" not in source[source.index("function CommandButtonsRenderer") : source.index("function ActionFormRenderer")]
+    assert "invokeAction(" not in source[source.index("function CommandButtonsRenderer") : source.index("function ActionFormRenderer")]
+    assert "api.sendMessage(session.session_id, content, attachments)" in store
+    assert "/forms/submit" in client
+    assert ".command-buttons" in styles
+    assert ".command-buttons button" in styles
+
+
 def test_chat_header_displays_and_switches_conversation_mode() -> None:
     source = read_frontend("components/ChatHeader.tsx")
 
