@@ -220,13 +220,17 @@ Avoid unless needed:
 Read:
 - `docs/EXTENSION_API.md#agent-overrides`
 - `docs/EXTENSION_API.md#capability-config`
+- `docs/RUNTIME_PROTOCOLS.md#session-title-generation` if changing automatic title settings or title behavior
 
 Likely source:
 - agent/capability config routes/stores
 - frontend settings components
+- `ai_workbench/core/settings.py` for General settings
+- `ai_workbench/core/session_titles.py` for automatic title generation
 
 Tests:
 - `uv run pytest tests/test_agent_settings.py tests/test_config_schema.py tests/test_settings_data.py`
+- `uv run pytest tests/test_session_titles.py` if automatic title settings or behavior changes
 - `cd frontend && npm run build` if frontend changed
 
 Avoid unless needed:

@@ -43,6 +43,8 @@ class ScriptRuntimeFixture:
         self.events = EventBus()
         self.llm_profiles = LLMProfileStore()
         self.provider_profiles = ProviderProfileStore()
+        self.app_settings = AppSettingsStore()
+        self.app_settings.patch({"auto_generate_session_titles": False})
         self.llm = llm or FakeLLMRuntime(response="llm reply")
         self.router = Router(agent_registry=self.agents, command_registry=commands)
         self.command_runner = CommandRunner(
@@ -64,6 +66,7 @@ class ScriptRuntimeFixture:
             capability_registry=capabilities,
             llm_profile_store=self.llm_profiles,
             provider_profile_store=self.provider_profiles,
+            app_settings_store=self.app_settings,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,

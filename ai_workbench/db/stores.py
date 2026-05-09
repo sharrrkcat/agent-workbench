@@ -14,6 +14,7 @@ from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import ensure_utc, utc_now
+from ai_workbench.core.session_titles import is_default_session_title
 from ai_workbench.db.models import (
     AgentConfigRecord,
     AppMetadataRecord,
@@ -47,7 +48,13 @@ class SqlSessionStore:
         self.engine = engine
 
     def create_session(self, default_agent_id: str = "chat", title: str = "", context_mode: str = "single_assistant") -> Session:
-        record = SessionRecord(session_id=str(uuid4()), title=title, default_agent_id=default_agent_id, context_mode=context_mode)
+        record = SessionRecord(
+            session_id=str(uuid4()),
+            title=title,
+            default_agent_id=default_agent_id,
+            context_mode=context_mode,
+            title_generation_state="pending" if is_default_session_title(title) else "manual",
+        )
         with DbSession(self.engine) as session:
             session.add(record)
             session.commit()
@@ -91,6 +98,34 @@ class SqlSessionStore:
             if record is None:
                 raise KeyError(f"unknown session id: {session_id}")
             record.title = title
+            record.title_generation_state = "manual"
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _session_from_record(record)
+
+    def set_generated_title(self, session_id: str, title: str, metadata: Optional[Dict[str, Any]] = None) -> Session:
+        with DbSession(self.engine) as session:
+            record = session.get(SessionRecord, session_id)
+            if record is None:
+                raise KeyError(f"unknown session id: {session_id}")
+            record.title = title
+            record.title_generation_state = "done"
+            record.title_generation_metadata_json = _dumps(metadata or {})
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _session_from_record(record)
+
+    def set_title_generation_state(self, session_id: str, state: str, metadata: Optional[Dict[str, Any]] = None) -> Session:
+        with DbSession(self.engine) as session:
+            record = session.get(SessionRecord, session_id)
+            if record is None:
+                raise KeyError(f"unknown session id: {session_id}")
+            record.title_generation_state = state
+            record.title_generation_metadata_json = _dumps(metadata or {})
             record.updated_at = utc_now()
             session.add(record)
             session.commit()
@@ -944,6 +979,8 @@ def _session_from_record(record: SessionRecord) -> Session:
         waiting_run_id=record.waiting_run_id,
         llm_profile_id=record.llm_profile_id,
         last_announced_llm_profile_id=record.last_announced_llm_profile_id,
+        title_generation_state=getattr(record, "title_generation_state", None) or "pending",
+        title_generation_metadata=_loads(getattr(record, "title_generation_metadata_json", "{}"), {}),
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )

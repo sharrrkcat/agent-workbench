@@ -55,6 +55,10 @@ def ensure_session_model_columns(engine) -> None:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN llm_profile_id VARCHAR"))
         if "last_announced_llm_profile_id" not in columns:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN last_announced_llm_profile_id VARCHAR"))
+        if "title_generation_state" not in columns:
+            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN title_generation_state VARCHAR DEFAULT 'pending'"))
+        if "title_generation_metadata_json" not in columns:
+            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN title_generation_metadata_json VARCHAR DEFAULT '{}'"))
 
 
 def ensure_message_speaker_columns(engine) -> None:

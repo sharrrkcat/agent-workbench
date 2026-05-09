@@ -31,6 +31,7 @@ from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
+from ai_workbench.core.session_titles import maybe_generate_session_title_before_llm_call
 from ai_workbench.core.session import Session
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc
@@ -292,6 +293,7 @@ class LLMProxy:
         run_store: RunStore = None,
         run_lifecycle: RunLifecycle = None,
         parent_step_id: str = "",
+        title_generation_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -307,6 +309,8 @@ class LLMProxy:
         self.parent_step_id = parent_step_id
         self.used = False
         self.last_raw: Dict[str, Any] | None = None
+        self._title_generation_context = title_generation_context or {}
+        self._title_generation_checked = False
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -323,6 +327,7 @@ class LLMProxy:
         return parsed
 
     async def chat(self, messages: List[Dict[str, Any]], **options) -> str:
+        await self._maybe_generate_session_title()
         self.used = True
         from ai_workbench.core.context import validate_llm_context_messages
 
@@ -355,6 +360,7 @@ class LLMProxy:
         response_format: Optional[Any] = None,
         **options,
     ):
+        await self._maybe_generate_session_title()
         self.used = True
         resolved_messages = _resolve_llm_messages(system=system, user=user, messages=messages)
         from ai_workbench.core.context import validate_llm_context_messages
@@ -424,6 +430,7 @@ class LLMProxy:
                 generate = getattr(self.llm_runtime, "generate", None)
                 resolved_prompt = prompt if prompt is not None else options.pop("prompt", "")
                 if callable(generate):
+                    await self._maybe_generate_session_title()
                     self.used = True
                     data = generate(
                         prompt=resolved_prompt,
@@ -445,6 +452,28 @@ class LLMProxy:
             return CapabilityCallResult(success=True, data=data)
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM generate failed.")
+
+    async def _maybe_generate_session_title(self) -> None:
+        if self._title_generation_checked:
+            return
+        self._title_generation_checked = True
+        context = self._title_generation_context
+        if not context:
+            return
+        await maybe_generate_session_title_before_llm_call(
+            session_id=context.get("session_id") or self.session_id,
+            source_message_id=context.get("source_message_id") or "",
+            fallback_user_text=context.get("fallback_user_text") or "",
+            run_id=self.run_id,
+            session_store=context.get("session_store"),
+            message_store=context.get("message_store"),
+            run_store=self.run_store,
+            event_bus=self.event_bus,
+            llm_runtime=self.llm_runtime,
+            llm_model_config=self.default_model_config,
+            llm_resolution=self.default_llm_resolution,
+            app_settings_store=context.get("app_settings_store"),
+        )
 
     async def unload(self, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
         try:
@@ -621,6 +650,8 @@ class AgentContext:
         run_lifecycle: RunLifecycle = None,
         output_message_id: Optional[str] = None,
         current_parent_step_id: Optional[str] = None,
+        input_message_id: Optional[str] = None,
+        app_settings_store: Any = None,
         capability_registry: CapabilityRegistry = None,
         capability_config_store: Any = None,
         session_agent_state_store: Any = None,
@@ -670,6 +701,14 @@ class AgentContext:
             run_store=run_store,
             run_lifecycle=run_lifecycle,
             parent_step_id=current_parent_step_id or "",
+            title_generation_context={
+                "session_id": session.session_id,
+                "source_message_id": input_message_id or "",
+                "fallback_user_text": input_text,
+                "session_store": session_store,
+                "message_store": message_store,
+                "app_settings_store": app_settings_store,
+            },
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -872,6 +911,7 @@ class ScriptAgentRunner:
         llm_defaults_store=None,
         agent_config_store=None,
         session_agent_state_store=None,
+        app_settings_store=None,
         run_lifecycle: RunLifecycle = None,
     ) -> None:
         self.agent_registry = agent_registry
@@ -888,6 +928,7 @@ class ScriptAgentRunner:
         self.llm_defaults_store = llm_defaults_store
         self.agent_config_store = agent_config_store
         self.session_agent_state_store = session_agent_state_store
+        self.app_settings_store = app_settings_store
         self.run_lifecycle = run_lifecycle or RunLifecycle(run_store, event_bus)
 
     async def run(
@@ -1036,6 +1077,11 @@ class ScriptAgentRunner:
                 self.run_lifecycle.fail_step(model_step.step_id, error_code=exc.code, error_message=exc.message)
                 return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
             self.run_lifecycle.complete_step(model_step.step_id)
+        else:
+            try:
+                llm_config = self._resolve_llm_model_config(agent, session_id)
+            except LLMConfigError:
+                llm_config = None
 
         starting_step = self.run_lifecycle.start_step(run.run_id, "Starting script")
         self.run_lifecycle.complete_step(starting_step.step_id)
@@ -1073,6 +1119,8 @@ class ScriptAgentRunner:
             run_lifecycle=self.run_lifecycle,
             output_message_id=output_message.message_id if output_message is not None else None,
             current_parent_step_id=running_step.step_id,
+            input_message_id=user_message.message_id if user_message is not None else input_message_id,
+            app_settings_store=self.app_settings_store,
             capability_registry=self.capability_registry,
             capability_config_store=self.capability_config_store,
             session_agent_state_store=self.session_agent_state_store,
@@ -1157,7 +1205,7 @@ class ScriptAgentRunner:
                 capability = None
         if self.capability_config_store is not None:
             capability_config = self.capability_config_store.get_config("llm")
-        session_llm_profile_id = self.session_store.get_session(session_id).llm_profile_id if _agent_uses_llm(agent) else None
+        session_llm_profile_id = self.session_store.get_session(session_id).llm_profile_id
         return resolve_llm_config(
             agent_schema=agent,
             capability_schema=capability,

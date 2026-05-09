@@ -186,6 +186,7 @@ async with ctx.step("Parse JSON"):
 - `ctx.output.write_delta(...)` explicitly appends visible public content.
 - `ctx.output.finish(...)` completes the public streaming message.
 - `ctx.llm.unload_model(...)` is trusted script-only model unload through provider/model profiles and returns a structured `CapabilityCallResult` with unload outcome data.
+- The first real `ctx.llm.*` provider call in a pending default-titled session may trigger the core automatic session-title pre-hook. Agent authors should not call title generation manually; the pre-hook is internal, non-streaming, and creates no visible messages.
 - `ctx.llm.unload()` is legacy capability-runtime unload if the LLM runtime supports it and also returns structured outcome data when available.
 - Script manual unload records run metadata, refreshes affected provider status when possible, and should surface success through the current run step rather than creating another assistant message.
 
@@ -315,6 +316,8 @@ Reusable integration Capabilities should expose narrow protocol methods plus sma
 The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, report per-workflow draft preset skip reasons, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.
 
 The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `refine` actions as one-shot LLM prompt operations. Its AgentConfig `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`; the stored recipe `input_mode` remains only `llm` or `raw`. Template config keys are `llm_refine_system_prompt`, `llm_refine_user_template`, `llm_fresh_system_prompt`, and `llm_fresh_user_template`.
+
+General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
 ## Capability Config
 

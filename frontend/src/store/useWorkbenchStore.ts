@@ -563,6 +563,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ activeRunId: event.run_id, sending: true });
       return;
     }
+    if (event.type === 'session_updated') {
+      const updatedSession = parseSessionPayload(event.payload.session);
+      if (updatedSession) {
+        set({
+          currentSession: get().currentSession?.session_id === updatedSession.session_id ? updatedSession : get().currentSession,
+          sessions: sortSessionsByRecent(get().sessions.map((item) => (item.session_id === updatedSession.session_id ? updatedSession : item))),
+        });
+      }
+      return;
+    }
     if ((event.type === 'run_updated' || event.type === 'run_created' || event.type === 'run_cancel_requested' || event.type === 'run_completed') && event.run_id) {
       const run = parseRunPayload(event.payload.run) || runFromEvent(event, session.session_id);
       const mergedRunState = mergeRunsIntoState(get(), [run]);
@@ -1468,6 +1478,13 @@ function sortSessionsByRecent(sessions: Session[]): Session[] {
 
 function normalizeSession(session: Session): Session {
   return { ...session, context_mode: normalizeContextMode(session.context_mode) };
+}
+
+function parseSessionPayload(value: unknown): Session | null {
+  if (!value || typeof value !== 'object') return null;
+  const session = value as Partial<Session>;
+  if (typeof session.session_id !== 'string') return null;
+  return normalizeSession(session as Session);
 }
 
 function normalizeContextMode(contextMode?: string | null): ContextMode {

@@ -186,6 +186,8 @@ await ctx.llm.unload()
 
 Script Agents should parse and validate LLM output explicitly. Do not depend on model function-calling or automatic tool selection.
 
+The core may run automatic session title generation immediately before the first real `ctx.llm.*` call in a pending default-titled session. This pre-hook uses only the triggering user message, does not create visible messages, and does not need any Agent code. Agent authors should not call title generation manually.
+
 The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recipes and generation. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, fill API-format workflow JSON from preset mappings, submit workflows, poll status, fetch formal output images, save local attachments, and return an `image_gallery`.
 
 ComfyUI preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). Use that schema when creating or reviewing workflow preset files.

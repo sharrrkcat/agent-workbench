@@ -198,6 +198,33 @@ Script Agent LLM calls:
 - Scripts must parse and validate model output themselves.
 - Scripts should not assume provider function calling is available.
 
+## Session Title Generation
+
+Automatic session title generation is an internal best-effort LLM call controlled by Settings -> General. It runs before the first real provider-bound LLM call in a default-titled session.
+
+Trigger points:
+- Prompt Agents try title generation after model resolution succeeds and before their main LLM call.
+- Script Agents try title generation immediately before the first actual `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.generate`, `ctx.llm.stream`, or `ctx.llm.stream_to_output` call.
+- Slash commands, command result messages, form/status/scan actions that do not call `ctx.llm`, and non-LLM Script Agent actions do not trigger title generation.
+
+Input and output rules:
+- The title prompt uses only the user message that triggered the LLM call.
+- Assistant output, Agent output, command result output, group transcript context, and historical messages are not title inputs.
+- Long user input is truncated from the middle using head/tail preservation according to `session_title_max_input_chars`.
+- The title call is non-streaming, creates no visible user or assistant messages, and emits no `message_delta`.
+- The title call uses the same resolved LLM config as the triggering LLM run. If the main LLM cannot resolve, title generation does not use a separate fallback model.
+
+Session state:
+- New default-titled sessions start with `title_generation_state="pending"`.
+- A successful title sets `done`.
+- If `auto_generate_session_titles=false` at the first LLM call, the session is marked `skipped` and is not backfilled later.
+- A failed title attempt sets `failed`; this first implementation does not retry.
+- Manual rename or an existing non-default title sets or behaves as `manual`.
+
+Lifecycle and metadata:
+- Title generation failure records `title_generation` metadata and a warning when tied to a run, but it does not fail the main task.
+- Title generation does not independently trigger model lifecycle unload. Prompt Agent and Script Agent cleanup/unload behavior remains tied to the main run.
+
 ## Conversation Context Modes
 
 Session `context_mode` controls how the core projects stored messages into provider-bound LLM context. It affects only future context builds. Switching the mode does not rewrite historical messages, and a run uses the mode captured while its context is built.

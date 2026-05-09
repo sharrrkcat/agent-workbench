@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -16,6 +16,8 @@ class Session(BaseModel):
     waiting_run_id: Optional[str] = None
     llm_profile_id: Optional[str] = None
     last_announced_llm_profile_id: Optional[str] = None
+    title_generation_state: Literal["pending", "done", "skipped", "failed", "manual"] = "pending"
+    title_generation_metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

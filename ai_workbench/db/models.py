@@ -15,6 +15,8 @@ class SessionRecord(SQLModel, table=True):
     waiting_run_id: Optional[str] = None
     llm_profile_id: Optional[str] = None
     last_announced_llm_profile_id: Optional[str] = None
+    title_generation_state: str = "pending"
+    title_generation_metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

@@ -6,6 +6,7 @@ from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identi
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
+from ai_workbench.core.session_titles import is_default_session_title
 from ai_workbench.core.session import Session
 from ai_workbench.core.time import utc_now
 
@@ -20,6 +21,7 @@ class SessionStore:
             title=title,
             default_agent_id=default_agent_id,
             context_mode=context_mode,
+            title_generation_state="pending" if is_default_session_title(title) else "manual",
         )
         self._sessions[session.session_id] = session
         return session
@@ -44,7 +46,28 @@ class SessionStore:
 
     def set_title(self, session_id: str, title: str) -> Session:
         session = self.get_session(session_id)
-        updated = session.model_copy(update={"title": title, "updated_at": utc_now()})
+        updated = session.model_copy(update={"title": title, "title_generation_state": "manual", "updated_at": utc_now()})
+        self._sessions[session_id] = updated
+        return updated
+
+    def set_generated_title(self, session_id: str, title: str, metadata: Optional[Dict[str, Any]] = None) -> Session:
+        session = self.get_session(session_id)
+        updated = session.model_copy(
+            update={
+                "title": title,
+                "title_generation_state": "done",
+                "title_generation_metadata": metadata or {},
+                "updated_at": utc_now(),
+            }
+        )
+        self._sessions[session_id] = updated
+        return updated
+
+    def set_title_generation_state(self, session_id: str, state: str, metadata: Optional[Dict[str, Any]] = None) -> Session:
+        session = self.get_session(session_id)
+        updated = session.model_copy(
+            update={"title_generation_state": state, "title_generation_metadata": metadata or {}, "updated_at": utc_now()}
+        )
         self._sessions[session_id] = updated
         return updated
 

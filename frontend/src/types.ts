@@ -349,6 +349,8 @@ export type Session = {
   waiting_run_id?: string | null;
   llm_profile_id?: string | null;
   last_announced_llm_profile_id?: string | null;
+  title_generation_state?: 'pending' | 'done' | 'skipped' | 'failed' | 'manual';
+  title_generation_metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -633,6 +635,10 @@ export type GeneralSettings = {
   max_total_file_context_per_message_kb: number;
   send_text_file_attachments_to_llm: boolean;
   persist_streaming_message_deltas: boolean;
+  auto_generate_session_titles: boolean;
+  session_title_prompt: string;
+  session_title_prompt_default: string;
+  session_title_max_input_chars: number;
   group_transcript_system_instruction: string | null;
   group_transcript_system_instruction_default: string;
   group_transcript_system_instruction_effective: string;

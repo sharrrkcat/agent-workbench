@@ -26,6 +26,7 @@ from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPay
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
+from ai_workbench.core.session_titles import maybe_generate_session_title_before_llm_call
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc, utc_now
@@ -144,6 +145,7 @@ class AgentRunner:
                 llm_defaults_store=llm_defaults_store,
                 agent_config_store=agent_config_store,
                 session_agent_state_store=session_agent_state_store,
+                app_settings_store=app_settings_store,
                 run_lifecycle=self.run_lifecycle,
             )
 
@@ -411,6 +413,20 @@ class AgentRunner:
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
             self.run_lifecycle.complete_step(resolving_model_step.step_id)
+            await maybe_generate_session_title_before_llm_call(
+                session_id=session_id,
+                source_message_id=current_user_message_id,
+                fallback_user_text=args,
+                run_id=run.run_id,
+                session_store=self.session_store,
+                message_store=self.message_store,
+                run_store=self.run_store,
+                event_bus=self.event_bus,
+                llm_runtime=self.llm_runtime,
+                llm_model_config=llm_config.values,
+                llm_resolution=_public_llm_resolution(llm_config),
+                app_settings_store=self.app_settings_store,
+            )
             llm_use_key = self._begin_llm_use(llm_config)
             llm_started = True
             calling_llm_step = self.run_lifecycle.start_step(run.run_id, "Calling LLM", message="Waiting for model response...")

@@ -239,6 +239,7 @@ def test_session_type_includes_context_mode_and_speaker_fields() -> None:
 
     assert "ContextMode = 'single_assistant' | 'group_transcript'" in source
     assert "context_mode?: ContextMode" in source
+    assert "title_generation_state?: 'pending' | 'done' | 'skipped' | 'failed' | 'manual'" in source
     assert "speaker_type?: 'user' | 'agent' | 'capability' | 'system' | null" in source
     assert "speaker_id?: string | null" in source
     assert "speaker_name?: string | null" in source
@@ -375,6 +376,16 @@ def test_general_settings_context_rendering_fields_are_exposed() -> None:
     assert "command_result_context_instruction: string | null" in types
     assert "command_result_context_instruction_default: string" in types
     assert "command_result_context_instruction_effective: string" in types
+    assert "auto_generate_session_titles: boolean" in types
+    assert "session_title_prompt: string" in types
+    assert "session_title_max_input_chars: number" in types
+    assert "Files" in panel
+    assert "LLM & Prompts" in panel
+    assert "Auto-generate session titles" in panel
+    assert "Session title prompt" in panel
+    assert "Session title max input chars" in panel
+    assert "Max image size (MB)" in panel
+    assert "Send text file attachments to LLM" in panel
     assert "Context Rendering" in panel
     assert "Group transcript system instruction" in panel
     assert "Command result context instruction" in panel

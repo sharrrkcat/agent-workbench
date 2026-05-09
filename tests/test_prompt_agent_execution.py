@@ -97,6 +97,8 @@ class PromptRuntimeFixture:
         self.llm_profiles = LLMProfileStore()
         self.provider_profiles = ProviderProfileStore()
         self.agent_configs = AgentConfigStore()
+        self.app_settings = AppSettingsStore()
+        self.app_settings.patch({"auto_generate_session_titles": False})
         self.llm = llm or FakeLLMRuntime()
         self.router = Router(agent_registry=agents, command_registry=commands)
         self.command_runner = CommandRunner(
@@ -119,6 +121,7 @@ class PromptRuntimeFixture:
             llm_profile_store=self.llm_profiles,
             provider_profile_store=self.provider_profiles,
             agent_config_store=self.agent_configs,
+            app_settings_store=self.app_settings,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -226,6 +229,7 @@ def test_group_transcript_system_instruction_uses_override_and_variables() -> No
     settings = AppSettingsStore()
     settings.patch(
         {
+            "auto_generate_session_titles": False,
             "group_transcript_system_instruction": (
                 "You are {agent_name} with id {agent_id}. User label is {user_label}. Unknown {missing}."
             )
@@ -245,7 +249,7 @@ def test_single_assistant_context_ignores_group_instruction_override() -> None:
     llm = FakeLLMRuntime(response="chat reply")
     fixture = PromptRuntimeFixture(llm=llm)
     settings = AppSettingsStore()
-    settings.patch({"group_transcript_system_instruction": "Group only {agent_name}"})
+    settings.patch({"auto_generate_session_titles": False, "group_transcript_system_instruction": "Group only {agent_name}"})
     fixture.agent_runner.app_settings_store = settings
     session = fixture.sessions.create_session(default_agent_id="chat", context_mode="single_assistant")
 
@@ -331,6 +335,7 @@ def test_command_result_context_instruction_uses_override_and_variables() -> Non
     settings = AppSettingsStore()
     settings.patch(
         {
+            "auto_generate_session_titles": False,
             "command_result_context_instruction": (
                 "Data from {command} via {capability_name}/{capability_id} as {output_type}. Unknown {missing}."
             )
