@@ -24,6 +24,9 @@ async def run(ctx):
     action = ctx.action_id or "default"
     if action == "form":
         recipe, preset, presets, recipe_state = await current_recipe(ctx)
+        if recipe is None:
+            await ctx.reply_markdown(_no_recipe_markdown(recipe_state, presets))
+            return
         await ctx.reply_blocks([_summary_block(recipe_state), recipe_to_form(recipe, preset, presets)])
         return
     if action == "save_recipe_from_form":
@@ -83,6 +86,26 @@ async def execute_generation(ctx, recipe: dict | None = None, mode_source: str =
         recipe["updated_at"] = _now()
         save_recipe(ctx, recipe)
         _complete_step(ctx, step, "Positive prompt generated.")
+        if not bool(ctx.config.get("auto_run_after_llm_prompt", True)):
+            await ctx.reply_markdown(
+                "\n".join(
+                    [
+                        "# Positive prompt saved",
+                        "",
+                        "LLM mode generated and saved the positive prompt in this session recipe.",
+                        "",
+                        "- Open `@comfyui_agent:form` to inspect or edit the recipe.",
+                        "- Run `@comfyui_agent:run` to submit the saved recipe.",
+                    ]
+                )
+            )
+            return {
+                "kind": "comfyui_prompt_saved",
+                "preset_id": recipe.get("preset_id") or "",
+                "input_mode": recipe.get("input_mode") or "llm",
+                "positive_prompt": positive_prompt,
+                "created_at": _now(),
+            }
 
     step = _start_step(ctx, "Build workflow", "Applying recipe values to workflow copy.")
     workflow = build_workflow_from_recipe(recipe, preset_data, scan)
@@ -275,18 +298,18 @@ async def save_recipe_from_form(ctx):
     prefill = dict(ctx.input.prefill or {})
     recipe, preset, presets, state = await current_recipe(ctx)
     if recipe is None:
-        await ctx.reply_markdown(_no_recipe_markdown(state))
+        if not getattr(ctx.input, "is_silent_submission", False):
+            await ctx.reply_markdown(_no_recipe_markdown(state, presets))
         return
     next_recipe, next_preset, switched, errors = apply_form_to_recipe(recipe, prefill, presets)
     if errors:
-        await ctx.reply_markdown("# Recipe form was not saved\n\n" + "\n".join(f"- {error}" for error in errors))
+        if not getattr(ctx.input, "is_silent_submission", False):
+            await ctx.reply_markdown("# Recipe form was not saved\n\n" + "\n".join(f"- {error}" for error in errors))
         return
     save_recipe(ctx, next_recipe)
     title = "Preset switched and recipe saved" if switched else "Recipe saved"
-    await ctx.reply_blocks([
-        {"type": "markdown", "text": _recipe_markdown(next_recipe, title, "Form values update only this session recipe, not preset files. No generation was submitted.")},
-        recipe_to_form(next_recipe, next_preset, presets),
-    ])
+    if not getattr(ctx.input, "is_silent_submission", False):
+        await ctx.reply_markdown(_recipe_markdown(next_recipe, title, "Form values update only this session recipe, not preset files. No generation was submitted."))
 
 
 async def switch_mode(ctx):
@@ -296,7 +319,7 @@ async def switch_mode(ctx):
         return
     recipe, preset, presets, state = await current_recipe(ctx)
     if recipe is None:
-        await ctx.reply_markdown(_no_recipe_markdown(state))
+        await ctx.reply_markdown(_no_recipe_markdown(state, presets))
         return
     recipe["input_mode"] = mode
     recipe["updated_at"] = _now()
@@ -348,6 +371,8 @@ async def status_action(ctx):
     default_id = str(ctx.config.get("default_preset_id") or "")
     default_preset = _preset_by_id(scan.get("presets") or [], default_id) if default_id else None
     recipe_validity = _recipe_validity(recipe, preset)
+    ready_presets = [item for item in scan.get("presets") or [] if item.get("valid") and item.get("status") == "ready"]
+    positive_prompt = ((recipe or {}).get("values") or {}).get("positive_prompt") if recipe else ""
     lines = [
         "# ComfyUI Status",
         "",
@@ -355,9 +380,11 @@ async def status_action(ctx):
         f"- Workflows dir: `{scan.get('workflows_dir')}`",
         f"- Presets dir: `{scan.get('presets_dir')}`",
         f"- Workflow count: `{len(scan.get('workflows') or [])}`",
-        f"- Preset count: `{len(scan.get('presets') or [])}`",
+        f"- Valid ready preset count: `{len(ready_presets)}`",
         f"- Current recipe preset: `{recipe.get('preset_id') if recipe else ''}`",
         f"- Current input_mode: `{recipe.get('input_mode') if recipe else ''}`",
+        f"- Auto-run after LLM prompt: `{bool(ctx.config.get('auto_run_after_llm_prompt', True))}`",
+        f"- Current positive_prompt empty: `{not bool(positive_prompt)}`",
         f"- Current recipe validity: `{recipe_validity}`",
         f"- Default preset validity: `{bool(default_preset and default_preset.get('valid') and default_preset.get('status') == 'ready')}`",
     ]
@@ -410,30 +437,17 @@ def recipe_from_preset(preset: dict, default_input_mode: str) -> dict:
 def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]) -> dict:
     recipe = recipe or {}
     preset = preset or {"parameters": []}
+    ready_presets = [item for item in presets if item.get("valid") and item.get("status") == "ready"]
     fields = [
         {
             "name": "preset_id",
             "type": "enum",
             "label": "Preset",
-            "options": [{"value": item["preset_id"], "label": item.get("name") or item["preset_id"]} for item in presets],
+            "description": "Changing preset replaces this session recipe with that preset's defaults after Save.",
+            "options": [{"value": item["preset_id"], "label": item.get("name") or item["preset_id"]} for item in ready_presets],
             "value": recipe.get("preset_id") or "",
             "required": True,
-        },
-        {
-            "name": "input_mode",
-            "type": "enum",
-            "label": "Input mode",
-            "options": [{"value": "llm", "label": "LLM prompt"}, {"value": "raw", "label": "Raw positive prompt"}],
-            "value": recipe.get("input_mode") or "llm",
-            "required": True,
-        },
-        {
-            "name": "user_prompt",
-            "type": "textarea",
-            "label": "User request for LLM",
-            "description": "Used when input_mode=llm. Submitting the form saves only; use Run to generate.",
-            "value": recipe.get("user_prompt") or "",
-        },
+        }
     ]
     values = recipe.get("values") or {}
     for parameter in preset.get("parameters") or []:
@@ -446,27 +460,29 @@ def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]
         "type": "action_form",
         "form_id": "comfyui_recipe",
         "title": "ComfyUI Recipe",
-        "description": "Edits the current session recipe only. Submit saves; it does not generate.",
+        "description": "Save recipe only updates this session recipe. It does not edit preset files or generate images.",
         "fields": fields,
-        "submit": {"label": "Save recipe", "action_id": "save_recipe_from_form", "message": "Saved ComfyUI recipe"},
+        "submit": {"label": "Save recipe", "action_id": "save_recipe_from_form", "visibility": "silent", "success_message": "Recipe saved"},
     }
 
 
 def apply_form_to_recipe(current_recipe: dict, prefill: dict, presets: list[dict]) -> tuple[dict, dict | None, bool, list[str]]:
     preset_id = str(prefill.get("preset_id") or current_recipe.get("preset_id") or "")
     preset = _preset_by_id(presets, preset_id)
-    if preset is None:
+    if preset is None or not (preset.get("valid") and preset.get("status") == "ready"):
         return current_recipe, None, False, [f"Unknown or invalid preset: {preset_id}"]
-    input_mode = _input_mode(prefill.get("input_mode") or current_recipe.get("input_mode") or "llm")
+    input_mode = _input_mode(current_recipe.get("input_mode") or "llm")
     switched = preset_id != current_recipe.get("preset_id")
     if switched:
         pseudo_preset = {"id": preset["preset_id"], "workflow": preset["workflow"], "parameters": preset.get("parameters") or []}
         recipe = recipe_from_preset(pseudo_preset, input_mode)
+        recipe["user_prompt"] = ""
+        recipe["updated_at"] = _now()
+        return recipe, preset, switched, []
     else:
         recipe = dict(current_recipe)
         recipe["values"] = dict(current_recipe.get("values") or {})
         recipe["input_mode"] = input_mode
-    recipe["user_prompt"] = str(prefill.get("user_prompt") or "")
     errors = []
     for parameter in preset.get("parameters") or []:
         name = parameter.get("name")
@@ -597,13 +613,24 @@ def _recipe_markdown(recipe: dict, title: str, detail: str) -> str:
         f"- Preset: `{recipe.get('preset_id')}`",
         f"- Workflow: `{recipe.get('workflow_file_name')}`",
         f"- Input mode: `{recipe.get('input_mode')}`",
-        f"- User prompt: `{recipe.get('user_prompt') or ''}`",
         f"- Recipe values: `{len(values)}` fields",
     ])
 
 
-def _no_recipe_markdown(state: dict) -> str:
-    return "# ComfyUI recipe unavailable\n\n" + str(state.get("message") or "Configure at least one ready preset first.")
+def _no_recipe_markdown(state: dict, presets: list[dict] | None = None) -> str:
+    lines = [
+        "# ComfyUI recipe unavailable",
+        "",
+        str(state.get("message") or "No valid ready ComfyUI preset is available."),
+        "",
+        "- Run `@comfyui_agent:scan_workflows` after adding API-format workflow JSON files.",
+        "- Or edit a draft preset in `presets_dir` until it is valid and ready.",
+    ]
+    needs_mapping = [item for item in presets or [] if item.get("status") == "needs_mapping"]
+    if needs_mapping:
+        lines.extend(["", "Needs mapping presets:"])
+        lines.extend(f"- `{item.get('preset_id')}` workflow=`{(item.get('workflow') or {}).get('file_name', '')}`" for item in needs_mapping)
+    return "\n".join(lines)
 
 
 def _summary_block(state: dict) -> dict:

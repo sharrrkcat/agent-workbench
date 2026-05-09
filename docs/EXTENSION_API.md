@@ -347,7 +347,7 @@ With `visibility="message"`, the backend creates a `form_submission` user messag
 
 With `visibility="silent"`, the backend invokes the target Agent action without creating a visible user message and suppresses normal assistant output from reply helpers or public output streaming. The target Script Agent still receives validated values in `ctx.input.prefill`, `ctx.input.form_id`, `ctx.input.source_message_id`, and `ctx.input.is_silent_submission=true`, so it can save state, save a recipe, or update settings. Successful silent submissions return a structured response with `silent=true` and a user-facing message from `submit.success_message` or `"Saved"`. Failed silent submissions return a structured error; `submit.failure_message` may be used as an error prefix.
 
-Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static for the rendered form; if a submitted preset change requires different fields, the target action should save the new state and return a fresh form. The ComfyUI Agent uses `action_form` as a recipe editor only; form submission does not submit generation.
+Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static for the rendered form; if a submitted preset change requires different fields, the target action can save the new state and let the user reopen the form to see the new fields. The ComfyUI Agent uses `action_form` as a recipe editor only; form submission does not submit generation, choose input mode, or collect the LLM user request.
 
 ## Validation and CLI
 

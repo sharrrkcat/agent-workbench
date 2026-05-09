@@ -216,7 +216,9 @@ ComfyUI workflow library foundation:
 - Editing a session recipe must not rewrite the preset file.
 - Generation requests are built as `workflow file -> preset -> session recipe -> filled workflow request`.
 - Long-running generation submits the filled workflow, polls status, fetches output images, saves local attachments, and renders an attachment-backed image gallery.
+- Forms edit only the current session recipe. They do not edit preset files, choose input mode, collect the LLM user request, or submit generation.
 - Form submit saves only the session recipe; generation actions are `default`, `raw`, `llm`, and `run`.
+- LLM mode may either auto-run after saving the generated positive prompt or stop for user inspection depending on the ComfyUI AgentConfig.
 
 Obsidian or LLM Wiki:
 
@@ -292,6 +294,7 @@ ComfyUI AgentConfig:
 - `default_preset_id`.
 - `default_input_mode`.
 - prompt enhancer templates.
+- Whether LLM prompt enhancement auto-runs generation.
 - Seed policy.
 
 Obsidian CapabilityConfig:

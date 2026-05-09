@@ -189,12 +189,14 @@ Script Agents should parse and validate LLM output explicitly. Do not depend on 
 The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recipes and generation. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, fill API-format workflow JSON from preset mappings, submit workflows, poll status, fetch images, save local attachments, and return an `image_gallery`.
 
 ComfyUI Agent action semantics:
-- `default`: use the current session recipe `input_mode`; `llm` enhances the user request into `values.positive_prompt`, while `raw` writes the user text directly, then generation runs.
+- `default`: use the current session recipe `input_mode`; `llm` enhances the user request into `values.positive_prompt`, while `raw` writes the user text directly.
 - `raw`: force raw for this invocation, keep the stored `input_mode` unchanged, write `values.positive_prompt`, then generation runs.
-- `llm`: force LLM prompt enhancement for this invocation, keep the stored `input_mode` unchanged, write `user_prompt` and generated `values.positive_prompt`, then generation runs.
+- `llm`: force LLM prompt enhancement for this invocation, keep the stored `input_mode` unchanged, write `user_prompt` and generated `values.positive_prompt`, then generation runs only when `auto_run_after_llm_prompt=true`.
 - `run`: execute the current session recipe without changing prompt or parameters.
-- `form` and `save_recipe_from_form`: show and save the session recipe editor only; form submit does not generate.
+- `form` and `save_recipe_from_form`: show and save the session recipe editor only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
+
+`switch` controls the stored recipe `input_mode`; `raw` and `llm` are one-shot modes for a single invocation. `auto_run_after_llm_prompt=false` makes LLM mode save the generated positive prompt for inspection or form editing before the user runs `@comfyui_agent:run`.
 
 Minimal interactive form Script Agent:
 

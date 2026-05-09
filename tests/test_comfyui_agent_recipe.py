@@ -50,11 +50,12 @@ class Result:
 
 
 class FakeInput:
-    def __init__(self, text="", prefill=None):
+    def __init__(self, text="", prefill=None, is_silent_submission=False):
         self.text = text
         self.prefill = prefill or {}
         self.form_id = ""
         self.source_message_id = ""
+        self.is_silent_submission = is_silent_submission
 
 
 class FakeState:
@@ -179,14 +180,15 @@ class FakeCapability:
 
 
 class FakeCtx:
-    def __init__(self, tmp_path: Path, action_id="default", text="", prefill=None, config=None, scan=None, llm=None):
+    def __init__(self, tmp_path: Path, action_id="default", text="", prefill=None, config=None, scan=None, llm=None, is_silent_submission=False):
         self.action_id = action_id
-        self.input = FakeInput(text, prefill)
+        self.input = FakeInput(text, prefill, is_silent_submission)
         self.config = {
             "default_input_mode": "llm",
             "default_preset_id": "txt2img_basic",
             "prompt_enhancer_system_prompt": "Improve prompts.",
             "prompt_enhancer_user_template": "{user_input}\n{positive_prompt}\n{negative_prompt}\n{preset_id}\n{preset_name}\n{input_mode}",
+            "auto_run_after_llm_prompt": True,
             "unload_llm_before_generation": True,
             **(config or {}),
         }
@@ -251,29 +253,91 @@ def test_new_session_recipe_uses_default_input_mode(tmp_path: Path, mode):
 
 
 def test_save_form_same_preset_updates_recipe_values_only(tmp_path: Path):
-    ctx = FakeCtx(tmp_path, action_id="save_recipe_from_form", prefill={"preset_id": "txt2img_basic", "input_mode": "llm", "positive_prompt": "cat", "steps": 44})
-    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+    ctx = FakeCtx(tmp_path, action_id="save_recipe_from_form", prefill={"preset_id": "txt2img_basic", "positive_prompt": "cat", "steps": 44})
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    recipe["user_prompt"] = "keep me"
+    ctx.state.set(comfy_agent.RECIPE_KEY, recipe)
 
     run(comfy_agent.run(ctx))
     saved = ctx.state.get(comfy_agent.RECIPE_KEY)
 
     assert saved["values"]["positive_prompt"] == "cat"
     assert saved["values"]["steps"] == 44
+    assert saved["input_mode"] == "llm"
+    assert saved["user_prompt"] == "keep me"
     assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
+    assert ctx.replies[-1][0] == "markdown"
+    assert all(reply[0] != "image_gallery" for reply in ctx.replies)
+    assert all(not any(block.get("type") == "action_form" for block in reply[1].get("blocks", [])) for reply in ctx.replies if reply[0] == "rich_content")
 
 
 def test_save_form_changed_preset_replaces_recipe_and_drops_old_fields(tmp_path: Path):
-    ctx = FakeCtx(tmp_path, action_id="save_recipe_from_form", prefill={"preset_id": "other", "input_mode": "raw", "cfg": 8.0})
+    ctx = FakeCtx(tmp_path, action_id="save_recipe_from_form", prefill={"preset_id": "other", "cfg": 8.0})
     recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
     recipe["values"]["positive_prompt"] = "old"
+    recipe["user_prompt"] = "old user prompt"
     ctx.state.set(comfy_agent.RECIPE_KEY, recipe)
 
     run(comfy_agent.run(ctx))
     saved = ctx.state.get(comfy_agent.RECIPE_KEY)
 
     assert saved["preset_id"] == "other"
-    assert saved["input_mode"] == "raw"
-    assert saved["values"] == {"cfg": 8.0}
+    assert saved["input_mode"] == "llm"
+    assert saved["user_prompt"] == ""
+    assert saved["values"] == {"cfg": 7.0}
+
+
+def test_silent_save_form_saves_recipe_without_chat_reply_or_generation(tmp_path: Path):
+    ctx = FakeCtx(
+        tmp_path,
+        action_id="save_recipe_from_form",
+        prefill={"preset_id": "txt2img_basic", "positive_prompt": "silent cat", "steps": 31},
+        is_silent_submission=True,
+    )
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+
+    run(comfy_agent.run(ctx))
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+
+    assert saved["values"]["positive_prompt"] == "silent cat"
+    assert saved["values"]["steps"] == 31
+    assert ctx.replies == []
+    assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
+
+
+def test_recipe_form_excludes_mode_and_user_prompt_uses_current_values_and_silent_submit(tmp_path: Path):
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    recipe["values"]["positive_prompt"] = "current generated prompt"
+    form = comfy_agent.recipe_to_form(recipe, READY_PRESET, [READY_PRESET, OTHER_PRESET])
+
+    fields = {field["name"]: field for field in form["fields"]}
+    assert "preset_id" in fields
+    assert fields["preset_id"]["options"]
+    assert fields["preset_id"]["value"] == "txt2img_basic"
+    assert "input_mode" not in fields
+    assert "user_prompt" not in fields
+    assert fields["positive_prompt"]["value"] == "current generated prompt"
+    assert form["submit"]["visibility"] == "silent"
+    assert form["submit"]["success_message"] == "Recipe saved"
+
+
+def test_form_action_without_ready_preset_returns_clear_prompt_not_empty_options(tmp_path: Path):
+    needs_mapping = {**READY_PRESET, "preset_id": "draft", "id": "draft", "status": "needs_mapping"}
+    scan = {
+        "presets": [needs_mapping],
+        "workflows": [],
+        "workflows_dir": str(tmp_path / "workflows"),
+        "presets_dir": str(tmp_path / "presets"),
+        "config": {"poll_interval_seconds": 0, "max_wait_seconds": 1},
+    }
+    ctx = FakeCtx(tmp_path, action_id="form", scan=scan)
+
+    run(comfy_agent.run(ctx))
+
+    assert ctx.replies[-1][0] == "markdown"
+    assert "No valid ready ComfyUI preset" in ctx.replies[-1][1]
+    assert "Needs mapping presets" in ctx.replies[-1][1]
+    assert all(reply[0] != "rich_content" for reply in ctx.replies)
 
 
 def test_switch_only_changes_input_mode_and_does_not_generate(tmp_path: Path):
@@ -313,6 +377,22 @@ def test_llm_action_writes_user_prompt_enhances_without_changing_mode_and_genera
     assert ("unload_model", {}) in ctx.llm.calls
 
 
+def test_llm_auto_run_false_saves_positive_prompt_without_submitting(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="llm", text="make a cat", config={"auto_run_after_llm_prompt": False})
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+
+    run(comfy_agent.run(ctx))
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+
+    assert saved["user_prompt"] == "make a cat"
+    assert saved["values"]["positive_prompt"] == "cinematic cat"
+    assert saved["input_mode"] == "raw"
+    assert [call[0] for call in ctx.llm.calls] == ["text"]
+    assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
+    assert ctx.replies[-1][0] == "markdown"
+    assert "Positive prompt saved" in ctx.replies[-1][1]
+
+
 def test_default_respects_raw_and_llm_modes_and_generates(tmp_path: Path):
     raw_ctx = FakeCtx(tmp_path, action_id="default", text="raw cat")
     raw_ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
@@ -341,6 +421,18 @@ def test_run_action_does_not_modify_prompt_or_parameters(tmp_path: Path):
     assert saved["user_prompt"] == "old user prompt"
     assert ctx.llm.calls == []
     assert any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
+
+
+def test_run_action_with_empty_positive_prompt_returns_clear_error_before_submit(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="run")
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        run(comfy_agent.run(ctx))
+
+    assert exc.value.code == "COMFYUI_RECIPE_INVALID"
+    assert "positive_prompt" in exc.value.message
+    assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
 
 
 def test_prompt_enhancer_empty_and_failure_do_not_fallback_raw(tmp_path: Path):
@@ -471,6 +563,8 @@ def test_status_and_scan_actions_return_details(tmp_path: Path):
 
     assert "test_connection" in status_ctx.calls
     assert "Current input_mode" in status_ctx.replies[-1][1]
+    assert "Auto-run after LLM prompt" in status_ctx.replies[-1][1]
+    assert "Current positive_prompt empty" in status_ctx.replies[-1][1]
     assert "Created Draft Presets" in scan_ctx.replies[-1][1]
     assert "unsupported_gui_format" in scan_ctx.replies[-1][1]
 

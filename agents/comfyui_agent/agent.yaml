@@ -26,7 +26,7 @@ actions:
     description: Force raw for this request, write positive_prompt, keep the session input_mode unchanged, then generate images.
   - id: llm
     label: LLM Prompt
-    description: Force LLM prompt enhancement for this request, keep the session input_mode unchanged, then generate images.
+    description: Force LLM prompt enhancement for this request, keep the session input_mode unchanged, then optionally generate images.
   - id: run
     label: Run Recipe
     description: Generate images from the current session recipe without changing prompt or parameters.
@@ -75,6 +75,11 @@ config_schema:
       Current negative prompt:
       {negative_prompt}
     description: User template for the prompt enhancer.
+  - name: auto_run_after_llm_prompt
+    type: boolean
+    label: Auto-run after LLM prompt
+    default: true
+    description: When true, LLM mode generates the positive prompt and immediately submits the current recipe. When false, LLM mode only saves the generated positive prompt so the user can inspect or edit it before running.
   - name: default_seed_policy
     type: enum
     label: Default seed policy

@@ -10,7 +10,7 @@ Do not edit manually.
 | id | name | type | actions | capabilities | entry / prompt | llm profile | config keys |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | chat | Chat Agent | prompt | default | llm | You are a concise, reliable assistant. |  | temperature |
-| comfyui_agent | ComfyUI Agent | script | default, form, save_recipe_from_form, switch, raw, llm, run, presets, scan_workflows, status | comfyui, llm | agent.py |  | default_preset_id, default_input_mode, prompt_enhancer_system_prompt, prompt_enhancer_user_template, default_seed_policy, unload_llm_before_generation |
+| comfyui_agent | ComfyUI Agent | script | default, form, save_recipe_from_form, switch, raw, llm, run, presets, scan_workflows, status | comfyui, llm | agent.py |  | default_preset_id, default_input_mode, prompt_enhancer_system_prompt, prompt_enhancer_user_template, auto_run_after_llm_prompt, default_seed_policy, unload_llm_before_generation |
 | echo_attachments | Echo Attachment Agent | script | default |  | agent.py |  |  |
 | echo_script | Echo Script Agent | script | default | base64 | agent.py |  |  |
 | render_test | Render Test Agent | script | default, json, text, llm, image, form, form_submit |  | agent.py |  |  |
