@@ -733,6 +733,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         form_id: formId,
         values,
       });
+      if (result.updated_form) {
+        set({ messages: applyUpdatedFormBlock(get().messages, result.updated_form) });
+      }
       await get().refreshCurrent();
       if (!result.success) {
         set({ error: undefined, lastError: undefined });
@@ -1189,6 +1192,31 @@ function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, compl
     };
   });
   return replaced ? sortMessagesByCreatedAt(next) : sortMessagesByCreatedAt([...messages, updatedMessage]);
+}
+
+function applyUpdatedFormBlock(messages: Message[], updatedForm: NonNullable<RuntimeResponse['updated_form']>): Message[] {
+  return messages.map((message) => {
+    if (message.message_id !== updatedForm.source_message_id) return message;
+    const content = replaceActionFormBlock(message.content, updatedForm.form_id, updatedForm.block);
+    return content === message.content ? message : { ...message, content };
+  });
+}
+
+function replaceActionFormBlock(content: unknown, formId: string, block: unknown): unknown {
+  if (!isRecord(content)) return content;
+  if (content.type === 'action_form' && content.form_id === formId) {
+    return block;
+  }
+  if (!Array.isArray(content.blocks)) return content;
+  let replaced = false;
+  const blocks = content.blocks.map((item) => {
+    if (isRecord(item) && item.type === 'action_form' && item.form_id === formId) {
+      replaced = true;
+      return block;
+    }
+    return item;
+  });
+  return replaced ? { ...content, blocks } : content;
 }
 
 function removeDraftAndAppendError(messages: Message[], sessionId: string, runId: string, error: AppError): Message[] {

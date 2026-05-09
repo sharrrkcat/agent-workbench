@@ -656,7 +656,7 @@ function RichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId:
           return <FileContentRenderer key={index} payload={block} />;
         }
         if (block.type === 'action_form') {
-          return <ActionFormRenderer key={index} form={block} messageId={messageId} />;
+          return <ActionFormRenderer key={`${messageId}:action_form:${index}:${block.form_id}`} form={block} messageId={messageId} blockIndex={index} />;
         }
         if (block.type === 'command_buttons') {
           return <CommandButtonsRenderer key={index} block={block} />;
@@ -685,20 +685,24 @@ function CommandButtonsRenderer({ block }: { block: CommandButtonsBlock }) {
   );
 }
 
-function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messageId: string }) {
+function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormBlock; messageId: string; blockIndex: number }) {
   const submitForm = useWorkbenchStore((state) => state.submitForm);
   const pendingActionKey = useWorkbenchStore((state) => state.pendingActionKey);
   const [values, setValues] = useState<Record<string, unknown>>(() => initialFormValues(form));
   const [error, setError] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
+  const [expanded, setExpanded] = useState(() => !initialActionFormCollapsed(form));
   const pending = pendingActionKey === `${messageId}:form:${form.form_id}`;
   const silent = form.submit.visibility === 'silent';
   const sections = groupActionFormFields(form);
+  const collapsed = !expanded;
+  const formDomKey = `${messageId}-${blockIndex}-${form.form_id}`;
 
   useEffect(() => {
     setValues(initialFormValues(form));
     setError('');
     setNotice('');
+    setExpanded(!initialActionFormCollapsed(form));
   }, [form]);
 
   function setFieldValue(field: ActionFormField, value: unknown) {
@@ -724,10 +728,29 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
     }
   }
 
+  if (collapsed) {
+    return (
+      <section className="action-form-card collapsed">
+        <button type="button" className="action-form-collapse-toggle" onClick={() => setExpanded(true)} aria-expanded={false}>
+          <ChevronRight size={14} />
+          <span>
+            <strong>{form.title}</strong>
+            <small>{form.ui?.collapsed_message || 'Click to expand.'}</small>
+          </span>
+        </button>
+      </section>
+    );
+  }
+
   return (
     <form className="action-form-card" onSubmit={(event) => void onSubmit(event)}>
       <header className="action-form-header">
-        <strong>{form.title}</strong>
+        <div className="action-form-title-row">
+          <button type="button" className="action-form-header-toggle" onClick={() => setExpanded(false)} aria-expanded={true} title="Collapse form">
+            <ChevronDown size={14} />
+          </button>
+          <strong>{form.title}</strong>
+        </div>
         {form.description ? <p>{form.description}</p> : null}
       </header>
       <div className="action-form-sections">
@@ -736,7 +759,7 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
             {section.title ? <h4>{section.title}</h4> : null}
             <div className="action-form-fields">
               {section.fields.map((field) => (
-                <ActionFormFieldControl key={field.name} field={field} value={values[field.name]} onChange={(value) => setFieldValue(field, value)} />
+                <ActionFormFieldControl key={`${formDomKey}-${field.name}`} formDomKey={formDomKey} field={field} value={values[field.name]} onChange={(value) => setFieldValue(field, value)} />
               ))}
             </div>
           </section>
@@ -758,8 +781,8 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
   );
 }
 
-function ActionFormFieldControl({ field, value, onChange }: { field: ActionFormField; value: unknown; onChange: (value: unknown) => void }) {
-  const id = `form-field-${field.name}`;
+function ActionFormFieldControl({ formDomKey, field, value, onChange }: { formDomKey: string; field: ActionFormField; value: unknown; onChange: (value: unknown) => void }) {
+  const id = `action-form-${formDomKey}-${field.name}`;
   const label = field.label || field.name;
   const description = field.description || field.help || '';
   const span = resolveActionFormFieldSpan(field);
@@ -775,12 +798,7 @@ function ActionFormFieldControl({ field, value, onChange }: { field: ActionFormF
   } else if (field.type === 'integer' || field.type === 'float') {
     control = <input {...common} type="number" value={numberFormValue(value)} min={field.minimum ?? undefined} max={field.maximum ?? undefined} step={field.step ?? (field.type === 'integer' ? 1 : 'any')} onChange={(event) => onChange(event.target.value)} />;
   } else if (field.type === 'boolean') {
-    control = (
-      <label className="action-form-checkbox">
-        <input type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} />
-        <span>{label}</span>
-      </label>
-    );
+    control = <input {...common} type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} />;
   } else if (field.type === 'enum') {
     control = (
       <select {...common} value={stringFormValue(value)} onChange={(event) => onChange(enumOptionValue(field, event.target.value))}>
@@ -797,12 +815,17 @@ function ActionFormFieldControl({ field, value, onChange }: { field: ActionFormF
     control = <input {...common} type="text" value={stringFormValue(value)} onChange={(event) => onChange(event.target.value)} minLength={field.min_length ?? undefined} maxLength={field.max_length ?? undefined} />;
   }
   return (
-    <label className={`action-form-field span-${span} ${field.type === 'boolean' ? 'boolean' : ''}`} htmlFor={field.type === 'boolean' ? undefined : id}>
-      {field.type !== 'boolean' ? <span>{label}</span> : null}
+    <label className={`action-form-field span-${span} ${field.type === 'boolean' ? 'boolean action-form-checkbox' : ''}`} htmlFor={id}>
+      <span>{label}</span>
       {control}
       {description ? <small>{description}</small> : null}
     </label>
   );
+}
+
+function initialActionFormCollapsed(form: ActionFormBlock): boolean {
+  if (typeof form.ui?.collapsed === 'boolean') return form.ui.collapsed;
+  return form.ui?.default_collapsed === true;
 }
 
 const DEFAULT_FORM_SECTION_KEY = '__default';

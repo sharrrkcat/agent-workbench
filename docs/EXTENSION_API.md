@@ -348,9 +348,18 @@ Top-level fields:
 - `form_id`: required string, unique within the message.
 - `title`: required display title.
 - `description`: optional help text.
+- `ui`: optional form-level UI metadata. Supported keys are `default_collapsed`, `collapsed`, `collapse_on_success`, and `collapsed_message`.
 - `fields`: required array of field declarations.
 - `sections`: optional array of static layout section declarations shaped as `{key, title?}`.
 - `submit`: required object.
+
+Form-level `ui` fields:
+- `default_collapsed`: optional boolean, used only for first render when `collapsed` is absent. Missing means expanded.
+- `collapsed`: optional boolean persisted form state. When present, it takes precedence over `default_collapsed`.
+- `collapse_on_success`: optional boolean. Trusted backend code may use this after a successful silent save to return an `updated_form` or emit `message_updated` with the source form collapsed.
+- `collapsed_message`: optional short text shown in collapsed state, such as `Recipe saved. Click to expand.`
+
+Collapsed state is frontend UI state on the same `action_form` block. It does not change the form submission protocol, submit target resolution, field values, provider-bound context, or the rule that the frontend submits only `source_message_id`, `form_id`, and `values`. Field `name` values remain submission keys; they are not DOM ids, and renderers should derive globally unique DOM ids per rendered form instance.
 
 Field declarations use `name`, `type`, optional `label`, `description`/`help`, `required`, `value`, `default`, `placeholder`, numeric bounds/`step`, text length bounds, enum `options: [{"value": "...", "label": "..."}]`, and optional static UI metadata:
 
@@ -367,7 +376,7 @@ On submit, the frontend sends only `source_message_id`, `form_id`, and `values`.
 
 With `visibility="message"`, the backend creates a `form_submission` user message with a short summary body and invokes the target Agent action. This is the default and preserves older form behavior.
 
-With `visibility="silent"`, the backend invokes the target Agent action without creating a visible user message and suppresses normal assistant output from reply helpers or public output streaming. The target Script Agent still receives validated values in `ctx.input.prefill`, `ctx.input.form_id`, `ctx.input.source_message_id`, and `ctx.input.is_silent_submission=true`, so it can save state, save a recipe, or update settings. Successful silent submissions return a structured response with `silent=true` and a user-facing message from `submit.success_message` or `"Saved"`. A Script Agent may return `{"updated_form": {"source_message_id": "...", "form_id": "...", "block": {...}}}` after it has rebuilt and persisted a replacement source `action_form`; the frontend can use that payload, or the corresponding `message_updated` event, to refresh the existing form without adding chat messages. Failed silent submissions return a structured error; `submit.failure_message` may be used as an error prefix.
+With `visibility="silent"`, the backend invokes the target Agent action without creating a visible user message and suppresses normal assistant output from reply helpers or public output streaming. The target Script Agent still receives validated values in `ctx.input.prefill`, `ctx.input.form_id`, `ctx.input.source_message_id`, and `ctx.input.is_silent_submission=true`, so it can save state, save a recipe, or update settings. Successful silent submissions return a structured response with `silent=true` and a user-facing message from `submit.success_message` or `"Saved"`. A Script Agent may return `{"updated_form": {"source_message_id": "...", "form_id": "...", "block": {...}}}` after it has rebuilt and persisted a replacement source `action_form`; the frontend can use that payload, or the corresponding `message_updated` event, to refresh the existing form without adding chat messages. The replacement block may set `ui.collapsed=true` to collapse the same source form after a successful silent save while retaining all fields and values for later expansion. Failed silent submissions return a structured error; `submit.failure_message` may be used as an error prefix.
 
 Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static while the user edits a rendered form; there is no dynamic onchange refresh. If a silent submit changes the saved state enough to require different fields, the target action can save the state and replace the source message form block from trusted backend code. The frontend still submits only `source_message_id`, `form_id`, and values; it must not submit a replacement form block. The ComfyUI Agent uses `action_form` as a recipe editor only; form submission does not submit generation, choose input mode, or collect the LLM user request.
 

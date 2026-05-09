@@ -356,6 +356,25 @@ def test_recipe_form_excludes_mode_and_user_prompt_uses_current_values_and_silen
     assert fields["positive_prompt"]["value"] == "current generated prompt"
     assert form["submit"]["visibility"] == "silent"
     assert form["submit"]["success_message"] == "Recipe saved"
+    assert form["ui"]["default_collapsed"] is False
+    assert form["ui"]["collapsed"] is False
+    assert form["ui"]["collapse_on_success"] is True
+    assert form["ui"]["collapsed_message"] == "Recipe saved. Click to expand."
+
+
+def test_recipe_form_can_render_saved_collapsed_state_with_fields(tmp_path: Path):
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    recipe["values"]["positive_prompt"] = "saved prompt"
+
+    form = comfy_agent.recipe_to_form(recipe, READY_PRESET, [READY_PRESET], collapsed=True)
+    fields = {field["name"]: field for field in form["fields"]}
+
+    assert form["type"] == "action_form"
+    assert form["ui"]["collapsed"] is True
+    assert form["ui"]["collapse_on_success"] is True
+    assert fields["positive_prompt"]["value"] == "saved prompt"
+    assert "input_mode" not in fields
+    assert "user_prompt" not in fields
 
 
 def test_recipe_form_copies_preset_ui_to_action_form(tmp_path: Path):

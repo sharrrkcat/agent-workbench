@@ -1412,9 +1412,69 @@ input:disabled {
   background: #171717;
 }
 
+.action-form-card.collapsed {
+  padding: 8px 10px;
+}
+
+.action-form-collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.86);
+  text-align: left;
+}
+
+.action-form-collapse-toggle > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.action-form-collapse-toggle strong {
+  font-size: 13px;
+}
+
+.action-form-collapse-toggle small {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.action-form-collapse-toggle:hover {
+  color: rgba(255, 255, 255, 0.96);
+}
+
 .action-form-header {
   display: grid;
   gap: 4px;
+}
+
+.action-form-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.action-form-header-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.action-form-header-toggle:hover {
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .action-form-header strong {

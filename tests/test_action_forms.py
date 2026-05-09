@@ -84,6 +84,41 @@ def test_action_form_layout_ui_and_sections_validate() -> None:
     assert parsed["fields"][1]["ui"] == {"section": "sampling", "span": 4}
 
 
+def test_action_form_top_level_ui_validates() -> None:
+    form = demo_form(
+        ui={
+            "default_collapsed": False,
+            "collapsed": True,
+            "collapse_on_success": True,
+            "collapsed_message": "Recipe saved. Click to expand.",
+        }
+    )
+    parsed = validate_action_form_block(form)
+
+    assert parsed["ui"] == {
+        "default_collapsed": False,
+        "collapsed": True,
+        "collapse_on_success": True,
+        "collapsed_message": "Recipe saved. Click to expand.",
+    }
+
+
+@pytest.mark.parametrize(
+    "ui",
+    [
+        {"default_collapsed": "false"},
+        {"collapsed": "true"},
+        {"collapse_on_success": "yes"},
+        {"collapsed_message": 123},
+        {"unknown": True},
+    ],
+)
+def test_action_form_rejects_invalid_top_level_ui(ui: dict) -> None:
+    with pytest.raises(FormValidationError) as exc:
+        validate_action_form_block(demo_form(ui=ui))
+    assert exc.value.code == "FORM_INVALID"
+
+
 def test_action_form_submit_visibility_defaults_to_message() -> None:
     assert validate_action_form_block(demo_form())["submit"]["visibility"] == "message"
 
@@ -135,7 +170,10 @@ def test_action_form_value_validation_success_and_optional_fallbacks() -> None:
 
 
 def test_action_form_value_validation_ignores_layout_metadata() -> None:
-    form = demo_form(fields=[{"name": "steps", "type": "integer", "value": 30, "ui": {"section": "sampling", "span": 4}}])
+    form = demo_form(
+        ui={"collapsed": True},
+        fields=[{"name": "steps", "type": "integer", "value": 30, "ui": {"section": "sampling", "span": 4}}],
+    )
     values = validate_action_form_values(form, {"steps": "44"})
     assert values == {"steps": 44}
     with pytest.raises(FormValidationError):
@@ -321,6 +359,8 @@ def test_comfyui_silent_recipe_save_updates_source_form_block_without_chat_bubbl
     blocks = updated.content["blocks"]
     form = next(block for block in blocks if block.get("form_id") == "comfyui_recipe")
     fields = {field["name"]: field for field in form["fields"]}
+    assert form["ui"]["collapsed"] is True
+    assert form["ui"]["collapsed_message"] == "Recipe saved. Click to expand."
     assert fields["positive_prompt"]["value"] == "new prompt"
     assert fields["steps"]["value"] == 44
     messages = client.app.state.runtime_state.messages.list_messages(session["session_id"])
@@ -346,6 +386,7 @@ def test_comfyui_silent_recipe_save_preset_switch_returns_new_form_fields(tmp_pa
     assert response.status_code == 200
     block = response.json()["updated_form"]["block"]
     fields = {field["name"]: field for field in block["fields"]}
+    assert block["ui"]["collapsed"] is True
     assert set(fields) == {"preset_id", "cfg"}
     assert fields["preset_id"]["value"] == "other"
 

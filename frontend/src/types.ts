@@ -393,6 +393,12 @@ export type ActionFormBlock = {
   form_id: string;
   title: string;
   description?: string | null;
+  ui?: {
+    default_collapsed?: boolean | null;
+    collapsed?: boolean | null;
+    collapse_on_success?: boolean | null;
+    collapsed_message?: string | null;
+  } | null;
   fields: ActionFormField[];
   sections?: ActionFormSection[] | null;
   submit: {
@@ -595,6 +601,11 @@ export type RuntimeResponse = {
   run_id?: string | null;
   run?: Run | null;
   session?: Session;
+  updated_form?: {
+    source_message_id: string;
+    form_id: string;
+    block: ActionFormBlock;
+  } | null;
   messages: Message[];
 };
 

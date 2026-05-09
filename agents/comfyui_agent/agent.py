@@ -522,7 +522,7 @@ def recipe_from_preset(preset: dict, default_input_mode: str) -> dict:
     }
 
 
-def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]) -> dict:
+def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict], collapsed: bool = False) -> dict:
     recipe = recipe or {}
     preset = preset or {"parameters": []}
     ready_presets = [item for item in presets if item.get("valid") and item.get("status") == "ready"]
@@ -568,6 +568,12 @@ def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]
         "form_id": "comfyui_recipe",
         "title": "ComfyUI Recipe",
         "description": "Save recipe only updates this session recipe. It does not edit preset files or generate images.",
+        "ui": {
+            "default_collapsed": False,
+            "collapsed": bool(collapsed),
+            "collapse_on_success": True,
+            "collapsed_message": "Recipe saved. Click to expand.",
+        },
         "fields": fields,
         "sections": _form_sections(preset_ui),
         "submit": {"label": "Save recipe", "action_id": "save_recipe_from_form", "visibility": "silent", "success_message": "Recipe saved"},
@@ -1005,7 +1011,7 @@ async def update_source_recipe_form(ctx, recipe: dict, preset: dict | None, pres
     form_id = getattr(ctx.input, "form_id", None) or "comfyui_recipe"
     if not source_message_id or getattr(ctx, "message_store", None) is None:
         return None
-    block = recipe_to_form(recipe, preset, presets)
+    block = recipe_to_form(recipe, preset, presets, collapsed=True)
     try:
         source = ctx.message_store.get_message(source_message_id)
     except Exception:

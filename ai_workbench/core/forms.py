@@ -2,7 +2,7 @@ import json
 import math
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator
 
 
 class FormValidationError(ValueError):
@@ -71,6 +71,15 @@ class ActionFormSection(BaseModel):
         return cleaned or None
 
 
+class ActionFormUi(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_collapsed: Optional[StrictBool] = None
+    collapsed: Optional[StrictBool] = None
+    collapse_on_success: Optional[StrictBool] = None
+    collapsed_message: Optional[StrictStr] = None
+
+
 class ActionFormField(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,6 +145,7 @@ class ActionFormBlock(BaseModel):
     description: Optional[str] = None
     fields: list[ActionFormField] = Field(min_length=1)
     sections: list[ActionFormSection] = Field(default_factory=list)
+    ui: Optional[ActionFormUi] = None
     submit: ActionFormSubmit
 
     @field_validator("form_id", "title")

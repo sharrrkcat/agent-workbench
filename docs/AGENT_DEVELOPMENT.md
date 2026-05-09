@@ -197,8 +197,8 @@ ComfyUI Agent action semantics:
 - `fresh`: one-shot LLM prompt generation that forces `input_mode=llm` and `llm_operation=fresh` for this request only. It uses only the user input to produce a complete new `values.positive_prompt`, does not modify the stored `input_mode`, and does not modify AgentConfig `llm_operation_default`.
 - `refine`: one-shot LLM prompt generation that forces `input_mode=llm` and `llm_operation=refine` for this request only. It uses the current `values.positive_prompt` plus the user input to produce a complete new `values.positive_prompt`, does not modify the stored `input_mode`, and does not modify AgentConfig `llm_operation_default`.
 - `run`: execute the current session recipe without changing prompt or parameters.
-- `form`: show the session recipe editor only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
-- `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls.
+- `form`: show the session recipe editor expanded by default only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
+- `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls. Silent saves update the source `action_form` block with latest values and collapse that form to the minimal `Recipe saved. Click to expand.` state; expanding it shows the same editable recipe form again.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
 ComfyUI preset `parameter.ui.section` and `parameter.ui.span` metadata can shape the recipe editor layout. The Agent copies that metadata into the `action_form` block and copies top-level `ui.sections` when present; otherwise it applies compact defaults for prompts, sampling, image, model, and output fields. This layout metadata is static and the form still only edits the per-session recipe.

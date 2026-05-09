@@ -16,7 +16,7 @@
 - The frontend ignores older `seq`.
 - The frontend ignores delta after completed if `seq` is old.
 - `message_updated` can merge metadata, `run_id`, attachments, and status, but not old content while streaming.
-- Non-streaming source messages may use `message_updated` to persist backend-generated rich content changes such as replacing an `action_form` block after a silent save.
+- Non-streaming source messages may use `message_updated` to persist backend-generated rich content changes such as replacing an `action_form` block after a silent save, including setting form-level `ui.collapsed=true`.
 - Internal `ctx.llm.stream` does not emit public `message_delta`.
 - `ctx.output.write_delta` and `ctx.llm.stream_to_output` emit public deltas.
 - `command_buttons` rich content blocks are rendered after message completion like other non-streaming rich content. Clicking a command button starts a new ordinary user message; it does not mutate the source assistant message.
@@ -241,7 +241,7 @@ Old messages may lack speaker fields. Context projection falls back from role, t
 
 `action_form` is a `rich_content` block that lets trusted Agents render declarative forms. The frontend must not execute form-provided HTML or JavaScript and must not submit to arbitrary URLs.
 
-An `action_form` may include static UI layout metadata: top-level `sections` and per-field `ui.section` / `ui.span`. This metadata only shapes frontend rendering. It does not affect form submission, validated values, conversation context projection, provider-bound roles, submit target resolution, or silent submit behavior. Dynamic onchange refresh is not part of the protocol; trusted backend Agent code may still replace a source form after a validated submit.
+An `action_form` may include static UI layout metadata: top-level `sections`, form-level `ui.default_collapsed` / `ui.collapsed` / `ui.collapse_on_success` / `ui.collapsed_message`, and per-field `ui.section` / `ui.span`. This metadata only shapes frontend rendering. It does not affect form submission, validated values, conversation context projection, provider-bound roles, submit target resolution, or silent submit behavior. Collapsed state is not projected into provider-bound LLM context. Dynamic onchange refresh is not part of the protocol; trusted backend Agent code may still replace a source form after a validated submit.
 
 Form submission protocol:
 - The frontend sends `source_message_id`, `form_id`, and `values` to the form submission endpoint.
@@ -267,7 +267,7 @@ For `submit.visibility="message"`, the backend creates a new user message with m
 
 The target Script Agent receives the validated values in `ctx.input.prefill`, plus `ctx.input.source_message_id` and `ctx.input.form_id`. Message-mode form submissions may enter future LLM context as normal user messages, but only their short visible summary is projected by default. The full `prefill` JSON stays in metadata and is not automatically expanded into provider payloads.
 
-For `submit.visibility="silent"`, the backend invokes the same target Agent action without creating the visible `form_submission` user message. Script Agents receive `ctx.input.prefill`, `ctx.input.source_message_id`, `ctx.input.form_id`, and `ctx.input.is_silent_submission=true`. Normal assistant replies and public output streams from the target action are suppressed, so successful save-only actions return a structured submission response instead of appending chat timeline messages. Silent submit may update the source form only when the target Agent persists a backend-generated replacement block and emits `message_updated`; the response may also include `updated_form` with `source_message_id`, `form_id`, and `block`. The full `prefill` still stays out of provider-bound LLM context unless an Agent explicitly uses it.
+For `submit.visibility="silent"`, the backend invokes the same target Agent action without creating the visible `form_submission` user message. Script Agents receive `ctx.input.prefill`, `ctx.input.source_message_id`, `ctx.input.form_id`, and `ctx.input.is_silent_submission=true`. Normal assistant replies and public output streams from the target action are suppressed, so successful save-only actions return a structured submission response instead of appending chat timeline messages. Silent submit may update the source form only when the target Agent persists a backend-generated replacement block and emits `message_updated`; the response may also include `updated_form` with `source_message_id`, `form_id`, and `block`. A successful save may set `updated_form.block.ui.collapsed=true` so the frontend collapses that source form only; validation failure or target action failure must not collapse it. The full `prefill` and any collapsed state still stay out of provider-bound LLM context unless an Agent explicitly uses them.
 
 Provider-bound message roles remain limited to `system`, `user`, and `assistant`; message-mode and silent form submissions do not introduce `tool`, `function`, or custom provider roles.
 

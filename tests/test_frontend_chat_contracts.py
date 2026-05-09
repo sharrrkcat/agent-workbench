@@ -256,15 +256,31 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert "visibility?: 'message' | 'silent' | null" in types
     assert "success_message?: string | null" in types
     assert "ui?: {" in types
+    assert "default_collapsed?: boolean | null" in types
+    assert "collapsed?: boolean | null" in types
+    assert "collapse_on_success?: boolean | null" in types
+    assert "collapsed_message?: string | null" in types
     assert "span?: number | null" in types
+    assert "updated_form?: {" in types
     assert "sections?: ActionFormSection[] | null" in types
     assert "ActionFormRenderer" in source
     assert "ActionFormFieldControl" in source
+    assert "initialActionFormCollapsed(form)" in source
+    assert "form.ui?.collapsed_message || 'Click to expand.'" in source
+    assert "className=\"action-form-collapse-toggle\"" in source
+    assert "aria-expanded={false}" in source
+    assert "setExpanded(true)" in source
+    assert "className=\"action-form-header-toggle\"" in source
+    assert "setExpanded(false)" in source
     assert "groupActionFormFields(form)" in source
     assert "field.ui?.section" in source
     assert "resolveActionFormFieldSpan(field)" in source
     assert "sections.map((section)" in source
     assert "section.fields.map((field)" in source
+    assert "key={`${formDomKey}-${field.name}`}" in source
+    assert "const id = `action-form-${formDomKey}-${field.name}`" in source
+    assert "htmlFor={id}" in source
+    assert "name: field.name" in source
     assert "textarea" in source
     assert "type=\"number\"" in source
     assert "type=\"checkbox\"" in source
@@ -277,8 +293,13 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert "setNotice(result?.message || form.submit.success_message || 'Saved')" in source
     assert "submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>, options?: { silent?: boolean })" in store
     assert "options?.silent" in store
+    assert "applyUpdatedFormBlock(get().messages, result.updated_form)" in store
+    assert "replaceActionFormBlock" in store
     assert "/forms/submit" in client
     assert ".action-form-card" in styles
+    assert ".action-form-card.collapsed" in styles
+    assert ".action-form-collapse-toggle" in styles
+    assert ".action-form-header-toggle" in styles
     assert "grid-template-columns: repeat(12" in styles
     assert ".action-form-section" in styles
     assert ".action-form-field.span-12" in styles
