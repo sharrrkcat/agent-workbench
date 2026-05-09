@@ -20,6 +20,57 @@ class ActionFormOption(BaseModel):
     label: Optional[str] = None
 
 
+class ActionFormFieldUi(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section: Optional[str] = None
+    span: Optional[int] = None
+
+    @field_validator("section")
+    @classmethod
+    def clean_section(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("ui.section must be a non-empty string")
+        return cleaned
+
+    @field_validator("span", mode="before")
+    @classmethod
+    def clean_span(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("ui.span must be an integer from 1 to 12")
+        if value < 1 or value > 12:
+            raise ValueError("ui.span must be an integer from 1 to 12")
+        return value
+
+
+class ActionFormSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1)
+    title: Optional[str] = None
+
+    @field_validator("key")
+    @classmethod
+    def clean_key(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("section key is required")
+        return cleaned
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
 class ActionFormField(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -38,6 +89,7 @@ class ActionFormField(BaseModel):
     max_length: Optional[int] = None
     step: Optional[float] = None
     options: list[ActionFormOption] = Field(default_factory=list)
+    ui: Optional[ActionFormFieldUi] = None
 
     @field_validator("name")
     @classmethod
@@ -83,6 +135,7 @@ class ActionFormBlock(BaseModel):
     title: str = Field(min_length=1)
     description: Optional[str] = None
     fields: list[ActionFormField] = Field(min_length=1)
+    sections: list[ActionFormSection] = Field(default_factory=list)
     submit: ActionFormSubmit
 
     @field_validator("form_id", "title")

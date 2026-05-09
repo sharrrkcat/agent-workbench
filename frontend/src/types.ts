@@ -377,6 +377,15 @@ export type ActionFormField = {
   max_length?: number | null;
   step?: number | null;
   options?: { value: string | number | boolean; label?: string | null }[];
+  ui?: {
+    section?: string | null;
+    span?: number | null;
+  } | null;
+};
+
+export type ActionFormSection = {
+  key: string;
+  title?: string | null;
 };
 
 export type ActionFormBlock = {
@@ -385,6 +394,7 @@ export type ActionFormBlock = {
   title: string;
   description?: string | null;
   fields: ActionFormField[];
+  sections?: ActionFormSection[] | null;
   submit: {
     label?: string | null;
     agent_id?: string | null;

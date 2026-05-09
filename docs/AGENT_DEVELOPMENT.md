@@ -201,6 +201,8 @@ ComfyUI Agent action semantics:
 - `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
+ComfyUI preset `parameter.ui.section` and `parameter.ui.span` metadata can shape the recipe editor layout. The Agent copies that metadata into the `action_form` block and copies top-level `ui.sections` when present; otherwise it applies compact defaults for prompts, sampling, image, model, and output fields. This layout metadata is static and the form still only edits the per-session recipe.
+
 `input_mode` remains only `llm` or `raw`; `switch` controls only that stored recipe field and does not accept `fresh`, `refine`, or `unset`. `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`, and defaults to `refine`; it does not accept `unset`.
 
 The ComfyUI Agent prompt templates are `llm_refine_system_prompt`, `llm_refine_user_template`, `llm_fresh_system_prompt`, and `llm_fresh_user_template`. Alpha-era legacy `prompt_enhancer_system_prompt` and `prompt_enhancer_user_template` fields are not supported config fields.

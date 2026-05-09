@@ -349,9 +349,17 @@ Top-level fields:
 - `title`: required display title.
 - `description`: optional help text.
 - `fields`: required array of field declarations.
+- `sections`: optional array of static layout section declarations shaped as `{key, title?}`.
 - `submit`: required object.
 
-Field declarations use `name`, `type`, optional `label`, `description`/`help`, `required`, `value`, `default`, `placeholder`, numeric bounds/`step`, text length bounds, and enum `options: [{"value": "...", "label": "..."}]`.
+Field declarations use `name`, `type`, optional `label`, `description`/`help`, `required`, `value`, `default`, `placeholder`, numeric bounds/`step`, text length bounds, enum `options: [{"value": "...", "label": "..."}]`, and optional static UI metadata:
+
+- `ui.section`: optional section key. Fields with the same section render in one section container.
+- `ui.span`: optional integer from 1 to 12 for the frontend 12-column form grid.
+
+Section order comes from the first occurrence of each `field.ui.section` in the `fields` array. Field order within a section is exactly the `fields` array order. If a field has no `ui.section`, it belongs to the default section. If `field.ui.section` has no matching top-level `sections` entry, the frontend may derive a title from the key. `ui.order` is not supported; reorder the `fields` array instead. The first version supports only static section grouping and grid span metadata. It does not support nested layout, collapsible sections, row layout DSL, or dynamic onchange refresh.
+
+Grid rendering is frontend behavior. Typical spans are `12` for long fields such as `textarea`, `json`, and prompt text, `6` for medium text/select fields, and `4` or `3` for compact numeric, boolean, and enum fields. Small screens may collapse to one column.
 
 Submit declarations use optional `label`, optional `agent_id`, required `action_id`, optional `message`, optional `visibility`, optional `success_message`, and optional `failure_message`. If `agent_id` is omitted, the source message Agent is used. `visibility` defaults to `"message"` and may be `"message"` or `"silent"`.
 

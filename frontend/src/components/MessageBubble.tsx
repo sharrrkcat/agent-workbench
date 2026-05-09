@@ -693,6 +693,7 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
   const [notice, setNotice] = useState<string>('');
   const pending = pendingActionKey === `${messageId}:form:${form.form_id}`;
   const silent = form.submit.visibility === 'silent';
+  const sections = groupActionFormFields(form);
 
   useEffect(() => {
     setValues(initialFormValues(form));
@@ -729,9 +730,16 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
         <strong>{form.title}</strong>
         {form.description ? <p>{form.description}</p> : null}
       </header>
-      <div className="action-form-fields">
-        {form.fields.map((field) => (
-          <ActionFormFieldControl key={field.name} field={field} value={values[field.name]} onChange={(value) => setFieldValue(field, value)} />
+      <div className="action-form-sections">
+        {sections.map((section) => (
+          <section className={`action-form-section ${section.key === DEFAULT_FORM_SECTION_KEY ? 'default' : ''}`} key={section.key}>
+            {section.title ? <h4>{section.title}</h4> : null}
+            <div className="action-form-fields">
+              {section.fields.map((field) => (
+                <ActionFormFieldControl key={field.name} field={field} value={values[field.name]} onChange={(value) => setFieldValue(field, value)} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
       {error ? <div className="action-form-error">{error}</div> : null}
@@ -754,6 +762,7 @@ function ActionFormFieldControl({ field, value, onChange }: { field: ActionFormF
   const id = `form-field-${field.name}`;
   const label = field.label || field.name;
   const description = field.description || field.help || '';
+  const span = resolveActionFormFieldSpan(field);
   const common = {
     id,
     name: field.name,
@@ -788,12 +797,59 @@ function ActionFormFieldControl({ field, value, onChange }: { field: ActionFormF
     control = <input {...common} type="text" value={stringFormValue(value)} onChange={(event) => onChange(event.target.value)} minLength={field.min_length ?? undefined} maxLength={field.max_length ?? undefined} />;
   }
   return (
-    <label className={`action-form-field ${field.type === 'boolean' ? 'boolean' : ''}`} htmlFor={field.type === 'boolean' ? undefined : id}>
+    <label className={`action-form-field span-${span} ${field.type === 'boolean' ? 'boolean' : ''}`} htmlFor={field.type === 'boolean' ? undefined : id}>
       {field.type !== 'boolean' ? <span>{label}</span> : null}
       {control}
       {description ? <small>{description}</small> : null}
     </label>
   );
+}
+
+const DEFAULT_FORM_SECTION_KEY = '__default';
+
+type ActionFormFieldSection = {
+  key: string;
+  title: string;
+  fields: ActionFormField[];
+};
+
+function groupActionFormFields(form: ActionFormBlock): ActionFormFieldSection[] {
+  const titleByKey = new Map((form.sections || []).filter((section) => section.key).map((section) => [section.key, section.title || titleFromSectionKey(section.key)]));
+  const sections: ActionFormFieldSection[] = [];
+  const byKey = new Map<string, ActionFormFieldSection>();
+  for (const field of form.fields) {
+    const key = field.ui?.section?.trim() || DEFAULT_FORM_SECTION_KEY;
+    let section = byKey.get(key);
+    if (!section) {
+      section = { key, title: key === DEFAULT_FORM_SECTION_KEY ? '' : titleByKey.get(key) || titleFromSectionKey(key), fields: [] };
+      byKey.set(key, section);
+      sections.push(section);
+    }
+    section.fields.push(field);
+  }
+  return sections;
+}
+
+function resolveActionFormFieldSpan(field: ActionFormField): number {
+  if (Number.isInteger(field.ui?.span) && field.ui?.span && field.ui.span >= 1 && field.ui.span <= 12) {
+    return field.ui.span;
+  }
+  const name = field.name.toLowerCase();
+  if (field.type === 'textarea' || field.type === 'json' || name.includes('prompt') || name.includes('description')) return 12;
+  if (['seed', 'steps', 'cfg', 'cfg_scale', 'width', 'height', 'batch_size', 'denoise', 'sampler', 'sampler_name', 'scheduler'].includes(name)) return 4;
+  if (name.includes('checkpoint') || name === 'ckpt_name' || name.includes('filename_prefix')) return 6;
+  if (field.type === 'integer' || field.type === 'float' || field.type === 'boolean') return 4;
+  if (field.type === 'enum') return 4;
+  if (field.type === 'text') return 12;
+  return 12;
+}
+
+function titleFromSectionKey(key: string): string {
+  return key
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
 }
 
 function initialFormValues(form: ActionFormBlock): Record<string, unknown> {

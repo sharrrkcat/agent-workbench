@@ -241,6 +241,8 @@ Old messages may lack speaker fields. Context projection falls back from role, t
 
 `action_form` is a `rich_content` block that lets trusted Agents render declarative forms. The frontend must not execute form-provided HTML or JavaScript and must not submit to arbitrary URLs.
 
+An `action_form` may include static UI layout metadata: top-level `sections` and per-field `ui.section` / `ui.span`. This metadata only shapes frontend rendering. It does not affect form submission, validated values, conversation context projection, provider-bound roles, submit target resolution, or silent submit behavior. Dynamic onchange refresh is not part of the protocol; trusted backend Agent code may still replace a source form after a validated submit.
+
 Form submission protocol:
 - The frontend sends `source_message_id`, `form_id`, and `values` to the form submission endpoint.
 - The backend reads the original source message and resolves the target `agent_id` / `action_id` from the original `action_form` block.

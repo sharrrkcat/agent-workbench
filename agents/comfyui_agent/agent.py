@@ -11,6 +11,14 @@ from typing import Any
 RECIPE_KEY = "comfyui_recipe"
 INPUT_MODES = {"llm", "raw"}
 LLM_OPERATIONS = {"refine", "fresh"}
+DEFAULT_FORM_SECTIONS = [
+    {"key": "recipe", "title": "Recipe"},
+    {"key": "prompts", "title": "Prompts"},
+    {"key": "sampling", "title": "Sampling"},
+    {"key": "image", "title": "Image"},
+    {"key": "model", "title": "Model"},
+    {"key": "output", "title": "Output"},
+]
 
 DEFAULT_LLM_REFINE_SYSTEM_PROMPT = """\
 Use the current positive_prompt and the user's new request to produce a complete new positive_prompt.
@@ -533,6 +541,7 @@ def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]
             "options": [{"value": item["preset_id"], "label": item.get("name") or item["preset_id"]} for item in ready_presets],
             "value": recipe.get("preset_id") or "",
             "required": True,
+            "ui": {"section": "recipe", "span": 12},
         }
     ]
     values = recipe.get("values") or {}
@@ -549,15 +558,82 @@ def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]
         if "name" not in field or "type" not in field:
             continue
         field["value"] = values.get(field["name"], parameter.get("default"))
+        field_ui = _form_field_ui(parameter, field)
+        if field_ui:
+            field["ui"] = field_ui
         fields.append(field)
+    preset_ui = preset.get("ui") if isinstance(preset.get("ui"), dict) else {}
     return {
         "type": "action_form",
         "form_id": "comfyui_recipe",
         "title": "ComfyUI Recipe",
         "description": "Save recipe only updates this session recipe. It does not edit preset files or generate images.",
         "fields": fields,
+        "sections": _form_sections(preset_ui),
         "submit": {"label": "Save recipe", "action_id": "save_recipe_from_form", "visibility": "silent", "success_message": "Recipe saved"},
     }
+
+
+def _form_sections(preset_ui: dict | None) -> list[dict]:
+    sections = (preset_ui or {}).get("sections")
+    if isinstance(sections, list) and sections:
+        cleaned = []
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            key = section.get("key")
+            if not isinstance(key, str) or not key.strip():
+                continue
+            item = {"key": key.strip()}
+            title = section.get("title")
+            if isinstance(title, str) and title.strip():
+                item["title"] = title.strip()
+            cleaned.append(item)
+        if cleaned:
+            return cleaned
+    return copy.deepcopy(DEFAULT_FORM_SECTIONS)
+
+
+def _form_field_ui(parameter: dict, field: dict) -> dict:
+    explicit = parameter.get("ui") if isinstance(parameter.get("ui"), dict) else {}
+    default = _default_form_field_ui(str(field.get("name") or ""), str(field.get("type") or ""))
+    ui = {}
+    explicit_section = explicit.get("section")
+    explicit_span = explicit.get("span")
+    if isinstance(explicit_section, str) and explicit_section.strip():
+        ui["section"] = explicit_section.strip()
+    elif default.get("section") is not None:
+        ui["section"] = default.get("section")
+    if isinstance(explicit_span, int) and not isinstance(explicit_span, bool) and 1 <= explicit_span <= 12:
+        ui["span"] = explicit_span
+    elif default.get("span") is not None:
+        ui["span"] = default.get("span")
+    return ui
+
+
+def _default_form_field_ui(name: str, field_type: str) -> dict:
+    normalized = name.lower()
+    if field_type in {"textarea", "json"} or "prompt" in normalized or "description" in normalized:
+        return {"section": "prompts", "span": 12}
+    if normalized in {"seed", "steps", "cfg", "cfg_scale", "denoise"}:
+        return {"section": "sampling", "span": 4}
+    if normalized in {"sampler", "sampler_name", "scheduler"}:
+        return {"section": "sampling", "span": 4}
+    if normalized in {"width", "height", "batch_size"}:
+        return {"section": "image", "span": 4}
+    if normalized in {"checkpoint", "checkpoint_name", "ckpt_name"}:
+        return {"section": "model", "span": 6}
+    if normalized == "filename_prefix":
+        return {"section": "output", "span": 6}
+    if field_type in {"integer", "float"}:
+        return {"section": "sampling", "span": 4}
+    if field_type == "boolean":
+        return {"section": "sampling", "span": 4}
+    if field_type == "enum":
+        return {"section": "sampling", "span": 4}
+    if field_type == "text":
+        return {"section": "output", "span": 6}
+    return {"section": "output", "span": 12}
 
 
 def apply_form_to_recipe(current_recipe: dict, prefill: dict, presets: list[dict]) -> tuple[dict, dict | None, bool, list[str]]:

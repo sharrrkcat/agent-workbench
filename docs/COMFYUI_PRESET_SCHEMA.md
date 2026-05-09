@@ -53,6 +53,9 @@ parameters:
     label: Positive prompt
     required: true
     default: ""
+    ui:
+      section: prompts
+      span: 12
     mapping:
       node_id: "6"
       input_path: ["inputs", "text"]
@@ -61,6 +64,9 @@ parameters:
     type: enum
     label: Sampler
     default: euler
+    ui:
+      section: sampling
+      span: 4
     options:
       - value: euler
         label: Euler
@@ -72,6 +78,21 @@ parameters:
 
 output:
   images: all
+```
+
+Optional top-level form layout sections:
+
+```yaml
+ui:
+  sections:
+    - key: prompts
+      title: Prompts
+    - key: sampling
+      title: Sampling
+    - key: image
+      title: Image
+    - key: output
+      title: Output
 ```
 
 ## Field Rules
@@ -86,6 +107,11 @@ output:
 - Custom parameter fields are allowed and preserved as long as required schema and `mapping` fields are present.
 - Enum parameters must have non-empty `options`.
 - Enum `options` items must be objects shaped as `{value, label}`.
+- Optional `parameter.ui` may shape the ComfyUI Agent recipe form. `ui.section` is an optional non-empty string. `ui.span` is an optional integer from 1 to 12 for a 12-column frontend grid.
+- Optional top-level `ui.sections` is an array of `{key, title?}` section labels.
+- `ui.order` is not supported. To change form order, reorder the `parameters` array. Section order is based on the first parameter that uses each section, and field order within a section remains the `parameters` array order.
+- `ui` does not affect workflow generation, parameter mapping, or recipe values. Missing `ui` uses Agent/frontend default layout rules.
+- Collapsible sections, `default_open`, nested layout, row layout DSL, dynamic onchange refresh, and automatic field mapping are not part of this schema.
 
 ## Status
 
@@ -208,6 +234,8 @@ Other common failures:
 - `mapping.node_id` does not exist in the workflow.
 - `mapping.input_path` cannot be found.
 - `workflow.hash` does not match the canonical workflow hash.
+- `parameter.ui.span` is outside 1..12 or is not an integer.
+- `parameter.ui.order` is present; reorder `parameters` instead.
 
 ## AI Checklist
 
@@ -220,5 +248,8 @@ Before writing or editing a preset:
 - Confirm every mapped `node_id` exists.
 - Confirm every `input_path` exists in that node.
 - Give every `enum` a non-empty list of `{value, label}` options.
+- Use `ui.section` and `ui.span` for compact recipe forms.
+- Do not use `ui.order`.
+- Keep field order in `parameters`.
 - Keep `needs_mapping` for drafts that are not generation-ready.
 - Use `output.images: all`.

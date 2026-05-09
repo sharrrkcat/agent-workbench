@@ -1,4 +1,5 @@
 import base64
+import copy
 import hashlib
 import json
 import mimetypes
@@ -761,7 +762,7 @@ def _validate_preset(
         return _preset_validation_result("", None, workflows_dir, workflows, loaded_presets, ["Preset must be a YAML object."], warnings, source_file_name)
     if preset.get("_load_error"):
         errors.append(f"Preset YAML could not be read: {preset['_load_error']}")
-    known = {"id", "name", "description", "status", "workflow", "parameters", "output"}
+    known = {"id", "name", "description", "status", "workflow", "parameters", "output", "ui"}
     for key in sorted(set(preset) - known - {"_load_error"}):
         warnings.append(f"Unknown preset field: {key}")
     preset_id = str(preset.get("id") or "")
@@ -775,6 +776,32 @@ def _validate_preset(
     status = str(preset.get("status") or "ready")
     if status not in PRESET_STATUS_VALUES:
         errors.append(f"Unsupported preset status: {status}")
+    ui = preset.get("ui") if "ui" in preset else None
+    if ui is not None:
+        if not isinstance(ui, dict):
+            errors.append("ui must be an object.")
+            ui = {}
+        else:
+            for key in sorted(set(ui) - {"sections"}):
+                if key == "order":
+                    errors.append("ui.order is not supported; reorder parameters instead.")
+                else:
+                    warnings.append(f"Unknown ui field: {key}")
+            if "sections" in ui:
+                sections = ui.get("sections")
+                if not isinstance(sections, list):
+                    errors.append("ui.sections must be an array.")
+                else:
+                    for index, section in enumerate(sections):
+                        if not isinstance(section, dict):
+                            errors.append(f"ui.sections[{index}] must be an object.")
+                            continue
+                        for key in sorted(set(section) - {"key", "title"}):
+                            warnings.append(f"Unknown ui.sections[{index}] field: {key}")
+                        if not isinstance(section.get("key"), str) or not section.get("key", "").strip():
+                            errors.append(f"ui.sections[{index}].key is required.")
+                        if "title" in section and section.get("title") is not None and not isinstance(section.get("title"), str):
+                            errors.append(f"ui.sections[{index}].title must be a string.")
     workflow_ref = preset.get("workflow") if isinstance(preset.get("workflow"), dict) else {}
     workflow_file = workflow_ref.get("file_name")
     if not _is_safe_basename(workflow_file):
@@ -825,6 +852,7 @@ def _validate_preset(
             errors.append(f"Default value type does not match parameter type: {p_name}")
         if ("minimum" in parameter or "maximum" in parameter) and p_type not in {"integer", "float"}:
             errors.append(f"minimum/maximum only apply to numeric parameters: {p_name}")
+        _validate_parameter_ui(parameter.get("ui"), p_name, errors, warnings)
         mapping = parameter.get("mapping")
         if status == "ready" and parameter.get("required") and not mapping:
             errors.append(f"Ready preset required parameter is missing mapping: {p_name}")
@@ -839,6 +867,26 @@ def _validate_preset(
     if output.get("images", "all") != "all":
         errors.append("Only output.images=all is supported.")
     return _preset_validation_result(preset_id, preset, workflows_dir, workflows, loaded_presets, errors, warnings, source_file_name, status, workflow_info, len(parameters))
+
+
+def _validate_parameter_ui(ui: Any, parameter_name: str, errors: list[str], warnings: list[str]) -> None:
+    if ui is None:
+        return
+    label = parameter_name or "<unnamed>"
+    if not isinstance(ui, dict):
+        errors.append(f"parameter.ui must be an object: {label}")
+        return
+    for key in sorted(set(ui) - {"section", "span"}):
+        if key == "order":
+            errors.append(f"parameter.ui.order is not supported for {label}; reorder parameters instead.")
+        else:
+            warnings.append(f"Unknown parameter.ui field for {label}: {key}")
+    section = ui.get("section")
+    if section is not None and (not isinstance(section, str) or not section.strip()):
+        errors.append(f"parameter.ui.section must be a non-empty string: {label}")
+    span = ui.get("span")
+    if span is not None and (not isinstance(span, int) or isinstance(span, bool) or span < 1 or span > 12):
+        errors.append(f"parameter.ui.span must be an integer from 1 to 12: {label}")
 
 
 def _preset_validation_result(
@@ -870,6 +918,7 @@ def _preset_validation_result(
         },
         "parameter_count": parameter_count,
         "parameters": list(preset.get("parameters") or []) if isinstance(preset, dict) else [],
+        "ui": copy.deepcopy(preset.get("ui") or {}) if isinstance(preset, dict) and isinstance(preset.get("ui"), dict) else {},
         "errors": errors,
         "warnings": warnings,
     }

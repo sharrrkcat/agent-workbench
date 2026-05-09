@@ -358,6 +358,68 @@ def test_recipe_form_excludes_mode_and_user_prompt_uses_current_values_and_silen
     assert form["submit"]["success_message"] == "Recipe saved"
 
 
+def test_recipe_form_copies_preset_ui_to_action_form(tmp_path: Path):
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    preset = {
+        **READY_PRESET,
+        "ui": {"sections": [{"key": "prompts", "title": "Prompts"}, {"key": "sampling", "title": "Sampling"}]},
+        "parameters": [
+            {**READY_PRESET["parameters"][0], "ui": {"section": "prompts", "span": 12}},
+            {**READY_PRESET["parameters"][2], "ui": {"section": "sampling", "span": 6}},
+        ],
+    }
+
+    form = comfy_agent.recipe_to_form(recipe, preset, [preset])
+    fields = {field["name"]: field for field in form["fields"]}
+
+    assert form["sections"] == [{"key": "prompts", "title": "Prompts"}, {"key": "sampling", "title": "Sampling"}]
+    assert fields["positive_prompt"]["ui"] == {"section": "prompts", "span": 12}
+    assert fields["steps"]["ui"] == {"section": "sampling", "span": 6}
+
+
+def test_recipe_form_default_layout_for_common_fields(tmp_path: Path):
+    preset = {
+        **READY_PRESET,
+        "parameters": [
+            *READY_PRESET["parameters"],
+            {"name": "cfg", "type": "float", "default": 7.0, "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}},
+            {"name": "width", "type": "integer", "default": 1024, "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}},
+            {"name": "height", "type": "integer", "default": 1024, "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}},
+            {"name": "batch_size", "type": "integer", "default": 1, "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}},
+        ],
+    }
+    recipe = comfy_agent.recipe_from_preset(preset, "llm")
+
+    form = comfy_agent.recipe_to_form(recipe, preset, [preset])
+    fields = {field["name"]: field for field in form["fields"]}
+
+    assert fields["preset_id"]["ui"] == {"section": "recipe", "span": 12}
+    assert fields["positive_prompt"]["ui"] == {"section": "prompts", "span": 12}
+    assert fields["negative_prompt"]["ui"] == {"section": "prompts", "span": 12}
+    assert fields["steps"]["ui"] == {"section": "sampling", "span": 4}
+    assert fields["cfg"]["ui"] == {"section": "sampling", "span": 4}
+    assert fields["width"]["ui"] == {"section": "image", "span": 4}
+    assert fields["height"]["ui"] == {"section": "image", "span": 4}
+    assert fields["batch_size"]["ui"] == {"section": "image", "span": 4}
+
+
+def test_recipe_form_preserves_explicit_ui_parts_when_defaulting_missing_parts(tmp_path: Path):
+    preset = {
+        **READY_PRESET,
+        "parameters": [
+            {**READY_PRESET["parameters"][2], "ui": {"span": 6}},
+            {"name": "cfg", "type": "float", "default": 7.0, "ui": {"section": "advanced"}, "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}},
+        ],
+    }
+    recipe = comfy_agent.recipe_from_preset(preset, "llm")
+
+    form = comfy_agent.recipe_to_form(recipe, preset, [preset])
+    fields = {field["name"]: field for field in form["fields"]}
+
+    assert fields["steps"]["ui"] == {"section": "sampling", "span": 6}
+    assert fields["cfg"]["ui"] == {"section": "advanced", "span": 4}
+
+
 def test_recipe_form_rejects_invalid_enum_parameter_before_rich_content_validation(tmp_path: Path):
     recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
     bad_preset = {**READY_PRESET, "parameters": [{"name": "sampler_name", "type": "enum", "default": "euler", "options": []}]}

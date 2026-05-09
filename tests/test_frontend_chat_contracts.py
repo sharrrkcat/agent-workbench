@@ -255,8 +255,16 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert "type: 'action_form'" in types
     assert "visibility?: 'message' | 'silent' | null" in types
     assert "success_message?: string | null" in types
+    assert "ui?: {" in types
+    assert "span?: number | null" in types
+    assert "sections?: ActionFormSection[] | null" in types
     assert "ActionFormRenderer" in source
     assert "ActionFormFieldControl" in source
+    assert "groupActionFormFields(form)" in source
+    assert "field.ui?.section" in source
+    assert "resolveActionFormFieldSpan(field)" in source
+    assert "sections.map((section)" in source
+    assert "section.fields.map((field)" in source
     assert "textarea" in source
     assert "type=\"number\"" in source
     assert "type=\"checkbox\"" in source
@@ -271,6 +279,12 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert "options?.silent" in store
     assert "/forms/submit" in client
     assert ".action-form-card" in styles
+    assert "grid-template-columns: repeat(12" in styles
+    assert ".action-form-section" in styles
+    assert ".action-form-field.span-12" in styles
+    assert ".action-form-field.span-6" in styles
+    assert ".action-form-field.span-4" in styles
+    assert "@media (max-width: 560px)" in styles
     assert ".action-form-error" in styles
     assert ".action-form-notice" in styles
     assert ".action-form-field select option" in styles

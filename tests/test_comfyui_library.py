@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from capabilities.comfyui import CapabilityRuntime
@@ -134,6 +135,68 @@ def test_validate_preset_ready_success_and_custom_parameter_fields_preserved(tmp
     assert result["valid"] is True
     assert result["status"] == "ready"
     assert result["parameters"][0]["custom_note"] == "preserved"
+
+
+def test_validate_preset_accepts_parameter_ui_and_top_level_sections(tmp_path: Path) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(
+        tmp_path / "presets" / "txt2img.yaml",
+        ui={"sections": [{"key": "prompts", "title": "Prompts"}, {"key": "sampling", "title": "Sampling"}]},
+        parameters=[
+            {"name": "positive_prompt", "type": "textarea", "default": "", "ui": {"section": "prompts", "span": 12}, "mapping": {"node_id": "6", "input_path": ["inputs", "text"]}},
+            {"name": "steps", "type": "integer", "default": 30, "ui": {"section": "sampling", "span": 4}, "mapping": {"node_id": "3", "input_path": ["inputs", "steps"]}},
+        ],
+    )
+
+    result = CapabilityRuntime().validate_preset(preset_id="txt2img_basic", context=context(tmp_path))
+
+    assert result["valid"] is True
+    assert result["ui"]["sections"][0]["key"] == "prompts"
+    assert result["parameters"][0]["ui"] == {"section": "prompts", "span": 12}
+    assert result["parameters"][1]["ui"]["span"] == 4
+
+
+@pytest.mark.parametrize("span", [13, 0, "4"])
+def test_validate_preset_rejects_invalid_parameter_ui_span(tmp_path: Path, span) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(
+        tmp_path / "presets" / "txt2img.yaml",
+        parameters=[
+            {"name": "steps", "type": "integer", "default": 30, "ui": {"section": "sampling", "span": span}, "mapping": {"node_id": "3", "input_path": ["inputs", "steps"]}},
+        ],
+    )
+
+    result = CapabilityRuntime().validate_preset(preset_id="txt2img_basic", context=context(tmp_path))
+
+    assert result["valid"] is False
+    assert any("parameter.ui.span must be an integer from 1 to 12: steps" in error for error in result["errors"])
+
+
+def test_validate_preset_rejects_parameter_ui_order_and_warns_unknown_ui(tmp_path: Path) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(
+        tmp_path / "presets" / "txt2img.yaml",
+        parameters=[
+            {"name": "steps", "type": "integer", "default": 30, "ui": {"section": "sampling", "span": 4, "order": 1, "tone": "compact"}, "mapping": {"node_id": "3", "input_path": ["inputs", "steps"]}},
+        ],
+    )
+
+    result = CapabilityRuntime().validate_preset(preset_id="txt2img_basic", context=context(tmp_path))
+
+    assert result["valid"] is False
+    assert any("parameter.ui.order is not supported for steps" in error for error in result["errors"])
+    assert any("Unknown parameter.ui field for steps: tone" in warning for warning in result["warnings"])
+
+
+@pytest.mark.parametrize("ui", [{"sections": "bad"}, {"sections": [{}]}, {"sections": [{"key": ""}]}])
+def test_validate_preset_rejects_invalid_ui_sections(tmp_path: Path, ui) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(tmp_path / "presets" / "txt2img.yaml", ui=ui)
+
+    result = CapabilityRuntime().validate_preset(preset_id="txt2img_basic", context=context(tmp_path))
+
+    assert result["valid"] is False
+    assert any("ui.sections" in error for error in result["errors"])
 
 
 def test_validate_preset_missing_workflow_errors(tmp_path: Path) -> None:

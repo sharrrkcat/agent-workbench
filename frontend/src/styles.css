@@ -1430,16 +1430,48 @@ input:disabled {
   line-height: 1.45;
 }
 
+.action-form-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.action-form-section {
+  display: grid;
+  gap: 8px;
+}
+
+.action-form-section h4 {
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 780;
+}
+
 .action-form-fields {
   display: grid;
   gap: 10px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
 }
 
 .action-form-field {
   display: grid;
   gap: 5px;
   min-width: 0;
+  grid-column: span 12;
 }
+
+.action-form-field.span-1 { grid-column: span 1; }
+.action-form-field.span-2 { grid-column: span 2; }
+.action-form-field.span-3 { grid-column: span 3; }
+.action-form-field.span-4 { grid-column: span 4; }
+.action-form-field.span-5 { grid-column: span 5; }
+.action-form-field.span-6 { grid-column: span 6; }
+.action-form-field.span-7 { grid-column: span 7; }
+.action-form-field.span-8 { grid-column: span 8; }
+.action-form-field.span-9 { grid-column: span 9; }
+.action-form-field.span-10 { grid-column: span 10; }
+.action-form-field.span-11 { grid-column: span 11; }
+.action-form-field.span-12 { grid-column: span 12; }
 
 .action-form-field > span {
   color: rgba(255, 255, 255, 0.8);
@@ -1547,6 +1579,37 @@ input:disabled {
 .action-form-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+@media (max-width: 760px) {
+  .action-form-field.span-1,
+  .action-form-field.span-2,
+  .action-form-field.span-3,
+  .action-form-field.span-4 {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 560px) {
+  .action-form-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .action-form-field,
+  .action-form-field.span-1,
+  .action-form-field.span-2,
+  .action-form-field.span-3,
+  .action-form-field.span-4,
+  .action-form-field.span-5,
+  .action-form-field.span-6,
+  .action-form-field.span-7,
+  .action-form-field.span-8,
+  .action-form-field.span-9,
+  .action-form-field.span-10,
+  .action-form-field.span-11,
+  .action-form-field.span-12 {
+    grid-column: 1 / -1;
+  }
 }
 
 .image-preview-overlay {

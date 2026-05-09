@@ -71,6 +71,19 @@ def test_action_form_payload_shape_validation_success() -> None:
     assert validate_action_form_block(demo_form())["form_id"] == "demo"
 
 
+def test_action_form_layout_ui_and_sections_validate() -> None:
+    form = demo_form(
+        fields=[
+            {"name": "prompt", "type": "textarea", "ui": {"section": "prompts", "span": 12}},
+            {"name": "steps", "type": "integer", "ui": {"section": "sampling", "span": 4}},
+        ],
+        sections=[{"key": "prompts", "title": "Prompts"}, {"key": "sampling", "title": "Sampling"}],
+    )
+    parsed = validate_action_form_block(form)
+    assert parsed["sections"][0] == {"key": "prompts", "title": "Prompts"}
+    assert parsed["fields"][1]["ui"] == {"section": "sampling", "span": 4}
+
+
 def test_action_form_submit_visibility_defaults_to_message() -> None:
     assert validate_action_form_block(demo_form())["submit"]["visibility"] == "message"
 
@@ -79,6 +92,21 @@ def test_action_form_submit_visibility_defaults_to_message() -> None:
 def test_action_form_payload_shape_validation_requires_core_fields(missing: str) -> None:
     form = demo_form()
     form.pop(missing)
+    with pytest.raises(FormValidationError) as exc:
+        validate_action_form_block(form)
+    assert exc.value.code == "FORM_INVALID"
+
+
+@pytest.mark.parametrize("span", [0, 13, "4"])
+def test_action_form_rejects_invalid_ui_span(span) -> None:
+    form = demo_form(fields=[{"name": "steps", "type": "integer", "ui": {"section": "sampling", "span": span}}])
+    with pytest.raises(FormValidationError) as exc:
+        validate_action_form_block(form)
+    assert exc.value.code == "FORM_INVALID"
+
+
+def test_action_form_rejects_ui_order() -> None:
+    form = demo_form(fields=[{"name": "steps", "type": "integer", "ui": {"section": "sampling", "span": 4, "order": 1}}])
     with pytest.raises(FormValidationError) as exc:
         validate_action_form_block(form)
     assert exc.value.code == "FORM_INVALID"
@@ -104,6 +132,14 @@ def test_action_form_value_validation_success_and_optional_fallbacks() -> None:
         "mode": "quality",
         "config_json": {"ok": True},
     }
+
+
+def test_action_form_value_validation_ignores_layout_metadata() -> None:
+    form = demo_form(fields=[{"name": "steps", "type": "integer", "value": 30, "ui": {"section": "sampling", "span": 4}}])
+    values = validate_action_form_values(form, {"steps": "44"})
+    assert values == {"steps": 44}
+    with pytest.raises(FormValidationError):
+        validate_action_form_values(form, {"steps": "44", "ui": {"span": 12}})
 
 
 @pytest.mark.parametrize(
