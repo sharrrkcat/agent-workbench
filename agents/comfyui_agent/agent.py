@@ -30,8 +30,7 @@ async def run(ctx):
         await ctx.reply_blocks([_summary_block(recipe_state), recipe_to_form(recipe, preset, presets)])
         return
     if action == "save_recipe_from_form":
-        await save_recipe_from_form(ctx)
-        return
+        return await save_recipe_from_form(ctx)
     if action == "switch":
         await switch_mode(ctx)
         return
@@ -81,7 +80,15 @@ async def execute_generation(ctx, recipe: dict | None = None, mode_source: str =
 
     if action_mode == "llm":
         step = _start_step(ctx, "Enhance prompt with LLM", "Generating positive prompt.")
-        positive_prompt = await enhance_positive_prompt(ctx, recipe, preset_data, user_input or recipe.get("user_prompt") or "")
+        try:
+            positive_prompt = await enhance_positive_prompt(ctx, recipe, preset_data, user_input or recipe.get("user_prompt") or "", action_id=mode_source)
+        except ComfyAgentError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            _record_prompt_enhancer_failure(ctx, detail)
+            if step is not None:
+                _update_step(ctx, step, detail.get("inner_message") or exc.message, metadata={"comfyui_prompt_enhancer": detail})
+                _fail_step(ctx, step, exc.code, exc.message)
+            raise
         recipe.setdefault("values", {})["positive_prompt"] = positive_prompt
         recipe["updated_at"] = _now()
         save_recipe(ctx, recipe)
@@ -192,31 +199,45 @@ async def poll_prompt_status(ctx, prompt_id: str, scan: dict) -> dict:
         raise
 
 
-async def enhance_positive_prompt(ctx, recipe: dict, preset: dict, user_input: str) -> str:
+async def enhance_positive_prompt(ctx, recipe: dict, preset: dict, user_input: str, action_id: str | None = None) -> str:
     values = recipe.get("values") or {}
     system = str(ctx.config.get("prompt_enhancer_system_prompt") or "").strip()
     template = str(ctx.config.get("prompt_enhancer_user_template") or "{user_input}").strip()
-    prompt = template.format(
-        user_input=user_input,
-        positive_prompt=values.get("positive_prompt") or "",
-        negative_prompt=values.get("negative_prompt") or "",
-        preset_id=recipe.get("preset_id") or "",
-        preset_name=preset.get("name") or recipe.get("preset_id") or "",
-        input_mode="llm",
-    )
+    detail = _prompt_enhancer_detail(ctx, action_id=action_id or getattr(ctx, "action_id", "") or "default", stage="render_template", reached_provider=False)
     try:
-        text = await ctx.llm.text(system=system, user=prompt)
+        prompt = template.format(
+            user_input=user_input,
+            positive_prompt=values.get("positive_prompt") or "",
+            negative_prompt=values.get("negative_prompt") or "",
+            preset_id=recipe.get("preset_id") or "",
+            preset_name=preset.get("name") or recipe.get("preset_id") or "",
+            input_mode="llm",
+        )
     except Exception as exc:
+        detail.update(_inner_error(exc), stage="render_template", reached_provider=False)
         raise ComfyAgentError(
             "COMFYUI_PROMPT_ENHANCER_FAILED",
             "LLM prompt enhancer failed. Configure an LLM, switch to raw mode, or use `@comfyui_agent:raw`.",
-            {"error": str(exc)},
+            detail,
+        ) from exc
+    try:
+        detail["stage"] = "call_llm"
+        detail["reached_provider"] = True
+        text = await ctx.llm.text(system=system, user=prompt)
+    except Exception as exc:
+        detail.update(_inner_error(exc), stage="call_llm", reached_provider=True)
+        raise ComfyAgentError(
+            "COMFYUI_PROMPT_ENHANCER_FAILED",
+            "LLM prompt enhancer failed. Configure an LLM, switch to raw mode, or use `@comfyui_agent:raw`.",
+            detail,
         ) from exc
     text = _strip_code_fence(str(text or "")).strip()
     if not text:
+        detail.update(stage="empty_output", reached_provider=True, inner_code="LLM_EMPTY_OUTPUT", inner_message="LLM prompt enhancer returned empty text.")
         raise ComfyAgentError(
-            "COMFYUI_PROMPT_ENHANCER_EMPTY",
+            "COMFYUI_PROMPT_ENHANCER_FAILED",
             "LLM prompt enhancer returned empty text. Configure an LLM, switch to raw mode, or use `@comfyui_agent:raw`.",
+            detail,
         )
     return text
 
@@ -308,8 +329,10 @@ async def save_recipe_from_form(ctx):
         return
     save_recipe(ctx, next_recipe)
     title = "Preset switched and recipe saved" if switched else "Recipe saved"
+    updated_form = await update_source_recipe_form(ctx, next_recipe, next_preset or preset, presets)
     if not getattr(ctx.input, "is_silent_submission", False):
         await ctx.reply_markdown(_recipe_markdown(next_recipe, title, "Form values update only this session recipe, not preset files. No generation was submitted."))
+    return {"updated_form": updated_form} if updated_form else {"ok": True}
 
 
 async def switch_mode(ctx):
@@ -438,6 +461,12 @@ def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]
     recipe = recipe or {}
     preset = preset or {"parameters": []}
     ready_presets = [item for item in presets if item.get("valid") and item.get("status") == "ready"]
+    if not ready_presets:
+        raise ComfyAgentError(
+            "COMFYUI_PRESET_INVALID",
+            "No valid ready ComfyUI preset is available; cannot render the recipe form.",
+            {"schema_doc": "docs/COMFYUI_PRESET_SCHEMA.md"},
+        )
     fields = [
         {
             "name": "preset_id",
@@ -451,6 +480,14 @@ def recipe_to_form(recipe: dict | None, preset: dict | None, presets: list[dict]
     ]
     values = recipe.get("values") or {}
     for parameter in preset.get("parameters") or []:
+        if parameter.get("type") == "enum" and not parameter.get("options"):
+            preset_id = recipe.get("preset_id") or preset.get("preset_id") or preset.get("id") or ""
+            name = parameter.get("name") or "<unnamed>"
+            raise ComfyAgentError(
+                "COMFYUI_PRESET_INVALID",
+                f"Preset `{preset_id}` enum parameter `{name}` is missing options. See docs/COMFYUI_PRESET_SCHEMA.md.",
+                {"preset_id": preset_id, "parameter": name, "missing": "options", "schema_doc": "docs/COMFYUI_PRESET_SCHEMA.md"},
+            )
         field = {key: parameter[key] for key in ("name", "type", "label", "description", "required", "default", "minimum", "maximum", "step", "options") if key in parameter}
         if "name" not in field or "type" not in field:
             continue
@@ -700,11 +737,85 @@ def _fail_step(ctx, step, code: str, message: str) -> None:
         ctx.run.fail_step(step.step_id, error_code=code, error_message=message)
 
 
-def _update_step(ctx, step, message: str) -> None:
+def _update_step(ctx, step, message: str, metadata: dict | None = None) -> None:
     if step is None or getattr(ctx, "run", None) is None:
         return
     if hasattr(ctx.run, "update_step"):
-        ctx.run.update_step(step.step_id, message=message)
+        ctx.run.update_step(step.step_id, message=message, metadata=metadata)
+
+
+async def update_source_recipe_form(ctx, recipe: dict, preset: dict | None, presets: list[dict]) -> dict | None:
+    source_message_id = getattr(ctx.input, "source_message_id", None)
+    form_id = getattr(ctx.input, "form_id", None) or "comfyui_recipe"
+    if not source_message_id or getattr(ctx, "message_store", None) is None:
+        return None
+    block = recipe_to_form(recipe, preset, presets)
+    try:
+        source = ctx.message_store.get_message(source_message_id)
+    except Exception:
+        return None
+    content = copy.deepcopy(source.content)
+    if not _replace_action_form_block(content, form_id, block):
+        return None
+    updated = ctx.message_store.update_message(source.model_copy(update={"content": content}))
+    if getattr(ctx, "event_bus", None) is not None:
+        ctx.event_bus.emit(
+            "message_updated",
+            session_id=updated.session_id,
+            run_id=getattr(ctx, "run_id", None),
+            message_id=updated.message_id,
+            payload={"message": updated.model_dump()},
+        )
+    return {"source_message_id": source_message_id, "form_id": form_id, "block": block}
+
+
+def _replace_action_form_block(content: Any, form_id: str, block: dict) -> bool:
+    if isinstance(content, dict) and content.get("type") == "action_form" and content.get("form_id") == form_id:
+        content.clear()
+        content.update(block)
+        return True
+    blocks = content.get("blocks") if isinstance(content, dict) else None
+    if not isinstance(blocks, list):
+        return False
+    for index, item in enumerate(blocks):
+        if isinstance(item, dict) and item.get("type") == "action_form" and item.get("form_id") == form_id:
+            blocks[index] = block
+            return True
+    return False
+
+
+def _prompt_enhancer_detail(ctx, action_id: str, stage: str, reached_provider: bool) -> dict:
+    resolution = getattr(ctx, "llm_resolution", None) or {}
+    model_config = getattr(getattr(ctx, "llm", None), "default_model_config", None) or {}
+    llm_profile_id = resolution.get("profile_id") or model_config.get("profile_id") or model_config.get("llm_profile_id")
+    return {
+        "code": "COMFYUI_PROMPT_ENHANCER_FAILED",
+        "stage": stage,
+        "agent_id": getattr(getattr(ctx, "agent", None), "id", None) or "comfyui_agent",
+        "action_id": action_id,
+        "llm_profile_id": llm_profile_id,
+        "provider_profile_id": resolution.get("provider_profile_id") or model_config.get("provider_profile_id"),
+        "provider": resolution.get("provider") or model_config.get("provider"),
+        "model_id": resolution.get("model_id") or model_config.get("model_id") or model_config.get("model"),
+        "reached_provider": reached_provider,
+    }
+
+
+def _inner_error(exc: Exception) -> dict:
+    return {
+        "inner_code": getattr(exc, "code", None) or exc.__class__.__name__,
+        "inner_message": getattr(exc, "message", None) or str(exc) or exc.__class__.__name__,
+    }
+
+
+def _record_prompt_enhancer_failure(ctx, detail: dict) -> None:
+    try:
+        run = ctx.run_store.get_run(ctx.run_id)
+        metadata = dict(run.metadata or {})
+        metadata["comfyui_prompt_enhancer_error"] = detail
+        ctx.run_store.update_metadata(ctx.run_id, metadata)
+    except Exception:
+        return
 
 
 def _cancel_requested(ctx) -> bool:

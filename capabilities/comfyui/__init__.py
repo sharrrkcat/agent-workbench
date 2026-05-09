@@ -808,6 +808,10 @@ def _validate_preset(
         if not isinstance(parameter, dict):
             errors.append("Each parameter must be an object.")
             continue
+        if "id" in parameter and "name" not in parameter:
+            errors.append("Use parameter.name instead of parameter.id.")
+        if "target" in parameter or "input" in parameter:
+            errors.append("Use mapping.node_id and mapping.input_path.")
         p_name = str(parameter.get("name") or "")
         if not p_name:
             errors.append("Parameter name is required.")
@@ -816,7 +820,7 @@ def _validate_preset(
         if p_type not in SUPPORTED_PARAMETER_TYPES:
             errors.append(f"Unsupported parameter type for {p_name}: {p_type}")
         if p_type == "enum" and not parameter.get("options"):
-            errors.append(f"Enum parameter requires options: {p_name}")
+            errors.append(f"Enum parameter '{p_name}' requires non-empty options.")
         if "default" in parameter and p_type in SUPPORTED_PARAMETER_TYPES and not _default_matches_type(parameter["default"], p_type):
             errors.append(f"Default value type does not match parameter type: {p_name}")
         if ("minimum" in parameter or "maximum" in parameter) and p_type not in {"integer", "float"}:

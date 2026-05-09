@@ -16,6 +16,7 @@
 - The frontend ignores older `seq`.
 - The frontend ignores delta after completed if `seq` is old.
 - `message_updated` can merge metadata, `run_id`, attachments, and status, but not old content while streaming.
+- Non-streaming source messages may use `message_updated` to persist backend-generated rich content changes such as replacing an `action_form` block after a silent save.
 - Internal `ctx.llm.stream` does not emit public `message_delta`.
 - `ctx.output.write_delta` and `ctx.llm.stream_to_output` emit public deltas.
 
@@ -241,7 +242,7 @@ Form submission protocol:
 - Request body target fields or visibility cannot override the original form target or visibility.
 - Submitted values are validated against the original form field declarations before any Agent action is called.
 - Validation failure returns a structured error and does not create a run.
-- The source form message is not modified by submission; the same form can be submitted again.
+- The frontend must not send replacement form blocks. Only trusted backend Agent code may rebuild and persist a source form after validated submission.
 
 For `submit.visibility="message"`, the backend creates a new user message with metadata like:
 
@@ -258,7 +259,7 @@ For `submit.visibility="message"`, the backend creates a new user message with m
 
 The target Script Agent receives the validated values in `ctx.input.prefill`, plus `ctx.input.source_message_id` and `ctx.input.form_id`. Message-mode form submissions may enter future LLM context as normal user messages, but only their short visible summary is projected by default. The full `prefill` JSON stays in metadata and is not automatically expanded into provider payloads.
 
-For `submit.visibility="silent"`, the backend invokes the same target Agent action without creating the visible `form_submission` user message. Script Agents receive `ctx.input.prefill`, `ctx.input.source_message_id`, `ctx.input.form_id`, and `ctx.input.is_silent_submission=true`. Normal assistant replies and public output streams from the target action are suppressed, so successful save-only actions return a structured submission response instead of appending chat timeline messages. Silent submit does not modify the source form message, and the full `prefill` still stays out of provider-bound LLM context unless an Agent explicitly uses it.
+For `submit.visibility="silent"`, the backend invokes the same target Agent action without creating the visible `form_submission` user message. Script Agents receive `ctx.input.prefill`, `ctx.input.source_message_id`, `ctx.input.form_id`, and `ctx.input.is_silent_submission=true`. Normal assistant replies and public output streams from the target action are suppressed, so successful save-only actions return a structured submission response instead of appending chat timeline messages. Silent submit may update the source form only when the target Agent persists a backend-generated replacement block and emits `message_updated`; the response may also include `updated_form` with `source_message_id`, `form_id`, and `block`. The full `prefill` still stays out of provider-bound LLM context unless an Agent explicitly uses it.
 
 Provider-bound message roles remain limited to `system`, `user`, and `assistant`; message-mode and silent form submissions do not introduce `tool`, `function`, or custom provider roles.
 

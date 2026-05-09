@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from agents.comfyui_agent import agent as comfy_agent
+from ai_workbench.core.stores import SessionAgentStateStore
+from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, run as run_async
 
 
 WORKFLOW = {
@@ -71,16 +75,17 @@ class FakeState:
 
 
 class FakeLLM:
-    def __init__(self, text="cinematic cat", fail=False, unload_ok=True):
+    def __init__(self, text="cinematic cat", fail=False, unload_ok=True, error=None):
         self.calls = []
         self.text_value = text
         self.fail = fail
         self.unload_ok = unload_ok
+        self.error = error
 
     async def text(self, **kwargs):
         self.calls.append(("text", kwargs))
         if self.fail:
-            raise RuntimeError("no model")
+            raise self.error or RuntimeError("no model")
         return self.text_value
 
     async def unload_model(self):
@@ -321,6 +326,18 @@ def test_recipe_form_excludes_mode_and_user_prompt_uses_current_values_and_silen
     assert form["submit"]["success_message"] == "Recipe saved"
 
 
+def test_recipe_form_rejects_invalid_enum_parameter_before_rich_content_validation(tmp_path: Path):
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    bad_preset = {**READY_PRESET, "parameters": [{"name": "sampler_name", "type": "enum", "default": "euler", "options": []}]}
+
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        comfy_agent.recipe_to_form(recipe, bad_preset, [bad_preset])
+
+    assert exc.value.code == "COMFYUI_PRESET_INVALID"
+    assert "sampler_name" in exc.value.message
+    assert "COMFYUI_PRESET_SCHEMA" in exc.value.message
+
+
 def test_form_action_without_ready_preset_returns_clear_prompt_not_empty_options(tmp_path: Path):
     needs_mapping = {**READY_PRESET, "preset_id": "draft", "id": "draft", "status": "needs_mapping"}
     scan = {
@@ -440,14 +457,37 @@ def test_prompt_enhancer_empty_and_failure_do_not_fallback_raw(tmp_path: Path):
     empty.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
     with pytest.raises(comfy_agent.ComfyAgentError) as exc:
         run(comfy_agent.run(empty))
-    assert exc.value.code == "COMFYUI_PROMPT_ENHANCER_EMPTY"
+    assert exc.value.code == "COMFYUI_PROMPT_ENHANCER_FAILED"
+    assert exc.value.detail["stage"] == "empty_output"
+    assert exc.value.detail["reached_provider"] is True
     assert not any(call[0] == "submit_workflow" for call in empty.calls if isinstance(call, tuple))
 
-    failed = FakeCtx(tmp_path, action_id="llm", text="cat", llm=FakeLLM(fail=True))
+    class ProviderError(RuntimeError):
+        code = "FAKE_PROVIDER_FAILED"
+        message = "provider failed before response"
+
+    failed = FakeCtx(tmp_path, action_id="llm", text="cat", llm=FakeLLM(fail=True, error=ProviderError("provider failed before response")))
     failed.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
     with pytest.raises(comfy_agent.ComfyAgentError) as exc:
         run(comfy_agent.run(failed))
     assert exc.value.code == "COMFYUI_PROMPT_ENHANCER_FAILED"
+    assert exc.value.detail["stage"] == "call_llm"
+    assert exc.value.detail["inner_code"] == "FAKE_PROVIDER_FAILED"
+    assert exc.value.detail["reached_provider"] is True
+
+
+def test_prompt_enhancer_template_failure_does_not_call_llm(tmp_path: Path):
+    llm = FakeLLM()
+    ctx = FakeCtx(tmp_path, action_id="llm", text="cat", llm=llm, config={"prompt_enhancer_user_template": "{missing_key}"})
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        run(comfy_agent.run(ctx))
+
+    assert exc.value.detail["stage"] == "render_template"
+    assert exc.value.detail["reached_provider"] is False
+    assert llm.calls == []
+    assert ctx.run_store.metadata["comfyui_prompt_enhancer_error"]["stage"] == "render_template"
 
 
 def test_unload_failure_warns_but_generation_continues(tmp_path: Path):
@@ -575,3 +615,127 @@ def test_default_manifest_description_says_generate():
 
     assert "generate" in default["description"].lower()
     assert "without generating" not in default["description"].lower()
+
+
+class IntegrationComfyRuntime:
+    def __init__(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+        self.calls = []
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        (workflows_dir / "txt2img.workflow.json").write_text(json.dumps(WORKFLOW), encoding="utf-8")
+        self.scan = {
+            "presets": [READY_PRESET],
+            "workflows": [{"file_name": "txt2img.workflow.json", "valid": True, "hash": "sha256:abc"}],
+            "workflows_dir": str(workflows_dir),
+            "presets_dir": str(tmp_path / "presets"),
+            "config": {"poll_interval_seconds": 0, "max_wait_seconds": 1},
+        }
+
+    def scan_workflow_library(self, context=None):
+        self.calls.append("scan_workflow_library")
+        return self.scan
+
+    def load_preset(self, preset_id=None, file_name=None, context=None):
+        self.calls.append(("load_preset", preset_id))
+        return {"found": True, "preset": READY_PRESET, "validation": READY_PRESET}
+
+    def validate_preset(self, preset_id=None, file_name=None, preset=None, context=None):
+        self.calls.append(("validate_preset", preset_id))
+        return READY_PRESET
+
+    def submit_workflow(self, workflow=None, context=None):
+        self.calls.append(("submit_workflow", workflow))
+        return {"accepted": True, "prompt_id": "prompt-1"}
+
+    def get_prompt_status(self, prompt_id=None, context=None):
+        self.calls.append(("get_prompt_status", prompt_id))
+        return completed_status()
+
+    def fetch_image(self, **kwargs):
+        self.calls.append(("fetch_image", kwargs))
+        return {"filename": kwargs["filename"], "mime_type": "image/png", "data_base64": "ZmFrZQ=="}
+
+
+def comfy_fixture(tmp_path: Path, llm=None) -> tuple[PromptRuntimeFixture, IntegrationComfyRuntime]:
+    fixture = PromptRuntimeFixture(llm=llm or FakeLLMRuntime(response="cinematic ocean"))
+    comfy_runtime = IntegrationComfyRuntime(tmp_path)
+    state_store = SessionAgentStateStore()
+    fixture.agent_runner.runtime_registry.replace("comfyui", comfy_runtime)
+    fixture.agent_runner.script_runner.runtime_registry.replace("comfyui", comfy_runtime)
+    fixture.agent_runner.session_agent_state_store = state_store
+    fixture.agent_runner.script_runner.session_agent_state_store = state_store
+    return fixture, comfy_runtime
+
+
+def add_model_profile(fixture: PromptRuntimeFixture) -> LLMProfileSchema:
+    provider = ProviderProfileSchema(
+        id="provider-comfy-test",
+        name="Comfy Provider",
+        provider="lm_studio",
+        base_url="http://localhost:1234/v1",
+    )
+    fixture.provider_profiles.create(provider)
+    profile = LLMProfileSchema(
+        id="comfy-model-profile",
+        alias="comfy_model_profile",
+        name="Comfy Model",
+        provider_profile_id=provider.id,
+        provider=provider.provider,
+        base_url=provider.base_url,
+        model_id="comfy-provider-model",
+    )
+    fixture.llm_profiles.create(profile)
+    return profile
+
+
+def test_comfyui_agent_llm_action_uses_agent_config_model_profile_override(tmp_path: Path):
+    llm = FakeLLMRuntime(response="cinematic ocean")
+    fixture, comfy_runtime = comfy_fixture(tmp_path, llm=llm)
+    profile = add_model_profile(fixture)
+    fixture.agent_configs.set_config("comfyui_agent", runtime={"llm_profile_id": profile.id})
+    session = fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    result = run_async(fixture.runtime.handle_input(session, "@comfyui_agent:llm 大海"))
+
+    assert result.success is True
+    assert len(llm.calls) == 1
+    assert llm.calls[0]["model_config"]["model_id"] == "comfy-provider-model"
+    assert llm.calls[0]["model_config"]["provider"] == "lm_studio"
+    assert llm.calls[0]["model_config"]["base_url"] == "http://localhost:1234/v1"
+    run_record = fixture.runs.get_run(result.run_id)
+    assert run_record.metadata["llm_resolution"]["profile_id"] == profile.id
+    assert run_record.metadata["llm_resolution"]["provider_profile_id"] == "provider-comfy-test"
+    assert any(call[0] == "submit_workflow" for call in comfy_runtime.calls if isinstance(call, tuple))
+
+
+def test_comfyui_agent_raw_and_run_actions_do_not_call_llm(tmp_path: Path):
+    llm = FakeLLMRuntime(response="unused")
+    fixture, _ = comfy_fixture(tmp_path, llm=llm)
+    profile = add_model_profile(fixture)
+    fixture.agent_configs.set_config("comfyui_agent", runtime={"llm_profile_id": profile.id})
+    session = fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    raw_result = run_async(fixture.runtime.handle_input(session, "@comfyui_agent:raw ocean"))
+    run_result = run_async(fixture.runtime.handle_input(session, "@comfyui_agent:run"))
+
+    assert raw_result.success is True
+    assert run_result.success is True
+    assert llm.calls == []
+
+
+def test_comfyui_agent_llm_resolution_failure_records_pre_provider_stage(tmp_path: Path):
+    llm = FakeLLMRuntime(response="unused")
+    fixture, _ = comfy_fixture(tmp_path, llm=llm)
+    fixture.agent_configs.set_config("comfyui_agent", runtime={"llm_profile_id": "missing"})
+    session = fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    result = run_async(fixture.runtime.handle_input(session, "@comfyui_agent:llm 大海"))
+
+    assert result.success is False
+    assert llm.calls == []
+    run_record = fixture.runs.get_run(result.run_id)
+    detail = run_record.metadata["comfyui_prompt_enhancer_error"]
+    assert detail["stage"] == "resolve_llm"
+    assert detail["reached_provider"] is False
+    assert detail["inner_code"] == "LLM_PROFILE_NOT_FOUND"

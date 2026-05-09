@@ -276,6 +276,8 @@ async def submit_form(session_id: str, payload: SubmitFormRequest, state: Runtim
             raise_error(400, result.error_code or "FORM_SUBMISSION_FAILED", error)
         payload_data = _result_payload(state, session_id, result, before_ids)
         payload_data.update({"ok": True, "message": message, "silent": True, "run_id": result.run_id or None})
+        if isinstance(result.data, dict) and isinstance(result.data.get("updated_form"), dict):
+            payload_data["updated_form"] = result.data["updated_form"]
         return payload_data
 
     display_text = submit.get("message") or f"Submitted form: {form.get('title') or payload.form_id}"

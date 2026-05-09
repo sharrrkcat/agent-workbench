@@ -175,6 +175,46 @@ def test_validate_preset_mapping_node_and_input_path_errors(tmp_path: Path) -> N
     assert any("input_path" in error for error in path_result["errors"])
 
 
+def test_validate_preset_rejects_old_parameter_id_and_target_input_fields(tmp_path: Path) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(
+        tmp_path / "presets" / "old.yaml",
+        id="old_format",
+        parameters=[{"id": "positive_prompt", "type": "textarea", "target": {"node_id": "6"}, "input": ["inputs", "text"]}],
+    )
+
+    result = CapabilityRuntime().validate_preset(preset_id="old_format", context=context(tmp_path))
+
+    assert result["valid"] is False
+    assert "Use parameter.name instead of parameter.id." in result["errors"]
+    assert "Use mapping.node_id and mapping.input_path." in result["errors"]
+
+
+def test_validate_preset_enum_options_empty_reports_clear_error(tmp_path: Path) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(
+        tmp_path / "presets" / "enum.yaml",
+        id="enum_bad",
+        parameters=[{"name": "sampler_name", "type": "enum", "default": "euler", "options": [], "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}}],
+    )
+
+    result = CapabilityRuntime().validate_preset(preset_id="enum_bad", context=context(tmp_path))
+
+    assert result["valid"] is False
+    assert "Enum parameter 'sampler_name' requires non-empty options." in result["errors"]
+
+
+def test_needs_mapping_preset_is_valid_but_not_ready_option(tmp_path: Path) -> None:
+    write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
+    write_preset(tmp_path / "presets" / "draft.yaml", id="draft", status="needs_mapping", parameters=[])
+
+    scan = CapabilityRuntime().scan_workflow_library(context=context(tmp_path))
+
+    draft = next(preset for preset in scan["presets"] if preset["preset_id"] == "draft")
+    assert draft["valid"] is True
+    assert draft["status"] == "needs_mapping"
+
+
 def test_same_workflow_can_have_multiple_presets(tmp_path: Path) -> None:
     write_json(tmp_path / "workflows" / "txt2img.workflow.json", api_workflow())
     write_preset(tmp_path / "presets" / "a.yaml", id="preset_a")

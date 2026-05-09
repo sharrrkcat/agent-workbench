@@ -212,6 +212,7 @@ ComfyUI workflow library foundation:
 
 - Workflow files and preset YAML files are local user assets managed by the ComfyUI Capability configuration.
 - Presets are durable mapping assets that reference workflow file basenames and optional canonical hashes.
+- Preset file format is specified in `docs/COMFYUI_PRESET_SCHEMA.md`.
 - A session recipe is a per-session, per-agent runtime copy of a preset plus user-edited values.
 - Editing a session recipe must not rewrite the preset file.
 - Generation requests are built as `workflow file -> preset -> session recipe -> filled workflow request`.

@@ -1,9 +1,51 @@
+import json
+
 import pytest
+import yaml
 
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.forms import FormValidationError, validate_action_form_block, validate_action_form_values
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from tests.test_api import create_session, make_client, post_message
+
+
+COMFY_WORKFLOW = {
+    "3": {"class_type": "KSampler", "inputs": {"steps": 30, "cfg": 7.0}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},
+}
+
+
+def write_comfy_assets(tmp_path):
+    workflows = tmp_path / "workflows"
+    presets = tmp_path / "presets"
+    workflows.mkdir(parents=True, exist_ok=True)
+    presets.mkdir(parents=True, exist_ok=True)
+    (workflows / "base.workflow.json").write_text(json.dumps(COMFY_WORKFLOW), encoding="utf-8")
+    (workflows / "other.workflow.json").write_text(json.dumps(COMFY_WORKFLOW), encoding="utf-8")
+    base = {
+        "id": "base",
+        "name": "Base",
+        "status": "ready",
+        "workflow": {"file_name": "base.workflow.json"},
+        "parameters": [
+            {"name": "positive_prompt", "type": "textarea", "required": True, "default": "", "mapping": {"node_id": "6", "input_path": ["inputs", "text"]}},
+            {"name": "steps", "type": "integer", "default": 30, "mapping": {"node_id": "3", "input_path": ["inputs", "steps"]}},
+        ],
+        "output": {"images": "all"},
+    }
+    other = {
+        "id": "other",
+        "name": "Other",
+        "status": "ready",
+        "workflow": {"file_name": "other.workflow.json"},
+        "parameters": [
+            {"name": "cfg", "type": "float", "default": 7.0, "mapping": {"node_id": "3", "input_path": ["inputs", "cfg"]}},
+        ],
+        "output": {"images": "all"},
+    }
+    (presets / "base.yaml").write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
+    (presets / "other.yaml").write_text(yaml.safe_dump(other, sort_keys=False), encoding="utf-8")
+    return workflows, presets
 
 
 def demo_form(**overrides):
@@ -211,6 +253,65 @@ def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_stat
     assert state["source_message_id"] == source.message_id
     assert state["form_id"] == "silent_demo"
     assert state["is_silent_submission"] is True
+
+
+def test_comfyui_silent_recipe_save_updates_source_form_block_without_chat_bubbles(tmp_path) -> None:
+    workflows, presets = write_comfy_assets(tmp_path)
+    client = make_client()
+    client.patch(
+        "/api/capability-configs/comfyui",
+        json={"user_config": {"workflows_dir": str(workflows), "presets_dir": str(presets), "allow_workflow_file_write": True, "allow_preset_file_write": True}},
+    )
+    session = create_session(client, default_agent_id="comfyui_agent")
+    payload = post_message(client, session["session_id"], "@comfyui_agent:form")
+    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={
+            "source_message_id": form_message["message_id"],
+            "form_id": "comfyui_recipe",
+            "values": {"preset_id": "base", "positive_prompt": "new prompt", "steps": 44},
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["ok"] is True
+    assert result["silent"] is True
+    assert result["messages"] == []
+    assert result["updated_form"]["source_message_id"] == form_message["message_id"]
+    updated = client.app.state.runtime_state.messages.get_message(form_message["message_id"])
+    blocks = updated.content["blocks"]
+    form = next(block for block in blocks if block.get("form_id") == "comfyui_recipe")
+    fields = {field["name"]: field for field in form["fields"]}
+    assert fields["positive_prompt"]["value"] == "new prompt"
+    assert fields["steps"]["value"] == 44
+    messages = client.app.state.runtime_state.messages.list_messages(session["session_id"])
+    assert [message.origin for message in messages] == ["user_message", "agent_reply"]
+
+
+def test_comfyui_silent_recipe_save_preset_switch_returns_new_form_fields(tmp_path) -> None:
+    workflows, presets = write_comfy_assets(tmp_path)
+    client = make_client()
+    client.patch(
+        "/api/capability-configs/comfyui",
+        json={"user_config": {"workflows_dir": str(workflows), "presets_dir": str(presets), "allow_workflow_file_write": True, "allow_preset_file_write": True}},
+    )
+    session = create_session(client, default_agent_id="comfyui_agent")
+    payload = post_message(client, session["session_id"], "@comfyui_agent:form")
+    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={"source_message_id": form_message["message_id"], "form_id": "comfyui_recipe", "values": {"preset_id": "other", "positive_prompt": "ignored", "steps": 30}},
+    )
+
+    assert response.status_code == 200
+    block = response.json()["updated_form"]["block"]
+    fields = {field["name"]: field for field in block["fields"]}
+    assert set(fields) == {"preset_id", "cfg"}
+    assert fields["preset_id"]["value"] == "other"
 
 
 def test_silent_form_submit_validation_failure_does_not_invoke_target() -> None:

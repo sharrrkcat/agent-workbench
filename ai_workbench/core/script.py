@@ -1010,6 +1010,22 @@ class ScriptAgentRunner:
                 llm_config = self._resolve_llm_model_config(agent, session_id)
                 self._record_llm_resolution(run.run_id, llm_config)
             except LLMConfigError as exc:
+                if agent.id == "comfyui_agent":
+                    metadata = dict(self.run_store.get_run(run.run_id).metadata or {})
+                    metadata["comfyui_prompt_enhancer_error"] = {
+                        "code": "COMFYUI_PROMPT_ENHANCER_FAILED",
+                        "inner_code": exc.code,
+                        "inner_message": exc.message,
+                        "stage": "resolve_llm",
+                        "agent_id": agent.id,
+                        "action_id": action_id,
+                        "llm_profile_id": None,
+                        "provider_profile_id": None,
+                        "provider": None,
+                        "model_id": None,
+                        "reached_provider": False,
+                    }
+                    self.run_store.update_metadata(run.run_id, metadata)
                 self.run_lifecycle.fail_step(model_step.step_id, error_code=exc.code, error_message=exc.message)
                 return self._fail(run.run_id, session_id, exc.message, error_code=exc.code)
             self.run_lifecycle.complete_step(model_step.step_id)
@@ -1103,7 +1119,8 @@ class ScriptAgentRunner:
         self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
         done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
-        return RunResult(success=True, run_id=done_run.run_id, data=None)
+        result_data = script_result if isinstance(script_result, dict) else None
+        return RunResult(success=True, run_id=done_run.run_id, data=result_data)
 
     def _load_script_run(self, agent: AgentSchema):
         if not agent.entry:
@@ -1312,6 +1329,4 @@ def _model_from_config(model_config: Dict[str, Any]) -> Optional[str]:
 
 
 def _agent_uses_llm(agent: AgentSchema) -> bool:
-    if agent.id == "comfyui_agent" and not (agent.llm or agent.model):
-        return False
     return bool(agent.llm or agent.model or "llm" in (agent.capabilities or []))

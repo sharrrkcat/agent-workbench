@@ -188,6 +188,8 @@ Script Agents should parse and validate LLM output explicitly. Do not depend on 
 
 The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recipes and generation. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, fill API-format workflow JSON from preset mappings, submit workflows, poll status, fetch images, save local attachments, and return an `image_gallery`.
 
+ComfyUI preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). Use that schema when creating or reviewing workflow preset files.
+
 ComfyUI Agent action semantics:
 - `default`: use the current session recipe `input_mode`; `llm` enhances the user request into `values.positive_prompt`, while `raw` writes the user text directly.
 - `raw`: force raw for this invocation, keep the stored `input_mode` unchanged, write `values.positive_prompt`, then generation runs.
