@@ -232,6 +232,8 @@ Interactive form submissions with `submit.visibility="message"` create user-orig
 
 `command_buttons` clicks create ordinary user messages with `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, and `origin="user_message"`. The message content is the button `message`, and provider-bound role remains `user`.
 
+Manual `:action` shortcut input also creates an ordinary user message with the original `:action args` content when it routes successfully. The run resolves to `session.default_agent_id` plus the parsed action, and invocation metadata records `route_kind="current_agent_action_shortcut"` with the resolved Agent/action ids. Provider-bound role remains `user`.
+
 Old messages may lack speaker fields. Context projection falls back from role, top-level `agent_id` / `command_name`, and command-result metadata. Old `role="tool"` command results are compatibility data only and are normalized or skipped before provider calls.
 
 ## Interactive Forms

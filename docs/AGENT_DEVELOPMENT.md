@@ -236,7 +236,12 @@ Actions are Agent entry points:
 @my_script hello
 @my_script:default hello
 @translate:formal
+:formal
 ```
+
+Use `@agent_id:action args` when the call must target a specific Agent. Use `:action args` only as a shortcut for the current session default Agent's action; it does not infer an Agent from previous messages, recent calls, or other Agents. If the current default Agent does not define that action, routing returns a clear error instead of falling back to `default`.
+
+Buttons, saved shortcuts, and cross-Agent links should continue to use the full `@agent_id:action` form because the user's current default Agent may be different when the button is clicked.
 
 CLI action calls:
 

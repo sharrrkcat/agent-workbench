@@ -36,6 +36,12 @@ def test_default_model_menu_uses_agent_default_profile_not_effective_override() 
     assert "statusDotClass(currentResolvedProfile" not in source
 
 
+def test_composer_placeholder_mentions_current_agent_action_shortcut() -> None:
+    source = read_frontend("components/ChatInput.tsx")
+
+    assert "Ask anything, use @agent, :action, or /command" in source
+
+
 def test_model_status_helper_has_four_ui_tones_and_unloaded_yellow() -> None:
     source = read_frontend("utils/modelStatus.ts")
 

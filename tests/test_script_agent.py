@@ -1137,6 +1137,42 @@ def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> No
     assert messages[-1].content == "hello"
 
 
+def test_current_agent_action_shortcut_stores_raw_input_and_route_metadata() -> None:
+    fixture = ScriptRuntimeFixture()
+    session = fixture.sessions.create_session(default_agent_id="render_test")
+
+    result = run(fixture.runtime.handle_input(session, ":text hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+    run_record = fixture.runs.get_run(result.run_id)
+
+    assert result.success is True
+    assert messages[0].role == "user"
+    assert messages[0].content == ":text hello"
+    assert messages[0].metadata["invocation"]["route_kind"] == "current_agent_action_shortcut"
+    assert messages[0].metadata["invocation"]["resolved_agent_id"] == "render_test"
+    assert messages[0].metadata["invocation"]["resolved_action_id"] == "text"
+    assert messages[0].metadata["invocation"]["args"] == "hello"
+    assert run_record.target_id == "render_test"
+    assert run_record.action_id == "text"
+    assert run_record.metadata["route_kind"] == "current_agent_action_shortcut"
+    assert run_record.metadata["resolved_agent_id"] == "render_test"
+    assert run_record.metadata["resolved_action_id"] == "text"
+    assert messages[-1].content == "hello"
+    assert {message.role for message in messages} <= {"user", "assistant"}
+
+
+def test_current_agent_action_shortcut_unknown_action_does_not_fallback_to_default() -> None:
+    fixture = ScriptRuntimeFixture()
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, ":form"))
+
+    assert result.success is False
+    assert "Current agent \"Chat Agent\" has no action \"form\"." in result.error
+    assert fixture.runs.list_runs(session.session_id) == []
+    assert fixture.messages.list_messages(session.session_id) == []
+
+
 def test_render_test_image_action_returns_three_non_llm_messages() -> None:
     fixture = ScriptRuntimeFixture()
     session = fixture.sessions.create_session()

@@ -906,6 +906,7 @@ class ScriptAgentRunner:
         attachments: list[dict] = None,
         suppress_output: bool = False,
         is_silent_submission: bool = False,
+        invocation_route_kind: str = "agent",
     ) -> RunResult:
         attachments = attachments or []
         session = self.session_store.get_session(session_id)
@@ -926,10 +927,13 @@ class ScriptAgentRunner:
                     "input_source": "script_agent",
                     "invocation": {
                         "route_type": "agent",
+                        "route_kind": invocation_route_kind,
                         "agent_id": agent.id,
                         "action_id": action_id,
                         "raw_text": raw_text,
                         "args": args,
+                        "resolved_agent_id": agent.id,
+                        "resolved_action_id": action_id,
                     },
                 },
                 speaker_type="user",
@@ -951,6 +955,9 @@ class ScriptAgentRunner:
                 "prefill": prefill or {},
                 "form_id": form_id or None,
                 "silent": bool(suppress_output),
+                "route_kind": invocation_route_kind,
+                "resolved_agent_id": agent.id,
+                "resolved_action_id": action_id,
             },
         )
         output_message = None

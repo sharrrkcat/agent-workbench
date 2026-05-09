@@ -9,6 +9,7 @@ The app looks like a normal chat client, but it supports callable Agents and sla
 - Plain user text goes to the current session's default Agent.
 - `@agent_id text` invokes a specific Agent.
 - `@agent_id:action args` invokes a specific Agent action.
+- `:action args` invokes that action on the current session's default Agent.
 - `/command args` invokes a global Command exposed by a Capability.
 - Message buttons invoke the same action system as text calls.
 
@@ -46,6 +47,7 @@ Examples:
 - `@chat hello` -> `chat.default`
 - `@translate hello` -> `translate.default`
 - `@translate:formal` -> `translate.formal`
+- `:formal` -> `<current session default Agent>.formal`
 
 Actions may also appear as buttons on messages.
 
@@ -125,9 +127,10 @@ Implement routing in this exact priority order:
 2. If input begins with `/`, route to `CommandRunner`.
 3. If input begins with `@agent_id:action`, route to `AgentRunner`.
 4. If input begins with `@agent_id`, route to `AgentRunner` with `default` action.
-5. Otherwise route to `session.default_agent_id` with `default` action.
+5. If input begins with `:action`, route to `session.default_agent_id` with that action.
+6. Otherwise route to `session.default_agent_id` with `default` action.
 
-`@` and `/` must remain separate namespaces.
+`@`, `:`, and `/` must remain separate namespaces. `:action` is only a shortcut for the current session default Agent; use `@agent_id:action` for buttons and cross-Agent calls.
 
 ## First implementation scope
 

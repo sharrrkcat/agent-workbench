@@ -760,6 +760,47 @@ def test_comfyui_agent_raw_and_run_actions_do_not_call_llm(tmp_path: Path):
     assert llm.calls == []
 
 
+def test_comfyui_agent_current_action_shortcuts_trigger_form_and_run(tmp_path: Path):
+    llm = FakeLLMRuntime(response="unused")
+    fixture, comfy_runtime = comfy_fixture(tmp_path, llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    form_result = run_async(fixture.runtime.handle_input(session, ":form"))
+    raw_result = run_async(fixture.runtime.handle_input(session, ":raw ocean"))
+    run_result = run_async(fixture.runtime.handle_input(session, ":run"))
+
+    assert form_result.success is True
+    assert raw_result.success is True
+    assert run_result.success is True
+    assert any(call[0] == "submit_workflow" for call in comfy_runtime.calls if isinstance(call, tuple))
+    messages = fixture.messages.list_messages(session.session_id)
+    assert messages[0].content == ":form"
+    assert messages[0].metadata["invocation"]["resolved_agent_id"] == "comfyui_agent"
+    assert messages[0].metadata["invocation"]["resolved_action_id"] == "form"
+    assert messages[2].content == ":raw ocean"
+    assert messages[2].metadata["invocation"]["args"] == "ocean"
+    assert messages[4].content == ":run"
+
+
+def test_comfyui_raw_shortcut_matches_explicit_action_when_target_agent_is_same(tmp_path: Path):
+    llm = FakeLLMRuntime(response="unused")
+    shortcut_fixture, shortcut_runtime = comfy_fixture(tmp_path / "shortcut", llm=llm)
+    explicit_fixture, explicit_runtime = comfy_fixture(tmp_path / "explicit", llm=FakeLLMRuntime(response="unused"))
+    shortcut_session = shortcut_fixture.sessions.create_session(default_agent_id="comfyui_agent")
+    explicit_session = explicit_fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    shortcut = run_async(shortcut_fixture.runtime.handle_input(shortcut_session, ":raw 大海"))
+    explicit = run_async(explicit_fixture.runtime.handle_input(explicit_session, "@comfyui_agent:raw 大海"))
+
+    assert shortcut.success is True
+    assert explicit.success is True
+    assert shortcut_fixture.runs.get_run(shortcut.run_id).target_id == explicit_fixture.runs.get_run(explicit.run_id).target_id
+    assert shortcut_fixture.runs.get_run(shortcut.run_id).action_id == explicit_fixture.runs.get_run(explicit.run_id).action_id
+    assert shortcut_fixture.runs.get_run(shortcut.run_id).metadata["args"] == explicit_fixture.runs.get_run(explicit.run_id).metadata["args"]
+    assert any(call[0] == "submit_workflow" for call in shortcut_runtime.calls if isinstance(call, tuple))
+    assert any(call[0] == "submit_workflow" for call in explicit_runtime.calls if isinstance(call, tuple))
+
+
 def test_comfyui_agent_llm_resolution_failure_records_pre_provider_stage(tmp_path: Path):
     llm = FakeLLMRuntime(response="unused")
     fixture, _ = comfy_fixture(tmp_path, llm=llm)

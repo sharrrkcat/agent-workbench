@@ -258,7 +258,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
           onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
           onPaste={onPaste}
           onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-          placeholder="Ask anything, use @agent or /command"
+          placeholder="Ask anything, use @agent, :action, or /command"
           rows={2}
         />
         <input

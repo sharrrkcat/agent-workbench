@@ -70,6 +70,86 @@ def test_agent_action_invocation_preserves_args() -> None:
     assert route.args == "more formal please"
 
 
+def test_current_agent_action_shortcut_routes_to_session_default_agent() -> None:
+    route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":form")
+
+    assert route.kind == RouteKind.AGENT
+    assert route.target_id == "comfyui_agent"
+    assert route.action_id == "form"
+    assert route.args == ""
+    assert route.invocation_route_kind == "current_agent_action_shortcut"
+
+
+def test_current_agent_action_shortcut_routes_run_action() -> None:
+    route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":run")
+
+    assert route.kind == RouteKind.AGENT
+    assert route.target_id == "comfyui_agent"
+    assert route.action_id == "run"
+
+
+def test_current_agent_action_shortcut_preserves_args() -> None:
+    raw_route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":raw hello")
+    switch_route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":switch raw")
+
+    assert raw_route.target_id == "comfyui_agent"
+    assert raw_route.action_id == "raw"
+    assert raw_route.args == "hello"
+    assert switch_route.target_id == "comfyui_agent"
+    assert switch_route.action_id == "switch"
+    assert switch_route.args == "raw"
+
+
+def test_current_agent_action_shortcut_tracks_changed_default_agent() -> None:
+    route = make_router().route(make_session(default_agent_id="render_test"), ":form")
+
+    assert route.kind == RouteKind.AGENT
+    assert route.target_id == "render_test"
+    assert route.action_id == "form"
+
+
+def test_explicit_agent_routes_are_not_changed_by_shortcut_support() -> None:
+    action_route = make_router().route(make_session(default_agent_id="chat"), "@comfyui_agent:form")
+    default_route = make_router().route(make_session(default_agent_id="chat"), "@comfyui_agent")
+
+    assert action_route.kind == RouteKind.AGENT
+    assert action_route.target_id == "comfyui_agent"
+    assert action_route.action_id == "form"
+    assert action_route.invocation_route_kind == "agent"
+    assert default_route.kind == RouteKind.AGENT
+    assert default_route.target_id == "comfyui_agent"
+    assert default_route.action_id == "default"
+
+
+def test_invalid_current_agent_action_shortcuts_fall_through_to_plain_text() -> None:
+    router = make_router()
+    session = make_session(default_agent_id="chat")
+
+    for raw_input in [":)", ": 你好", "::form", "：form", ":", ":123", ":foo/bar"]:
+        route = router.route(session, raw_input)
+        assert route.kind == RouteKind.AGENT
+        assert route.target_id == "chat"
+        assert route.action_id == "default"
+        assert route.args == raw_input
+
+
+def test_current_agent_action_shortcut_unknown_action_returns_structured_error() -> None:
+    route = make_router().route(make_session(default_agent_id="chat"), ":form")
+
+    assert route.kind == RouteKind.ERROR
+    assert route.error_code == "unknown_agent_action"
+    assert 'Current agent "Chat Agent" has no action "form".' in route.error_message
+    assert "Use @agent_id:action" in route.error_message
+
+
+def test_current_agent_action_shortcut_without_default_agent_returns_structured_error() -> None:
+    route = make_router().route(make_session(default_agent_id=""), ":form")
+
+    assert route.kind == RouteKind.ERROR
+    assert route.error_code == "missing_default_agent"
+    assert "Current session has no default Agent" in route.error_message
+
+
 def test_unknown_command_returns_structured_error() -> None:
     route = make_router().route(make_session(), "/missing hello")
 
@@ -108,4 +188,3 @@ def test_waiting_run_routes_to_resume_before_parsing_command_or_agent() -> None:
     assert agent_route.kind == RouteKind.RESUME
     assert agent_route.run_id == "run-123"
     assert agent_route.args == "@missing should not parse"
-

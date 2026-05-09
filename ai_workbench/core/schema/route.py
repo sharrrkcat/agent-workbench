@@ -20,7 +20,7 @@ class RouteTarget(BaseModel):
     target_id: Optional[str] = None
     action_id: Optional[str] = None
     args: str = ""
+    invocation_route_kind: Optional[str] = None
     run_id: Optional[str] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
-

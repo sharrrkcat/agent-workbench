@@ -56,6 +56,7 @@ class WorkbenchRuntime:
                 source_message_id=source_message_id,
                 display_input=route.raw_input,
                 attachments=attachments,
+                invocation_route_kind=route.invocation_route_kind or "agent",
             )
             self._maybe_generate_session_title(session.session_id, route.args, result)
             return result
@@ -125,6 +126,7 @@ class WorkbenchRuntime:
                 source_message_id=source_message_id,
                 input_message_id=message.message_id,
                 create_user_message=False,
+                invocation_route_kind=route.invocation_route_kind or "agent",
             )
             self._maybe_generate_session_title(session.session_id, route.args, result)
             return result

@@ -163,6 +163,7 @@ class AgentRunner:
         attachments: list[dict] = None,
         suppress_output: bool = False,
         is_silent_submission: bool = False,
+        invocation_route_kind: str = "agent",
     ) -> RunResult:
         attachments = attachments or []
         try:
@@ -204,6 +205,7 @@ class AgentRunner:
                 attachments=attachments,
                 suppress_output=suppress_output,
                 is_silent_submission=is_silent_submission,
+                invocation_route_kind=invocation_route_kind,
             )
 
         if agent.type != "prompt":
@@ -228,10 +230,13 @@ class AgentRunner:
                     "input_source": "text",
                     "invocation": {
                         "route_type": "agent",
+                        "route_kind": invocation_route_kind,
                         "agent_id": agent_id,
                         "action_id": action_id,
                         "raw_text": raw_text,
                         "args": args,
+                        "resolved_agent_id": agent_id,
+                        "resolved_action_id": action_id,
                     },
                 },
                 speaker_type="user",
@@ -256,6 +261,9 @@ class AgentRunner:
                 "source_message_id": source_message_id or None,
                 "prefill": prefill or {},
                 "silent": bool(suppress_output),
+                "route_kind": invocation_route_kind,
+                "resolved_agent_id": agent_id,
+                "resolved_action_id": action_id,
             },
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)

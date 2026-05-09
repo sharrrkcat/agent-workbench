@@ -80,6 +80,13 @@ model_lifecycle:
 | `attach_to` | UI attachment hint. | Used by message actions when present. |
 | `callable` | Whether action is user-callable. | Defaults to true. |
 
+Text routing supports two Agent action forms:
+
+- `@agent_id:action args` explicitly invokes `action` on `agent_id`.
+- `:action args` invokes `action` only on the current session default Agent.
+
+The `:action` shortcut does not infer from previous messages, recent Agent calls, or other Agents. If the current session default Agent lacks the named action, routing returns a structured error instead of treating the input as ordinary text. Use full `@agent_id:action` messages for buttons, saved shortcuts, and cross-Agent calls.
+
 ### Config schema fields
 
 | field | meaning |
