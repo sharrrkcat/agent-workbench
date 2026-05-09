@@ -94,18 +94,7 @@ async def execute_generation(ctx, recipe: dict | None = None, mode_source: str =
         save_recipe(ctx, recipe)
         _complete_step(ctx, step, "Positive prompt generated.")
         if not bool(ctx.config.get("auto_run_after_llm_prompt", True)):
-            await ctx.reply_markdown(
-                "\n".join(
-                    [
-                        "# Positive prompt saved",
-                        "",
-                        "LLM mode generated and saved the positive prompt in this session recipe.",
-                        "",
-                        "- Open `@comfyui_agent:form` to inspect or edit the recipe.",
-                        "- Run `@comfyui_agent:run` to submit the saved recipe.",
-                    ]
-                )
-            )
+            await ctx.reply_markdown(saved_positive_prompt_markdown(positive_prompt))
             return {
                 "kind": "comfyui_prompt_saved",
                 "preset_id": recipe.get("preset_id") or "",
@@ -638,6 +627,28 @@ def _sanitize_filename(filename: str) -> str:
     name = os.path.basename(filename or "comfyui-output.png")
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
     return name or "comfyui-output.png"
+
+
+def saved_positive_prompt_markdown(positive_prompt: str) -> str:
+    return "\n".join(
+        [
+            "## Positive prompt",
+            "",
+            _fenced_text_block(positive_prompt),
+            "",
+            "Saved to the current session recipe.",
+            "",
+            "Edit: `@comfyui_agent:form`",
+            "Run: `@comfyui_agent:run`",
+        ]
+    )
+
+
+def _fenced_text_block(text: str) -> str:
+    content = text or ""
+    max_backticks = max((len(match.group(0)) for match in re.finditer(r"`+", content)), default=0)
+    fence = "`" * max(3, max_backticks + 1)
+    return f"{fence}text\n{content}\n{fence}"
 
 
 def _recipe_markdown(recipe: dict, title: str, detail: str) -> str:

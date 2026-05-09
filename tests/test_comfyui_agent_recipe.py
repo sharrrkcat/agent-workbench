@@ -394,20 +394,37 @@ def test_llm_action_writes_user_prompt_enhances_without_changing_mode_and_genera
     assert ("unload_model", {}) in ctx.llm.calls
 
 
-def test_llm_auto_run_false_saves_positive_prompt_without_submitting(tmp_path: Path):
-    ctx = FakeCtx(tmp_path, action_id="llm", text="make a cat", config={"auto_run_after_llm_prompt": False})
-    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+@pytest.mark.parametrize(
+    ("action_id", "stored_mode"),
+    [
+        ("llm", "raw"),
+        ("default", "llm"),
+    ],
+)
+def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submitting(tmp_path: Path, action_id: str, stored_mode: str):
+    generated = "cinematic `cat`\n```note\nkept\n```"
+    ctx = FakeCtx(tmp_path, action_id=action_id, text="make a cat", config={"auto_run_after_llm_prompt": False}, llm=FakeLLM(text=generated))
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, stored_mode))
 
     run(comfy_agent.run(ctx))
     saved = ctx.state.get(comfy_agent.RECIPE_KEY)
 
     assert saved["user_prompt"] == "make a cat"
-    assert saved["values"]["positive_prompt"] == "cinematic cat"
-    assert saved["input_mode"] == "raw"
+    assert saved["values"]["positive_prompt"] == generated
+    assert saved["input_mode"] == stored_mode
     assert [call[0] for call in ctx.llm.calls] == ["text"]
     assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
+    assert ctx.attachments == []
+    assert all(reply[0] != "image_gallery" for reply in ctx.replies)
     assert ctx.replies[-1][0] == "markdown"
-    assert "Positive prompt saved" in ctx.replies[-1][1]
+    body = ctx.replies[-1][1]
+    assert "## Positive prompt" in body
+    assert generated in body
+    assert "````text" in body
+    assert "Saved to the current session recipe." in body
+    assert "`@comfyui_agent:form`" in body
+    assert "`@comfyui_agent:run`" in body
+    assert "Positive prompt saved" not in body
 
 
 def test_default_respects_raw_and_llm_modes_and_generates(tmp_path: Path):
