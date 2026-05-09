@@ -87,6 +87,8 @@ Text routing supports two Agent action forms:
 
 The `:action` shortcut does not infer from previous messages, recent Agent calls, or other Agents. If the current session default Agent lacks the named action, routing returns a structured error instead of treating the input as ordinary text. Use full `@agent_id:action` messages for buttons, saved shortcuts, and cross-Agent calls.
 
+Actions with `callable: false` are internal Agent entry points. They are excluded from user-facing composer autocomplete and direct text/API user invocation returns a clear not-callable error. Trusted internal `action_form` submission may still target a non-callable action declared by the original form block.
+
 ### Config schema fields
 
 | field | meaning |

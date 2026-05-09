@@ -42,6 +42,38 @@ def test_composer_placeholder_mentions_current_agent_action_shortcut() -> None:
     assert "Ask anything, use @agent, :action, or /command" in source
 
 
+def test_composer_current_agent_action_autocomplete_trigger_contract() -> None:
+    source = read_frontend("components/ChatInput.tsx")
+
+    assert "current-actions" in source
+    assert r"^:([A-Za-z0-9_-]*)$" in source
+    assert "activeToken.token.startsWith(':')" in source
+
+
+def test_command_palette_current_agent_action_autocomplete_contract() -> None:
+    source = read_frontend("components/CommandPalette.tsx")
+
+    assert "currentSession?.default_agent_id" in source
+    assert "currentAgent.actions" in source
+    assert ".filter((action) => action.callable !== false)" in source
+    assert "label: `:${action.id}`" in source
+    assert "value: `:${action.id} `" in source
+    assert "No current agent selected." in source
+    assert "No matching actions for current agent." in source
+    assert "save_recipe_from_form" not in source
+    assert "value: `@${agent.id}:${action.id} `" in source
+    assert "commands" in source
+
+
+def test_composer_colon_autocomplete_does_not_replace_existing_namespaces() -> None:
+    source = read_frontend("components/ChatInput.tsx")
+
+    assert "activeToken.token.startsWith('/')) return 'commands'" in source
+    assert "activeToken.token.startsWith('@') && activeToken.token.includes(':')) return 'actions'" in source
+    assert "activeToken.token.startsWith('@')) return 'agents'" in source
+    assert source.index("activeToken.token.startsWith('@') && activeToken.token.includes(':')") < source.index("activeToken.token.startsWith(':')")
+
+
 def test_model_status_helper_has_four_ui_tones_and_unloaded_yellow() -> None:
     source = read_frontend("utils/modelStatus.ts")
 

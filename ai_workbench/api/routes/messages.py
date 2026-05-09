@@ -262,6 +262,7 @@ async def submit_form(session_id: str, payload: SubmitFormRequest, state: Runtim
             create_user_message=False,
             suppress_output=True,
             is_silent_submission=True,
+            enforce_callable=False,
         )
         message = submit.get("success_message") or "Saved"
         if not result.success:
@@ -321,6 +322,7 @@ async def submit_form(session_id: str, payload: SubmitFormRequest, state: Runtim
         form_id=payload.form_id,
         input_message_id=user_message.message_id,
         create_user_message=False,
+        enforce_callable=False,
     )
     if not result.success:
         if result.run_id:

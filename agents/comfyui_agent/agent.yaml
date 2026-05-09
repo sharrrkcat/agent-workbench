@@ -18,6 +18,7 @@ actions:
   - id: save_recipe_from_form
     label: Save Recipe
     description: Save submitted form values into the current session recipe without generating images.
+    callable: false
   - id: switch
     label: Switch Mode
     description: Switch the current recipe input_mode between llm and raw.

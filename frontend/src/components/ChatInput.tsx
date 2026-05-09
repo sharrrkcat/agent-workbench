@@ -30,6 +30,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     if (activeToken.token.startsWith('/')) return 'commands';
     if (activeToken.token.startsWith('@') && activeToken.token.includes(':')) return 'actions';
     if (activeToken.token.startsWith('@')) return 'agents';
+    if (activeToken.token.startsWith(':')) return 'current-actions';
     return 'none';
   }, [activeToken, suggestionsDismissed]);
 
@@ -485,6 +486,9 @@ function defaultModelTitle(profile: LlmProfile | undefined, statuses: Record<str
 
 function getActiveToken(value: string, cursorPosition: number): { token: string; start: number; end: number } | null {
   const cursor = Math.max(0, Math.min(cursorPosition, value.length));
+  if (cursor === value.length && /^:([A-Za-z0-9_-]*)$/.test(value)) {
+    return { token: value, start: 0, end: cursor };
+  }
   const beforeCursor = value.slice(0, cursor);
   const tokenStart = Math.max(beforeCursor.search(/\S+$/), 0);
   const token = value.slice(tokenStart, cursor);

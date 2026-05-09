@@ -83,6 +83,33 @@ def test_runtime_invoke_action_uses_same_formal_action() -> None:
     assert action_message.parent_message_id == source.message_id
 
 
+def test_user_text_cannot_directly_invoke_internal_action() -> None:
+    fixture = PromptRuntimeFixture()
+    session = fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    result = run(fixture.runtime.handle_input(session, ":save_recipe_from_form"))
+
+    assert result.success is False
+    assert result.error_code == "ACTION_NOT_CALLABLE"
+    assert "not user-callable" in result.error
+
+
+def test_runtime_invoke_action_rejects_internal_action() -> None:
+    fixture = PromptRuntimeFixture()
+    session = fixture.sessions.create_session(default_agent_id="comfyui_agent")
+
+    result = run(
+        fixture.runtime.invoke_action(
+            session_id=session.session_id,
+            agent_id="comfyui_agent",
+            action_id="save_recipe_from_form",
+        )
+    )
+
+    assert result.success is False
+    assert result.error_code == "ACTION_NOT_CALLABLE"
+
+
 def test_selected_message_context_includes_source_agent_message() -> None:
     llm = FakeLLMRuntime(response="formal hello")
     fixture = PromptRuntimeFixture(llm=llm)
@@ -207,4 +234,3 @@ def test_missing_source_message_returns_structured_failed_run() -> None:
     assert result.success is False
     assert "missing-message" in result.error
     assert action_run.status == RunStatus.FAILED
-

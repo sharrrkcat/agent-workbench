@@ -195,7 +195,8 @@ ComfyUI Agent action semantics:
 - `raw`: force raw for this invocation, keep the stored `input_mode` unchanged, write `values.positive_prompt`, then generation runs.
 - `llm`: force LLM prompt enhancement for this invocation, keep the stored `input_mode` unchanged, write `user_prompt` and generated `values.positive_prompt`, then generation runs only when `auto_run_after_llm_prompt=true`.
 - `run`: execute the current session recipe without changing prompt or parameters.
-- `form` and `save_recipe_from_form`: show and save the session recipe editor only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
+- `form`: show the session recipe editor only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
+- `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
 `switch` controls the stored recipe `input_mode`; `raw` and `llm` are one-shot modes for a single invocation. `auto_run_after_llm_prompt=false` makes LLM mode save the generated positive prompt for inspection or form editing before the user runs `@comfyui_agent:run`.
@@ -241,7 +242,11 @@ Actions are Agent entry points:
 
 Use `@agent_id:action args` when the call must target a specific Agent. Use `:action args` only as a shortcut for the current session default Agent's action; it does not infer an Agent from previous messages, recent calls, or other Agents. If the current default Agent does not define that action, routing returns a clear error instead of falling back to `default`.
 
-Buttons, saved shortcuts, and cross-Agent links should continue to use the full `@agent_id:action` form because the user's current default Agent may be different when the button is clicked.
+The composer autocompletes current-Agent action shortcuts when the input is only `:` plus an optional action prefix, such as `:` or `:fo`. The list is built only from the current session default Agent and only includes actions where `callable` is true or omitted.
+
+Set `callable: false` for internal form actions that should not be manually called by users. They do not appear in user-facing autocomplete, and direct user invocation is rejected, but trusted `action_form` submit targets may still call them.
+
+Buttons, saved shortcuts, and cross-Agent links should continue to use the full `@agent_id:action` form because the user's current default Agent may be different when the button is clicked. `@agent_id:action` also remains the right form for explicit cross-Agent calls.
 
 CLI action calls:
 

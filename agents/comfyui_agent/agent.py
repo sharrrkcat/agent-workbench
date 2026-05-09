@@ -632,7 +632,9 @@ def _sanitize_filename(filename: str) -> str:
 def saved_positive_prompt_blocks(positive_prompt: str) -> list[dict]:
     return [
         {"type": "markdown", "text": "## Positive prompt"},
+        {"type": "markdown", "text": "---"},
         {"type": "text", "text": positive_prompt or ""},
+        {"type": "markdown", "text": "---"},
         {"type": "markdown", "text": "Saved to the current session recipe."},
         {
             "type": "command_buttons",

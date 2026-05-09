@@ -31,6 +31,14 @@ def test_agent_manifests_load() -> None:
     }
 
 
+def test_comfyui_form_save_action_is_internal_not_user_callable() -> None:
+    comfyui = load_agent_manifest(ROOT / "agents" / "comfyui_agent" / "agent.yaml")
+
+    action = next(item for item in comfyui.actions if item.id == "save_recipe_from_form")
+
+    assert action.callable is False
+
+
 def test_capability_manifest_loads() -> None:
     capability = load_capability_manifest(ROOT / "capabilities" / "base64" / "capability.yaml")
 

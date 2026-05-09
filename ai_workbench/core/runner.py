@@ -164,6 +164,7 @@ class AgentRunner:
         suppress_output: bool = False,
         is_silent_submission: bool = False,
         invocation_route_kind: str = "agent",
+        enforce_callable: bool = True,
     ) -> RunResult:
         attachments = attachments or []
         try:
@@ -179,12 +180,20 @@ class AgentRunner:
                 error_code="AGENT_DISABLED",
             )
 
-        if action_id not in {action.id for action in agent.actions}:
+        action = next((item for item in agent.actions if item.id == action_id), None)
+        if action is None:
             return RunResult(
                 success=False,
                 run_id="",
                 error=f"Unknown action '{action_id}' for agent '{agent_id}'.",
                 error_code="ACTION_NOT_FOUND",
+            )
+        if enforce_callable and not action.callable:
+            return RunResult(
+                success=False,
+                run_id="",
+                error=f"Action '{action_id}' for agent '{agent_id}' is not user-callable.",
+                error_code="ACTION_NOT_CALLABLE",
             )
 
         if agent.type == "script":
@@ -211,7 +220,6 @@ class AgentRunner:
         if agent.type != "prompt":
             return RunResult(success=False, run_id="", error=f"Unsupported agent type: {agent.type}")
 
-        action = next(item for item in agent.actions if item.id == action_id)
         parent_id = parent_message_id or source_message_id or ""
         current_user_message_id = ""
         if input_message_id and not create_user_message:

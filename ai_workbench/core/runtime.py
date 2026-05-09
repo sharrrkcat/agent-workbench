@@ -32,7 +32,7 @@ class WorkbenchRuntime:
         attachments = attachments or []
         route = self.router.route(session, raw_input)
         if route.kind == RouteKind.ERROR:
-            return RunResult(success=False, run_id="", error=route.error_message)
+            return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
             result = await self.command_runner.run(route.target_id or "", route.args, route.session_id, input_message_id=input_message_id)
             self._maybe_generate_session_title(session.session_id, raw_input, result)
@@ -149,6 +149,7 @@ class WorkbenchRuntime:
             session_id=session.session_id,
             input_message_id=source_user_message.message_id,
             create_user_message=False,
+            enforce_callable=True,
         )
         self._maybe_generate_session_title(session.session_id, args, result)
         return result
