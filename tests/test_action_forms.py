@@ -29,6 +29,10 @@ def test_action_form_payload_shape_validation_success() -> None:
     assert validate_action_form_block(demo_form())["form_id"] == "demo"
 
 
+def test_action_form_submit_visibility_defaults_to_message() -> None:
+    assert validate_action_form_block(demo_form())["submit"]["visibility"] == "message"
+
+
 @pytest.mark.parametrize("missing", ["form_id", "title", "fields", "submit"])
 def test_action_form_payload_shape_validation_requires_core_fields(missing: str) -> None:
     form = demo_form()
@@ -150,6 +154,161 @@ def test_form_submit_uses_original_form_target_and_prefill() -> None:
     assert assistant["content"]["received_prefill"]["prompt"] == "submitted"
     assert assistant["content"]["source_message_id"] == form_message["message_id"]
     assert assistant["role"] == "assistant"
+
+
+def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_state() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    source = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content={
+            "blocks": [
+                {
+                    "type": "action_form",
+                    "form_id": "silent_demo",
+                    "title": "Silent Demo",
+                    "fields": [{"name": "prompt", "type": "text", "required": True}],
+                    "submit": {
+                        "agent_id": "render_test",
+                        "action_id": "form_submit",
+                        "visibility": "silent",
+                        "success_message": "Recipe saved",
+                    },
+                }
+            ]
+        },
+        agent_id="render_test",
+        output_type="rich_content",
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={
+            "source_message_id": source.message_id,
+            "form_id": "silent_demo",
+            "values": {"prompt": "submitted"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["ok"] is True
+    assert payload["silent"] is True
+    assert payload["message"] == "Recipe saved"
+    assert payload["run_id"]
+    assert payload["messages"] == []
+
+    messages = client.app.state.runtime_state.messages.list_messages(session["session_id"])
+    assert [message.origin for message in messages] == ["agent_reply"]
+    assert all(message.origin != "form_submission" for message in messages)
+    assert all(message.role != "tool" for message in messages)
+    state = client.app.state.runtime_state.session_agent_states.get_state(
+        session["session_id"], "render_test", "last_silent_form_submission"
+    )
+    assert state["prefill"]["prompt"] == "submitted"
+    assert state["source_message_id"] == source.message_id
+    assert state["form_id"] == "silent_demo"
+    assert state["is_silent_submission"] is True
+
+
+def test_silent_form_submit_validation_failure_does_not_invoke_target() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    source = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content={
+            "blocks": [
+                {
+                    "type": "action_form",
+                    "form_id": "silent_invalid",
+                    "title": "Silent Invalid",
+                    "fields": [{"name": "prompt", "type": "text", "required": True}],
+                    "submit": {"agent_id": "render_test", "action_id": "form_submit", "visibility": "silent"},
+                }
+            ]
+        },
+        agent_id="render_test",
+        output_type="rich_content",
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={"source_message_id": source.message_id, "form_id": "silent_invalid", "values": {"prompt": ""}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "FORM_VALIDATION_FAILED"
+    assert client.app.state.runtime_state.session_agent_states.get_state(
+        session["session_id"], "render_test", "last_silent_form_submission"
+    ) is None
+
+
+def test_silent_form_submit_ignores_request_visibility_and_target_overrides() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    payload = post_message(client, session["session_id"], "@render_test:form")
+    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={
+            "source_message_id": form_message["message_id"],
+            "form_id": "demo",
+            "values": {
+                "prompt": "submitted",
+                "count": 5,
+                "mode": "quality",
+                "enabled": False,
+                "config_json": {"size": "medium"},
+            },
+            "submit": {"visibility": "silent", "agent_id": "chat", "action_id": "default"},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_silent_form_submit_target_failure_returns_structured_error_without_chat_messages() -> None:
+    client = make_client()
+    session = create_session(client, default_agent_id="render_test")
+    source = client.app.state.runtime_state.messages.add_message(
+        session_id=session["session_id"],
+        role="assistant",
+        content={
+            "blocks": [
+                {
+                    "type": "action_form",
+                    "form_id": "silent_fail",
+                    "title": "Silent Fail",
+                    "fields": [{"name": "prompt", "type": "text", "required": True}],
+                    "submit": {
+                        "agent_id": "render_test",
+                        "action_id": "form_submit",
+                        "visibility": "silent",
+                        "failure_message": "Save failed",
+                    },
+                }
+            ]
+        },
+        agent_id="render_test",
+        output_type="rich_content",
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['session_id']}/forms/submit",
+        json={"source_message_id": source.message_id, "form_id": "silent_fail", "values": {"prompt": "fail"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["ok"] is False
+    assert payload["silent"] is True
+    assert payload["message"] == "Save failed: Form submit failed on request."
+    assert payload["messages"] == []
 
 
 def test_form_submit_invalid_target_action_returns_structured_error() -> None:

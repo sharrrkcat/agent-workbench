@@ -204,6 +204,8 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     styles = read_frontend("styles.css")
 
     assert "type: 'action_form'" in types
+    assert "visibility?: 'message' | 'silent' | null" in types
+    assert "success_message?: string | null" in types
     assert "ActionFormRenderer" in source
     assert "ActionFormFieldControl" in source
     assert "textarea" in source
@@ -212,11 +214,17 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert "<select" in source
     assert "action-form-json" in source
     assert "initialFormValues(form)" in source
-    assert "submitForm(messageId, form.form_id, values)" in source
-    assert "submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>)" in store
+    assert "form.submit.visibility === 'silent'" in source
+    assert "submitForm(messageId, form.form_id, values, { silent })" in source
+    assert "throw new Error(result.message || result.error || 'Form submission failed')" in source
+    assert "setNotice(result?.message || form.submit.success_message || 'Saved')" in source
+    assert "submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>, options?: { silent?: boolean })" in store
+    assert "options?.silent" in store
     assert "/forms/submit" in client
     assert ".action-form-card" in styles
     assert ".action-form-error" in styles
+    assert ".action-form-notice" in styles
+    assert ".action-form-field select option" in styles
 
 
 def test_chat_header_displays_and_switches_conversation_mode() -> None:

@@ -50,6 +50,7 @@ class ScriptInput(BaseModel):
     text: str
     action_id: Optional[str] = None
     form_id: Optional[str] = None
+    is_silent_submission: bool = False
     context: list = Field(default_factory=list)
     source_message_id: Optional[str] = None
     prefill: Dict[str, Any] = Field(default_factory=dict)
@@ -155,12 +156,13 @@ class CapabilityProxy:
 
 
 class ScriptOutputProxy:
-    def __init__(self, message_store: MessageStore, event_bus: EventBus, session_id: str, run_id: str, message_id: Optional[str]) -> None:
+    def __init__(self, message_store: MessageStore, event_bus: EventBus, session_id: str, run_id: str, message_id: Optional[str], suppress_output: bool = False) -> None:
         self.message_store = message_store
         self.event_bus = event_bus
         self.session_id = session_id
         self.run_id = run_id
         self.message_id = message_id
+        self.suppress_output = suppress_output
         self.completed = False
         self._content = ""
         self._output_type = "text"
@@ -178,6 +180,8 @@ class ScriptOutputProxy:
         self.message_store.update_message(message.model_copy(update={"output_type": self._output_type}))
 
     async def write_delta(self, text: str) -> None:
+        if self.suppress_output:
+            return
         if not text:
             return
         self._content += text
@@ -200,6 +204,13 @@ class ScriptOutputProxy:
         action_id: Optional[str] = None,
         parent_message_id: Optional[str] = None,
     ):
+        if self.suppress_output:
+            self.completed = True
+            if final_content is not None:
+                self._content = final_content if isinstance(final_content, str) else final_content
+            if output_type:
+                self._output_type = output_type
+            return None
         if self.completed:
             if final_content is None and output_type is None and actions is None and metadata is None:
                 return self.message_store.get_message(self.message_id)
@@ -613,6 +624,8 @@ class AgentContext:
         capability_registry: CapabilityRegistry = None,
         capability_config_store: Any = None,
         session_agent_state_store: Any = None,
+        is_silent_submission: bool = False,
+        suppress_output: bool = False,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -621,6 +634,7 @@ class AgentContext:
             text=input_text,
             action_id=action_id,
             form_id=form_id,
+            is_silent_submission=is_silent_submission,
             source_message_id=source_message_id,
             prefill=prefill or {},
             attachments=list(attachments or []),
@@ -641,6 +655,7 @@ class AgentContext:
             session_id=session.session_id,
             run_id=run_id,
             message_id=output_message_id,
+            suppress_output=suppress_output,
         )
         self.llm = LLMProxy(
             llm_runtime,
@@ -889,6 +904,8 @@ class ScriptAgentRunner:
         create_user_message: bool = True,
         display_input: str = "",
         attachments: list[dict] = None,
+        suppress_output: bool = False,
+        is_silent_submission: bool = False,
     ) -> RunResult:
         attachments = attachments or []
         session = self.session_store.get_session(session_id)
@@ -933,39 +950,42 @@ class ScriptAgentRunner:
                 "source_message_id": source_message_id or None,
                 "prefill": prefill or {},
                 "form_id": form_id or None,
+                "silent": bool(suppress_output),
             },
         )
-        output_message = self.message_store.add_message(
-            session_id=session_id,
-            role="assistant",
-            content="",
-            agent_id=agent.id,
-            action_id=action_id,
-            run_id=run.run_id,
-            output_type="text",
-            parent_message_id=parent_id or None,
-            metadata={"success": True, "streaming": True, "placeholder": True},
-            speaker_type="agent",
-            speaker_id=agent.id,
-            speaker_name=agent.name,
-            origin="agent_reply",
-        )
-        run = self.run_store.update_metadata(run.run_id, {**run.metadata, "message_id": output_message.message_id})
-        self.event_bus.emit(
-            "message_started",
-            session_id=session_id,
-            run_id=run.run_id,
-            message_id=output_message.message_id,
-            payload={
-                "message_id": output_message.message_id,
-                "role": "assistant",
-                "agent_id": agent.id,
-                "agent_name": agent.name,
-                "action_id": action_id,
-                "parent_message_id": parent_id or None,
-                "created_at": isoformat_utc(output_message.created_at),
-            },
-        )
+        output_message = None
+        if not suppress_output:
+            output_message = self.message_store.add_message(
+                session_id=session_id,
+                role="assistant",
+                content="",
+                agent_id=agent.id,
+                action_id=action_id,
+                run_id=run.run_id,
+                output_type="text",
+                parent_message_id=parent_id or None,
+                metadata={"success": True, "streaming": True, "placeholder": True},
+                speaker_type="agent",
+                speaker_id=agent.id,
+                speaker_name=agent.name,
+                origin="agent_reply",
+            )
+            run = self.run_store.update_metadata(run.run_id, {**run.metadata, "message_id": output_message.message_id})
+            self.event_bus.emit(
+                "message_started",
+                session_id=session_id,
+                run_id=run.run_id,
+                message_id=output_message.message_id,
+                payload={
+                    "message_id": output_message.message_id,
+                    "role": "assistant",
+                    "agent_id": agent.id,
+                    "agent_name": agent.name,
+                    "action_id": action_id,
+                    "parent_message_id": parent_id or None,
+                    "created_at": isoformat_utc(output_message.created_at),
+                },
+            )
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
         lifecycle = resolved_model_lifecycle(agent, agent_config)
         if self.agent_config_store is not None:
@@ -1028,11 +1048,13 @@ class ScriptAgentRunner:
             llm_profile_store=self.llm_profile_store,
             attachments=attachments,
             run_lifecycle=self.run_lifecycle,
-            output_message_id=output_message.message_id,
+            output_message_id=output_message.message_id if output_message is not None else None,
             current_parent_step_id=running_step.step_id,
             capability_registry=self.capability_registry,
             capability_config_store=self.capability_config_store,
             session_agent_state_store=self.session_agent_state_store,
+            is_silent_submission=is_silent_submission,
+            suppress_output=suppress_output,
         )
 
         try:

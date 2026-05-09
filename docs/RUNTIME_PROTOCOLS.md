@@ -226,7 +226,7 @@ New Agent replies use `role="assistant"`, `speaker_type="agent"`, `speaker_id=<a
 
 New slash command results use `role="assistant"`, `speaker_type="capability"`, `speaker_id=<capability_id>`, a Capability or command display name as `speaker_name`, and `origin="command_result"`. Their metadata continues to include `metadata.kind="command_result"`, `metadata.command`, `metadata.capability_id`, and `metadata.output_type`.
 
-Interactive form submissions create user-origin messages with `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, and `origin="form_submission"`. Their visible `content` is the form submit message or `Submitted form: <title>`, not the full submitted JSON.
+Interactive form submissions with `submit.visibility="message"` create user-origin messages with `role="user"`, `speaker_type="user"`, `speaker_id="local_user"`, and `origin="form_submission"`. Their visible `content` is the form submit message or `Submitted form: <title>`, not the full submitted JSON. Silent form submissions do not create a visible user message.
 
 Old messages may lack speaker fields. Context projection falls back from role, top-level `agent_id` / `command_name`, and command-result metadata. Old `role="tool"` command results are compatibility data only and are normalized or skipped before provider calls.
 
@@ -237,12 +237,13 @@ Old messages may lack speaker fields. Context projection falls back from role, t
 Form submission protocol:
 - The frontend sends `source_message_id`, `form_id`, and `values` to the form submission endpoint.
 - The backend reads the original source message and resolves the target `agent_id` / `action_id` from the original `action_form` block.
-- Request body target fields cannot override the original form target.
+- The backend resolves `submit.visibility` from the original `action_form` block. Missing visibility means `"message"`.
+- Request body target fields or visibility cannot override the original form target or visibility.
 - Submitted values are validated against the original form field declarations before any Agent action is called.
 - Validation failure returns a structured error and does not create a run.
 - The source form message is not modified by submission; the same form can be submitted again.
 
-The backend creates a new user message with metadata like:
+For `submit.visibility="message"`, the backend creates a new user message with metadata like:
 
 ```json
 {
@@ -255,9 +256,11 @@ The backend creates a new user message with metadata like:
 }
 ```
 
-The target Script Agent receives the validated values in `ctx.input.prefill`, plus `ctx.input.source_message_id` and `ctx.input.form_id`. The form submission message may enter future LLM context as a normal user message, but only its short visible summary is projected by default. The full `prefill` JSON stays in metadata and is not automatically expanded into provider payloads.
+The target Script Agent receives the validated values in `ctx.input.prefill`, plus `ctx.input.source_message_id` and `ctx.input.form_id`. Message-mode form submissions may enter future LLM context as normal user messages, but only their short visible summary is projected by default. The full `prefill` JSON stays in metadata and is not automatically expanded into provider payloads.
 
-Provider-bound message roles remain limited to `system`, `user`, and `assistant`; form submissions do not introduce `tool`, `function`, or custom provider roles.
+For `submit.visibility="silent"`, the backend invokes the same target Agent action without creating the visible `form_submission` user message. Script Agents receive `ctx.input.prefill`, `ctx.input.source_message_id`, `ctx.input.form_id`, and `ctx.input.is_silent_submission=true`. Normal assistant replies and public output streams from the target action are suppressed, so successful save-only actions return a structured submission response instead of appending chat timeline messages. Silent submit does not modify the source form message, and the full `prefill` still stays out of provider-bound LLM context unless an Agent explicitly uses it.
+
+Provider-bound message roles remain limited to `system`, `user`, and `assistant`; message-mode and silent form submissions do not introduce `tool`, `function`, or custom provider roles.
 
 ## Group Transcript Context
 

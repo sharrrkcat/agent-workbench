@@ -62,6 +62,9 @@ class ActionFormSubmit(BaseModel):
     agent_id: Optional[str] = None
     action_id: str = Field(min_length=1)
     message: Optional[str] = None
+    visibility: Literal["message", "silent"] = "message"
+    success_message: Optional[str] = None
+    failure_message: Optional[str] = None
 
     @field_validator("action_id")
     @classmethod

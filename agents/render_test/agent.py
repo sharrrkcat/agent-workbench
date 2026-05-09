@@ -1,10 +1,23 @@
 async def run(ctx):
     if ctx.action_id == "form_submit":
+        if ctx.input.prefill.get("prompt") == "fail":
+            raise ValueError("Form submit failed on request.")
+        if ctx.input.is_silent_submission:
+            ctx.state.set(
+                "last_silent_form_submission",
+                {
+                    "prefill": ctx.input.prefill,
+                    "source_message_id": ctx.input.source_message_id,
+                    "form_id": ctx.input.form_id,
+                    "is_silent_submission": ctx.input.is_silent_submission,
+                },
+            )
         await ctx.reply_json(
             {
                 "received_prefill": ctx.input.prefill,
                 "source_message_id": ctx.input.source_message_id,
                 "form_id": ctx.input.form_id,
+                "is_silent_submission": ctx.input.is_silent_submission,
             }
         )
         return

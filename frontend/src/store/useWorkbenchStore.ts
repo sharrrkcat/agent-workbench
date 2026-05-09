@@ -20,6 +20,7 @@ import type {
   Run,
   RunEvent,
   RunStep,
+  RuntimeResponse,
   HealthDetails,
   RuntimeEvent,
   Session,
@@ -91,7 +92,7 @@ type WorkbenchState = {
   sendMessage: (content: string, attachments?: SendMessageAttachment[]) => Promise<boolean>;
   cancelActiveRun: () => Promise<void>;
   invokeAction: (action: AvailableAction) => Promise<void>;
-  submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>) => Promise<void>;
+  submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>, options?: { silent?: boolean }) => Promise<RuntimeResponse | undefined>;
   deleteMessage: (messageId: string) => Promise<void>;
   dismissNotification: (notificationId: string) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
@@ -721,7 +722,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  submitForm: async (sourceMessageId: string, formId: string, values: Record<string, unknown>) => {
+  submitForm: async (sourceMessageId: string, formId: string, values: Record<string, unknown>, options?: { silent?: boolean }) => {
     const session = get().currentSession;
     if (!session) return;
     const key = `${sourceMessageId}:form:${formId}`;
@@ -737,14 +738,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         set({ error: undefined, lastError: undefined });
       }
       set({ pendingActionKey: undefined });
+      return result;
     } catch (error) {
       const formatted = formatError(error, 'Form submission failed');
-      set({
-        error: undefined,
-        lastError: undefined,
-        pendingActionKey: undefined,
-        messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, sourceMessageId)],
-      });
+      if (options?.silent) {
+        set({ error: undefined, lastError: undefined, pendingActionKey: undefined });
+      } else {
+        set({
+          error: undefined,
+          lastError: undefined,
+          pendingActionKey: undefined,
+          messages: [...get().messages, createInlineErrorMessage(session.session_id, formatted.lastError, sourceMessageId)],
+        });
+      }
       throw error;
     }
   },

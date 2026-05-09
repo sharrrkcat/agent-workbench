@@ -161,6 +161,8 @@ class AgentRunner:
         create_user_message: bool = True,
         display_input: str = "",
         attachments: list[dict] = None,
+        suppress_output: bool = False,
+        is_silent_submission: bool = False,
     ) -> RunResult:
         attachments = attachments or []
         try:
@@ -200,6 +202,8 @@ class AgentRunner:
                 create_user_message=create_user_message,
                 display_input=display_input,
                 attachments=attachments,
+                suppress_output=suppress_output,
+                is_silent_submission=is_silent_submission,
             )
 
         if agent.type != "prompt":
@@ -251,16 +255,18 @@ class AgentRunner:
                 "parent_message_id": parent_id or None,
                 "source_message_id": source_message_id or None,
                 "prefill": prefill or {},
+                "silent": bool(suppress_output),
             },
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
-        self._emit_prompt_message_started(
-            agent=agent,
-            action_id=action_id,
-            session_id=session_id,
-            run=run,
-            parent_id=parent_id,
-        )
+        if not suppress_output:
+            self._emit_prompt_message_started(
+                agent=agent,
+                action_id=action_id,
+                session_id=session_id,
+                run=run,
+                parent_id=parent_id,
+            )
         if action_id != "default":
             self.event_bus.emit(
                 "action_invoked",
@@ -290,6 +296,7 @@ class AgentRunner:
                 current_user_message_id=current_user_message_id,
                 prefill=prefill or {},
                 run=run,
+                suppress_output=suppress_output,
             )
         except asyncio.CancelledError:
             try:
@@ -314,6 +321,7 @@ class AgentRunner:
         current_user_message_id: str,
         prefill: dict,
         run: RunSchema,
+        suppress_output: bool = False,
     ) -> RunResult:
         resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
@@ -360,6 +368,7 @@ class AgentRunner:
         llm_use_key = None
         llm_started = False
         cleanup_done = False
+        unload_result = None
         resolving_model_step = None
         calling_llm_step = None
         try:
@@ -390,31 +399,39 @@ class AgentRunner:
             llm_started = True
             calling_llm_step = self.run_lifecycle.start_step(run.run_id, "Calling LLM", message="Waiting for model response...")
             if _streaming_enabled(llm_config):
-                cleanup_done = True
-                return await self._run_prompt_agent_streaming(
-                    agent=agent,
-                    action_id=action_id,
-                    messages=messages,
-                    session_id=session_id,
-                    source_message_id=source_message_id,
-                    parent_id=parent_id,
-                    current_user_message_id=current_user_message_id,
-                    prefill=prefill,
-                    run=run,
-                    context_warnings=context_warnings,
-                    llm_config=llm_config,
-                    vision_input=vision_input["metadata"],
-                    file_context=file_context["metadata"],
-                    lifecycle=lifecycle,
-                    llm_use_key=llm_use_key,
-                    calling_llm_step_id=calling_llm_step.step_id,
-                )
-            metrics_recorder = LLMMetricsRecorder(streamed=False)
-            raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
-            llm_result = _extract_llm_result(raw_content)
-            content = llm_result.content
-            llm_metrics = metrics_recorder.complete(content, llm_result.usage)
-            self.run_lifecycle.complete_step(calling_llm_step.step_id)
+                if not suppress_output:
+                    cleanup_done = True
+                    return await self._run_prompt_agent_streaming(
+                        agent=agent,
+                        action_id=action_id,
+                        messages=messages,
+                        session_id=session_id,
+                        source_message_id=source_message_id,
+                        parent_id=parent_id,
+                        current_user_message_id=current_user_message_id,
+                        prefill=prefill,
+                        run=run,
+                        context_warnings=context_warnings,
+                        llm_config=llm_config,
+                        vision_input=vision_input["metadata"],
+                        file_context=file_context["metadata"],
+                        lifecycle=lifecycle,
+                        llm_use_key=llm_use_key,
+                        calling_llm_step_id=calling_llm_step.step_id,
+                    )
+                metrics_recorder = LLMMetricsRecorder(streamed=False)
+                raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
+                llm_result = _extract_llm_result(raw_content)
+                content = llm_result.content
+                llm_metrics = metrics_recorder.complete(content, llm_result.usage)
+                self.run_lifecycle.complete_step(calling_llm_step.step_id)
+            else:
+                metrics_recorder = LLMMetricsRecorder(streamed=False)
+                raw_content = await _call_chat_nonstream(self.llm_runtime, messages, llm_config.values)
+                llm_result = _extract_llm_result(raw_content)
+                content = llm_result.content
+                llm_metrics = metrics_recorder.complete(content, llm_result.usage)
+                self.run_lifecycle.complete_step(calling_llm_step.step_id)
         except LLMConfigError as exc:
             if resolving_model_step is not None:
                 self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=exc.code, error_message=exc.message)
@@ -467,6 +484,23 @@ class AgentRunner:
             metadata["reasoning_content"] = llm_result.reasoning_content
         self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"], file_context["metadata"], llm_raw=llm_result.raw)
         saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
+        if suppress_output:
+            self.run_lifecycle.complete_step(saving_step.step_id)
+            cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
+            unload_message = None
+            if llm_started and not cleanup_done:
+                unload_result = self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
+                unload_message = _llm_unload_message(unload_result) if unload_result else None
+            self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
+            done_run = self.run_lifecycle.complete_run(run.run_id)
+            self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
+            self.event_bus.emit(
+                "run_metrics",
+                session_id=session_id,
+                run_id=done_run.run_id,
+                payload={"metrics": llm_metrics},
+            )
+            return RunResult(success=True, run_id=done_run.run_id, data=content)
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",

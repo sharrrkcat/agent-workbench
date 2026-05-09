@@ -669,11 +669,14 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
   const pendingActionKey = useWorkbenchStore((state) => state.pendingActionKey);
   const [values, setValues] = useState<Record<string, unknown>>(() => initialFormValues(form));
   const [error, setError] = useState<string>('');
+  const [notice, setNotice] = useState<string>('');
   const pending = pendingActionKey === `${messageId}:form:${form.form_id}`;
+  const silent = form.submit.visibility === 'silent';
 
   useEffect(() => {
     setValues(initialFormValues(form));
     setError('');
+    setNotice('');
   }, [form]);
 
   function setFieldValue(field: ActionFormField, value: unknown) {
@@ -684,8 +687,15 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
     event.preventDefault();
     if (!messageId || pending) return;
     setError('');
+    setNotice('');
     try {
-      await submitForm(messageId, form.form_id, values);
+      const result = await submitForm(messageId, form.form_id, values, { silent });
+      if (silent) {
+        if (result && !result.success) {
+          throw new Error(result.message || result.error || 'Form submission failed');
+        }
+        setNotice(result?.message || form.submit.success_message || 'Saved');
+      }
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : 'Form submission failed';
       setError(message);
@@ -704,6 +714,7 @@ function ActionFormRenderer({ form, messageId }: { form: ActionFormBlock; messag
         ))}
       </div>
       {error ? <div className="action-form-error">{error}</div> : null}
+      {notice ? <div className="action-form-notice">{notice}</div> : null}
       <div className="action-form-actions">
         <button type="button" onClick={() => setValues(initialFormValues(form))} disabled={pending}>
           <RotateCcw size={14} />

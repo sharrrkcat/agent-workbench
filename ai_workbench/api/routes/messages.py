@@ -248,6 +248,36 @@ async def submit_form(session_id: str, payload: SubmitFormRequest, state: Runtim
     except FormValidationError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
 
+    visibility = submit.get("visibility") or "message"
+    if visibility == "silent":
+        result = await state.agent_runner.run(
+            agent_id=target_agent_id,
+            action_id=target_action_id,
+            args="",
+            session_id=session_id,
+            source_message_id=source.message_id,
+            parent_message_id=source.message_id,
+            prefill=values,
+            form_id=payload.form_id,
+            create_user_message=False,
+            suppress_output=True,
+            is_silent_submission=True,
+        )
+        message = submit.get("success_message") or "Saved"
+        if not result.success:
+            prefix = submit.get("failure_message")
+            error = result.error or "Form submission failed."
+            if prefix:
+                error = f"{prefix}: {error}"
+            if result.run_id:
+                payload_data = _result_payload(state, session_id, result, before_ids)
+                payload_data.update({"ok": False, "message": error, "silent": True, "run_id": result.run_id})
+                return payload_data
+            raise_error(400, result.error_code or "FORM_SUBMISSION_FAILED", error)
+        payload_data = _result_payload(state, session_id, result, before_ids)
+        payload_data.update({"ok": True, "message": message, "silent": True, "run_id": result.run_id or None})
+        return payload_data
+
     display_text = submit.get("message") or f"Submitted form: {form.get('title') or payload.form_id}"
     user_message = state.messages.add_message(
         session_id=session_id,

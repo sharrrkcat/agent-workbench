@@ -1433,6 +1433,16 @@ input:disabled {
   font: inherit;
 }
 
+.action-form-field select,
+.action-form-field select option {
+  background: #171717;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.action-form-field select option:disabled {
+  color: rgba(255, 255, 255, 0.46);
+}
+
 .action-form-field input,
 .action-form-field select {
   min-height: 34px;
@@ -1470,6 +1480,15 @@ input:disabled {
   border-radius: 8px;
   background: rgba(127, 29, 29, 0.22);
   color: #fecaca;
+  font-size: 12px;
+}
+
+.action-form-notice {
+  padding: 8px 10px;
+  border: 1px solid rgba(34, 197, 94, 0.24);
+  border-radius: 8px;
+  background: rgba(20, 83, 45, 0.22);
+  color: #bbf7d0;
   font-size: 12px;
 }
 

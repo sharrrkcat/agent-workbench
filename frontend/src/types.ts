@@ -390,6 +390,9 @@ export type ActionFormBlock = {
     agent_id?: string | null;
     action_id: string;
     message?: string | null;
+    visibility?: 'message' | 'silent' | null;
+    success_message?: string | null;
+    failure_message?: string | null;
   };
 };
 
@@ -570,6 +573,10 @@ export type RuntimeResponse = {
   success: boolean;
   data: unknown;
   error?: string | null;
+  ok?: boolean;
+  message?: string | null;
+  silent?: boolean;
+  run_id?: string | null;
   run?: Run | null;
   session?: Session;
   messages: Message[];

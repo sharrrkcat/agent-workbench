@@ -135,6 +135,7 @@ async def run(ctx):
 - `text`: routed argument text for this invocation.
 - `action_id`: current Agent action id.
 - `form_id`: submitted `action_form` id when the invocation came from a form submission.
+- `is_silent_submission`: true when the invocation came from an `action_form` with `submit.visibility="silent"`.
 - `attachments`: current message attachment metadata.
 - `source_message_id`: source message for message-button/action invocations when available.
 - `prefill`: structured action prefill data when available. Form submissions place validated field values here.
@@ -320,7 +321,7 @@ The `comfyui` Capability also manages local workflow and preset library director
 | `image_gallery` | Multiple images. | `{"images": [{"url": "..."}]}` | Each image must satisfy image payload shape. |
 | `file_content` | Raw text file display. | `{"content": "...", "filename": "a.txt"}` | It is raw text and does not go through markdown rendering. |
 | `rich_content` | Ordered mixed blocks. | `{"blocks": [{"type": "markdown", "text": "..."}]}` | Keep block order explicit. |
-| `action_form` block | Declarative form inside `rich_content`. | `{"type": "action_form", "form_id": "demo", "title": "Demo", "fields": [{"name": "prompt", "type": "text"}], "submit": {"action_id": "run"}}` | Forms submit only to internal Agent actions. |
+| `action_form` block | Declarative form inside `rich_content`. | `{"type": "action_form", "form_id": "demo", "title": "Demo", "fields": [{"name": "prompt", "type": "text"}], "submit": {"action_id": "run", "visibility": "silent"}}` | Forms submit only to internal Agent actions. |
 
 If a command returns a dict with no declared output, the runner may infer `json`, `image`, `image_gallery`, or `rich_content`.
 
@@ -338,9 +339,13 @@ Top-level fields:
 
 Field declarations use `name`, `type`, optional `label`, `description`/`help`, `required`, `value`, `default`, `placeholder`, numeric bounds/`step`, text length bounds, and enum `options: [{"value": "...", "label": "..."}]`.
 
-Submit declarations use optional `label`, optional `agent_id`, required `action_id`, and optional `message`. If `agent_id` is omitted, the source message Agent is used.
+Submit declarations use optional `label`, optional `agent_id`, required `action_id`, optional `message`, optional `visibility`, optional `success_message`, and optional `failure_message`. If `agent_id` is omitted, the source message Agent is used. `visibility` defaults to `"message"` and may be `"message"` or `"silent"`.
 
-On submit, the frontend sends only `source_message_id`, `form_id`, and `values`. The backend reads the original message, finds the matching `action_form`, resolves the submit target from that original block, validates values against the original fields, creates a `form_submission` user message with a short summary body, and invokes the target Agent action. Request body `agent_id` or `action_id` cannot override the original form target.
+On submit, the frontend sends only `source_message_id`, `form_id`, and `values`. The backend reads the original message, finds the matching `action_form`, resolves the submit target and visibility from that original block, and validates values against the original fields. Request body `agent_id`, `action_id`, or `visibility` cannot override the original form target or visibility.
+
+With `visibility="message"`, the backend creates a `form_submission` user message with a short summary body and invokes the target Agent action. This is the default and preserves older form behavior.
+
+With `visibility="silent"`, the backend invokes the target Agent action without creating a visible user message and suppresses normal assistant output from reply helpers or public output streaming. The target Script Agent still receives validated values in `ctx.input.prefill`, `ctx.input.form_id`, `ctx.input.source_message_id`, and `ctx.input.is_silent_submission=true`, so it can save state, save a recipe, or update settings. Successful silent submissions return a structured response with `silent=true` and a user-facing message from `submit.success_message` or `"Saved"`. Failed silent submissions return a structured error; `submit.failure_message` may be used as an error prefix.
 
 Forms may edit runtime state such as a session recipe. Preset selectors and other field groups are static for the rendered form; if a submitted preset change requires different fields, the target action should save the new state and return a fresh form. The ComfyUI Agent uses `action_form` as a recipe editor only; form submission does not submit generation.
 
