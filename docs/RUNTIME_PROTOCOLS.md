@@ -89,6 +89,7 @@ Run metadata:
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
 - Generated image workflows may record compact recipe metadata under a domain key such as `comfyui_generation`; this metadata should include attachment ids and prompt/request ids, not full workflow JSON or large binary data.
+- ComfyUI LLM prompt generation metadata may record `input_mode`, `llm_operation`, `llm_operation_requested`, `llm_operation_used`, `user_prompt`, and `positive_prompt` for the current request. Raw and run-only ComfyUI generation should not be labeled as `refine` or `fresh`.
 - Failures should set both run status and user-visible error metadata where applicable.
 - Cancellation sets `cancel_requested` before terminal cancellation when possible.
 

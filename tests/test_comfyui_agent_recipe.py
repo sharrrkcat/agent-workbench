@@ -192,6 +192,7 @@ class FakeCtx:
         self.config = {
             "default_input_mode": "llm",
             "default_preset_id": "txt2img_basic",
+            "llm_operation_default": "refine",
             "prompt_enhancer_system_prompt": "Improve prompts.",
             "prompt_enhancer_user_template": "{user_input}\n{positive_prompt}\n{negative_prompt}\n{preset_id}\n{preset_name}\n{input_mode}",
             "auto_run_after_llm_prompt": True,
@@ -361,10 +362,12 @@ def test_form_action_without_ready_preset_returns_clear_prompt_not_empty_options
 def test_switch_only_changes_input_mode_and_does_not_generate(tmp_path: Path):
     ctx = FakeCtx(tmp_path, action_id="switch", text="raw")
     ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
+    ctx.config["llm_operation_default"] = "fresh"
 
     run(comfy_agent.run(ctx))
 
     assert ctx.state.get(comfy_agent.RECIPE_KEY)["input_mode"] == "raw"
+    assert ctx.config["llm_operation_default"] == "fresh"
     assert "submit_workflow" not in ctx.calls
 
 
@@ -379,6 +382,7 @@ def test_raw_action_writes_positive_prompt_without_changing_mode_and_generates(t
     assert saved["input_mode"] == "llm"
     assert any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
     assert ctx.llm.calls == []
+    assert "llm_operation" not in ctx.run_store.metadata["comfyui_generation"]
 
 
 def test_llm_action_writes_user_prompt_enhances_without_changing_mode_and_generates(tmp_path: Path):
@@ -391,8 +395,152 @@ def test_llm_action_writes_user_prompt_enhances_without_changing_mode_and_genera
     assert saved["user_prompt"] == "make a cat"
     assert saved["values"]["positive_prompt"] == "cinematic cat"
     assert saved["input_mode"] == "raw"
+    assert saved["last_llm_operation"] == "refine"
     assert ctx.llm.calls[0][0] == "text"
     assert ("unload_model", {}) in ctx.llm.calls
+
+
+def test_default_llm_mode_uses_configured_refine_template(tmp_path: Path):
+    ctx = FakeCtx(
+        tmp_path,
+        action_id="default",
+        text="add gulls",
+        config={
+            "llm_operation_default": "refine",
+            "llm_refine_system_prompt": "Refine system",
+            "llm_refine_user_template": "request={user_input}; old={positive_prompt}; op={llm_operation}",
+            "auto_run_after_llm_prompt": False,
+        },
+        llm=FakeLLM(text="ocean with gulls"),
+    )
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    recipe["values"]["positive_prompt"] = "ocean"
+    ctx.state.set(comfy_agent.RECIPE_KEY, recipe)
+
+    run(comfy_agent.run(ctx))
+
+    call = ctx.llm.calls[0][1]
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+    assert call["system"] == "Refine system"
+    assert call["user"] == "request=add gulls; old=ocean; op=refine"
+    assert saved["values"]["positive_prompt"] == "ocean with gulls"
+    assert saved["last_llm_operation"] == "refine"
+    assert ctx.run_store.metadata["comfyui_generation"]["llm_operation"] == "refine"
+
+
+def test_default_llm_mode_uses_configured_fresh_template_without_current_positive_prompt(tmp_path: Path):
+    ctx = FakeCtx(
+        tmp_path,
+        action_id="default",
+        text="new forest",
+        config={
+            "llm_operation_default": "fresh",
+            "llm_fresh_system_prompt": "Fresh system",
+            "llm_fresh_user_template": "request={user_input}; op={llm_operation}",
+            "auto_run_after_llm_prompt": False,
+        },
+        llm=FakeLLM(text="forest prompt"),
+    )
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
+    recipe["values"]["positive_prompt"] = "old ocean prompt"
+    ctx.state.set(comfy_agent.RECIPE_KEY, recipe)
+
+    run(comfy_agent.run(ctx))
+
+    call = ctx.llm.calls[0][1]
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+    assert call["system"] == "Fresh system"
+    assert call["user"] == "request=new forest; op=fresh"
+    assert "old ocean prompt" not in call["user"]
+    assert saved["values"]["positive_prompt"] == "forest prompt"
+    assert saved["last_llm_operation"] == "fresh"
+    assert ctx.run_store.metadata["comfyui_generation"]["llm_operation"] == "fresh"
+
+
+def test_llm_action_uses_llm_operation_default(tmp_path: Path):
+    ctx = FakeCtx(
+        tmp_path,
+        action_id="llm",
+        text="new ocean",
+        config={
+            "llm_operation_default": "fresh",
+            "llm_fresh_user_template": "{user_input}|{llm_operation}",
+            "auto_run_after_llm_prompt": False,
+        },
+    )
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "raw")
+    recipe["values"]["positive_prompt"] = "old prompt"
+    ctx.state.set(comfy_agent.RECIPE_KEY, recipe)
+
+    run(comfy_agent.run(ctx))
+
+    assert ctx.llm.calls[0][1]["user"] == "new ocean|fresh"
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+    assert saved["input_mode"] == "raw"
+    assert saved["last_llm_operation"] == "fresh"
+
+
+def test_refine_template_uses_legacy_custom_field_when_new_field_is_default() -> None:
+    system, template = comfy_agent._llm_prompt_template(
+        {
+            "llm_refine_system_prompt": comfy_agent.DEFAULT_LLM_REFINE_SYSTEM_PROMPT,
+            "llm_refine_user_template": comfy_agent.DEFAULT_LLM_REFINE_USER_TEMPLATE,
+            "prompt_enhancer_system_prompt": "Legacy custom system",
+            "prompt_enhancer_user_template": "legacy={user_input}",
+        },
+        "refine",
+    )
+
+    assert system == "Legacy custom system"
+    assert template == "legacy={user_input}"
+
+
+def test_refine_template_prefers_new_field_over_legacy_field() -> None:
+    system, template = comfy_agent._llm_prompt_template(
+        {
+            "llm_refine_system_prompt": "New custom system",
+            "llm_refine_user_template": "new={user_input}",
+            "prompt_enhancer_system_prompt": "Legacy custom system",
+            "prompt_enhancer_user_template": "legacy={user_input}",
+        },
+        "refine",
+    )
+
+    assert system == "New custom system"
+    assert template == "new={user_input}"
+
+
+@pytest.mark.parametrize(
+    ("action_id", "configured_default", "expected_operation"),
+    [
+        ("fresh", "refine", "fresh"),
+        ("refine", "fresh", "refine"),
+    ],
+)
+def test_fresh_and_refine_actions_force_operation_without_changing_default(tmp_path: Path, action_id: str, configured_default: str, expected_operation: str):
+    ctx = FakeCtx(
+        tmp_path,
+        action_id=action_id,
+        text="make a cat",
+        config={
+            "llm_operation_default": configured_default,
+            "llm_refine_user_template": "refine={user_input}|{positive_prompt}|{llm_operation}",
+            "llm_fresh_user_template": "fresh={user_input}|{llm_operation}",
+            "auto_run_after_llm_prompt": False,
+        },
+    )
+    recipe = comfy_agent.recipe_from_preset(READY_PRESET, "raw")
+    recipe["values"]["positive_prompt"] = "old prompt"
+    ctx.state.set(comfy_agent.RECIPE_KEY, recipe)
+
+    run(comfy_agent.run(ctx))
+
+    call_user = ctx.llm.calls[0][1]["user"]
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+    assert expected_operation in call_user
+    assert saved["input_mode"] == "raw"
+    assert saved["last_llm_operation"] == expected_operation
+    assert ctx.config["llm_operation_default"] == configured_default
 
 
 @pytest.mark.parametrize(
@@ -400,6 +548,8 @@ def test_llm_action_writes_user_prompt_enhances_without_changing_mode_and_genera
     [
         ("llm", "raw"),
         ("default", "llm"),
+        ("fresh", "raw"),
+        ("refine", "raw"),
     ],
 )
 def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submitting(tmp_path: Path, action_id: str, stored_mode: str):
@@ -413,6 +563,7 @@ def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submittin
     assert saved["user_prompt"] == "make a cat"
     assert saved["values"]["positive_prompt"] == generated
     assert saved["input_mode"] == stored_mode
+    assert saved["last_llm_operation"] in {"refine", "fresh"}
     assert [call[0] for call in ctx.llm.calls] == ["text"]
     assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
     assert ctx.attachments == []
@@ -434,6 +585,7 @@ def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submittin
     assert "```text" not in body
     assert "````text" not in body
     assert "Positive prompt saved" not in body
+    assert ctx.run_store.metadata["comfyui_generation"]["llm_operation"] == saved["last_llm_operation"]
 
 
 def test_saved_positive_prompt_blocks_validate_as_rich_content() -> None:
@@ -460,6 +612,19 @@ def test_default_respects_raw_and_llm_modes_and_generates(tmp_path: Path):
     assert llm_ctx.state.get(comfy_agent.RECIPE_KEY)["values"]["positive_prompt"] == "cinematic cat"
 
 
+@pytest.mark.parametrize("action_id", ["fresh", "refine"])
+def test_fresh_and_refine_auto_run_true_enter_generation_pipeline(tmp_path: Path, action_id: str):
+    ctx = FakeCtx(tmp_path, action_id=action_id, text="make a cat")
+    ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "raw"))
+
+    run(comfy_agent.run(ctx))
+
+    saved = ctx.state.get(comfy_agent.RECIPE_KEY)
+    assert saved["last_llm_operation"] == action_id
+    assert any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
+    assert ctx.run_store.metadata["comfyui_generation"]["llm_operation"] == action_id
+
+
 def test_run_action_does_not_modify_prompt_or_parameters(tmp_path: Path):
     ctx = FakeCtx(tmp_path, action_id="run")
     recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
@@ -473,6 +638,7 @@ def test_run_action_does_not_modify_prompt_or_parameters(tmp_path: Path):
     assert saved["values"]["positive_prompt"] == "existing"
     assert saved["user_prompt"] == "old user prompt"
     assert ctx.llm.calls == []
+    assert "llm_operation" not in ctx.run_store.metadata["comfyui_generation"]
     assert any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
 
 
@@ -651,6 +817,27 @@ def test_default_manifest_description_says_generate():
 
     assert "generate" in default["description"].lower()
     assert "without generating" not in default["description"].lower()
+
+
+def test_comfyui_manifest_declares_llm_operation_config_and_actions():
+    manifest = yaml.safe_load((Path(__file__).resolve().parents[1] / "agents" / "comfyui_agent" / "agent.yaml").read_text(encoding="utf-8"))
+    actions = {action["id"]: action for action in manifest["actions"]}
+    schema = {field["name"]: field for field in manifest["config_schema"]}
+
+    assert {"fresh", "refine"}.issubset(actions)
+    assert schema["llm_operation_default"]["default"] == "refine"
+    assert schema["llm_operation_default"]["options"] == ["refine", "fresh"]
+    for key in [
+        "llm_refine_system_prompt",
+        "llm_refine_user_template",
+        "llm_fresh_system_prompt",
+        "llm_fresh_user_template",
+        "prompt_enhancer_system_prompt",
+        "prompt_enhancer_user_template",
+    ]:
+        assert key in schema
+    assert "{positive_prompt}" in schema["llm_refine_user_template"]["default"]
+    assert "{positive_prompt}" not in schema["llm_fresh_user_template"]["default"]
 
 
 class IntegrationComfyRuntime:

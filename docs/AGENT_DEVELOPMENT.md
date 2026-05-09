@@ -191,15 +191,21 @@ The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recip
 ComfyUI preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). Use that schema when creating or reviewing workflow preset files.
 
 ComfyUI Agent action semantics:
-- `default`: use the current session recipe `input_mode`; `llm` enhances the user request into `values.positive_prompt`, while `raw` writes the user text directly.
+- `default`: use the current session recipe `input_mode`; `llm` enhances the user request into `values.positive_prompt` using AgentConfig `llm_operation_default`, while `raw` writes the user text directly.
 - `raw`: force raw for this invocation, keep the stored `input_mode` unchanged, write `values.positive_prompt`, then generation runs.
-- `llm`: force LLM prompt enhancement for this invocation, keep the stored `input_mode` unchanged, write `user_prompt` and generated `values.positive_prompt`, then generation runs only when `auto_run_after_llm_prompt=true`.
+- `llm`: force LLM prompt enhancement for this invocation, use AgentConfig `llm_operation_default`, keep the stored `input_mode` unchanged, write `user_prompt` and generated `values.positive_prompt`, then generation runs only when `auto_run_after_llm_prompt=true`.
+- `fresh`: one-shot LLM prompt generation that forces `input_mode=llm` and `llm_operation=fresh` for this request only. It uses only the user input to produce a complete new `values.positive_prompt`, does not modify the stored `input_mode`, and does not modify AgentConfig `llm_operation_default`.
+- `refine`: one-shot LLM prompt generation that forces `input_mode=llm` and `llm_operation=refine` for this request only. It uses the current `values.positive_prompt` plus the user input to produce a complete new `values.positive_prompt`, does not modify the stored `input_mode`, and does not modify AgentConfig `llm_operation_default`.
 - `run`: execute the current session recipe without changing prompt or parameters.
 - `form`: show the session recipe editor only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
 - `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
-`switch` controls the stored recipe `input_mode`; `raw` and `llm` are one-shot modes for a single invocation. `auto_run_after_llm_prompt=false` makes LLM mode save the generated positive prompt for inspection or form editing before the user runs `@comfyui_agent:run`.
+`input_mode` remains only `llm` or `raw`; `switch` controls only that stored recipe field and does not accept `fresh` or `refine`. `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`, and defaults to `refine`. `fresh` and `refine` override the operation for one request only. `raw` and `run` do not call the LLM.
+
+The ComfyUI Agent has recommended `llm_refine_*` and `llm_fresh_*` prompt template fields. The legacy `prompt_enhancer_system_prompt` and `prompt_enhancer_user_template` fields remain for compatibility and are used as refine fallbacks when the new refine fields are absent.
+
+`auto_run_after_llm_prompt=false` makes LLM mode save the generated positive prompt for inspection or form editing before the user runs `@comfyui_agent:run`; this applies to `default`, `llm`, `fresh`, and `refine` whenever they use LLM prompt generation.
 
 When LLM prompt inspection stops before generation, the reply may include `command_buttons` that send `@comfyui_agent:form` and `@comfyui_agent:run` as normal user messages.
 

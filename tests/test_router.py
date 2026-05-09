@@ -91,6 +91,8 @@ def test_current_agent_action_shortcut_routes_run_action() -> None:
 def test_current_agent_action_shortcut_preserves_args() -> None:
     raw_route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":raw hello")
     switch_route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":switch raw")
+    fresh_route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":fresh ocean")
+    refine_route = make_router().route(make_session(default_agent_id="comfyui_agent"), ":refine add gulls")
 
     assert raw_route.target_id == "comfyui_agent"
     assert raw_route.action_id == "raw"
@@ -98,6 +100,12 @@ def test_current_agent_action_shortcut_preserves_args() -> None:
     assert switch_route.target_id == "comfyui_agent"
     assert switch_route.action_id == "switch"
     assert switch_route.args == "raw"
+    assert fresh_route.target_id == "comfyui_agent"
+    assert fresh_route.action_id == "fresh"
+    assert fresh_route.args == "ocean"
+    assert refine_route.target_id == "comfyui_agent"
+    assert refine_route.action_id == "refine"
+    assert refine_route.args == "add gulls"
 
 
 def test_current_agent_action_shortcut_tracks_changed_default_agent() -> None:

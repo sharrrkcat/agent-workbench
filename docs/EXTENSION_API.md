@@ -312,6 +312,8 @@ Reusable integration Capabilities should expose narrow protocol methods plus sma
 
 The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, report per-workflow draft preset skip reasons, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.
 
+The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `refine` actions as one-shot LLM prompt operations. Its AgentConfig `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`; the stored recipe `input_mode` remains only `llm` or `raw`. Recommended template config keys are `llm_refine_system_prompt`, `llm_refine_user_template`, `llm_fresh_system_prompt`, and `llm_fresh_user_template`; legacy `prompt_enhancer_system_prompt` and `prompt_enhancer_user_template` remain compatibility fallbacks for refine behavior.
+
 ## Capability Config
 
 - `config_schema` declares Settings fields.

@@ -27,7 +27,13 @@ actions:
     description: Force raw for this request, write positive_prompt, keep the session input_mode unchanged, then generate images.
   - id: llm
     label: LLM Prompt
-    description: Force LLM prompt enhancement for this request, keep the session input_mode unchanged, then optionally generate images.
+    description: Force LLM prompt enhancement for this request using llm_operation_default, keep the session input_mode unchanged, then optionally generate images.
+  - id: fresh
+    label: Fresh LLM Prompt
+    description: One-shot LLM prompt generation using only the user request; does not change input_mode or llm_operation_default.
+  - id: refine
+    label: Refine LLM Prompt
+    description: One-shot LLM prompt generation using the current positive_prompt plus the user request; does not change input_mode or llm_operation_default.
   - id: run
     label: Run Recipe
     description: Generate images from the current session recipe without changing prompt or parameters.
@@ -55,17 +61,25 @@ config_schema:
       - raw
     default: llm
     description: How normal user messages are interpreted by default.
-  - name: prompt_enhancer_system_prompt
+  - name: llm_operation_default
+    type: enum
+    label: Default LLM operation
+    options:
+      - refine
+      - fresh
+    default: refine
+    description: Controls how normal LLM-mode input updates the positive prompt. refine uses the current positive prompt plus the user input; fresh uses only the user input.
+  - name: llm_refine_system_prompt
     type: text
-    label: Prompt enhancer system prompt
+    label: LLM refine system prompt
     default: |
-      Convert the user's image request into a concise image generation prompt.
-      Do not choose sampler, cfg, steps, size, model, workflow, or seed.
-      Return only the improved positive prompt unless instructed otherwise.
-    description: Prompt used by the LLM prompt enhancer.
-  - name: prompt_enhancer_user_template
+      Use the current positive_prompt and the user's new request to produce a complete new positive_prompt.
+      Return only the complete positive prompt, not a diff.
+      Do not choose workflow, steps, cfg, sampler, scheduler, seed, width, height, or any other recipe parameter.
+    description: Recommended system prompt for refine operation.
+  - name: llm_refine_user_template
     type: text
-    label: Prompt enhancer user template
+    label: LLM refine user template
     default: |
       User request:
       {user_input}
@@ -75,7 +89,58 @@ config_schema:
 
       Current negative prompt:
       {negative_prompt}
-    description: User template for the prompt enhancer.
+
+      Preset:
+      {preset_name} ({preset_id})
+
+      Input mode: {input_mode}
+      LLM operation: {llm_operation}
+    description: Recommended user template for refine operation. Supports user_input, positive_prompt, negative_prompt, preset_id, preset_name, input_mode, and llm_operation.
+  - name: llm_fresh_system_prompt
+    type: text
+    label: LLM fresh system prompt
+    default: |
+      Use only the user's request to produce a complete positive_prompt.
+      Do not reference the current positive_prompt.
+      Do not choose workflow, steps, cfg, sampler, scheduler, seed, width, height, or any other recipe parameter.
+    description: Recommended system prompt for fresh operation.
+  - name: llm_fresh_user_template
+    type: text
+    label: LLM fresh user template
+    default: |
+      User request:
+      {user_input}
+
+      Current negative prompt:
+      {negative_prompt}
+
+      Preset:
+      {preset_name} ({preset_id})
+
+      Input mode: {input_mode}
+      LLM operation: {llm_operation}
+    description: Recommended user template for fresh operation. Supports user_input, negative_prompt, preset_id, preset_name, input_mode, and llm_operation.
+  - name: prompt_enhancer_system_prompt
+    type: text
+    label: Legacy prompt enhancer system prompt
+    default: |
+      Convert the user's image request into a concise image generation prompt.
+      Do not choose sampler, cfg, steps, size, model, workflow, or seed.
+      Return only the improved positive prompt unless instructed otherwise.
+    description: Legacy compatibility field used when llm_refine_system_prompt is not configured.
+  - name: prompt_enhancer_user_template
+    type: text
+    label: Legacy prompt enhancer user template
+    default: |
+      User request:
+      {user_input}
+
+      Current positive prompt:
+      {positive_prompt}
+
+      Current negative prompt:
+      {negative_prompt}
+    description: Legacy compatibility field used when llm_refine_user_template is not configured.
   - name: auto_run_after_llm_prompt
     type: boolean
     label: Auto-run after LLM prompt
