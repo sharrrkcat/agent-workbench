@@ -193,8 +193,10 @@ class FakeCtx:
             "default_input_mode": "llm",
             "default_preset_id": "txt2img_basic",
             "llm_operation_default": "refine",
-            "prompt_enhancer_system_prompt": "Improve prompts.",
-            "prompt_enhancer_user_template": "{user_input}\n{positive_prompt}\n{negative_prompt}\n{preset_id}\n{preset_name}\n{input_mode}",
+            "llm_refine_system_prompt": "Improve prompts.",
+            "llm_refine_user_template": "{user_input}\n{positive_prompt}\n{negative_prompt}\n{preset_id}\n{preset_name}\n{input_mode}\n{llm_operation}",
+            "llm_fresh_system_prompt": "Improve fresh prompts.",
+            "llm_fresh_user_template": "{user_input}\n{negative_prompt}\n{preset_id}\n{preset_name}\n{input_mode}\n{llm_operation}",
             "auto_run_after_llm_prompt": True,
             "unload_llm_before_generation": True,
             **(config or {}),
@@ -255,8 +257,36 @@ def test_new_session_recipe_uses_default_input_mode(tmp_path: Path, mode):
 
     assert recipe["preset_id"] == "txt2img_basic"
     assert recipe["input_mode"] == mode
-    assert "enhance" not in recipe
-    assert recipe["values"]["steps"] == 30
+
+
+@pytest.mark.parametrize("stored_value", [None, "", "unset"])
+def test_default_input_mode_unset_values_fall_back_to_manifest_default(tmp_path: Path, stored_value):
+    ctx = FakeCtx(tmp_path, action_id="status", config={"default_input_mode": stored_value})
+
+    recipe, _, _, _ = run(comfy_agent.current_recipe(ctx))
+
+    assert recipe["input_mode"] == "llm"
+
+
+def test_default_input_mode_invalid_value_fails_clearly(tmp_path: Path):
+    ctx = FakeCtx(tmp_path, action_id="status", config={"default_input_mode": "unset-but-not-valid"})
+
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        run(comfy_agent.current_recipe(ctx))
+
+    assert exc.value.code == "COMFYUI_CONFIG_INVALID"
+
+
+@pytest.mark.parametrize("stored_value", [None, "", "unset"])
+def test_llm_operation_default_unset_values_fall_back_to_manifest_default(stored_value):
+    assert comfy_agent.resolve_default_llm_operation({"llm_operation_default": stored_value}) == "refine"
+
+
+def test_llm_operation_default_invalid_value_fails_clearly():
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        comfy_agent.resolve_default_llm_operation({"llm_operation_default": "unset-but-not-valid"})
+
+    assert exc.value.code == "COMFYUI_CONFIG_INVALID"
 
 
 def test_save_form_same_preset_updates_recipe_values_only(tmp_path: Path):
@@ -480,19 +510,17 @@ def test_llm_action_uses_llm_operation_default(tmp_path: Path):
     assert saved["last_llm_operation"] == "fresh"
 
 
-def test_refine_template_uses_legacy_custom_field_when_new_field_is_default() -> None:
+def test_refine_template_ignores_legacy_custom_fields() -> None:
     system, template = comfy_agent._llm_prompt_template(
         {
-            "llm_refine_system_prompt": comfy_agent.DEFAULT_LLM_REFINE_SYSTEM_PROMPT,
-            "llm_refine_user_template": comfy_agent.DEFAULT_LLM_REFINE_USER_TEMPLATE,
             "prompt_enhancer_system_prompt": "Legacy custom system",
             "prompt_enhancer_user_template": "legacy={user_input}",
         },
         "refine",
     )
 
-    assert system == "Legacy custom system"
-    assert template == "legacy={user_input}"
+    assert system == comfy_agent.DEFAULT_LLM_REFINE_SYSTEM_PROMPT.strip()
+    assert template == comfy_agent.DEFAULT_LLM_REFINE_USER_TEMPLATE.strip()
 
 
 def test_refine_template_prefers_new_field_over_legacy_field() -> None:
@@ -508,6 +536,14 @@ def test_refine_template_prefers_new_field_over_legacy_field() -> None:
 
     assert system == "New custom system"
     assert template == "new={user_input}"
+
+
+def test_prompt_template_empty_value_fails_clearly() -> None:
+    with pytest.raises(comfy_agent.ComfyAgentError) as exc:
+        comfy_agent._llm_prompt_template({"llm_refine_user_template": ""}, "refine")
+
+    assert exc.value.code == "COMFYUI_PROMPT_TEMPLATE_EMPTY"
+    assert exc.value.detail["field"] == "llm_refine_user_template"
 
 
 @pytest.mark.parametrize(
@@ -680,7 +716,7 @@ def test_prompt_enhancer_empty_and_failure_do_not_fallback_raw(tmp_path: Path):
 
 def test_prompt_enhancer_template_failure_does_not_call_llm(tmp_path: Path):
     llm = FakeLLM()
-    ctx = FakeCtx(tmp_path, action_id="llm", text="cat", llm=llm, config={"prompt_enhancer_user_template": "{missing_key}"})
+    ctx = FakeCtx(tmp_path, action_id="llm", text="cat", llm=llm, config={"llm_refine_user_template": "{missing_key}"})
     ctx.state.set(comfy_agent.RECIPE_KEY, comfy_agent.recipe_from_preset(READY_PRESET, "llm"))
 
     with pytest.raises(comfy_agent.ComfyAgentError) as exc:
@@ -832,10 +868,10 @@ def test_comfyui_manifest_declares_llm_operation_config_and_actions():
         "llm_refine_user_template",
         "llm_fresh_system_prompt",
         "llm_fresh_user_template",
-        "prompt_enhancer_system_prompt",
-        "prompt_enhancer_user_template",
     ]:
         assert key in schema
+    assert "prompt_enhancer_system_prompt" not in schema
+    assert "prompt_enhancer_user_template" not in schema
     assert "{positive_prompt}" in schema["llm_refine_user_template"]["default"]
     assert "{positive_prompt}" not in schema["llm_fresh_user_template"]["default"]
 

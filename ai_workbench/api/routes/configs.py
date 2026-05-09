@@ -8,6 +8,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.config_schema import (
     ConfigValidationError,
+    clear_empty_enum_overrides,
     dump_config_schema,
     mask_config,
     merge_secret_patch,
@@ -204,7 +205,8 @@ def _get_capability_or_404(state: RuntimeState, capability_id: str):
 def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
     agent = state.agents.get(agent_id)
     config = state.agent_configs.get_config(agent_id)
-    masked_user_config = mask_config(agent.config_schema, config["user_config"])
+    stored_user_config = clear_empty_enum_overrides(agent.config_schema, config["user_config"])
+    masked_user_config = mask_config(agent.config_schema, stored_user_config)
     agent_dir = None
     try:
         agent_dir = state.agents.get_agent_dir(agent.id)
@@ -216,7 +218,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
     return {
         **config,
         "user_config": masked_user_config,
-        "resolved_config": mask_config(agent.config_schema, _resolve_for_response(agent.config_schema, config["user_config"])),
+        "resolved_config": mask_config(agent.config_schema, _resolve_for_response(agent.config_schema, stored_user_config)),
         "config_schema": dump_config_schema(agent.config_schema),
         "manifest_summary": {
             "id": agent.id,
@@ -245,7 +247,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
         },
         "resolved": {
             **resolved,
-            "config": mask_config(agent.config_schema, _resolve_for_response(agent.config_schema, config["user_config"])),
+            "config": mask_config(agent.config_schema, _resolve_for_response(agent.config_schema, stored_user_config)),
         },
         "field_sources": resolved["field_sources"],
     }
@@ -254,13 +256,14 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
 def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dict:
     capability = state.capabilities.get(capability_id)
     config = state.capability_configs.get_config(capability_id)
-    masked_user_config = mask_config(capability.config_schema, config["user_config"])
+    stored_user_config = clear_empty_enum_overrides(capability.config_schema, config["user_config"])
+    masked_user_config = mask_config(capability.config_schema, stored_user_config)
     return {
         **config,
         "user_config": masked_user_config,
         "resolved_config": mask_config(
             capability.config_schema,
-            _resolve_for_response(capability.config_schema, config["user_config"]),
+            _resolve_for_response(capability.config_schema, stored_user_config),
         ),
         "config_schema": dump_config_schema(capability.config_schema),
         "manifest_summary": {
@@ -275,6 +278,7 @@ def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dic
 
 def _validate_config_patch(schema, existing_config: Dict[str, Any], incoming_config: Dict[str, Any]) -> Dict[str, Any]:
     merged = merge_secret_patch(schema, existing_config, incoming_config)
+    merged = clear_empty_enum_overrides(schema, merged)
     try:
         validate_user_config(schema, merged)
         resolve_config(schema, merged)

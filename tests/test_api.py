@@ -832,6 +832,37 @@ def test_patch_capability_config_rejects_invalid_enum_option() -> None:
     assert response.json()["error"]["code"] == "INVALID_CONFIG_OPTION"
 
 
+def test_patch_comfyui_agent_config_rejects_unset_enum_business_value() -> None:
+    response = make_client().patch("/api/agent-configs/comfyui_agent", json={"user_config": {"default_input_mode": "unset"}})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_CONFIG_OPTION"
+
+
+def test_patch_comfyui_agent_config_clears_empty_enum_override_to_default() -> None:
+    client = make_client()
+
+    response = client.patch(
+        "/api/agent-configs/comfyui_agent",
+        json={"user_config": {"default_input_mode": "raw", "llm_operation_default": "fresh"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["user_config"]["default_input_mode"] == "raw"
+    assert response.json()["user_config"]["llm_operation_default"] == "fresh"
+
+    response = client.patch(
+        "/api/agent-configs/comfyui_agent",
+        json={"user_config": {"default_input_mode": None, "llm_operation_default": ""}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "default_input_mode" not in payload["user_config"]
+    assert "llm_operation_default" not in payload["user_config"]
+    assert payload["resolved_config"]["default_input_mode"] == "llm"
+    assert payload["resolved_config"]["llm_operation_default"] == "refine"
+
+
 def test_patch_capability_config_rejects_invalid_numeric_type() -> None:
     response = make_client().patch("/api/capability-configs/llm", json={"user_config": {"timeout": "slow"}})
 

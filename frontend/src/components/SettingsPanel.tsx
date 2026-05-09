@@ -280,9 +280,10 @@ function renderInput(field: ConfigFieldSchema, id: string, value: unknown, onCha
     return <input id={id} type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />;
   }
   if (field.type === 'enum') {
+    const optionValues = new Set(field.options);
+    const selected = typeof value === 'string' && optionValues.has(value) ? value : String(field.default ?? '');
     return (
-      <select id={id} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Unset</option>
+      <select id={id} value={selected} onChange={(event) => onChange(event.target.value)}>
         {field.options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -313,8 +314,8 @@ function renderInput(field: ConfigFieldSchema, id: string, value: unknown, onCha
 }
 
 function initialValues(config: AgentConfig | CapabilityConfig): FormValues {
-  const source = config.user_config || {};
-  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, source[field.name] ?? '']));
+  const source = { ...(config.resolved_config || {}), ...(config.user_config || {}) };
+  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, initialConfigValue(field, source[field.name])]));
 }
 
 function buildUserConfig(fields: ConfigFieldSchema[], values: FormValues): Record<string, unknown> {
@@ -338,11 +339,23 @@ function buildUserConfig(fields: ConfigFieldSchema[], values: FormValues): Recor
       } else {
         userConfig[field.name] = value;
       }
+    } else if (field.type === 'enum') {
+      if (typeof value !== 'string' || !field.options.includes(value)) {
+        throw new Error(`${field.label || field.name} must be one of: ${field.options.join(', ')}.`);
+      }
+      userConfig[field.name] = value;
     } else {
       userConfig[field.name] = value;
     }
   }
   return userConfig;
+}
+
+function initialConfigValue(field: ConfigFieldSchema, value: unknown): unknown {
+  if (field.type === 'enum') {
+    return typeof value === 'string' && field.options.includes(value) ? value : field.default ?? '';
+  }
+  return value ?? field.default ?? '';
 }
 
 function isDirty(

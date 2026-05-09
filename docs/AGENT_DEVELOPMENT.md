@@ -201,9 +201,9 @@ ComfyUI Agent action semantics:
 - `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
-`input_mode` remains only `llm` or `raw`; `switch` controls only that stored recipe field and does not accept `fresh` or `refine`. `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`, and defaults to `refine`. `fresh` and `refine` override the operation for one request only. `raw` and `run` do not call the LLM.
+`input_mode` remains only `llm` or `raw`; `switch` controls only that stored recipe field and does not accept `fresh`, `refine`, or `unset`. `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`, and defaults to `refine`; it does not accept `unset`.
 
-The ComfyUI Agent has recommended `llm_refine_*` and `llm_fresh_*` prompt template fields. The legacy `prompt_enhancer_system_prompt` and `prompt_enhancer_user_template` fields remain for compatibility and are used as refine fallbacks when the new refine fields are absent.
+The ComfyUI Agent prompt templates are `llm_refine_system_prompt`, `llm_refine_user_template`, `llm_fresh_system_prompt`, and `llm_fresh_user_template`. Alpha-era legacy `prompt_enhancer_system_prompt` and `prompt_enhancer_user_template` fields are not supported config fields.
 
 `auto_run_after_llm_prompt=false` makes LLM mode save the generated positive prompt for inspection or form editing before the user runs `@comfyui_agent:run`; this applies to `default`, `llm`, `fresh`, and `refine` whenever they use LLM prompt generation.
 

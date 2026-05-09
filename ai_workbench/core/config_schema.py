@@ -65,6 +65,8 @@ def validate_user_config(schema: List[ConfigFieldSchema], user_config: Dict[str,
     for key, value in user_config.items():
         field = field_map[key]
         if value is None:
+            if field.type == "enum":
+                raise ConfigValidationError("INVALID_CONFIG_TYPE", f"Config field '{field.name}' must not be null", field.name)
             validated[key] = value
             continue
         validated[key] = _validate_value(field, value)
@@ -72,7 +74,7 @@ def validate_user_config(schema: List[ConfigFieldSchema], user_config: Dict[str,
 
 
 def resolve_config(schema: List[ConfigFieldSchema], user_config: Dict[str, Any]) -> Dict[str, Any]:
-    validated = validate_user_config(schema, user_config)
+    validated = validate_user_config(schema, clear_empty_enum_overrides(schema, user_config))
     resolved: Dict[str, Any] = {}
     for field in schema:
         if field.name in validated:
@@ -88,6 +90,16 @@ def resolve_config(schema: List[ConfigFieldSchema], user_config: Dict[str, Any])
         else:
             resolved[field.name] = value
     return resolved
+
+
+def clear_empty_enum_overrides(schema: List[ConfigFieldSchema], user_config: Dict[str, Any]) -> Dict[str, Any]:
+    field_map = {field.name: field for field in schema}
+    cleaned = dict(user_config or {})
+    for key, value in list(cleaned.items()):
+        field = field_map.get(key)
+        if field is not None and field.type == "enum" and value in (None, ""):
+            cleaned.pop(key, None)
+    return cleaned
 
 
 def merge_secret_patch(

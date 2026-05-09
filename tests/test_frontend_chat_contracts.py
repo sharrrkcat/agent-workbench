@@ -65,6 +65,17 @@ def test_command_palette_current_agent_action_autocomplete_contract() -> None:
     assert "commands" in source
 
 
+def test_settings_config_enum_does_not_render_unset_option() -> None:
+    source = read_frontend("components/settings/ConfigForm.tsx")
+    utils = read_frontend("components/settings/configUtils.ts")
+
+    assert '<option value="">Unset</option>' not in source
+    assert "field.options.map((option)" in source
+    assert "optionValues.has(value)" in source
+    assert "effectiveConfigValue" in utils
+    assert "field.options.includes(value)" in utils
+
+
 def test_composer_colon_autocomplete_does_not_replace_existing_namespaces() -> None:
     source = read_frontend("components/ChatInput.tsx")
 

@@ -6,7 +6,7 @@ export type ConfigValues = Record<string, unknown>;
 
 export function initialConfigValues(config: EditableConfig): ConfigValues {
   const source = { ...(config.resolved_config || {}), ...(config.user_config || {}) };
-  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, source[field.name] ?? field.default ?? '']));
+  return Object.fromEntries((config.config_schema || []).map((field) => [field.name, effectiveConfigValue(field, source[field.name])]));
 }
 
 export function buildUserConfig(fields: ConfigFieldSchema[], values: ConfigValues): Record<string, unknown> {
@@ -38,11 +38,23 @@ export function buildUserConfig(fields: ConfigFieldSchema[], values: ConfigValue
       } else {
         userConfig[field.name] = value;
       }
+    } else if (field.type === 'enum') {
+      if (typeof value !== 'string' || !field.options.includes(value)) {
+        throw new Error(`${field.label || field.name} must be one of: ${field.options.join(', ')}.`);
+      }
+      userConfig[field.name] = value;
     } else {
       userConfig[field.name] = value;
     }
   }
   return userConfig;
+}
+
+function effectiveConfigValue(field: ConfigFieldSchema, value: unknown): unknown {
+  if (field.type === 'enum') {
+    return typeof value === 'string' && field.options.includes(value) ? value : field.default ?? '';
+  }
+  return value ?? field.default ?? '';
 }
 
 export function isConfigDirty(config: EditableConfig, enabled: boolean, values: ConfigValues): boolean {

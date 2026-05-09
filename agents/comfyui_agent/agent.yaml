@@ -120,27 +120,6 @@ config_schema:
       Input mode: {input_mode}
       LLM operation: {llm_operation}
     description: Recommended user template for fresh operation. Supports user_input, negative_prompt, preset_id, preset_name, input_mode, and llm_operation.
-  - name: prompt_enhancer_system_prompt
-    type: text
-    label: Legacy prompt enhancer system prompt
-    default: |
-      Convert the user's image request into a concise image generation prompt.
-      Do not choose sampler, cfg, steps, size, model, workflow, or seed.
-      Return only the improved positive prompt unless instructed otherwise.
-    description: Legacy compatibility field used when llm_refine_system_prompt is not configured.
-  - name: prompt_enhancer_user_template
-    type: text
-    label: Legacy prompt enhancer user template
-    default: |
-      User request:
-      {user_input}
-
-      Current positive prompt:
-      {positive_prompt}
-
-      Current negative prompt:
-      {negative_prompt}
-    description: Legacy compatibility field used when llm_refine_user_template is not configured.
   - name: auto_run_after_llm_prompt
     type: boolean
     label: Auto-run after LLM prompt

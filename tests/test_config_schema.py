@@ -5,6 +5,7 @@ import pytest
 from ai_workbench.core.config_schema import (
     MASKED_SECRET,
     ConfigValidationError,
+    clear_empty_enum_overrides,
     mask_config,
     merge_secret_patch,
     parse_config_schema,
@@ -71,6 +72,24 @@ def test_config_validation_rejects_invalid_enum_option() -> None:
         validate_user_config(schema, {"mode": "b"})
 
     assert exc.value.code == "INVALID_CONFIG_OPTION"
+
+
+def test_config_validation_rejects_null_enum_option() -> None:
+    schema = parse_config_schema([{"name": "mode", "type": "enum", "label": "Mode", "options": ["a"], "default": "a"}])
+
+    with pytest.raises(ConfigValidationError) as exc:
+        validate_user_config(schema, {"mode": None})
+
+    assert exc.value.code == "INVALID_CONFIG_TYPE"
+
+
+def test_config_resolver_treats_empty_enum_override_as_manifest_default() -> None:
+    schema = parse_config_schema([{"name": "mode", "type": "enum", "label": "Mode", "options": ["a", "b"], "default": "a"}])
+
+    assert clear_empty_enum_overrides(schema, {"mode": None}) == {}
+    assert clear_empty_enum_overrides(schema, {"mode": ""}) == {}
+    assert resolve_config(schema, {"mode": None}) == {"mode": "a"}
+    assert resolve_config(schema, {"mode": ""}) == {"mode": "a"}
 
 
 def test_config_validation_rejects_invalid_integer_and_boolean_types() -> None:

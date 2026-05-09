@@ -223,6 +223,7 @@ ComfyUI workflow library foundation:
 - LLM mode has a second operation layer, separate from `input_mode`: `refine` uses the current session recipe `positive_prompt` plus the user input, while `fresh` uses only the user input.
 - The LLM operation affects only positive prompt generation. It does not reset or change preset, steps, cfg, seed, sampler, scheduler, dimensions, or other recipe parameters.
 - The `fresh` and `refine` actions are one-shot LLM operations. They do not change the stored recipe `input_mode` or AgentConfig default LLM operation.
+- Refine and fresh prompt generation use the AgentConfig template fields `llm_refine_system_prompt`, `llm_refine_user_template`, `llm_fresh_system_prompt`, and `llm_fresh_user_template`.
 
 Obsidian or LLM Wiki:
 
@@ -297,7 +298,8 @@ ComfyUI AgentConfig:
 
 - `default_preset_id`.
 - `default_input_mode`.
-- prompt enhancer templates.
+- `llm_operation_default`.
+- refine/fresh prompt enhancer templates.
 - Whether LLM prompt enhancement auto-runs generation.
 - Seed policy.
 

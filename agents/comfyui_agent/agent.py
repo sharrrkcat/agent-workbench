@@ -51,21 +51,6 @@ Preset:
 Input mode: {input_mode}
 LLM operation: {llm_operation}
 """
-LEGACY_PROMPT_ENHANCER_SYSTEM_PROMPT = """\
-Convert the user's image request into a concise image generation prompt.
-Do not choose sampler, cfg, steps, size, model, workflow, or seed.
-Return only the improved positive prompt unless instructed otherwise.
-"""
-LEGACY_PROMPT_ENHANCER_USER_TEMPLATE = """\
-User request:
-{user_input}
-
-Current positive prompt:
-{positive_prompt}
-
-Current negative prompt:
-{negative_prompt}
-"""
 
 
 class ComfyAgentError(RuntimeError):
@@ -256,8 +241,7 @@ async def poll_prompt_status(ctx, prompt_id: str, scan: dict) -> dict:
 
 async def enhance_positive_prompt(ctx, recipe: dict, preset: dict, user_input: str, action_id: str | None = None, llm_operation: str | None = None) -> str:
     values = recipe.get("values") or {}
-    operation = _llm_operation(llm_operation)
-    system, template = _llm_prompt_template(ctx.config, operation)
+    operation = _resolve_llm_operation_value(llm_operation, default="refine")
     detail = _prompt_enhancer_detail(
         ctx,
         action_id=action_id or getattr(ctx, "action_id", "") or "default",
@@ -265,6 +249,15 @@ async def enhance_positive_prompt(ctx, recipe: dict, preset: dict, user_input: s
         reached_provider=False,
         llm_operation=operation,
     )
+    try:
+        system, template = _llm_prompt_template(ctx.config, operation)
+    except ComfyAgentError as exc:
+        detail.update(exc.detail, stage="resolve_template", reached_provider=False)
+        raise ComfyAgentError(
+            "COMFYUI_PROMPT_ENHANCER_FAILED",
+            "LLM prompt enhancer template is not configured. Set the ComfyUI Agent refine/fresh prompt templates.",
+            detail,
+        ) from exc
     try:
         prompt = template.format(
             user_input=user_input,
@@ -468,7 +461,7 @@ async def status_action(ctx):
         f"- Valid ready preset count: `{len(ready_presets)}`",
         f"- Current recipe preset: `{recipe.get('preset_id') if recipe else ''}`",
         f"- Current input_mode: `{recipe.get('input_mode') if recipe else ''}`",
-        f"- Default LLM operation: `{_llm_operation(ctx.config.get('llm_operation_default') or 'refine')}`",
+        f"- Default LLM operation: `{resolve_default_llm_operation(ctx.config)}`",
         f"- Last LLM operation: `{recipe.get('last_llm_operation') if recipe else ''}`",
         f"- Auto-run after LLM prompt: `{bool(ctx.config.get('auto_run_after_llm_prompt', True))}`",
         f"- Current positive_prompt empty: `{not bool(positive_prompt)}`",
@@ -490,7 +483,7 @@ async def current_recipe(ctx, scan: dict | None = None):
         preset = _preset_by_id(all_presets, stored.get("preset_id"))
         return stored, preset, all_presets, {"status": "loaded"}
     default_id = str(ctx.config.get("default_preset_id") or "")
-    default_mode = _input_mode(ctx.config.get("default_input_mode") or "llm")
+    default_mode = resolve_default_input_mode(ctx.config)
     preset = _preset_by_id(ready_presets, default_id) if default_id else None
     if preset is None:
         preset = next(iter(ready_presets), None)
@@ -607,13 +600,13 @@ async def call_comfy(ctx, method_name: str, **kwargs) -> dict:
 def save_recipe(ctx, recipe: dict) -> None:
     recipe["input_mode"] = _input_mode(recipe.get("input_mode") or "llm")
     if recipe.get("last_llm_operation") is not None:
-        recipe["last_llm_operation"] = _llm_operation(recipe.get("last_llm_operation"))
+        recipe["last_llm_operation"] = _resolve_llm_operation_value(recipe.get("last_llm_operation"), default=None)
     recipe["updated_at"] = _now()
     ctx.state.set(RECIPE_KEY, recipe)
 
 
 def prompt_saved_metadata(recipe: dict, preset: dict, llm_operation: str, positive_prompt: str) -> dict:
-    operation = _llm_operation(llm_operation)
+    operation = _resolve_llm_operation_value(llm_operation, default="refine")
     return {
         "kind": "comfyui_prompt_saved",
         "preset_id": recipe.get("preset_id") or "",
@@ -649,7 +642,7 @@ def generation_metadata(recipe: dict, preset: dict, prompt_id: str, attachments:
         "created_at": _now(),
     }
     if llm_operation:
-        operation = _llm_operation(llm_operation)
+        operation = _resolve_llm_operation_value(llm_operation, default=None)
         metadata.update(
             {
                 "llm_operation": operation,
@@ -681,10 +674,10 @@ def resolve_llm_operation(action_id: str, recipe: dict, agent_config: dict | Non
     if action_id == "refine":
         return "refine"
     if action_id == "llm":
-        return _llm_operation((agent_config or {}).get("llm_operation_default") or "refine")
+        return resolve_default_llm_operation(agent_config)
     if action_id == "default" and _input_mode(recipe.get("input_mode") or "llm") == "llm":
-        return _llm_operation((agent_config or {}).get("llm_operation_default") or "refine")
-    return _llm_operation((agent_config or {}).get("llm_operation_default") or "refine")
+        return resolve_default_llm_operation(agent_config)
+    return resolve_default_llm_operation(agent_config)
 
 
 def _preset_by_id(presets: list[dict], preset_id: str | None) -> dict | None:
@@ -692,46 +685,73 @@ def _preset_by_id(presets: list[dict], preset_id: str | None) -> dict | None:
 
 
 def _input_mode(value: Any) -> str:
-    value = str(value or "llm").lower()
-    return value if value in INPUT_MODES else "llm"
+    return _resolve_input_mode_value(value, default="llm")
 
 
-def _llm_operation(value: Any) -> str:
-    value = str(value or "refine").lower()
-    return value if value in LLM_OPERATIONS else "refine"
+def resolve_default_input_mode(agent_config: dict | None) -> str:
+    return _resolve_input_mode_value((agent_config or {}).get("default_input_mode"), default="llm")
+
+
+def resolve_default_llm_operation(agent_config: dict | None) -> str:
+    return _resolve_llm_operation_value((agent_config or {}).get("llm_operation_default"), default="refine")
+
+
+def _resolve_input_mode_value(value: Any, default: str | None) -> str:
+    text = _normalized_config_text(value)
+    if text in {"", "unset"}:
+        if default is None:
+            raise ComfyAgentError("COMFYUI_CONFIG_INVALID", "ComfyUI input mode is not configured.")
+        return default
+    if text not in INPUT_MODES:
+        raise ComfyAgentError("COMFYUI_CONFIG_INVALID", f"Invalid ComfyUI input mode: {value}. Expected `llm` or `raw`.")
+    return text
+
+
+def _resolve_llm_operation_value(value: Any, default: str | None) -> str:
+    text = _normalized_config_text(value)
+    if text in {"", "unset"}:
+        if default is None:
+            raise ComfyAgentError("COMFYUI_CONFIG_INVALID", "ComfyUI LLM operation is not configured.")
+        return default
+    if text not in LLM_OPERATIONS:
+        raise ComfyAgentError("COMFYUI_CONFIG_INVALID", f"Invalid ComfyUI LLM operation: {value}. Expected `refine` or `fresh`.")
+    return text
+
+
+def _normalized_config_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()
 
 
 def _llm_prompt_template(config: dict | None, operation: str) -> tuple[str, str]:
     config = config or {}
     if operation == "fresh":
-        system = str(config.get("llm_fresh_system_prompt") or DEFAULT_LLM_FRESH_SYSTEM_PROMPT).strip()
-        template = str(config.get("llm_fresh_user_template") or DEFAULT_LLM_FRESH_USER_TEMPLATE).strip()
+        system = _prompt_template_value(config, "llm_fresh_system_prompt", DEFAULT_LLM_FRESH_SYSTEM_PROMPT)
+        template = _prompt_template_value(config, "llm_fresh_user_template", DEFAULT_LLM_FRESH_USER_TEMPLATE)
+        _validate_prompt_template(system, "llm_fresh_system_prompt")
+        _validate_prompt_template(template, "llm_fresh_user_template")
         return system, template
-    system = _preferred_refine_config_value(
-        config,
-        new_key="llm_refine_system_prompt",
-        new_default=DEFAULT_LLM_REFINE_SYSTEM_PROMPT,
-        legacy_key="prompt_enhancer_system_prompt",
-        legacy_default=LEGACY_PROMPT_ENHANCER_SYSTEM_PROMPT,
-    )
-    template = _preferred_refine_config_value(
-        config,
-        new_key="llm_refine_user_template",
-        new_default=DEFAULT_LLM_REFINE_USER_TEMPLATE,
-        legacy_key="prompt_enhancer_user_template",
-        legacy_default=LEGACY_PROMPT_ENHANCER_USER_TEMPLATE,
-    )
+    system = _prompt_template_value(config, "llm_refine_system_prompt", DEFAULT_LLM_REFINE_SYSTEM_PROMPT)
+    template = _prompt_template_value(config, "llm_refine_user_template", DEFAULT_LLM_REFINE_USER_TEMPLATE)
+    _validate_prompt_template(system, "llm_refine_system_prompt")
+    _validate_prompt_template(template, "llm_refine_user_template")
     return system, template
 
 
-def _preferred_refine_config_value(config: dict, new_key: str, new_default: str, legacy_key: str, legacy_default: str) -> str:
-    new_value = str(config.get(new_key) or "").strip()
-    legacy_value = str(config.get(legacy_key) or "").strip()
-    if new_value and new_value != new_default.strip():
-        return new_value
-    if legacy_value and legacy_value != legacy_default.strip():
-        return legacy_value
-    return new_value or legacy_value or new_default.strip()
+def _prompt_template_value(config: dict, key: str, default: str) -> str:
+    if key in config and config.get(key) is not None:
+        return str(config.get(key)).strip()
+    return default.strip()
+
+
+def _validate_prompt_template(value: str, key: str) -> None:
+    if not value:
+        raise ComfyAgentError(
+            "COMFYUI_PROMPT_TEMPLATE_EMPTY",
+            f"ComfyUI Agent config `{key}` must not be empty.",
+            {"field": key},
+        )
 
 
 def _value_matches_type(value: Any, field_type: str) -> bool:
@@ -831,7 +851,7 @@ def _no_recipe_markdown(state: dict, presets: list[dict] | None = None) -> str:
 
 
 def _summary_block(state: dict) -> dict:
-    return {"type": "markdown", "text": f"Recipe status: `{state.get('status')}`. Form submit saves only; default/raw/llm/run generate explicitly."}
+    return {"type": "markdown", "text": f"Recipe status: `{state.get('status')}`. Form submit saves only; default/raw/llm/fresh/refine/run generate explicitly."}
 
 
 def _append_created(lines: list[str], created: list[dict]) -> None:
@@ -960,7 +980,7 @@ def _prompt_enhancer_detail(ctx, action_id: str, stage: str, reached_provider: b
         "reached_provider": reached_provider,
     }
     if llm_operation:
-        operation = _llm_operation(llm_operation)
+        operation = _resolve_llm_operation_value(llm_operation, default=None)
         detail.update(
             {
                 "llm_operation": operation,

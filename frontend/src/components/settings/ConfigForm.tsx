@@ -89,9 +89,10 @@ function renderInput(field: ConfigFieldSchema, id: string, value: unknown, onCha
     return <input id={id} type="number" value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />;
   }
   if (field.type === 'enum') {
+    const optionValues = new Set(field.options);
+    const selected = typeof value === 'string' && optionValues.has(value) ? value : String(field.default ?? '');
     return (
-      <select id={id} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Unset</option>
+      <select id={id} value={selected} onChange={(event) => onChange(event.target.value)}>
         {field.options.map((option) => (
           <option key={option} value={option}>
             {option}
