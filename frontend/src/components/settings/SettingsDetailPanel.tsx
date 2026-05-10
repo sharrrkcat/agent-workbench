@@ -9,7 +9,7 @@ import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSetti
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
-import type { LlmSettingsSubsection, SettingsSection } from './SettingsNav';
+import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
 import type { GeneralSettingsCategory, KnowledgeSettingsCategory } from './SettingsObjectList';
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 
@@ -25,8 +25,10 @@ export function SettingsDetailPanel({
   selectedLlmItemId = 'global',
   llmSubsection = 'defaults',
   generalCategory = 'files',
-  knowledgeCategory = 'defaults',
+  knowledgeSubsection = 'defaults',
+  selectedKnowledgeItemId = 'global',
   onLlmProfilesChanged,
+  onKnowledgeObjectsChanged,
   activeTab,
   onTabChange,
   onDirtyChange,
@@ -42,8 +44,10 @@ export function SettingsDetailPanel({
   selectedLlmItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
-  knowledgeCategory?: KnowledgeSettingsCategory;
+  knowledgeSubsection?: KnowledgeSettingsSubsection;
+  selectedKnowledgeItemId?: string;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
+  onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -120,7 +124,12 @@ export function SettingsDetailPanel({
   if (section === 'knowledge') {
     return (
       <section className="settings-detail-panel">
-        <KnowledgeSettingsDetail category={knowledgeCategory} onDirtyChange={onDirtyChange} />
+        <KnowledgeSettingsDetail
+          category={knowledgeSubsection as KnowledgeSettingsCategory}
+          selectedItemId={selectedKnowledgeItemId}
+          onObjectsChanged={onKnowledgeObjectsChanged}
+          onDirtyChange={onDirtyChange}
+        />
       </section>
     );
   }

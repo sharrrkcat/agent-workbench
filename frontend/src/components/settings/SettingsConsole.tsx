@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { LlmProfile, LlmProviderProfile } from '../../types';
+import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
-import { SettingsNav, type LlmSettingsSubsection, type SettingsSection } from './SettingsNav';
-import { SettingsObjectList, type GeneralSettingsCategory, type KnowledgeSettingsCategory } from './SettingsObjectList';
+import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsSection } from './SettingsNav';
+import { SettingsObjectList, type GeneralSettingsCategory } from './SettingsObjectList';
 
 export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
@@ -15,14 +15,23 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   const [llmProviderProfiles, setLlmProviderProfiles] = useState<LlmProviderProfile[]>([]);
   const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('global');
   const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('defaults');
+  const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
+  const [selectedKnowledgeItemId, setSelectedKnowledgeItemId] = useState<string>('global');
   const [generalCategory, setGeneralCategory] = useState<GeneralSettingsCategory>('files');
-  const [knowledgeCategory, setKnowledgeCategory] = useState<KnowledgeSettingsCategory>('defaults');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
 
   useEffect(() => {
     void refreshLlmProfiles().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (activeSection === 'knowledge') {
+      void refreshKnowledgeObjects().catch(() => undefined);
+    }
+  }, [activeSection]);
 
   useEffect(() => {
     if (!selectedAgentId && agentConfigs.length) {
@@ -65,7 +74,9 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
       setGeneralCategory('files');
     }
     if (section === 'knowledge') {
-      setKnowledgeCategory('defaults');
+      setSelectedKnowledgeSubsection('defaults');
+      setSelectedKnowledgeItemId('global');
+      void refreshKnowledgeObjects().catch(() => undefined);
     }
   }
 
@@ -110,6 +121,22 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
   }
 
+  async function refreshKnowledgeObjects(nextSelectedId?: string) {
+    const [profiles, bases] = await Promise.all([api.listEmbeddingModels(), api.listKnowledgeBases()]);
+    setEmbeddingProfiles(profiles);
+    setKnowledgeBases(bases);
+    if (nextSelectedId) {
+      setSelectedKnowledgeItemId(nextSelectedId);
+      return;
+    }
+    if (selectedKnowledgeSubsection === 'embedding_models' && selectedKnowledgeItemId && selectedKnowledgeItemId !== 'new' && !profiles.some((profile) => profile.id === selectedKnowledgeItemId)) {
+      setSelectedKnowledgeItemId(profiles[0]?.id || '');
+    }
+    if (selectedKnowledgeSubsection === 'knowledge_bases' && selectedKnowledgeItemId && selectedKnowledgeItemId !== 'new' && !bases.some((base) => base.id === selectedKnowledgeItemId)) {
+      setSelectedKnowledgeItemId(bases[0]?.id || '');
+    }
+  }
+
   function changeLlmSubsection(subsection: LlmSettingsSubsection) {
     if (subsection === selectedLlmSubsection) return;
     if (!confirmDirtyNavigation()) return;
@@ -128,11 +155,32 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
   }
 
+  function changeKnowledgeSubsection(subsection: KnowledgeSettingsSubsection) {
+    if (subsection === selectedKnowledgeSubsection) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedKnowledgeSubsection(subsection);
+    if (subsection === 'defaults') {
+      setSelectedKnowledgeItemId('global');
+    } else if (subsection === 'embedding_models') {
+      setSelectedKnowledgeItemId(embeddingProfiles[0]?.id || '');
+    } else {
+      setSelectedKnowledgeItemId(knowledgeBases[0]?.id || '');
+    }
+  }
+
   function selectLlmItem(itemId: string) {
     if (itemId === selectedLlmItemId) return;
     if (!confirmDirtyNavigation()) return;
     setDetailDirty(false);
     setSelectedLlmItemId(itemId);
+  }
+
+  function selectKnowledgeItem(itemId: string) {
+    if (itemId === selectedKnowledgeItemId) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedKnowledgeItemId(itemId);
   }
 
   const selectedAgentConfig = agentConfigs.find((config) => config.agent_id === selectedAgentId) || agentConfigs[0];
@@ -149,14 +197,16 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
       <SettingsNav
         activeSection={activeSection}
         activeLlmSubsection={selectedLlmSubsection}
+        activeKnowledgeSubsection={selectedKnowledgeSubsection}
         onChange={changeSection}
         onLlmSubsectionChange={changeLlmSubsection}
+        onKnowledgeSubsectionChange={changeKnowledgeSubsection}
       />
       <SettingsObjectList
         section={activeSection}
         llmSubsection={selectedLlmSubsection}
+        knowledgeSubsection={selectedKnowledgeSubsection}
         generalCategory={generalCategory}
-        knowledgeCategory={knowledgeCategory}
         agentConfigs={agentConfigs}
         capabilityConfigs={capabilityConfigs}
         selectedAgentId={selectedAgentConfig?.agent_id}
@@ -164,11 +214,14 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         llmProfiles={llmProfiles}
         llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
+        embeddingProfiles={embeddingProfiles}
+        knowledgeBases={knowledgeBases}
+        selectedKnowledgeItemId={selectedKnowledgeItemId}
         onSelectGeneralCategory={setGeneralCategory}
-        onSelectKnowledgeCategory={setKnowledgeCategory}
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
         onSelectLlmItem={selectLlmItem}
+        onSelectKnowledgeItem={selectKnowledgeItem}
       />
       <SettingsDetailPanel
         section={activeSection}
@@ -182,8 +235,10 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         selectedLlmItemId={selectedLlmItemId}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}
-        knowledgeCategory={knowledgeCategory}
+        knowledgeSubsection={selectedKnowledgeSubsection}
+        selectedKnowledgeItemId={selectedKnowledgeItemId}
         onLlmProfilesChanged={refreshLlmProfiles}
+        onKnowledgeObjectsChanged={refreshKnowledgeObjects}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}
         onDirtyChange={setDetailDirty}

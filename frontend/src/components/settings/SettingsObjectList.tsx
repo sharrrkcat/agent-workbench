@@ -1,30 +1,24 @@
 import { Boxes, Plus, SlidersHorizontal } from 'lucide-react';
-import type { AgentConfig, CapabilityConfig, LlmProfile, LlmProviderProfile } from '../../types';
+import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
-import type { LlmSettingsSubsection, SettingsSection } from './SettingsNav';
+import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
 import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts';
-export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases';
+export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
 
 const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
   { id: 'files', name: 'Files', description: 'Upload limits and file context.' },
   { id: 'llm_prompts', name: 'LLM & Prompts', description: 'Title generation and context prompts.' },
 ];
 
-const knowledgeCategories: { id: KnowledgeSettingsCategory; name: string; description: string }[] = [
-  { id: 'defaults', name: 'Defaults', description: 'Local model and retrieval defaults.' },
-  { id: 'embedding_models', name: 'Embedding Models', description: 'Local embedding model profiles.' },
-  { id: 'knowledge_bases', name: 'Knowledge Bases', description: 'Config-only KB objects.' },
-];
-
 export function SettingsObjectList({
   section,
   llmSubsection = 'defaults',
+  knowledgeSubsection = 'defaults',
   generalCategory = 'files',
-  knowledgeCategory = 'defaults',
   agentConfigs,
   capabilityConfigs,
   selectedAgentId,
@@ -32,16 +26,19 @@ export function SettingsObjectList({
   llmProfiles = [],
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
+  embeddingProfiles = [],
+  knowledgeBases = [],
+  selectedKnowledgeItemId = 'global',
   onSelectGeneralCategory,
-  onSelectKnowledgeCategory,
   onSelectAgent,
   onSelectCapability,
   onSelectLlmItem,
+  onSelectKnowledgeItem,
 }: {
   section: SettingsSection;
   llmSubsection?: LlmSettingsSubsection;
+  knowledgeSubsection?: KnowledgeSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
-  knowledgeCategory?: KnowledgeSettingsCategory;
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
   selectedAgentId?: string;
@@ -49,11 +46,14 @@ export function SettingsObjectList({
   llmProfiles?: LlmProfile[];
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
+  embeddingProfiles?: EmbeddingModelProfile[];
+  knowledgeBases?: KnowledgeBase[];
+  selectedKnowledgeItemId?: string;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
-  onSelectKnowledgeCategory?: (category: KnowledgeSettingsCategory) => void;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
   onSelectLlmItem?: (itemId: string) => void;
+  onSelectKnowledgeItem?: (itemId: string) => void;
 }) {
   if (section === 'general') {
     return (
@@ -100,26 +100,66 @@ export function SettingsObjectList({
   }
 
   if (section === 'knowledge') {
+    if (knowledgeSubsection === 'defaults') {
+      return (
+        <aside className="settings-object-list" aria-label="Knowledge defaults">
+          <ObjectListHeader title="DEFAULTS" count={1} />
+          <button
+            type="button"
+            className={`settings-object-row ${selectedKnowledgeItemId === 'global' ? 'active' : ''}`}
+            onClick={() => onSelectKnowledgeItem?.('global')}
+          >
+            <div className="settings-object-avatar">
+              <SlidersHorizontal size={16} />
+            </div>
+            <div className="settings-object-copy">
+              <strong>Knowledge defaults</strong>
+              <small>Local model and retrieval defaults</small>
+            </div>
+          </button>
+        </aside>
+      );
+    }
+
+    if (knowledgeSubsection === 'embedding_models') {
+      return (
+        <aside className="settings-object-list" aria-label="Embedding model profiles">
+          <ObjectListHeader title="EMBEDDING MODELS" count={embeddingProfiles.length} actionLabel="New model" onAction={() => onSelectKnowledgeItem?.('new')} />
+          <div className="settings-list-scroll">
+            {embeddingProfiles.length ? (
+              embeddingProfiles.map((profile) => (
+                <EmbeddingProfileListItem
+                  key={profile.id}
+                  profile={profile}
+                  active={selectedKnowledgeItemId === profile.id}
+                  onClick={() => onSelectKnowledgeItem?.(profile.id)}
+                />
+              ))
+            ) : (
+              <div className="settings-empty-state compact">No embedding model profiles yet.</div>
+            )}
+          </div>
+        </aside>
+      );
+    }
+
     return (
-      <aside className="settings-object-list" aria-label="Knowledge categories">
-        <ObjectListHeader title="Category" count={knowledgeCategories.length} />
+      <aside className="settings-object-list" aria-label="Knowledge bases">
+        <ObjectListHeader title="KNOWLEDGE BASES" count={knowledgeBases.length} actionLabel="New knowledge base" onAction={() => onSelectKnowledgeItem?.('new')} />
         <div className="settings-list-scroll">
-          {knowledgeCategories.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              className={`settings-object-row ${knowledgeCategory === category.id ? 'active' : ''}`}
-              onClick={() => onSelectKnowledgeCategory?.(category.id)}
-            >
-              <div className="settings-object-avatar">
-                <SlidersHorizontal size={16} />
-              </div>
-              <div className="settings-object-copy">
-                <strong>{category.name}</strong>
-                <small>{category.description}</small>
-              </div>
-            </button>
-          ))}
+          {knowledgeBases.length ? (
+            knowledgeBases.map((knowledgeBase) => (
+              <KnowledgeBaseListItem
+                key={knowledgeBase.id}
+                knowledgeBase={knowledgeBase}
+                embeddingProfiles={embeddingProfiles}
+                active={selectedKnowledgeItemId === knowledgeBase.id}
+                onClick={() => onSelectKnowledgeItem?.(knowledgeBase.id)}
+              />
+            ))
+          ) : (
+            <div className="settings-empty-state compact">No knowledge bases yet.</div>
+          )}
         </div>
       </aside>
     );
@@ -282,6 +322,43 @@ function ProviderListItem({ profile, active, onClick }: { profile: LlmProviderPr
         <small>{profile.provider} / {profile.base_url || 'No base URL'}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+    </button>
+  );
+}
+
+function EmbeddingProfileListItem({ profile, active, onClick }: { profile: EmbeddingModelProfile; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{profile.name || 'Untitled model'}</strong>
+        <small>{profile.alias || 'No alias'} / {profile.model_path || 'No model path'}</small>
+      </div>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+    </button>
+  );
+}
+
+function KnowledgeBaseListItem({
+  knowledgeBase,
+  embeddingProfiles,
+  active,
+  onClick,
+}: {
+  knowledgeBase: KnowledgeBase;
+  embeddingProfiles: EmbeddingModelProfile[];
+  active: boolean;
+  onClick: () => void;
+}) {
+  const profile = embeddingProfiles.find((item) => item.id === knowledgeBase.embedding_model_profile_id);
+  return (
+    <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${knowledgeBase.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(knowledgeBase.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{knowledgeBase.name || 'Untitled knowledge base'}</strong>
+        <small>{knowledgeBase.index_status || 'empty'} / {profile?.alias || 'missing model'}</small>
+      </div>
+      <span className={`settings-status-dot ${knowledgeBase.enabled ? 'enabled' : ''}`}>{knowledgeBase.enabled ? 'Enabled' : 'Disabled'}</span>
     </button>
   );
 }

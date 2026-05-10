@@ -34,14 +34,22 @@ const defaultKnowledgeBase: Partial<KnowledgeBase> = {
   max_context_chars_override: null,
 };
 
-export function KnowledgeSettingsDetail({ category, onDirtyChange }: { category: KnowledgeSettingsCategory; onDirtyChange: (dirty: boolean) => void }) {
+export function KnowledgeSettingsDetail({
+  category,
+  selectedItemId = 'global',
+  onObjectsChanged,
+  onDirtyChange,
+}: {
+  category: KnowledgeSettingsCategory;
+  selectedItemId?: string;
+  onObjectsChanged?: (selectedItemId?: string) => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
   const [values, setValues] = useState<KnowledgeSettings | null>(null);
   const [scan, setScan] = useState<KnowledgeModelScan | null>(null);
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-  const [embeddingMode, setEmbeddingMode] = useState<FormMode>('list');
-  const [kbMode, setKbMode] = useState<FormMode>('list');
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
@@ -57,6 +65,11 @@ export function KnowledgeSettingsDetail({ category, onDirtyChange }: { category:
     setValues(nextSettings);
     setEmbeddingProfiles(nextProfiles);
     setKnowledgeBases(nextBases);
+  }
+
+  async function refreshObjects(selectedId?: string) {
+    await refresh();
+    await onObjectsChanged?.(selectedId);
   }
 
   useEffect(() => {
@@ -106,9 +119,8 @@ export function KnowledgeSettingsDetail({ category, onDirtyChange }: { category:
         {localError ? <SettingsApiError error={localError} /> : null}
         <EmbeddingModelsEditor
           profiles={embeddingProfiles}
-          mode={embeddingMode}
-          setMode={setEmbeddingMode}
-          onRefresh={refresh}
+          mode={selectedItemId}
+          onRefresh={refreshObjects}
           setBusy={setBusy}
           setResult={setResult}
           setLocalError={setLocalError}
@@ -124,9 +136,8 @@ export function KnowledgeSettingsDetail({ category, onDirtyChange }: { category:
         <KnowledgeBasesEditor
           knowledgeBases={knowledgeBases}
           profiles={embeddingProfiles}
-          mode={kbMode}
-          setMode={setKbMode}
-          onRefresh={refresh}
+          mode={selectedItemId}
+          onRefresh={refreshObjects}
           setBusy={setBusy}
           setResult={setResult}
           setLocalError={setLocalError}
@@ -250,55 +261,44 @@ function KnowledgeShell({ title, description, busy, result, children }: { title:
   );
 }
 
-function EmbeddingModelsEditor({ profiles, mode, setMode, onRefresh, setBusy, setResult, setLocalError }: {
+function EmbeddingModelsEditor({ profiles, mode, onRefresh, setBusy, setResult, setLocalError }: {
   profiles: EmbeddingModelProfile[];
   mode: FormMode;
-  setMode: (mode: FormMode) => void;
-  onRefresh: () => Promise<void>;
+  onRefresh: (selectedItemId?: string) => Promise<void>;
   setBusy: (value: string) => void;
   setResult: (value: string) => void;
   setLocalError: (value: SettingsErrorValue | null) => void;
 }) {
   const selected = profiles.find((profile) => profile.id === mode);
   const initial = mode === 'new' ? defaultEmbeddingProfile : selected;
-  if (!initial || mode === 'list') {
-    return (
-      <>
-        <div className="settings-button-row">
-          <button className="settings-primary-button" type="button" onClick={() => setMode('new')}>New embedding model</button>
-        </div>
-        {profiles.length ? profiles.map((profile) => (
-          <button key={profile.id} className="settings-object-row" type="button" onClick={() => setMode(profile.id)}>
-            <div className="settings-object-copy"><strong>{profile.name}</strong><small>{profile.alias} / {profile.model_path}</small></div>
-            <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
-          </button>
-        )) : <div className="settings-empty-state compact">No embedding model profiles yet.</div>}
-      </>
-    );
+  if (!initial) {
+    return <Empty title="No embedding model selected" message={profiles.length ? 'Select an embedding model profile from the list.' : 'No embedding model profiles yet.'} />;
   }
-  return <EmbeddingProfileForm initial={initial} isNew={mode === 'new'} onCancel={() => setMode('list')} onRefresh={onRefresh} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} />;
+  return <EmbeddingProfileForm initial={initial} isNew={mode === 'new'} onRefresh={onRefresh} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} />;
 }
 
-function EmbeddingProfileForm({ initial, isNew, onCancel, onRefresh, setBusy, setResult, setLocalError }: {
+function EmbeddingProfileForm({ initial, isNew, onRefresh, setBusy, setResult, setLocalError }: {
   initial: Partial<EmbeddingModelProfile>;
   isNew: boolean;
-  onCancel: () => void;
-  onRefresh: () => Promise<void>;
+  onRefresh: (selectedItemId?: string) => Promise<void>;
   setBusy: (value: string) => void;
   setResult: (value: string) => void;
   setLocalError: (value: SettingsErrorValue | null) => void;
 }) {
   const [values, setValues] = useState<Partial<EmbeddingModelProfile>>(initial);
+
+  useEffect(() => {
+    setValues(initial);
+  }, [initial]);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy('saving');
     try {
       setLocalError(null);
-      if (isNew) await api.createEmbeddingModel(values);
-      else await api.patchEmbeddingModel(values.id || '', values);
-      await onRefresh();
+      const saved = isNew ? await api.createEmbeddingModel(values) : await api.patchEmbeddingModel(values.id || '', values);
+      await onRefresh(saved.id);
       setResult('Embedding model saved.');
-      onCancel();
     } catch (error) {
       setLocalError(toSettingsError(error, 'Failed to save embedding model.'));
     } finally {
@@ -313,7 +313,6 @@ function EmbeddingProfileForm({ initial, isNew, onCancel, onRefresh, setBusy, se
       await api.deleteEmbeddingModel(values.id);
       await onRefresh();
       setResult('Embedding model deleted.');
-      onCancel();
     } catch (error) {
       setLocalError(toSettingsError(error, 'Failed to delete embedding model.'));
     } finally {
@@ -350,64 +349,51 @@ function EmbeddingProfileForm({ initial, isNew, onCancel, onRefresh, setBusy, se
         <button className="settings-primary-button" type="submit"><Save size={14} />Save</button>
         {!isNew ? <button className="settings-secondary-button" type="button" onClick={test}><Play size={14} />Test</button> : null}
         {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove}><Trash2 size={14} />Delete</button> : null}
-        <button className="settings-secondary-button" type="button" onClick={onCancel}>Cancel</button>
       </div>
     </form>
   );
 }
 
-function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, setMode, onRefresh, setBusy, setResult, setLocalError }: {
+function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, onRefresh, setBusy, setResult, setLocalError }: {
   knowledgeBases: KnowledgeBase[];
   profiles: EmbeddingModelProfile[];
   mode: FormMode;
-  setMode: (mode: FormMode) => void;
-  onRefresh: () => Promise<void>;
+  onRefresh: (selectedItemId?: string) => Promise<void>;
   setBusy: (value: string) => void;
   setResult: (value: string) => void;
   setLocalError: (value: SettingsErrorValue | null) => void;
 }) {
   const selected = knowledgeBases.find((kb) => kb.id === mode);
   const initial = useMemo(() => mode === 'new' ? { ...defaultKnowledgeBase, embedding_model_profile_id: profiles[0]?.id || '' } : selected, [mode, profiles, selected]);
-  if (!initial || mode === 'list') {
-    return (
-      <>
-        <div className="settings-button-row">
-          <button className="settings-primary-button" type="button" onClick={() => setMode('new')} disabled={!profiles.length}>New knowledge base</button>
-        </div>
-        {profiles.length ? null : <div className="settings-empty-state compact">Create an embedding model profile before creating a knowledge base.</div>}
-        {knowledgeBases.length ? knowledgeBases.map((kb) => (
-          <button key={kb.id} className="settings-object-row" type="button" onClick={() => setMode(kb.id)}>
-            <div className="settings-object-copy"><strong>{kb.name}</strong><small>{kb.index_status} / {profiles.find((profile) => profile.id === kb.embedding_model_profile_id)?.alias || 'missing model'}</small></div>
-            <span className={`settings-status-dot ${kb.enabled ? 'enabled' : ''}`}>{kb.enabled ? 'Enabled' : 'Disabled'}</span>
-          </button>
-        )) : <div className="settings-empty-state compact">No knowledge bases yet.</div>}
-      </>
-    );
+  if (!initial) {
+    return <Empty title="No knowledge base selected" message={knowledgeBases.length ? 'Select a knowledge base from the list.' : 'No knowledge bases yet.'} />;
   }
-  return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} onCancel={() => setMode('list')} onRefresh={onRefresh} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} />;
+  return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} onRefresh={onRefresh} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} />;
 }
 
-function KnowledgeBaseForm({ initial, profiles, isNew, onCancel, onRefresh, setBusy, setResult, setLocalError }: {
+function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setResult, setLocalError }: {
   initial: Partial<KnowledgeBase>;
   profiles: EmbeddingModelProfile[];
   isNew: boolean;
-  onCancel: () => void;
-  onRefresh: () => Promise<void>;
+  onRefresh: (selectedItemId?: string) => Promise<void>;
   setBusy: (value: string) => void;
   setResult: (value: string) => void;
   setLocalError: (value: SettingsErrorValue | null) => void;
 }) {
   const [values, setValues] = useState<Partial<KnowledgeBase>>(initial);
+
+  useEffect(() => {
+    setValues(initial);
+  }, [initial]);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy('saving');
     try {
       setLocalError(null);
-      if (isNew) await api.createKnowledgeBase(values);
-      else await api.patchKnowledgeBase(values.id || '', values);
-      await onRefresh();
+      const saved = isNew ? await api.createKnowledgeBase(values) : await api.patchKnowledgeBase(values.id || '', values);
+      await onRefresh(saved.id);
       setResult('Knowledge base saved.');
-      onCancel();
     } catch (error) {
       setLocalError(toSettingsError(error, 'Failed to save knowledge base.'));
     } finally {
@@ -422,7 +408,6 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onCancel, onRefresh, setB
       await api.deleteKnowledgeBase(values.id);
       await onRefresh();
       setResult('Knowledge base deleted.');
-      onCancel();
     } catch (error) {
       setLocalError(toSettingsError(error, 'Failed to delete knowledge base.'));
     } finally {
@@ -449,7 +434,6 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onCancel, onRefresh, setB
       <div className="settings-button-row">
         <button className="settings-primary-button" type="submit"><Save size={14} />Save</button>
         {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove}><Trash2 size={14} />Delete</button> : null}
-        <button className="settings-secondary-button" type="button" onClick={onCancel}>Cancel</button>
       </div>
     </form>
   );

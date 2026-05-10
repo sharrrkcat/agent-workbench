@@ -2,6 +2,7 @@ import { Activity, Bot, Boxes, BrainCircuit, Code2, Database, Info, Settings, Sl
 
 export type SettingsSection = 'general' | 'llm' | 'knowledge' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
 export type LlmSettingsSubsection = 'defaults' | 'providers' | 'models';
+export type KnowledgeSettingsSubsection = 'defaults' | 'embedding_models' | 'knowledge_bases';
 
 const sections: { id: SettingsSection; label: string; icon: typeof Settings }[] = [
   { id: 'general', label: 'General', icon: Settings },
@@ -18,13 +19,17 @@ const sections: { id: SettingsSection; label: string; icon: typeof Settings }[] 
 export function SettingsNav({
   activeSection,
   activeLlmSubsection = 'defaults',
+  activeKnowledgeSubsection = 'defaults',
   onChange,
   onLlmSubsectionChange,
+  onKnowledgeSubsectionChange,
 }: {
   activeSection: SettingsSection;
   onChange: (section: SettingsSection) => void;
   activeLlmSubsection?: LlmSettingsSubsection;
+  activeKnowledgeSubsection?: KnowledgeSettingsSubsection;
   onLlmSubsectionChange?: (subsection: LlmSettingsSubsection) => void;
+  onKnowledgeSubsectionChange?: (subsection: KnowledgeSettingsSubsection) => void;
 }) {
   return (
     <nav className="settings-nav" aria-label="Settings sections">
@@ -62,6 +67,31 @@ export function SettingsNav({
                   onClick={() => onLlmSubsectionChange?.('models')}
                 >
                   <span>Model Profiles</span>
+                </button>
+              </div>
+            ) : null}
+            {section.id === 'knowledge' && activeSection === 'knowledge' ? (
+              <div className="settings-subnav" aria-label="Knowledge settings sections">
+                <button
+                  type="button"
+                  className={activeKnowledgeSubsection === 'defaults' ? 'active' : ''}
+                  onClick={() => onKnowledgeSubsectionChange?.('defaults')}
+                >
+                  <span>Defaults</span>
+                </button>
+                <button
+                  type="button"
+                  className={activeKnowledgeSubsection === 'embedding_models' ? 'active' : ''}
+                  onClick={() => onKnowledgeSubsectionChange?.('embedding_models')}
+                >
+                  <span>Embedding Models</span>
+                </button>
+                <button
+                  type="button"
+                  className={activeKnowledgeSubsection === 'knowledge_bases' ? 'active' : ''}
+                  onClick={() => onKnowledgeSubsectionChange?.('knowledge_bases')}
+                >
+                  <span>Knowledge Bases</span>
                 </button>
               </div>
             ) : null}
