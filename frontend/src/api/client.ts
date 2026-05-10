@@ -24,7 +24,9 @@ import type {
   GeneralSettings,
   OrphanScanResult,
   EmbeddingModelProfile,
+  EmbeddingModelProfileInput,
   KnowledgeBase,
+  KnowledgeBaseInput,
   SessionKnowledgeBinding,
   KnowledgeSource,
   KnowledgeSourceIndexResult,
@@ -170,12 +172,12 @@ export const api = {
     }),
   scanKnowledgeModels: () => request<KnowledgeModelScan>('/api/knowledge/models/scan'),
   listEmbeddingModels: () => request<EmbeddingModelProfile[]>('/api/knowledge/embedding-models'),
-  createEmbeddingModel: (profile: Partial<EmbeddingModelProfile>) =>
+  createEmbeddingModel: (profile: EmbeddingModelProfileInput) =>
     request<EmbeddingModelProfile>('/api/knowledge/embedding-models', {
       method: 'POST',
       body: JSON.stringify(profile),
     }),
-  patchEmbeddingModel: (profileId: string, patch: Partial<EmbeddingModelProfile>) =>
+  patchEmbeddingModel: (profileId: string, patch: EmbeddingModelProfileInput) =>
     request<EmbeddingModelProfile>(`/api/knowledge/embedding-models/${profileId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
@@ -198,12 +200,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   listKnowledgeBases: () => request<KnowledgeBase[]>('/api/knowledge/bases'),
-  createKnowledgeBase: (knowledgeBase: Partial<KnowledgeBase>) =>
+  createKnowledgeBase: (knowledgeBase: KnowledgeBaseInput) =>
     request<KnowledgeBase>('/api/knowledge/bases', {
       method: 'POST',
       body: JSON.stringify(knowledgeBase),
     }),
-  patchKnowledgeBase: (knowledgeBaseId: string, patch: Partial<KnowledgeBase>) =>
+  patchKnowledgeBase: (knowledgeBaseId: string, patch: KnowledgeBaseInput) =>
     request<KnowledgeBase>(`/api/knowledge/bases/${knowledgeBaseId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),

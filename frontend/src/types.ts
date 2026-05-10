@@ -374,6 +374,21 @@ export type EmbeddingModelProfile = {
   updated_at: string;
 };
 
+export type EmbeddingModelProfileInput = Partial<
+  Pick<
+    EmbeddingModelProfile,
+    | 'name'
+    | 'alias'
+    | 'model_path'
+    | 'dimension'
+    | 'normalize'
+    | 'document_instruction'
+    | 'query_instruction'
+    | 'enabled'
+    | 'notes'
+  >
+>;
+
 export type KnowledgeBase = {
   id: string;
   name: string;
@@ -391,6 +406,22 @@ export type KnowledgeBase = {
   created_at: string;
   updated_at: string;
 };
+
+export type KnowledgeBaseInput = Partial<
+  Pick<
+    KnowledgeBase,
+    | 'name'
+    | 'description'
+    | 'embedding_model_profile_id'
+    | 'enabled'
+    | 'chunk_size_override'
+    | 'chunk_overlap_override'
+    | 'vector_candidate_k_override'
+    | 'keyword_candidate_k_override'
+    | 'final_top_k_override'
+    | 'max_context_chars_override'
+  >
+>;
 
 export type SessionKnowledgeBinding = {
   id?: number | null;
