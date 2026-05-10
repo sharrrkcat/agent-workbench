@@ -13,6 +13,8 @@ type DragState = {
   lastX: number;
 };
 
+type PetPosition = { x: number; y: number };
+
 const BASE_WIDTH = 192;
 const BASE_HEIGHT = 208;
 const DEFAULT_MARGIN_RIGHT = 28;
@@ -67,13 +69,15 @@ export function PetOverlay() {
   const { currentSession, runs, stepsByRunId } = useWorkbenchStore();
   const [settings, setSettings] = useState<PetSettings | null>(null);
   const [pets, setPets] = useState<PetItem[]>([]);
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [localPosition, setLocalPosition] = useState<PetPosition | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dragDirection, setDragDirection] = useState<'left' | 'right'>('right');
   const [jumping, setJumping] = useState(false);
   const [terminalRun, setTerminalRun] = useState<Run | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const lastHeldTerminalRunIdRef = useRef<string | null>(null);
+  const pendingSavedPositionRef = useRef<PetPosition | null>(null);
+  const appliedSettingsPositionKeyRef = useRef('');
 
   const validPets = useMemo(() => pets.filter((pet) => pet.valid && pet.spritesheet_url), [pets]);
   const selectedPet = useMemo(() => {
@@ -105,7 +109,7 @@ export function PetOverlay() {
       const nextSettings = normalizeSettings(settingsResponse.settings);
       setSettings(nextSettings);
       setPets(petsResponse.pets);
-      setPosition((current) => current || resolveInitialPosition(nextSettings, BASE_WIDTH * nextSettings.pet_scale, BASE_HEIGHT * nextSettings.pet_scale));
+      setLocalPosition((current) => current || resolveInitialPosition(nextSettings, BASE_WIDTH * nextSettings.pet_scale, BASE_HEIGHT * nextSettings.pet_scale));
     } catch {
       if (!cancelled()) {
         setSettings(null);
@@ -129,11 +133,23 @@ export function PetOverlay() {
 
   useEffect(() => {
     if (!settings || drag) return;
-    setPosition((current) => {
-      const base = settings.position.mode === 'custom' && typeof settings.position.x === 'number' && typeof settings.position.y === 'number'
-        ? { x: settings.position.x, y: settings.position.y }
-        : current || defaultPosition(petWidth, petHeight);
-      return clampPosition(base, petWidth, petHeight);
+    const pendingPosition = pendingSavedPositionRef.current;
+    if (pendingPosition) {
+      if (settings.position.mode === 'custom' && positionsMatch(settings.position, pendingPosition)) {
+        pendingSavedPositionRef.current = null;
+        appliedSettingsPositionKeyRef.current = settingsPositionKey(settings);
+      }
+      return;
+    }
+
+    const nextSettingsPositionKey = settingsPositionKey(settings);
+    const shouldApplySettingsPosition = nextSettingsPositionKey !== appliedSettingsPositionKeyRef.current;
+    setLocalPosition((current) => {
+      if (!current || shouldApplySettingsPosition) {
+        appliedSettingsPositionKeyRef.current = nextSettingsPositionKey;
+        return resolveInitialPosition(settings, petWidth, petHeight);
+      }
+      return clampPosition(current, petWidth, petHeight);
     });
   }, [petWidth, petHeight, settings?.position.mode, settings?.position.x, settings?.position.y, drag]);
 
@@ -172,16 +188,27 @@ export function PetOverlay() {
       );
       setDragDirection(event.clientX < drag.lastX ? 'left' : 'right');
       setDrag((current) => (current ? { ...current, lastX: event.clientX } : current));
-      setPosition(next);
+      setLocalPosition(next);
     };
     const onPointerUp = (event: PointerEvent) => {
       if (event.pointerId !== drag.pointerId) return;
-      const finalPosition = clampPosition(position || defaultPosition(petWidth, petHeight), petWidth, petHeight);
+      const finalPosition = clampPosition(
+        {
+          x: drag.startX + event.clientX - drag.startPointerX,
+          y: drag.startY + event.clientY - drag.startPointerY,
+        },
+        petWidth,
+        petHeight,
+      );
+      const savedPosition = { x: Math.round(finalPosition.x), y: Math.round(finalPosition.y) };
+      pendingSavedPositionRef.current = savedPosition;
       setDrag(null);
-      setPosition(finalPosition);
-      void api.updatePetSettings({ position: { mode: 'custom', x: Math.round(finalPosition.x), y: Math.round(finalPosition.y) } }).then((response) => {
+      setLocalPosition(finalPosition);
+      void api.updatePetSettings({ position: { mode: 'custom', ...savedPosition } }).then((response) => {
         setSettings(normalizeSettings(response.settings));
-      }).catch(() => undefined);
+      }).catch(() => {
+        pendingSavedPositionRef.current = null;
+      });
     };
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
@@ -191,11 +218,11 @@ export function PetOverlay() {
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [drag, petHeight, petWidth, position]);
+  }, [drag, petHeight, petWidth]);
 
   useEffect(() => {
     const onResize = () => {
-      setPosition((current) => clampPosition(current || defaultPosition(petWidth, petHeight), petWidth, petHeight));
+      setLocalPosition((current) => clampPosition(current || defaultPosition(petWidth, petHeight), petWidth, petHeight));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -206,14 +233,14 @@ export function PetOverlay() {
     setJumping(true);
   }, [drag, settings?.jump_on_hover]);
 
-  const handleAnimationComplete = useCallback((state: PetSpriteState) => {
+  const handlePlaybackComplete = useCallback((state: PetSpriteState) => {
     if (state === 'jumping') {
       setJumping(false);
     }
   }, []);
 
   function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !position) return;
+    if (event.button !== 0 || !localPosition) return;
     event.preventDefault();
     overlayRef.current?.setPointerCapture(event.pointerId);
     setJumping(false);
@@ -221,21 +248,21 @@ export function PetOverlay() {
       pointerId: event.pointerId,
       startPointerX: event.clientX,
       startPointerY: event.clientY,
-      startX: position.x,
-      startY: position.y,
+      startX: localPosition.x,
+      startY: localPosition.y,
       lastX: event.clientX,
     });
   }
 
-  if (!settings?.pet_enabled || !selectedPet || !spriteUrl || !position) return null;
+  if (!settings?.pet_enabled || !selectedPet || !spriteUrl || !localPosition) return null;
 
   return (
     <div
       ref={overlayRef}
       className={`pet-overlay ${drag ? 'dragging' : ''}`}
       style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
+        left: `${localPosition.x}px`,
+        top: `${localPosition.y}px`,
         width: `${petWidth}px`,
         height: `${petHeight}px`,
         '--pet-bubble-offset-x': `${settings.bubble_offset_x ?? 12}px`,
@@ -252,7 +279,8 @@ export function PetOverlay() {
         state={animationState}
         scale={scale}
         className="pet-sprite"
-        onAnimationComplete={handleAnimationComplete}
+        repeatCount={animationState === 'jumping' ? 3 : 1}
+        onPlaybackComplete={handlePlaybackComplete}
       />
     </div>
   );
@@ -284,6 +312,22 @@ function resolveInitialPosition(settings: PetSettings, width: number, height: nu
     return clampPosition({ x: settings.position.x, y: settings.position.y }, width, height);
   }
   return defaultPosition(width, height);
+}
+
+function settingsPositionKey(settings: PetSettings): string {
+  if (settings.position.mode === 'custom' && typeof settings.position.x === 'number' && typeof settings.position.y === 'number') {
+    return `custom:${Math.round(settings.position.x)}:${Math.round(settings.position.y)}`;
+  }
+  return 'default';
+}
+
+function positionsMatch(settingsPosition: PetSettings['position'], position: PetPosition): boolean {
+  return (
+    typeof settingsPosition.x === 'number'
+    && typeof settingsPosition.y === 'number'
+    && Math.round(settingsPosition.x) === Math.round(position.x)
+    && Math.round(settingsPosition.y) === Math.round(position.y)
+  );
 }
 
 function defaultPosition(width: number, height: number): { x: number; y: number } {

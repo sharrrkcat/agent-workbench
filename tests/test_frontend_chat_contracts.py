@@ -17,24 +17,38 @@ def test_status_bar_does_not_render_global_error_text() -> None:
     assert "{error}" not in source
 
 
-def test_pet_sprite_uses_codex_animation_frame_counts() -> None:
+def test_pet_sprite_uses_codex_animation_durations() -> None:
     source = read_frontend("components/PetSprite.tsx")
 
     assert "CODEX_PET_ATLAS" in source
     assert "columns: 8" in source
     assert "rows: 9" in source
-    assert "frameCount: 6" in source[source.index("idle:") : source.index("'running-right':")]
-    assert "frameCount: 8" in source[source.index("'running-right':") : source.index("'running-left':")]
-    assert "frameCount: 8" in source[source.index("'running-left':") : source.index("waving:")]
-    assert "frameCount: 4" in source[source.index("waving:") : source.index("jumping:")]
-    assert "frameCount: 5" in source[source.index("jumping:") : source.index("failed:")]
-    assert "frameCount: 8" in source[source.index("failed:") : source.index("waiting:")]
-    assert "frameCount: 6" in source[source.index("waiting:") : source.index("running:")]
-    assert "frameCount: 6" in source[source.index("running:") : source.index("review:")]
-    assert "frameCount: 6" in source[source.index("review:") : source.index("export function PetSprite")]
+    assert "durations: [280, 110, 110, 140, 140, 320]" in source
+    assert "durations: [120, 120, 120, 120, 120, 120, 120, 220]" in source
+    assert "durations: [140, 140, 140, 280]" in source
+    assert "durations: [140, 140, 140, 140, 280]" in source
+    assert "durations: [140, 140, 140, 140, 140, 140, 140, 240]" in source
+    assert "durations: [150, 150, 150, 150, 150, 260]" in source
+    assert "durations: [120, 120, 120, 120, 120, 220]" in source
+    assert "durations: [150, 150, 150, 150, 150, 280]" in source
+    assert "currentSpec.durations.length" in source
+    assert "frameCount" not in source
+    assert "frameDurationMs" not in source
+    assert "setInterval" not in source
     assert "% CODEX_PET_ATLAS.columns" not in source
-    assert "% COLS" not in source
     assert "% 8" not in source
+
+
+def test_pet_overlay_repeats_jump_and_keeps_drag_position_local() -> None:
+    source = read_frontend("components/PetOverlay.tsx")
+
+    assert "repeatCount={animationState === 'jumping' ? 3 : 1}" in source
+    assert "onPlaybackComplete={handlePlaybackComplete}" in source
+    assert "const [localPosition, setLocalPosition]" in source
+    assert "pendingSavedPositionRef" in source
+    assert "positionsMatch(settings.position, pendingPosition)" in source
+    assert "setLocalPosition(finalPosition)" in source
+    assert "api.updatePetSettings({ position: { mode: 'custom', ...savedPosition } })" in source
 
 
 def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:

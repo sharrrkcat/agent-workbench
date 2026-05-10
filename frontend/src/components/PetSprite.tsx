@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export type PetAnimationState =
   | 'idle'
@@ -13,9 +13,7 @@ export type PetAnimationState =
 
 type PetAnimationSpec = {
   row: number;
-  frameCount: number;
-  frameDurationMs: number;
-  lastFrameDurationMs?: number;
+  durations: readonly number[];
   loop: boolean;
 };
 
@@ -24,7 +22,9 @@ type PetSpriteProps = {
   state: PetAnimationState;
   scale?: number;
   className?: string;
-  onAnimationComplete?: (state: PetAnimationState) => void;
+  repeatCount?: number;
+  onAnimationLoopComplete?: (state: PetAnimationState, completedLoops: number) => void;
+  onPlaybackComplete?: (state: PetAnimationState) => void;
 };
 
 export type PetSpriteState = PetAnimationState;
@@ -39,102 +39,105 @@ export const CODEX_PET_ATLAS = {
 export const CODEX_PET_ANIMATIONS: Record<PetAnimationState, PetAnimationSpec> = {
   idle: {
     row: 0,
-    frameCount: 6,
-    frameDurationMs: 160,
-    lastFrameDurationMs: 360,
+    durations: [280, 110, 110, 140, 140, 320],
     loop: true,
   },
   'running-right': {
     row: 1,
-    frameCount: 8,
-    frameDurationMs: 90,
+    durations: [120, 120, 120, 120, 120, 120, 120, 220],
     loop: true,
   },
   'running-left': {
     row: 2,
-    frameCount: 8,
-    frameDurationMs: 90,
+    durations: [120, 120, 120, 120, 120, 120, 120, 220],
     loop: true,
   },
   waving: {
     row: 3,
-    frameCount: 4,
-    frameDurationMs: 140,
-    lastFrameDurationMs: 260,
+    durations: [140, 140, 140, 280],
     loop: false,
   },
   jumping: {
     row: 4,
-    frameCount: 5,
-    frameDurationMs: 110,
-    lastFrameDurationMs: 180,
+    durations: [140, 140, 140, 140, 280],
     loop: false,
   },
   failed: {
     row: 5,
-    frameCount: 8,
-    frameDurationMs: 150,
-    lastFrameDurationMs: 300,
+    durations: [140, 140, 140, 140, 140, 140, 140, 240],
     loop: true,
   },
   waiting: {
     row: 6,
-    frameCount: 6,
-    frameDurationMs: 170,
-    lastFrameDurationMs: 360,
+    durations: [150, 150, 150, 150, 150, 260],
     loop: true,
   },
   running: {
     row: 7,
-    frameCount: 6,
-    frameDurationMs: 120,
+    durations: [120, 120, 120, 120, 120, 220],
     loop: true,
   },
   review: {
     row: 8,
-    frameCount: 6,
-    frameDurationMs: 150,
-    lastFrameDurationMs: 300,
+    durations: [150, 150, 150, 150, 150, 280],
     loop: true,
   },
 };
 
-export function PetSprite({ spritesheetUrl, state, scale = 1, className = '', onAnimationComplete }: PetSpriteProps) {
+export function PetSprite({
+  spritesheetUrl,
+  state,
+  scale = 1,
+  className = '',
+  repeatCount = 1,
+  onAnimationLoopComplete,
+  onPlaybackComplete,
+}: PetSpriteProps) {
   const [frame, setFrame] = useState(0);
+  const reduceMotion = usePrefersReducedMotion();
   const spec = CODEX_PET_ANIMATIONS[state];
+  const renderSpec = reduceMotion ? CODEX_PET_ANIMATIONS.idle : spec;
 
   useEffect(() => {
     const currentSpec = CODEX_PET_ANIMATIONS[state];
     setFrame(0);
+    if (reduceMotion) return undefined;
+
     let cancelled = false;
     let timeoutId: number | undefined;
+    const maxRepeats = Math.max(1, Math.floor(repeatCount));
 
-    const tick = (currentFrame: number) => {
-      const lastFrame = Math.max(0, currentSpec.frameCount - 1);
+    const tick = (currentFrame: number, completedLoops: number) => {
+      const lastFrame = Math.max(0, currentSpec.durations.length - 1);
       const isLast = currentFrame >= lastFrame;
-      const delay = isLast
-        ? currentSpec.lastFrameDurationMs ?? currentSpec.frameDurationMs
-        : currentSpec.frameDurationMs;
+      const delay = currentSpec.durations[Math.min(currentFrame, lastFrame)] ?? 120;
 
       timeoutId = window.setTimeout(() => {
         if (cancelled) return;
         if (isLast) {
+          const nextCompletedLoops = completedLoops + 1;
+          onAnimationLoopComplete?.(state, nextCompletedLoops);
           if (currentSpec.loop) {
             setFrame(0);
-            tick(0);
-          } else {
-            onAnimationComplete?.(state);
+            tick(0, nextCompletedLoops);
+            return;
           }
+          if (nextCompletedLoops >= maxRepeats) {
+            onPlaybackComplete?.(state);
+            return;
+          }
+          setFrame(0);
+          tick(0, nextCompletedLoops);
           return;
         }
 
         const nextFrame = currentFrame + 1;
         setFrame(nextFrame);
-        tick(nextFrame);
+        tick(nextFrame, completedLoops);
       }, delay);
     };
 
-    tick(0);
+    tick(0, 0);
 
     return () => {
       cancelled = true;
@@ -142,7 +145,7 @@ export function PetSprite({ spritesheetUrl, state, scale = 1, className = '', on
         window.clearTimeout(timeoutId);
       }
     };
-  }, [state, spritesheetUrl, onAnimationComplete]);
+  }, [state, spritesheetUrl, repeatCount, reduceMotion, onAnimationLoopComplete, onPlaybackComplete]);
 
   return (
     <div
@@ -163,9 +166,25 @@ export function PetSprite({ spritesheetUrl, state, scale = 1, className = '', on
         style={{
           width: CODEX_PET_ATLAS.frameWidth * CODEX_PET_ATLAS.columns * scale,
           height: CODEX_PET_ATLAS.frameHeight * CODEX_PET_ATLAS.rows * scale,
-          transform: `translate(${-frame * CODEX_PET_ATLAS.frameWidth * scale}px, ${-spec.row * CODEX_PET_ATLAS.frameHeight * scale}px)`,
+          transform: `translate(${-frame * CODEX_PET_ATLAS.frameWidth * scale}px, ${-renderSpec.row * CODEX_PET_ATLAS.frameHeight * scale}px)`,
         }}
       />
     </div>
   );
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduceMotion, setReduceMotion] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ));
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduceMotion(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+
+  return useMemo(() => reduceMotion, [reduceMotion]);
 }
