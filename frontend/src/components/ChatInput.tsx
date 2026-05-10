@@ -1,4 +1,5 @@
-import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
@@ -21,7 +22,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
+  const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [modelMenuStyle, setModelMenuStyle] = useState<CSSProperties>({});
   const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError, setComposerDraftText } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
 
@@ -76,7 +79,8 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
       if (!formRef.current?.contains(event.target as Node)) {
         setSuggestionsDismissed(true);
       }
-      if (!modelSelectorRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!modelSelectorRef.current?.contains(target) && !modelMenuRef.current?.contains(target)) {
         setModelMenuOpen(false);
       }
     }
@@ -93,6 +97,33 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!modelMenuOpen) return;
+
+    function updateModelMenuPosition() {
+      const anchor = modelSelectorRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const width = Math.max(anchor.width, 210);
+      const right = Math.max(12, window.innerWidth - anchor.right);
+      const maxHeight = Math.max(160, Math.min(260, anchor.top - 20));
+      setModelMenuStyle({
+        position: 'fixed',
+        right,
+        bottom: Math.max(12, window.innerHeight - anchor.top + 8),
+        width,
+        maxHeight,
+      });
+    }
+
+    updateModelMenuPosition();
+    window.addEventListener('resize', updateModelMenuPosition);
+    window.addEventListener('scroll', updateModelMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateModelMenuPosition);
+      window.removeEventListener('scroll', updateModelMenuPosition, true);
+    };
+  }, [modelMenuOpen]);
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -344,40 +375,20 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
                 <strong>{selectedModelLabel}</strong>
                 <ChevronDown size={13} aria-hidden="true" />
               </button>
-              {modelMenuOpen ? (
-                <div className="model-selector-menu" role="menu">
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={!currentSession?.llm_profile_id}
-                    className={!currentSession?.llm_profile_id ? 'selected' : ''}
-                    onClick={() => selectModel(null)}
-                    title={defaultModelTitle(agentDefaultProfile, llmProviderStatuses)}
-                  >
-                    <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
-                    <span>Default</span>
-                    {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
-                  </button>
-                  {enabledProfiles.map((profile) => {
-                    const selected = currentSession?.llm_profile_id === profile.id;
-                    return (
-                      <button
-                        key={profile.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={selected}
-                        className={selected ? 'selected' : ''}
-                        onClick={() => selectModel(profile.id)}
-                        title={statusDotTitle(profile, llmProviderStatuses)}
-                      >
-                        <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
-                        <span>{profile.name || profile.alias}</span>
-                        {selected ? <Check size={14} /> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
+              {modelMenuOpen
+                ? createPortal(
+                    <ModelSelectorMenu
+                      ref={modelMenuRef}
+                      style={modelMenuStyle}
+                      currentSession={currentSession}
+                      enabledProfiles={enabledProfiles}
+                      agentDefaultProfile={agentDefaultProfile}
+                      llmProviderStatuses={llmProviderStatuses}
+                      onSelect={selectModel}
+                    />,
+                    document.body,
+                  )
+                : null}
             </div>
             <button
               className={`send-button ${sending ? 'stop' : ''}`}
@@ -439,6 +450,52 @@ function AttachmentPreview({
     </div>
   );
 }
+
+const ModelSelectorMenu = forwardRef<HTMLDivElement, {
+  style: CSSProperties;
+  currentSession?: Session | null;
+  enabledProfiles: LlmProfile[];
+  agentDefaultProfile?: LlmProfile;
+  llmProviderStatuses: Record<string, LlmProviderStatus>;
+  onSelect: (profileId: string | null) => void;
+}>(
+  ({ style, currentSession, enabledProfiles, agentDefaultProfile, llmProviderStatuses, onSelect }, ref) => (
+    <div ref={ref} className="model-selector-menu model-selector-menu-portal" role="menu" style={style}>
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={!currentSession?.llm_profile_id}
+        className={!currentSession?.llm_profile_id ? 'selected' : ''}
+        onClick={() => onSelect(null)}
+        title={defaultModelTitle(agentDefaultProfile, llmProviderStatuses)}
+      >
+        <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
+        <span>Default</span>
+        {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
+      </button>
+      {enabledProfiles.map((profile) => {
+        const selected = currentSession?.llm_profile_id === profile.id;
+        return (
+          <button
+            key={profile.id}
+            type="button"
+            role="menuitemradio"
+            aria-checked={selected}
+            className={selected ? 'selected' : ''}
+            onClick={() => onSelect(profile.id)}
+            title={statusDotTitle(profile, llmProviderStatuses)}
+          >
+            <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
+            <span>{profile.name || profile.alias}</span>
+            {selected ? <Check size={14} /> : null}
+          </button>
+        );
+      })}
+    </div>
+  ),
+);
+
+ModelSelectorMenu.displayName = 'ModelSelectorMenu';
 
 function fileKindLabel(mimeType: string, name: string): string {
   const extension = fileExtension(name).replace('.', '').toUpperCase();

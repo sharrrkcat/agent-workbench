@@ -1629,6 +1629,226 @@ input:disabled {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.kb-search-card,
+.knowledge-debug-block {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.kb-search-card > header,
+.knowledge-debug-block > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.kb-search-card > header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kb-search-card > header strong,
+.knowledge-debug-block > header strong {
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.kb-search-card > header span {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-search-card.error {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.kb-search-card.error p,
+.kb-search-empty {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+}
+
+.kb-search-results {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-search-results li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.kb-search-rank {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(117, 98, 255, 0.18);
+  color: #d8b4fe;
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.kb-search-result-body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.kb-search-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kb-search-result-heading strong,
+.kb-search-result-heading span,
+.kb-search-result-body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-search-result-heading strong {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.kb-search-result-heading span,
+.kb-search-result-body small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+}
+
+.kb-search-result-body p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.kb-search-score-row,
+.knowledge-debug-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.kb-search-score-row span,
+.knowledge-debug-warnings span {
+  min-height: 22px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.knowledge-debug-warnings span {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(120, 53, 15, 0.18);
+  color: #fcd34d;
+}
+
+.kb-search-debug {
+  min-width: 0;
+}
+
+.kb-search-debug summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kb-search-debug summary::-webkit-details-marker {
+  display: none;
+}
+
+.kb-search-debug-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.knowledge-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.knowledge-debug-grid div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.knowledge-debug-grid div.wide {
+  grid-column: 1 / -1;
+}
+
+.knowledge-debug-grid dt,
+.knowledge-debug-grid dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.knowledge-debug-grid dt {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.knowledge-debug-grid dd {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .action-form-card {
   display: grid;
   gap: 12px;
@@ -2917,6 +3137,11 @@ input:disabled {
   border-radius: 13px;
   background: #262626;
   box-shadow: 0 22px 54px rgba(0, 0, 0, 0.38);
+}
+
+.model-selector-menu-portal {
+  z-index: 80;
+  pointer-events: auto;
 }
 
 .model-selector-menu button {

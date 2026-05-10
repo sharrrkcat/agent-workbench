@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpen, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Send, Trash2, X, XCircle } from 'lucide-react';
+import { BookOpen, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, X, XCircle } from 'lucide-react';
 import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, KnowledgeChunk, Message, Run, RunStep } from '../types';
 import { api } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
@@ -55,6 +55,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const snippetRefs = isAgentMessage ? knowledgeSnippetRefs(message.metadata) : [];
   const runSteps = storeRunSteps || messageRunSteps(message);
   const messageRun = storeRun || message.run;
+  const knowledgeDebug = knowledgeDebugFromMetadata(message.metadata, messageRun?.metadata);
   if (!editing && !message.client_status && !hasVisibleRun(messageRun) && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
@@ -112,7 +113,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
               <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
-              <RunStepsPanel run={messageRun} steps={runSteps} />
+              <RunStepsPanel run={messageRun} steps={runSteps} knowledgeDebug={knowledgeDebug} />
             </>
           )}
           {message.client_status === 'pending' ? (
@@ -181,6 +182,49 @@ type KnowledgeSnippetRef = {
 
 type KnowledgeSnippet = KnowledgeSnippetRef & {
   chunk?: KnowledgeChunk;
+};
+
+type KnowledgeDebugSummary = {
+  query?: string;
+  kbLabels: string[];
+  injected?: boolean;
+  resultCount?: number;
+  vectorCandidateCount?: number;
+  keywordCandidateCount?: number;
+  mergedCandidateCount?: number;
+  rerankerUsed?: boolean;
+  rerankerFailed?: boolean;
+  warnings: string[];
+};
+
+type KbSearchResult = {
+  rank?: number;
+  knowledge_base_id?: string;
+  knowledge_base_name?: string;
+  source_id?: string;
+  title?: string;
+  heading_path?: string;
+  content?: string;
+  vector_score?: number | null;
+  keyword_score?: number | null;
+  rrf_score?: number | null;
+  rerank_score?: number | null;
+};
+
+type KbSearchDebug = {
+  embedding_groups?: { embedding_model_profile_id?: string; knowledge_base_ids?: string[]; candidate_count?: number }[];
+  keyword_candidate_count?: number;
+  merged_candidate_count?: number;
+  reranker_used?: boolean;
+  reranker_failed?: boolean;
+  warnings?: string[];
+};
+
+type KbSearchResponse = {
+  query?: string;
+  results: KbSearchResult[];
+  debug?: KbSearchDebug;
+  error?: { code?: string; message?: string };
 };
 
 function KnowledgeSnippetsModal({ refs, onClose }: { refs: KnowledgeSnippetRef[]; onClose: () => void }) {
@@ -329,7 +373,7 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
   );
 }
 
-function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps: RunStep[]; forceExpanded?: boolean }) {
+function RunStepsPanel({ run, steps, knowledgeDebug, forceExpanded = false }: { run?: Run; steps: RunStep[]; knowledgeDebug?: KnowledgeDebugSummary | null; forceExpanded?: boolean }) {
   const cancelActiveRun = useWorkbenchStore((state) => state.cancelActiveRun);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
   const expandedByRunId = useWorkbenchStore((state) => state.runStepsExpandedByRunId);
@@ -348,7 +392,7 @@ function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps
     return () => window.clearInterval(interval);
   }, [hasRunningStep]);
 
-  if (!steps.length && !run) return null;
+  if (!steps.length && !run && !knowledgeDebug) return null;
   const duration = runDurationLabel(run, steps);
   const progressSummary = run?.progress_total && run.progress_current !== undefined && run.progress_current !== null ? `${run.progress_current} / ${run.progress_total}` : '';
   const stepSummary = progressSummary || (steps.length ? `${steps.length} steps` : runStatusLabel(run?.status));
@@ -370,12 +414,55 @@ function RunStepsPanel({ run, steps, forceExpanded = false }: { run?: Run; steps
           </button>
         ) : null}
       </div>
-      {expanded && steps.length ? (
-        <ol className="run-step-list">
-          {stepTree.map((step) => <RunStepTreeItem step={step} key={step.step_id} depth={0} />)}
-        </ol>
+      {expanded ? (
+        <>
+          {knowledgeDebug ? <KnowledgeDebugBlock summary={knowledgeDebug} /> : null}
+          {steps.length ? (
+            <ol className="run-step-list">
+              {stepTree.map((step) => <RunStepTreeItem step={step} key={step.step_id} depth={0} />)}
+            </ol>
+          ) : null}
+        </>
       ) : null}
     </section>
+  );
+}
+
+function KnowledgeDebugBlock({ summary }: { summary: KnowledgeDebugSummary }) {
+  return (
+    <section className="knowledge-debug-block" aria-label="Knowledge debug">
+      <header>
+        <BookOpen size={13} />
+        <strong>Knowledge Debug</strong>
+      </header>
+      <div className="knowledge-debug-grid">
+        {summary.query ? <DebugRow label="Query" value={summary.query} wide /> : null}
+        {summary.kbLabels.length ? <DebugRow label="KBs" value={summary.kbLabels.join(', ')} wide /> : null}
+        <DebugRow label="Injected" value={summary.injected === undefined ? 'unknown' : summary.injected ? 'yes' : 'no'} />
+        <DebugRow label="Results" value={summary.resultCount} />
+        <DebugRow label="Vector" value={summary.vectorCandidateCount} />
+        <DebugRow label="Keyword" value={summary.keywordCandidateCount} />
+        <DebugRow label="Merged" value={summary.mergedCandidateCount} />
+        <DebugRow label="Reranker" value={rerankerLabel(summary)} />
+      </div>
+      {summary.warnings.length ? (
+        <div className="knowledge-debug-warnings">
+          {summary.warnings.map((warning, index) => (
+            <span key={`${warning}-${index}`}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DebugRow({ label, value, wide = false }: { label: string; value: ReactNode; wide?: boolean }) {
+  if (value === undefined || value === null || value === '') return null;
+  return (
+    <div className={wide ? 'wide' : undefined}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
   );
 }
 
@@ -698,10 +785,108 @@ export function MarkdownRenderer({ content }: { content: unknown }) {
 
 export function JsonRenderer({ content }: { content: unknown }) {
   const parsed = normalizeJsonContent(content);
+  const kbSearch = normalizeKbSearchResponse(parsed);
+  if (kbSearch) {
+    return <KbSearchRenderer response={kbSearch} />;
+  }
   if (typeof parsed === 'string') {
     return <pre className="message-content json-content">{parsed}</pre>;
   }
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
+}
+
+function KbSearchRenderer({ response }: { response: KbSearchResponse }) {
+  const [debugOpen, setDebugOpen] = useState(false);
+  const errorMessage = response.error?.message;
+
+  if (errorMessage) {
+    return (
+      <section className="message-content kb-search-card error">
+        <header>
+          <CircleAlert size={15} />
+          <strong>Knowledge search failed</strong>
+        </header>
+        <p>{errorMessage}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="message-content kb-search-card">
+      <header>
+        <Search size={15} />
+        <div>
+          <strong>Knowledge search</strong>
+          {response.query ? <span>{response.query}</span> : null}
+        </div>
+      </header>
+      {!response.results.length ? (
+        <div className="kb-search-empty">No matching knowledge snippets found.</div>
+      ) : (
+        <ol className="kb-search-results">
+          {response.results.map((result, index) => (
+            <li key={`${result.rank || index}:${result.knowledge_base_id || ''}:${result.source_id || ''}`}>
+              <div className="kb-search-rank">{result.rank || index + 1}</div>
+              <div className="kb-search-result-body">
+                <div className="kb-search-result-heading">
+                  <strong>{result.title || result.source_id || 'Untitled source'}</strong>
+                  <span>{result.knowledge_base_name || result.knowledge_base_id || 'Knowledge base'}</span>
+                </div>
+                {result.heading_path ? <small>{result.heading_path}</small> : null}
+                <p>{result.content || ''}</p>
+                <div className="kb-search-score-row">
+                  {scoreLabel('vector', nullableNumber(result.vector_score))}
+                  {scoreLabel('keyword', nullableNumber(result.keyword_score))}
+                  {scoreLabel('rrf', nullableNumber(result.rrf_score))}
+                  {scoreLabel('rerank', nullableNumber(result.rerank_score))}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      {response.debug ? (
+        <details className="kb-search-debug" open={debugOpen} onToggle={(event) => setDebugOpen(event.currentTarget.open)}>
+          <summary>
+            {debugOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            Debug
+          </summary>
+          <KbSearchDebugView debug={response.debug} />
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+function KbSearchDebugView({ debug }: { debug: KbSearchDebug }) {
+  const groups = Array.isArray(debug.embedding_groups) ? debug.embedding_groups : [];
+  const warnings = Array.isArray(debug.warnings) ? debug.warnings.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  return (
+    <div className="kb-search-debug-body">
+      <div className="knowledge-debug-grid">
+        <DebugRow
+          label="Embedding groups"
+          value={
+            groups.length
+              ? groups.map((group) => `${group.embedding_model_profile_id || 'profile'} (${group.candidate_count ?? 0})`).join(', ')
+              : 'none'
+          }
+          wide
+        />
+        <DebugRow label="Keyword candidates" value={debug.keyword_candidate_count} />
+        <DebugRow label="Merged candidates" value={debug.merged_candidate_count} />
+        <DebugRow label="Reranker used" value={debug.reranker_used === undefined ? undefined : debug.reranker_used ? 'yes' : 'no'} />
+        <DebugRow label="Reranker failed" value={debug.reranker_failed === undefined ? undefined : debug.reranker_failed ? 'yes' : 'no'} />
+      </div>
+      {warnings.length ? (
+        <div className="knowledge-debug-warnings">
+          {warnings.map((warning, index) => (
+            <span key={`${warning}-${index}`}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function FileContentRenderer({ payload, variant = 'card', wrapLines }: { payload: FileContentPayload; variant?: 'card' | 'modal'; wrapLines?: boolean }) {
@@ -1270,6 +1455,95 @@ export function normalizeJsonContent(content: unknown): unknown {
   }
 }
 
+function normalizeKbSearchResponse(value: unknown): KbSearchResponse | null {
+  if (!isPlainRecord(value)) return null;
+  const rawResults = value.results;
+  const hasKbSearchShape = Array.isArray(rawResults) && (typeof value.query === 'string' || isPlainRecord(value.debug) || rawResults.some(isPlainRecord));
+  if (!hasKbSearchShape) return null;
+  const results = rawResults
+    .filter(isPlainRecord)
+    .map((item): KbSearchResult => ({
+      rank: numberValue(item.rank),
+      knowledge_base_id: textValue(item.knowledge_base_id),
+      knowledge_base_name: textValue(item.knowledge_base_name),
+      source_id: textValue(item.source_id),
+      title: textValue(item.title),
+      heading_path: textValue(item.heading_path),
+      content: textValue(item.content) || '',
+      vector_score: nullableNumber(item.vector_score),
+      keyword_score: nullableNumber(item.keyword_score),
+      rrf_score: nullableNumber(item.rrf_score),
+      rerank_score: nullableNumber(item.rerank_score),
+    }));
+  const debug = isPlainRecord(value.debug) ? value.debug : undefined;
+  return {
+    query: textValue(value.query),
+    results,
+    debug: debug
+      ? {
+          embedding_groups: Array.isArray(debug.embedding_groups) ? debug.embedding_groups.filter(isPlainRecord).map((group) => ({
+            embedding_model_profile_id: textValue(group.embedding_model_profile_id),
+            knowledge_base_ids: Array.isArray(group.knowledge_base_ids) ? group.knowledge_base_ids.map(String) : [],
+            candidate_count: numberValue(group.candidate_count),
+          })) : [],
+          keyword_candidate_count: numberValue(debug.keyword_candidate_count),
+          merged_candidate_count: numberValue(debug.merged_candidate_count),
+          reranker_used: booleanValue(debug.reranker_used),
+          reranker_failed: booleanValue(debug.reranker_failed),
+          warnings: Array.isArray(debug.warnings) ? debug.warnings.map(String) : [],
+        }
+      : undefined,
+    error: isPlainRecord(value.error)
+      ? {
+          code: textValue(value.error.code),
+          message: textValue(value.error.message),
+        }
+      : undefined,
+  };
+}
+
+function knowledgeDebugFromMetadata(messageMetadata: Record<string, unknown> | undefined, runMetadata: Record<string, unknown> | undefined): KnowledgeDebugSummary | null {
+  const context = firstPlainRecord([messageMetadata?.knowledge_context, runMetadata?.knowledge_context]);
+  if (!context) return null;
+  const warnings = Array.isArray(context.warnings) ? context.warnings.map(String).filter(Boolean) : [];
+  const kbLabels = [
+    ...(Array.isArray(context.knowledge_base_names) ? context.knowledge_base_names.map(String) : []),
+    ...(Array.isArray(context.knowledge_bases) ? context.knowledge_bases.map(kbLabel).filter((item): item is string => Boolean(item)) : []),
+  ];
+  if (!kbLabels.length && Array.isArray(context.knowledge_base_ids)) {
+    kbLabels.push(...context.knowledge_base_ids.map(String));
+  }
+  return {
+    query: textValue(context.query),
+    kbLabels: Array.from(new Set(kbLabels.filter(Boolean))),
+    injected: booleanValue(context.injected),
+    resultCount: numberValue(context.result_count),
+    vectorCandidateCount: numberValue(context.vector_candidate_count),
+    keywordCandidateCount: numberValue(context.keyword_candidate_count),
+    mergedCandidateCount: numberValue(context.merged_candidate_count),
+    rerankerUsed: booleanValue(context.reranker_used),
+    rerankerFailed: booleanValue(context.reranker_failed),
+    warnings,
+  };
+}
+
+function kbLabel(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (!isPlainRecord(value)) return undefined;
+  return textValue(value.name) || textValue(value.id);
+}
+
+function firstPlainRecord(values: unknown[]): Record<string, unknown> | undefined {
+  return values.find(isPlainRecord);
+}
+
+function rerankerLabel(summary: KnowledgeDebugSummary): string {
+  if (summary.rerankerFailed) return 'failed';
+  if (summary.rerankerUsed) return 'used';
+  if (summary.rerankerUsed === false) return 'not used';
+  return 'unknown';
+}
+
 function normalizeError(message: Message): { code?: string; message?: string } {
   if (message.client_error) {
     return message.client_error;
@@ -1396,6 +1670,14 @@ function formatMetrics(value: unknown, interrupted: boolean): string {
 function numberValue(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   return undefined;
+}
+
+function nullableNumber(value: unknown): number | undefined {
+  return numberValue(value);
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function textValue(value: unknown): string | undefined {

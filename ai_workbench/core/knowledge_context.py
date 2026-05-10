@@ -45,6 +45,7 @@ def build_session_knowledge_context(
         "effective_mode": effective_mode,
         "source": source,
         "knowledge_base_ids": active_kb_ids,
+        "knowledge_base_names": [kb["name"] for kb in active_kbs if kb.get("name")],
         "query": _short_query(query_text),
     }
     try:
@@ -70,9 +71,10 @@ def build_session_knowledge_context(
 
     results = list(response.get("results") or []) if isinstance(response, dict) else []
     warnings = _debug_warnings(response)
+    debug_metadata = _debug_metadata(response)
     if not results:
         return KnowledgeContextResult(
-            metadata={**metadata_base, "result_count": 0, "injected": False, "reason": "no_results", "warnings": warnings},
+            metadata={**metadata_base, **debug_metadata, "result_count": 0, "injected": False, "reason": "no_results", "warnings": warnings},
             warnings=warnings,
         )
 
@@ -89,6 +91,7 @@ def build_session_knowledge_context(
         snippets=snippets,
         metadata={
             **metadata_base,
+            **debug_metadata,
             "result_count": len(snippets),
             "injected": bool(rendered_text),
             "snippet_refs": [_snippet_ref(snippet) for snippet in snippets] if rendered_text else [],
@@ -184,6 +187,31 @@ def _debug_warnings(response: dict[str, Any]) -> list[str]:
         return []
     warnings = debug.get("warnings")
     return [str(item) for item in warnings] if isinstance(warnings, list) else []
+
+
+def _debug_metadata(response: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {}
+    debug = response.get("debug")
+    if not isinstance(debug, dict):
+        return {}
+    metadata: dict[str, Any] = {}
+    embedding_groups = debug.get("embedding_groups")
+    if isinstance(embedding_groups, list):
+        vector_count = 0
+        for group in embedding_groups:
+            if isinstance(group, dict) and isinstance(group.get("candidate_count"), int):
+                vector_count += group["candidate_count"]
+        metadata["vector_candidate_count"] = vector_count
+    for key in ("keyword_candidate_count", "merged_candidate_count"):
+        value = debug.get(key)
+        if isinstance(value, int):
+            metadata[key] = value
+    for key in ("reranker_used", "reranker_failed"):
+        value = debug.get(key)
+        if isinstance(value, bool):
+            metadata[key] = value
+    return metadata
 
 
 def _skipped(reason: str, *, effective_mode: str, source: str, query: str) -> KnowledgeContextResult:
