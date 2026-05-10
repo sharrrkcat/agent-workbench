@@ -203,6 +203,7 @@ def test_pet_command_select_missing_pet_returns_error(tmp_path: Path) -> None:
 def test_pet_settings_include_bubble_offsets_by_default(tmp_path: Path) -> None:
     settings = CapabilityRuntime(root=tmp_path).get_settings(context=_pet_command_context(tmp_path))["settings"]
 
+    assert settings["pet_scale"] == 0.5
     assert settings["bubble_offset_x"] == 12
     assert settings["bubble_offset_y"] == -12
 

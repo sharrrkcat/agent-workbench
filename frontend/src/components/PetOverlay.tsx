@@ -14,6 +14,8 @@ type DragState = {
 };
 
 type PetPosition = { x: number; y: number };
+type PetCommandFeedback = 'tuck' | null;
+type ComposerWaitPhase = 'waiting' | 'idle';
 
 const BASE_WIDTH = 192;
 const BASE_HEIGHT = 208;
@@ -21,6 +23,7 @@ const DEFAULT_MARGIN_RIGHT = 28;
 const DEFAULT_MARGIN_BOTTOM = 92;
 const TERMINAL_HOLD_MS = 4200;
 const PET_REFRESH_MS = 6000;
+const DEFAULT_PET_SCALE = 0.5;
 
 const PET_RUN_STEP_TASK_LABELS: Record<string, string> = {
   'Resolving agent': '\u51c6\u5907\u4ee3\u7406',
@@ -55,7 +58,7 @@ const DEFAULT_BUBBLE_TEXTS: PetBubbleTexts = {
 const DEFAULT_SETTINGS: PetSettings = {
   pet_enabled: true,
   default_pet_id: '',
-  pet_scale: 1,
+  pet_scale: DEFAULT_PET_SCALE,
   show_status_bubble: true,
   bubble_offset_x: 12,
   bubble_offset_y: -12,
@@ -66,18 +69,25 @@ const DEFAULT_SETTINGS: PetSettings = {
 };
 
 export function PetOverlay() {
-  const { currentSession, runs, stepsByRunId } = useWorkbenchStore();
+  const { currentSession, runs, stepsByRunId, messages, composerDraftText } = useWorkbenchStore();
   const [settings, setSettings] = useState<PetSettings | null>(null);
   const [pets, setPets] = useState<PetItem[]>([]);
   const [localPosition, setLocalPosition] = useState<PetPosition | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dragDirection, setDragDirection] = useState<'left' | 'right'>('right');
   const [jumping, setJumping] = useState(false);
+  const [hoverActive, setHoverActive] = useState(false);
+  const [runningTask, setRunningTask] = useState<{ key: string; label: string } | null>(null);
+  const [commandFeedback, setCommandFeedback] = useState<PetCommandFeedback>(null);
+  const [composerWaitPhase, setComposerWaitPhase] = useState<ComposerWaitPhase>('waiting');
   const [terminalRun, setTerminalRun] = useState<Run | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const lastHeldTerminalRunIdRef = useRef<string | null>(null);
   const pendingSavedPositionRef = useRef<PetPosition | null>(null);
   const appliedSettingsPositionKeyRef = useRef('');
+  const lastTaskKeyRef = useRef('');
+  const previousPetEnabledRef = useRef<boolean | null>(null);
+  const lastTuckMessageIdRef = useRef('');
 
   const validPets = useMemo(() => pets.filter((pet) => pet.valid && pet.spritesheet_url), [pets]);
   const selectedPet = useMemo(() => {
@@ -85,21 +95,28 @@ export function PetOverlay() {
     return validPets.find((pet) => pet.id === settings.default_pet_id) || validPets[0];
   }, [settings, validPets]);
 
-  const scale = clampNumber(settings?.pet_scale || 1, 0.5, 2);
+  const scale = clampNumber(settings?.pet_scale || DEFAULT_PET_SCALE, 0.5, 2);
   const petWidth = BASE_WIDTH * scale;
   const petHeight = BASE_HEIGHT * scale;
   const activeRun = useMemo(() => pickActiveRun(runs, currentSession?.session_id), [runs, currentSession?.session_id]);
-  const baseRun = activeRun || terminalRun;
-  const baseState = useMemo(() => mapRunToPetState(baseRun), [baseRun]);
+  const runningStep = useMemo(() => (activeRun ? pickRunningStep(stepsByRunId[activeRun.run_id] || activeRun.steps || []) : null), [activeRun, stepsByRunId]);
+  const runningTaskLabelValue = useMemo(() => (activeRun ? runningTaskLabel(activeRun, runningStep) : ''), [activeRun, runningStep]);
+  const taskKey = useMemo(() => buildTaskKey(activeRun, runningStep), [activeRun, runningStep]);
+  const hasComposerText = composerDraftText.trim().length > 0;
+  const terminalState = useMemo(() => mapTerminalRunToPetState(terminalRun), [terminalRun]);
+  const baseState: PetSpriteState = hasComposerText ? composerWaitPhase : terminalState;
   const animationState: PetSpriteState = drag
     ? dragDirection === 'left'
       ? 'running-left'
       : 'running-right'
-    : jumping
+    : commandFeedback === 'tuck'
+      ? 'waving'
+      : jumping
       ? 'jumping'
+      : runningTask
+        ? 'running'
       : baseState;
-  const runningStep = useMemo(() => (activeRun ? pickRunningStep(stepsByRunId[activeRun.run_id] || activeRun.steps || []) : null), [activeRun, stepsByRunId]);
-  const bubbleText = settings ? buildBubbleText(settings, activeRun, terminalRun, runningStep) : '';
+  const bubbleText = settings ? buildBubbleText(settings, terminalRun, runningTask, commandFeedback) : '';
   const spriteUrl = selectedPet?.spritesheet_url ? joinApiUrl(API_BASE_URL, selectedPet.spritesheet_url) : '';
 
   const refreshPetState = useCallback(async (cancelled: () => boolean = () => false) => {
@@ -107,6 +124,11 @@ export function PetOverlay() {
       const [settingsResponse, petsResponse] = await Promise.all([api.getPetSettings(), api.listPets()]);
       if (cancelled()) return;
       const nextSettings = normalizeSettings(settingsResponse.settings);
+      const previousEnabled = previousPetEnabledRef.current;
+      if (previousEnabled === true && !nextSettings.pet_enabled) {
+        setCommandFeedback('tuck');
+      }
+      previousPetEnabledRef.current = nextSettings.pet_enabled;
       setSettings(nextSettings);
       setPets(petsResponse.pets);
       setLocalPosition((current) => current || resolveInitialPosition(nextSettings, BASE_WIDTH * nextSettings.pet_scale, BASE_HEIGHT * nextSettings.pet_scale));
@@ -175,6 +197,30 @@ export function PetOverlay() {
   }, [activeRun, terminalRun]);
 
   useEffect(() => {
+    if (!taskKey || !activeRun || !['PENDING', 'RUNNING', 'CANCELLING'].includes(activeRun.status)) return;
+    if (lastTaskKeyRef.current === taskKey) return;
+    lastTaskKeyRef.current = taskKey;
+    setRunningTask({ key: taskKey, label: runningTaskLabelValue });
+  }, [activeRun, runningTaskLabelValue, taskKey]);
+
+  useEffect(() => {
+    if (hasComposerText) return;
+    setComposerWaitPhase('waiting');
+  }, [hasComposerText]);
+
+  useEffect(() => {
+    const latestTuckMessage = [...messages].reverse().find((message) => {
+      if (message.metadata?.command !== '/pet') return false;
+      if (!isRecord(message.content) || message.content.action !== 'tuck') return false;
+      return true;
+    });
+    if (!latestTuckMessage || latestTuckMessage.message_id === lastTuckMessageIdRef.current) return;
+    lastTuckMessageIdRef.current = latestTuckMessage.message_id;
+    setCommandFeedback('tuck');
+    void refreshPetState();
+  }, [messages, refreshPetState]);
+
+  useEffect(() => {
     if (!drag) return;
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerId !== drag.pointerId) return;
@@ -230,19 +276,64 @@ export function PetOverlay() {
 
   const startJump = useCallback(() => {
     if (!settings?.jump_on_hover || drag) return;
+    setHoverActive(true);
     setJumping(true);
   }, [drag, settings?.jump_on_hover]);
 
+  const stopJump = useCallback(() => {
+    if (drag) return;
+    setHoverActive(false);
+    setJumping(false);
+  }, [drag]);
+
   const handlePlaybackComplete = useCallback((state: PetSpriteState) => {
-    if (state === 'jumping') {
+    if (state === 'jumping' && !hoverActive) {
       setJumping(false);
     }
-  }, []);
+    if (state === 'jumping' && hoverActive) {
+      setJumping(false);
+    }
+    if (state === 'running') {
+      setRunningTask(null);
+    }
+    if (state === 'waving' && commandFeedback === 'tuck') {
+      setCommandFeedback(null);
+    }
+    if ((state === 'waiting' || state === 'idle') && hasComposerText && !runningTask && !jumping && !drag && !commandFeedback) {
+      setComposerWaitPhase((phase) => (phase === 'waiting' ? 'idle' : 'waiting'));
+    }
+  }, [commandFeedback, drag, hasComposerText, hoverActive, jumping, runningTask]);
+
+  const repeatCount = useMemo(() => {
+    if (animationState === 'jumping') return 3;
+    if (animationState === 'running' && runningTask) return 2;
+    if ((animationState === 'waiting' || animationState === 'idle') && hasComposerText) return 1;
+    if (animationState === 'waving' && commandFeedback === 'tuck') return 1;
+    return undefined;
+  }, [animationState, commandFeedback, hasComposerText, runningTask]);
+
+  const shouldRender = Boolean(
+    selectedPet
+    && spriteUrl
+    && localPosition
+    && (settings?.pet_enabled || commandFeedback === 'tuck'),
+  );
+
+  const showBubble = settings?.show_status_bubble && bubbleText && !drag;
+
+  const onPointerLeave = useCallback(() => {
+    stopJump();
+  }, [stopJump]);
+
+  const onPointerEnter = useCallback(() => {
+    startJump();
+  }, [startJump]);
 
   function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !localPosition) return;
     event.preventDefault();
     overlayRef.current?.setPointerCapture(event.pointerId);
+    setHoverActive(false);
     setJumping(false);
     setDrag({
       pointerId: event.pointerId,
@@ -254,36 +345,45 @@ export function PetOverlay() {
     });
   }
 
-  if (!settings?.pet_enabled || !selectedPet || !spriteUrl || !localPosition) return null;
+  if (!shouldRender) return null;
+
+  const renderPosition = localPosition;
+  const renderPet = selectedPet;
+  if (!renderPosition || !renderPet) return null;
 
   return (
     <div
       ref={overlayRef}
       className={`pet-overlay ${drag ? 'dragging' : ''}`}
       style={{
-        left: `${localPosition.x}px`,
-        top: `${localPosition.y}px`,
+        left: `${renderPosition.x}px`,
+        top: `${renderPosition.y}px`,
         width: `${petWidth}px`,
         height: `${petHeight}px`,
-        '--pet-bubble-offset-x': `${settings.bubble_offset_x ?? 12}px`,
-        '--pet-bubble-offset-y': `${settings.bubble_offset_y ?? -12}px`,
+        '--pet-bubble-offset-x': `${settings?.bubble_offset_x ?? 12}px`,
+        '--pet-bubble-offset-y': `${settings?.bubble_offset_y ?? -12}px`,
       } as CSSProperties}
       onPointerDown={startDrag}
-      onPointerEnter={startJump}
-      aria-label={selectedPet.display_name || selectedPet.id}
-      title={selectedPet.display_name || selectedPet.id}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      aria-label={renderPet.display_name || renderPet.id}
+      title={renderPet.display_name || renderPet.id}
     >
-      {settings.show_status_bubble && bubbleText && !drag ? <div className="pet-status-bubble">{bubbleText}</div> : null}
+      {showBubble ? <div className="pet-status-bubble">{bubbleText}</div> : null}
       <PetSprite
         spritesheetUrl={spriteUrl}
         state={animationState}
         scale={scale}
         className="pet-sprite"
-        repeatCount={animationState === 'jumping' ? 3 : 1}
+        repeatCount={repeatCount}
         onPlaybackComplete={handlePlaybackComplete}
       />
     </div>
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetSettings {
@@ -292,7 +392,7 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
     ...settings,
     pet_enabled: Boolean(settings.pet_enabled),
     default_pet_id: typeof settings.default_pet_id === 'string' ? settings.default_pet_id : '',
-    pet_scale: clampNumber(Number(settings.pet_scale) || 1, 0.5, 2),
+    pet_scale: clampNumber(Number(settings.pet_scale) || DEFAULT_PET_SCALE, 0.5, 2),
     show_status_bubble: Boolean(settings.show_status_bubble),
     bubble_offset_x: clampNumber(Number(settings.bubble_offset_x ?? 12), -240, 240),
     bubble_offset_y: clampNumber(Number(settings.bubble_offset_y ?? -12), -240, 240),
@@ -376,13 +476,30 @@ function runTimestamp(run: Run): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function mapRunToPetState(run: Run | null): PetSpriteState {
+function mapTerminalRunToPetState(run: Run | null): PetSpriteState {
   if (!run) return 'idle';
-  if (run.status === 'WAITING_FOR_USER') return 'waiting';
-  if (['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)) return 'running';
   if (run.status === 'DONE') return 'review';
   if (['FAILED', 'CANCELLED', 'INTERRUPTED'].includes(run.status)) return 'failed';
   return 'idle';
+}
+
+function buildTaskKey(run: Run | null, step: RunStep | null): string {
+  if (!run || !['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)) return '';
+  if (step) {
+    return [
+      run.run_id,
+      step.step_id,
+      step.updated_at || step.status || '',
+      step.message || '',
+      step.label || '',
+    ].join(':');
+  }
+  return [
+    run.run_id,
+    run.status || '',
+    run.current_step || run.stage || '',
+    run.progress_message || '',
+  ].join(':');
 }
 
 function pickRunningStep(steps: RunStep[]): RunStep | null {
@@ -391,13 +508,17 @@ function pickRunningStep(steps: RunStep[]): RunStep | null {
     .sort((a, b) => (b.order ?? 0) - (a.order ?? 0) || Date.parse(b.updated_at || b.created_at || '') - Date.parse(a.updated_at || a.created_at || ''))[0] || null;
 }
 
-function buildBubbleText(settings: PetSettings, activeRun: Run | null, terminalRun: Run | null, runningStep: RunStep | null): string {
-  if (activeRun && ['PENDING', 'RUNNING', 'CANCELLING'].includes(activeRun.status)) {
-    const task = runningTaskLabel(activeRun, runningStep);
-    return `${settings.running_prefix || DEFAULT_SETTINGS.running_prefix}${task}`;
+function buildBubbleText(
+  settings: PetSettings,
+  terminalRun: Run | null,
+  runningTask: { key: string; label: string } | null,
+  commandFeedback: PetCommandFeedback,
+): string {
+  if (commandFeedback === 'tuck') return settings.bubble_texts.tuck || '';
+  if (runningTask) {
+    return `${settings.running_prefix || DEFAULT_SETTINGS.running_prefix}${runningTask.label}`;
   }
   const texts = settings.bubble_texts;
-  if (activeRun?.status === 'WAITING_FOR_USER') return texts.waiting || '';
   if (!terminalRun) return texts.idle || '';
   if (terminalRun.status === 'DONE') return texts.done || '';
   if (terminalRun.status === 'FAILED') return texts.failed || '';

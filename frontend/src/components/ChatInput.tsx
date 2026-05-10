@@ -19,7 +19,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError } = useWorkbenchStore();
+  const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError, setComposerDraftText } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
 
   const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
@@ -54,6 +54,11 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   useEffect(() => {
     setSuggestionsDismissed(false);
   }, [cursorPosition, value]);
+
+  useEffect(() => {
+    setComposerDraftText(value);
+    return () => setComposerDraftText('');
+  }, [setComposerDraftText, value]);
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {

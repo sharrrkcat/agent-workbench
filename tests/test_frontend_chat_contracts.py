@@ -23,7 +23,7 @@ def test_pet_sprite_uses_codex_animation_durations() -> None:
     assert "CODEX_PET_ATLAS" in source
     assert "columns: 8" in source
     assert "rows: 9" in source
-    assert "durations: [280, 110, 110, 140, 140, 320]" in source
+    assert "durations: [560, 220, 220, 280, 280, 640]" in source
     assert "durations: [120, 120, 120, 120, 120, 120, 120, 220]" in source
     assert "durations: [140, 140, 140, 280]" in source
     assert "durations: [140, 140, 140, 140, 280]" in source
@@ -42,13 +42,31 @@ def test_pet_sprite_uses_codex_animation_durations() -> None:
 def test_pet_overlay_repeats_jump_and_keeps_drag_position_local() -> None:
     source = read_frontend("components/PetOverlay.tsx")
 
-    assert "repeatCount={animationState === 'jumping' ? 3 : 1}" in source
+    assert "DEFAULT_PET_SCALE = 0.5" in source
+    assert "pet_scale: DEFAULT_PET_SCALE" in source
     assert "onPlaybackComplete={handlePlaybackComplete}" in source
+    assert "setHoverActive(false)" in source
     assert "const [localPosition, setLocalPosition]" in source
     assert "pendingSavedPositionRef" in source
     assert "positionsMatch(settings.position, pendingPosition)" in source
     assert "setLocalPosition(finalPosition)" in source
     assert "api.updatePetSettings({ position: { mode: 'custom', ...savedPosition } })" in source
+    assert "repeatCount === undefined" in read_frontend("components/PetSprite.tsx")
+    assert "if (animationState === 'jumping') return 3" in source
+    assert "if (animationState === 'running' && runningTask) return 2" in source
+    assert "commandFeedback === 'tuck'" in source
+    assert "setComposerWaitPhase((phase) => (phase === 'waiting' ? 'idle' : 'waiting'))" in source
+
+
+def test_composer_draft_text_drives_pet_waiting_state() -> None:
+    input_source = read_frontend("components/ChatInput.tsx")
+    store_source = read_frontend("store/useWorkbenchStore.ts")
+    overlay_source = read_frontend("components/PetOverlay.tsx")
+
+    assert "composerDraftText: string" in store_source
+    assert "setComposerDraftText: (text: string) => void" in store_source
+    assert "setComposerDraftText(value)" in input_source
+    assert "composerDraftText.trim().length > 0" in overlay_source
 
 
 def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:

@@ -53,6 +53,7 @@ type WorkbenchState = {
   loading: boolean;
   creatingSession: boolean;
   sending: boolean;
+  composerDraftText: string;
   activeRunId?: string;
   savingConfigId?: string;
   testingLlm: boolean;
@@ -88,6 +89,7 @@ type WorkbenchState = {
   updateGeneralSettings: (patch: Partial<GeneralSettings>) => Promise<void>;
   loadRunEvents: (runId: string) => Promise<void>;
   setRunStepsExpanded: (runId: string, expanded: boolean) => void;
+  setComposerDraftText: (text: string) => void;
   applyRuntimeEvent: (event: RuntimeEvent) => void;
   sendMessage: (content: string, attachments?: SendMessageAttachment[]) => Promise<boolean>;
   cancelActiveRun: () => Promise<void>;
@@ -121,6 +123,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   loading: false,
   creatingSession: false,
   sending: false,
+  composerDraftText: '',
   testingLlm: false,
 
   setError: (error, fallback) => set(formatError(error, fallback)),
@@ -510,6 +513,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!runId) return;
     set({ runStepsExpandedByRunId: { ...get().runStepsExpandedByRunId, [runId]: expanded } });
   },
+
+  setComposerDraftText: (text) => set({ composerDraftText: text }),
 
   sendMessage: async (content: string, attachments: SendMessageAttachment[] = []) => {
     const session = get().currentSession;

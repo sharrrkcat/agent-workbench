@@ -48,7 +48,7 @@ const DEFAULT_BUBBLE_TEXTS: PetBubbleTexts = {
 const DEFAULT_SETTINGS: PetSettings = {
   pet_enabled: true,
   default_pet_id: '',
-  pet_scale: 1,
+  pet_scale: 0.5,
   show_status_bubble: true,
   bubble_offset_x: 12,
   bubble_offset_y: -12,
@@ -516,7 +516,7 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
     ...settings,
     pet_enabled: Boolean(settings.pet_enabled),
     default_pet_id: typeof settings.default_pet_id === 'string' ? settings.default_pet_id : '',
-    pet_scale: typeof settings.pet_scale === 'number' ? settings.pet_scale : Number(settings.pet_scale) || 1,
+    pet_scale: typeof settings.pet_scale === 'number' ? settings.pet_scale : Number(settings.pet_scale) || 0.5,
     show_status_bubble: Boolean(settings.show_status_bubble),
     bubble_offset_x: clampNumber(Number(settings.bubble_offset_x ?? 12), -240, 240),
     bubble_offset_y: clampNumber(Number(settings.bubble_offset_y ?? -12), -240, 240),

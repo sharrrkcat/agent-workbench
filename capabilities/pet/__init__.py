@@ -17,7 +17,7 @@ MAX_SPRITESHEET_BYTES = 10 * 1024 * 1024
 DEFAULT_SETTINGS = {
     "pet_enabled": True,
     "default_pet_id": "",
-    "pet_scale": 1.0,
+    "pet_scale": 0.5,
     "show_status_bubble": True,
     "bubble_offset_x": 12,
     "bubble_offset_y": -12,

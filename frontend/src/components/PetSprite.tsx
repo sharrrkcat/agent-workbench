@@ -39,7 +39,7 @@ export const CODEX_PET_ATLAS = {
 export const CODEX_PET_ANIMATIONS: Record<PetAnimationState, PetAnimationSpec> = {
   idle: {
     row: 0,
-    durations: [280, 110, 110, 140, 140, 320],
+    durations: [560, 220, 220, 280, 280, 640],
     loop: true,
   },
   'running-right': {
@@ -89,7 +89,7 @@ export function PetSprite({
   state,
   scale = 1,
   className = '',
-  repeatCount = 1,
+  repeatCount,
   onAnimationLoopComplete,
   onPlaybackComplete,
 }: PetSpriteProps) {
@@ -105,7 +105,11 @@ export function PetSprite({
 
     let cancelled = false;
     let timeoutId: number | undefined;
-    const maxRepeats = Math.max(1, Math.floor(repeatCount));
+    const maxRepeats = repeatCount === undefined
+      ? currentSpec.loop
+        ? Number.POSITIVE_INFINITY
+        : 1
+      : Math.max(1, Math.floor(repeatCount));
 
     const tick = (currentFrame: number, completedLoops: number) => {
       const lastFrame = Math.max(0, currentSpec.durations.length - 1);
@@ -117,17 +121,12 @@ export function PetSprite({
         if (isLast) {
           const nextCompletedLoops = completedLoops + 1;
           onAnimationLoopComplete?.(state, nextCompletedLoops);
-          if (currentSpec.loop) {
+          if (nextCompletedLoops < maxRepeats) {
             setFrame(0);
             tick(0, nextCompletedLoops);
             return;
           }
-          if (nextCompletedLoops >= maxRepeats) {
-            onPlaybackComplete?.(state);
-            return;
-          }
-          setFrame(0);
-          tick(0, nextCompletedLoops);
+          onPlaybackComplete?.(state);
           return;
         }
 

@@ -16,7 +16,7 @@ config_schema:
   - name: pet_scale
     type: float
     label: Scale
-    default: 1.0
+    default: 0.5
     minimum: 0.5
     maximum: 2.0
 
