@@ -98,7 +98,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <SessionSidebar />
+      <SessionSidebar onOpenSettings={() => navigate('/settings')} />
       <main className="workspace">
         <ChatHeader onOpenSettings={() => navigate('/settings')} />
         <ErrorBanner />

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquarePlus, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { MessageSquarePlus, Pencil, Settings, Sparkles, Trash2 } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Session } from '../types';
 
-export function SessionSidebar() {
+export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { sessions, currentSession, createSession, creatingSession, selectSession, deleteSession, renameSession } = useWorkbenchStore();
 
   function confirmDelete(sessionId: string) {
@@ -23,6 +23,9 @@ export function SessionSidebar() {
           <strong>Agent Workbench</strong>
           <span>Local AI console</span>
         </div>
+        <button className="sidebar-settings-button" type="button" title="Open settings" aria-label="Open settings" onClick={onOpenSettings}>
+          <Settings size={16} />
+        </button>
       </div>
       <button className="new-chat-button" onClick={() => void createSession()} type="button" disabled={creatingSession}>
         <MessageSquarePlus size={17} />
