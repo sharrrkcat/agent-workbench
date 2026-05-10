@@ -2,6 +2,7 @@ import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Tra
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource } from '../../types';
+import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
@@ -82,6 +83,12 @@ export function KnowledgeSettingsDetail({
     onDirtyChange(category === 'defaults' ? dirty : false);
   }, [category, dirty, onDirtyChange]);
 
+  useEffect(() => {
+    setBusy('');
+    setResult('');
+    setLocalError(null);
+  }, [category, selectedItemId]);
+
   async function runScan() {
     setBusy('scan');
     try {
@@ -120,13 +127,8 @@ export function KnowledgeSettingsDetail({
       <EmbeddingModelsEditor
         profiles={embeddingProfiles}
         mode={selectedItemId}
-        busy={busy}
-        result={result}
-        error={localError}
         onRefresh={refreshObjects}
-        setBusy={setBusy}
-        setResult={setResult}
-        setLocalError={setLocalError}
+        onDirtyChange={onDirtyChange}
       />
     );
   }
@@ -137,13 +139,8 @@ export function KnowledgeSettingsDetail({
         knowledgeBases={knowledgeBases}
         profiles={embeddingProfiles}
         mode={selectedItemId}
-        busy={busy}
-        result={result}
-        error={localError}
         onRefresh={refreshObjects}
-        setBusy={setBusy}
-        setResult={setResult}
-        setLocalError={setLocalError}
+        onDirtyChange={onDirtyChange}
       />
     );
   }
@@ -245,53 +242,58 @@ export function KnowledgeSettingsDetail({
   );
 }
 
-function EmbeddingModelsEditor({ profiles, mode, busy, result, error, onRefresh, setBusy, setResult, setLocalError }: {
+function EmbeddingModelsEditor({ profiles, mode, onRefresh, onDirtyChange }: {
   profiles: EmbeddingModelProfile[];
   mode: FormMode;
-  busy: string;
-  result: string;
-  error: SettingsErrorValue | null;
   onRefresh: (selectedItemId?: string) => Promise<void>;
-  setBusy: (value: string) => void;
-  setResult: (value: string) => void;
-  setLocalError: (value: SettingsErrorValue | null) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const selected = profiles.find((profile) => profile.id === mode);
   const initial = mode === 'new' ? defaultEmbeddingProfile : selected;
   if (!initial) {
     return <Empty title="No embedding model selected" message={profiles.length ? 'Select an embedding model profile from the list.' : 'No embedding model profiles yet.'} />;
   }
-  return <EmbeddingProfileForm initial={initial} isNew={mode === 'new'} busy={busy} result={result} error={error} onRefresh={onRefresh} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} />;
+  return <EmbeddingProfileForm initial={initial} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
 
-function EmbeddingProfileForm({ initial, isNew, busy, result, error, onRefresh, setBusy, setResult, setLocalError }: {
+function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
   initial: Partial<EmbeddingModelProfile>;
   isNew: boolean;
-  busy: string;
-  result: string;
-  error: SettingsErrorValue | null;
   onRefresh: (selectedItemId?: string) => Promise<void>;
-  setBusy: (value: string) => void;
-  setResult: (value: string) => void;
-  setLocalError: (value: SettingsErrorValue | null) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [values, setValues] = useState<Partial<EmbeddingModelProfile>>(initial);
+  const [busy, setBusy] = useState('');
+  const [result, setResult] = useState('');
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const scopeId = isNew ? 'new' : initial.id || '';
+  const dirty = stableConfigString(buildEmbeddingModelPayload(values)) !== stableConfigString(buildEmbeddingModelPayload(initial));
 
   useEffect(() => {
     setValues(initial);
   }, [initial]);
 
+  useEffect(() => {
+    setBusy('');
+    setResult('');
+    setError(null);
+  }, [scopeId]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy('saving');
     try {
-      setLocalError(null);
+      setError(null);
       const payload = buildEmbeddingModelPayload(values);
       const saved = isNew ? await api.createEmbeddingModel(payload) : await api.patchEmbeddingModel(values.id || '', payload);
       await onRefresh(saved.id);
       setResult('Embedding model saved.');
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to save embedding model.'));
+      setError(toSettingsError(error, 'Failed to save embedding model.'));
     } finally {
       setBusy('');
     }
@@ -300,12 +302,12 @@ function EmbeddingProfileForm({ initial, isNew, busy, result, error, onRefresh, 
     if (!values.id) return;
     setBusy('deleting');
     try {
-      setLocalError(null);
+      setError(null);
       await api.deleteEmbeddingModel(values.id);
       await onRefresh();
       setResult('Embedding model deleted.');
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to delete embedding model.'));
+      setError(toSettingsError(error, 'Failed to delete embedding model.'));
     } finally {
       setBusy('');
     }
@@ -314,11 +316,11 @@ function EmbeddingProfileForm({ initial, isNew, busy, result, error, onRefresh, 
     if (!values.id) return;
     setBusy('testing');
     try {
-      setLocalError(null);
+      setError(null);
       const response = await api.testEmbeddingModel(values.id, 'hello world', 'query');
       setResult(`Embedding dimension ${response.dimension}.`);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Embedding backend unavailable.'));
+      setError(toSettingsError(error, 'Embedding backend unavailable.'));
     } finally {
       setBusy('');
     }
@@ -338,10 +340,12 @@ function EmbeddingProfileForm({ initial, isNew, busy, result, error, onRefresh, 
         </div>
         <div className="settings-detail-actions">
           {result ? <span className="settings-badge success">{result}</span> : null}
-          <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
-            <Save size={14} />
-            {busy === 'saving' ? 'Saving...' : 'Save'}
-          </button>
+          {dirty ? (
+            <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
+              <Save size={14} />
+              {busy === 'saving' ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
           {!isNew ? <button className="settings-secondary-button" type="button" onClick={test} disabled={Boolean(busy)}><Play size={14} />{busy === 'testing' ? 'Testing...' : 'Test'}</button> : null}
           {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button> : null}
           <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
@@ -370,40 +374,34 @@ function EmbeddingProfileForm({ initial, isNew, busy, result, error, onRefresh, 
   );
 }
 
-function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, busy, result, error, onRefresh, setBusy, setResult, setLocalError }: {
+function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, onRefresh, onDirtyChange }: {
   knowledgeBases: KnowledgeBase[];
   profiles: EmbeddingModelProfile[];
   mode: FormMode;
-  busy: string;
-  result: string;
-  error: SettingsErrorValue | null;
   onRefresh: (selectedItemId?: string) => Promise<void>;
-  setBusy: (value: string) => void;
-  setResult: (value: string) => void;
-  setLocalError: (value: SettingsErrorValue | null) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const selected = knowledgeBases.find((kb) => kb.id === mode);
   const initial = useMemo(() => mode === 'new' ? { ...defaultKnowledgeBase, embedding_model_profile_id: profiles[0]?.id || '' } : selected, [mode, profiles, selected]);
   if (!initial) {
     return <Empty title="No knowledge base selected" message={knowledgeBases.length ? 'Select a knowledge base from the list.' : 'No knowledge bases yet.'} />;
   }
-  return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} busy={busy} result={result} error={error} onRefresh={onRefresh} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} />;
+  return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
 
-function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRefresh, setBusy, setResult, setLocalError }: {
+function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange }: {
   initial: Partial<KnowledgeBase>;
   profiles: EmbeddingModelProfile[];
   isNew: boolean;
-  busy: string;
-  result: string;
-  error: SettingsErrorValue | null;
   onRefresh: (selectedItemId?: string) => Promise<void>;
-  setBusy: (value: string) => void;
-  setResult: (value: string) => void;
-  setLocalError: (value: SettingsErrorValue | null) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [values, setValues] = useState<Partial<KnowledgeBase>>(initial);
+  const [busy, setBusy] = useState('');
+  const [configResult, setConfigResult] = useState('');
+  const [configError, setConfigError] = useState<SettingsErrorValue | null>(null);
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [sourceResult, setSourceResult] = useState('');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
   const [sourceError, setSourceError] = useState<SettingsErrorValue | null>(null);
@@ -411,18 +409,55 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
   const [dragActive, setDragActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResponse, setSearchResponse] = useState<KnowledgeSearchResponse | null>(null);
+  const [searchError, setSearchError] = useState<SettingsErrorValue | null>(null);
   const [activeTab, setActiveTab] = useState<'config' | 'sources'>('config');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const searchRequestRef = useRef(0);
+  const currentKnowledgeBaseIdRef = useRef(initial.id || '');
+  currentKnowledgeBaseIdRef.current = initial.id || '';
+  const scopeId = isNew ? 'new' : initial.id || '';
   const selectedProfile = profiles.find((profile) => profile.id === values.embedding_model_profile_id);
   const sortedSources = useMemo(() => sortSources(sources, sourceSort), [sourceSort, sources]);
+  const dirty = stableConfigString(buildKnowledgeBasePayload(values)) !== stableConfigString(buildKnowledgeBasePayload(initial));
 
   useEffect(() => {
     setValues(initial);
   }, [initial]);
 
   useEffect(() => {
+    setBusy('');
+    setConfigResult('');
+    setConfigError(null);
+    currentKnowledgeBaseIdRef.current = initial.id || '';
+  }, [scopeId]);
+
+  useEffect(() => {
     setActiveTab('config');
+    setSearchQuery('');
+    setSearchResponse(null);
+    setSearchError(null);
+    setSourceError(null);
+    setSourceResult('');
+    setSourceTitle('');
+    setSourceText('');
+    searchRequestRef.current += 1;
+    currentKnowledgeBaseIdRef.current = initial.id || '';
   }, [initial.id, isNew]);
+
+  useEffect(() => {
+    if (activeTab === 'config') {
+      setSourceError(null);
+      setSourceResult('');
+      setSearchError(null);
+    } else {
+      setConfigError(null);
+      setConfigResult('');
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     if (!initial.id || isNew) {
@@ -435,9 +470,14 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
   async function loadSources(knowledgeBaseId = values.id || '') {
     if (!knowledgeBaseId) return;
     try {
-      setSources(await api.listKnowledgeSources(knowledgeBaseId));
+      const loadedSources = await api.listKnowledgeSources(knowledgeBaseId);
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSources(loadedSources);
+      }
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to load knowledge sources.'));
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to load knowledge sources.'));
+      }
     }
   }
 
@@ -445,13 +485,13 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
     event.preventDefault();
     setBusy('saving');
     try {
-      setLocalError(null);
+      setConfigError(null);
       const payload = buildKnowledgeBasePayload(values);
       const saved = isNew ? await api.createKnowledgeBase(payload) : await api.patchKnowledgeBase(values.id || '', payload);
       await onRefresh(saved.id);
-      setResult('Knowledge base saved.');
+      setConfigResult('Knowledge base saved.');
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to save knowledge base.'));
+      setConfigError(toSettingsError(error, 'Failed to save knowledge base.'));
     } finally {
       setBusy('');
     }
@@ -460,35 +500,41 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
     if (!values.id) return;
     setBusy('deleting');
     try {
-      setLocalError(null);
+      setConfigError(null);
       await api.deleteKnowledgeBase(values.id);
       await onRefresh();
-      setResult('Knowledge base deleted.');
+      setConfigResult('Knowledge base deleted.');
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to delete knowledge base.'));
+      setConfigError(toSettingsError(error, 'Failed to delete knowledge base.'));
     } finally {
       setBusy('');
     }
   }
   async function addPastedSource() {
     if (!values.id || !sourceText.trim()) return;
+    const knowledgeBaseId = values.id;
     setBusy('indexing');
     try {
       setSourceError(null);
-      const indexed = await api.createPastedKnowledgeSource(values.id, { title: sourceTitle || 'Pasted text', text: sourceText });
+      setSourceResult('');
+      const indexed = await api.createPastedKnowledgeSource(knowledgeBaseId, { title: sourceTitle || 'Pasted text', text: sourceText });
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       setSourceTitle('');
       setSourceText('');
-      await loadSources(values.id);
-      await onRefresh(values.id);
-      setResult(`Indexed ${indexed.chunks} chunks.`);
+      await loadSources(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
+      setSourceResult(`Indexed ${indexed.chunks} chunks.`);
     } catch (error) {
-      setSourceError(toSettingsError(error, 'Failed to index pasted text source.'));
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to index pasted text source.'));
+      }
     } finally {
-      setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
   async function addFiles(files: FileList | File[]) {
     if (!values.id) return;
+    const knowledgeBaseId = values.id;
     const accepted = Array.from(files).filter(isSupportedTextFile);
     const rejected = Array.from(files).filter((file) => !isSupportedTextFile(file));
     if (rejected.length) {
@@ -498,21 +544,25 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
     setBusy('indexing file');
     try {
       setSourceError(null);
+      setSourceResult('');
       let indexedCount = 0;
       for (const file of accepted) {
         const attachment = await api.uploadAttachment(file);
         const attachmentId = (attachment.uri || '').replace(/^local:\/\/attachments\//, '');
         if (!attachmentId) throw new Error('Uploaded attachment did not return a local attachment id.');
-        const indexed = await api.createAttachmentKnowledgeSource(values.id, { attachment_id: attachmentId, title: file.name || 'Attachment text' });
+        const indexed = await api.createAttachmentKnowledgeSource(knowledgeBaseId, { attachment_id: attachmentId, title: file.name || 'Attachment text' });
         indexedCount += indexed.chunks;
       }
-      await loadSources(values.id);
-      await onRefresh(values.id);
-      setResult(`Indexed ${indexedCount} chunks from ${accepted.length} file${accepted.length === 1 ? '' : 's'}.`);
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      await loadSources(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
+      setSourceResult(`Indexed ${indexedCount} chunks from ${accepted.length} file${accepted.length === 1 ? '' : 's'}.`);
     } catch (error) {
-      setSourceError(toSettingsError(error, 'Failed to index text file source.'));
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to index text file source.'));
+      }
     } finally {
-      setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -544,44 +594,65 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
   }
   async function deleteSource(sourceId: string) {
     if (!values.id) return;
+    const knowledgeBaseId = values.id;
     setBusy('deleting source');
     try {
-      setLocalError(null);
+      setSourceError(null);
+      setSourceResult('');
       await api.deleteKnowledgeSource(sourceId);
-      await loadSources(values.id);
-      await onRefresh(values.id);
-      setResult('Source deleted.');
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      await loadSources(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
+      setSourceResult('Source deleted.');
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to delete source.'));
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to delete source.'));
+      }
     } finally {
-      setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
   async function reindexSource(sourceId: string) {
     if (!values.id) return;
+    const knowledgeBaseId = values.id;
     setBusy('reindexing');
     try {
-      setLocalError(null);
+      setSourceError(null);
+      setSourceResult('');
       const result = await api.reindexKnowledgeSource(sourceId);
-      await loadSources(values.id);
-      await onRefresh(values.id);
-      setResult(`Reindexed ${result.chunks} chunks.`);
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      await loadSources(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
+      setSourceResult(`Reindexed ${result.chunks} chunks.`);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to reindex source.'));
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to reindex source.'));
+      }
     } finally {
-      setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
   async function runSearch() {
     if (!values.id || !searchQuery.trim()) return;
+    const knowledgeBaseId = values.id;
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
     setBusy('searching');
     try {
-      setLocalError(null);
-      setSearchResponse(await api.searchKnowledge({ query: searchQuery, knowledge_base_ids: [values.id], debug: true }));
+      setSearchError(null);
+      setSearchResponse(null);
+      const response = await api.searchKnowledge({ query: searchQuery, knowledge_base_ids: [knowledgeBaseId], debug: true });
+      if (searchRequestRef.current === requestId && currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSearchResponse(response);
+      }
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Knowledge search failed.'));
+      if (searchRequestRef.current === requestId && currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSearchError(toSettingsError(error, 'Knowledge search failed.'));
+      }
     } finally {
-      setBusy('');
+      if (searchRequestRef.current === requestId && currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setBusy('');
+      }
     }
   }
   return (
@@ -599,20 +670,22 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
           </div>
         </div>
         <div className="settings-detail-actions">
-          {result ? <span className="settings-badge success">{result}</span> : null}
-          <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
-            <Save size={14} />
-            {busy === 'saving' ? 'Saving...' : 'Save'}
-          </button>
+          {activeTab === 'config' && configResult ? <span className="settings-badge success">{configResult}</span> : null}
+          {activeTab === 'config' && dirty ? (
+            <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
+              <Save size={14} />
+              {busy === 'saving' ? 'Saving...' : 'Save'}
+            </button>
+          ) : null}
           {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button> : null}
           <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
         </div>
       </header>
       <DetailTabs tabs={[{ id: 'config', label: 'Config' }, { id: 'sources', label: 'Sources', enabled: !isNew && Boolean(values.id) }]} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as 'config' | 'sources')} />
       <div className="settings-detail-body">
-        {error ? <SettingsApiError error={error} /> : null}
         {activeTab === 'config' ? (
           <>
+            {configError ? <SettingsApiError error={configError} /> : null}
             <section className="detail-section">
               <h3>Config</h3>
               <div className="settings-detail-grid">
@@ -645,10 +718,12 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
               <div className="settings-button-row">
                 <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />Search</button>
               </div>
+              {searchError ? <SettingsApiError error={searchError} /> : null}
               {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
             </section>
             <section className="detail-section">
               <div className="detail-section-heading"><h3>Adding Sources</h3></div>
+              {sourceResult ? <span className="settings-badge success">{sourceResult}</span> : null}
               {sourceError ? <SettingsApiError error={sourceError} /> : null}
               <div className="settings-detail-grid">
                 <TextField label="Pasted source title" value={sourceTitle} onChange={setSourceTitle} />
