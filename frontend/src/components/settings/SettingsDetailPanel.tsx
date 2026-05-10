@@ -1,5 +1,6 @@
 import { Activity, Database, RefreshCw, Save, Search, Settings, Trash2 } from 'lucide-react';
 import { FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats } from '../../types';
@@ -167,6 +168,7 @@ export function SettingsDetailPanel({
 }
 
 function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirtyChange: (dirty: boolean) => void }) {
+  const { t } = useTranslation('common');
   const { updateCapabilityConfig, savingConfigId, testingLlm } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
@@ -216,7 +218,7 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
           {dirty ? (
             <button className="settings-primary-button" type="submit" disabled={saveDisabled}>
               <Save size={14} />
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? t('saving') : t('save')}
             </button>
           ) : null}
           <ToggleSwitch checked={enabled} onChange={setEnabled} disabled={isSaving} />
@@ -235,13 +237,14 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
 }
 
 function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsCategory; onDirtyChange: (dirty: boolean) => void }) {
+  const { t } = useTranslation(['settings', 'common']);
   const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
   const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
-  const title = category === 'files' ? 'Files' : 'LLM & Prompts';
-  const description = category === 'files' ? 'Upload limits and file context.' : 'Title generation and context prompts.';
+  const title = category === 'files' ? t('settings:general.files') : t('settings:general.llmPrompts');
+  const description = category === 'files' ? t('settings:general.filesDescription') : t('settings:general.llmPromptsDescription');
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -297,7 +300,7 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
     });
   }
 
-  if (!values) return <EmptyDetail title="General" message="Loading general settings." />;
+  if (!values) return <EmptyDetail title={t('settings:sections.general')} message="Loading general settings." />;
 
   return (
     <form className="settings-detail-form" onSubmit={save}>
@@ -312,11 +315,11 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
           </div>
         </div>
         <div className="settings-detail-actions">
-          {saved ? <span className="settings-badge success">Saved</span> : null}
+          {saved ? <span className="settings-badge success">{t('common:saved')}</span> : null}
           {dirty ? (
             <button className="settings-primary-button" type="submit">
               <Save size={14} />
-              Save
+              {t('common:save')}
             </button>
           ) : null}
         </div>
@@ -465,12 +468,13 @@ function InstructionField({
   onChange: (value: string) => void;
   onReset: () => void;
 }) {
+  const { t } = useTranslation('common');
   return (
     <label className="config-field settings-config-field">
       <span>
         {label}
         <button className="settings-secondary-button" type="button" onClick={onReset} disabled={isDefault}>
-          Reset to default
+          {t('reset')}
         </button>
       </span>
       <textarea rows={6} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
@@ -491,6 +495,7 @@ function NumberField({ label, value, min, max, onChange }: { label: string; valu
 }
 
 function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirtyChange: (dirty: boolean) => void }) {
+  const { t } = useTranslation('common');
   const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [busy, setBusy] = useState('');
@@ -580,11 +585,11 @@ function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirty
           </div>
         </div>
         <div className="settings-detail-actions">
-          {saved ? <span className="settings-badge success">Saved</span> : null}
+          {saved ? <span className="settings-badge success">{t('saved')}</span> : null}
           {dirty ? (
             <button className="settings-primary-button" type="button" onClick={saveSettings}>
               <Save size={14} />
-              Save
+              {t('save')}
             </button>
           ) : null}
         </div>

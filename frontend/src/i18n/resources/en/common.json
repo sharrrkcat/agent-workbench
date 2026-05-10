@@ -1,0 +1,21 @@
+{
+  "appName": "Agent Workbench",
+  "backToChat": "Back to chat",
+  "save": "Save",
+  "saving": "Saving...",
+  "saved": "Saved",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "reset": "Reset",
+  "refresh": "Refresh",
+  "test": "Test",
+  "close": "Close",
+  "edit": "Edit",
+  "copy": "Copy",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "default": "Default",
+  "language": "Language",
+  "languageEnglish": "English",
+  "languageChinese": "Chinese"
+}

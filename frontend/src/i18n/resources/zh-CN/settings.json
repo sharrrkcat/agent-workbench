@@ -1,0 +1,70 @@
+{
+  "title": "设置",
+  "description": "配置本地 Agent、Capability 和 LLM 连接详情。",
+  "summary": {
+    "agents": "{{count}} 个 Agent",
+    "capabilities": "{{count}} 个 Capability"
+  },
+  "sections": {
+    "general": "通用",
+    "appearance": "外观",
+    "llm": "LLM",
+    "knowledge": "知识库",
+    "agents": "Agents",
+    "capabilities": "Capabilities",
+    "data": "数据",
+    "diagnostics": "诊断",
+    "developer": "开发者",
+    "about": "关于"
+  },
+  "subsections": {
+    "defaults": "默认值",
+    "providerProfiles": "Provider 配置",
+    "modelProfiles": "模型配置",
+    "embeddingModels": "Embedding 模型",
+    "knowledgeBases": "知识库"
+  },
+  "searchPlaceholder": "搜索设置",
+  "objectList": {
+    "category": "类别",
+    "generalCategories": "通用类别",
+    "agents": "Agents",
+    "capabilities": "Capabilities",
+    "appearance": "外观",
+    "appearanceItems": "外观项目",
+    "knowledgeDefaults": "知识库默认值",
+    "embeddingModelProfiles": "Embedding 模型配置",
+    "knowledgeBases": "知识库",
+    "llmDefaults": "LLM 默认值",
+    "llmProviderProfiles": "LLM Provider 配置",
+    "llmModelProfiles": "LLM 模型配置",
+    "settingsCategory": "设置类别",
+    "noObjects": "此分区暂无对象。",
+    "noEmbeddingProfiles": "还没有 Embedding 模型配置。",
+    "noKnowledgeBases": "还没有知识库。",
+    "noProviderProfiles": "还没有 Provider 配置。",
+    "noModelProfiles": "还没有模型配置。",
+    "newModel": "新建模型",
+    "newProvider": "新建 Provider",
+    "newKnowledgeBase": "新建知识库"
+  },
+  "general": {
+    "files": "文件",
+    "filesDescription": "上传限制和文件上下文。",
+    "llmPrompts": "LLM 与 Prompts",
+    "llmPromptsDescription": "标题生成和上下文 prompts。"
+  },
+  "appearance": {
+    "pet": "宠物",
+    "petDescription": "工作台宠物设置和本地库"
+  },
+  "knowledge": {
+    "defaultsName": "知识库默认值",
+    "defaultsDescription": "本地模型和检索默认值"
+  },
+  "llm": {
+    "defaultModelProfile": "默认模型配置",
+    "globalFallback": "全局 fallback"
+  },
+  "confirmDiscard": "设置中有未保存的更改。要放弃更改并继续吗？"
+}

@@ -1,0 +1,16 @@
+{
+  "send": "发送",
+  "stop": "停止",
+  "placeholder": "输入问题，使用 @agent、:action 或 /command",
+  "dropFiles": "拖放文件以添加附件",
+  "tools": "Composer 工具",
+  "attachFiles": "添加附件",
+  "mentionAgent": "提及 Agent",
+  "useCommand": "使用命令",
+  "attachedImage": "已附加图片",
+  "file": "文件",
+  "removeAttachment": "移除 {{name}}",
+  "defaultModel": "默认",
+  "defaultModelTitle": "默认使用当前 Agent 的模型配置",
+  "missingModelProfile": "缺失模型配置"
+}

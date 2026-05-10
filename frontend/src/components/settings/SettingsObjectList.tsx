@@ -1,4 +1,5 @@
 import { Boxes, PawPrint, Plus, SlidersHorizontal } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
@@ -8,11 +9,6 @@ import { getResolvedAgentDisplay } from '../../utils/agents';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts';
 export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
-
-const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
-  { id: 'files', name: 'Files', description: 'Upload limits and file context.' },
-  { id: 'llm_prompts', name: 'LLM & Prompts', description: 'Title generation and context prompts.' },
-];
 
 export function SettingsObjectList({
   section,
@@ -55,10 +51,16 @@ export function SettingsObjectList({
   onSelectLlmItem?: (itemId: string) => void;
   onSelectKnowledgeItem?: (itemId: string) => void;
 }) {
+  const { t } = useTranslation(['settings', 'common']);
+  const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
+    { id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') },
+    { id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') },
+  ];
+
   if (section === 'general') {
     return (
-      <aside className="settings-object-list" aria-label="General categories">
-        <ObjectListHeader title="Category" count={generalCategories.length} />
+      <aside className="settings-object-list" aria-label={t('settings:objectList.generalCategories')}>
+        <ObjectListHeader title={t('settings:objectList.category')} count={generalCategories.length} />
         <div className="settings-list-scroll">
           {generalCategories.map((category) => (
             <button
@@ -83,8 +85,8 @@ export function SettingsObjectList({
 
   if (section === 'agents') {
     return (
-      <aside className="settings-object-list" aria-label="Agents">
-        <ObjectListHeader title="Agents" count={agentConfigs.length} />
+      <aside className="settings-object-list" aria-label={t('settings:objectList.agents')}>
+        <ObjectListHeader title={t('settings:objectList.agents')} count={agentConfigs.length} />
         <div className="settings-list-scroll">
           {agentConfigs.map((config) => (
             <AgentListItem
@@ -101,16 +103,16 @@ export function SettingsObjectList({
 
   if (section === 'appearance') {
     return (
-      <aside className="settings-object-list" aria-label="Appearance items">
-        <ObjectListHeader title="Appearance" count={1} />
+      <aside className="settings-object-list" aria-label={t('settings:objectList.appearanceItems')}>
+        <ObjectListHeader title={t('settings:objectList.appearance')} count={1} />
         <div className="settings-list-scroll">
           <button type="button" className="settings-object-row active">
             <div className="settings-object-avatar">
               <PawPrint size={16} />
             </div>
             <div className="settings-object-copy">
-              <strong>Pet</strong>
-              <small>Workbench pet settings and local library</small>
+              <strong>{t('settings:appearance.pet')}</strong>
+              <small>{t('settings:appearance.petDescription')}</small>
             </div>
           </button>
         </div>
@@ -121,8 +123,8 @@ export function SettingsObjectList({
   if (section === 'knowledge') {
     if (knowledgeSubsection === 'defaults') {
       return (
-        <aside className="settings-object-list" aria-label="Knowledge defaults">
-          <ObjectListHeader title="DEFAULTS" count={1} />
+        <aside className="settings-object-list" aria-label={t('settings:objectList.knowledgeDefaults')}>
+          <ObjectListHeader title={t('settings:subsections.defaults')} count={1} />
           <button
             type="button"
             className={`settings-object-row ${selectedKnowledgeItemId === 'global' ? 'active' : ''}`}
@@ -132,8 +134,8 @@ export function SettingsObjectList({
               <SlidersHorizontal size={16} />
             </div>
             <div className="settings-object-copy">
-              <strong>Knowledge defaults</strong>
-              <small>Local model and retrieval defaults</small>
+              <strong>{t('settings:knowledge.defaultsName')}</strong>
+              <small>{t('settings:knowledge.defaultsDescription')}</small>
             </div>
           </button>
         </aside>
@@ -142,8 +144,8 @@ export function SettingsObjectList({
 
     if (knowledgeSubsection === 'embedding_models') {
       return (
-        <aside className="settings-object-list" aria-label="Embedding model profiles">
-          <ObjectListHeader title="EMBEDDING MODELS" count={embeddingProfiles.length} actionLabel="New model" onAction={() => onSelectKnowledgeItem?.('new')} />
+        <aside className="settings-object-list" aria-label={t('settings:objectList.embeddingModelProfiles')}>
+          <ObjectListHeader title={t('settings:subsections.embeddingModels')} count={embeddingProfiles.length} actionLabel={t('settings:objectList.newModel')} onAction={() => onSelectKnowledgeItem?.('new')} />
           <div className="settings-list-scroll">
             {embeddingProfiles.length ? (
               embeddingProfiles.map((profile) => (
@@ -155,7 +157,7 @@ export function SettingsObjectList({
                 />
               ))
             ) : (
-              <div className="settings-empty-state compact">No embedding model profiles yet.</div>
+              <div className="settings-empty-state compact">{t('settings:objectList.noEmbeddingProfiles')}</div>
             )}
           </div>
         </aside>
@@ -163,8 +165,8 @@ export function SettingsObjectList({
     }
 
     return (
-      <aside className="settings-object-list" aria-label="Knowledge bases">
-        <ObjectListHeader title="KNOWLEDGE BASES" count={knowledgeBases.length} actionLabel="New knowledge base" onAction={() => onSelectKnowledgeItem?.('new')} />
+      <aside className="settings-object-list" aria-label={t('settings:objectList.knowledgeBases')}>
+        <ObjectListHeader title={t('settings:subsections.knowledgeBases')} count={knowledgeBases.length} actionLabel={t('settings:objectList.newKnowledgeBase')} onAction={() => onSelectKnowledgeItem?.('new')} />
         <div className="settings-list-scroll">
           {knowledgeBases.length ? (
             knowledgeBases.map((knowledgeBase) => (
@@ -177,7 +179,7 @@ export function SettingsObjectList({
               />
             ))
           ) : (
-            <div className="settings-empty-state compact">No knowledge bases yet.</div>
+            <div className="settings-empty-state compact">{t('settings:objectList.noKnowledgeBases')}</div>
           )}
         </div>
       </aside>
@@ -186,8 +188,8 @@ export function SettingsObjectList({
 
   if (section === 'capabilities') {
     return (
-      <aside className="settings-object-list" aria-label="Capabilities">
-        <ObjectListHeader title="Capabilities" count={capabilityConfigs.length} />
+      <aside className="settings-object-list" aria-label={t('settings:objectList.capabilities')}>
+        <ObjectListHeader title={t('settings:objectList.capabilities')} count={capabilityConfigs.length} />
         <div className="settings-list-scroll">
           {capabilityConfigs.map((config) => (
             <CapabilityListItem
@@ -207,8 +209,8 @@ export function SettingsObjectList({
     const llmEnabled = llmConfig?.enabled ?? false;
     if (llmSubsection === 'defaults') {
       return (
-        <aside className="settings-object-list" aria-label="LLM defaults">
-          <ObjectListHeader title="Defaults" count={1} />
+        <aside className="settings-object-list" aria-label={t('settings:objectList.llmDefaults')}>
+          <ObjectListHeader title={t('settings:subsections.defaults')} count={1} />
           <button
             type="button"
             className={`settings-object-row ${selectedLlmItemId === 'global' ? 'active' : ''} ${llmEnabled ? '' : 'disabled'}`}
@@ -218,18 +220,18 @@ export function SettingsObjectList({
               <SlidersHorizontal size={16} />
             </div>
             <div className="settings-object-copy">
-              <strong>Default model profile</strong>
-              <small>Global fallback</small>
+              <strong>{t('settings:llm.defaultModelProfile')}</strong>
+              <small>{t('settings:llm.globalFallback')}</small>
             </div>
-            <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? 'Enabled' : 'Disabled'}</span>
+            <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? t('common:enabled') : t('common:disabled')}</span>
           </button>
         </aside>
       );
     }
     if (llmSubsection === 'providers') {
       return (
-        <aside className="settings-object-list" aria-label="LLM provider profiles">
-          <ObjectListHeader title="Provider Profiles" count={llmProviderProfiles.length} actionLabel="New provider" onAction={() => onSelectLlmItem?.('new-provider')} />
+        <aside className="settings-object-list" aria-label={t('settings:objectList.llmProviderProfiles')}>
+          <ObjectListHeader title={t('settings:subsections.providerProfiles')} count={llmProviderProfiles.length} actionLabel={t('settings:objectList.newProvider')} onAction={() => onSelectLlmItem?.('new-provider')} />
           <div className="settings-list-scroll">
             {llmProviderProfiles.length ? (
               llmProviderProfiles.map((profile) => (
@@ -242,10 +244,10 @@ export function SettingsObjectList({
               ))
             ) : (
               <div className="settings-empty-state compact">
-                <p>No provider profiles yet.</p>
+                <p>{t('settings:objectList.noProviderProfiles')}</p>
                 <button className="settings-list-action" type="button" onClick={() => onSelectLlmItem?.('new-provider')}>
                   <Plus size={13} />
-                  New provider
+                  {t('settings:objectList.newProvider')}
                 </button>
               </div>
             )}
@@ -254,8 +256,8 @@ export function SettingsObjectList({
       );
     }
     return (
-      <aside className="settings-object-list" aria-label="LLM model profiles">
-        <ObjectListHeader title="Model Profiles" count={llmProfiles.length} actionLabel="New model" onAction={() => onSelectLlmItem?.('new')} />
+      <aside className="settings-object-list" aria-label={t('settings:objectList.llmModelProfiles')}>
+        <ObjectListHeader title={t('settings:subsections.modelProfiles')} count={llmProfiles.length} actionLabel={t('settings:objectList.newModel')} onAction={() => onSelectLlmItem?.('new')} />
         <div className="settings-list-scroll llm-model-profile-list">
           {llmProfiles.length ? (
             llmProfiles.map((profile) => (
@@ -269,10 +271,10 @@ export function SettingsObjectList({
             ))
           ) : (
             <div className="settings-empty-state compact">
-              <p>No model profiles yet.</p>
+              <p>{t('settings:objectList.noModelProfiles')}</p>
               <button className="settings-list-action" type="button" onClick={() => onSelectLlmItem?.('new')}>
                 <Plus size={13} />
-                New model
+                {t('settings:objectList.newModel')}
               </button>
             </div>
           )}
@@ -282,9 +284,9 @@ export function SettingsObjectList({
   }
 
   return (
-    <aside className="settings-object-list" aria-label="Settings category">
-      <ObjectListHeader title="Category" count={0} />
-      <div className="settings-empty-state compact">No objects in this section.</div>
+    <aside className="settings-object-list" aria-label={t('settings:objectList.settingsCategory')}>
+      <ObjectListHeader title={t('settings:objectList.category')} count={0} />
+      <div className="settings-empty-state compact">{t('settings:objectList.noObjects')}</div>
     </aside>
   );
 }
@@ -316,6 +318,7 @@ function ProfileListItem({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation('common');
   const providerName = providerProfiles.find((provider) => provider.id === profile.provider_profile_id)?.name || 'No provider';
   return (
     <button type="button" className={`settings-object-row llm-object-row llm-model-profile-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
@@ -323,7 +326,7 @@ function ProfileListItem({
       <div className="settings-object-copy">
         <div className="settings-object-title-row">
           <strong>{profile.name}</strong>
-          <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+          <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
         </div>
         <small>{providerName} / {profile.model_id || 'No model ID'}</small>
         <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons" />
@@ -333,6 +336,7 @@ function ProfileListItem({
 }
 
 function ProviderListItem({ profile, active, onClick }: { profile: LlmProviderProfile; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation('common');
   return (
     <button type="button" className={`settings-object-row llm-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
@@ -340,12 +344,13 @@ function ProviderListItem({ profile, active, onClick }: { profile: LlmProviderPr
         <strong>{profile.name}</strong>
         <small>{profile.provider} / {profile.base_url || 'No base URL'}</small>
       </div>
-      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>
   );
 }
 
 function EmbeddingProfileListItem({ profile, active, onClick }: { profile: EmbeddingModelProfile; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation('common');
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
@@ -353,7 +358,7 @@ function EmbeddingProfileListItem({ profile, active, onClick }: { profile: Embed
         <strong>{profile.name || 'Untitled model'}</strong>
         <small>{profile.alias || 'No profile key'} / {profile.model_path || 'No model path'}</small>
       </div>
-      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? 'Enabled' : 'Disabled'}</span>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>
   );
 }
@@ -369,6 +374,7 @@ function KnowledgeBaseListItem({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation('common');
   const profile = embeddingProfiles.find((item) => item.id === knowledgeBase.embedding_model_profile_id);
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${knowledgeBase.enabled ? '' : 'disabled'}`} onClick={onClick}>
@@ -377,12 +383,13 @@ function KnowledgeBaseListItem({
         <strong>{knowledgeBase.name || 'Untitled knowledge base'}</strong>
         <small>{knowledgeBase.index_status || 'empty'} / {profile?.alias || 'missing model'}</small>
       </div>
-      <span className={`settings-status-dot ${knowledgeBase.enabled ? 'enabled' : ''}`}>{knowledgeBase.enabled ? 'Enabled' : 'Disabled'}</span>
+      <span className={`settings-status-dot ${knowledgeBase.enabled ? 'enabled' : ''}`}>{knowledgeBase.enabled ? t('enabled') : t('disabled')}</span>
     </button>
   );
 }
 
 function AgentListItem({ config, active, onClick }: { config: AgentConfig; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation('common');
   const display = getResolvedAgentDisplay(config);
   const label = display.name || config.agent_id;
   return (
@@ -392,7 +399,7 @@ function AgentListItem({ config, active, onClick }: { config: AgentConfig; activ
         <strong>{label}</strong>
         <small>{display.description || config.agent_id}</small>
       </div>
-      <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? 'Enabled' : 'Disabled'}</span>
+      <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? t('enabled') : t('disabled')}</span>
     </button>
   );
 }
@@ -406,6 +413,7 @@ function CapabilityListItem({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation('common');
   const summary = config.manifest_summary;
   const label = summary.name || config.capability_id;
   return (
@@ -415,7 +423,7 @@ function CapabilityListItem({
         <strong>{label}</strong>
         <small>{config.capability_id}</small>
       </div>
-      <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? 'Enabled' : 'Disabled'}</span>
+      <span className={`settings-status-dot ${config.enabled ? 'enabled' : ''}`}>{config.enabled ? t('enabled') : t('disabled')}</span>
     </button>
   );
 }

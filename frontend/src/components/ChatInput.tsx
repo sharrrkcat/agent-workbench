@@ -1,6 +1,7 @@
 import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
 import { CommandPalette, type CommandPaletteItem } from './CommandPalette';
@@ -9,6 +10,7 @@ import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
 
 export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
+  const { t } = useTranslation('chat');
   const [value, setValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
@@ -326,7 +328,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     >
       <CommandPalette mode={mode} token={activeToken?.token ?? ''} selectedIndex={selectedSuggestionIndex} onPick={pickSuggestion} onItemsChange={updateSuggestionItems} />
       <div className="composer-card">
-        {dragActive ? <div className="composer-drag-overlay">Drop files to attach</div> : null}
+        {dragActive ? <div className="composer-drag-overlay">{t('dropFiles')}</div> : null}
         <AttachmentPreview attachments={attachments} onRemove={removeAttachment} onPreviewImage={onPreviewImage} />
         <textarea
           ref={textareaRef}
@@ -336,7 +338,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
           onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
           onPaste={onPaste}
           onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-          placeholder="Ask anything, use @agent, :action, or /command"
+          placeholder={t('placeholder')}
           rows={2}
         />
         <input
@@ -349,14 +351,14 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
           onChange={onFileChange}
         />
         <div className="composer-toolbar">
-          <div className="composer-tools" aria-label="Composer tools">
-            <button type="button" title="Attach files" onClick={() => fileInputRef.current?.click()} disabled={!currentSession || sending}>
+          <div className="composer-tools" aria-label={t('tools')}>
+            <button type="button" title={t('attachFiles')} onClick={() => fileInputRef.current?.click()} disabled={!currentSession || sending}>
               <Paperclip size={15} />
             </button>
-            <button type="button" title="Mention an agent" onClick={() => insertTrigger('@')}>
+            <button type="button" title={t('mentionAgent')} onClick={() => insertTrigger('@')}>
               <AtSign size={15} />
             </button>
-            <button type="button" title="Use a command" onClick={() => insertTrigger('/')}>
+            <button type="button" title={t('useCommand')} onClick={() => insertTrigger('/')}>
               <Slash size={15} />
             </button>
           </div>
@@ -366,7 +368,10 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
               <button
                 className="model-selector-pill"
                 type="button"
-                title={modelSelectorTitle(currentSession?.llm_profile_id || null, llmProfiles)}
+                title={modelSelectorTitle(currentSession?.llm_profile_id || null, llmProfiles, {
+                  defaultTitle: t('defaultModelTitle'),
+                  missingProfile: t('missingModelProfile'),
+                })}
                 disabled={!currentSession}
                 aria-haspopup="menu"
                 aria-expanded={modelMenuOpen}
@@ -394,11 +399,11 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
               className={`send-button ${sending ? 'stop' : ''}`}
               type={sending ? 'button' : 'submit'}
               disabled={sending ? !currentSession : !canSend}
-              title={sending ? 'Stop' : 'Send'}
+              title={sending ? t('stop') : t('send')}
               onClick={sending ? () => void cancelActiveRun() : undefined}
             >
               {sending ? <Octagon size={17} /> : <Send size={17} />}
-              <span className="sr-only">{sending ? 'Stop' : 'Send'}</span>
+              <span className="sr-only">{sending ? t('stop') : t('send')}</span>
             </button>
           </div>
         </div>
@@ -416,20 +421,21 @@ function AttachmentPreview({
   onRemove: (id: string) => void;
   onPreviewImage: (image: ImagePreview) => void;
 }) {
+  const { t } = useTranslation('chat');
   if (!attachments.length) return null;
   return (
     <div className="composer-attachments">
       {attachments.map((attachment) => (
         <figure className={`composer-attachment ${attachment.type === 'file' ? 'file' : 'image'}`} key={attachment.id}>
           {attachment.type === 'image' ? (
-            <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: resolveAttachmentUrl(attachment), alt: attachment.name || 'Attached image', title: attachment.name })}>
-              <img src={resolveAttachmentUrl(attachment)} alt={attachment.name || 'Attached image'} />
+            <button className="composer-attachment-preview" type="button" onClick={() => onPreviewImage({ url: resolveAttachmentUrl(attachment), alt: attachment.name || t('attachedImage'), title: attachment.name })}>
+              <img src={resolveAttachmentUrl(attachment)} alt={attachment.name || t('attachedImage')} />
             </button>
           ) : (
             <div className="composer-file-chip" title={attachment.name}>
               <FileText size={18} />
               <span>
-                <strong>{attachment.name || 'File'}</strong>
+                <strong>{attachment.name || t('file')}</strong>
                 <small>{fileKindLabel(attachment.mime_type, attachment.name)} · {formatBytes(attachment.size)}</small>
               </span>
             </div>
@@ -441,7 +447,7 @@ function AttachmentPreview({
               event.stopPropagation();
               onRemove(attachment.id);
             }}
-            title={`Remove ${attachment.name || 'attachment'}`}
+            title={t('removeAttachment', { name: attachment.name || 'attachment' })}
           >
             <X size={14} />
           </button>
@@ -459,40 +465,43 @@ const ModelSelectorMenu = forwardRef<HTMLDivElement, {
   llmProviderStatuses: Record<string, LlmProviderStatus>;
   onSelect: (profileId: string | null) => void;
 }>(
-  ({ style, currentSession, enabledProfiles, agentDefaultProfile, llmProviderStatuses, onSelect }, ref) => (
-    <div ref={ref} className="model-selector-menu model-selector-menu-portal" role="menu" style={style}>
-      <button
-        type="button"
-        role="menuitemradio"
-        aria-checked={!currentSession?.llm_profile_id}
-        className={!currentSession?.llm_profile_id ? 'selected' : ''}
-        onClick={() => onSelect(null)}
-        title={defaultModelTitle(agentDefaultProfile, llmProviderStatuses)}
-      >
-        <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
-        <span>Default</span>
-        {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
-      </button>
-      {enabledProfiles.map((profile) => {
-        const selected = currentSession?.llm_profile_id === profile.id;
-        return (
-          <button
-            key={profile.id}
-            type="button"
-            role="menuitemradio"
-            aria-checked={selected}
-            className={selected ? 'selected' : ''}
-            onClick={() => onSelect(profile.id)}
-            title={statusDotTitle(profile, llmProviderStatuses)}
-          >
-            <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
-            <span>{profile.name || profile.alias}</span>
-            {selected ? <Check size={14} /> : null}
-          </button>
-        );
-      })}
-    </div>
-  ),
+  ({ style, currentSession, enabledProfiles, agentDefaultProfile, llmProviderStatuses, onSelect }, ref) => {
+    const { t } = useTranslation('chat');
+    return (
+      <div ref={ref} className="model-selector-menu model-selector-menu-portal" role="menu" style={style}>
+        <button
+          type="button"
+          role="menuitemradio"
+          aria-checked={!currentSession?.llm_profile_id}
+          className={!currentSession?.llm_profile_id ? 'selected' : ''}
+          onClick={() => onSelect(null)}
+          title={defaultModelTitle(agentDefaultProfile, llmProviderStatuses, t('defaultModel'))}
+        >
+          <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
+          <span>{t('defaultModel')}</span>
+          {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
+        </button>
+        {enabledProfiles.map((profile) => {
+          const selected = currentSession?.llm_profile_id === profile.id;
+          return (
+            <button
+              key={profile.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={selected}
+              className={selected ? 'selected' : ''}
+              onClick={() => onSelect(profile.id)}
+              title={statusDotTitle(profile, llmProviderStatuses)}
+            >
+              <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
+              <span>{profile.name || profile.alias}</span>
+              {selected ? <Check size={14} /> : null}
+            </button>
+          );
+        })}
+      </div>
+    );
+  },
 );
 
 ModelSelectorMenu.displayName = 'ModelSelectorMenu';
@@ -556,10 +565,10 @@ function firstStringValue(source: Record<string, unknown> | undefined, key: stri
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[]): string {
-  if (!profileId) return 'Default uses the current agent model profile';
+function modelSelectorTitle(profileId: string | null, profiles: { id: string; name: string; alias: string; model_id: string }[], labels: { defaultTitle: string; missingProfile: string }): string {
+  if (!profileId) return labels.defaultTitle;
   const profile = profiles.find((item) => item.id === profileId);
-  if (!profile) return 'Missing model profile';
+  if (!profile) return labels.missingProfile;
   return `${profile.name || profile.alias} - ${profile.model_id}`;
 }
 
@@ -582,9 +591,9 @@ function statusDotTitle(profile: LlmProfile | undefined, statuses: Record<string
   return getModelProfileStatus(profile, statuses).title;
 }
 
-function defaultModelTitle(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>): string {
-  if (!profile) return 'Default: this agent has no model profile.';
-  return `Default: ${profile.name || profile.alias}\n${statusDotTitle(profile, statuses)}`;
+function defaultModelTitle(profile: LlmProfile | undefined, statuses: Record<string, LlmProviderStatus>, defaultLabel: string): string {
+  if (!profile) return `${defaultLabel}: this agent has no model profile.`;
+  return `${defaultLabel}: ${profile.name || profile.alias}\n${statusDotTitle(profile, statuses)}`;
 }
 
 function getActiveToken(value: string, cursorPosition: number): { token: string; start: number; end: number } | null {

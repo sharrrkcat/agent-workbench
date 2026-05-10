@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
@@ -8,6 +9,7 @@ import { SettingsObjectList, type GeneralSettingsCategory } from './SettingsObje
 
 export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
+  const { t } = useTranslation('settings');
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
@@ -48,8 +50,8 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
 
   const confirmDirtyNavigation = useCallback(() => {
     if (!detailDirty) return true;
-    return window.confirm('You have unsaved settings changes. Discard them and continue?');
-  }, [detailDirty]);
+    return window.confirm(t('confirmDiscard'));
+  }, [detailDirty, t]);
 
   function changeSection(section: SettingsSection) {
     if (section === activeSection) return;

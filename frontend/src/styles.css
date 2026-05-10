@@ -3454,6 +3454,16 @@ input:disabled {
   white-space: nowrap;
 }
 
+.language-select select {
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  padding: 0 10px;
+}
+
 .panel-title {
   color: #f5f5f5;
   font-size: 15px;

@@ -1,0 +1,70 @@
+{
+  "title": "Settings",
+  "description": "Configure local agents, capabilities, and LLM connection details.",
+  "summary": {
+    "agents": "{{count}} agents",
+    "capabilities": "{{count}} capabilities"
+  },
+  "sections": {
+    "general": "General",
+    "appearance": "Appearance",
+    "llm": "LLM",
+    "knowledge": "Knowledge",
+    "agents": "Agents",
+    "capabilities": "Capabilities",
+    "data": "Data",
+    "diagnostics": "Diagnostics",
+    "developer": "Developer",
+    "about": "About"
+  },
+  "subsections": {
+    "defaults": "Defaults",
+    "providerProfiles": "Provider Profiles",
+    "modelProfiles": "Model Profiles",
+    "embeddingModels": "Embedding Models",
+    "knowledgeBases": "Knowledge Bases"
+  },
+  "searchPlaceholder": "Search settings",
+  "objectList": {
+    "category": "Category",
+    "generalCategories": "General categories",
+    "agents": "Agents",
+    "capabilities": "Capabilities",
+    "appearance": "Appearance",
+    "appearanceItems": "Appearance items",
+    "knowledgeDefaults": "Knowledge defaults",
+    "embeddingModelProfiles": "Embedding model profiles",
+    "knowledgeBases": "Knowledge bases",
+    "llmDefaults": "LLM defaults",
+    "llmProviderProfiles": "LLM provider profiles",
+    "llmModelProfiles": "LLM model profiles",
+    "settingsCategory": "Settings category",
+    "noObjects": "No objects in this section.",
+    "noEmbeddingProfiles": "No embedding model profiles yet.",
+    "noKnowledgeBases": "No knowledge bases yet.",
+    "noProviderProfiles": "No provider profiles yet.",
+    "noModelProfiles": "No model profiles yet.",
+    "newModel": "New model",
+    "newProvider": "New provider",
+    "newKnowledgeBase": "New knowledge base"
+  },
+  "general": {
+    "files": "Files",
+    "filesDescription": "Upload limits and file context.",
+    "llmPrompts": "LLM & Prompts",
+    "llmPromptsDescription": "Title generation and context prompts."
+  },
+  "appearance": {
+    "pet": "Pet",
+    "petDescription": "Workbench pet settings and local library"
+  },
+  "knowledge": {
+    "defaultsName": "Knowledge defaults",
+    "defaultsDescription": "Local model and retrieval defaults"
+  },
+  "llm": {
+    "defaultModelProfile": "Default model profile",
+    "globalFallback": "Global fallback"
+  },
+  "confirmDiscard": "You have unsaved settings changes. Discard them and continue?"
+}

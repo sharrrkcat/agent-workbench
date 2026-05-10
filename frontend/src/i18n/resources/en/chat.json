@@ -1,0 +1,16 @@
+{
+  "send": "Send",
+  "stop": "Stop",
+  "placeholder": "Ask anything, use @agent, :action, or /command",
+  "dropFiles": "Drop files to attach",
+  "tools": "Composer tools",
+  "attachFiles": "Attach files",
+  "mentionAgent": "Mention an agent",
+  "useCommand": "Use a command",
+  "attachedImage": "Attached image",
+  "file": "File",
+  "removeAttachment": "Remove {{name}}",
+  "defaultModel": "Default",
+  "defaultModelTitle": "Default uses the current agent model profile",
+  "missingModelProfile": "Missing model profile"
+}
