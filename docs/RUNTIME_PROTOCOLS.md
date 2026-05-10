@@ -256,6 +256,8 @@ Script Agents that declare the `llm` capability default to session Knowledge dis
 
 Knowledge context injection never runs for session title generation, command result context, form JSON/recipe JSON, or non-LLM Script Agents. Automatic injection failures are best-effort warnings: retrieval/rendering failure does not fail the main LLM call, does not add streaming deltas, and records warning metadata.
 
+`/kb-search <query>` is an explicit Knowledge Capability command for manual search/debugging. It routes through the normal slash command path, creates a command run, searches active KBs for the current session, and returns JSON with `query`, `results`, and `debug`. It does not call Prompt Agents, does not call an LLM, does not create an Agent run, and does not participate in automatic Knowledge context injection.
+
 Agent override `runtime.knowledge_context_mode` is tri-state: `use_default`, `enabled`, or `disabled`. Effective defaults are:
 
 - Prompt Agent: `use_default => enabled`.

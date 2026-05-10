@@ -68,6 +68,8 @@ Tests:
 Avoid unless needed:
 - Do not add slash command aliases to Agents.
 
+For the built-in Knowledge Capability, also read `docs/EXTENSION_ARCHITECTURE.md#knowledge-bridge` and `docs/RUNTIME_PROTOCOLS.md#knowledge-context`. Keep `capabilities/knowledge` as a thin wrapper around `ai_workbench/core/retrieval.py` and the Knowledge store; do not change automatic context injection or retrieval/indexing/model algorithms for `/kb-search`.
+
 ### Create or modify an external integration / workflow agent
 
 Read:

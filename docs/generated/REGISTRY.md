@@ -25,6 +25,7 @@ Do not edit manually.
 | comfyui | ComfyUI Capability | test_connection, get_queue, get_history, submit_workflow, wait_for_prompt, get_prompt_status, extract_outputs, fetch_image, collect_images_for_prompt, free_memory, interrupt, upload_image, get_object_info, scan_workflow_library, list_workflows, list_presets, validate_preset, load_preset |  | json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json | base_url, timeout_seconds, poll_interval_seconds, max_wait_seconds, verify_ssl, default_image_response_mode, enable_upload, workflows_dir, presets_dir, auto_create_missing_presets, allow_workflow_file_write, allow_preset_file_write |
 | file | File Capability | read_text, read_image | /read-file, /read-image | file_content, image | allowed_directories, max_local_text_read_size_mb, max_local_image_read_size_mb, allowed_text_extensions, enable_read_file, enable_read_image |
 | http | HTTP Capability | get_text, fetch_page, fetch_image | /http-get, /fetch-page, /fetch-image | text, markdown, image | enable_http_get, enable_fetch_image, allowed_schemes, timeout_seconds, max_text_response_size_mb, max_image_response_size_mb, allow_redirects, max_redirects |
+| knowledge | Knowledge | search, list_bases, stats | /kb-search | json, json, json |  |
 | llm | LLM Capability | generate, chat, unload |  | text, text, json | base_url, api_key, model, default_profile, timeout |
 | storage | Storage | get, set |  |  |  |
 

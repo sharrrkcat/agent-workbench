@@ -313,6 +313,12 @@ Runtime call rules:
 - Script Agents call capabilities through `await ctx.capability("id").method(...)`. When the runtime method accepts a `context` keyword, Script Agent calls receive resolved CapabilityConfig, session id, capability id, and current attachments.
 - Capability methods should return plain Python values matching declared output.
 
+Built-in `knowledge` Capability:
+- `search(query, knowledge_base_ids=None, session_id=None, top_k=None, max_context_chars=None, debug=True)` returns the core Knowledge search JSON shape, using explicit KB ids when provided or the current Script/command context `session_id` otherwise.
+- `list_bases(enabled_only=False)` returns compact KB records with id, name, enabled state, index status, source count, and chunk count.
+- `stats(knowledge_base_id=None)` returns compact source/chunk/embedding counts globally or for one KB. It does not read full source originals or return vectors.
+- `/kb-search <query>` passes the remaining text as `query`, searches current session active KBs, returns JSON, and does not call an LLM or create an Agent run. Empty input fails clearly; no active KBs returns an empty result with a `No active knowledge bases for this session.` warning.
+
 Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, object-info, and `free_memory` methods. `free_memory` posts to ComfyUI `/free` with `unload_models` and `free_memory` booleans and returns a structured JSON outcome; it is not a slash command or user-facing Agent action. The Capability returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, memory-release workflow choices, and final rendering.
 
 The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, report per-workflow draft preset skip reasons, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.
@@ -412,7 +418,7 @@ Response shape:
 {"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "debug": {"warnings": []}}
 ```
 
-Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Current non-goals: Knowledge Capability, `/kb-search`, `local_file` sources, automatic model download, and changes to retrieval/indexing/model backends.
+Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Phase 5 adds a thin `knowledge` Capability and `/kb-search` command that wrap the same core retrieval path for explicit debugging/manual search. Current non-goals: `local_file` sources, automatic model download, and changes to retrieval/indexing/model backends.
 
 Session bindings:
 

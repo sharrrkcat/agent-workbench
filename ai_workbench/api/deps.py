@@ -146,6 +146,13 @@ def build_runtime_state(
         capability_registry=capabilities,
     )
     knowledge_model_backend = LocalKnowledgeModelBackend(repo_root)
+    try:
+        knowledge_runtime = runtimes.get_runtime("knowledge")
+        configure = getattr(knowledge_runtime, "configure", None)
+        if callable(configure):
+            configure(knowledge_store=knowledge, model_backend=knowledge_model_backend)
+    except KeyError:
+        pass
     agent_runner = AgentRunner(
         agent_registry=agents,
         run_store=runs,

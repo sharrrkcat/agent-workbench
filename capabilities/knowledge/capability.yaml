@@ -1,0 +1,52 @@
+id: knowledge
+name: Knowledge
+description: Search Workbench knowledge bases and inspect Knowledge status.
+
+methods:
+  - id: search
+    description: Search active or selected knowledge bases.
+    input_schema:
+      query:
+        type: string
+        required: true
+      knowledge_base_ids:
+        type: json
+        required: false
+      session_id:
+        type: string
+        required: false
+      top_k:
+        type: integer
+        required: false
+      max_context_chars:
+        type: integer
+        required: false
+      debug:
+        type: boolean
+        required: false
+    output:
+      type: json
+
+  - id: list_bases
+    description: List knowledge bases.
+    input_schema:
+      enabled_only:
+        type: boolean
+        required: false
+    output:
+      type: json
+
+  - id: stats
+    description: Return compact Knowledge storage and indexing stats.
+    input_schema:
+      knowledge_base_id:
+        type: string
+        required: false
+    output:
+      type: json
+
+commands:
+  - name: /kb-search
+    method: search
+    description: Search active session knowledge bases.
+    safe: true
