@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { API_BASE_URL, api, joinApiUrl } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { PetBubbleTexts, PetItem, PetSettings, Run, RunStep } from '../types';
+import type { Message, PetBubbleTexts, PetCommandTexts, PetItem, PetSettings, Run, RunStep } from '../types';
 import { PetSprite, type PetSpriteState } from './PetSprite';
 
 type DragState = {
@@ -14,7 +14,11 @@ type DragState = {
 };
 
 type PetPosition = { x: number; y: number };
-type PetCommandFeedback = 'tuck' | null;
+type PetCommandFeedback =
+  | { type: 'wake'; animation: 'waving'; bubbleKey: 'wake' }
+  | { type: 'tuck'; animation: 'waving'; bubbleKey: 'tuck'; hideAfterComplete: true }
+  | { type: 'select'; animation: 'waving'; bubbleKey: 'select' }
+  | null;
 type ComposerWaitPhase = 'waiting' | 'idle';
 
 const BASE_WIDTH = 192;
@@ -23,6 +27,7 @@ const DEFAULT_MARGIN_RIGHT = 28;
 const DEFAULT_MARGIN_BOTTOM = 92;
 const TERMINAL_HOLD_MS = 4200;
 const PET_REFRESH_MS = 6000;
+const PET_COMMAND_FRESH_MS = 10000;
 const DEFAULT_PET_SCALE = 0.5;
 
 const PET_RUN_STEP_TASK_LABELS: Record<string, string> = {
@@ -55,6 +60,16 @@ const DEFAULT_BUBBLE_TEXTS: PetBubbleTexts = {
   delete_failed: '\u5220\u9664\u5931\u8d25',
 };
 
+const DEFAULT_COMMAND_TEXTS: PetCommandTexts = {
+  wake: '\u5df2\u5524\u9192 {pet.display_name}',
+  tuck: '{pet.display_name} \u5df2\u6682\u79bb',
+  select: '\u5df2\u5207\u6362\u4e3a {pet.display_name}\u3002\n{pet.description}',
+  status: '\u5f53\u524d pet\uff1a{pet.display_name}',
+  reload: '\u5df2\u91cd\u65b0\u626b\u63cf pet\uff1a{valid_count} \u4e2a\u53ef\u7528\uff0c{invalid_count} \u4e2a\u65e0\u6548',
+  no_pet: '\u8fd8\u6ca1\u6709\u53ef\u7528\u7684 pet',
+  select_missing: '\u672a\u627e\u5230\u53ef\u7528 pet\uff1a{pet_id}',
+};
+
 const DEFAULT_SETTINGS: PetSettings = {
   pet_enabled: true,
   default_pet_id: '',
@@ -66,6 +81,7 @@ const DEFAULT_SETTINGS: PetSettings = {
   running_prefix: '\u6b63\u5728',
   position: { mode: 'default', x: null, y: null },
   bubble_texts: DEFAULT_BUBBLE_TEXTS,
+  command_texts: DEFAULT_COMMAND_TEXTS,
 };
 
 export function PetOverlay() {
@@ -87,7 +103,8 @@ export function PetOverlay() {
   const appliedSettingsPositionKeyRef = useRef('');
   const lastTaskKeyRef = useRef('');
   const previousPetEnabledRef = useRef<boolean | null>(null);
-  const lastTuckMessageIdRef = useRef('');
+  const initialSettingsLoadedRef = useRef(false);
+  const lastPetCommandMessageIdRef = useRef('');
 
   const validPets = useMemo(() => pets.filter((pet) => pet.valid && pet.spritesheet_url), [pets]);
   const selectedPet = useMemo(() => {
@@ -109,8 +126,8 @@ export function PetOverlay() {
     ? dragDirection === 'left'
       ? 'running-left'
       : 'running-right'
-    : commandFeedback === 'tuck'
-      ? 'waving'
+    : commandFeedback
+      ? commandFeedback.animation
       : jumping
       ? 'jumping'
       : runningTask
@@ -125,10 +142,11 @@ export function PetOverlay() {
       if (cancelled()) return;
       const nextSettings = normalizeSettings(settingsResponse.settings);
       const previousEnabled = previousPetEnabledRef.current;
-      if (previousEnabled === true && !nextSettings.pet_enabled) {
-        setCommandFeedback('tuck');
+      if (initialSettingsLoadedRef.current && previousEnabled === true && !nextSettings.pet_enabled) {
+        setCommandFeedback({ type: 'tuck', animation: 'waving', bubbleKey: 'tuck', hideAfterComplete: true });
       }
       previousPetEnabledRef.current = nextSettings.pet_enabled;
+      initialSettingsLoadedRef.current = true;
       setSettings(nextSettings);
       setPets(petsResponse.pets);
       setLocalPosition((current) => current || resolveInitialPosition(nextSettings, BASE_WIDTH * nextSettings.pet_scale, BASE_HEIGHT * nextSettings.pet_scale));
@@ -209,14 +227,11 @@ export function PetOverlay() {
   }, [hasComposerText]);
 
   useEffect(() => {
-    const latestTuckMessage = [...messages].reverse().find((message) => {
-      if (message.metadata?.command !== '/pet') return false;
-      if (!isRecord(message.content) || message.content.action !== 'tuck') return false;
-      return true;
-    });
-    if (!latestTuckMessage || latestTuckMessage.message_id === lastTuckMessageIdRef.current) return;
-    lastTuckMessageIdRef.current = latestTuckMessage.message_id;
-    setCommandFeedback('tuck');
+    const latestPetCommand = pickLatestPetCommandFeedback(messages);
+    if (!latestPetCommand || latestPetCommand.messageId === lastPetCommandMessageIdRef.current) return;
+    lastPetCommandMessageIdRef.current = latestPetCommand.messageId;
+    setTerminalRun(null);
+    setCommandFeedback(commandFeedbackForAction(latestPetCommand.action));
     void refreshPetState();
   }, [messages, refreshPetState]);
 
@@ -296,7 +311,7 @@ export function PetOverlay() {
     if (state === 'running') {
       setRunningTask(null);
     }
-    if (state === 'waving' && commandFeedback === 'tuck') {
+    if (state === 'waving' && commandFeedback) {
       setCommandFeedback(null);
     }
     if ((state === 'waiting' || state === 'idle') && hasComposerText && !runningTask && !jumping && !drag && !commandFeedback) {
@@ -308,7 +323,7 @@ export function PetOverlay() {
     if (animationState === 'jumping') return 3;
     if (animationState === 'running' && runningTask) return 2;
     if ((animationState === 'waiting' || animationState === 'idle') && hasComposerText) return 1;
-    if (animationState === 'waving' && commandFeedback === 'tuck') return 1;
+    if (animationState === 'waving' && commandFeedback) return 1;
     return undefined;
   }, [animationState, commandFeedback, hasComposerText, runningTask]);
 
@@ -316,7 +331,7 @@ export function PetOverlay() {
     selectedPet
     && spriteUrl
     && localPosition
-    && (settings?.pet_enabled || commandFeedback === 'tuck'),
+    && (settings?.pet_enabled || Boolean(commandFeedback)),
   );
 
   const showBubble = settings?.show_status_bubble && bubbleText && !drag;
@@ -382,10 +397,6 @@ export function PetOverlay() {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
 function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetSettings {
   const settings = { ...DEFAULT_SETTINGS, ...(value || {}) };
   return {
@@ -404,6 +415,7 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
       y: typeof settings.position?.y === 'number' ? settings.position.y : null,
     },
     bubble_texts: { ...DEFAULT_BUBBLE_TEXTS, ...(settings.bubble_texts || {}) },
+    command_texts: { ...DEFAULT_COMMAND_TEXTS, ...(settings.command_texts || {}) },
   };
 }
 
@@ -463,6 +475,7 @@ function pickLatestTerminalRun(runs: Run[], sessionId?: string): Run | null {
   const now = Date.now();
   return [...runs]
     .filter((run) => run.session_id === sessionId && ['DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(run.status))
+    .filter((run) => run.kind !== 'command' || run.target_id !== '/pet')
     .filter((run) => now - runTimestamp(run) <= TERMINAL_HOLD_MS)
     .sort(compareRunsByRecent)[0] || null;
 }
@@ -514,7 +527,7 @@ function buildBubbleText(
   runningTask: { key: string; label: string } | null,
   commandFeedback: PetCommandFeedback,
 ): string {
-  if (commandFeedback === 'tuck') return settings.bubble_texts.tuck || '';
+  if (commandFeedback) return settings.bubble_texts[commandFeedback.bubbleKey] || '';
   if (runningTask) {
     return `${settings.running_prefix || DEFAULT_SETTINGS.running_prefix}${runningTask.label}`;
   }
@@ -525,6 +538,51 @@ function buildBubbleText(
   if (terminalRun.status === 'CANCELLED') return texts.cancelled || '';
   if (terminalRun.status === 'INTERRUPTED') return texts.interrupted || '';
   return '';
+}
+
+function commandFeedbackForAction(action: 'wake' | 'tuck' | 'select'): NonNullable<PetCommandFeedback> {
+  if (action === 'tuck') return { type: 'tuck', animation: 'waving', bubbleKey: 'tuck', hideAfterComplete: true };
+  if (action === 'select') return { type: 'select', animation: 'waving', bubbleKey: 'select' };
+  return { type: 'wake', animation: 'waving', bubbleKey: 'wake' };
+}
+
+function pickLatestPetCommandFeedback(messages: Message[]): { messageId: string; action: 'wake' | 'tuck' | 'select' } | null {
+  const messagesById = new Map(messages.map((message) => [message.message_id, message]));
+  const now = Date.now();
+  for (const message of [...messages].reverse()) {
+    const parsed = parsePetCommandMessage(message, messagesById);
+    if (!parsed) continue;
+    if (now - messageTimestamp(message) > PET_COMMAND_FRESH_MS) return null;
+    return parsed;
+  }
+  return null;
+}
+
+function parsePetCommandMessage(message: Message, messagesById: Map<string, Message>): { messageId: string; action: 'wake' | 'tuck' | 'select' } | null {
+  if (message.metadata?.command === '/pet') {
+    if (message.metadata.success === false) return null;
+    const parentId = typeof message.metadata.parent_message_id === 'string' ? message.metadata.parent_message_id : message.parent_message_id || '';
+    const parent = parentId ? messagesById.get(parentId) : null;
+    const parentAction = parent ? parsePetCommandText(parent.content) : null;
+    return parentAction ? { messageId: message.message_id, action: parentAction } : null;
+  }
+  if (message.role !== 'user') return null;
+  const action = parsePetCommandText(message.content);
+  if (action === 'select') return null;
+  return action ? { messageId: message.message_id, action } : null;
+}
+
+function parsePetCommandText(content: unknown): 'wake' | 'tuck' | 'select' | null {
+  if (typeof content !== 'string') return null;
+  const match = content.trim().match(/^\/pet(?:\s+(\S+))?/i);
+  if (!match) return null;
+  const action = (match[1] || 'status').toLowerCase();
+  return action === 'wake' || action === 'tuck' || action === 'select' ? action : null;
+}
+
+function messageTimestamp(message: Message): number {
+  const timestamp = Date.parse(message.created_at || '');
+  return Number.isFinite(timestamp) ? timestamp : Date.now();
 }
 
 function runningTaskLabel(run: Run, step: RunStep | null): string {

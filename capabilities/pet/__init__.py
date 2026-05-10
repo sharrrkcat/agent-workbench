@@ -3,6 +3,7 @@ import re
 import shutil
 from hashlib import sha256
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from ai_workbench.core.config_schema import ConfigValidationError, resolve_config, validate_user_config
@@ -42,6 +43,15 @@ DEFAULT_SETTINGS = {
         "delete_success": "已删除",
         "delete_failed": "删除失败",
     },
+    "command_texts": {
+        "wake": "\u5df2\u5524\u9192 {pet.display_name}",
+        "tuck": "{pet.display_name} \u5df2\u6682\u79bb",
+        "select": "\u5df2\u5207\u6362\u4e3a {pet.display_name}\u3002\n{pet.description}",
+        "status": "\u5f53\u524d pet\uff1a{pet.display_name}",
+        "reload": "\u5df2\u91cd\u65b0\u626b\u63cf pet\uff1a{valid_count} \u4e2a\u53ef\u7528\uff0c{invalid_count} \u4e2a\u65e0\u6548",
+        "no_pet": "\u8fd8\u6ca1\u6709\u53ef\u7528\u7684 pet",
+        "select_missing": "\u672a\u627e\u5230\u53ef\u7528 pet\uff1a{pet_id}",
+    },
 }
 
 
@@ -64,10 +74,10 @@ class CapabilityRuntime:
         config = _context_config(context)
         schema = _context_schema(context)
         if schema:
-            return {"settings": resolve_config(schema, config)}
+            return {"settings": _merge_defaults(resolve_config(schema, config))}
         return {"settings": _merge_defaults(config)}
 
-    def command(self, args: str = "", context: dict | None = None) -> dict:
+    def command(self, args: str = "", context: dict | None = None) -> str:
         parts = (args or "").strip().split()
         action = parts[0].lower() if parts else "status"
 
@@ -75,40 +85,29 @@ class CapabilityRuntime:
             return self._command_status(context)
         if action == "wake":
             settings = self.update_settings({"pet_enabled": True}, context=context)["settings"]
-            return {"ok": True, "action": "wake", "message": settings["bubble_texts"].get("wake") or "Pet enabled.", "settings": {"pet_enabled": True}}
+            return _render_command_text("wake", settings, pet=self._selected_pet(settings, context))
         if action == "tuck":
             settings = self.update_settings({"pet_enabled": False}, context=context)["settings"]
-            return {"ok": True, "action": "tuck", "message": settings["bubble_texts"].get("tuck") or "Pet disabled.", "settings": {"pet_enabled": False}}
+            return _render_command_text("tuck", settings, pet=self._selected_pet(settings, context))
         if action == "reload":
             pets = self.scan_pets(context=context)["pets"]
             valid_count = sum(1 for pet in pets if pet.get("valid"))
             invalid_count = len(pets) - valid_count
             settings = self.get_settings(context=context)["settings"]
-            return {
-                "ok": True,
-                "action": "reload",
-                "message": settings["bubble_texts"].get("reload") or "Pet scan complete.",
-                "count": len(pets),
-                "valid_count": valid_count,
-                "invalid_count": invalid_count,
-            }
+            return _render_command_text("reload", settings, valid_count=valid_count, invalid_count=invalid_count)
         if action == "select":
             if len(parts) < 2:
                 raise PetError("PET_SELECT_MISSING_ID", "Usage: /pet select <pet_id>")
             pet_id = validate_pet_id(parts[1])
             pet = next((item for item in self.scan_pets(context=context)["pets"] if item.get("id") == pet_id), None)
             if pet is None:
-                raise PetError("PET_NOT_FOUND", f"Pet not found: {pet_id}", {"pet_id": pet_id})
+                settings = self.get_settings(context=context)["settings"]
+                raise PetError("PET_NOT_FOUND", _render_command_text("select_missing", settings, pet_id=pet_id), {"pet_id": pet_id})
             if not pet.get("valid"):
-                raise PetError("PET_NOT_VALID", f"Pet is not valid: {pet_id}", {"pet_id": pet_id, "errors": pet.get("errors", [])})
+                settings = self.get_settings(context=context)["settings"]
+                raise PetError("PET_NOT_VALID", _render_command_text("select_missing", settings, pet_id=pet_id), {"pet_id": pet_id, "errors": pet.get("errors", [])})
             settings = self.update_settings({"default_pet_id": pet_id, "pet_enabled": True}, context=context)["settings"]
-            return {
-                "ok": True,
-                "action": "select",
-                "message": settings["bubble_texts"].get("select") or f"Selected pet: {pet['display_name']}",
-                "pet": pet,
-                "settings": {"pet_enabled": True, "default_pet_id": pet_id},
-            }
+            return _render_command_text("select", settings, pet=pet, pet_id=pet_id)
 
         raise PetError("PET_COMMAND_UNKNOWN", "Usage: /pet [wake|tuck|status|reload|select <pet_id>]")
 
@@ -123,7 +122,7 @@ class CapabilityRuntime:
         if schema:
             try:
                 validate_user_config(schema, merged)
-                resolved = resolve_config(schema, merged)
+                resolved = _merge_defaults(resolve_config(schema, merged))
             except ConfigValidationError as exc:
                 raise PetError(exc.code, exc.message, {"field": exc.field}) from exc
         else:
@@ -192,25 +191,27 @@ class CapabilityRuntime:
         pets = self.scan_pets(context=context)["pets"]
         return {"pet": pet, "pets": pets, "selected": True, "settings": settings, "warnings": []}
 
-    def _command_status(self, context: dict | None = None) -> dict:
+    def _command_status(self, context: dict | None = None) -> str:
         settings = self.get_settings(context=context)["settings"]
         pets = self.scan_pets(context=context)["pets"]
         valid_pets = [pet for pet in pets if pet.get("valid")]
         selected = next((pet for pet in valid_pets if pet.get("id") == settings.get("default_pet_id")), None)
         if selected is None and valid_pets:
             selected = valid_pets[0]
-        return {
-            "ok": True,
-            "action": "status",
-            "enabled": bool(settings.get("pet_enabled")),
-            "default_pet_id": settings.get("default_pet_id") or "",
-            "selected": {
-                "id": selected.get("id"),
-                "display_name": selected.get("display_name"),
-            } if selected else None,
-            "valid_count": len(valid_pets),
-            "pet_path": "data/pet/",
-        }
+        if selected is None:
+            return _render_command_text("no_pet", settings)
+        return _render_command_text("status", settings, pet=selected, valid_count=len(valid_pets))
+
+    def _selected_pet(self, settings: dict, context: dict | None = None) -> dict:
+        pets = self.scan_pets(context=context)["pets"]
+        valid_pets = [pet for pet in pets if pet.get("valid")]
+        selected = next((pet for pet in valid_pets if pet.get("id") == settings.get("default_pet_id")), None)
+        if selected is not None:
+            return selected
+        if valid_pets:
+            return valid_pets[0]
+        fallback_id = settings.get("default_pet_id") or "pet"
+        return _pet_result(fallback_id, display_name=fallback_id)
 
     def _validate_pet_dir(self, pet_id: str, root: Path) -> dict:
         try:
@@ -382,7 +383,35 @@ def _pet_result(
 
 
 def _merge_defaults(config: dict | None) -> dict:
-    return {**DEFAULT_SETTINGS, **(config or {})}
+    merged = {**DEFAULT_SETTINGS, **(config or {})}
+    merged["bubble_texts"] = {**DEFAULT_SETTINGS["bubble_texts"], **((config or {}).get("bubble_texts") or {})}
+    merged["command_texts"] = {**DEFAULT_SETTINGS["command_texts"], **((config or {}).get("command_texts") or {})}
+    return merged
+
+
+def _command_texts(settings: dict) -> dict:
+    return {**DEFAULT_SETTINGS["command_texts"], **(settings.get("command_texts") or {})}
+
+
+def _render_command_text(key: str, settings: dict, pet: dict | None = None, **values: Any) -> str:
+    texts = _command_texts(settings)
+    template = texts.get(key) if isinstance(texts.get(key), str) and texts.get(key) else DEFAULT_SETTINGS["command_texts"][key]
+    fallback_template = DEFAULT_SETTINGS["command_texts"][key]
+    pet_data = pet or {}
+    data = {
+        "pet": SimpleNamespace(
+            id=str(pet_data.get("id") or ""),
+            display_name=str(pet_data.get("display_name") or pet_data.get("id") or "pet"),
+            description=str(pet_data.get("description") or ""),
+        ),
+        "pet_id": str(values.get("pet_id") or pet_data.get("id") or ""),
+        "valid_count": values.get("valid_count", 0),
+        "invalid_count": values.get("invalid_count", 0),
+    }
+    try:
+        return template.format(**data)
+    except (KeyError, AttributeError, ValueError):
+        return fallback_template.format(**data)
 
 
 def _context_config(context: dict | None) -> dict:

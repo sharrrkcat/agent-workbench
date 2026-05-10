@@ -78,6 +78,18 @@ config_schema:
       delete_success: "已删除"
       delete_failed: "删除失败"
 
+  - name: command_texts
+    type: json
+    label: Command Texts
+    default:
+      wake: "\u5df2\u5524\u9192 {pet.display_name}"
+      tuck: "{pet.display_name} \u5df2\u6682\u79bb"
+      select: "\u5df2\u5207\u6362\u4e3a {pet.display_name}\u3002\n{pet.description}"
+      status: "\u5f53\u524d pet\uff1a{pet.display_name}"
+      reload: "\u5df2\u91cd\u65b0\u626b\u63cf pet\uff1a{valid_count} \u4e2a\u53ef\u7528\uff0c{invalid_count} \u4e2a\u65e0\u6548"
+      no_pet: "\u8fd8\u6ca1\u6709\u53ef\u7528\u7684 pet"
+      select_missing: "\u672a\u627e\u5230\u53ef\u7528 pet\uff1a{pet_id}"
+
 methods:
   - id: command
     description: Control the Workbench Pet overlay from the /pet slash command.
@@ -86,7 +98,7 @@ methods:
         type: string
         required: false
     output:
-      type: json
+      type: markdown
 
   - id: get_settings
     description: Return resolved Pet capability settings.

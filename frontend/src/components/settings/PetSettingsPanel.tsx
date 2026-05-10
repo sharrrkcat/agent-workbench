@@ -1,7 +1,7 @@
 import { PawPrint, RefreshCw, RotateCcw, Save, Search, Trash2, Upload } from 'lucide-react';
 import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { api, joinApiUrl, API_BASE_URL } from '../../api/client';
-import type { PetBubbleTexts, PetItem, PetSettings } from '../../types';
+import type { PetBubbleTexts, PetCommandTexts, PetItem, PetSettings } from '../../types';
 import { PetSprite } from '../PetSprite';
 import { DetailTabs } from './DetailTabs';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
@@ -26,6 +26,16 @@ const BUBBLE_TEXT_KEYS: (keyof PetBubbleTexts)[] = [
   'delete_failed',
 ];
 
+const COMMAND_TEXT_KEYS: (keyof PetCommandTexts)[] = [
+  'wake',
+  'tuck',
+  'select',
+  'status',
+  'reload',
+  'no_pet',
+  'select_missing',
+];
+
 const DEFAULT_BUBBLE_TEXTS: PetBubbleTexts = {
   idle: '',
   waiting: 'Waiting',
@@ -45,6 +55,16 @@ const DEFAULT_BUBBLE_TEXTS: PetBubbleTexts = {
   delete_failed: 'Delete failed',
 };
 
+const DEFAULT_COMMAND_TEXTS: PetCommandTexts = {
+  wake: 'Woke {pet.display_name}',
+  tuck: '{pet.display_name} is tucked away',
+  select: 'Selected {pet.display_name}.\n{pet.description}',
+  status: 'Current pet: {pet.display_name}',
+  reload: 'Scanned pets: {valid_count} valid, {invalid_count} invalid',
+  no_pet: 'No pet available',
+  select_missing: 'Pet not found: {pet_id}',
+};
+
 const DEFAULT_SETTINGS: PetSettings = {
   pet_enabled: true,
   default_pet_id: '',
@@ -56,6 +76,7 @@ const DEFAULT_SETTINGS: PetSettings = {
   running_prefix: 'Running',
   position: { mode: 'default', x: null, y: null },
   bubble_texts: DEFAULT_BUBBLE_TEXTS,
+  command_texts: DEFAULT_COMMAND_TEXTS,
 };
 
 export function PetSettingsDetail({
@@ -226,6 +247,10 @@ export function PetSettingsDetail({
     setValues((current) => current ? { ...current, bubble_texts: { ...current.bubble_texts, [key]: text } } : current);
   }
 
+  function setCommandText(key: keyof PetCommandTexts, text: string) {
+    setValues((current) => current ? { ...current, command_texts: { ...current.command_texts, [key]: text } } : current);
+  }
+
   return (
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
@@ -271,6 +296,7 @@ export function PetSettingsDetail({
             busy={busy}
             onSetValue={setValue}
             onSetBubbleText={setBubbleText}
+            onSetCommandText={setCommandText}
             onResetPosition={resetPosition}
             onScanPets={scanPets}
             onImportPet={importPet}
@@ -289,6 +315,7 @@ function PetConfigTab({
   busy,
   onSetValue,
   onSetBubbleText,
+  onSetCommandText,
   onResetPosition,
   onScanPets,
   onImportPet,
@@ -298,6 +325,7 @@ function PetConfigTab({
   busy: string;
   onSetValue: <K extends keyof PetSettings>(key: K, value: PetSettings[K]) => void;
   onSetBubbleText: (key: keyof PetBubbleTexts, text: string) => void;
+  onSetCommandText: (key: keyof PetCommandTexts, text: string) => void;
   onResetPosition: () => void;
   onScanPets: () => void;
   onImportPet: (files: File[]) => void;
@@ -434,6 +462,18 @@ function PetConfigTab({
       </section>
 
       <section className="detail-section">
+        <div className="detail-section-heading"><h3>Command Texts</h3></div>
+        <div className="pet-bubble-grid">
+          {COMMAND_TEXT_KEYS.map((key) => (
+            <label key={key} className="config-field settings-config-field">
+              <span>{key}</span>
+              <textarea rows={key === 'select' ? 3 : 2} value={values.command_texts[key]} onChange={(event) => onSetCommandText(key, event.currentTarget.value)} />
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="detail-section">
         <div className="detail-section-heading"><h3>Interaction</h3></div>
         <label className="config-field settings-config-field boolean-field">
           <span>Jump on Hover</span>
@@ -528,6 +568,7 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
       y: typeof settings.position?.y === 'number' ? settings.position.y : null,
     },
     bubble_texts: { ...DEFAULT_BUBBLE_TEXTS, ...(settings.bubble_texts || {}) },
+    command_texts: { ...DEFAULT_COMMAND_TEXTS, ...(settings.command_texts || {}) },
   };
 }
 

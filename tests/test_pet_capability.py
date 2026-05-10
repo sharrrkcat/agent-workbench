@@ -183,12 +183,14 @@ def test_pet_command_controls_settings_and_reports_status(tmp_path: Path) -> Non
     tuck = runtime.command("tuck", context=context)
     reload = runtime.command("reload", context=context)
 
-    assert status["valid_count"] == 1
-    assert wake["settings"]["pet_enabled"] is True
-    assert selected["settings"] == {"pet_enabled": True, "default_pet_id": "command_pet"}
-    assert tuck["settings"]["pet_enabled"] is False
-    assert reload["valid_count"] == 1
-    assert context["capability_config_store"].get_config("pet")["user_config"]["default_pet_id"] == "command_pet"
+    assert status == "当前 pet：Test Pet"
+    assert wake == "已唤醒 Test Pet"
+    assert selected == "已切换为 Test Pet。\nA test pet."
+    assert tuck == "Test Pet 已暂离"
+    assert reload == "已重新扫描 pet：1 个可用，0 个无效"
+    stored = context["capability_config_store"].get_config("pet")["user_config"]
+    assert stored["pet_enabled"] is False
+    assert stored["default_pet_id"] == "command_pet"
 
 
 def test_pet_command_select_missing_pet_returns_error(tmp_path: Path) -> None:
@@ -198,6 +200,36 @@ def test_pet_command_select_missing_pet_returns_error(tmp_path: Path) -> None:
         runtime.command("select missing", context=_pet_command_context(tmp_path))
 
     assert exc.value.code == "PET_NOT_FOUND"
+    assert exc.value.message == "未找到可用 pet：missing"
+
+
+def test_pet_command_texts_are_configurable_and_partial_configs_fallback(tmp_path: Path) -> None:
+    write_pet(tmp_path, "custom_pet")
+    context = _pet_command_context(tmp_path)
+    context["capability_config_store"].set_config(
+        "pet",
+        user_config={"command_texts": {"wake": "Wake up, {pet.display_name}."}},
+    )
+
+    runtime = CapabilityRuntime(root=tmp_path)
+
+    assert runtime.command("wake", context=context) == "Wake up, Test Pet."
+    assert runtime.command("tuck", context=context) == "Test Pet 已暂离"
+
+
+def test_pet_command_message_is_markdown_text(tmp_path: Path) -> None:
+    write_pet(tmp_path, "api_command_pet")
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    client.app.state.runtime_state.repo_root = tmp_path
+    session = client.post("/api/sessions", json={"title": "Test", "default_agent_id": "chat"}).json()
+
+    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/pet wake"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"] == "已唤醒 pet"
+    assert payload["messages"][-1]["output_type"] == "markdown"
+    assert payload["messages"][-1]["content"] == "已唤醒 pet"
 
 
 def test_pet_settings_include_bubble_offsets_by_default(tmp_path: Path) -> None:

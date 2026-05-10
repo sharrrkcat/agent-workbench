@@ -518,6 +518,16 @@ export type PetBubbleTexts = {
   delete_failed: string;
 };
 
+export type PetCommandTexts = {
+  wake: string;
+  tuck: string;
+  select: string;
+  status: string;
+  reload: string;
+  no_pet: string;
+  select_missing: string;
+};
+
 export type PetSettings = {
   pet_enabled: boolean;
   default_pet_id: string;
@@ -529,6 +539,7 @@ export type PetSettings = {
   running_prefix: string;
   position: PetPosition;
   bubble_texts: PetBubbleTexts;
+  command_texts: PetCommandTexts;
 };
 
 export type PetItem = {

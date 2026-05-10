@@ -54,7 +54,7 @@ def test_pet_overlay_repeats_jump_and_keeps_drag_position_local() -> None:
     assert "repeatCount === undefined" in read_frontend("components/PetSprite.tsx")
     assert "if (animationState === 'jumping') return 3" in source
     assert "if (animationState === 'running' && runningTask) return 2" in source
-    assert "commandFeedback === 'tuck'" in source
+    assert "commandFeedbackForAction" in source
     assert "setComposerWaitPhase((phase) => (phase === 'waiting' ? 'idle' : 'waiting'))" in source
 
 
