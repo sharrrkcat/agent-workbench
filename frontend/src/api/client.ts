@@ -25,6 +25,7 @@ import type {
   OrphanScanResult,
   EmbeddingModelProfile,
   KnowledgeBase,
+  SessionKnowledgeBinding,
   KnowledgeSource,
   KnowledgeSourceIndexResult,
   KnowledgeModelScan,
@@ -225,6 +226,12 @@ export const api = {
     request<KnowledgeSearchResponse>('/api/knowledge/search', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+  listSessionKnowledgeBases: (sessionId: string) => request<SessionKnowledgeBinding[]>(`/api/sessions/${sessionId}/knowledge-bases`),
+  updateSessionKnowledgeBases: (sessionId: string, knowledgeBaseIds: string[]) =>
+    request<SessionKnowledgeBinding[]>(`/api/sessions/${sessionId}/knowledge-bases`, {
+      method: 'PATCH',
+      body: JSON.stringify({ knowledge_base_ids: knowledgeBaseIds }),
     }),
   getStorageStats: () => request<StorageStats>('/api/data/storage-stats'),
   getDiagnostics: () => request<Diagnostics>('/api/diagnostics'),

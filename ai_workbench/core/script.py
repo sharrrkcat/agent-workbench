@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_model_lifecycle, resolved_runtime_override
+from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_knowledge_context_mode, resolved_model_lifecycle, resolved_runtime_override
 from ai_workbench.core.attachments import (
     read_attachment_as_data_url,
     read_attachment_bytes,
@@ -25,6 +25,7 @@ from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
+from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.agent import AgentSchema
@@ -294,6 +295,7 @@ class LLMProxy:
         run_lifecycle: RunLifecycle = None,
         parent_step_id: str = "",
         title_generation_context: Optional[Dict[str, Any]] = None,
+        knowledge_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -311,6 +313,7 @@ class LLMProxy:
         self.last_raw: Dict[str, Any] | None = None
         self._title_generation_context = title_generation_context or {}
         self._title_generation_checked = False
+        self._knowledge_context = knowledge_context or {}
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -331,6 +334,8 @@ class LLMProxy:
         self.used = True
         from ai_workbench.core.context import validate_llm_context_messages
 
+        knowledge_already_injected = bool(options.pop("_knowledge_injected", False))
+        messages = messages if knowledge_already_injected else self._inject_knowledge(messages)
         messages = validate_llm_context_messages(messages)
         chat = getattr(self.llm_runtime, "chat", None)
         model_config = options.pop("model_config", None) or self.default_model_config
@@ -365,12 +370,13 @@ class LLMProxy:
         resolved_messages = _resolve_llm_messages(system=system, user=user, messages=messages)
         from ai_workbench.core.context import validate_llm_context_messages
 
+        resolved_messages = self._inject_knowledge(resolved_messages)
         resolved_messages = validate_llm_context_messages(resolved_messages)
         model_config = options.pop("model_config", None) or self.default_model_config
         if response_format is not None:
             options["response_format"] = response_format
         if model_config.get("supports_streaming") is False:
-            text = await self.chat(messages=resolved_messages, model_config=model_config, **options)
+            text = await self.chat(messages=resolved_messages, model_config=model_config, _knowledge_injected=True, **options)
             yield ScriptLLMStreamChunk(text=text, raw=None, model=_model_from_config(model_config))
             return
         try:
@@ -432,6 +438,9 @@ class LLMProxy:
                 if callable(generate):
                     await self._maybe_generate_session_title()
                     self.used = True
+                    knowledge_prompt = self._knowledge_block_for_generate_prompt()
+                    if knowledge_prompt:
+                        resolved_prompt = f"{knowledge_prompt}\n\n{resolved_prompt}" if resolved_prompt else knowledge_prompt
                     data = generate(
                         prompt=resolved_prompt,
                         model_config=model_config or self.default_model_config,
@@ -452,6 +461,50 @@ class LLMProxy:
             return CapabilityCallResult(success=True, data=data)
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM generate failed.")
+
+    def _inject_knowledge(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        context = self._knowledge_context
+        if not context:
+            return messages
+        result = build_session_knowledge_context(
+            knowledge_store=context.get("knowledge_store"),
+            model_backend=context.get("knowledge_model_backend"),
+            query=context.get("query") or "",
+            session_id=context.get("session_id") or self.session_id,
+            source="script_agent",
+            effective_mode=context.get("effective_mode") or "disabled",
+        )
+        self._record_knowledge_context(result.metadata)
+        if result.rendered_text:
+            return append_knowledge_to_system(messages, result.rendered_text)
+        return messages
+
+    def _knowledge_block_for_generate_prompt(self) -> str:
+        context = self._knowledge_context
+        if not context:
+            return ""
+        result = build_session_knowledge_context(
+            knowledge_store=context.get("knowledge_store"),
+            model_backend=context.get("knowledge_model_backend"),
+            query=context.get("query") or "",
+            session_id=context.get("session_id") or self.session_id,
+            source="script_agent",
+            effective_mode=context.get("effective_mode") or "disabled",
+        )
+        self._record_knowledge_context(result.metadata)
+        return result.rendered_text
+
+    def _record_knowledge_context(self, knowledge_context: dict[str, Any]) -> None:
+        if self.run_store is None or not self.run_id:
+            return
+        metadata = dict(self.run_store.get_run(self.run_id).metadata)
+        metadata["knowledge_context"] = knowledge_context
+        warnings = knowledge_context.get("warnings") if isinstance(knowledge_context, dict) else None
+        if warnings:
+            existing = list(metadata.get("warnings", []))
+            existing.extend(str(item) for item in warnings)
+            metadata["warnings"] = existing
+        self.run_store.update_metadata(self.run_id, metadata)
 
     async def _maybe_generate_session_title(self) -> None:
         if self._title_generation_checked:
@@ -657,6 +710,7 @@ class AgentContext:
         session_agent_state_store: Any = None,
         is_silent_submission: bool = False,
         suppress_output: bool = False,
+        knowledge_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -709,6 +763,7 @@ class AgentContext:
                 "message_store": message_store,
                 "app_settings_store": app_settings_store,
             },
+            knowledge_context=knowledge_context,
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -913,6 +968,8 @@ class ScriptAgentRunner:
         session_agent_state_store=None,
         app_settings_store=None,
         run_lifecycle: RunLifecycle = None,
+        knowledge_store=None,
+        knowledge_model_backend=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -930,6 +987,8 @@ class ScriptAgentRunner:
         self.session_agent_state_store = session_agent_state_store
         self.app_settings_store = app_settings_store
         self.run_lifecycle = run_lifecycle or RunLifecycle(run_store, event_bus)
+        self.knowledge_store = knowledge_store
+        self.knowledge_model_backend = knowledge_model_backend
 
     async def run(
         self,
@@ -1126,6 +1185,13 @@ class ScriptAgentRunner:
             session_agent_state_store=self.session_agent_state_store,
             is_silent_submission=is_silent_submission,
             suppress_output=suppress_output,
+            knowledge_context={
+                "knowledge_store": self.knowledge_store,
+                "knowledge_model_backend": self.knowledge_model_backend,
+                "session_id": session_id,
+                "query": "" if is_silent_submission else self._knowledge_query(args, user_message, input_message_id),
+                "effective_mode": str(resolved_knowledge_context_mode(agent, agent_config)["effective_mode"]),
+            },
         )
 
         try:
@@ -1224,6 +1290,19 @@ class ScriptAgentRunner:
         metadata = dict(run.metadata)
         metadata["llm_resolution"] = _public_llm_resolution(llm_config)
         self.run_store.update_metadata(run_id, metadata)
+
+    def _knowledge_query(self, args: str, user_message: Any = None, input_message_id: str = "") -> str:
+        text = str(args or "").strip()
+        if text:
+            return text
+        message = user_message
+        if message is None and input_message_id:
+            try:
+                message = self.message_store.get_message(input_message_id)
+            except KeyError:
+                message = None
+        content = getattr(message, "content", "") if message is not None else ""
+        return content if isinstance(content, str) else ""
 
     def _fail(self, run_id: str, session_id: str, error: str, error_code: str = None) -> RunResult:
         failed_run = self.run_lifecycle.fail_run(run_id, error_code, error)

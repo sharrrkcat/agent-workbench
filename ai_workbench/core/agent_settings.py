@@ -16,7 +16,16 @@ from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
 
 
 DISPLAY_KEYS = {"name", "description", "avatar"}
-RUNTIME_KEYS = {"llm_profile_id", "allow_session_override", "context_policy", "model_lifecycle", "timeout_seconds", "prompt"}
+KNOWLEDGE_CONTEXT_MODES = {"use_default", "enabled", "disabled"}
+RUNTIME_KEYS = {
+    "llm_profile_id",
+    "allow_session_override",
+    "context_policy",
+    "model_lifecycle",
+    "timeout_seconds",
+    "prompt",
+    "knowledge_context_mode",
+}
 
 
 def normalize_display_override(value: Any) -> dict[str, str]:
@@ -80,6 +89,12 @@ def normalize_runtime_override(value: Any) -> dict[str, Any]:
             if not isinstance(raw, str):
                 raise ValueError("runtime.prompt must be a string")
             result[key] = raw
+        elif key == "knowledge_context_mode":
+            if raw in (None, ""):
+                continue
+            if not isinstance(raw, str) or raw not in KNOWLEDGE_CONTEXT_MODES:
+                raise ValueError("runtime.knowledge_context_mode must be use_default, enabled, or disabled")
+            result[key] = raw
     return result
 
 
@@ -94,6 +109,8 @@ def resolved_agent_settings(agent: AgentSchema, config: dict[str, Any] | None = 
         sections.append({"id": "prompt", "label": "Prompt"})
     if "llm" in (agent.capabilities or []):
         sections.append({"id": "llm_runtime", "label": "LLM Runtime Settings", "capability_id": "llm"})
+    if agent.type == "prompt" or _agent_has_llm_capability(agent):
+        sections.append({"id": "knowledge_runtime", "label": "Knowledge Runtime Settings"})
     return {
         "display": display,
         "runtime": runtime,
@@ -127,6 +144,20 @@ def resolved_prompt(agent: AgentSchema, config: dict[str, Any] | None = None) ->
 
 def resolved_runtime_override(config: dict[str, Any] | None = None) -> dict[str, Any]:
     return normalize_runtime_override((config or {}).get("runtime", {}))
+
+
+def resolved_knowledge_context_mode(agent: AgentSchema, config: dict[str, Any] | None = None) -> dict[str, str | bool]:
+    runtime = normalize_runtime_override((config or {}).get("runtime", {}))
+    configured = runtime.get("knowledge_context_mode", "use_default")
+    default_effective = "enabled" if agent.type == "prompt" else "disabled"
+    effective = default_effective if configured == "use_default" else configured
+    return {
+        "mode": configured,
+        "effective_mode": effective,
+        "enabled": effective == "enabled",
+        "default_effective_mode": default_effective,
+        "available": agent.type == "prompt" or _agent_has_llm_capability(agent),
+    }
 
 
 def write_overrides_to_manifest(agent: AgentSchema, agent_dir: Path, config: dict[str, Any]) -> dict[str, Any]:
@@ -235,4 +266,13 @@ def _resolve_runtime(agent: AgentSchema, override: dict[str, Any]) -> tuple[dict
     else:
         runtime["prompt"] = agent.prompt or ""
         sources["runtime.prompt"] = "manifest" if agent.prompt else "default"
+    knowledge = resolved_knowledge_context_mode(agent, {"runtime": override})
+    runtime["knowledge_context_mode"] = knowledge["mode"]
+    runtime["knowledge_context_effective_mode"] = knowledge["effective_mode"]
+    runtime["knowledge_context_default_effective_mode"] = knowledge["default_effective_mode"]
+    sources["runtime.knowledge_context_mode"] = "override" if "knowledge_context_mode" in override else "default"
     return runtime, sources
+
+
+def _agent_has_llm_capability(agent: AgentSchema) -> bool:
+    return bool(agent.llm or agent.model or "llm" in (agent.capabilities or []))

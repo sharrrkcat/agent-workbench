@@ -244,15 +244,40 @@ Settings -> General -> Context Rendering exposes prompt-text overrides for group
 
 ## Knowledge Context
 
-Knowledge RAG v1 Phase 3 defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, local embedding/reranker APIs, synchronous source indexing, and an explicit retrieval search API.
+Knowledge RAG v1 Phase 4 defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, local embedding/reranker APIs, synchronous source indexing, explicit retrieval search, and automatic session Knowledge context injection.
 
 Source indexing supports `pasted_text` and text attachment sources. Pasted source originals are stored as text files under `data/knowledge/sources`; full source originals are not stored in SQLite. The indexer chunks source text, embeds chunks with the Knowledge Base embedding profile using `purpose=document`, stores float32 vectors in SQLite BLOB rows, and writes FTS5/BM25-ready rows.
 
 `POST /api/knowledge/search` can search explicit `knowledge_base_ids` or active session bindings. It groups vector search by `embedding_model_profile_id`, embeds one query per group with `purpose=query`, searches only matching model-profile vectors, runs FTS5/BM25 across selected KBs, merges vector and keyword candidates with RRF, and optionally runs the configured global reranker once over the merged candidate set. If reranking is disabled or fails, results use RRF order and debug warnings record the reason.
 
-Phase 3 does not inject retrieved snippets into Prompt Agent `Building context`, Script Agent `ctx.llm`, command result context, session title generation, or any provider-bound message payload. Prompt Agent and Script Agent run-step contracts remain unchanged.
+Prompt Agents default to session Knowledge enabled. During the existing `Building context` step, after normal `context_policy` rendering and after the Agent prompt/prompt override/action instruction are resolved, the runtime searches active session KB bindings with the current user message text. Results are rendered as a `# Retrieved Knowledge` system-context block using Knowledge Defaults `knowledge_context_instruction` and `knowledge_context_snippet_template`, then appended to the system message. If the Agent has no system message, the runtime creates one. Provider message roles are not otherwise changed.
 
-Future phases may use active session knowledge bases to retrieve snippets and append a bounded Knowledge context block before provider calls. That work must update this protocol when it changes Prompt Agent context building, Script Agent LLM helpers, run metadata, or message warnings.
+Script Agents that declare the `llm` capability default to session Knowledge disabled. If their Agent override enables it, every `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.stream`, `ctx.llm.stream_to_output`, and chat-backed `ctx.llm.generate` call retrieves against active session KBs and appends the same `Retrieved Knowledge` block to that call's system context. Direct prompt-backed `ctx.llm.generate` prepends the rendered block to the generated prompt because it has no role-bearing message list. The query is `ctx.input.text` first, then the current visible user message content when available. Silent form submissions with no user-facing query skip retrieval.
+
+Knowledge context injection never runs for session title generation, command result context, form JSON/recipe JSON, or non-LLM Script Agents. Automatic injection failures are best-effort warnings: retrieval/rendering failure does not fail the main LLM call, does not add streaming deltas, and records warning metadata.
+
+Agent override `runtime.knowledge_context_mode` is tri-state: `use_default`, `enabled`, or `disabled`. Effective defaults are:
+
+- Prompt Agent: `use_default => enabled`.
+- Script Agent with `llm`: `use_default => disabled`.
+- Other Agents: disabled and no Knowledge override UI.
+
+Run metadata records `metadata.knowledge_context` without full snippet content:
+
+```json
+{
+  "enabled": true,
+  "effective_mode": "enabled",
+  "source": "prompt_agent",
+  "knowledge_base_ids": ["kb_id"],
+  "query": "short truncated query",
+  "result_count": 4,
+  "injected": true,
+  "warnings": []
+}
+```
+
+Skipped or failed retrieval records `enabled=false` or `injected=false` with a `reason` such as `agent_disabled`, `no_active_kbs`, `empty_query`, `no_results`, or `retrieval_failed`. Query metadata is truncated and full retrieved content is not stored in run or message metadata.
 
 ## Speaker Identity
 

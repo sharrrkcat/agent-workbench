@@ -114,6 +114,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Display override fields include name, description, and avatar.
 - Prompt override replaces the manifest prompt at runtime.
 - LLM runtime override can set `llm_profile_id` and `allow_session_override`.
+- Knowledge runtime override can set `knowledge_context_mode` to `use_default`, `enabled`, or `disabled`. Prompt Agents default to effective `enabled`; Script Agents that declare `llm` default to effective `disabled`; Script Agents without `llm` do not show the override. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`.
 - Reset overrides clears local AgentConfig values back to manifest behavior.
 - Write overrides to manifest only when intentionally changing the package default.
 
@@ -187,6 +188,7 @@ async with ctx.step("Parse JSON"):
 - `ctx.output.finish(...)` completes the public streaming message.
 - `ctx.llm.unload_model(...)` is trusted script-only model unload through provider/model profiles and returns a structured `CapabilityCallResult` with unload outcome data.
 - The first real `ctx.llm.*` provider call in a pending default-titled session may trigger the core automatic session-title pre-hook. Agent authors should not call title generation manually; the pre-hook is internal, non-streaming, and creates no visible messages.
+- Depending on the Agent Knowledge override and active Session KB bindings, the core may append a `Retrieved Knowledge` system-context block before `ctx.llm.*` provider calls. This is automatic, best-effort, and does not change script method signatures. Retrieval warnings are recorded in run metadata without storing full snippet content.
 - `ctx.llm.unload()` is legacy capability-runtime unload if the LLM runtime supports it and also returns structured outcome data when available.
 - Script manual unload records run metadata, refreshes affected provider status when possible, and should surface success through the current run step rather than creating another assistant message.
 
@@ -328,7 +330,7 @@ Settings:
 - `GET /api/knowledge/settings`
 - `PATCH /api/knowledge/settings`
 
-Knowledge Defaults store local model device, embedding batch/timeout defaults, the single global reranker configuration, future retrieval/chunking/index limits, and future Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
+Knowledge Defaults store local model device, embedding batch/timeout defaults, the single global reranker configuration, retrieval/chunking/index limits, and Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
 
 Local model directories:
 
@@ -410,7 +412,7 @@ Response shape:
 {"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "debug": {"warnings": []}}
 ```
 
-Current non-goals: Prompt Agent context injection, Script Agent context injection, Agent Knowledge overrides, chat session KB picker, Knowledge Capability, and `/kb-search`.
+Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Current non-goals: Knowledge Capability, `/kb-search`, `local_file` sources, automatic model download, and changes to retrieval/indexing/model backends.
 
 Session bindings:
 

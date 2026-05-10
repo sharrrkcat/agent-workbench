@@ -16,6 +16,7 @@ from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
 from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
 
 
@@ -97,6 +98,8 @@ class PromptRuntimeFixture:
         self.llm_profiles = LLMProfileStore()
         self.provider_profiles = ProviderProfileStore()
         self.agent_configs = AgentConfigStore()
+        self.knowledge = MemoryKnowledgeStore()
+        self.knowledge.engine = object()
         self.app_settings = AppSettingsStore()
         self.app_settings.patch({"auto_generate_session_titles": False})
         self.llm = llm or FakeLLMRuntime()
@@ -122,6 +125,8 @@ class PromptRuntimeFixture:
             provider_profile_store=self.provider_profiles,
             agent_config_store=self.agent_configs,
             app_settings_store=self.app_settings,
+            knowledge_store=self.knowledge,
+            knowledge_model_backend=object(),
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -166,6 +171,94 @@ def test_plain_text_routes_to_default_agent_and_executes() -> None:
     assert result.success is True
     assert result.data == "chat reply"
     assert fixture.runs.get_run(result.run_id).target_id == "chat"
+
+
+def bind_test_kb(fixture: PromptRuntimeFixture, session_id: str):
+    profile = fixture.knowledge.create_embedding_profile(
+        EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test")
+    )
+    kb = fixture.knowledge.create_knowledge_base(KnowledgeBase(name="Project KB", embedding_model_profile_id=profile.id))
+    fixture.knowledge.replace_session_bindings(session_id, [kb.id])
+    return kb
+
+
+def test_prompt_agent_injects_session_knowledge_by_default(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    kb = bind_test_kb(fixture, session.session_id)
+
+    def fake_search(**kwargs):
+        assert kwargs["session_id"] == session.session_id
+        return {
+            "query": kwargs["query"],
+            "results": [
+                {
+                    "rank": 1,
+                    "chunk_id": "chunk-1",
+                    "knowledge_base_id": kb.id,
+                    "source_id": "source-1",
+                    "title": "Spec",
+                    "heading_path": "Intro",
+                    "content": "Alpha knowledge.",
+                    "truncated": False,
+                    "rrf_score": 1.0,
+                }
+            ],
+            "debug": {"warnings": []},
+        }
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fake_search)
+
+    result = run(fixture.runtime.handle_input(session, "what is alpha?"))
+    sent = llm.calls[0]["messages"]
+    metadata = fixture.runs.get_run(result.run_id).metadata["knowledge_context"]
+
+    assert "# Retrieved Knowledge" in sent[0]["content"]
+    assert "Alpha knowledge." in sent[0]["content"]
+    assert metadata["enabled"] is True
+    assert metadata["injected"] is True
+    assert metadata["knowledge_base_ids"] == [kb.id]
+
+
+def test_prompt_agent_knowledge_override_disabled_skips_retrieval(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    bind_test_kb(fixture, session.session_id)
+    fixture.agent_configs.set_config("chat", runtime={"knowledge_context_mode": "disabled"})
+
+    def fail_search(**kwargs):
+        raise AssertionError("search should not be called")
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fail_search)
+
+    result = run(fixture.runtime.handle_input(session, "what is alpha?"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["knowledge_context"]
+
+    assert "# Retrieved Knowledge" not in llm.calls[0]["messages"][0]["content"]
+    assert metadata["enabled"] is False
+    assert metadata["reason"] == "agent_disabled"
+
+
+def test_prompt_agent_knowledge_failure_warns_and_continues(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    bind_test_kb(fixture, session.session_id)
+
+    def fail_search(**kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fail_search)
+
+    result = run(fixture.runtime.handle_input(session, "what is alpha?"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["knowledge_context"]
+
+    assert result.success is True
+    assert metadata["reason"] == "retrieval_failed"
+    assert metadata["warnings"]
+    assert "Retrieved Knowledge" not in str(llm.calls[0]["messages"])
 
 
 def test_chat_agent_session_context_includes_history() -> None:

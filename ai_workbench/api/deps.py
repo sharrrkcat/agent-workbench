@@ -145,6 +145,7 @@ def build_runtime_state(
         capability_config_store=capability_configs,
         capability_registry=capabilities,
     )
+    knowledge_model_backend = LocalKnowledgeModelBackend(repo_root)
     agent_runner = AgentRunner(
         agent_registry=agents,
         run_store=runs,
@@ -162,6 +163,8 @@ def build_runtime_state(
         app_settings_store=app_settings,
         session_agent_state_store=session_agent_states,
         active_runs=active_runs,
+        knowledge_store=knowledge,
+        knowledge_model_backend=knowledge_model_backend,
     )
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
     return RuntimeState(
@@ -187,7 +190,7 @@ def build_runtime_state(
         app_settings=app_settings,
         session_agent_states=session_agent_states,
         knowledge=knowledge,
-        knowledge_model_backend=LocalKnowledgeModelBackend(repo_root),
+        knowledge_model_backend=knowledge_model_backend,
         repo_root=repo_root,
         database_url=resolved_database_url,
     )

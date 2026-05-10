@@ -103,6 +103,34 @@ def test_store_applies_provider_status_update_events_to_status_cache() -> None:
     assert "[provider.provider_profile_id]: provider" in source
 
 
+def test_chat_header_has_session_knowledge_picker_contract() -> None:
+    source = read_frontend("components/ChatHeader.tsx")
+    client = read_frontend("api/client.ts")
+    types = read_frontend("types.ts")
+
+    assert "SessionKnowledgePicker" in source
+    assert "api.listKnowledgeBases()" in source
+    assert "api.listSessionKnowledgeBases" in source
+    assert "api.updateSessionKnowledgeBases" in source
+    assert "KB: {selectedIds.size}" in source
+    assert "Settings &gt; Knowledge" in source
+    assert "SessionKnowledgeBinding" in types
+    assert "listSessionKnowledgeBases" in client
+    assert "updateSessionKnowledgeBases" in client
+
+
+def test_agent_overrides_has_knowledge_runtime_settings_contract() -> None:
+    source = read_frontend("components/settings/AgentDetail.tsx")
+    types = read_frontend("types.ts")
+
+    assert "Knowledge Runtime Settings" in source
+    assert "Use session knowledge bases" in source
+    assert "Prompt Agents use Session KBs by default" in source
+    assert "knowledge_context_mode" in source
+    assert "knowledge_context_effective_mode" in source
+    assert "'use_default' | 'enabled' | 'disabled'" in types
+
+
 def test_chat_renders_run_steps_panel_and_step_statuses() -> None:
     source = read_frontend("components/MessageBubble.tsx")
 

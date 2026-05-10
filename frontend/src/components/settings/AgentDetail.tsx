@@ -237,8 +237,9 @@ function OverridesTab({
 }) {
   const resolved = config.resolved;
   const sections = resolved?.sections || [];
-  const hasLlmSection = sections.some((section) => section.id === 'llm_runtime') || agent?.capabilities?.includes('llm') || config.manifest_summary.capabilities?.includes('llm');
   const isPromptAgent = (agent?.type || config.manifest_summary.type) === 'prompt';
+  const hasLlmSection = sections.some((section) => section.id === 'llm_runtime') || agent?.capabilities?.includes('llm') || config.manifest_summary.capabilities?.includes('llm');
+  const hasKnowledgeSection = sections.some((section) => section.id === 'knowledge_runtime') || isPromptAgent || hasLlmSection;
   const runtime = resolved?.runtime || {};
   return (
     <div className="settings-runtime-stack">
@@ -294,6 +295,34 @@ function OverridesTab({
             onChange={(prompt) => onRuntimeChange({ ...runtimeDraft, prompt })}
             textarea
           />
+        </section>
+      ) : null}
+
+      {hasKnowledgeSection ? (
+        <section className="settings-override-section">
+          <div className="detail-section-heading">
+            <h3>Knowledge Runtime Settings</h3>
+            <span className="settings-badge muted">{runtimeDraft.knowledge_context_mode ? 1 : 0} overrides</span>
+          </div>
+          <p className="settings-muted-text">
+            Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.
+          </p>
+          <OverrideSelect
+            label="Use session knowledge bases"
+            field="runtime.knowledge_context_mode"
+            value={runtimeDraft.knowledge_context_mode || ''}
+            config={config}
+            onChange={(knowledge_context_mode) =>
+              onRuntimeChange({
+                ...runtimeDraft,
+                knowledge_context_mode: knowledge_context_mode ? knowledge_context_mode as AgentRuntimeOverrides['knowledge_context_mode'] : undefined,
+              })
+            }
+          >
+            <option value="">Use default ({runtime.knowledge_context_effective_mode || runtime.knowledge_context_default_effective_mode || (isPromptAgent ? 'enabled' : 'disabled')})</option>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+          </OverrideSelect>
         </section>
       ) : null}
 
@@ -544,6 +573,7 @@ function normalizedRuntimeDraft(runtime: AgentRuntimeOverrides, config: AgentCon
     result.prompt = runtime.prompt;
   }
   if (runtime.allow_session_override !== undefined) result.allow_session_override = runtime.allow_session_override;
+  if (runtime.knowledge_context_mode) result.knowledge_context_mode = runtime.knowledge_context_mode;
   if (runtime.context_policy) result.context_policy = runtime.context_policy;
   if (runtime.model_lifecycle) result.model_lifecycle = runtime.model_lifecycle;
   if (runtime.timeout_seconds !== undefined) result.timeout_seconds = runtime.timeout_seconds;

@@ -89,6 +89,9 @@ export type AgentRuntimeOverrides = {
   llm_profile_key?: string | null;
   allow_session_override?: boolean;
   prompt?: string;
+  knowledge_context_mode?: 'use_default' | 'enabled' | 'disabled';
+  knowledge_context_effective_mode?: 'enabled' | 'disabled';
+  knowledge_context_default_effective_mode?: 'enabled' | 'disabled';
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
   timeout_seconds?: number;
@@ -387,6 +390,15 @@ export type KnowledgeBase = {
   max_context_chars_override?: number | null;
   created_at: string;
   updated_at: string;
+};
+
+export type SessionKnowledgeBinding = {
+  id?: number | null;
+  session_id: string;
+  knowledge_base_id: string;
+  enabled: boolean;
+  created_at: string;
+  knowledge_base?: KnowledgeBase | null;
 };
 
 export type KnowledgeSource = {

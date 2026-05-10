@@ -236,7 +236,7 @@ Tests:
 Avoid unless needed:
 - Do not rewrite tutorial docs for Settings-only changes.
 
-### Change Knowledge / RAG settings or local model APIs
+### Change Knowledge / RAG settings, injection, or local model APIs
 
 Read:
 - `README.md#settings`
@@ -254,6 +254,10 @@ Likely source:
 - `ai_workbench/core/vector_store.py`
 - `ai_workbench/core/keyword_search.py`
 - `ai_workbench/core/retrieval.py`
+- `ai_workbench/core/knowledge_context.py`
+- `ai_workbench/core/runner.py` if Prompt Agent injection changes
+- `ai_workbench/core/script.py` if Script Agent `ctx.llm` injection changes
+- `ai_workbench/core/agent_settings.py` if Agent Knowledge overrides change
 - `ai_workbench/core/knowledge_models.py`
 - `ai_workbench/core/knowledge_settings.py`
 - `ai_workbench/core/embedding.py`
@@ -262,6 +266,8 @@ Likely source:
 - `ai_workbench/core/knowledge_store.py`
 - `ai_workbench/api/routes/knowledge.py`
 - `frontend/src/components/settings/KnowledgeSettingsPanel.tsx`
+- `frontend/src/components/ChatHeader.tsx` if the Session KB picker changes
+- `frontend/src/components/settings/AgentDetail.tsx` if Agent Knowledge overrides change
 - `frontend/src/components/settings/SettingsConsole.tsx`
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
@@ -270,11 +276,12 @@ Tests:
 - `uv run pytest tests/test_knowledge_settings.py tests/test_knowledge_models.py`
 - `uv run pytest tests/test_knowledge_indexing.py`
 - `uv run pytest tests/test_knowledge_retrieval.py`
+- `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py tests/test_agent_settings.py`
 - `uv run pytest tests/test_frontend_chat_contracts.py`
 - `cd frontend && npm run build`
 
 Avoid unless explicitly in scope:
-- Do not add Knowledge Capability, `/kb-search`, automatic model download, or Prompt/Script Agent context changes for Knowledge search/settings work unless explicitly requested.
+- Do not add Knowledge Capability, `/kb-search`, automatic model download, local-file sources, or retrieval/indexing/backend changes for Knowledge injection work unless explicitly requested.
 
 ## Documentation Update Rules
 

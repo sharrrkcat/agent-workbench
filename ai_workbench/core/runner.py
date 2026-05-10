@@ -3,7 +3,14 @@ import inspect
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
-from ai_workbench.core.agent_settings import resolved_agent_settings, resolved_context_policy, resolved_model_lifecycle, resolved_prompt, resolved_runtime_override
+from ai_workbench.core.agent_settings import (
+    resolved_agent_settings,
+    resolved_context_policy,
+    resolved_knowledge_context_mode,
+    resolved_model_lifecycle,
+    resolved_prompt,
+    resolved_runtime_override,
+)
 from ai_workbench.core.attachments import ImageAttachment, is_text_attachment, language_for_filename, read_attachment_as_data_url, read_attachment_text
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
@@ -13,6 +20,7 @@ from ai_workbench.core.context import ContextBuilder, LLMContextError, group_tra
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
+from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.provider_status import (
     MODEL_MISMATCH,
     MODEL_NOT_AVAILABLE,
@@ -108,6 +116,8 @@ class AgentRunner:
         app_settings_store=None,
         session_agent_state_store=None,
         active_runs: ActiveRunRegistry = None,
+        knowledge_store=None,
+        knowledge_model_backend=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -125,6 +135,8 @@ class AgentRunner:
         self.llm_defaults_store = llm_defaults_store
         self.app_settings_store = app_settings_store
         self.session_agent_state_store = session_agent_state_store
+        self.knowledge_store = knowledge_store
+        self.knowledge_model_backend = knowledge_model_backend
         self.active_runs = active_runs or ActiveRunRegistry()
         self.run_lifecycle = RunLifecycle(run_store, event_bus)
         self.active_llm_uses = ActiveLLMUseRegistry()
@@ -147,6 +159,8 @@ class AgentRunner:
                 session_agent_state_store=session_agent_state_store,
                 app_settings_store=app_settings_store,
                 run_lifecycle=self.run_lifecycle,
+                knowledge_store=knowledge_store,
+                knowledge_model_backend=knowledge_model_backend,
             )
 
     async def run(
@@ -370,7 +384,6 @@ class AgentRunner:
             self.run_lifecycle.fail_step(context_step.step_id, error_message=error)
             failed_run = self.run_lifecycle.fail_run(run.run_id, "CONTEXT_BUILD_FAILED", error)
             return RunResult(success=False, run_id=failed_run.run_id, error=error)
-        self.run_lifecycle.complete_step(context_step.step_id)
 
         messages = []
         prompt = resolved_prompt(agent, agent_config)
@@ -381,6 +394,19 @@ class AgentRunner:
                 prompt = f"{prompt.rstrip()}\n\n{group_transcript_identity_instruction(agent.name, agent.id, app_settings.group_transcript_system_instruction)}"
             messages.append({"role": "system", "content": prompt})
         messages.extend(context.messages)
+        knowledge_mode = resolved_knowledge_context_mode(agent, agent_config)
+        knowledge_context = build_session_knowledge_context(
+            knowledge_store=self.knowledge_store,
+            model_backend=self.knowledge_model_backend,
+            query=args,
+            session_id=session_id,
+            source="prompt_agent",
+            effective_mode=str(knowledge_mode["effective_mode"]),
+        )
+        self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
+        if knowledge_context.rendered_text:
+            messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
+        self.run_lifecycle.complete_step(context_step.step_id)
 
         llm_config = None
         llm_use_key = None
@@ -408,7 +434,7 @@ class AgentRunner:
             )
             messages = vision_input["messages"]
             messages = validate_llm_context_messages(messages)
-            context_warnings = [*context.warnings, *file_context["warnings"], *vision_input["warnings"]]
+            context_warnings = [*context.warnings, *knowledge_context.warnings, *file_context["warnings"], *vision_input["warnings"]]
             self._record_llm_resolution(run.run_id, llm_config)
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
@@ -873,6 +899,17 @@ class AgentRunner:
         run = self.run_store.get_run(run_id)
         metadata = dict(run.metadata)
         metadata["file_context"] = file_context
+        self.run_store.update_metadata(run_id, metadata)
+
+    def _record_knowledge_context_metadata(self, run_id: str, knowledge_context: dict) -> None:
+        run = self.run_store.get_run(run_id)
+        metadata = dict(run.metadata)
+        metadata["knowledge_context"] = knowledge_context
+        warnings = knowledge_context.get("warnings") if isinstance(knowledge_context, dict) else None
+        if warnings:
+            existing = list(metadata.get("warnings", []))
+            existing.extend(str(item) for item in warnings)
+            metadata["warnings"] = existing
         self.run_store.update_metadata(run_id, metadata)
 
     def _record_llm_metadata(self, run_id: str, llm_config, llm_metrics: dict, vision_input: dict | None = None, file_context: dict | None = None, llm_raw: dict | None = None) -> None:

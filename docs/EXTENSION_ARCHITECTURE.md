@@ -147,6 +147,7 @@ Agent Workbench Knowledge v1 local model foundation:
 - Phase 1 owns local Knowledge settings and model APIs in the core application rather than a Capability manifest.
 - Phase 2 owns source indexing, chunk storage, vector BLOB storage, and FTS5 rows in the core application rather than a Capability manifest.
 - Phase 3 owns explicit retrieval search in the core application rather than a Capability manifest: SQLite vector BLOB brute-force search, FTS5/BM25 keyword search, RRF merge, one optional global rerank pass, and context-budget trimming.
+- Phase 4 owns session Knowledge context injection in the core runtime rather than a Capability manifest: Chat sessions bind enabled KBs, Prompt Agents inject by default during `Building context`, and LLM Script Agents inject only when AgentConfig overrides enable it.
 - Local model directories are `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
 - Local source staging starts at `data/knowledge/sources`; pasted source originals are written there as `<source_id>.txt`.
 - Embedding model profiles bind a user-named profile to an `embeddings/<folder>` model path.
@@ -156,7 +157,7 @@ Agent Workbench Knowledge v1 local model foundation:
 - `kb_chunks` owns indexed chunk content and source offsets.
 - `kb_embeddings` owns embedding snapshots and float32 vector BLOBs.
 - `kb_chunk_fts` owns keyword-search rows for future BM25 retrieval.
-- Prompt Agent injection, Script Agent injection, Knowledge Capability, and `/kb-search` are later phases.
+- Knowledge Capability, `/kb-search`, local-file sources, automatic model download, and retrieval/indexing/backend changes remain later phases.
 
 Common pitfalls:
 
@@ -326,8 +327,8 @@ Knowledge configuration ownership:
 - Embedding Model Profiles store local embedding model paths and instructions.
 - Knowledge Bases store per-KB configuration and overrides.
 - Knowledge Sources, Chunks, Embeddings, and FTS rows are Workbench-owned data derived from source inputs. Deleting a source deletes its chunks, embeddings, and FTS rows without deleting the original attachment.
-- Session Knowledge Bindings store which KBs are active for a session, but Phase 2 does not use them for context injection.
-- Do not store Knowledge model paths in AgentConfig or CapabilityConfig unless a later feature explicitly defines agent-level Knowledge overrides.
+- Session Knowledge Bindings store which KBs are active for a session and Phase 4 uses them for Prompt Agent and opted-in Script Agent context injection.
+- AgentConfig may store only the tri-state `knowledge_context_mode` runtime override. Do not store Knowledge model paths in AgentConfig or CapabilityConfig.
 
 Obsidian CapabilityConfig:
 

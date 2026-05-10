@@ -16,8 +16,9 @@ from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfi
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
 from ai_workbench.core.storage_maintenance import scan_orphan_attachments
-from ai_workbench.core.stores import LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
+from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
 from tests.test_prompt_agent_execution import FakeLLMRuntime, FakeStreamingLLMRuntime, run
 
 
@@ -43,6 +44,9 @@ class ScriptRuntimeFixture:
         self.events = EventBus()
         self.llm_profiles = LLMProfileStore()
         self.provider_profiles = ProviderProfileStore()
+        self.agent_configs = AgentConfigStore()
+        self.knowledge = MemoryKnowledgeStore()
+        self.knowledge.engine = object()
         self.app_settings = AppSettingsStore()
         self.app_settings.patch({"auto_generate_session_titles": False})
         self.llm = llm or FakeLLMRuntime(response="llm reply")
@@ -66,7 +70,10 @@ class ScriptRuntimeFixture:
             capability_registry=capabilities,
             llm_profile_store=self.llm_profiles,
             provider_profile_store=self.provider_profiles,
+            agent_config_store=self.agent_configs,
             app_settings_store=self.app_settings,
+            knowledge_store=self.knowledge,
+            knowledge_model_backend=object(),
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -118,6 +125,15 @@ def configure_llm_profile(fixture: ScriptRuntimeFixture, supports_streaming: boo
     return fixture.sessions.get_session(session.session_id)
 
 
+def bind_script_test_kb(fixture: ScriptRuntimeFixture, session_id: str):
+    profile = fixture.knowledge.create_embedding_profile(
+        EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test")
+    )
+    kb = fixture.knowledge.create_knowledge_base(KnowledgeBase(name="Script KB", embedding_model_profile_id=profile.id))
+    fixture.knowledge.replace_session_bindings(session_id, [kb.id])
+    return kb
+
+
 def test_script_agent_manifest_loads() -> None:
     agents = AgentRegistry()
     agents.load_from_directory(ROOT / "agents")
@@ -138,6 +154,117 @@ def test_script_lifecycle_lab_manifest_loads() -> None:
     assert agent.entry == "agent.py"
     assert "llm" in agent.capabilities
     assert {action.id for action in agent.actions} == {"default", "steps", "hidden_json", "public_stream"}
+
+
+def test_script_agent_with_llm_defaults_to_no_knowledge(monkeypatch, tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "script_llm_no_kb",
+        "async def run(ctx):\n    return await ctx.llm.text(system='sys', user=ctx.input.text)\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=agents, llm=FakeLLMRuntime(response="script reply"))
+    session = configure_llm_profile(fixture)
+    bind_script_test_kb(fixture, session.session_id)
+
+    def fail_search(**kwargs):
+        raise AssertionError("search should not be called")
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fail_search)
+
+    result = run(fixture.runtime.handle_input(session, "@script_llm_no_kb hello"))
+    metadata = fixture.runs.get_run(result.run_id).metadata
+
+    assert result.success is True
+    assert "Retrieved Knowledge" not in fixture.llm.calls[0]["messages"][0]["content"]
+    assert metadata["knowledge_context"]["reason"] == "agent_disabled"
+
+
+def test_script_agent_override_enabled_injects_knowledge_for_text_json_and_stream(monkeypatch, tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "script_llm_kb",
+        "\n".join(
+            [
+                "async def run(ctx):",
+                "    if ctx.input.text == 'json':",
+                "        data = await ctx.llm.json(system='sys', user='json')",
+                "        return data.get('value', '')",
+                "    if ctx.input.text == 'stream':",
+                "        text = ''",
+                "        async for chunk in ctx.llm.stream(system='sys', user='stream'):",
+                "            text += chunk.text",
+                "        return text",
+                "    return await ctx.llm.text(system='sys', user=ctx.input.text)",
+            ]
+        ),
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=agents, llm=FakeLLMRuntime(response='{"value":"ok"}'))
+    fixture.agent_configs.set_config("script_llm_kb", runtime={"knowledge_context_mode": "enabled"})
+    session = configure_llm_profile(fixture, supports_streaming=False)
+    kb = bind_script_test_kb(fixture, session.session_id)
+
+    def fake_search(**kwargs):
+        return {
+            "query": kwargs["query"],
+            "results": [
+                {
+                    "rank": 1,
+                    "chunk_id": "chunk-1",
+                    "knowledge_base_id": kb.id,
+                    "source_id": "source-1",
+                    "title": "Script Spec",
+                    "heading_path": "",
+                    "content": "Script knowledge.",
+                    "truncated": False,
+                    "rrf_score": 1.0,
+                }
+            ],
+            "debug": {"warnings": []},
+        }
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fake_search)
+
+    run(fixture.runtime.handle_input(session, "@script_llm_kb hello"))
+    run(fixture.runtime.handle_input(session, "@script_llm_kb json"))
+    run(fixture.runtime.handle_input(session, "@script_llm_kb stream"))
+
+    assert len(fixture.llm.calls) == 3
+    assert all("Script knowledge." in call["messages"][0]["content"] for call in fixture.llm.calls)
+    assert all(fixture.runs.get_run(run_item.run_id).metadata.get("knowledge_context", {}).get("injected") is not False for run_item in fixture.runs.list_runs(session.session_id))
+
+
+def test_script_agent_empty_and_silent_query_skip_knowledge(monkeypatch, tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "script_llm_empty_kb",
+        "async def run(ctx):\n    return await ctx.llm.text(system='sys', user='hello')\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=agents, llm=FakeLLMRuntime(response="ok"))
+    fixture.agent_configs.set_config("script_llm_empty_kb", runtime={"knowledge_context_mode": "enabled"})
+    session = configure_llm_profile(fixture)
+    bind_script_test_kb(fixture, session.session_id)
+
+    def fail_search(**kwargs):
+        raise AssertionError("search should not be called")
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fail_search)
+
+    result = run(
+        fixture.agent_runner.run(
+            "script_llm_empty_kb",
+            "default",
+            "",
+            session.session_id,
+            create_user_message=False,
+            is_silent_submission=True,
+        )
+    )
+
+    assert result.success is True
+    assert fixture.runs.get_run(result.run_id).metadata["knowledge_context"]["reason"] == "empty_query"
 
 
 def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
