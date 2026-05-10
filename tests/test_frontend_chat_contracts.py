@@ -423,6 +423,55 @@ def test_general_settings_uses_middle_category_list() -> None:
     assert "generalTab" not in panel
 
 
+def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
+    nav = read_frontend("components/settings/SettingsNav.tsx")
+    console = read_frontend("components/settings/SettingsConsole.tsx")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    knowledge = read_frontend("components/settings/KnowledgeSettingsPanel.tsx")
+    client = read_frontend("api/client.ts")
+
+    assert "'knowledge'" in nav
+    assert "label: 'Knowledge'" in nav
+    assert "type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases'" in object_list
+    assert "Defaults" in object_list
+    assert "Embedding Models" in object_list
+    assert "Knowledge Bases" in object_list
+    assert "if (section === 'knowledge')" in object_list
+    assert "onSelectKnowledgeCategory?.(category.id)" in object_list
+    assert "useState<KnowledgeSettingsCategory>('defaults')" in console
+    assert "setKnowledgeCategory('defaults')" in console
+    assert "knowledgeCategory={knowledgeCategory}" in console
+    assert "onSelectKnowledgeCategory={setKnowledgeCategory}" in console
+    assert "<KnowledgeSettingsDetail category={knowledgeCategory} onDirtyChange={onDirtyChange} />" in panel
+
+    assert "Local Models" in knowledge
+    assert "Embedding" in knowledge
+    assert "Reranker" in knowledge
+    assert "Retrieval" in knowledge
+    assert "Chunking" in knowledge
+    assert "Index limits" in knowledge
+    assert "Context Injection" in knowledge
+    assert "Scan local models" in knowledge
+    assert "Test reranker" in knowledge
+    assert "Test" in knowledge
+    assert "No embedding model profiles yet." in knowledge
+    assert "No knowledge bases yet." in knowledge
+    assert "Sources and indexing arrive in the next phase." in knowledge
+    assert "api.scanKnowledgeModels()" in knowledge
+    assert "api.updateKnowledgeSettings" in knowledge
+    assert "api.testEmbeddingModel" in knowledge
+    assert "api.rerankKnowledge" in knowledge
+    assert "backendLabel(scan?.backend)" in knowledge
+    assert "Unavailable: optional dependencies missing" in knowledge
+
+    assert "/api/knowledge/settings" in client
+    assert "/api/knowledge/models/scan" in client
+    assert "/api/knowledge/embedding-models" in client
+    assert "/api/knowledge/bases" in client
+    assert "/api/knowledge/rerank" in client
+
+
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")

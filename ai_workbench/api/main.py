@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, attachments, commands, configs, data, diagnostics, health, llm_profiles, llm_provider_profiles, messages, runs, sessions, settings
+from ai_workbench.api.routes import agents, attachments, commands, configs, data, diagnostics, health, knowledge, llm_profiles, llm_provider_profiles, messages, runs, sessions, settings
 from ai_workbench.api.ws import router as ws_router
 
 
@@ -30,12 +30,14 @@ def create_app(
     database_url: str = None,
     use_memory: bool = False,
     frontend_dist: str | Path | None = None,
+    root: str | Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agent Workbench", lifespan=runtime_lifespan)
     app.state.runtime_state = runtime_state or build_runtime_state(
         llm_runtime=llm_runtime,
         database_url=database_url,
         use_memory=use_memory,
+        root=root,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -72,6 +74,7 @@ def create_app(
     app.include_router(diagnostics.router)
     app.include_router(llm_profiles.router)
     app.include_router(llm_provider_profiles.router)
+    app.include_router(knowledge.router)
     app.include_router(settings.router)
     app.include_router(health.router)
     app.include_router(sessions.router)

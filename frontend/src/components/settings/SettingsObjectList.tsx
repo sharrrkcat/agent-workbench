@@ -7,16 +7,24 @@ import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts';
+export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases';
 
 const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
   { id: 'files', name: 'Files', description: 'Upload limits and file context.' },
   { id: 'llm_prompts', name: 'LLM & Prompts', description: 'Title generation and context prompts.' },
 ];
 
+const knowledgeCategories: { id: KnowledgeSettingsCategory; name: string; description: string }[] = [
+  { id: 'defaults', name: 'Defaults', description: 'Local model and retrieval defaults.' },
+  { id: 'embedding_models', name: 'Embedding Models', description: 'Local embedding model profiles.' },
+  { id: 'knowledge_bases', name: 'Knowledge Bases', description: 'Config-only KB objects.' },
+];
+
 export function SettingsObjectList({
   section,
   llmSubsection = 'defaults',
   generalCategory = 'files',
+  knowledgeCategory = 'defaults',
   agentConfigs,
   capabilityConfigs,
   selectedAgentId,
@@ -25,6 +33,7 @@ export function SettingsObjectList({
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
   onSelectGeneralCategory,
+  onSelectKnowledgeCategory,
   onSelectAgent,
   onSelectCapability,
   onSelectLlmItem,
@@ -32,6 +41,7 @@ export function SettingsObjectList({
   section: SettingsSection;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
+  knowledgeCategory?: KnowledgeSettingsCategory;
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
   selectedAgentId?: string;
@@ -40,6 +50,7 @@ export function SettingsObjectList({
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
+  onSelectKnowledgeCategory?: (category: KnowledgeSettingsCategory) => void;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
   onSelectLlmItem?: (itemId: string) => void;
@@ -82,6 +93,32 @@ export function SettingsObjectList({
               active={selectedAgentId === config.agent_id}
               onClick={() => onSelectAgent(config.agent_id)}
             />
+          ))}
+        </div>
+      </aside>
+    );
+  }
+
+  if (section === 'knowledge') {
+    return (
+      <aside className="settings-object-list" aria-label="Knowledge categories">
+        <ObjectListHeader title="Category" count={knowledgeCategories.length} />
+        <div className="settings-list-scroll">
+          {knowledgeCategories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`settings-object-row ${knowledgeCategory === category.id ? 'active' : ''}`}
+              onClick={() => onSelectKnowledgeCategory?.(category.id)}
+            >
+              <div className="settings-object-avatar">
+                <SlidersHorizontal size={16} />
+              </div>
+              <div className="settings-object-copy">
+                <strong>{category.name}</strong>
+                <small>{category.description}</small>
+              </div>
+            </button>
           ))}
         </div>
       </aside>

@@ -1,11 +1,12 @@
-import { Activity, Bot, Boxes, Code2, Database, Info, Settings, SlidersHorizontal } from 'lucide-react';
+import { Activity, Bot, Boxes, BrainCircuit, Code2, Database, Info, Settings, SlidersHorizontal } from 'lucide-react';
 
-export type SettingsSection = 'general' | 'llm' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
+export type SettingsSection = 'general' | 'llm' | 'knowledge' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
 export type LlmSettingsSubsection = 'defaults' | 'providers' | 'models';
 
 const sections: { id: SettingsSection; label: string; icon: typeof Settings }[] = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'llm', label: 'LLM', icon: SlidersHorizontal },
+  { id: 'knowledge', label: 'Knowledge', icon: BrainCircuit },
   { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'capabilities', label: 'Capabilities', icon: Boxes },
   { id: 'data', label: 'Data', icon: Database },

@@ -142,6 +142,16 @@ Typical components:
 - Script Agent logic for summarization, concept extraction, linking, and review.
 - Mock LLM outputs and temp source data in tests.
 
+Agent Workbench Knowledge v1 local model foundation:
+
+- Phase 1 owns local Knowledge settings and model APIs in the core application rather than a Capability manifest.
+- Local model directories are `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
+- Local source staging starts at `data/knowledge/sources`, but Phase 1 does not ingest or index sources.
+- Embedding model profiles bind a user-named profile to an `embeddings/<folder>` model path.
+- Knowledge Defaults hold the single global reranker setting with a `rerankers/<folder>` model path.
+- The local embedding and reranker APIs use Workbench JSON shapes and optional local dependencies; missing optional dependencies must not prevent normal chat startup.
+- Source indexing, vector/FTS retrieval, reranker integration into retrieval, Prompt Agent injection, Script Agent injection, Knowledge Capability, and `/kb-search` are later phases.
+
 Common pitfalls:
 
 - Treating generated summaries as source truth.
@@ -303,6 +313,14 @@ ComfyUI AgentConfig:
 - Whether LLM prompt enhancement auto-runs generation.
 - Seed policy.
 - Whether to request ComfyUI model unload and execution memory release after generation.
+
+Knowledge configuration ownership:
+
+- Knowledge Defaults store app-level RAG defaults such as local model device, reranker path, retrieval limits, chunking limits, and future context prompt templates.
+- Embedding Model Profiles store local embedding model paths and instructions.
+- Knowledge Bases store per-KB configuration and overrides.
+- Session Knowledge Bindings store which KBs are active for a session, but Phase 1 does not use them for context injection.
+- Do not store Knowledge model paths in AgentConfig or CapabilityConfig unless a later feature explicitly defines agent-level Knowledge overrides.
 
 Obsidian CapabilityConfig:
 

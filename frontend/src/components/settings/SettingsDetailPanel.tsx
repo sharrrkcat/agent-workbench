@@ -10,7 +10,8 @@ import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './Se
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import type { LlmSettingsSubsection, SettingsSection } from './SettingsNav';
-import type { GeneralSettingsCategory } from './SettingsObjectList';
+import type { GeneralSettingsCategory, KnowledgeSettingsCategory } from './SettingsObjectList';
+import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 
 export function SettingsDetailPanel({
   section,
@@ -24,6 +25,7 @@ export function SettingsDetailPanel({
   selectedLlmItemId = 'global',
   llmSubsection = 'defaults',
   generalCategory = 'files',
+  knowledgeCategory = 'defaults',
   onLlmProfilesChanged,
   activeTab,
   onTabChange,
@@ -40,6 +42,7 @@ export function SettingsDetailPanel({
   selectedLlmItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
+  knowledgeCategory?: KnowledgeSettingsCategory;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -110,6 +113,14 @@ export function SettingsDetailPanel({
     return (
       <section className="settings-detail-panel">
         <GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} />
+      </section>
+    );
+  }
+
+  if (section === 'knowledge') {
+    return (
+      <section className="settings-detail-panel">
+        <KnowledgeSettingsDetail category={knowledgeCategory} onDirtyChange={onDirtyChange} />
       </section>
     );
   }

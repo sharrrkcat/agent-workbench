@@ -14,6 +14,8 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.knowledge_models import LocalKnowledgeModelBackend, ensure_knowledge_directories
+from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
 from ai_workbench.core.stores import (
     AgentConfigStore,
     CapabilityConfigStore,
@@ -65,6 +67,9 @@ class RuntimeState:
     llm_defaults: Any = None
     app_settings: Any = None
     session_agent_states: Any = None
+    knowledge: Any = None
+    knowledge_model_backend: Any = None
+    repo_root: Path | None = None
     database_url: str | None = None
     started_at: datetime = field(default_factory=utc_now)
     active_websockets: int = 0
@@ -77,6 +82,7 @@ def build_runtime_state(
     use_memory: bool = False,
 ) -> RuntimeState:
     repo_root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
+    ensure_knowledge_directories(repo_root)
     agents = AgentRegistry()
     agents.load_from_directory(repo_root / "agents")
 
@@ -104,6 +110,7 @@ def build_runtime_state(
         llm_defaults = LLMDefaultsStore()
         app_settings = AppSettingsStore()
         session_agent_states = SessionAgentStateStore()
+        knowledge = MemoryKnowledgeStore()
         resolved_database_url = "sqlite:///:memory:"
     else:
         engine = get_engine(database_url)
@@ -118,10 +125,11 @@ def build_runtime_state(
         provider_profiles = SqlProviderProfileStore(engine)
         llm_defaults = SqlLLMDefaultsStore(engine)
         from ai_workbench.db.database import get_database_url
-        from ai_workbench.db.stores import SqlAppSettingsStore
+        from ai_workbench.db.stores import SqlAppSettingsStore, SqlKnowledgeStore
 
         app_settings = SqlAppSettingsStore(engine)
         session_agent_states = SqlSessionAgentStateStore(engine)
+        knowledge = SqlKnowledgeStore(engine)
         resolved_database_url = get_database_url(database_url)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
@@ -178,6 +186,9 @@ def build_runtime_state(
         llm_defaults=llm_defaults,
         app_settings=app_settings,
         session_agent_states=session_agent_states,
+        knowledge=knowledge,
+        knowledge_model_backend=LocalKnowledgeModelBackend(repo_root),
+        repo_root=repo_root,
         database_url=resolved_database_url,
     )
 

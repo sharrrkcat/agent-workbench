@@ -4,7 +4,7 @@ import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { LlmProfile, LlmProviderProfile } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type LlmSettingsSubsection, type SettingsSection } from './SettingsNav';
-import { SettingsObjectList, type GeneralSettingsCategory } from './SettingsObjectList';
+import { SettingsObjectList, type GeneralSettingsCategory, type KnowledgeSettingsCategory } from './SettingsObjectList';
 
 export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
@@ -16,6 +16,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('global');
   const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('defaults');
   const [generalCategory, setGeneralCategory] = useState<GeneralSettingsCategory>('files');
+  const [knowledgeCategory, setKnowledgeCategory] = useState<KnowledgeSettingsCategory>('defaults');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
 
@@ -62,6 +63,9 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
     if (section === 'general') {
       setGeneralCategory('files');
+    }
+    if (section === 'knowledge') {
+      setKnowledgeCategory('defaults');
     }
   }
 
@@ -152,6 +156,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         section={activeSection}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}
+        knowledgeCategory={knowledgeCategory}
         agentConfigs={agentConfigs}
         capabilityConfigs={capabilityConfigs}
         selectedAgentId={selectedAgentConfig?.agent_id}
@@ -160,6 +165,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
         onSelectGeneralCategory={setGeneralCategory}
+        onSelectKnowledgeCategory={setKnowledgeCategory}
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
         onSelectLlmItem={selectLlmItem}
@@ -176,6 +182,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         selectedLlmItemId={selectedLlmItemId}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}
+        knowledgeCategory={knowledgeCategory}
         onLlmProfilesChanged={refreshLlmProfiles}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}

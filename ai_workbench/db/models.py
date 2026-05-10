@@ -147,6 +147,97 @@ class LLMProfileRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class KnowledgeSettingsRecord(SQLModel, table=True):
+    __tablename__ = "knowledge_settings"
+
+    id: int = Field(default=1, primary_key=True)
+    models_root: str = "data/models"
+    local_model_device: str = "auto"
+    embedding_batch_size: int = 16
+    embedding_timeout_seconds: int = 60
+    reranker_enabled: bool = False
+    reranker_model_path: Optional[str] = None
+    reranker_batch_size: int = 16
+    reranker_timeout_seconds: int = 60
+    reranker_candidate_limit: int = 50
+    hybrid_search_enabled: bool = True
+    default_vector_candidate_k: int = 20
+    default_keyword_candidate_k: int = 20
+    default_final_top_k: int = 6
+    default_max_context_chars: int = 10000
+    default_min_score: Optional[float] = None
+    rrf_k: int = 60
+    default_chunk_size: int = 1000
+    default_chunk_overlap: int = 150
+    max_source_size_bytes: int = 2097152
+    max_chunks_per_source: int = 500
+    max_total_index_chars_per_source: int = 200000
+    knowledge_context_instruction: str = (
+        "The following snippets were retrieved from active session knowledge bases.\n"
+        "Use them only when relevant.\n"
+        "If the snippets do not contain enough evidence, say so.\n"
+        "Cite snippets as [K1], [K2]."
+    )
+    knowledge_context_snippet_template: str = (
+        "[{index}]\n"
+        "Knowledge base: {knowledge_base_name}\n"
+        "Source: {source_title}\n"
+        "Section: {heading_path}\n"
+        "Content:\n"
+        "{content}"
+    )
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class EmbeddingModelProfileRecord(SQLModel, table=True):
+    __tablename__ = "embedding_model_profiles"
+
+    id: str = Field(primary_key=True)
+    name: str
+    alias: str = Field(index=True, unique=True)
+    model_path: str
+    dimension: Optional[int] = None
+    normalize: bool = True
+    document_instruction: str = ""
+    query_instruction: str = ""
+    enabled: bool = True
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeBaseRecord(SQLModel, table=True):
+    __tablename__ = "knowledge_bases"
+
+    id: str = Field(primary_key=True)
+    name: str
+    description: str = ""
+    embedding_model_profile_id: str = Field(index=True)
+    enabled: bool = True
+    index_status: str = "empty"
+    index_error: Optional[str] = None
+    chunk_size_override: Optional[int] = None
+    chunk_overlap_override: Optional[int] = None
+    vector_candidate_k_override: Optional[int] = None
+    keyword_candidate_k_override: Optional[int] = None
+    final_top_k_override: Optional[int] = None
+    max_context_chars_override: Optional[int] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class SessionKnowledgeBindingRecord(SQLModel, table=True):
+    __tablename__ = "session_knowledge_bindings"
+    __table_args__ = (UniqueConstraint("session_id", "knowledge_base_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str = Field(index=True)
+    knowledge_base_id: str = Field(index=True)
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class ProviderProfileRecord(SQLModel, table=True):
     __tablename__ = "llm_provider_profiles"
 

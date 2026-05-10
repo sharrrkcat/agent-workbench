@@ -10,6 +10,7 @@ from ai_workbench.api.errors import raise_error
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.time import ensure_utc, utc_now
+from ai_workbench.api.routes.knowledge import SessionKnowledgePatch, list_session_knowledge_bases, patch_session_knowledge_bases
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -91,6 +92,20 @@ def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_stat
             ),
         )
     ]
+
+
+@router.get("/{session_id}/knowledge-bases")
+def get_session_knowledge_bases(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
+    return list_session_knowledge_bases(session_id, state)
+
+
+@router.patch("/{session_id}/knowledge-bases")
+def update_session_knowledge_bases(
+    session_id: str,
+    payload: SessionKnowledgePatch,
+    state: RuntimeState = Depends(get_state),
+) -> list[dict]:
+    return patch_session_knowledge_bases(session_id, payload, state)
 
 
 @router.post("/{session_id}/notifications/{notification_id}/dismiss")
@@ -187,6 +202,7 @@ def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) ->
     state.run_events.delete_session(session_id)
     state.runs.delete_session(session_id)
     state.messages.delete_session(session_id)
+    state.knowledge.delete_session_bindings(session_id)
     for message in deleted_messages:
         attachments = (message.metadata or {}).get("attachments")
         if isinstance(attachments, list):

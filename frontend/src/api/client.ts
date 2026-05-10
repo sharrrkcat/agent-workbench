@@ -23,6 +23,10 @@ import type {
   CleanupOrphansResult,
   GeneralSettings,
   OrphanScanResult,
+  EmbeddingModelProfile,
+  KnowledgeBase,
+  KnowledgeModelScan,
+  KnowledgeSettings,
   RuntimeResponse,
   Session,
   SendMessageAttachment,
@@ -154,6 +158,54 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+  getKnowledgeSettings: () => request<KnowledgeSettings>('/api/knowledge/settings'),
+  updateKnowledgeSettings: (patch: Partial<KnowledgeSettings>) =>
+    request<KnowledgeSettings>('/api/knowledge/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  scanKnowledgeModels: () => request<KnowledgeModelScan>('/api/knowledge/models/scan'),
+  listEmbeddingModels: () => request<EmbeddingModelProfile[]>('/api/knowledge/embedding-models'),
+  createEmbeddingModel: (profile: Partial<EmbeddingModelProfile>) =>
+    request<EmbeddingModelProfile>('/api/knowledge/embedding-models', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchEmbeddingModel: (profileId: string, patch: Partial<EmbeddingModelProfile>) =>
+    request<EmbeddingModelProfile>(`/api/knowledge/embedding-models/${profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteEmbeddingModel: (profileId: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/knowledge/embedding-models/${profileId}`, { method: 'DELETE' }),
+  testEmbeddingModel: (profileId: string, text: string, purpose: 'query' | 'document' = 'query') =>
+    request<{ ok: boolean; dimension: number; sample: number[]; normalized: boolean }>(`/api/knowledge/embedding-models/${profileId}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ text, purpose }),
+    }),
+  createKnowledgeEmbeddings: (payload: { model_profile_id: string; purpose: 'query' | 'document'; inputs: string[] }) =>
+    request<{ model_profile_id: string; dimension: number; vectors: number[][] }>('/api/knowledge/embeddings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  rerankKnowledge: (payload: { query: string; documents: { id: string; text: string }[] }) =>
+    request<{ ok: boolean; model_path: string; results: { id: string; score: number }[] }>('/api/knowledge/rerank', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  listKnowledgeBases: () => request<KnowledgeBase[]>('/api/knowledge/bases'),
+  createKnowledgeBase: (knowledgeBase: Partial<KnowledgeBase>) =>
+    request<KnowledgeBase>('/api/knowledge/bases', {
+      method: 'POST',
+      body: JSON.stringify(knowledgeBase),
+    }),
+  patchKnowledgeBase: (knowledgeBaseId: string, patch: Partial<KnowledgeBase>) =>
+    request<KnowledgeBase>(`/api/knowledge/bases/${knowledgeBaseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteKnowledgeBase: (knowledgeBaseId: string) =>
+    request<{ deleted: boolean; knowledge_base_id: string }>(`/api/knowledge/bases/${knowledgeBaseId}`, { method: 'DELETE' }),
   getStorageStats: () => request<StorageStats>('/api/data/storage-stats'),
   getDiagnostics: () => request<Diagnostics>('/api/diagnostics'),
   scanOrphanAttachments: () => request<OrphanScanResult>('/api/data/attachments/scan-orphans', { method: 'POST' }),

@@ -319,6 +319,61 @@ The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `ref
 
 General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
+## Knowledge Settings And Local Model APIs
+
+Knowledge RAG v1 Phase 1 adds Workbench-owned settings and model APIs. These are internal Workbench JSON APIs, not provider function calling, tool calling, or OpenAI-compatible embedding endpoints.
+
+Settings:
+
+- `GET /api/knowledge/settings`
+- `PATCH /api/knowledge/settings`
+
+Knowledge Defaults store local model device, embedding batch/timeout defaults, the single global reranker configuration, future retrieval/chunking/index limits, and future Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
+
+Local model directories:
+
+- `data/models/embeddings/<model-folder>`
+- `data/models/rerankers/<model-folder>`
+- `data/knowledge/sources`
+
+Model paths must be relative to `data/models`, use POSIX-style storage, and match either `embeddings/<folder>` for embedding profiles or `rerankers/<folder>` for the global reranker. Absolute paths and `..` segments are rejected.
+
+Embedding model profile APIs:
+
+- `GET /api/knowledge/embedding-models`
+- `POST /api/knowledge/embedding-models`
+- `GET /api/knowledge/embedding-models/{id}`
+- `PATCH /api/knowledge/embedding-models/{id}`
+- `DELETE /api/knowledge/embedding-models/{id}`
+- `POST /api/knowledge/embedding-models/{id}/test`
+
+Embedding generation:
+
+- `POST /api/knowledge/embeddings`
+
+Request shape is `{model_profile_id, purpose, inputs}` where `purpose` is `query` or `document`. The API applies the profile instruction for that purpose, validates batch size against Knowledge Defaults, and returns `{model_profile_id, model_path, purpose, dimension, vectors}`.
+
+Reranking:
+
+- `POST /api/knowledge/rerank`
+
+The reranker uses Knowledge Defaults `reranker_enabled` and `reranker_model_path`. It returns sorted `{id, score}` results or structured errors such as `KNOWLEDGE_RERANKER_DISABLED`, `KNOWLEDGE_RERANKER_MODEL_NOT_CONFIGURED`, `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, or `KNOWLEDGE_MODEL_NOT_FOUND`.
+
+Knowledge base APIs:
+
+- `GET /api/knowledge/bases`
+- `POST /api/knowledge/bases`
+- `GET /api/knowledge/bases/{id}`
+- `PATCH /api/knowledge/bases/{id}`
+- `DELETE /api/knowledge/bases/{id}`
+
+Session bindings:
+
+- `GET /api/sessions/{session_id}/knowledge-bases`
+- `PATCH /api/sessions/{session_id}/knowledge-bases`
+
+Phase 1 bindings are configuration only. They do not alter Prompt Agent or Script Agent context.
+
 ## Capability Config
 
 - `config_schema` declares Settings fields.

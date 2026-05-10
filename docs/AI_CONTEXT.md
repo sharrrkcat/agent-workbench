@@ -236,6 +236,40 @@ Tests:
 Avoid unless needed:
 - Do not rewrite tutorial docs for Settings-only changes.
 
+### Change Knowledge / RAG settings or local model APIs
+
+Read:
+- `README.md#settings`
+- `README.md#sqlite-data`
+- `docs/RUNTIME_PROTOCOLS.md#llm-resolution`
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+- `docs/RUNTIME_PROTOCOLS.md#session-title-generation`
+- `docs/EXTENSION_API.md#config-schema-fields`
+- `docs/EXTENSION_API.md#capability-config`
+- `docs/EXTENSION_ARCHITECTURE.md#knowledge-bridge`
+- `docs/EXTENSION_ARCHITECTURE.md#configuration-ownership`
+- `docs/generated/REGISTRY.md`
+
+Likely source:
+- `ai_workbench/core/knowledge_models.py`
+- `ai_workbench/core/knowledge_settings.py`
+- `ai_workbench/core/embedding.py`
+- `ai_workbench/core/rerank.py`
+- `ai_workbench/core/knowledge_store.py`
+- `ai_workbench/api/routes/knowledge.py`
+- `frontend/src/components/settings/KnowledgeSettingsPanel.tsx`
+- `frontend/src/components/settings/SettingsConsole.tsx`
+- `frontend/src/components/settings/SettingsObjectList.tsx`
+- `frontend/src/components/settings/SettingsDetailPanel.tsx`
+
+Tests:
+- `uv run pytest tests/test_knowledge_settings.py tests/test_knowledge_models.py`
+- `uv run pytest tests/test_frontend_chat_contracts.py`
+- `cd frontend && npm run build`
+
+Avoid unless explicitly in scope:
+- Do not add source indexing, vector storage, FTS/BM25, retrieval injection, Knowledge Capability, `/kb-search`, automatic model download, or Prompt/Script Agent context changes for Knowledge Settings-only work.
+
 ## Documentation Update Rules
 
 - If `agent.yaml` or `capability.yaml` fields change, update `EXTENSION_API` and regenerate `REGISTRY`.

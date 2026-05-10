@@ -13,12 +13,21 @@ from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, Ru
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
+from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
+from ai_workbench.core.knowledge_store import (
+    EmbeddingModelProfile,
+    KnowledgeBase,
+    SessionKnowledgeBinding,
+)
 from ai_workbench.core.time import ensure_utc, utc_now
 from ai_workbench.core.session_titles import is_default_session_title
 from ai_workbench.db.models import (
     AgentConfigRecord,
     AppMetadataRecord,
     CapabilityConfigRecord,
+    EmbeddingModelProfileRecord,
+    KnowledgeBaseRecord,
+    KnowledgeSettingsRecord,
     LLMProfileRecord,
     MessageRecord,
     ProviderProfileRecord,
@@ -27,6 +36,7 @@ from ai_workbench.db.models import (
     RunStepRecord,
     SessionRecord,
     SessionAgentStateRecord,
+    SessionKnowledgeBindingRecord,
 )
 
 
@@ -970,6 +980,177 @@ class SqlLLMDefaultsStore:
         return next_values
 
 
+class SqlKnowledgeStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def get_settings(self) -> KnowledgeSettings:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeSettingsRecord, 1)
+            if record is None:
+                record = KnowledgeSettingsRecord(id=1)
+                session.add(record)
+                session.commit()
+                session.refresh(record)
+            return _knowledge_settings_from_record(record)
+
+    def patch_settings(self, values: Dict[str, Any]) -> KnowledgeSettings:
+        patch = KnowledgeSettingsPatch.model_validate(values)
+        updates = knowledge_settings_patch_updates(patch)
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeSettingsRecord, 1)
+            if record is None:
+                record = KnowledgeSettingsRecord(id=1)
+            current = _knowledge_settings_from_record(record)
+            next_settings = KnowledgeSettings.model_validate({**current.model_dump(), **updates})
+            _apply_knowledge_settings_to_record(record, next_settings)
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _knowledge_settings_from_record(record)
+
+    def list_embedding_profiles(self) -> List[EmbeddingModelProfile]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(EmbeddingModelProfileRecord).order_by(EmbeddingModelProfileRecord.alias)).all()
+            return [_embedding_profile_from_record(record) for record in records]
+
+    def create_embedding_profile(self, profile: EmbeddingModelProfile) -> EmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            if session.get(EmbeddingModelProfileRecord, profile.id) is not None:
+                raise ValueError("KNOWLEDGE_EMBEDDING_ID_EXISTS")
+            if _find_embedding_profile_by_alias(session, profile.alias) is not None:
+                raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
+            record = EmbeddingModelProfileRecord(**profile.model_dump())
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _embedding_profile_from_record(record)
+
+    def get_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(EmbeddingModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown embedding model profile: {profile_id}")
+            return _embedding_profile_from_record(record)
+
+    def update_embedding_profile(self, profile_id: str, values: Dict[str, Any]) -> EmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(EmbeddingModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown embedding model profile: {profile_id}")
+            alias = values.get("alias")
+            if alias is not None:
+                conflict = _find_embedding_profile_by_alias(session, str(alias))
+                if conflict is not None and conflict.id != record.id:
+                    raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
+            candidate = _embedding_profile_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
+            profile = EmbeddingModelProfile.model_validate(candidate.model_dump())
+            for key, value in profile.model_dump().items():
+                setattr(record, key, value)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _embedding_profile_from_record(record)
+
+    def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(EmbeddingModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown embedding model profile: {profile_id}")
+            in_use = session.exec(
+                select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.embedding_model_profile_id == record.id)
+            ).first()
+            if in_use is not None:
+                raise ValueError("KNOWLEDGE_EMBEDDING_MODEL_IN_USE")
+            profile = _embedding_profile_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
+    def list_knowledge_bases(self) -> List[KnowledgeBase]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(KnowledgeBaseRecord).order_by(KnowledgeBaseRecord.name)).all()
+            return [_knowledge_base_from_record(record) for record in records]
+
+    def create_knowledge_base(self, knowledge_base: KnowledgeBase) -> KnowledgeBase:
+        with DbSession(self.engine) as session:
+            if session.get(KnowledgeBaseRecord, knowledge_base.id) is not None:
+                raise ValueError("KNOWLEDGE_BASE_ID_EXISTS")
+            record = KnowledgeBaseRecord(**knowledge_base.model_dump())
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _knowledge_base_from_record(record)
+
+    def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeBaseRecord, knowledge_base_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+            return _knowledge_base_from_record(record)
+
+    def update_knowledge_base(self, knowledge_base_id: str, values: Dict[str, Any]) -> KnowledgeBase:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeBaseRecord, knowledge_base_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+            candidate = _knowledge_base_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
+            knowledge_base = KnowledgeBase.model_validate(candidate.model_dump())
+            for key, value in knowledge_base.model_dump().items():
+                setattr(record, key, value)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _knowledge_base_from_record(record)
+
+    def delete_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeBaseRecord, knowledge_base_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+            knowledge_base = _knowledge_base_from_record(record)
+            session.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.knowledge_base_id == record.id))
+            session.delete(record)
+            session.commit()
+            return knowledge_base
+
+    def list_session_bindings(self, session_id: str) -> List[SessionKnowledgeBinding]:
+        with DbSession(self.engine) as session:
+            records = session.exec(
+                select(SessionKnowledgeBindingRecord)
+                .where(SessionKnowledgeBindingRecord.session_id == session_id)
+                .order_by(SessionKnowledgeBindingRecord.created_at)
+            ).all()
+            bindings: List[SessionKnowledgeBinding] = []
+            for record in records:
+                kb_record = session.get(KnowledgeBaseRecord, record.knowledge_base_id)
+                bindings.append(_session_knowledge_binding_from_record(record, kb_record))
+            return bindings
+
+    def replace_session_bindings(self, session_id: str, knowledge_base_ids: List[str]) -> List[SessionKnowledgeBinding]:
+        with DbSession(self.engine) as session:
+            seen: set[str] = set()
+            validated_ids: list[str] = []
+            for knowledge_base_id in knowledge_base_ids:
+                if knowledge_base_id in seen:
+                    continue
+                if session.get(KnowledgeBaseRecord, knowledge_base_id) is None:
+                    raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+                seen.add(knowledge_base_id)
+                validated_ids.append(knowledge_base_id)
+            session.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id == session_id))
+            for knowledge_base_id in validated_ids:
+                session.add(SessionKnowledgeBindingRecord(session_id=session_id, knowledge_base_id=knowledge_base_id, enabled=True))
+            session.commit()
+        return self.list_session_bindings(session_id)
+
+    def delete_session_bindings(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            session.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id == session_id))
+            session.commit()
+
+
 def _session_from_record(record: SessionRecord) -> Session:
     return Session(
         session_id=record.session_id,
@@ -1152,4 +1333,72 @@ def _provider_from_record(record: ProviderProfileRecord) -> ProviderProfileSchem
         metadata=_loads(record.metadata_json, {}),
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
+    )
+
+
+def _knowledge_settings_from_record(record: KnowledgeSettingsRecord) -> KnowledgeSettings:
+    return KnowledgeSettings.model_validate(
+        {key: getattr(record, key) for key in KnowledgeSettings.model_fields if hasattr(record, key)}
+    )
+
+
+def _apply_knowledge_settings_to_record(record: KnowledgeSettingsRecord, settings: KnowledgeSettings) -> None:
+    for key, value in settings.model_dump().items():
+        if key in {"id"}:
+            continue
+        setattr(record, key, value)
+
+
+def _find_embedding_profile_by_alias(session: DbSession, alias: str) -> Optional[EmbeddingModelProfileRecord]:
+    return session.exec(select(EmbeddingModelProfileRecord).where(EmbeddingModelProfileRecord.alias == alias)).first()
+
+
+def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> EmbeddingModelProfile:
+    return EmbeddingModelProfile(
+        id=record.id,
+        name=record.name,
+        alias=record.alias,
+        model_path=record.model_path,
+        dimension=record.dimension,
+        normalize=record.normalize,
+        document_instruction=record.document_instruction,
+        query_instruction=record.query_instruction,
+        enabled=record.enabled,
+        notes=record.notes,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
+def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
+    return KnowledgeBase(
+        id=record.id,
+        name=record.name,
+        description=record.description,
+        embedding_model_profile_id=record.embedding_model_profile_id,
+        enabled=record.enabled,
+        index_status=record.index_status,
+        index_error=record.index_error,
+        chunk_size_override=record.chunk_size_override,
+        chunk_overlap_override=record.chunk_overlap_override,
+        vector_candidate_k_override=record.vector_candidate_k_override,
+        keyword_candidate_k_override=record.keyword_candidate_k_override,
+        final_top_k_override=record.final_top_k_override,
+        max_context_chars_override=record.max_context_chars_override,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
+def _session_knowledge_binding_from_record(
+    record: SessionKnowledgeBindingRecord,
+    knowledge_base_record: KnowledgeBaseRecord | None = None,
+) -> SessionKnowledgeBinding:
+    return SessionKnowledgeBinding(
+        id=record.id,
+        session_id=record.session_id,
+        knowledge_base_id=record.knowledge_base_id,
+        enabled=record.enabled,
+        created_at=ensure_utc(record.created_at),
+        knowledge_base=_knowledge_base_from_record(knowledge_base_record) if knowledge_base_record is not None else None,
     )

@@ -242,6 +242,14 @@ Retry and edit reruns build context from the current session `context_mode`.
 
 Settings -> General -> Context Rendering exposes prompt-text overrides for group transcript and command result context instructions. These settings affect only future context builds. They do not rewrite historical messages and do not dynamically update a run whose context has already been built.
 
+## Knowledge Context
+
+Knowledge RAG v1 Phase 1 only defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, and local embedding/reranker APIs.
+
+Phase 1 does not inject retrieved snippets into Prompt Agent `Building context`, Script Agent `ctx.llm`, command result context, session title generation, or any provider-bound message payload. Prompt Agent and Script Agent run-step contracts remain unchanged.
+
+Future phases may use active session knowledge bases to retrieve snippets and append a bounded Knowledge context block before provider calls. That work must update this protocol when it changes Prompt Agent context building, Script Agent LLM helpers, run metadata, or message warnings.
+
 ## Speaker Identity
 
 Message `role` is the provider-compatible direction of the message. New provider-bound payloads may only use `system`, `user`, and `assistant`.

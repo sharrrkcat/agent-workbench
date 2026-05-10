@@ -312,6 +312,83 @@ export type LlmDefaults = {
   default_model_profile_id: string | null;
 };
 
+export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases';
+
+export type KnowledgeBackendStatus = {
+  sentence_transformers_available: boolean;
+  torch_available: boolean;
+  transformers_available?: boolean;
+  cuda_available?: boolean;
+  available?: boolean;
+};
+
+export type KnowledgeModelScan = {
+  models_root: string;
+  embedding_models: { model_path: string; name: string; exists: boolean }[];
+  reranker_models: { model_path: string; name: string; exists: boolean }[];
+  backend: KnowledgeBackendStatus;
+};
+
+export type KnowledgeSettings = {
+  id: number;
+  models_root: string;
+  local_model_device: 'auto' | 'cpu' | 'cuda';
+  embedding_batch_size: number;
+  embedding_timeout_seconds: number;
+  reranker_enabled: boolean;
+  reranker_model_path: string | null;
+  reranker_batch_size: number;
+  reranker_timeout_seconds: number;
+  reranker_candidate_limit: number;
+  hybrid_search_enabled: boolean;
+  default_vector_candidate_k: number;
+  default_keyword_candidate_k: number;
+  default_final_top_k: number;
+  default_max_context_chars: number;
+  default_min_score: number | null;
+  rrf_k: number;
+  default_chunk_size: number;
+  default_chunk_overlap: number;
+  max_source_size_bytes: number;
+  max_chunks_per_source: number;
+  max_total_index_chars_per_source: number;
+  knowledge_context_instruction: string;
+  knowledge_context_snippet_template: string;
+};
+
+export type EmbeddingModelProfile = {
+  id: string;
+  name: string;
+  alias: string;
+  model_path: string;
+  dimension?: number | null;
+  normalize: boolean;
+  document_instruction: string;
+  query_instruction: string;
+  enabled: boolean;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeBase = {
+  id: string;
+  name: string;
+  description: string;
+  embedding_model_profile_id: string;
+  enabled: boolean;
+  index_status: 'empty' | 'ready' | 'indexing' | 'failed' | 'needs_reindex' | string;
+  index_error?: string | null;
+  chunk_size_override?: number | null;
+  chunk_overlap_override?: number | null;
+  vector_candidate_k_override?: number | null;
+  keyword_candidate_k_override?: number | null;
+  final_top_k_override?: number | null;
+  max_context_chars_override?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type LlmResolvedConfig = {
   source?: string | null;
   profile_id?: string | null;

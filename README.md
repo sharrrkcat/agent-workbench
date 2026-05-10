@@ -179,6 +179,25 @@ Settings -> LLM follows the Settings Console three-column structure. The left Se
 - Provider Profiles, backed by `llm_provider_profiles`.
 - Model Profiles, backed by the existing `llm_profiles` table for compatibility.
 
+Settings -> Knowledge follows the same Settings Console three-column structure. The left Settings nav has `Knowledge`, and the middle category list contains:
+
+- Defaults: local model defaults, reranker defaults, retrieval knobs, chunking limits, indexing limits, and future context injection prompt text.
+- Embedding Models: local embedding model profiles backed by `embedding_model_profiles`.
+- Knowledge Bases: configuration-only knowledge base records backed by `knowledge_bases`.
+
+Knowledge RAG v1 Phase 1 provides the local foundation only:
+
+- local model directories under `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
+- source staging directory `data/knowledge/sources`.
+- model scanning without loading models or downloading files.
+- optional local embedding and reranker backend APIs using `sentence-transformers`, `torch`, and `transformers` when installed.
+- embedding model profiles, knowledge bases, and session knowledge bindings.
+- test embedding/reranker endpoints and Workbench-native JSON embedding/reranker APIs.
+
+Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. Install them with the `knowledge` extra when desired. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
+
+Phase 1 intentionally does not implement source indexing, vector storage, FTS/BM25, retrieval injection into Prompt Agents or Script Agents, `local_file` sources, `/kb-search`, Knowledge Capability, or automatic model download. Local model paths must be relative paths inside `data/models`; embedding profiles use `embeddings/<folder>` and the global reranker path uses `rerankers/<folder>`.
+
 Existing LLM Profiles are migrated automatically. Legacy profile connection fields (`provider`, `base_url`, `api_key`, `timeout`) are moved into deduplicated Provider Profiles and the original `llm_profiles` rows become Model Profiles that reference those providers. The migration is idempotent and keeps capability flags and generation defaults. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
 
 The default model profile replaces the old editable Global fallback UI. Runtime resolution order is:
