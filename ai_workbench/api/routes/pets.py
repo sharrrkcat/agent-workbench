@@ -1,9 +1,10 @@
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from starlette.datastructures import UploadFile
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
@@ -56,6 +57,42 @@ def list_pets(state: RuntimeState = Depends(get_state)) -> dict:
 def scan_pets(state: RuntimeState = Depends(get_state)) -> dict:
     try:
         return _runtime(state).scan_pets(context=_context(state))
+    except PetError as exc:
+        _raise_pet_error(exc)
+
+
+@router.post("/import")
+async def import_pet(
+    request: Request,
+    state: RuntimeState = Depends(get_state),
+) -> dict:
+    form = await request.form()
+    allowed_fields = {"pet_json", "spritesheet"}
+    unexpected = [key for key, _value in form.multi_items() if key not in allowed_fields]
+    if unexpected:
+        raise_error(422, "PET_IMPORT_UNEXPECTED_FILE", "Only pet.json and spritesheet.webp uploads are accepted.", {"fields": unexpected})
+
+    pet_json_items = form.getlist("pet_json")
+    spritesheet_items = form.getlist("spritesheet")
+    if len(pet_json_items) > 1 or len(spritesheet_items) > 1:
+        raise_error(422, "PET_IMPORT_DUPLICATE_FILE", "Upload each pet file exactly once.")
+    pet_json = pet_json_items[0] if pet_json_items else None
+    spritesheet = spritesheet_items[0] if spritesheet_items else None
+
+    if pet_json is None:
+        raise_error(422, "PET_IMPORT_MISSING_FILE", "pet.json is required.")
+    if spritesheet is None:
+        raise_error(422, "PET_IMPORT_MISSING_FILE", "spritesheet.webp is required.")
+    if not isinstance(pet_json, UploadFile) or not isinstance(spritesheet, UploadFile):
+        raise_error(422, "PET_IMPORT_INVALID_FILE", "pet_json and spritesheet must be file uploads.")
+    if pet_json.filename != "pet.json":
+        raise_error(422, "PET_IMPORT_INVALID_FILE", "Upload field pet_json must be named pet.json.")
+    if spritesheet.filename != "spritesheet.webp":
+        raise_error(422, "PET_IMPORT_INVALID_FILE", "Upload field spritesheet must be named spritesheet.webp.")
+    try:
+        pet_json_bytes = await pet_json.read()
+        spritesheet_bytes = await spritesheet.read()
+        return _runtime(state).import_pet(pet_json_bytes, spritesheet_bytes, context=_context(state))
     except PetError as exc:
         _raise_pet_error(exc)
 

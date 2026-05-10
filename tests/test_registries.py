@@ -35,6 +35,16 @@ def test_command_registry_exposes_base64_commands() -> None:
     assert commands.get("/base64-encode-image").method == "encode_image"
 
 
+def test_command_registry_exposes_pet_command() -> None:
+    capabilities = CapabilityRegistry()
+    capabilities.load_from_directory(ROOT / "capabilities")
+
+    commands = CommandRegistry.from_capability_registry(capabilities)
+
+    assert commands.get("/pet").capability_id == "pet"
+    assert commands.get("/pet").method == "command"
+
+
 def test_duplicate_agent_id_fails() -> None:
     registry = AgentRegistry()
     agent = load_agent_manifest(ROOT / "agents" / "chat" / "agent.yaml")

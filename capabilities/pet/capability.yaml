@@ -65,6 +65,15 @@ config_schema:
       delete_failed: "删除失败"
 
 methods:
+  - id: command
+    description: Control the Workbench Pet overlay from the /pet slash command.
+    input_schema:
+      args:
+        type: string
+        required: false
+    output:
+      type: json
+
   - id: get_settings
     description: Return resolved Pet capability settings.
     input_schema: {}
@@ -109,3 +118,21 @@ methods:
         required: true
     output:
       type: json
+
+  - id: import_pet
+    description: Import one Codex-compatible pet from uploaded pet.json and spritesheet.webp bytes.
+    input_schema:
+      pet_json:
+        type: json
+        required: true
+      spritesheet:
+        type: json
+        required: true
+    output:
+      type: json
+
+commands:
+  - name: /pet
+    method: command
+    description: Control the Workbench Pet overlay.
+    safe: true

@@ -1862,19 +1862,24 @@ class CommandRunner:
             except KeyError:
                 attachments = []
         capability_config = {}
+        config_schema = []
         if self.capability_config_store is not None and self.capability_registry is not None:
             try:
                 capability = self.capability_registry.get(capability_id)
                 stored = self.capability_config_store.get_config(capability_id)
+                config_schema = capability.config_schema
                 capability_config = resolve_config(capability.config_schema, stored.get("user_config") or {})
             except Exception:
                 capability_config = {}
+                config_schema = []
         return {
             "session_id": session_id,
             "input_message_id": input_message_id or "",
             "attachments": attachments,
             "capability_id": capability_id,
             "capability_config": capability_config,
+            "capability_config_store": self.capability_config_store,
+            "config_schema": config_schema,
         }
 
     def _call_method(self, method, args: str, context: dict):

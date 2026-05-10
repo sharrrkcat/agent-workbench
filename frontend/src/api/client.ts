@@ -34,6 +34,7 @@ import type {
   KnowledgeSearchResponse,
   KnowledgeSettings,
   PetListResponse,
+  PetImportResponse,
   PetSettings,
   PetSettingsResponse,
   RuntimeResponse,
@@ -64,6 +65,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...(options.headers || {}),
     },
     ...options,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const backendError = payload?.error;
+    const code = typeof backendError?.code === 'string' ? backendError.code : 'HTTP_ERROR';
+    const message = typeof backendError?.message === 'string' ? backendError.message : `Request failed: ${response.status}`;
+    const details = typeof backendError?.details === 'object' && backendError.details ? backendError.details : {};
+    throw new ApiError(code, message, details);
+  }
+  return payload as T;
+}
+
+async function requestForm<T>(path: string, body: FormData): Promise<T> {
+  const response = await fetch(joinApiUrl(API_BASE_URL, path), {
+    method: 'POST',
+    body,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -240,6 +257,12 @@ export const api = {
     }),
   listPets: () => request<PetListResponse>('/api/pets'),
   scanPets: () => request<PetListResponse>('/api/pets/scan', { method: 'POST' }),
+  importPet: (petJson: File, spritesheet: File) => {
+    const formData = new FormData();
+    formData.append('pet_json', petJson, 'pet.json');
+    formData.append('spritesheet', spritesheet, 'spritesheet.webp');
+    return requestForm<PetImportResponse>('/api/pets/import', formData);
+  },
   deletePet: (petId: string) =>
     request<{ deleted: boolean; pet_id: string }>(`/api/pets/${encodeURIComponent(petId)}`, {
       method: 'DELETE',

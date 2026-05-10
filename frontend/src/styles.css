@@ -4211,6 +4211,37 @@ input:disabled {
   line-height: 1.45;
 }
 
+.pet-import-dropzone {
+  display: grid;
+  gap: 6px;
+  place-items: center;
+  min-height: 128px;
+  padding: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  background: #242424;
+  color: rgba(255, 255, 255, 0.78);
+  text-align: center;
+}
+
+.pet-import-dropzone.dragging {
+  border-color: rgba(99, 179, 237, 0.78);
+  background: #26313a;
+}
+
+.pet-import-dropzone strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+}
+
+.pet-import-dropzone span,
+.pet-import-dropzone small {
+  max-width: 520px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .pet-bubble-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

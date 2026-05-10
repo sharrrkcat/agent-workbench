@@ -1,5 +1,5 @@
 import { PawPrint, RefreshCw, RotateCcw, Save, Search, Trash2, Upload } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { api, joinApiUrl, API_BASE_URL } from '../../api/client';
 import type { PetBubbleTexts, PetItem, PetSettings } from '../../types';
 import { DetailTabs } from './DetailTabs';
@@ -181,6 +181,40 @@ export function PetSettingsDetail({
     }
   }
 
+  async function importPet(files: File[]) {
+    const names = files.map((file) => file.name);
+    const allowed = new Set(['pet.json', 'spritesheet.webp']);
+    const unexpected = names.filter((name) => !allowed.has(name));
+    const petJson = files.find((file) => file.name === 'pet.json');
+    const spritesheet = files.find((file) => file.name === 'spritesheet.webp');
+    if (unexpected.length || !petJson || !spritesheet) {
+      setLocalError({
+        code: 'PET_IMPORT_FILES_REQUIRED',
+        message: 'Drop exactly pet.json and spritesheet.webp.',
+        details: { received: names },
+      });
+      return;
+    }
+
+    setBusy('import');
+    try {
+      setLocalError(null);
+      const response = await api.importPet(petJson, spritesheet);
+      setPets(response.pets);
+      const nextSettings = response.settings
+        ? normalizeSettings(response.settings)
+        : normalizeSettings((await api.getPetSettings()).settings);
+      setSettings(nextSettings);
+      setValues(nextSettings);
+      setNotice(nextSettings.bubble_texts.import_success || DEFAULT_BUBBLE_TEXTS.import_success);
+      window.setTimeout(() => setNotice(''), 1800);
+    } catch (error) {
+      setLocalError(toSettingsError(error, values?.bubble_texts.import_failed || DEFAULT_BUBBLE_TEXTS.import_failed));
+    } finally {
+      setBusy('');
+    }
+  }
+
   function setValue<K extends keyof PetSettings>(key: K, value: PetSettings[K]) {
     setValues((current) => (current ? { ...current, [key]: value } : current));
   }
@@ -236,6 +270,7 @@ export function PetSettingsDetail({
             onSetBubbleText={setBubbleText}
             onResetPosition={resetPosition}
             onScanPets={scanPets}
+            onImportPet={importPet}
           />
         ) : (
           <PetListTab pets={pets} busy={busy} onScanPets={scanPets} onDeletePet={deletePet} />
@@ -253,6 +288,7 @@ function PetConfigTab({
   onSetBubbleText,
   onResetPosition,
   onScanPets,
+  onImportPet,
 }: {
   values: PetSettings;
   validPets: PetItem[];
@@ -261,7 +297,17 @@ function PetConfigTab({
   onSetBubbleText: (key: keyof PetBubbleTexts, text: string) => void;
   onResetPosition: () => void;
   onScanPets: () => void;
+  onImportPet: (files: File[]) => void;
 }) {
+  const [dragging, setDragging] = useState(false);
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    const files = Array.from(event.dataTransfer.files || []);
+    void onImportPet(files);
+  }
+
   return (
     <>
       <section className="detail-section">
@@ -307,14 +353,31 @@ function PetConfigTab({
             <Search size={14} />
             {busy === 'scan' ? 'Scanning...' : 'Scan Pets'}
           </button>
-          <button className="settings-secondary-button" type="button" disabled>
+          <button className="settings-secondary-button" type="button" disabled={busy === 'import'}>
             <Upload size={14} />
-            Import Pet
+            {busy === 'import' ? 'Importing...' : 'Import Pet'}
           </button>
         </div>
-        <div className="settings-placeholder pet-import-placeholder">
-          <p>Drag import will be implemented in a later round.</p>
-          <p>For now, put Codex-compatible pets under <code>data/pet/&lt;pet_id&gt;/</code> and click Scan Pets.</p>
+        <div
+          className={`pet-import-dropzone ${dragging ? 'dragging' : ''}`}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }}
+          onDragLeave={(event) => {
+            if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+            setDragging(false);
+          }}
+          onDrop={handleDrop}
+        >
+          <Upload size={18} />
+          <strong>Drop pet.json and spritesheet.webp</strong>
+          <span>Only Codex-compatible pet files with these exact names are accepted.</span>
+          <small>Imported pets are saved under <code>data/pet/&lt;pet_id&gt;/</code> and selected as the default pet.</small>
         </div>
       </section>
 

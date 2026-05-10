@@ -4,6 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.capability_registry import CapabilityRegistry
+from ai_workbench.core.stores import CapabilityConfigStore
 from capabilities.pet import CapabilityRuntime, PetError
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
@@ -87,3 +89,123 @@ def test_api_spritesheet_rejects_path_traversal(tmp_path: Path) -> None:
     response = client.get("/api/pets/../x/spritesheet.webp")
 
     assert response.status_code in {400, 404}
+
+
+def test_api_import_valid_pet_saves_and_selects_default(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    client.app.state.runtime_state.repo_root = tmp_path
+
+    response = client.post(
+        "/api/pets/import",
+        files={
+            "pet_json": ("pet.json", b'{"id":"import_pet","displayName":"Import Pet"}', "application/json"),
+            "spritesheet": ("spritesheet.webp", WEBP_BYTES, "image/webp"),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pet"]["id"] == "import_pet"
+    assert payload["pet"]["valid"] is True
+    assert payload["selected"] is True
+    assert (tmp_path / "data" / "pet" / "import_pet" / "pet.json").is_file()
+    assert (tmp_path / "data" / "pet" / "import_pet" / "spritesheet.webp").is_file()
+    assert client.get("/api/pets").json()["pets"][0]["id"] == "import_pet"
+    assert client.get("/api/pets/settings").json()["settings"]["default_pet_id"] == "import_pet"
+
+
+def test_api_import_missing_file_returns_structured_error(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    client.app.state.runtime_state.repo_root = tmp_path
+
+    response = client.post(
+        "/api/pets/import",
+        files={"pet_json": ("pet.json", b'{"id":"missing_sprite"}', "application/json")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "PET_IMPORT_MISSING_FILE"
+
+
+def test_api_import_rejects_unexpected_file_field(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    client.app.state.runtime_state.repo_root = tmp_path
+
+    response = client.post(
+        "/api/pets/import",
+        files={
+            "pet_json": ("pet.json", b'{"id":"bad_extra"}', "application/json"),
+            "spritesheet": ("spritesheet.webp", WEBP_BYTES, "image/webp"),
+            "extra": ("other.png", b"nope", "image/png"),
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "PET_IMPORT_UNEXPECTED_FILE"
+    assert not (tmp_path / "data" / "pet").exists()
+
+
+def test_api_import_invalid_pet_json_does_not_pollute_data_pet(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    client.app.state.runtime_state.repo_root = tmp_path
+
+    response = client.post(
+        "/api/pets/import",
+        files={
+            "pet_json": ("pet.json", b"not json", "application/json"),
+            "spritesheet": ("spritesheet.webp", WEBP_BYTES, "image/webp"),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "PET_JSON_INVALID"
+    assert not (tmp_path / "data" / "pet").exists()
+
+
+def test_import_duplicate_pet_id_uses_suffix_without_overwrite(tmp_path: Path) -> None:
+    runtime = CapabilityRuntime(root=tmp_path)
+    first = runtime.import_pet(b'{"id":"dup_pet","displayName":"First"}', WEBP_BYTES)
+    second = runtime.import_pet(b'{"id":"dup_pet","displayName":"Second"}', WEBP_BYTES)
+
+    assert first["pet"]["id"] == "dup_pet"
+    assert second["pet"]["id"] == "dup_pet_2"
+    assert (tmp_path / "data" / "pet" / "dup_pet" / "pet.json").read_text(encoding="utf-8") == '{"id":"dup_pet","displayName":"First"}'
+
+
+def test_pet_command_controls_settings_and_reports_status(tmp_path: Path) -> None:
+    write_pet(tmp_path, "command_pet")
+    context = _pet_command_context(tmp_path)
+    runtime = CapabilityRuntime(root=tmp_path)
+
+    status = runtime.command("status", context=context)
+    wake = runtime.command("wake", context=context)
+    selected = runtime.command("select command_pet", context=context)
+    tuck = runtime.command("tuck", context=context)
+    reload = runtime.command("reload", context=context)
+
+    assert status["valid_count"] == 1
+    assert wake["settings"]["pet_enabled"] is True
+    assert selected["settings"] == {"pet_enabled": True, "default_pet_id": "command_pet"}
+    assert tuck["settings"]["pet_enabled"] is False
+    assert reload["valid_count"] == 1
+    assert context["capability_config_store"].get_config("pet")["user_config"]["default_pet_id"] == "command_pet"
+
+
+def test_pet_command_select_missing_pet_returns_error(tmp_path: Path) -> None:
+    runtime = CapabilityRuntime(root=tmp_path)
+
+    with pytest.raises(PetError) as exc:
+        runtime.command("select missing", context=_pet_command_context(tmp_path))
+
+    assert exc.value.code == "PET_NOT_FOUND"
+
+
+def _pet_command_context(tmp_path: Path) -> dict:
+    capabilities = CapabilityRegistry()
+    capabilities.load_from_directory(Path(__file__).resolve().parents[1] / "capabilities")
+    return {
+        "repo_root": tmp_path,
+        "capability_config": {},
+        "capability_config_store": CapabilityConfigStore(),
+        "config_schema": capabilities.get("pet").config_schema,
+    }

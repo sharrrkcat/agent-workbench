@@ -550,6 +550,14 @@ export type PetListResponse = {
   pets: PetItem[];
 };
 
+export type PetImportResponse = {
+  pet: PetItem;
+  pets: PetItem[];
+  selected: boolean;
+  warnings: string[];
+  settings?: PetSettings;
+};
+
 export type LlmResolvedConfig = {
   source?: string | null;
   profile_id?: string | null;

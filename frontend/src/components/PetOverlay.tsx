@@ -29,6 +29,7 @@ const DEFAULT_MARGIN_RIGHT = 28;
 const DEFAULT_MARGIN_BOTTOM = 92;
 const TERMINAL_HOLD_MS = 4200;
 const JUMP_MS = 720;
+const PET_REFRESH_MS = 6000;
 
 const PET_ANIMATION_ROWS: Record<PetAnimationState, number> = {
   idle: 0,
@@ -118,31 +119,34 @@ export function PetOverlay() {
   const bubbleText = settings ? buildBubbleText(settings, activeRun, terminalRun, runningStep) : '';
   const spriteUrl = selectedPet?.spritesheet_url ? joinApiUrl(API_BASE_URL, selectedPet.spritesheet_url) : '';
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [settingsResponse, petsResponse] = await Promise.all([api.getPetSettings(), api.listPets()]);
-        if (cancelled) return;
-        const nextSettings = normalizeSettings(settingsResponse.settings);
-        setSettings(nextSettings);
-        setPets(petsResponse.pets);
-        setPosition(resolveInitialPosition(nextSettings, BASE_WIDTH * nextSettings.pet_scale, BASE_HEIGHT * nextSettings.pet_scale));
-      } catch {
-        if (!cancelled) {
-          setSettings(null);
-          setPets([]);
-        }
+  const refreshPetState = useCallback(async (cancelled: () => boolean = () => false) => {
+    try {
+      const [settingsResponse, petsResponse] = await Promise.all([api.getPetSettings(), api.listPets()]);
+      if (cancelled()) return;
+      const nextSettings = normalizeSettings(settingsResponse.settings);
+      setSettings(nextSettings);
+      setPets(petsResponse.pets);
+      setPosition((current) => current || resolveInitialPosition(nextSettings, BASE_WIDTH * nextSettings.pet_scale, BASE_HEIGHT * nextSettings.pet_scale));
+    } catch {
+      if (!cancelled()) {
+        setSettings(null);
+        setPets([]);
       }
     }
-    void load();
-    const onFocus = () => void load();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void refreshPetState(() => cancelled);
+    const timer = window.setInterval(() => void refreshPetState(() => cancelled), PET_REFRESH_MS);
+    const onFocus = () => void refreshPetState(() => cancelled);
     window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       window.removeEventListener('focus', onFocus);
     };
-  }, []);
+  }, [refreshPetState]);
 
   useEffect(() => {
     if (!settings || drag) return;
