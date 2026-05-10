@@ -4352,10 +4352,43 @@ input:disabled {
   font-size: 12px;
 }
 
+.settings-secondary-button.icon-only {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
 .knowledge-search-results {
   display: grid;
   gap: 9px;
   min-width: 0;
+}
+
+.knowledge-context-preview {
+  min-width: 0;
+}
+
+.knowledge-context-preview summary {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.knowledge-context-preview pre {
+  max-height: 360px;
+  margin: 8px 0 0;
+  overflow: auto;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.48;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .knowledge-result-card {
@@ -4521,9 +4554,43 @@ input:disabled {
   text-transform: none;
 }
 
-.knowledge-source-detail {
+.knowledge-source-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(980px, 94vw);
+  max-height: 88vh;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #151515;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+  color: rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+}
+
+.knowledge-source-modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.knowledge-source-modal-header h3 {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-source-modal-body {
   display: grid;
   gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
 }
 
 .knowledge-source-subsection {
@@ -4573,19 +4640,20 @@ input:disabled {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.knowledge-chunk-card header {
+.knowledge-chunk-card summary {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: baseline;
+  cursor: pointer;
 }
 
-.knowledge-chunk-card header strong {
+.knowledge-chunk-card summary strong {
   color: rgba(255, 255, 255, 0.86);
   font-size: 13px;
 }
 
-.knowledge-chunk-card header span,
+.knowledge-chunk-card summary span,
 .knowledge-chunk-card small {
   color: rgba(255, 255, 255, 0.48);
   font-size: 12px;

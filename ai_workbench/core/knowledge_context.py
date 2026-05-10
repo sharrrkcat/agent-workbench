@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ai_workbench.core.retrieval import search_knowledge
+from ai_workbench.core.retrieval import expand_query_variants, search_knowledge
 
 
 MAX_METADATA_QUERY_CHARS = 240
@@ -26,6 +26,8 @@ def build_session_knowledge_context(
     source: str,
     effective_mode: str = "enabled",
     search_fn: Callable[..., dict[str, Any]] | None = None,
+    llm_runtime: Any = None,
+    llm_model_config: dict[str, Any] | None = None,
 ) -> KnowledgeContextResult:
     query_text = str(query or "").strip()
     if effective_mode != "enabled":
@@ -61,6 +63,7 @@ def build_session_knowledge_context(
             top_k=None,
             max_context_chars=None,
             include_debug=True,
+            query_expander=_knowledge_query_expander(llm_runtime, llm_model_config),
         )
     except Exception as exc:
         warning = f"Knowledge retrieval failed: {exc}"
@@ -113,6 +116,23 @@ def append_knowledge_to_system(messages: list[dict[str, Any]], rendered_text: st
     return [{"role": "system", "content": rendered_text}, *next_messages]
 
 
+def render_knowledge_context_preview(
+    *,
+    settings: Any,
+    results: list[dict[str, Any]],
+    knowledge_base_names: dict[str, str] | None = None,
+) -> str:
+    if not results:
+        return ""
+    kb_names = knowledge_base_names or {}
+    snippets = [_snippet_payload(item, index, kb_names) for index, item in enumerate(results, start=1)]
+    return _render_block(
+        instruction=getattr(settings, "knowledge_context_instruction", ""),
+        snippet_template=getattr(settings, "knowledge_context_snippet_template", "{content}"),
+        snippets=snippets,
+    )
+
+
 def _active_session_kbs(knowledge_store: Any, session_id: str) -> list[dict[str, str]]:
     active: list[dict[str, str]] = []
     for binding in knowledge_store.list_session_bindings(session_id):
@@ -128,6 +148,22 @@ def _active_session_kbs(knowledge_store: Any, session_id: str) -> list[dict[str,
             continue
         active.append({"id": kb.id, "name": kb.name})
     return active
+
+
+def _knowledge_query_expander(llm_runtime: Any, llm_model_config: dict[str, Any] | None):
+    if llm_runtime is None:
+        return None
+
+    def expand(query: str, max_variants: int, prompt_template: str) -> list[str]:
+        return expand_query_variants(
+            llm_runtime=llm_runtime,
+            query=query,
+            max_variants=max_variants,
+            prompt_template=prompt_template,
+            model_config=llm_model_config or {},
+        )
+
+    return expand
 
 
 def _snippet_payload(item: dict[str, Any], index: int, kb_names: dict[str, str]) -> dict[str, Any]:
@@ -221,7 +257,15 @@ def _debug_metadata(response: dict[str, Any]) -> dict[str, Any]:
         value = debug.get(key)
         if isinstance(value, int):
             metadata[key] = value
+    for key in ("before_filter_count", "min_score_filtered_count", "per_source_filtered_count", "per_kb_filtered_count", "final_result_count", "expanded_query_count"):
+        value = debug.get(key)
+        if isinstance(value, int):
+            metadata[key] = value
     for key in ("reranker_used", "reranker_failed"):
+        value = debug.get(key)
+        if isinstance(value, bool):
+            metadata[key] = value
+    for key in ("query_expansion_enabled", "query_expansion_used", "expansion_failed"):
         value = debug.get(key)
         if isinstance(value, bool):
             metadata[key] = value
@@ -254,6 +298,15 @@ def knowledge_step_metadata(knowledge_context: dict[str, Any]) -> dict[str, Any]
         "reranker_failed",
         "reranker_input_count",
         "reranker_output_count",
+        "query_expansion_enabled",
+        "query_expansion_used",
+        "expanded_query_count",
+        "expansion_failed",
+        "before_filter_count",
+        "min_score_filtered_count",
+        "per_source_filtered_count",
+        "per_kb_filtered_count",
+        "final_result_count",
         "result_count",
         "injected",
         "reason",

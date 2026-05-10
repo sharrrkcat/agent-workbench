@@ -20,6 +20,7 @@ from ai_workbench.core.knowledge_indexing import (
     source_content_hash,
     validate_source_limits,
 )
+from ai_workbench.core.knowledge_context import render_knowledge_context_preview
 from ai_workbench.core.knowledge_models import (
     KnowledgeModelError,
     normalize_model_path,
@@ -36,7 +37,7 @@ from ai_workbench.core.knowledge_store import (
     KnowledgeSource,
 )
 from ai_workbench.core.rerank import rerank_documents
-from ai_workbench.core.retrieval import search_knowledge
+from ai_workbench.core.retrieval import expand_query_variants, search_knowledge
 from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord, KnowledgeSourceRecord
 
 
@@ -97,6 +98,10 @@ class KnowledgeSearchRequest(BaseModel):
     session_id: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=100)
     max_context_chars: int | None = Field(default=None, ge=100, le=200000)
+    min_score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
+    max_chunks_per_source: int | None = Field(default=None, ge=1, le=100)
+    max_chunks_per_knowledge_base: int | None = Field(default=None, ge=1, le=100)
+    expand_query: bool | None = None
     debug: bool = False
 
 
@@ -274,7 +279,7 @@ def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_st
     if engine is None:
         raise_error(400, "KNOWLEDGE_SEARCH_STORE_UNAVAILABLE", "Knowledge search requires the SQLite knowledge store.")
     try:
-        return search_knowledge(
+        response = search_knowledge(
             engine=engine,
             knowledge_store=state.knowledge,
             model_backend=state.knowledge_model_backend,
@@ -284,7 +289,14 @@ def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_st
             top_k=payload.top_k,
             max_context_chars=payload.max_context_chars,
             include_debug=payload.debug,
+            min_score_threshold=payload.min_score_threshold,
+            max_chunks_per_source=payload.max_chunks_per_source,
+            max_chunks_per_knowledge_base=payload.max_chunks_per_knowledge_base,
+            expand_query=payload.expand_query,
+            query_expander=_api_query_expander(state, payload.session_id),
         )
+        response["context_preview"] = _context_preview_for_search_response(response, state)
+        return response
     except KeyError as exc:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", str(exc))
     except KnowledgeModelError as exc:
@@ -585,6 +597,44 @@ def _require_session(state: RuntimeState, session_id: str) -> None:
         state.sessions.get_session(session_id)
     except KeyError:
         raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
+
+
+def _api_query_expander(state: RuntimeState, session_id: str | None):
+    if not session_id:
+        return None
+    try:
+        state.sessions.get_session(session_id)
+    except KeyError:
+        return None
+    try:
+        llm_runtime = state.runtimes.get_runtime("llm")
+    except KeyError:
+        return None
+
+    def expand(query: str, max_variants: int, prompt_template: str) -> list[str]:
+        return expand_query_variants(
+            llm_runtime=llm_runtime,
+            query=query,
+            max_variants=max_variants,
+            prompt_template=prompt_template,
+            model_config={},
+        )
+
+    return expand
+
+
+def _context_preview_for_search_response(response: dict, state: RuntimeState) -> str:
+    results = list(response.get("results") or []) if isinstance(response, dict) else []
+    kb_names = {}
+    for result in results:
+        knowledge_base_id = result.get("knowledge_base_id") if isinstance(result, dict) else None
+        if not knowledge_base_id or knowledge_base_id in kb_names:
+            continue
+        try:
+            kb_names[str(knowledge_base_id)] = state.knowledge.get_knowledge_base(str(knowledge_base_id)).name
+        except KeyError:
+            kb_names[str(knowledge_base_id)] = str(knowledge_base_id)
+    return render_knowledge_context_preview(settings=state.knowledge.get_settings(), results=results, knowledge_base_names=kb_names)
 
 
 def _raise_validation(exc: ValidationError) -> None:

@@ -336,7 +336,7 @@ Settings:
 - `GET /api/knowledge/settings`
 - `PATCH /api/knowledge/settings`
 
-Knowledge Defaults store local model device, embedding batch/timeout defaults, the single global reranker configuration, retrieval/chunking/index limits, and Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
+Knowledge Defaults store local model device, embedding batch/timeout defaults, the single global reranker configuration, retrieval quality knobs, chunking/index limits, optional query expansion settings, and Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
 
 Local model directories:
 
@@ -407,15 +407,17 @@ Knowledge search:
 Request shape:
 
 ```json
-{"query": "...", "knowledge_base_ids": ["kb_id"], "session_id": null, "top_k": 6, "max_context_chars": 10000, "debug": true}
+{"query": "...", "knowledge_base_ids": ["kb_id"], "session_id": null, "top_k": 6, "max_context_chars": 10000, "min_score_threshold": null, "max_chunks_per_source": null, "max_chunks_per_knowledge_base": null, "expand_query": null, "debug": true}
 ```
 
-`query` is required and non-empty. Provide either explicit `knowledge_base_ids` or `session_id`; explicit KB ids win. Search uses only enabled KBs. Vector search is grouped by embedding model profile and never compares scores across different embedding models directly. Keyword search uses FTS5/BM25 across selected KBs. Candidates are deduped by `chunk_id`, merged with RRF, optionally reranked once globally, then trimmed by `top_k` and `max_context_chars`.
+`query` is required and non-empty. Provide either explicit `knowledge_base_ids` or `session_id`; explicit KB ids win. Search uses only enabled KBs. Vector search is grouped by embedding model profile and never compares scores across different embedding models directly. Keyword search uses FTS5/BM25 across selected KBs. Candidates are deduped by `chunk_id`, merged with RRF, optionally reranked once globally, filtered by min score and per-source/per-KB chunk limits when configured, then trimmed by `top_k` and `max_context_chars`.
+
+When query expansion is enabled, search asks the resolved LLM runtime for short query variants before retrieval, searches the original query plus variants, dedupes candidates during RRF merge, and falls back to the original query with a debug warning if expansion fails. The search API can override expansion with `expand_query`; automatic Agent Knowledge injection uses the current run LLM runtime and does not recursively trigger Knowledge retrieval.
 
 Response shape:
 
 ```json
-{"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "debug": {"warnings": []}}
+{"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "context_preview": "# Retrieved Knowledge\n...", "debug": {"warnings": [], "before_filter_count": 3, "final_result_count": 1}}
 ```
 
 Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Phase 5 adds a thin `knowledge` Capability and `/kb-search` command that wrap the same core retrieval path for explicit debugging/manual search. Current non-goals: `local_file` sources, automatic model download, and changes to retrieval/indexing/model backends.

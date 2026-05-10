@@ -220,6 +220,124 @@ def test_reranker_failure_falls_back_to_rrf_and_records_warning(tmp_path: Path) 
     assert payload["results"][0]["rerank_score"] is None
 
 
+def test_min_score_threshold_filters_final_candidates(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    client.patch("/api/knowledge/settings", json={"min_score_threshold": 0.99})
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["results"] == []
+    assert payload["debug"]["before_filter_count"] > 0
+    assert payload["debug"]["min_score_filtered_count"] > 0
+    assert payload["debug"]["final_result_count"] == 0
+
+
+def test_retrieval_limits_chunks_per_source_before_top_k(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    profile = create_profile(client, "source_limit", "source-limit")
+    kb = create_kb(client, profile["id"], "Source Limit")
+    add_source(client, kb["id"], "Alpha Long", "alpha " * 60)
+    client.patch("/api/knowledge/settings", json={"retrieval_max_chunks_per_source": 1})
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "top_k": 10, "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["results"]) == 1
+    assert payload["debug"]["per_source_filtered_count"] > 0
+
+
+def test_retrieval_limits_chunks_per_knowledge_base_before_top_k(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    profile = create_profile(client, "kb_limit", "kb-limit")
+    kb = create_kb(client, profile["id"], "KB Limit")
+    add_source(client, kb["id"], "Alpha One", "alpha " * 24)
+    add_source(client, kb["id"], "Alpha Two", "alpha " * 24)
+    client.patch("/api/knowledge/settings", json={"retrieval_max_chunks_per_knowledge_base": 1})
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "top_k": 10, "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["results"]) == 1
+    assert payload["debug"]["per_kb_filtered_count"] > 0
+
+
+def test_query_expansion_is_disabled_by_default(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    backend.embedding_calls.clear()
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["debug"]["query_expansion_enabled"] is False
+    assert payload["debug"]["query_expansion_used"] is False
+    assert backend.embedding_calls[0]["texts"] == ["alpha"]
+
+
+def test_query_expansion_variants_participate_in_retrieval(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    session = client.app.state.runtime_state.sessions.create_session(title="Expansion", default_agent_id="chat")
+    client.patch(f"/api/sessions/{session.session_id}/knowledge-bases", json={"knowledge_base_ids": [kb["id"]]})
+    client.app.state.runtime_state.runtimes.replace("llm", FakeLLMRuntime(response='["beta"]'))
+    client.patch("/api/knowledge/settings", json={"query_expansion_enabled": True})
+    backend.embedding_calls.clear()
+
+    response = client.post("/api/knowledge/search", json={"query": "delta", "session_id": session.session_id, "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["debug"]["query_expansion_used"] is True
+    assert payload["debug"]["expanded_query_count"] == 2
+    assert payload["debug"]["expanded_queries"] == ["beta"]
+    assert backend.embedding_calls[0]["texts"] == ["delta", "beta"]
+    assert any(result["title"] == "Beta" for result in payload["results"])
+
+
+def test_query_expansion_failure_falls_back_to_original_query(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    session = client.app.state.runtime_state.sessions.create_session(title="Expansion", default_agent_id="chat")
+    client.patch(f"/api/sessions/{session.session_id}/knowledge-bases", json={"knowledge_base_ids": [kb["id"]]})
+    client.app.state.runtime_state.runtimes.replace("llm", FakeLLMRuntime(response="not json"))
+    client.patch("/api/knowledge/settings", json={"query_expansion_enabled": True})
+    backend.embedding_calls.clear()
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "session_id": session.session_id, "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["debug"]["expansion_failed"] is True
+    assert any("Query expansion failed" in warning for warning in payload["debug"]["warnings"])
+    assert backend.embedding_calls[0]["texts"] == ["alpha"]
+
+
+def test_search_response_includes_context_preview_using_current_templates(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    client.patch(
+        "/api/knowledge/settings",
+        json={
+            "knowledge_context_instruction": "Use this preview.",
+            "knowledge_context_snippet_template": "({index}) {source_title}: {content}",
+        },
+    )
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]]})
+
+    assert response.status_code == 200, response.text
+    preview = response.json()["context_preview"]
+    assert "# Retrieved Knowledge" in preview
+    assert "Use this preview." in preview
+    assert "(K1) Alpha:" in preview
+
+
 def test_search_api_supports_session_bindings(tmp_path: Path) -> None:
     client, _backend = make_client(tmp_path)
     _profile, kb = setup_indexed_kbs(client)

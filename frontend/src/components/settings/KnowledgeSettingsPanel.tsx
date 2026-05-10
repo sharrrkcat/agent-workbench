@@ -1,4 +1,4 @@
-import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
@@ -227,8 +227,21 @@ export function KnowledgeSettingsDetail({
             <ToggleSwitch checked={values.hybrid_search_enabled} onChange={(checked) => setValues({ ...values, hybrid_search_enabled: checked })} />
           </label>
           <div className="settings-detail-grid">
-            <NumberField label="Min score" value={values.default_min_score ?? ''} onChange={(value) => setValues({ ...values, default_min_score: value === '' ? null : Number(value) })} />
+            <NumberField label="Min score threshold" value={values.min_score_threshold ?? ''} onChange={(value) => setValues({ ...values, min_score_threshold: value === '' ? null : Number(value) })} />
+            <NumberField label="Per source max chunks" value={values.retrieval_max_chunks_per_source ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_source: value === '' ? null : Number(value) })} />
+            <NumberField label="Per KB max chunks" value={values.retrieval_max_chunks_per_knowledge_base ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_knowledge_base: value === '' ? null : Number(value) })} />
           </div>
+        </div>
+        <div className="detail-section">
+          <div className="detail-section-heading"><h3>Query Expansion</h3></div>
+          <label className="config-field settings-config-field boolean-field">
+            <span>Enabled</span>
+            <ToggleSwitch checked={values.query_expansion_enabled} onChange={(checked) => setValues({ ...values, query_expansion_enabled: checked })} />
+          </label>
+          <div className="settings-detail-grid">
+            <NumberField label="Max variants" value={values.query_expansion_max_variants} onChange={(value) => { if (value !== '') setValues({ ...values, query_expansion_max_variants: value }); }} />
+          </div>
+          <TextAreaField label="Expansion prompt" value={values.query_expansion_prompt} onChange={(value) => setValues({ ...values, query_expansion_prompt: value })} />
         </div>
         <NumberGroup title="Chunking" values={values} setValues={setValues} fields={[['default_chunk_size', 'Chunk size'], ['default_chunk_overlap', 'Chunk overlap']]} />
         <NumberGroup title="Index limits" values={values} setValues={setValues} fields={[['max_source_size_bytes', 'Max source size bytes'], ['max_chunks_per_source', 'Max chunks per source'], ['max_total_index_chars_per_source', 'Max total index chars per source']]} />
@@ -864,6 +877,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                 loading={sourceDetailLoading}
                 error={sourceDetailError}
                 busy={busy}
+                onClose={() => setSelectedSourceId('')}
                 onReindex={() => reindexSource(selectedSource.id)}
                 onDelete={() => deleteSource(selectedSource.id)}
               />
@@ -903,6 +917,14 @@ function KnowledgeSearchResults({ response }: { response: KnowledgeSearchRespons
           <pre>{JSON.stringify(response.debug, null, 2)}</pre>
         </details>
       ) : null}
+      <details className="knowledge-context-preview" open>
+        <summary>Context preview</summary>
+        {response.context_preview ? (
+          <pre>{response.context_preview}</pre>
+        ) : (
+          <p className="settings-muted-text">No context would be injected.</p>
+        )}
+      </details>
     </div>
   );
 }
@@ -955,73 +977,82 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
   );
 }
 
-function SourceDetail({ source, preview, chunks, loading, error, busy, onReindex, onDelete }: {
+function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, onReindex, onDelete }: {
   source: KnowledgeSource;
   preview: KnowledgeSourcePreview | null;
   chunks: KnowledgeSourceChunk[];
   loading: boolean;
   error: SettingsErrorValue | null;
   busy: string;
+  onClose: () => void;
   onReindex: () => void;
   onDelete: () => void;
 }) {
   return (
-    <section className="detail-section knowledge-source-detail">
-      <div className="detail-section-heading">
-        <h3>Source detail</h3>
-        <div className="settings-button-row compact">
-          <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
-          <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
-        </div>
-      </div>
-      {error ? <SettingsApiError error={error} /> : null}
-      <section className="knowledge-source-subsection">
-        <h4>Overview</h4>
-        <dl className="settings-definition-grid">
-          <Metric label="Title" value={source.title || source.uri || source.id} />
-          <Metric label="Type" value={source.source_type} />
-          <Metric label="Status" value={source.status} />
-          <Metric label="Indexed at" value={formatDate(source.indexed_at)} />
-          <Metric label="Chunks" value={String(source.chunks)} />
-          <Metric label="Size" value={formatBytes(source.size_bytes)} />
-          <Metric label="Content hash" value={source.content_hash || 'n/a'} />
-          <Metric label="Embedding dimension" value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
-        </dl>
-        {source.error ? <p className="settings-error-text">{source.error}</p> : null}
-      </section>
-      <section className="knowledge-source-subsection">
-        <div className="detail-section-heading">
-          <h4>Source preview</h4>
-          {preview?.truncated ? <span className="settings-badge warning">truncated</span> : null}
-        </div>
-        {loading && !preview ? <p className="settings-muted-text">Loading source preview...</p> : null}
-        {!loading && !preview && !error ? <p className="settings-muted-text">Source preview is unavailable.</p> : null}
-        {preview ? <pre className="knowledge-source-preview">{preview.preview}</pre> : null}
-      </section>
-      <section className="knowledge-source-subsection">
-        <div className="detail-section-heading">
-          <h4>Chunks</h4>
-          <span className="settings-badge muted">{chunks.length}</span>
-        </div>
-        {loading && !chunks.length ? <p className="settings-muted-text">Loading chunks...</p> : null}
-        {!loading && !chunks.length ? <Empty title="No chunks" message="No chunks are currently stored for this source." /> : null}
-        {chunks.length ? (
-          <div className="knowledge-chunk-list">
-            {chunks.map((chunk) => (
-              <article className="knowledge-chunk-card" key={chunk.chunk_id}>
-                <header>
-                  <strong>Chunk {chunk.chunk_index}</strong>
-                  <span>{chunk.char_start}-{chunk.char_end}</span>
-                  {chunk.embedding_dimension ? <span>{chunk.embedding_dimension}d</span> : null}
-                </header>
-                {chunk.heading_path ? <small>{chunk.heading_path}</small> : null}
-                <pre>{chunk.content_preview || chunk.content}{chunk.truncated ? '\n...' : ''}</pre>
-              </article>
-            ))}
+    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="Source detail" onClick={onClose}>
+      <section className="knowledge-source-modal" onClick={(event) => event.stopPropagation()}>
+        <header className="knowledge-source-modal-header">
+          <div>
+            <h3>{source.title || source.uri || source.id}</h3>
+            <div className="settings-chip-row">
+              <span>{source.source_type}</span>
+              <span>{source.status}</span>
+              <span>{formatDate(source.indexed_at)}</span>
+            </div>
           </div>
-        ) : null}
+          <div className="settings-button-row compact">
+            <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
+            <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
+            <button className="settings-secondary-button icon-only" type="button" onClick={onClose} aria-label="Close source detail"><X size={16} /></button>
+          </div>
+        </header>
+        <div className="knowledge-source-modal-body">
+          {error ? <SettingsApiError error={error} /> : null}
+          <section className="knowledge-source-subsection">
+            <h4>Overview</h4>
+            <dl className="settings-definition-grid">
+              <Metric label="Chunks" value={String(source.chunks)} />
+              <Metric label="Size" value={formatBytes(source.size_bytes)} />
+              <Metric label="Content hash" value={source.content_hash || 'n/a'} />
+              <Metric label="Embedding dimension" value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
+            </dl>
+            {source.error ? <p className="settings-error-text">{source.error}</p> : null}
+          </section>
+          <section className="knowledge-source-subsection">
+            <div className="detail-section-heading">
+              <h4>Source preview</h4>
+              {preview?.truncated ? <span className="settings-badge warning">truncated</span> : null}
+            </div>
+            {loading && !preview ? <p className="settings-muted-text">Loading source preview...</p> : null}
+            {!loading && !preview && !error ? <p className="settings-muted-text">Source preview is unavailable.</p> : null}
+            {preview ? <pre className="knowledge-source-preview">{preview.preview}</pre> : null}
+          </section>
+          <section className="knowledge-source-subsection">
+            <div className="detail-section-heading">
+              <h4>Chunks</h4>
+              <span className="settings-badge muted">{chunks.length}</span>
+            </div>
+            {loading && !chunks.length ? <p className="settings-muted-text">Loading chunks...</p> : null}
+            {!loading && !chunks.length ? <Empty title="No chunks" message="No chunks are currently stored for this source." /> : null}
+            {chunks.length ? (
+              <div className="knowledge-chunk-list">
+                {chunks.map((chunk) => (
+                  <details className="knowledge-chunk-card" key={chunk.chunk_id} open={chunk.chunk_index < 3}>
+                    <summary>
+                      <strong>Chunk {chunk.chunk_index}</strong>
+                      <span>{chunk.char_start}-{chunk.char_end}</span>
+                      {chunk.embedding_dimension ? <span>{chunk.embedding_dimension}d</span> : null}
+                    </summary>
+                    {chunk.heading_path ? <small>{chunk.heading_path}</small> : null}
+                    <pre>{chunk.content_preview || chunk.content}{chunk.truncated ? '\n...' : ''}</pre>
+                  </details>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </div>
       </section>
-    </section>
+    </div>
   );
 }
 

@@ -257,7 +257,18 @@ export const api = {
     request<KnowledgeSourcePreview>(`/api/knowledge/sources/${sourceId}/preview`),
   listKnowledgeSourceChunks: (sourceId: string) =>
     request<KnowledgeSourceChunksResponse>(`/api/knowledge/sources/${sourceId}/chunks`),
-  searchKnowledge: (payload: { query: string; knowledge_base_ids?: string[]; session_id?: string | null; top_k?: number; max_context_chars?: number; debug?: boolean }) =>
+  searchKnowledge: (payload: {
+    query: string;
+    knowledge_base_ids?: string[];
+    session_id?: string | null;
+    top_k?: number;
+    max_context_chars?: number;
+    min_score_threshold?: number | null;
+    max_chunks_per_source?: number | null;
+    max_chunks_per_knowledge_base?: number | null;
+    expand_query?: boolean | null;
+    debug?: boolean;
+  }) =>
     request<KnowledgeSearchResponse>('/api/knowledge/search', {
       method: 'POST',
       body: JSON.stringify(payload),

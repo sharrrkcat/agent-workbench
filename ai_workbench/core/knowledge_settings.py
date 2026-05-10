@@ -16,6 +16,14 @@ Section: {heading_path}
 Content:
 {content}"""
 
+DEFAULT_QUERY_EXPANSION_PROMPT = """\
+Generate up to {max_variants} short search query variants for the user's query.
+Use the same language when useful.
+Return only a JSON array of strings.
+
+User query:
+{query}"""
+
 
 class KnowledgeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -36,6 +44,12 @@ class KnowledgeSettings(BaseModel):
     default_final_top_k: int = Field(default=6, ge=1, le=100)
     default_max_context_chars: int = Field(default=10000, ge=100, le=200000)
     default_min_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    min_score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
+    retrieval_max_chunks_per_source: int | None = Field(default=None, ge=1, le=100)
+    retrieval_max_chunks_per_knowledge_base: int | None = Field(default=None, ge=1, le=100)
+    query_expansion_enabled: StrictBool = False
+    query_expansion_max_variants: int = Field(default=3, ge=1, le=10)
+    query_expansion_prompt: str = DEFAULT_QUERY_EXPANSION_PROMPT
     rrf_k: int = Field(default=60, ge=1, le=1000)
     default_chunk_size: int = Field(default=1000, ge=100, le=10000)
     default_chunk_overlap: int = Field(default=150, ge=0, le=5000)
@@ -53,12 +67,12 @@ class KnowledgeSettings(BaseModel):
         text = str(value).strip()
         return text or None
 
-    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template", mode="before")
+    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template", "query_expansion_prompt", mode="before")
     @classmethod
     def _non_empty_text(cls, value: Any) -> str:
         text = str(value or "").strip()
         if not text:
-            raise ValueError("Knowledge context prompt fields must not be empty.")
+            raise ValueError("Knowledge prompt fields must not be empty.")
         return text
 
     @field_validator("knowledge_context_snippet_template")
@@ -66,6 +80,13 @@ class KnowledgeSettings(BaseModel):
     def _template_contains_content(cls, value: str) -> str:
         if "{content}" not in value:
             raise ValueError("Knowledge context snippet template must include {content}.")
+        return value
+
+    @field_validator("query_expansion_prompt")
+    @classmethod
+    def _query_expansion_prompt_variables(cls, value: str) -> str:
+        if "{query}" not in value or "{max_variants}" not in value:
+            raise ValueError("Query expansion prompt must include {query} and {max_variants}.")
         return value
 
 
@@ -86,6 +107,12 @@ class KnowledgeSettingsPatch(BaseModel):
     default_final_top_k: int | None = Field(default=None, ge=1, le=100)
     default_max_context_chars: int | None = Field(default=None, ge=100, le=200000)
     default_min_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    min_score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
+    retrieval_max_chunks_per_source: int | None = Field(default=None, ge=1, le=100)
+    retrieval_max_chunks_per_knowledge_base: int | None = Field(default=None, ge=1, le=100)
+    query_expansion_enabled: StrictBool | None = None
+    query_expansion_max_variants: int | None = Field(default=None, ge=1, le=10)
+    query_expansion_prompt: str | None = None
     rrf_k: int | None = Field(default=None, ge=1, le=1000)
     default_chunk_size: int | None = Field(default=None, ge=100, le=10000)
     default_chunk_overlap: int | None = Field(default=None, ge=0, le=5000)
@@ -103,14 +130,14 @@ class KnowledgeSettingsPatch(BaseModel):
         text = str(value).strip()
         return text or None
 
-    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template", mode="before")
+    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template", "query_expansion_prompt", mode="before")
     @classmethod
     def _non_empty_text(cls, value: Any) -> str | None:
         if value is None:
             return None
         text = str(value).strip()
         if not text:
-            raise ValueError("Knowledge context prompt fields must not be empty.")
+            raise ValueError("Knowledge prompt fields must not be empty.")
         return text
 
     @field_validator("knowledge_context_snippet_template")
@@ -118,6 +145,13 @@ class KnowledgeSettingsPatch(BaseModel):
     def _template_contains_content(cls, value: str | None) -> str | None:
         if value is not None and "{content}" not in value:
             raise ValueError("Knowledge context snippet template must include {content}.")
+        return value
+
+    @field_validator("query_expansion_prompt")
+    @classmethod
+    def _query_expansion_prompt_variables(cls, value: str | None) -> str | None:
+        if value is not None and ("{query}" not in value or "{max_variants}" not in value):
+            raise ValueError("Query expansion prompt must include {query} and {max_variants}.")
         return value
 
 

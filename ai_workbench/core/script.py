@@ -473,6 +473,8 @@ class LLMProxy:
             session_id=context.get("session_id") or self.session_id,
             source="script_agent",
             effective_mode=context.get("effective_mode") or "disabled",
+            llm_runtime=self.llm_runtime,
+            llm_model_config=self.default_model_config,
         )
         self._record_knowledge_context(result.metadata)
         if result.rendered_text:
@@ -490,6 +492,8 @@ class LLMProxy:
             session_id=context.get("session_id") or self.session_id,
             source="script_agent",
             effective_mode=context.get("effective_mode") or "disabled",
+            llm_runtime=self.llm_runtime,
+            llm_model_config=self.default_model_config,
         )
         self._record_knowledge_context(result.metadata)
         return result.rendered_text

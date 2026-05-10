@@ -349,6 +349,12 @@ export type KnowledgeSettings = {
   default_final_top_k: number;
   default_max_context_chars: number;
   default_min_score: number | null;
+  min_score_threshold: number | null;
+  retrieval_max_chunks_per_source: number | null;
+  retrieval_max_chunks_per_knowledge_base: number | null;
+  query_expansion_enabled: boolean;
+  query_expansion_max_variants: number;
+  query_expansion_prompt: string;
   rrf_k: number;
   default_chunk_size: number;
   default_chunk_overlap: number;
@@ -515,8 +521,19 @@ export type KnowledgeSearchResponse = {
     merged_candidate_count: number;
     reranker_used: boolean;
     reranker_failed: boolean;
+    query_expansion_enabled?: boolean;
+    query_expansion_used?: boolean;
+    expanded_query_count?: number;
+    expanded_queries?: string[];
+    expansion_failed?: boolean;
+    before_filter_count?: number;
+    min_score_filtered_count?: number;
+    per_source_filtered_count?: number;
+    per_kb_filtered_count?: number;
+    final_result_count?: number;
     warnings: string[];
   };
+  context_preview?: string;
 };
 
 export type KnowledgeChunk = {

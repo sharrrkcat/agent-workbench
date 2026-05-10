@@ -39,6 +39,7 @@ def init_db(engine) -> None:
     ensure_message_speaker_columns(engine)
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
+    ensure_knowledge_settings_columns(engine)
     ensure_run_lifecycle_columns(engine)
     migrate_llm_provider_profiles(engine)
     ensure_schema_version(engine)
@@ -119,6 +120,33 @@ def ensure_llm_profile_columns(engine) -> None:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(llm_profiles)").fetchall()}
         if "provider_profile_id" not in columns:
             connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN provider_profile_id VARCHAR"))
+
+
+def ensure_knowledge_settings_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "knowledge_settings" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(knowledge_settings)").fetchall()}
+        additions = {
+            "min_score_threshold": "FLOAT",
+            "retrieval_max_chunks_per_source": "INTEGER",
+            "retrieval_max_chunks_per_knowledge_base": "INTEGER",
+            "query_expansion_enabled": "BOOLEAN DEFAULT 0",
+            "query_expansion_max_variants": "INTEGER DEFAULT 3",
+            "query_expansion_prompt": (
+                "VARCHAR DEFAULT 'Generate up to {max_variants} short search query variants for the user''s query.\n"
+                "Use the same language when useful.\n"
+                "Return only a JSON array of strings.\n\n"
+                "User query:\n"
+                "{query}'"
+            ),
+        }
+        for column, ddl in additions.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE knowledge_settings ADD COLUMN {column} {ddl}"))
 
 
 def ensure_run_lifecycle_columns(engine) -> None:

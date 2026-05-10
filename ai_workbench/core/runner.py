@@ -396,6 +396,11 @@ class AgentRunner:
                 prompt = f"{prompt.rstrip()}\n\n{group_transcript_identity_instruction(agent.name, agent.id, app_settings.group_transcript_system_instruction)}"
             messages.append({"role": "system", "content": prompt})
         messages.extend(context.messages)
+        llm_config = None
+        try:
+            llm_config = self._resolve_llm_model_config(agent, action, session_id)
+        except Exception:
+            llm_config = None
         knowledge_mode = resolved_knowledge_context_mode(agent, agent_config)
         knowledge_context = build_session_knowledge_context(
             knowledge_store=self.knowledge_store,
@@ -404,13 +409,14 @@ class AgentRunner:
             session_id=session_id,
             source="prompt_agent",
             effective_mode=str(knowledge_mode["effective_mode"]),
+            llm_runtime=self.llm_runtime,
+            llm_model_config=llm_config.values if llm_config is not None else None,
         )
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
         self.run_lifecycle.complete_step(context_step.step_id, metadata={"knowledge_context": knowledge_step_metadata(knowledge_context.metadata)})
 
-        llm_config = None
         llm_use_key = None
         llm_started = False
         cleanup_done = False
@@ -419,7 +425,7 @@ class AgentRunner:
         calling_llm_step = None
         try:
             resolving_model_step = self.run_lifecycle.start_step(run.run_id, "Resolving model")
-            llm_config = self._resolve_llm_model_config(agent, action, session_id)
+            llm_config = llm_config or self._resolve_llm_model_config(agent, action, session_id)
             require_llm_model(llm_config)
             file_context = _prepare_file_context_messages(
                 messages=messages,

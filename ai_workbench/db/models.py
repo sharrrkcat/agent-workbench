@@ -166,6 +166,18 @@ class KnowledgeSettingsRecord(SQLModel, table=True):
     default_final_top_k: int = 6
     default_max_context_chars: int = 10000
     default_min_score: Optional[float] = None
+    min_score_threshold: Optional[float] = None
+    retrieval_max_chunks_per_source: Optional[int] = None
+    retrieval_max_chunks_per_knowledge_base: Optional[int] = None
+    query_expansion_enabled: bool = False
+    query_expansion_max_variants: int = 3
+    query_expansion_prompt: str = (
+        "Generate up to {max_variants} short search query variants for the user's query.\n"
+        "Use the same language when useful.\n"
+        "Return only a JSON array of strings.\n\n"
+        "User query:\n"
+        "{query}"
+    )
     rrf_k: int = 60
     default_chunk_size: int = 1000
     default_chunk_overlap: int = 150

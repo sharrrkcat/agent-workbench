@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.keyword_search import KeywordSearchResult, search_keywords
@@ -39,6 +40,11 @@ def search_knowledge(
     top_k: int | None,
     max_context_chars: int | None,
     include_debug: bool,
+    min_score_threshold: float | None = None,
+    max_chunks_per_source: int | None = None,
+    max_chunks_per_knowledge_base: int | None = None,
+    expand_query: bool | None = None,
+    query_expander: Callable[[str, int, str], list[str]] | None = None,
 ) -> dict[str, Any]:
     settings = knowledge_store.get_settings()
     debug: dict[str, Any] = {
@@ -47,6 +53,15 @@ def search_knowledge(
         "merged_candidate_count": 0,
         "reranker_used": False,
         "reranker_failed": False,
+        "query_expansion_enabled": bool(settings.query_expansion_enabled if expand_query is None else expand_query),
+        "query_expansion_used": False,
+        "expanded_query_count": 1,
+        "expansion_failed": False,
+        "before_filter_count": 0,
+        "min_score_filtered_count": 0,
+        "per_source_filtered_count": 0,
+        "per_kb_filtered_count": 0,
+        "final_result_count": 0,
         "warnings": [],
     }
     selected_kbs = _resolve_selected_kbs(knowledge_store, knowledge_base_ids, session_id, debug["warnings"])
@@ -54,6 +69,8 @@ def search_knowledge(
     if not selected_kbs:
         debug["warnings"].append("No enabled knowledge bases were selected for search.")
         return _response(query, [], debug, include_debug)
+
+    queries = _expanded_queries(query, settings=settings, enabled=debug["query_expansion_enabled"], query_expander=query_expander, debug=debug)
 
     profiles = _load_profiles(knowledge_store, selected_kbs, debug["warnings"])
     vector_candidates: list[RetrievalCandidate] = []
@@ -63,21 +80,25 @@ def search_knowledge(
             debug["warnings"].append(f"Skipped embedding group {profile_id} because the embedding profile is missing or disabled.")
             continue
         candidate_k = _candidate_k(settings.default_vector_candidate_k, [kb.vector_candidate_k_override for kb in group_kbs])
+        group_count = 0
         embedding_result = embed_texts(
             backend=model_backend,
             profile=profile,
-            texts=[query],
+            texts=queries,
             purpose="query",
             device=settings.local_model_device,
         )
-        results, warnings = search_vectors(
-            engine=engine,
-            query_vector=embedding_result["vectors"][0],
-            embedding_model_profile_id=profile.id,
-            knowledge_base_ids=[kb.id for kb in group_kbs],
-            top_k=candidate_k,
-        )
-        debug["warnings"].extend(warnings)
+        for query_vector in embedding_result["vectors"]:
+            results, warnings = search_vectors(
+                engine=engine,
+                query_vector=query_vector,
+                embedding_model_profile_id=profile.id,
+                knowledge_base_ids=[kb.id for kb in group_kbs],
+                top_k=candidate_k,
+            )
+            debug["warnings"].extend(warnings)
+            group_count += len(results)
+            vector_candidates.extend(_from_vector(result) for result in results)
         debug["embedding_groups"].append(
             {
                 "embedding_model_profile_id": profile.id,
@@ -85,23 +106,23 @@ def search_knowledge(
                 "embedding_model_profile_alias": profile.alias,
                 "embedding_dimension": embedding_result.get("dimension") or profile.dimension,
                 "knowledge_base_ids": [kb.id for kb in group_kbs],
-                "candidate_count": len(results),
+                "candidate_count": group_count,
             }
         )
-        vector_candidates.extend(_from_vector(result) for result in results)
 
     keyword_candidates: list[RetrievalCandidate] = []
     if settings.hybrid_search_enabled:
         keyword_k = _candidate_k(settings.default_keyword_candidate_k, [kb.keyword_candidate_k_override for kb in selected_kbs])
-        keyword_results, keyword_warnings = search_keywords(
-            engine=engine,
-            query=query,
-            knowledge_base_ids=[kb.id for kb in selected_kbs],
-            top_k=keyword_k,
-        )
-        debug["warnings"].extend(keyword_warnings)
-        debug["keyword_candidate_count"] = len(keyword_results)
-        keyword_candidates = [_from_keyword(result) for result in keyword_results]
+        for query_text in queries:
+            keyword_results, keyword_warnings = search_keywords(
+                engine=engine,
+                query=query_text,
+                knowledge_base_ids=[kb.id for kb in selected_kbs],
+                top_k=keyword_k,
+            )
+            debug["warnings"].extend(keyword_warnings)
+            debug["keyword_candidate_count"] += len(keyword_results)
+            keyword_candidates.extend(_from_keyword(result) for result in keyword_results)
 
     merged = rrf_merge(vector_candidates, keyword_candidates, rrf_k=settings.rrf_k)
     debug["merged_candidate_count"] = len(merged)
@@ -114,9 +135,23 @@ def search_knowledge(
         candidates=merged,
         debug=debug,
     )
+    debug["before_filter_count"] = len(ranked)
+    score_threshold = min_score_threshold if min_score_threshold is not None else (settings.min_score_threshold if settings.min_score_threshold is not None else settings.default_min_score)
+    source_limit = max_chunks_per_source if max_chunks_per_source is not None else settings.retrieval_max_chunks_per_source
+    kb_limit = max_chunks_per_knowledge_base if max_chunks_per_knowledge_base is not None else settings.retrieval_max_chunks_per_knowledge_base
+    ranked = _apply_quality_filters(
+        ranked,
+        min_score_threshold=score_threshold,
+        max_chunks_per_source=source_limit,
+        max_chunks_per_knowledge_base=kb_limit,
+        use_rerank_score=debug["reranker_used"],
+        debug=debug,
+    )
     final_top_k = top_k or _candidate_k(settings.default_final_top_k, [kb.final_top_k_override for kb in selected_kbs])
     final_max_chars = max_context_chars or _candidate_k(settings.default_max_context_chars, [kb.max_context_chars_override for kb in selected_kbs])
-    return _response(query, _trim_results(ranked, final_top_k, final_max_chars), debug, include_debug)
+    results = _trim_results(ranked[:final_top_k], final_top_k, final_max_chars)
+    debug["final_result_count"] = len(results)
+    return _response(query, results, debug, include_debug)
 
 
 def rrf_merge(
@@ -142,6 +177,29 @@ def rrf_merge(
         if candidate.keyword_rank is not None:
             target.rrf_score += 1.0 / (rrf_k + candidate.keyword_rank)
     return sorted(merged.values(), key=lambda item: item.rrf_score, reverse=True)
+
+
+def expand_query_variants(*, llm_runtime: Any, query: str, max_variants: int, prompt_template: str, model_config: dict[str, Any] | None = None) -> list[str]:
+    prompt = prompt_template.format(query=query, max_variants=max_variants)
+    generate = getattr(llm_runtime, "generate", None)
+    chat = getattr(llm_runtime, "chat", None)
+    if callable(generate):
+        raw = generate(prompt, model_config=model_config or {}, stream=False)
+    elif callable(chat):
+        raw = chat(messages=[{"role": "user", "content": prompt}], model_config=model_config or {}, stream=False)
+    else:
+        raise RuntimeError("LLM runtime does not support query expansion.")
+    if isinstance(raw, dict):
+        raw = raw.get("text") or raw.get("content") or raw.get("message") or ""
+    payload = json.loads(str(raw).strip())
+    if not isinstance(payload, list):
+        raise ValueError("Query expansion response must be a JSON array.")
+    variants: list[str] = []
+    for item in payload:
+        text = str(item or "").strip()
+        if text:
+            variants.append(text)
+    return variants
 
 
 def _resolve_selected_kbs(
@@ -186,6 +244,83 @@ def _group_kbs_by_profile(kbs: list[KnowledgeBase]) -> dict[str, list[KnowledgeB
 def _candidate_k(default: int, overrides: list[int | None]) -> int:
     values = [value for value in overrides if value is not None]
     return max(values) if values else default
+
+
+def _expanded_queries(
+    query: str,
+    *,
+    settings: KnowledgeSettings,
+    enabled: bool,
+    query_expander: Callable[[str, int, str], list[str]] | None,
+    debug: dict[str, Any],
+) -> list[str]:
+    if not enabled:
+        return [query]
+    if query_expander is None:
+        debug["warnings"].append("Query expansion enabled but no LLM expander is available; using original query.")
+        return [query]
+    try:
+        variants = query_expander(query, settings.query_expansion_max_variants, settings.query_expansion_prompt)
+    except Exception as exc:
+        debug["expansion_failed"] = True
+        debug["warnings"].append(f"Query expansion failed; using original query: {exc}")
+        return [query]
+    seen = {query.strip().lower()}
+    queries = [query]
+    expanded: list[str] = []
+    for variant in variants:
+        text = str(variant or "").strip()
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        queries.append(text)
+        expanded.append(text)
+        if len(expanded) >= settings.query_expansion_max_variants:
+            break
+    debug["query_expansion_used"] = bool(expanded)
+    debug["expanded_query_count"] = len(queries)
+    debug["expanded_queries"] = expanded
+    return queries
+
+
+def _apply_quality_filters(
+    candidates: list[RetrievalCandidate],
+    *,
+    min_score_threshold: float | None,
+    max_chunks_per_source: int | None,
+    max_chunks_per_knowledge_base: int | None,
+    use_rerank_score: bool,
+    debug: dict[str, Any],
+) -> list[RetrievalCandidate]:
+    filtered: list[RetrievalCandidate] = []
+    for candidate in candidates:
+        score = candidate.rerank_score if use_rerank_score else candidate.rrf_score
+        if min_score_threshold is not None and (score is None or score < min_score_threshold):
+            debug["min_score_filtered_count"] += 1
+            continue
+        filtered.append(candidate)
+    if min_score_threshold is not None and debug["min_score_filtered_count"]:
+        debug["warnings"].append(f"Filtered {debug['min_score_filtered_count']} candidates below min score threshold.")
+
+    source_counts: dict[str, int] = {}
+    source_limited: list[RetrievalCandidate] = []
+    for candidate in filtered:
+        source_counts[candidate.source_id] = source_counts.get(candidate.source_id, 0) + 1
+        if max_chunks_per_source is not None and source_counts[candidate.source_id] > max_chunks_per_source:
+            debug["per_source_filtered_count"] += 1
+            continue
+        source_limited.append(candidate)
+
+    kb_counts: dict[str, int] = {}
+    kb_limited: list[RetrievalCandidate] = []
+    for candidate in source_limited:
+        kb_counts[candidate.knowledge_base_id] = kb_counts.get(candidate.knowledge_base_id, 0) + 1
+        if max_chunks_per_knowledge_base is not None and kb_counts[candidate.knowledge_base_id] > max_chunks_per_knowledge_base:
+            debug["per_kb_filtered_count"] += 1
+            continue
+        kb_limited.append(candidate)
+    return kb_limited
 
 
 def _from_vector(result: VectorSearchResult) -> RetrievalCandidate:
