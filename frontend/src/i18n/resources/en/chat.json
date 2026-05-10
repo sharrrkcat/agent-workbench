@@ -12,5 +12,18 @@
   "removeAttachment": "Remove {{name}}",
   "defaultModel": "Default",
   "defaultModelTitle": "Default uses the current agent model profile",
-  "missingModelProfile": "Missing model profile"
+  "missingModelProfile": "Missing model profile",
+  "confirmDelete": "Delete this message?\nThis only removes the selected message.",
+  "actions": {
+    "messageActions": "Message actions",
+    "notificationActions": "Notification actions",
+    "copied": "Copied",
+    "retry": "Retry",
+    "saveSubmit": "Save & submit",
+    "viewKnowledgeSnippets": "View knowledge snippets"
+  },
+  "status": {
+    "sending": "Sending",
+    "streaming": "Streaming"
+  }
 }

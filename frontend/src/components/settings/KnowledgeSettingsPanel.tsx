@@ -1,5 +1,6 @@
 import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
 import { stableConfigString } from './configUtils';
@@ -7,6 +8,7 @@ import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
+import { getKnowledgeIndexStatusLabel, getKnowledgeSourceStatusLabel } from '../../i18n/formatters';
 
 type FormMode = 'list' | 'new' | string;
 type SourceSortKey = 'title' | 'source_type' | 'chunks' | 'status' | 'indexed_at';
@@ -48,6 +50,7 @@ export function KnowledgeSettingsDetail({
   onObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation(['knowledge', 'common']);
   const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
   const [values, setValues] = useState<KnowledgeSettings | null>(null);
   const [scan, setScan] = useState<KnowledgeModelScan | null>(null);
@@ -110,7 +113,7 @@ export function KnowledgeSettingsDetail({
       const saved = await api.updateKnowledgeSettings(knowledgeSettingsPatch(values));
       setSettings(saved);
       setValues(saved);
-      setResult('Defaults saved.');
+      setResult(t('knowledge:results.defaultsSaved'));
     } catch (error) {
       setLocalError(toSettingsError(error, 'Failed to save Knowledge defaults.'));
     } finally {
@@ -119,7 +122,7 @@ export function KnowledgeSettingsDetail({
   }
 
   if (!values) {
-    return <Empty title="Knowledge" message="Loading Knowledge settings." />;
+    return <Empty title="Knowledge" message={t('knowledge:empty.loadingSettings')} />;
   }
 
   if (category === 'embedding_models') {
@@ -153,8 +156,8 @@ export function KnowledgeSettingsDetail({
             <BrainCircuit size={18} />
           </div>
           <div>
-            <h2>Knowledge Defaults</h2>
-            <p>Local model, retrieval, chunking, and context prompt defaults.</p>
+            <h2>{t('knowledge:titles.defaults')}</h2>
+            <p>{t('knowledge:descriptions.defaults')}</p>
           </div>
         </div>
         <div className="settings-detail-actions">
@@ -162,7 +165,7 @@ export function KnowledgeSettingsDetail({
           {dirty ? (
             <button className="settings-primary-button" type="submit" disabled={busy === 'save'}>
               <Save size={14} />
-              {busy === 'save' ? 'Saving...' : 'Save'}
+              {busy === 'save' ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
         </div>
@@ -171,35 +174,35 @@ export function KnowledgeSettingsDetail({
         {localError ? <SettingsApiError error={localError} /> : null}
         <div className="detail-section">
           <div className="detail-section-heading">
-            <h3>Local Models</h3>
+            <h3>{t('knowledge:sections.localModels')}</h3>
           </div>
           <dl className="settings-definition-grid">
-            <Metric label="Models root" value={values.models_root} />
-            <Metric label="Backend" value={backendLabel(scan?.backend)} />
+            <Metric label={t('knowledge:labels.modelsRoot')} value={values.models_root} />
+            <Metric label={t('knowledge:labels.backend')} value={backendLabel(scan?.backend, t)} />
           </dl>
           <div className="settings-detail-grid">
-            <SelectField label="Local model device" value={values.local_model_device} options={['auto', 'cpu', 'cuda']} onChange={(value) => setValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })} />
+            <SelectField label={t('knowledge:labels.localModelDevice')} value={values.local_model_device} options={['auto', 'cpu', 'cuda']} onChange={(value) => setValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })} />
           </div>
           <div className="settings-button-row">
             <button className="settings-secondary-button" type="button" onClick={runScan} disabled={busy === 'scan'}>
               <RefreshCw size={14} />
-              {busy === 'scan' ? 'Scanning...' : 'Scan local models'}
+              {busy === 'scan' ? t('knowledge:actions.scanning') : t('knowledge:actions.scanLocalModels')}
             </button>
           </div>
           {scan ? <ModelScanSummary scan={scan} /> : null}
         </div>
-        <NumberGroup title="Embedding" values={values} setValues={setValues} fields={[['embedding_batch_size', 'Batch size'], ['embedding_timeout_seconds', 'Timeout seconds']]} />
+        <NumberGroup title={t('knowledge:sections.embedding')} values={values} setValues={setValues} fields={[['embedding_batch_size', t('knowledge:labels.batchSize')], ['embedding_timeout_seconds', t('knowledge:labels.timeoutSeconds')]]} />
         <div className="detail-section">
-          <div className="detail-section-heading"><h3>Reranker</h3></div>
+          <div className="detail-section-heading"><h3>{t('knowledge:sections.reranker')}</h3></div>
           <label className="config-field settings-config-field boolean-field">
-            <span>Enabled</span>
+            <span>{t('knowledge:labels.enabled')}</span>
             <ToggleSwitch checked={values.reranker_enabled} onChange={(checked) => setValues({ ...values, reranker_enabled: checked })} />
           </label>
           <div className="settings-detail-grid">
-            <TextField label="Reranker model path" value={values.reranker_model_path || ''} onChange={(value) => setValues({ ...values, reranker_model_path: value || null })} />
-            <NumberField label="Batch size" value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
-            <NumberField label="Timeout seconds" value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
-            <NumberField label="Candidate limit" value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
+            <TextField label={t('knowledge:labels.rerankerModelPath')} value={values.reranker_model_path || ''} onChange={(value) => setValues({ ...values, reranker_model_path: value || null })} />
+            <NumberField label={t('knowledge:labels.batchSize')} value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
+            <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
+            <NumberField label={t('knowledge:labels.candidateLimit')} value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
           </div>
           <div className="settings-button-row">
             <button className="settings-secondary-button" type="button" onClick={async () => {
@@ -207,7 +210,7 @@ export function KnowledgeSettingsDetail({
               try {
                 setLocalError(null);
                 const response = await api.rerankKnowledge({ query: 'What is RAG?', documents: [{ id: 'doc1', text: 'Retrieval augmented generation uses retrieved context.' }, { id: 'doc2', text: 'Other text.' }] });
-                setResult(`Reranker test returned ${response.results.length} results.`);
+                setResult(t('knowledge:results.rerankerReturned', { count: response.results.length }));
               } catch (error) {
                 setLocalError(toSettingsError(error, 'Reranker unavailable.'));
               } finally {
@@ -215,40 +218,40 @@ export function KnowledgeSettingsDetail({
               }
             }}>
               <Play size={14} />
-              Test reranker
+              {t('knowledge:actions.testReranker')}
             </button>
           </div>
         </div>
-        <NumberGroup title="Retrieval" values={values} setValues={setValues} fields={[['default_vector_candidate_k', 'Vector candidate K'], ['default_keyword_candidate_k', 'Keyword candidate K'], ['default_final_top_k', 'Final top K'], ['default_max_context_chars', 'Max context chars'], ['rrf_k', 'RRF K']]} />
+        <NumberGroup title={t('knowledge:sections.retrieval')} values={values} setValues={setValues} fields={[['default_vector_candidate_k', t('knowledge:labels.vectorCandidateK')], ['default_keyword_candidate_k', t('knowledge:labels.keywordCandidateK')], ['default_final_top_k', t('knowledge:labels.finalTopK')], ['default_max_context_chars', t('knowledge:labels.maxContextChars')], ['rrf_k', t('knowledge:labels.rrfK')]]} />
         <div className="detail-section">
-          <div className="detail-section-heading"><h3>Retrieval switches</h3></div>
+          <div className="detail-section-heading"><h3>{t('knowledge:sections.retrievalSwitches')}</h3></div>
           <label className="config-field settings-config-field boolean-field">
-            <span>Hybrid search enabled</span>
+            <span>{t('knowledge:labels.enabled')}</span>
             <ToggleSwitch checked={values.hybrid_search_enabled} onChange={(checked) => setValues({ ...values, hybrid_search_enabled: checked })} />
           </label>
           <div className="settings-detail-grid">
-            <NumberField label="Min score threshold" value={values.min_score_threshold ?? ''} onChange={(value) => setValues({ ...values, min_score_threshold: value === '' ? null : Number(value) })} />
-            <NumberField label="Per source max chunks" value={values.retrieval_max_chunks_per_source ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_source: value === '' ? null : Number(value) })} />
-            <NumberField label="Per KB max chunks" value={values.retrieval_max_chunks_per_knowledge_base ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_knowledge_base: value === '' ? null : Number(value) })} />
+            <NumberField label={t('knowledge:labels.minScoreThreshold')} value={values.min_score_threshold ?? ''} onChange={(value) => setValues({ ...values, min_score_threshold: value === '' ? null : Number(value) })} />
+            <NumberField label={t('knowledge:labels.perSourceMaxChunks')} value={values.retrieval_max_chunks_per_source ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_source: value === '' ? null : Number(value) })} />
+            <NumberField label={t('knowledge:labels.perKbMaxChunks')} value={values.retrieval_max_chunks_per_knowledge_base ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_knowledge_base: value === '' ? null : Number(value) })} />
           </div>
         </div>
         <div className="detail-section">
-          <div className="detail-section-heading"><h3>Query Expansion</h3></div>
+          <div className="detail-section-heading"><h3>{t('knowledge:sections.queryExpansion')}</h3></div>
           <label className="config-field settings-config-field boolean-field">
-            <span>Enabled</span>
+            <span>{t('knowledge:labels.enabled')}</span>
             <ToggleSwitch checked={values.query_expansion_enabled} onChange={(checked) => setValues({ ...values, query_expansion_enabled: checked })} />
           </label>
           <div className="settings-detail-grid">
-            <NumberField label="Max variants" value={values.query_expansion_max_variants} onChange={(value) => { if (value !== '') setValues({ ...values, query_expansion_max_variants: value }); }} />
+            <NumberField label={t('knowledge:labels.maxVariants')} value={values.query_expansion_max_variants} onChange={(value) => { if (value !== '') setValues({ ...values, query_expansion_max_variants: value }); }} />
           </div>
-          <TextAreaField label="Expansion prompt" value={values.query_expansion_prompt} onChange={(value) => setValues({ ...values, query_expansion_prompt: value })} />
+          <TextAreaField label={t('knowledge:labels.expansionPrompt')} value={values.query_expansion_prompt} onChange={(value) => setValues({ ...values, query_expansion_prompt: value })} />
         </div>
-        <NumberGroup title="Chunking" values={values} setValues={setValues} fields={[['default_chunk_size', 'Chunk size'], ['default_chunk_overlap', 'Chunk overlap']]} />
-        <NumberGroup title="Index limits" values={values} setValues={setValues} fields={[['max_source_size_bytes', 'Max source size bytes'], ['max_chunks_per_source', 'Max chunks per source'], ['max_total_index_chars_per_source', 'Max total index chars per source']]} />
+        <NumberGroup title={t('knowledge:sections.chunking')} values={values} setValues={setValues} fields={[['default_chunk_size', t('knowledge:labels.chunkSize')], ['default_chunk_overlap', t('knowledge:labels.chunkOverlap')]]} />
+        <NumberGroup title={t('knowledge:sections.indexLimits')} values={values} setValues={setValues} fields={[['max_source_size_bytes', t('knowledge:labels.maxSourceSizeBytes')], ['max_chunks_per_source', t('knowledge:labels.maxChunksPerSource')], ['max_total_index_chars_per_source', t('knowledge:labels.maxTotalIndexCharsPerSource')]]} />
         <div className="detail-section">
-          <div className="detail-section-heading"><h3>Context Injection</h3></div>
-          <TextAreaField label="Knowledge context instruction" value={values.knowledge_context_instruction} onChange={(value) => setValues({ ...values, knowledge_context_instruction: value })} />
-          <TextAreaField label="Snippet template" value={values.knowledge_context_snippet_template} onChange={(value) => setValues({ ...values, knowledge_context_snippet_template: value })} />
+          <div className="detail-section-heading"><h3>{t('knowledge:sections.contextInjection')}</h3></div>
+          <TextAreaField label={t('knowledge:labels.knowledgeContextInstruction')} value={values.knowledge_context_instruction} onChange={(value) => setValues({ ...values, knowledge_context_instruction: value })} />
+          <TextAreaField label={t('knowledge:labels.snippetTemplate')} value={values.knowledge_context_snippet_template} onChange={(value) => setValues({ ...values, knowledge_context_snippet_template: value })} />
         </div>
       </div>
     </form>
@@ -261,10 +264,11 @@ function EmbeddingModelsEditor({ profiles, mode, onRefresh, onDirtyChange }: {
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation('knowledge');
   const selected = profiles.find((profile) => profile.id === mode);
   const initial = mode === 'new' ? defaultEmbeddingProfile : selected;
   if (!initial) {
-    return <Empty title="No embedding model selected" message={profiles.length ? 'Select an embedding model profile from the list.' : 'No embedding model profiles yet.'} />;
+    return <Empty title={t('empty.noEmbeddingSelected')} message={profiles.length ? t('empty.selectEmbedding') : t('empty.noEmbeddingProfiles')} />;
   }
   return <EmbeddingProfileForm initial={initial} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
@@ -275,6 +279,7 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation(['knowledge', 'common']);
   const [values, setValues] = useState<Partial<EmbeddingModelProfile>>(initial);
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
@@ -304,7 +309,7 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
       const payload = buildEmbeddingModelPayload(values);
       const saved = isNew ? await api.createEmbeddingModel(payload) : await api.patchEmbeddingModel(values.id || '', payload);
       await onRefresh(saved.id);
-      setResult('Embedding model saved.');
+      setResult(t('knowledge:results.embeddingSaved'));
     } catch (error) {
       setError(toSettingsError(error, 'Failed to save embedding model.'));
     } finally {
@@ -318,7 +323,7 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
       setError(null);
       await api.deleteEmbeddingModel(values.id);
       await onRefresh();
-      setResult('Embedding model deleted.');
+      setResult(t('knowledge:results.embeddingDeleted'));
     } catch (error) {
       setError(toSettingsError(error, 'Failed to delete embedding model.'));
     } finally {
@@ -331,7 +336,7 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
     try {
       setError(null);
       const response = await api.testEmbeddingModel(values.id, 'hello world', 'query');
-      setResult(`Embedding dimension ${response.dimension}.`);
+      setResult(t('knowledge:results.embeddingDimension', { dimension: response.dimension }));
     } catch (error) {
       setError(toSettingsError(error, 'Embedding backend unavailable.'));
     } finally {
@@ -344,7 +349,7 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">{profileInitials(values.name || values.alias || 'EM') || <BrainCircuit size={18} />}</div>
           <div>
-            <h2>{values.name || 'New embedding model'}</h2>
+            <h2>{values.name || t('knowledge:titles.newEmbeddingModel')}</h2>
             <p>
               <code>{values.alias || 'profile_key'}</code>
               <span>{values.model_path || 'No model path'}</span>
@@ -356,31 +361,31 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
           {dirty ? (
             <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
               <Save size={14} />
-              {busy === 'saving' ? 'Saving...' : 'Save'}
+              {busy === 'saving' ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
-          {!isNew ? <button className="settings-secondary-button" type="button" onClick={test} disabled={Boolean(busy)}><Play size={14} />{busy === 'testing' ? 'Testing...' : 'Test'}</button> : null}
-          {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button> : null}
+          {!isNew ? <button className="settings-secondary-button" type="button" onClick={test} disabled={Boolean(busy)}><Play size={14} />{busy === 'testing' ? t('knowledge:actions.testing') : t('knowledge:actions.test')}</button> : null}
+          {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
           <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
         </div>
       </header>
       <div className="settings-detail-body">
         {error ? <SettingsApiError error={error} /> : null}
         <section className="detail-section">
-          <h3>Model</h3>
+          <h3>{t('knowledge:sections.model')}</h3>
           <div className="settings-detail-grid">
-            <TextField label="Name" value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
-            <TextField label="Profile key" value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
-            <TextField label="Model path" value={values.model_path || ''} onChange={(value) => setValues({ ...values, model_path: value })} />
-            <NumberField label="Dimension" value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
+            <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
+            <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
+            <TextField label={t('knowledge:labels.modelPath')} value={values.model_path || ''} onChange={(value) => setValues({ ...values, model_path: value })} />
+            <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
           </div>
         </section>
         <section className="detail-section">
-          <h3>Runtime</h3>
-          <label className="config-field settings-config-field boolean-field"><span>Normalize</span><ToggleSwitch checked={values.normalize ?? true} onChange={(checked) => setValues({ ...values, normalize: checked })} /></label>
-          <TextAreaField label="Document instruction" value={values.document_instruction || ''} onChange={(value) => setValues({ ...values, document_instruction: value })} />
-          <TextAreaField label="Query instruction" value={values.query_instruction || ''} onChange={(value) => setValues({ ...values, query_instruction: value })} />
-          <TextAreaField label="Notes" value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
+          <h3>{t('knowledge:sections.runtime')}</h3>
+          <label className="config-field settings-config-field boolean-field"><span>{t('knowledge:labels.normalize')}</span><ToggleSwitch checked={values.normalize ?? true} onChange={(checked) => setValues({ ...values, normalize: checked })} /></label>
+          <TextAreaField label={t('knowledge:labels.documentInstruction')} value={values.document_instruction || ''} onChange={(value) => setValues({ ...values, document_instruction: value })} />
+          <TextAreaField label={t('knowledge:labels.queryInstruction')} value={values.query_instruction || ''} onChange={(value) => setValues({ ...values, query_instruction: value })} />
+          <TextAreaField label={t('knowledge:labels.notes')} value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
         </section>
       </div>
     </form>
@@ -394,10 +399,11 @@ function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, onRefresh, onDir
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation('knowledge');
   const selected = knowledgeBases.find((kb) => kb.id === mode);
   const initial = useMemo(() => mode === 'new' ? { ...defaultKnowledgeBase, embedding_model_profile_id: profiles[0]?.id || '' } : selected, [mode, profiles, selected]);
   if (!initial) {
-    return <Empty title="No knowledge base selected" message={knowledgeBases.length ? 'Select a knowledge base from the list.' : 'No knowledge bases yet.'} />;
+    return <Empty title={t('empty.noKnowledgeBaseSelected')} message={knowledgeBases.length ? t('empty.selectKnowledgeBase') : t('empty.noKnowledgeBases')} />;
   }
   return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
@@ -409,6 +415,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation(['knowledge', 'common']);
   const [values, setValues] = useState<Partial<KnowledgeBase>>(initial);
   const [busy, setBusy] = useState('');
   const [configResult, setConfigResult] = useState('');
@@ -558,7 +565,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       const saved = isNew ? await api.createKnowledgeBase(payload) : await api.patchKnowledgeBase(values.id || '', payload);
       await onRefresh(saved.id);
       if (!isNew) await loadSources(saved.id);
-      setConfigResult('Knowledge base saved.');
+      setConfigResult(t('knowledge:results.knowledgeBaseSaved'));
     } catch (error) {
       setConfigError(toSettingsError(error, 'Failed to save knowledge base.'));
     } finally {
@@ -572,7 +579,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setConfigError(null);
       await api.deleteKnowledgeBase(values.id);
       await onRefresh();
-      setConfigResult('Knowledge base deleted.');
+      setConfigResult(t('knowledge:results.knowledgeBaseDeleted'));
     } catch (error) {
       setConfigError(toSettingsError(error, 'Failed to delete knowledge base.'));
     } finally {
@@ -593,7 +600,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setSelectedSourceId(indexed.source_id);
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
-      setSourceResult(`Indexed ${indexed.chunks} chunks.`);
+      setSourceResult(t('knowledge:results.indexedChunks', { count: indexed.chunks }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to index pasted text source.'));
@@ -626,7 +633,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
-      setSourceResult(`Indexed ${indexedCount} chunks from ${accepted.length} file${accepted.length === 1 ? '' : 's'}.`);
+      setSourceResult(t('knowledge:results.indexedFiles', { chunks: indexedCount, files: accepted.length, count: accepted.length }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to index text file source.'));
@@ -678,7 +685,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       }
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
-      setSourceResult('Source deleted.');
+      setSourceResult(t('knowledge:results.sourceDeleted'));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to delete source.'));
@@ -699,7 +706,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       await loadSources(knowledgeBaseId);
       if (selectedSourceId === sourceId) await loadSourceDetail(sourceId);
       await onRefresh(knowledgeBaseId);
-      setSourceResult(`Reindexed ${result.chunks} chunks.`);
+      setSourceResult(t('knowledge:results.reindexedChunks', { count: result.chunks }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to reindex source.'));
@@ -721,7 +728,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       if (selectedSourceId) await loadSourceDetail(selectedSourceId);
       await onRefresh(knowledgeBaseId);
       const failed = result.sources.filter((source) => source.status === 'failed').length;
-      setSourceResult(failed ? `Reindexed ${result.sources.length - failed} sources; ${failed} failed.` : `Reindexed ${result.sources.length} sources.`);
+      setSourceResult(failed ? t('knowledge:results.reindexedSourcesWithFailures', { count: result.sources.length - failed, failed }) : t('knowledge:results.reindexedSources', { count: result.sources.length }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to reindex knowledge base.'));
@@ -759,10 +766,10 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">{profileInitials(values.name || 'KB') || <BrainCircuit size={18} />}</div>
           <div>
-            <h2>{values.name || 'New knowledge base'}</h2>
+            <h2>{values.name || t('knowledge:titles.newKnowledgeBase')}</h2>
             <p>
-              <span>Knowledge base configuration, sources, and local indexes.</span>
-              <span>{'index_status' in values ? values.index_status || 'empty' : 'unsaved'}</span>
+              <span>{t('knowledge:descriptions.knowledgeBase')}</span>
+              <span>{'index_status' in values ? getKnowledgeIndexStatusLabel(values.index_status || 'empty', t) : t('status:common.unset', { ns: 'status' })}</span>
               <span>{selectedProfile?.alias || 'missing model'}</span>
             </p>
           </div>
@@ -772,36 +779,36 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           {activeTab === 'config' && dirty ? (
             <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
               <Save size={14} />
-              {busy === 'saving' ? 'Saving...' : 'Save'}
+              {busy === 'saving' ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
-          {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button> : null}
+          {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
           <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
         </div>
       </header>
-      <DetailTabs tabs={[{ id: 'config', label: 'Config' }, { id: 'sources', label: 'Sources', enabled: !isNew && Boolean(values.id) }]} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as 'config' | 'sources')} />
+      <DetailTabs tabs={[{ id: 'config', label: t('knowledge:sections.config') }, { id: 'sources', label: t('knowledge:sections.sourcesList'), enabled: !isNew && Boolean(values.id) }]} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as 'config' | 'sources')} />
       <div className="settings-detail-body">
         {activeTab === 'config' ? (
           <>
             {configError ? <SettingsApiError error={configError} /> : null}
             <section className="detail-section">
-              <h3>Config</h3>
+              <h3>{t('knowledge:sections.config')}</h3>
               <div className="settings-detail-grid">
-                <TextField label="Name" value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
-                <SelectField label="Embedding model profile" value={values.embedding_model_profile_id || ''} options={profiles.map((profile) => profile.id)} labels={Object.fromEntries(profiles.map((profile) => [profile.id, profile.alias]))} onChange={(value) => setValues({ ...values, embedding_model_profile_id: value })} />
+                <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
+                <SelectField label={t('knowledge:labels.embeddingModelProfile')} value={values.embedding_model_profile_id || ''} options={profiles.map((profile) => profile.id)} labels={Object.fromEntries(profiles.map((profile) => [profile.id, profile.alias]))} onChange={(value) => setValues({ ...values, embedding_model_profile_id: value })} />
               </div>
-              <TextAreaField label="Description" value={values.description || ''} onChange={(value) => setValues({ ...values, description: value })} />
-              {'index_status' in values ? <dl className="settings-definition-grid"><Metric label="Index status" value={values.index_status || 'empty'} /></dl> : null}
+              <TextAreaField label={t('knowledge:labels.description')} value={values.description || ''} onChange={(value) => setValues({ ...values, description: value })} />
+              {'index_status' in values ? <dl className="settings-definition-grid"><Metric label={t('knowledge:labels.indexStatus')} value={getKnowledgeIndexStatusLabel(values.index_status || 'empty', t)} /></dl> : null}
             </section>
             <section className="detail-section">
-              <h3>Overrides</h3>
+              <h3>{t('knowledge:sections.overrides')}</h3>
               <div className="settings-detail-grid">
-                <NumberField label="Chunk size override" value={values.chunk_size_override ?? ''} onChange={(value) => setValues({ ...values, chunk_size_override: value === '' ? null : Number(value) })} />
-                <NumberField label="Chunk overlap override" value={values.chunk_overlap_override ?? ''} onChange={(value) => setValues({ ...values, chunk_overlap_override: value === '' ? null : Number(value) })} />
-                <NumberField label="Vector candidate K override" value={values.vector_candidate_k_override ?? ''} onChange={(value) => setValues({ ...values, vector_candidate_k_override: value === '' ? null : Number(value) })} />
-                <NumberField label="Keyword candidate K override" value={values.keyword_candidate_k_override ?? ''} onChange={(value) => setValues({ ...values, keyword_candidate_k_override: value === '' ? null : Number(value) })} />
-                <NumberField label="Final top K override" value={values.final_top_k_override ?? ''} onChange={(value) => setValues({ ...values, final_top_k_override: value === '' ? null : Number(value) })} />
-                <NumberField label="Max context chars override" value={values.max_context_chars_override ?? ''} onChange={(value) => setValues({ ...values, max_context_chars_override: value === '' ? null : Number(value) })} />
+                <NumberField label={t('knowledge:labels.chunkSizeOverride')} value={values.chunk_size_override ?? ''} onChange={(value) => setValues({ ...values, chunk_size_override: value === '' ? null : Number(value) })} />
+                <NumberField label={t('knowledge:labels.chunkOverlapOverride')} value={values.chunk_overlap_override ?? ''} onChange={(value) => setValues({ ...values, chunk_overlap_override: value === '' ? null : Number(value) })} />
+                <NumberField label={t('knowledge:labels.vectorCandidateKOverride')} value={values.vector_candidate_k_override ?? ''} onChange={(value) => setValues({ ...values, vector_candidate_k_override: value === '' ? null : Number(value) })} />
+                <NumberField label={t('knowledge:labels.keywordCandidateKOverride')} value={values.keyword_candidate_k_override ?? ''} onChange={(value) => setValues({ ...values, keyword_candidate_k_override: value === '' ? null : Number(value) })} />
+                <NumberField label={t('knowledge:labels.finalTopKOverride')} value={values.final_top_k_override ?? ''} onChange={(value) => setValues({ ...values, final_top_k_override: value === '' ? null : Number(value) })} />
+                <NumberField label={t('knowledge:labels.maxContextCharsOverride')} value={values.max_context_chars_override ?? ''} onChange={(value) => setValues({ ...values, max_context_chars_override: value === '' ? null : Number(value) })} />
               </div>
             </section>
           </>
@@ -809,26 +816,26 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         {activeTab === 'sources' && !isNew && values.id ? (
           <>
             <section className="detail-section">
-              <div className="detail-section-heading"><h3>Search Test</h3></div>
+              <div className="detail-section-heading"><h3>{t('knowledge:sections.searchTest')}</h3></div>
               <div className="settings-detail-grid">
-                <TextField label="Query" value={searchQuery} onChange={setSearchQuery} />
+                <TextField label={t('knowledge:labels.query')} value={searchQuery} onChange={setSearchQuery} />
               </div>
               <div className="settings-button-row">
-                <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />Search</button>
+                <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />{t('knowledge:actions.search')}</button>
               </div>
               {searchError ? <SettingsApiError error={searchError} /> : null}
               {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
             </section>
             <section className="detail-section">
-              <div className="detail-section-heading"><h3>Adding Sources</h3></div>
+              <div className="detail-section-heading"><h3>{t('knowledge:sections.addingSources')}</h3></div>
               {sourceResult ? <span className="settings-badge success">{sourceResult}</span> : null}
               {sourceError ? <SettingsApiError error={sourceError} /> : null}
               <div className="settings-detail-grid">
-                <TextField label="Pasted source title" value={sourceTitle} onChange={setSourceTitle} />
+                <TextField label={t('knowledge:labels.pastedSourceTitle')} value={sourceTitle} onChange={setSourceTitle} />
               </div>
-              <TextAreaField label="Pasted text" value={sourceText} onChange={setSourceText} />
+              <TextAreaField label={t('knowledge:labels.pastedText')} value={sourceText} onChange={setSourceText} />
               <div className="settings-button-row">
-                <button className="settings-secondary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}><Play size={14} />Index pasted text</button>
+                <button className="settings-secondary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}><Play size={14} />{t('knowledge:actions.indexPastedText')}</button>
               </div>
               <div
                 className={`knowledge-dropzone ${dragActive ? 'active' : ''}`}
@@ -838,22 +845,22 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               >
                 <Upload size={18} />
                 <div>
-                  <strong>Drop text files here</strong>
-                  <p>Supports text, code, and config files already accepted by attachments.</p>
+                  <strong>{t('knowledge:dropzone.title')}</strong>
+                  <p>{t('knowledge:dropzone.description')}</p>
                 </div>
                 <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => fileInputRef.current?.click()}>
                   <FileText size={14} />
-                  Choose files
+                  {t('knowledge:actions.chooseFiles')}
                 </button>
                 <input ref={fileInputRef} className="sr-only" type="file" multiple accept={TEXT_ATTACHMENT_ACCEPT} onChange={onFileChange} />
               </div>
             </section>
             <section className="detail-section">
               <div className="detail-section-heading">
-                <h3>Sources list</h3>
+                <h3>{t('knowledge:sections.sourcesList')}</h3>
                 <button className="settings-secondary-button" type="button" disabled={!sources.length || Boolean(busy)} onClick={reindexAllSources}>
                   <RefreshCw size={14} />
-                  {busy === 'reindexing all' ? 'Reindexing...' : 'Reindex all'}
+                  {busy === 'reindexing all' ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindexAll')}
                 </button>
               </div>
               {sources.length ? (
@@ -867,7 +874,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                   onDelete={deleteSource}
                   busy={busy}
                 />
-              ) : <Empty title="No sources" message="No sources have been indexed for this knowledge base." />}
+              ) : <Empty title={t('knowledge:empty.noSources')} message={t('knowledge:empty.noSourcesMessage')} />}
             </section>
             {selectedSource ? (
               <SourceDetail
@@ -884,13 +891,14 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
             ) : null}
           </>
         ) : null}
-        {activeTab === 'sources' && (isNew || !values.id) ? <Empty title="Save first" message="Save this knowledge base before adding sources." /> : null}
+        {activeTab === 'sources' && (isNew || !values.id) ? <Empty title={t('knowledge:empty.saveFirst')} message={t('knowledge:empty.saveFirstMessage')} /> : null}
       </div>
     </form>
   );
 }
 
 function KnowledgeSearchResults({ response }: { response: KnowledgeSearchResponse }) {
+  const { t } = useTranslation(['knowledge', 'common']);
   return (
     <div className="knowledge-search-results">
       {response.results.length ? response.results.map((result) => (
@@ -910,19 +918,19 @@ function KnowledgeSearchResults({ response }: { response: KnowledgeSearchRespons
             </div>
           </div>
         </article>
-      )) : <Empty title="No results" message="No chunks matched this query." />}
+      )) : <Empty title={t('knowledge:empty.noResults')} message={t('knowledge:empty.noResultsMessage')} />}
       {response.debug ? (
         <details className="settings-debug-details">
-          <summary>Debug</summary>
+          <summary>{t('common:details')}</summary>
           <pre>{JSON.stringify(response.debug, null, 2)}</pre>
         </details>
       ) : null}
       <details className="knowledge-context-preview" open>
-        <summary>Context preview</summary>
+        <summary>{t('knowledge:labels.contextPreview')}</summary>
         {response.context_preview ? (
           <pre>{response.context_preview}</pre>
         ) : (
-          <p className="settings-muted-text">No context would be injected.</p>
+          <p className="settings-muted-text">{t('knowledge:empty.noContext')}</p>
         )}
       </details>
     </div>
@@ -939,17 +947,18 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
   onDelete: (sourceId: string) => void;
   busy: string;
 }) {
+  const { t } = useTranslation(['knowledge', 'common']);
   return (
     <div className="knowledge-table-scroll">
       <table className="knowledge-sources-table">
         <thead>
           <tr>
-            <SortableHeader label="Name" sortKey="title" activeSort={sort} onSort={onSort} />
-            <SortableHeader label="Type" sortKey="source_type" activeSort={sort} onSort={onSort} />
-            <SortableHeader label="Chunks" sortKey="chunks" activeSort={sort} onSort={onSort} />
-            <SortableHeader label="Indexed" sortKey="status" activeSort={sort} onSort={onSort} />
-            <SortableHeader label="Indexed date" sortKey="indexed_at" activeSort={sort} onSort={onSort} />
-            <th>Actions</th>
+            <SortableHeader label={t('knowledge:labels.nameColumn')} sortKey="title" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.type')} sortKey="source_type" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.chunks')} sortKey="chunks" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.indexed')} sortKey="status" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.indexedDate')} sortKey="indexed_at" activeSort={sort} onSort={onSort} />
+            <th>{t('knowledge:labels.actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -965,8 +974,8 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
               <td>{formatDate(source.indexed_at)}</td>
               <td>
                 <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
-                  <button className="settings-secondary-button" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
-                  <button className="settings-secondary-button danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
+                  <button className="settings-secondary-button" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy)}><RefreshCw size={14} />{t('knowledge:actions.reindex')}</button>
+                  <button className="settings-secondary-button danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button>
                 </div>
               </td>
             </tr>
@@ -988,6 +997,7 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
   onReindex: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation(['knowledge', 'common', 'status']);
   return (
     <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="Source detail" onClick={onClose}>
       <section className="knowledge-source-modal" onClick={(event) => event.stopPropagation()}>
@@ -996,44 +1006,44 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
             <h3>{source.title || source.uri || source.id}</h3>
             <div className="settings-chip-row">
               <span>{source.source_type}</span>
-              <span>{source.status}</span>
+              <span>{getKnowledgeSourceStatusLabel(source.status, t)}</span>
               <span>{formatDate(source.indexed_at)}</span>
             </div>
           </div>
           <div className="settings-button-row compact">
-            <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
-            <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
-            <button className="settings-secondary-button icon-only" type="button" onClick={onClose} aria-label="Close source detail"><X size={16} /></button>
+            <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy)}><RefreshCw size={14} />{t('knowledge:actions.reindex')}</button>
+            <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button>
+            <button className="settings-secondary-button icon-only" type="button" onClick={onClose} aria-label={t('knowledge:actions.closeSourceDetail')}><X size={16} /></button>
           </div>
         </header>
         <div className="knowledge-source-modal-body">
           {error ? <SettingsApiError error={error} /> : null}
           <section className="knowledge-source-subsection">
-            <h4>Overview</h4>
+            <h4>{t('knowledge:sections.overview')}</h4>
             <dl className="settings-definition-grid">
-              <Metric label="Chunks" value={String(source.chunks)} />
-              <Metric label="Size" value={formatBytes(source.size_bytes)} />
-              <Metric label="Content hash" value={source.content_hash || 'n/a'} />
-              <Metric label="Embedding dimension" value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
+              <Metric label={t('knowledge:labels.chunks')} value={String(source.chunks)} />
+              <Metric label={t('knowledge:labels.size')} value={formatBytes(source.size_bytes)} />
+              <Metric label={t('knowledge:labels.contentHash')} value={source.content_hash || 'n/a'} />
+              <Metric label={t('knowledge:labels.embeddingDimension')} value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
             </dl>
             {source.error ? <p className="settings-error-text">{source.error}</p> : null}
           </section>
           <section className="knowledge-source-subsection">
             <div className="detail-section-heading">
-              <h4>Source preview</h4>
+              <h4>{t('knowledge:sections.sourcePreview')}</h4>
               {preview?.truncated ? <span className="settings-badge warning">truncated</span> : null}
             </div>
-            {loading && !preview ? <p className="settings-muted-text">Loading source preview...</p> : null}
-            {!loading && !preview && !error ? <p className="settings-muted-text">Source preview is unavailable.</p> : null}
+            {loading && !preview ? <p className="settings-muted-text">{t('common:loading')}</p> : null}
+            {!loading && !preview && !error ? <p className="settings-muted-text">{t('knowledge:empty.sourcePreviewUnavailable')}</p> : null}
             {preview ? <pre className="knowledge-source-preview">{preview.preview}</pre> : null}
           </section>
           <section className="knowledge-source-subsection">
             <div className="detail-section-heading">
-              <h4>Chunks</h4>
+              <h4>{t('knowledge:sections.chunks')}</h4>
               <span className="settings-badge muted">{chunks.length}</span>
             </div>
-            {loading && !chunks.length ? <p className="settings-muted-text">Loading chunks...</p> : null}
-            {!loading && !chunks.length ? <Empty title="No chunks" message="No chunks are currently stored for this source." /> : null}
+            {loading && !chunks.length ? <p className="settings-muted-text">{t('common:loading')}</p> : null}
+            {!loading && !chunks.length ? <Empty title={t('knowledge:empty.noChunks')} message={t('knowledge:empty.noChunksMessage')} /> : null}
             {chunks.length ? (
               <div className="knowledge-chunk-list">
                 {chunks.map((chunk) => (
@@ -1057,8 +1067,9 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation('status');
   const className = status === 'indexed' || status === 'ready' ? 'success' : status === 'needs_reindex' || status === 'failed' ? 'warning' : '';
-  return <span className={`settings-badge ${className}`}>{status}</span>;
+  return <span className={`settings-badge ${className}`}>{getKnowledgeSourceStatusLabel(status, t)}</span>;
 }
 
 function SortableHeader({ label, sortKey, activeSort, onSort }: { label: string; sortKey: SourceSortKey; activeSort: { key: SourceSortKey; direction: SortDirection }; onSort: (key: SourceSortKey) => void }) {
@@ -1119,19 +1130,20 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function ModelScanSummary({ scan }: { scan: KnowledgeModelScan }) {
+  const { t } = useTranslation(['knowledge', 'status']);
   return (
     <dl className="settings-definition-grid">
-      <Metric label="Embedding folders" value={String(scan.embedding_models.length)} />
-      <Metric label="Reranker folders" value={String(scan.reranker_models.length)} />
-      <Metric label="sentence-transformers" value={scan.backend.sentence_transformers_available ? 'Available' : 'Unavailable'} />
-      <Metric label="torch" value={scan.backend.torch_available ? 'Available' : 'Unavailable'} />
+      <Metric label={t('knowledge:labels.embeddingFolders')} value={String(scan.embedding_models.length)} />
+      <Metric label={t('knowledge:labels.rerankerFolders')} value={String(scan.reranker_models.length)} />
+      <Metric label="sentence-transformers" value={scan.backend.sentence_transformers_available ? t('status:common.available') : t('status:common.unavailable')} />
+      <Metric label="torch" value={scan.backend.torch_available ? t('status:common.available') : t('status:common.unavailable')} />
     </dl>
   );
 }
 
-function backendLabel(backend?: KnowledgeModelScan['backend']): string {
-  if (!backend) return 'Not scanned';
-  return backend.available ? 'Available' : 'Unavailable: optional dependencies missing';
+function backendLabel(backend: KnowledgeModelScan['backend'] | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!backend) return t('knowledge:backend.notScanned');
+  return backend.available ? t('knowledge:backend.available') : t('knowledge:backend.unavailableOptionalDeps');
 }
 
 function knowledgeSettingsPatch(values: KnowledgeSettings): Partial<KnowledgeSettings> {

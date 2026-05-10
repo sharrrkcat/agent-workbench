@@ -1,0 +1,43 @@
+{
+  "common": {
+    "unknown": "Unknown",
+    "unset": "Unset",
+    "unavailable": "Unavailable",
+    "available": "Available",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "yes": "Yes",
+    "no": "No",
+    "none": "None",
+    "notSelected": "Not selected",
+    "notIndexed": "Not indexed"
+  },
+  "llmProvider": {
+    "READY": "Ready",
+    "PROVIDER_UNREACHABLE": "Provider unreachable",
+    "MODEL_NOT_AVAILABLE": "Model not available",
+    "MODEL_NOT_LOADED": "Model not loaded",
+    "MODEL_MISMATCH": "Model mismatch",
+    "MODEL_STATUS_UNKNOWN": "Model status unknown",
+    "UNSUPPORTED": "Unsupported",
+    "UNLOADING": "Unloading",
+    "UNLOAD_FAILED": "Unload failed",
+    "MODEL_UNLOAD_FAILED": "Model unload failed"
+  },
+  "knowledgeIndex": {
+    "empty": "Empty",
+    "ready": "Ready",
+    "indexing": "Indexing",
+    "failed": "Failed",
+    "needs_reindex": "Needs reindex"
+  },
+  "knowledgeSource": {
+    "pending": "Pending",
+    "indexing": "Indexing",
+    "indexed": "Indexed",
+    "ready": "Ready",
+    "failed": "Failed",
+    "needs_reindex": "Needs reindex",
+    "deleted": "Deleted"
+  }
+}

@@ -17,5 +17,7 @@
   "default": "Default",
   "language": "Language",
   "languageEnglish": "English",
-  "languageChinese": "Chinese"
+  "languageChinese": "Chinese",
+  "loading": "Loading...",
+  "details": "Details"
 }

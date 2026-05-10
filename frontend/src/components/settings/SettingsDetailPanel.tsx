@@ -8,6 +8,7 @@ import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { getStatusLabel } from '../../i18n/formatters';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
@@ -300,7 +301,7 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
     });
   }
 
-  if (!values) return <EmptyDetail title={t('settings:sections.general')} message="Loading general settings." />;
+  if (!values) return <EmptyDetail title={t('settings:sections.general')} message={t('settings:general.loading')} />;
 
   return (
     <form className="settings-detail-form" onSubmit={save}>
@@ -345,30 +346,31 @@ function GeneralFilesSettings({
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
 }) {
+  const { t } = useTranslation('settings');
   return (
     <>
       <div className="detail-section">
         <div className="detail-section-heading">
-          <h3>Upload limits</h3>
+          <h3>{t('general.uploadLimits')}</h3>
         </div>
         <div className="settings-detail-grid">
-          <NumberField label="Max image size (MB)" value={values.max_image_size_mb} min={1} max={100} onChange={(value) => setNumber('max_image_size_mb', value)} />
-          <NumberField label="Max file size (MB)" value={values.max_file_size_mb} min={1} max={100} onChange={(value) => setNumber('max_file_size_mb', value)} />
-          <NumberField label="Max attachments per message" value={values.max_attachments_per_message} min={1} max={50} onChange={(value) => setNumber('max_attachments_per_message', value)} />
+          <NumberField label={t('general.maxImageSize')} value={values.max_image_size_mb} min={1} max={100} onChange={(value) => setNumber('max_image_size_mb', value)} />
+          <NumberField label={t('general.maxFileSize')} value={values.max_file_size_mb} min={1} max={100} onChange={(value) => setNumber('max_file_size_mb', value)} />
+          <NumberField label={t('general.maxAttachments')} value={values.max_attachments_per_message} min={1} max={50} onChange={(value) => setNumber('max_attachments_per_message', value)} />
         </div>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
-          <h3>LLM file context</h3>
+          <h3>{t('general.llmFileContext')}</h3>
         </div>
         <label className="config-field settings-config-field boolean-field">
-          <span>Send text file attachments to LLM</span>
+          <span>{t('general.sendTextFiles')}</span>
           <ToggleSwitch checked={values.send_text_file_attachments_to_llm} onChange={(checked) => setValues({ ...values, send_text_file_attachments_to_llm: checked })} />
-          <small>This only affects ordinary text files. Image Vision input is controlled by the selected model.</small>
+          <small>{t('general.sendTextFilesHelp')}</small>
         </label>
         <div className="settings-detail-grid">
-          <NumberField label="Max file context per file (KB)" value={values.max_file_context_per_file_kb} min={1} max={2048} onChange={(value) => setNumber('max_file_context_per_file_kb', value)} />
-          <NumberField label="Max total file context per message (KB)" value={values.max_total_file_context_per_message_kb} min={1} max={8192} onChange={(value) => setNumber('max_total_file_context_per_message_kb', value)} />
+          <NumberField label={t('general.maxFileContextPerFile')} value={values.max_file_context_per_file_kb} min={1} max={2048} onChange={(value) => setNumber('max_file_context_per_file_kb', value)} />
+          <NumberField label={t('general.maxTotalFileContext')} value={values.max_total_file_context_per_message_kb} min={1} max={8192} onChange={(value) => setNumber('max_total_file_context_per_message_kb', value)} />
         </div>
       </div>
     </>
@@ -388,44 +390,45 @@ function GeneralPromptSettings({
   setInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction', value: string) => void;
   resetInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction') => void;
 }) {
+  const { t } = useTranslation('settings');
   return (
     <>
       <div className="detail-section">
         <div className="detail-section-heading">
-          <h3>Session titles</h3>
+          <h3>{t('general.sessionTitles')}</h3>
         </div>
         <label className="config-field settings-config-field boolean-field">
-          <span>Auto-generate session titles</span>
+          <span>{t('general.autoGenerateTitles')}</span>
           <ToggleSwitch checked={values.auto_generate_session_titles} onChange={(checked) => setValues({ ...values, auto_generate_session_titles: checked })} />
-          <small>Generate a short title before the first LLM response in a new default-titled session.</small>
+          <small>{t('general.autoGenerateTitlesHelp')}</small>
         </label>
         <InstructionField
-          label="Session title prompt"
-          description="Prompt used for automatic session title generation. Available variables: {user_input}."
+          label={t('general.sessionTitlePrompt')}
+          description={t('general.sessionTitlePromptHelp')}
           value={values.session_title_prompt}
           isDefault={values.session_title_prompt === values.session_title_prompt_default}
           onChange={(value) => setInstruction('session_title_prompt', value)}
           onReset={() => resetInstruction('session_title_prompt')}
         />
         <div className="settings-detail-grid">
-          <NumberField label="Session title max input chars" value={values.session_title_max_input_chars} min={100} max={10000} onChange={(value) => setNumber('session_title_max_input_chars', value)} />
+          <NumberField label={t('general.sessionTitleMaxChars')} value={values.session_title_max_input_chars} min={100} max={10000} onChange={(value) => setNumber('session_title_max_input_chars', value)} />
         </div>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
-          <h3>Context Rendering</h3>
+          <h3>{t('general.contextRendering')}</h3>
         </div>
         <InstructionField
-          label="Group transcript system instruction"
-          description="Instruction appended when a session uses Group transcript mode. It tells the current agent how to read speaker labels and reply as itself."
+          label={t('general.groupTranscriptInstruction')}
+          description={t('general.groupTranscriptInstructionHelp')}
           value={values.group_transcript_system_instruction ?? values.group_transcript_system_instruction_effective}
           isDefault={values.group_transcript_system_instruction === null}
           onChange={(value) => setInstruction('group_transcript_system_instruction', value)}
           onReset={() => resetInstruction('group_transcript_system_instruction')}
         />
         <InstructionField
-          label="Command result context instruction"
-          description="Instruction used when slash command results are included in LLM context. It should tell the model to treat command output as data, not instructions."
+          label={t('general.commandResultInstruction')}
+          description={t('general.commandResultInstructionHelp')}
           value={values.command_result_context_instruction ?? values.command_result_context_instruction_effective}
           isDefault={values.command_result_context_instruction === null}
           onChange={(value) => setInstruction('command_result_context_instruction', value)}
@@ -468,7 +471,7 @@ function InstructionField({
   onChange: (value: string) => void;
   onReset: () => void;
 }) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'settings']);
   return (
     <label className="config-field settings-config-field">
       <span>
@@ -479,7 +482,7 @@ function InstructionField({
       </span>
       <textarea rows={6} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
       <small>
-        {description} {isDefault ? 'Using the default value.' : 'Using a saved override.'}
+        {description} {isDefault ? t('settings:general.usingDefaultValue') : t('settings:general.usingSavedOverride')}
       </small>
     </label>
   );
@@ -495,7 +498,7 @@ function NumberField({ label, value, min, max, onChange }: { label: string; valu
 }
 
 function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirtyChange: (dirty: boolean) => void }) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'settings', 'status']);
   const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [busy, setBusy] = useState('');
@@ -580,8 +583,8 @@ function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirty
             <Database size={18} />
           </div>
           <div>
-            <h2>Data</h2>
-            <p>SQLite local storage and attachment maintenance.</p>
+            <h2>{t('settings:data.title')}</h2>
+            <p>{t('settings:data.description')}</p>
           </div>
         </div>
         <div className="settings-detail-actions">
@@ -598,56 +601,53 @@ function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirty
         {localError ? <SettingsApiError error={localError} /> : null}
         <div className="detail-section">
           <div className="detail-section-heading">
-            <h3>Event log</h3>
+            <h3>{t('settings:data.eventLog')}</h3>
           </div>
           <label className="config-field settings-config-field boolean-field">
-            <span>Persist streaming message deltas</span>
+            <span>{t('settings:data.persistDeltas')}</span>
             <ToggleSwitch checked={persistDeltas} onChange={setPersistDeltas} />
-            <small>
-              Store every streaming message_delta event in the local database for debugging. Disabled by default to keep the database smaller. Final
-              messages, run steps, errors, and warnings are still stored.
-            </small>
+            <small>{t('settings:data.persistDeltasHelp')}</small>
           </label>
         </div>
         <div className="detail-section">
           <div className="detail-section-heading">
-            <h3>Database</h3>
+            <h3>{t('settings:data.database')}</h3>
           </div>
           <dl className="settings-definition-grid">
-            <Metric label="Status" value={stats?.database.status || health?.database?.status || 'Unavailable'} />
-            <Metric label="Schema version" value={stats?.database.schema_version || health?.schema_version || 'Unavailable'} />
-            <Metric label="Database path" value={stats?.database.path || 'Unavailable'} wide />
-            <Metric label="Database size" value={formatBytes(stats?.database.size_bytes || 0)} />
+            <Metric label={t('settings:data.status')} value={getStatusLabel(stats?.database.status || health?.database?.status || 'unavailable', t)} />
+            <Metric label={t('settings:data.schemaVersion')} value={stats?.database.schema_version || health?.schema_version || t('status:common.unavailable')} />
+            <Metric label={t('settings:data.databasePath')} value={stats?.database.path || t('status:common.unavailable')} wide />
+            <Metric label={t('settings:data.databaseSize')} value={formatBytes(stats?.database.size_bytes || 0)} />
           </dl>
         </div>
         <div className="detail-section">
           <div className="detail-section-heading">
-            <h3>Attachments</h3>
+            <h3>{t('settings:data.attachments')}</h3>
           </div>
           <dl className="settings-definition-grid">
-            <Metric label="Directory" value={stats?.attachments.directory || 'Unavailable'} wide />
-            <Metric label="Attachment count" value={String(stats?.attachments.count ?? 0)} />
-            <Metric label="Total size" value={formatBytes(stats?.attachments.total_size_bytes || 0)} />
-            <Metric label="Orphan count" value={String(orphanCount)} />
-            <Metric label="Orphan size" value={formatBytes(stats?.attachments.orphan_size_bytes || 0)} />
+            <Metric label={t('settings:data.directory')} value={stats?.attachments.directory || t('status:common.unavailable')} wide />
+            <Metric label={t('settings:data.attachmentCount')} value={String(stats?.attachments.count ?? 0)} />
+            <Metric label={t('settings:data.totalSize')} value={formatBytes(stats?.attachments.total_size_bytes || 0)} />
+            <Metric label={t('settings:data.orphanCount')} value={String(orphanCount)} />
+            <Metric label={t('settings:data.orphanSize')} value={formatBytes(stats?.attachments.orphan_size_bytes || 0)} />
           </dl>
         </div>
         <div className="detail-section">
           <div className="detail-section-heading">
-            <h3>Maintenance</h3>
+            <h3>{t('settings:data.maintenance')}</h3>
           </div>
           <div className="settings-button-row">
             <button className="settings-secondary-button" type="button" onClick={refresh} disabled={Boolean(busy)}>
               <RefreshCw size={14} />
-              Refresh stats
+              {t('settings:data.refreshStats')}
             </button>
             <button className="settings-secondary-button" type="button" onClick={scan} disabled={Boolean(busy)}>
               <Search size={14} />
-              Scan orphan attachments
+              {t('settings:data.scanOrphans')}
             </button>
             <button className="settings-secondary-button danger" type="button" onClick={clean} disabled={Boolean(busy) || orphanCount === 0}>
               <Trash2 size={14} />
-              {confirmClean ? 'Confirm clean' : 'Clean orphan attachments'}
+              {confirmClean ? t('settings:data.confirmClean') : t('settings:data.cleanOrphans')}
             </button>
           </div>
         </div>
@@ -657,6 +657,7 @@ function DataDetail({ health, onDirtyChange }: { health?: HealthDetails; onDirty
 }
 
 function DiagnosticsDetail() {
+  const { t } = useTranslation(['settings', 'status']);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
@@ -687,103 +688,103 @@ function DiagnosticsDetail() {
             <Activity size={18} />
           </div>
           <div>
-            <h2>Diagnostics</h2>
-            <p>Local runtime health and configuration readiness.</p>
+            <h2>{t('settings:diagnostics.title')}</h2>
+            <p>{t('settings:diagnostics.description')}</p>
           </div>
         </div>
         <div className="settings-detail-actions">
-          {lastRefreshed ? <span className="settings-muted-text">Last refreshed {lastRefreshed}</span> : null}
+          {lastRefreshed ? <span className="settings-muted-text">{t('settings:diagnostics.lastRefreshed', { time: lastRefreshed })}</span> : null}
           <button className="settings-secondary-button" type="button" onClick={refresh} disabled={busy}>
             <RefreshCw size={14} />
-            {busy ? 'Refreshing...' : 'Refresh diagnostics'}
+            {busy ? t('settings:diagnostics.refreshing') : t('settings:diagnostics.refresh')}
           </button>
         </div>
       </header>
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
         {!diagnostics ? (
-          <EmptyDetail title="Diagnostics" message={busy ? 'Loading diagnostics.' : 'Diagnostics unavailable.'} />
+          <EmptyDetail title={t('settings:diagnostics.title')} message={busy ? t('settings:diagnostics.loading') : t('settings:diagnostics.unavailable')} />
         ) : (
           <>
             <div className="settings-diagnostics-grid">
-              <DiagnosticsCard title="System">
-                <Metric label="Backend status" value={diagnostics.backend.status} />
-                <Metric label="Version" value={diagnostics.backend.version || 'unknown'} />
-                <Metric label="Python" value={diagnostics.backend.python_version || 'unknown'} />
-                <Metric label="Uptime" value={formatDuration(diagnostics.backend.uptime_seconds || 0)} />
+              <DiagnosticsCard title={t('settings:diagnostics.system')}>
+                <Metric label={t('settings:diagnostics.backendStatus')} value={getStatusLabel(diagnostics.backend.status, t)} />
+                <Metric label={t('settings:diagnostics.version')} value={diagnostics.backend.version || t('status:common.unknown')} />
+                <Metric label={t('settings:diagnostics.python')} value={diagnostics.backend.python_version || t('status:common.unknown')} />
+                <Metric label={t('settings:diagnostics.uptime')} value={formatDuration(diagnostics.backend.uptime_seconds || 0)} />
               </DiagnosticsCard>
-              <DiagnosticsCard title="Database">
-                <Metric label="Status" value={diagnostics.database.status} />
-                <Metric label="Schema version" value={diagnostics.database.schema_version || 'unknown'} />
-                <Metric label="DB size" value={formatBytes(diagnostics.database.size_bytes || 0)} />
+              <DiagnosticsCard title={t('settings:diagnostics.database')}>
+                <Metric label={t('settings:data.status')} value={getStatusLabel(diagnostics.database.status, t)} />
+                <Metric label={t('settings:data.schemaVersion')} value={diagnostics.database.schema_version || t('status:common.unknown')} />
+                <Metric label={t('settings:data.databaseSize')} value={formatBytes(diagnostics.database.size_bytes || 0)} />
               </DiagnosticsCard>
-              <DiagnosticsCard title="Attachments">
-                <Metric label="Status" value={diagnostics.attachments.status} />
-                <Metric label="Count" value={String(diagnostics.attachments.count ?? 0)} />
-                <Metric label="Total size" value={formatBytes(diagnostics.attachments.total_size_bytes || 0)} />
-                <Metric label="Writable" value={diagnostics.attachments.writable ? 'Yes' : 'No'} />
+              <DiagnosticsCard title={t('settings:diagnostics.attachments')}>
+                <Metric label={t('settings:data.status')} value={getStatusLabel(diagnostics.attachments.status, t)} />
+                <Metric label={t('settings:data.attachmentCount')} value={String(diagnostics.attachments.count ?? 0)} />
+                <Metric label={t('settings:data.totalSize')} value={formatBytes(diagnostics.attachments.total_size_bytes || 0)} />
+                <Metric label="Writable" value={diagnostics.attachments.writable ? t('status:common.yes') : t('status:common.no')} />
               </DiagnosticsCard>
-              <DiagnosticsCard title="Realtime">
-                <Metric label="EventBus subscribers" value={String(diagnostics.event_bus.subscriber_count ?? 0)} />
-                <Metric label="WebSocket connections" value={String(diagnostics.event_bus.active_websocket_connections ?? 0)} />
-                <Metric label="Active runs" value={String(diagnostics.runs.active_count)} />
-                <Metric label="Active tasks" value={String(diagnostics.runs.active_task_count ?? 0)} />
+              <DiagnosticsCard title={t('settings:diagnostics.realtime')}>
+                <Metric label={t('settings:diagnostics.eventBusSubscribers')} value={String(diagnostics.event_bus.subscriber_count ?? 0)} />
+                <Metric label={t('settings:diagnostics.websocketConnections')} value={String(diagnostics.event_bus.active_websocket_connections ?? 0)} />
+                <Metric label={t('settings:diagnostics.activeRuns')} value={String(diagnostics.runs.active_count)} />
+                <Metric label={t('settings:diagnostics.activeTasks')} value={String(diagnostics.runs.active_task_count ?? 0)} />
               </DiagnosticsCard>
               <DiagnosticsCard title="LLM">
-                <Metric label="Profiles" value={`${diagnostics.llm.profiles_enabled} / ${diagnostics.llm.profiles_total} enabled`} />
-                <Metric label="Resolved model" value={diagnostics.llm.default_resolved?.model_id || 'Not selected'} />
-                <Metric label="Base URL" value={diagnostics.llm.default_resolved?.base_url || 'Unavailable'} />
-                <Metric label="API key set" value={diagnostics.llm.default_resolved?.api_key_set ? 'Yes' : 'No'} />
+                <Metric label={t('settings:diagnostics.profiles')} value={t('settings:diagnostics.enabledCount', { enabled: diagnostics.llm.profiles_enabled, total: diagnostics.llm.profiles_total })} />
+                <Metric label={t('settings:diagnostics.resolvedModel')} value={diagnostics.llm.default_resolved?.model_id || t('status:common.notSelected')} />
+                <Metric label={t('settings:diagnostics.baseUrl')} value={diagnostics.llm.default_resolved?.base_url || t('status:common.unavailable')} />
+                <Metric label={t('settings:diagnostics.apiKeySet')} value={diagnostics.llm.default_resolved?.api_key_set ? t('status:common.yes') : t('status:common.no')} />
               </DiagnosticsCard>
-              <DiagnosticsCard title="Capabilities">
-                <Metric label="File" value={`${diagnostics.capabilities.file.enabled ? 'Enabled' : 'Disabled'} / ${diagnostics.capabilities.file.status}`} />
-                <Metric label="Allowed dirs" value={String(diagnostics.capabilities.file.allowed_directories_count ?? 0)} />
-                <Metric label="/read-file" value={diagnostics.capabilities.file.read_file_enabled ? 'Enabled' : 'Disabled'} />
-                <Metric label="/read-image" value={diagnostics.capabilities.file.read_image_enabled ? 'Enabled' : 'Disabled'} />
-                <Metric label="Max text read" value={`${diagnostics.capabilities.file.max_local_text_read_size_mb ?? 0} MB`} />
-                <Metric label="Max image read" value={`${diagnostics.capabilities.file.max_local_image_read_size_mb ?? 0} MB`} />
-                <Metric label="HTTP" value={`${diagnostics.capabilities.http.enabled ? 'Enabled' : 'Disabled'} / ${diagnostics.capabilities.http.status}`} />
-                <Metric label="HTTP GET" value={diagnostics.capabilities.http.http_get_enabled ? 'Enabled' : 'Disabled'} />
-                <Metric label="Fetch image" value={diagnostics.capabilities.http.fetch_image_enabled ? 'Enabled' : 'Disabled'} />
-                <Metric label="Max text response" value={`${diagnostics.capabilities.http.max_text_response_size_mb ?? 0} MB`} />
-                <Metric label="Max image response" value={`${diagnostics.capabilities.http.max_image_response_size_mb ?? 0} MB`} />
-                <Metric label="Redirects" value={diagnostics.capabilities.http.allow_redirects ? 'Allowed' : 'Disabled'} />
+              <DiagnosticsCard title={t('settings:diagnostics.capabilities')}>
+                <Metric label={t('settings:diagnostics.file')} value={`${diagnostics.capabilities.file.enabled ? t('status:common.enabled') : t('status:common.disabled')} / ${getStatusLabel(diagnostics.capabilities.file.status, t)}`} />
+                <Metric label={t('settings:diagnostics.allowedDirs')} value={String(diagnostics.capabilities.file.allowed_directories_count ?? 0)} />
+                <Metric label="/read-file" value={diagnostics.capabilities.file.read_file_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
+                <Metric label="/read-image" value={diagnostics.capabilities.file.read_image_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
+                <Metric label={t('settings:diagnostics.maxTextRead')} value={`${diagnostics.capabilities.file.max_local_text_read_size_mb ?? 0} MB`} />
+                <Metric label={t('settings:diagnostics.maxImageRead')} value={`${diagnostics.capabilities.file.max_local_image_read_size_mb ?? 0} MB`} />
+                <Metric label={t('settings:diagnostics.http')} value={`${diagnostics.capabilities.http.enabled ? t('status:common.enabled') : t('status:common.disabled')} / ${getStatusLabel(diagnostics.capabilities.http.status, t)}`} />
+                <Metric label={t('settings:diagnostics.httpGet')} value={diagnostics.capabilities.http.http_get_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
+                <Metric label={t('settings:diagnostics.fetchImage')} value={diagnostics.capabilities.http.fetch_image_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
+                <Metric label={t('settings:diagnostics.maxTextResponse')} value={`${diagnostics.capabilities.http.max_text_response_size_mb ?? 0} MB`} />
+                <Metric label={t('settings:diagnostics.maxImageResponse')} value={`${diagnostics.capabilities.http.max_image_response_size_mb ?? 0} MB`} />
+                <Metric label={t('settings:diagnostics.redirects')} value={diagnostics.capabilities.http.allow_redirects ? t('settings:diagnostics.allowed') : t('status:common.disabled')} />
               </DiagnosticsCard>
             </div>
             <div className="detail-section">
               <div className="detail-section-heading">
-                <h3>Recent failures</h3>
+                <h3>{t('settings:diagnostics.recentFailures')}</h3>
               </div>
               {diagnostics.runs.recent_failures.length ? (
                 <div className="settings-table-wrap">
                   <table className="settings-table">
                     <thead>
                       <tr>
-                        <th>Time</th>
-                        <th>Target</th>
-                        <th>Error</th>
-                        <th>Message</th>
+                        <th>{t('settings:diagnostics.time')}</th>
+                        <th>{t('settings:diagnostics.target')}</th>
+                        <th>{t('settings:diagnostics.error')}</th>
+                        <th>{t('settings:diagnostics.message')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {diagnostics.runs.recent_failures.map((failure) => (
                         <tr key={failure.run_id}>
                           <td>{formatDateTime(failure.created_at)}</td>
-                          <td>{failure.agent_id || failure.command_name || 'run'}</td>
+                          <td>{failure.agent_id || failure.command_name || t('settings:diagnostics.run')}</td>
                           <td>{failure.error_code}</td>
-                          <td>{failure.message || 'No error message.'}</td>
+                          <td>{failure.message || t('settings:diagnostics.noErrorMessage')}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <div className="settings-empty-state compact">No recent failed runs.</div>
+                <div className="settings-empty-state compact">{t('settings:diagnostics.noRecentFailures')}</div>
               )}
             </div>
             <div className="detail-section">
               <div className="detail-section-heading">
-                <h3>Warnings</h3>
+                <h3>{t('settings:diagnostics.warnings')}</h3>
               </div>
               {diagnostics.warnings.length ? (
                 <ul className="settings-warning-list">
@@ -792,7 +793,7 @@ function DiagnosticsDetail() {
                   ))}
                 </ul>
               ) : (
-                <div className="settings-empty-state compact">No warnings.</div>
+                <div className="settings-empty-state compact">{t('settings:diagnostics.noWarnings')}</div>
               )}
             </div>
           </>

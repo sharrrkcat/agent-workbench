@@ -1,0 +1,82 @@
+{
+  "sections": {
+    "globalFallbackConfig": "Global fallback config",
+    "resolvedConfig": "Resolved LLM config",
+    "savedProfiles": "Saved LLM Profiles",
+    "defaults": "Defaults",
+    "advanced": "Advanced",
+    "connection": "Connection",
+    "model": "Model",
+    "generationDefaults": "Generation defaults",
+    "capabilities": "Capabilities"
+  },
+  "actions": {
+    "refreshModels": "Refresh models",
+    "refreshing": "Refreshing...",
+    "testConnection": "Test connection",
+    "testing": "Testing...",
+    "newProfile": "New profile",
+    "duplicate": "Duplicate"
+  },
+  "labels": {
+    "source": "Source",
+    "provider": "Provider",
+    "providerProfile": "Provider profile",
+    "baseUrl": "Base URL",
+    "model": "Model",
+    "modelId": "Model ID",
+    "timeout": "Timeout",
+    "apiKey": "API key",
+    "apiKeySet": "API key set",
+    "availableModels": "Available models",
+    "defaultModelProfile": "Default model profile",
+    "status": "Status",
+    "capabilities": "Capabilities",
+    "name": "Name",
+    "alias": "Alias",
+    "notes": "Notes",
+    "temperature": "Temperature",
+    "topP": "Top P",
+    "topK": "Top K",
+    "maxTokens": "Max tokens",
+    "profileKey": "Profile key",
+    "chooseFromProvider": "Choose from provider",
+    "manualModelIdOverride": "Manual model ID override",
+    "vision": "Vision",
+    "tools": "Tools",
+    "reasoningOutput": "Reasoning output",
+    "streaming": "Streaming"
+  },
+  "empty": {
+    "noConfigFields": "This capability has no configurable fields.",
+    "resolvedUnavailable": "Resolved config is unavailable.",
+    "noSavedProfiles": "No saved profiles.",
+    "noModelSelected": "No model selected",
+    "noCapabilities": "No capabilities",
+    "noDefaultProfile": "No default model profile selected.",
+    "selectProviderProfile": "Select a provider profile",
+    "selectProviderFirst": "Select a provider profile first.",
+    "selectRefreshedModel": "Select refreshed model",
+    "noRefreshedModels": "No refreshed models",
+    "missingProviderProfile": "Missing provider profile"
+  },
+  "help": {
+    "environmentOverride": "Environment variables may override saved settings.",
+    "chooseModelThenSave": "Choose a model, then Save to store it in the LLM capability config.",
+    "fallbackOrder": "Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.",
+    "legacyReadonly": "Legacy provider, base URL, and model fields are retained only as readonly fallback config when no model profile is resolved.",
+    "preferRefreshedModel": "Prefer selecting a refreshed provider model when available.",
+    "manualModelId": "Use manual Model ID when the provider is offline, does not support listing models, or when you need a custom alias.",
+    "reasoningOutput": "Reasoning output declares expected output behavior only. It does not change provider request parameters.",
+    "profileKey": "Used by agent manifests as llm.profile. This currently maps to API alias.",
+    "llamaCppAlias": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed."
+  },
+  "results": {
+    "providerReturnedNoModels": "Provider returned no models.",
+    "providerReturnedNoChatModels": "Provider returned models, but none are chat/LLM models.",
+    "foundModels": "Found {{count}} model.",
+    "foundModels_plural": "Found {{count}} models.",
+    "foundChatModels": "Found {{count}} chat/LLM model.",
+    "foundChatModels_plural": "Found {{count}} chat/LLM models."
+  }
+}

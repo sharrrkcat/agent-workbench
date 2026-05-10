@@ -1,0 +1,32 @@
+{
+  "status": {
+    "PENDING": "Pending",
+    "RUNNING": "Running",
+    "COMPLETED": "Completed",
+    "FAILED": "Failed",
+    "CANCELLED": "Cancelled",
+    "CANCELLING": "Cancelling",
+    "WAITING_FOR_USER": "Waiting for user"
+  },
+  "steps": {
+    "buildingContext": "Building context",
+    "callingLlm": "Calling LLM",
+    "runningScript": "Running script",
+    "runningCommand": "Running command",
+    "knowledgeRetrieval": "Knowledge retrieval",
+    "preparingResponse": "Preparing response"
+  },
+  "panel": {
+    "title": "Run steps",
+    "stepCount": "{{count}} steps",
+    "withDuration": "{{summary}} · {{duration}}",
+    "cancelling": "Cancelling",
+    "stop": "Stop"
+  },
+  "metrics": {
+    "inputTokens": "input {{count}} tokens",
+    "outputTokens": "output {{count}} tokens",
+    "estimatedOutputTokens": "output ~{{count}} tokens",
+    "tokensPerSecond": "{{rate}} tok/s"
+  }
+}

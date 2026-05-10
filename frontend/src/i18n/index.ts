@@ -4,10 +4,18 @@ import enCommon from './resources/en/common.json';
 import enSettings from './resources/en/settings.json';
 import enChat from './resources/en/chat.json';
 import enErrors from './resources/en/errors.json';
+import enStatus from './resources/en/status.json';
+import enRuns from './resources/en/runs.json';
+import enLlm from './resources/en/llm.json';
+import enKnowledge from './resources/en/knowledge.json';
 import zhCommon from './resources/zh-CN/common.json';
 import zhSettings from './resources/zh-CN/settings.json';
 import zhChat from './resources/zh-CN/chat.json';
 import zhErrors from './resources/zh-CN/errors.json';
+import zhStatus from './resources/zh-CN/status.json';
+import zhRuns from './resources/zh-CN/runs.json';
+import zhLlm from './resources/zh-CN/llm.json';
+import zhKnowledge from './resources/zh-CN/knowledge.json';
 
 export const LOCALE_STORAGE_KEY = 'agent-workbench.locale';
 export const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const;
@@ -26,18 +34,26 @@ void i18n.use(initReactI18next).init({
       settings: enSettings,
       chat: enChat,
       errors: enErrors,
+      status: enStatus,
+      runs: enRuns,
+      llm: enLlm,
+      knowledge: enKnowledge,
     },
     'zh-CN': {
       common: zhCommon,
       settings: zhSettings,
       chat: zhChat,
       errors: zhErrors,
+      status: zhStatus,
+      runs: zhRuns,
+      llm: zhLlm,
+      knowledge: zhKnowledge,
     },
   },
   lng: storedLocale(),
   fallbackLng: 'en',
   defaultNS: 'common',
-  ns: ['common', 'settings', 'chat', 'errors'],
+  ns: ['common', 'settings', 'chat', 'errors', 'status', 'runs', 'llm', 'knowledge'],
   interpolation: {
     escapeValue: false,
   },

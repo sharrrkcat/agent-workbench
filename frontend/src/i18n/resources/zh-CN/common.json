@@ -17,5 +17,7 @@
   "default": "默认",
   "language": "语言",
   "languageEnglish": "英文",
-  "languageChinese": "中文"
+  "languageChinese": "中文",
+  "loading": "加载中...",
+  "details": "详情"
 }

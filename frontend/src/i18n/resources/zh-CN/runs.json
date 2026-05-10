@@ -1,0 +1,32 @@
+{
+  "status": {
+    "PENDING": "等待中",
+    "RUNNING": "运行中",
+    "COMPLETED": "已完成",
+    "FAILED": "失败",
+    "CANCELLED": "已取消",
+    "CANCELLING": "取消中",
+    "WAITING_FOR_USER": "等待用户"
+  },
+  "steps": {
+    "buildingContext": "构建上下文",
+    "callingLlm": "调用 LLM",
+    "runningScript": "运行脚本",
+    "runningCommand": "运行命令",
+    "knowledgeRetrieval": "知识库检索",
+    "preparingResponse": "准备响应"
+  },
+  "panel": {
+    "title": "运行步骤",
+    "stepCount": "{{count}} 个步骤",
+    "withDuration": "{{summary}} · {{duration}}",
+    "cancelling": "取消中",
+    "stop": "停止"
+  },
+  "metrics": {
+    "inputTokens": "输入 {{count}} tokens",
+    "outputTokens": "输出 {{count}} tokens",
+    "estimatedOutputTokens": "输出 ~{{count}} tokens",
+    "tokensPerSecond": "{{rate}} tok/s"
+  }
+}

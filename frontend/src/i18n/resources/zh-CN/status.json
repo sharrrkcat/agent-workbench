@@ -1,0 +1,43 @@
+{
+  "common": {
+    "unknown": "未知",
+    "unset": "未设置",
+    "unavailable": "不可用",
+    "available": "可用",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "yes": "是",
+    "no": "否",
+    "none": "无",
+    "notSelected": "未选择",
+    "notIndexed": "未索引"
+  },
+  "llmProvider": {
+    "READY": "就绪",
+    "PROVIDER_UNREACHABLE": "Provider 不可达",
+    "MODEL_NOT_AVAILABLE": "模型不可用",
+    "MODEL_NOT_LOADED": "模型未加载",
+    "MODEL_MISMATCH": "模型不匹配",
+    "MODEL_STATUS_UNKNOWN": "模型状态未知",
+    "UNSUPPORTED": "不支持",
+    "UNLOADING": "正在卸载",
+    "UNLOAD_FAILED": "卸载失败",
+    "MODEL_UNLOAD_FAILED": "模型卸载失败"
+  },
+  "knowledgeIndex": {
+    "empty": "空",
+    "ready": "就绪",
+    "indexing": "索引中",
+    "failed": "失败",
+    "needs_reindex": "需要重建索引"
+  },
+  "knowledgeSource": {
+    "pending": "等待中",
+    "indexing": "索引中",
+    "indexed": "已索引",
+    "ready": "就绪",
+    "failed": "失败",
+    "needs_reindex": "需要重建索引",
+    "deleted": "已删除"
+  }
+}

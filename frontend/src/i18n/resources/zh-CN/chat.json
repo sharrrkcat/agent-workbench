@@ -12,5 +12,18 @@
   "removeAttachment": "移除 {{name}}",
   "defaultModel": "默认",
   "defaultModelTitle": "默认使用当前 Agent 的模型配置",
-  "missingModelProfile": "缺失模型配置"
+  "missingModelProfile": "缺失模型配置",
+  "confirmDelete": "删除这条消息？\n这只会移除所选消息。",
+  "actions": {
+    "messageActions": "消息操作",
+    "notificationActions": "通知操作",
+    "copied": "已复制",
+    "retry": "重试",
+    "saveSubmit": "保存并提交",
+    "viewKnowledgeSnippets": "查看知识片段"
+  },
+  "status": {
+    "sending": "发送中",
+    "streaming": "流式输出中"
+  }
 }

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { BookOpen, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, X, XCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, KnowledgeChunk, Message, Run, RunStep } from '../types';
 import { api } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
@@ -10,6 +11,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { formatMessageTime, parseServerTime } from '../utils/time';
 import { resolveAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
 import { getResolvedAgentDisplay } from '../utils/agents';
+import { formatApiError, getRunStatusLabel, getRunStepLabel } from '../i18n/formatters';
 
 export type FilePreview = {
   url: string;
@@ -22,6 +24,7 @@ export type FilePreview = {
 type RunStepNode = RunStep & { children: RunStepNode[] };
 
 export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { message: Message; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
+  const { t } = useTranslation(['chat', 'common', 'runs', 'errors']);
   const agents = useWorkbenchStore((state) => state.agents);
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
   const retryMessage = useWorkbenchStore((state) => state.retryMessage);
@@ -50,7 +53,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const kind = isUser ? 'user' : isCommand ? 'command' : 'agent';
   const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
   const operationPending = pendingMessageActionId === message.message_id;
-  const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
+  const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted), t) : '';
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
   const snippetRefs = isAgentMessage ? knowledgeSnippetRefs(message.metadata) : [];
   const runSteps = storeRunSteps || messageRunSteps(message);
@@ -75,7 +78,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   }
 
   function confirmDelete() {
-    const confirmed = window.confirm('Delete this message?\nThis only removes the selected message.');
+    const confirmed = window.confirm(t('chat:confirmDelete', { defaultValue: 'Delete this message?\nThis only removes the selected message.' }));
     if (!confirmed) return;
     void deleteMessage(message.message_id);
   }
@@ -102,10 +105,10 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
               <textarea value={editValue} onChange={(event) => setEditValue(event.target.value)} rows={Math.min(8, Math.max(3, editValue.split(/\r\n|\r|\n/).length))} />
               <div>
                 <button type="button" onClick={() => setEditing(false)} disabled={operationPending}>
-                  Cancel
+                  {t('common:cancel')}
                 </button>
                 <button type="button" className="primary" onClick={() => void saveEdit()} disabled={!editValue.trim() || operationPending}>
-                  Save & submit
+                  {t('chat:actions.saveSubmit', { defaultValue: 'Save & submit' })}
                 </button>
               </div>
             </div>
@@ -119,40 +122,40 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
           {message.client_status === 'pending' ? (
             <div className="message-status">
               <Clock3 size={13} />
-              Sending
+              {t('chat:status.sending', { defaultValue: 'Sending' })}
             </div>
           ) : null}
           {message.client_status === 'streaming' ? (
             <div className="message-status">
               <Clock3 size={13} />
-              Streaming
+              {t('chat:status.streaming', { defaultValue: 'Streaming' })}
             </div>
           ) : null}
           <ActionButtons actions={message.available_actions} />
         </div>
         {!message.client_status && !editing ? (
-          <div className="message-hover-actions" aria-label="Message actions">
-            <button type="button" onClick={() => void copyMessage()} disabled={operationPending} title="Copy">
+          <div className="message-hover-actions" aria-label={t('chat:actions.messageActions', { defaultValue: 'Message actions' })}>
+            <button type="button" onClick={() => void copyMessage()} disabled={operationPending} title={t('common:copy')}>
               {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? <span>Copied</span> : ''}
+              {copied ? <span>{t('chat:actions.copied', { defaultValue: 'Copied' })}</span> : ''}
             </button>
             {isAgentMessage ? (
-              <button type="button" onClick={() => void retryMessage(message.message_id)} disabled={operationPending} title="Retry">
+              <button type="button" onClick={() => void retryMessage(message.message_id)} disabled={operationPending} title={t('chat:actions.retry', { defaultValue: 'Retry' })}>
                 <RefreshCw size={13} className={operationPending ? 'spin' : undefined} />
               </button>
             ) : null}
             {isUser ? (
-              <button type="button" onClick={() => setEditing(true)} disabled={operationPending} title="Edit">
+              <button type="button" onClick={() => setEditing(true)} disabled={operationPending} title={t('common:edit')}>
                 <Pencil size={13} />
               </button>
             ) : null}
             {isUser || isAgentMessage || isCommand ? (
-              <button type="button" className="danger" onClick={confirmDelete} disabled={operationPending} title="Delete">
+              <button type="button" className="danger" onClick={confirmDelete} disabled={operationPending} title={t('common:delete')}>
                 <Trash2 size={13} />
               </button>
             ) : null}
             {snippetRefs.length ? (
-              <button type="button" onClick={() => setKnowledgeModalOpen(true)} disabled={operationPending} title="View knowledge snippets">
+              <button type="button" onClick={() => setKnowledgeModalOpen(true)} disabled={operationPending} title={t('chat:actions.viewKnowledgeSnippets', { defaultValue: 'View knowledge snippets' })}>
                 <BookOpen size={13} />
               </button>
             ) : null}
@@ -378,6 +381,7 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
 }
 
 function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { run?: Run; steps: RunStep[]; runKnowledge?: KnowledgeRetrievalSummary | null; forceExpanded?: boolean }) {
+  const { t } = useTranslation(['runs']);
   const cancelActiveRun = useWorkbenchStore((state) => state.cancelActiveRun);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
   const expandedByRunId = useWorkbenchStore((state) => state.runStepsExpandedByRunId);
@@ -399,8 +403,8 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
   if (!steps.length && !run && !runKnowledge) return null;
   const duration = runDurationLabel(run, steps);
   const progressSummary = run?.progress_total && run.progress_current !== undefined && run.progress_current !== null ? `${run.progress_current} / ${run.progress_total}` : '';
-  const stepSummary = progressSummary || (steps.length ? `${steps.length} steps` : runStatusLabel(run?.status));
-  const displaySummary = `${stepSummary}${duration ? ` · ${duration}` : ''}`;
+  const stepSummary = progressSummary || (steps.length ? t('runs:panel.stepCount', { count: steps.length }) : getRunStatusLabel(run?.status, t));
+  const displaySummary = duration ? t('runs:panel.withDuration', { summary: stepSummary, duration }) : stepSummary;
   const canCancel = Boolean(run?.run_id && (activeRunId === run.run_id || active) && !run.cancel_requested && run.status !== 'CANCELLING');
   const stepTree = buildRunStepTree(steps);
 
@@ -409,12 +413,12 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
       <div className="run-steps-header">
         <button type="button" onClick={() => (runId ? setRunStepsExpanded(runId, !expanded) : undefined)} aria-expanded={expanded}>
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span>运行步骤：{displaySummary}</span>
+          <span>{t('runs:panel.title')}: {displaySummary}</span>
         </button>
-        {run?.status === 'CANCELLING' ? <small>Cancelling</small> : null}
+        {run?.status === 'CANCELLING' ? <small>{t('runs:panel.cancelling')}</small> : null}
         {canCancel ? (
           <button type="button" className="run-steps-stop" onClick={() => void cancelActiveRun()}>
-            Stop
+            {t('runs:panel.stop')}
           </button>
         ) : null}
       </div>
@@ -442,6 +446,7 @@ function DebugRow({ label, value, wide = false }: { label: string; value: ReactN
 }
 
 function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; depth: number; runKnowledge?: KnowledgeRetrievalSummary | null }) {
+  const { t } = useTranslation(['runs']);
   const duration = stepDurationLabel(step);
   const knowledgeSummaries = knowledgeRetrievalsForStep(step, runKnowledge);
   return (
@@ -449,7 +454,7 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
       <div className="run-step-row">
         <RunStepIcon status={step.status} />
         <span>
-          <strong>{step.label}{duration ? ` · ${duration}` : ''}</strong>
+          <strong>{getRunStepLabel(step.label, t)}{duration ? ` · ${duration}` : ''}</strong>
           {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
         </span>
       </div>
@@ -515,11 +520,6 @@ function isActiveRunStatus(status: string): boolean {
 function defaultRunStepsExpanded(run?: Run): boolean {
   if (!run) return false;
   return ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER', 'FAILED', 'CANCELLED'].includes(run.status);
-}
-
-function runStatusLabel(status?: string): string {
-  if (!status) return '';
-  return status.toLowerCase().replace(/_/g, ' ');
 }
 
 function runDurationLabel(run: Run | undefined, steps: RunStep[]): string {
@@ -614,7 +614,9 @@ function SystemEventSeparator({ message }: { message: Message }) {
 }
 
 function InlineErrorBlock({ message }: { message: Message }) {
+  const { t } = useTranslation(['errors', 'common', 'chat']);
   const error = normalizeError(message);
+  const displayError = formatApiError({ code: error.code || 'RUN_FAILED', message: error.message }, t, t('errors:RUN_FAILED'));
   const dismissNotification = useWorkbenchStore((state) => state.dismissNotification);
   const setError = useWorkbenchStore((state) => state.setError);
   const pendingMessageActionId = useWorkbenchStore((state) => state.pendingMessageActionId);
@@ -641,18 +643,18 @@ function InlineErrorBlock({ message }: { message: Message }) {
         <div className="inline-error-block">
           <CircleAlert size={16} />
           <div>
-            <strong>{error.code || 'Agent failed'}</strong>
-            <p>{error.message || 'The run failed.'}</p>
+            <strong>{displayError.code || t('errors:RUN_FAILED')}</strong>
+            <p>{displayError.message || t('errors:RUN_FAILED')}</p>
           </div>
         </div>
         <RunStepsPanel run={storeRun || message.run} steps={runSteps} forceExpanded />
-        <div className="message-hover-actions system-notification-actions" aria-label="Notification actions">
-          <button type="button" onClick={() => void copyNotification()} disabled={operationPending} title="Copy">
+        <div className="message-hover-actions system-notification-actions" aria-label={t('chat:actions.notificationActions', { defaultValue: 'Notification actions' })}>
+          <button type="button" onClick={() => void copyNotification()} disabled={operationPending} title={t('common:copy')}>
             {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? <span>Copied</span> : ''}
+            {copied ? <span>{t('chat:actions.copied')}</span> : ''}
           </button>
           {canDismiss ? (
-            <button type="button" className="danger" onClick={() => void dismissNotification(message.message_id)} disabled={operationPending} title="Delete">
+            <button type="button" className="danger" onClick={() => void dismissNotification(message.message_id)} disabled={operationPending} title={t('common:delete')}>
               <Trash2 size={13} />
             </button>
           ) : null}
@@ -694,14 +696,16 @@ function MessageContent({ message, kind, onPreviewImage, onPreviewFile }: { mess
 }
 
 function MessageErrorCard({ message }: { message: Message }) {
+  const { t } = useTranslation(['errors']);
   const error = normalizeError(message);
-  const title = error.code || (message.speaker_type === 'capability' ? 'Command failed' : 'Agent failed');
+  const displayError = formatApiError({ code: error.code || 'RUN_FAILED', message: error.message }, t, t('errors:RUN_FAILED'));
+  const title = displayError.code || (message.speaker_type === 'capability' ? 'Command failed' : 'Agent failed');
   return (
     <div className="inline-error-block message-error-card">
       <CircleAlert size={16} />
       <div>
         <strong>{title}</strong>
-        <p>{error.message || contentToText(message.content) || 'The run failed.'}</p>
+        <p>{displayError.message || contentToText(message.content) || t('errors:RUN_FAILED')}</p>
       </div>
     </div>
   );
@@ -1718,7 +1722,7 @@ function extractResolutionLabel(value: unknown): string | undefined {
   return undefined;
 }
 
-function formatMetrics(value: unknown, interrupted: boolean): string {
+function formatMetrics(value: unknown, interrupted: boolean, t: ReturnType<typeof useTranslation>['t']): string {
   if (!value || typeof value !== 'object') return '';
   const metrics = value as Record<string, unknown>;
   const usageSource = typeof metrics.usage_source === 'string' ? metrics.usage_source : '';
@@ -1730,16 +1734,16 @@ function formatMetrics(value: unknown, interrupted: boolean): string {
   const firstTokenMs = numberValue(metrics.time_to_first_token_ms);
   const tokensPerSecond = numberValue(metrics.tokens_per_second);
   const parts: string[] = [];
-  if (interrupted) parts.push('Stopped');
+  if (interrupted) parts.push(t('runs:panel.stop'));
   if (promptTokens !== undefined) {
-    parts.push(`输入 ${promptTokens} tokens`);
+    parts.push(t('runs:metrics.inputTokens', { count: promptTokens }));
   }
   if (tokens !== undefined) {
     const estimated = usageSource === 'estimated' || (providerTokens === undefined && estimatedTokens !== undefined);
-    parts.push(`输出 ${estimated ? '~' : ''}${tokens} tokens`);
+    parts.push(t(estimated ? 'runs:metrics.estimatedOutputTokens' : 'runs:metrics.outputTokens', { count: tokens }));
   }
   if (tokensPerSecond !== undefined) {
-    parts.push(`${tokensPerSecond.toFixed(1)} tok/s`);
+    parts.push(t('runs:metrics.tokensPerSecond', { rate: tokensPerSecond.toFixed(1) }));
   }
   if (firstTokenMs !== undefined) {
     parts.push(`${formatSeconds(firstTokenMs)} first token`);
