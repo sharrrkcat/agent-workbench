@@ -4288,20 +4288,7 @@ input:disabled {
 }
 
 .pet-avatar-animated {
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  background-size: 800% 900%;
-  animation: pet-idle-frames 1s steps(8) infinite;
-  image-rendering: auto;
-}
-
-@keyframes pet-idle-frames {
-  from {
-    background-position-x: 0;
-  }
-  to {
-    background-position-x: 100%;
-  }
+  image-rendering: pixelated;
 }
 
 .pet-overlay {
@@ -4321,49 +4308,32 @@ input:disabled {
 }
 
 .pet-sprite {
-  width: 100%;
-  height: 100%;
-  background-repeat: no-repeat;
-  background-position-x: 0;
-  background-size: 800% 900%;
-  animation: pet-overlay-frames 0.9s steps(8) infinite;
-  image-rendering: auto;
+  pointer-events: none;
 }
 
-.pet-sprite[data-state="jumping"] {
-  animation-duration: 0.72s;
-  animation-iteration-count: 1;
+.pet-sprite-viewport {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  image-rendering: pixelated;
 }
 
-.pet-sprite[data-state="running"],
-.pet-sprite[data-state="running-left"],
-.pet-sprite[data-state="running-right"] {
-  animation-duration: 0.72s;
-}
-
-.pet-sprite[data-state="waiting"],
-.pet-sprite[data-state="review"] {
-  animation-duration: 1.08s;
-}
-
-.pet-sprite[data-state="failed"] {
-  animation-duration: 1.2s;
-}
-
-@keyframes pet-overlay-frames {
-  from {
-    background-position-x: 0;
-  }
-  to {
-    background-position-x: 100%;
-  }
+.pet-sprite-sheet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+  image-rendering: pixelated;
 }
 
 .pet-status-bubble {
   position: absolute;
-  right: 78%;
-  bottom: 72%;
-  max-width: min(220px, 48vw);
+  left: calc(100% + var(--pet-bubble-offset-x, 12px));
+  top: var(--pet-bubble-offset-y, -12px);
+  z-index: 1;
+  max-width: min(280px, calc(100vw - 32px));
   padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
@@ -4373,7 +4343,10 @@ input:disabled {
   font-size: 12px;
   font-weight: 680;
   line-height: 1.35;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  word-break: keep-all;
+  overflow-wrap: normal;
   pointer-events: none;
   backdrop-filter: blur(12px);
 }
@@ -4381,12 +4354,12 @@ input:disabled {
 .pet-status-bubble::after {
   content: "";
   position: absolute;
-  right: -6px;
-  bottom: 14px;
+  left: -6px;
+  top: 18px;
   width: 10px;
   height: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(31, 31, 31, 0.92);
   transform: rotate(45deg);
 }

@@ -2,6 +2,7 @@ import { PawPrint, RefreshCw, RotateCcw, Save, Search, Trash2, Upload } from 'lu
 import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { api, joinApiUrl, API_BASE_URL } from '../../api/client';
 import type { PetBubbleTexts, PetItem, PetSettings } from '../../types';
+import { PetSprite } from '../PetSprite';
 import { DetailTabs } from './DetailTabs';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -49,6 +50,8 @@ const DEFAULT_SETTINGS: PetSettings = {
   default_pet_id: '',
   pet_scale: 1,
   show_status_bubble: true,
+  bubble_offset_x: 12,
+  bubble_offset_y: -12,
   jump_on_hover: true,
   running_prefix: 'Running',
   position: { mode: 'default', x: null, y: null },
@@ -338,6 +341,30 @@ function PetConfigTab({
           <span>Show Status Bubble</span>
           <ToggleSwitch checked={values.show_status_bubble} onChange={(checked) => onSetValue('show_status_bubble', checked)} />
         </label>
+        <div className="settings-detail-grid">
+          <label className="config-field settings-config-field">
+            <span>Bubble Offset X</span>
+            <input
+              type="number"
+              min="-240"
+              max="240"
+              step="1"
+              value={values.bubble_offset_x}
+              onChange={(event) => onSetValue('bubble_offset_x', clampNumber(Number(event.currentTarget.value), -240, 240))}
+            />
+          </label>
+          <label className="config-field settings-config-field">
+            <span>Bubble Offset Y</span>
+            <input
+              type="number"
+              min="-240"
+              max="240"
+              step="1"
+              value={values.bubble_offset_y}
+              onChange={(event) => onSetValue('bubble_offset_y', clampNumber(Number(event.currentTarget.value), -240, 240))}
+            />
+          </label>
+        </div>
         <div className="settings-button-row">
           <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onResetPosition}>
             <RotateCcw size={14} />
@@ -458,7 +485,9 @@ function PetListItem({ pet, busy, onDeletePet }: { pet: PetItem; busy: string; o
   return (
     <div className={`pet-list-item ${pet.valid ? '' : 'invalid'}`}>
       {spriteUrl ? (
-        <div className="pet-avatar pet-avatar-animated" style={{ backgroundImage: `url("${spriteUrl}")` }} aria-hidden="true" />
+        <div className="pet-avatar pet-avatar-animated" aria-hidden="true">
+          <PetSprite spritesheetUrl={spriteUrl} state="idle" scale={0.25} />
+        </div>
       ) : (
         <div className="pet-avatar pet-avatar-placeholder" aria-hidden="true"><PawPrint size={18} /></div>
       )}
@@ -489,6 +518,8 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
     default_pet_id: typeof settings.default_pet_id === 'string' ? settings.default_pet_id : '',
     pet_scale: typeof settings.pet_scale === 'number' ? settings.pet_scale : Number(settings.pet_scale) || 1,
     show_status_bubble: Boolean(settings.show_status_bubble),
+    bubble_offset_x: clampNumber(Number(settings.bubble_offset_x ?? 12), -240, 240),
+    bubble_offset_y: clampNumber(Number(settings.bubble_offset_y ?? -12), -240, 240),
     jump_on_hover: Boolean(settings.jump_on_hover),
     running_prefix: typeof settings.running_prefix === 'string' ? settings.running_prefix : DEFAULT_SETTINGS.running_prefix,
     position: {
@@ -498,4 +529,9 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
     },
     bubble_texts: { ...DEFAULT_BUBBLE_TEXTS, ...(settings.bubble_texts || {}) },
   };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }

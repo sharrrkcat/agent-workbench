@@ -1,18 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { API_BASE_URL, api, joinApiUrl } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { PetBubbleTexts, PetItem, PetSettings, Run, RunStep } from '../types';
-
-type PetAnimationState =
-  | 'idle'
-  | 'running-right'
-  | 'running-left'
-  | 'waving'
-  | 'jumping'
-  | 'failed'
-  | 'waiting'
-  | 'running'
-  | 'review';
+import { PetSprite, type PetSpriteState } from './PetSprite';
 
 type DragState = {
   pointerId: number;
@@ -23,25 +13,13 @@ type DragState = {
   lastX: number;
 };
 
-const BASE_WIDTH = 112;
-const BASE_HEIGHT = 122;
+const BASE_WIDTH = 192;
+const BASE_HEIGHT = 208;
 const DEFAULT_MARGIN_RIGHT = 28;
 const DEFAULT_MARGIN_BOTTOM = 92;
 const TERMINAL_HOLD_MS = 4200;
 const JUMP_MS = 720;
 const PET_REFRESH_MS = 6000;
-
-const PET_ANIMATION_ROWS: Record<PetAnimationState, number> = {
-  idle: 0,
-  'running-right': 1,
-  'running-left': 2,
-  waving: 3,
-  jumping: 4,
-  failed: 5,
-  waiting: 6,
-  running: 7,
-  review: 8,
-};
 
 const PET_RUN_STEP_TASK_LABELS: Record<string, string> = {
   'Resolving agent': '\u51c6\u5907\u4ee3\u7406',
@@ -78,6 +56,8 @@ const DEFAULT_SETTINGS: PetSettings = {
   default_pet_id: '',
   pet_scale: 1,
   show_status_bubble: true,
+  bubble_offset_x: 12,
+  bubble_offset_y: -12,
   jump_on_hover: true,
   running_prefix: '\u6b63\u5728',
   position: { mode: 'default', x: null, y: null },
@@ -108,7 +88,7 @@ export function PetOverlay() {
   const activeRun = useMemo(() => pickActiveRun(runs, currentSession?.session_id), [runs, currentSession?.session_id]);
   const baseRun = activeRun || terminalRun;
   const baseState = useMemo(() => mapRunToPetState(baseRun), [baseRun]);
-  const animationState: PetAnimationState = drag
+  const animationState: PetSpriteState = drag
     ? dragDirection === 'left'
       ? 'running-left'
       : 'running-right'
@@ -254,22 +234,16 @@ export function PetOverlay() {
         top: `${position.y}px`,
         width: `${petWidth}px`,
         height: `${petHeight}px`,
-      }}
+        '--pet-bubble-offset-x': `${settings.bubble_offset_x ?? 12}px`,
+        '--pet-bubble-offset-y': `${settings.bubble_offset_y ?? -12}px`,
+      } as CSSProperties}
       onPointerDown={startDrag}
       onPointerEnter={startJump}
       aria-label={selectedPet.display_name || selectedPet.id}
       title={selectedPet.display_name || selectedPet.id}
     >
       {settings.show_status_bubble && bubbleText && !drag ? <div className="pet-status-bubble">{bubbleText}</div> : null}
-      <div
-        className="pet-sprite"
-        data-state={animationState}
-        style={{
-          backgroundImage: `url("${spriteUrl}")`,
-          backgroundPositionY: `${(PET_ANIMATION_ROWS[animationState] / 8) * 100}%`,
-        }}
-        aria-hidden="true"
-      />
+      <PetSprite spritesheetUrl={spriteUrl} state={animationState} scale={scale} className="pet-sprite" />
     </div>
   );
 }
@@ -282,6 +256,8 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
     default_pet_id: typeof settings.default_pet_id === 'string' ? settings.default_pet_id : '',
     pet_scale: clampNumber(Number(settings.pet_scale) || 1, 0.5, 2),
     show_status_bubble: Boolean(settings.show_status_bubble),
+    bubble_offset_x: clampNumber(Number(settings.bubble_offset_x ?? 12), -240, 240),
+    bubble_offset_y: clampNumber(Number(settings.bubble_offset_y ?? -12), -240, 240),
     jump_on_hover: Boolean(settings.jump_on_hover),
     running_prefix: typeof settings.running_prefix === 'string' ? settings.running_prefix : DEFAULT_SETTINGS.running_prefix,
     position: {
@@ -346,7 +322,7 @@ function runTimestamp(run: Run): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function mapRunToPetState(run: Run | null): PetAnimationState {
+function mapRunToPetState(run: Run | null): PetSpriteState {
   if (!run) return 'idle';
   if (run.status === 'WAITING_FOR_USER') return 'waiting';
   if (['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)) return 'running';

@@ -19,6 +19,8 @@ DEFAULT_SETTINGS = {
     "default_pet_id": "",
     "pet_scale": 1.0,
     "show_status_bubble": True,
+    "bubble_offset_x": 12,
+    "bubble_offset_y": -12,
     "jump_on_hover": True,
     "running_prefix": "正在",
     "position": {"mode": "default", "x": None, "y": None},

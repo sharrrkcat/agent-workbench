@@ -200,6 +200,27 @@ def test_pet_command_select_missing_pet_returns_error(tmp_path: Path) -> None:
     assert exc.value.code == "PET_NOT_FOUND"
 
 
+def test_pet_settings_include_bubble_offsets_by_default(tmp_path: Path) -> None:
+    settings = CapabilityRuntime(root=tmp_path).get_settings(context=_pet_command_context(tmp_path))["settings"]
+
+    assert settings["bubble_offset_x"] == 12
+    assert settings["bubble_offset_y"] == -12
+
+
+def test_api_pet_settings_patch_saves_bubble_offsets(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    client.app.state.runtime_state.repo_root = tmp_path
+
+    response = client.patch("/api/pets/settings", json={"values": {"bubble_offset_x": 32, "bubble_offset_y": -40}})
+
+    assert response.status_code == 200
+    assert response.json()["settings"]["bubble_offset_x"] == 32
+    assert response.json()["settings"]["bubble_offset_y"] == -40
+    stored = client.app.state.runtime_state.capability_configs.get_config("pet")["user_config"]
+    assert stored["bubble_offset_x"] == 32
+    assert stored["bubble_offset_y"] == -40
+
+
 def _pet_command_context(tmp_path: Path) -> dict:
     capabilities = CapabilityRegistry()
     capabilities.load_from_directory(Path(__file__).resolve().parents[1] / "capabilities")

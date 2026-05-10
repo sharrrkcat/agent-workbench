@@ -523,6 +523,8 @@ export type PetSettings = {
   default_pet_id: string;
   pet_scale: number;
   show_status_bubble: boolean;
+  bubble_offset_x: number;
+  bubble_offset_y: number;
   jump_on_hover: boolean;
   running_prefix: string;
   position: PetPosition;

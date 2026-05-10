@@ -25,6 +25,20 @@ config_schema:
     label: Show Status Bubble
     default: true
 
+  - name: bubble_offset_x
+    type: integer
+    label: Bubble Offset X
+    default: 12
+    minimum: -240
+    maximum: 240
+
+  - name: bubble_offset_y
+    type: integer
+    label: Bubble Offset Y
+    default: -12
+    minimum: -240
+    maximum: 240
+
   - name: jump_on_hover
     type: boolean
     label: Jump on Hover
