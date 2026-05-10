@@ -2591,15 +2591,11 @@ input:disabled {
   padding: 0 0 12px;
   background: linear-gradient(to top, #212121 72%, rgba(33, 33, 33, 0));
   pointer-events: none;
-  --composer-card-radius: 24px;
-  --composer-textarea-radius: 16px;
   --composer-textarea-height: 44px;
   --composer-transition: 210ms cubic-bezier(0.2, 0, 0.2, 1);
 }
 
 .composer-shell.compact {
-  --composer-card-radius: 999px;
-  --composer-textarea-radius: 999px;
   --composer-textarea-height: 38px;
 }
 
@@ -2612,7 +2608,7 @@ input:disabled {
   max-height: 250px;
   padding: 9px 10px 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--composer-card-radius);
+  border-radius: 24px;
   background: #2f2f2f;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   overflow: hidden;
@@ -2621,9 +2617,8 @@ input:disabled {
     min-height var(--composer-transition),
     max-height var(--composer-transition),
     padding var(--composer-transition),
-    border-radius var(--composer-transition),
     box-shadow var(--composer-transition);
-  will-change: min-height, max-height, border-radius;
+  will-change: min-height, max-height;
 }
 
 .composer-drag-overlay {
@@ -2647,6 +2642,7 @@ input:disabled {
   min-height: 60px;
   max-height: 68px;
   padding: 8px 8px 8px 16px;
+  border-radius: 999px;
 }
 
 .composer-card textarea {
@@ -2656,7 +2652,7 @@ input:disabled {
   max-height: 200px;
   resize: none;
   border: 0;
-  border-radius: var(--composer-textarea-radius);
+  border-radius: 16px;
   outline: 0;
   padding: 6px 8px;
   background: transparent;
@@ -2671,15 +2667,15 @@ input:disabled {
     height var(--composer-transition),
     min-height var(--composer-transition),
     max-height var(--composer-transition),
-    padding var(--composer-transition),
-    border-radius var(--composer-transition);
-  will-change: height, border-radius;
+    padding var(--composer-transition);
+  will-change: height;
 }
 
 .composer-shell.compact .composer-card textarea {
   height: var(--composer-textarea-height);
   min-height: 38px;
   max-height: 38px;
+  border-radius: 999px;
   padding: 8px 2px;
   line-height: 22px;
   white-space: nowrap;
@@ -3022,6 +3018,7 @@ input:disabled {
   background: #2f2f2f;
   box-shadow: 0 22px 54px rgba(0, 0, 0, 0.32);
   z-index: 5;
+  pointer-events: auto;
 }
 
 .command-palette button {
@@ -3036,7 +3033,8 @@ input:disabled {
   color: #f5f5f5;
 }
 
-.command-palette button:hover {
+.command-palette button:hover,
+.command-palette button.selected {
   background: rgba(255, 255, 255, 0.07);
 }
 

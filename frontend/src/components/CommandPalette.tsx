@@ -1,11 +1,30 @@
+import { useEffect, useMemo } from 'react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 type PaletteMode = 'commands' | 'agents' | 'actions' | 'current-actions' | 'none';
 
-export function CommandPalette({ mode, token, onPick }: { mode: PaletteMode; token: string; onPick: (value: string) => void }) {
-  const { agents, commands, currentSession } = useWorkbenchStore();
-  if (mode === 'none') return null;
+export type CommandPaletteItem = {
+  key: string;
+  label: string;
+  detail?: string;
+  value: string;
+  disabled?: boolean;
+};
 
+export function CommandPalette({
+  mode,
+  token,
+  selectedIndex = 0,
+  onPick,
+  onItemsChange,
+}: {
+  mode: PaletteMode;
+  token: string;
+  selectedIndex?: number;
+  onPick: (value: string) => void;
+  onItemsChange?: (items: CommandPaletteItem[]) => void;
+}) {
+  const { agents, commands, currentSession } = useWorkbenchStore();
   const actionAgentId = token.match(/^@([a-zA-Z][a-zA-Z0-9_-]*):/)?.[1];
   const agent = agents.find((item) => item.id === actionAgentId);
   const currentAgent = agents.find((item) => item.id === currentSession?.default_agent_id);
@@ -13,8 +32,10 @@ export function CommandPalette({ mode, token, onPick }: { mode: PaletteMode; tok
   const actionQuery = token.split(':')[1]?.toLowerCase() ?? '';
   const currentActionQuery = token.slice(1).toLowerCase();
 
-  const items =
-    mode === 'commands'
+  const items: CommandPaletteItem[] =
+    mode === 'none'
+      ? []
+      : mode === 'commands'
       ? commands
           .filter((command) => command.name.toLowerCase().startsWith(token.toLowerCase()))
           .map((command) => ({
@@ -56,7 +77,7 @@ export function CommandPalette({ mode, token, onPick }: { mode: PaletteMode; tok
                   disabled: true,
                 },
               ]
-        : agents
+      : agents
             .filter((item) => item.id.toLowerCase().startsWith(query))
             .map((item) => ({
               key: item.id,
@@ -78,13 +99,19 @@ export function CommandPalette({ mode, token, onPick }: { mode: PaletteMode; tok
           },
         ]
       : items;
+  const enabledItems = useMemo(() => visibleItems.filter((item) => !item.disabled && item.value), [visibleItems]);
 
-  if (!visibleItems.length) return null;
+  useEffect(() => {
+    onItemsChange?.(enabledItems);
+  }, [enabledItems, onItemsChange]);
+
+  if (mode === 'none' || !visibleItems.length) return null;
+  const activeKey = enabledItems[Math.min(selectedIndex, Math.max(enabledItems.length - 1, 0))]?.key;
 
   return (
     <div className="command-palette">
       {visibleItems.map((item) => (
-        <button type="button" key={item.key} onClick={() => !item.disabled && onPick(item.value)} className={item.disabled ? 'disabled' : ''} disabled={item.disabled}>
+        <button type="button" key={item.key} onClick={() => !item.disabled && onPick(item.value)} className={`${item.disabled ? 'disabled' : ''} ${item.key === activeKey ? 'selected' : ''}`.trim()} disabled={item.disabled}>
           <span>{item.label}</span>
           <small>{item.detail}</small>
         </button>

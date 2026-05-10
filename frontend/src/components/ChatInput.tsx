@@ -1,8 +1,8 @@
-import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
-import { CommandPalette } from './CommandPalette';
+import { CommandPalette, type CommandPaletteItem } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
@@ -15,7 +15,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [isFocused, setIsFocused] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragActive, setDragActive] = useState(false);
-  const [composerMetrics, setComposerMetrics] = useState({ height: 38, multiline: false });
+  const [composerHeight, setComposerHeight] = useState(38);
+  const [suggestionItems, setSuggestionItems] = useState<CommandPaletteItem[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
@@ -40,9 +42,8 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
-    const form = formRef.current;
     if (!textarea) return;
-    textarea.style.height = '0px';
+    textarea.style.height = 'auto';
     let nextHeight = 38;
     let overflowY = 'hidden';
     if (isCompact) {
@@ -51,21 +52,19 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
       nextHeight = Math.max(Math.min(textarea.scrollHeight, 200), 44);
       overflowY = textarea.scrollHeight > 200 ? 'auto' : 'hidden';
     }
-    const multiline = nextHeight > 52 || value.includes('\n');
-    const radius = multiline ? '24px' : '999px';
-    const textareaRadius = multiline ? '16px' : '999px';
     textarea.style.height = `${nextHeight}px`;
     textarea.style.setProperty('--composer-textarea-height', `${nextHeight}px`);
     textarea.style.overflowY = overflowY;
-    form?.style.setProperty('--composer-card-radius', radius);
-    form?.style.setProperty('--composer-textarea-radius', textareaRadius);
-    form?.style.setProperty('--composer-textarea-height', `${nextHeight}px`);
-    setComposerMetrics((current) => (current.height === nextHeight && current.multiline === multiline ? current : { height: nextHeight, multiline }));
+    setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
   }, [isCompact, value]);
 
   useEffect(() => {
     setSuggestionsDismissed(false);
   }, [cursorPosition, value]);
+
+  useEffect(() => {
+    setSelectedSuggestionIndex(0);
+  }, [mode, activeToken?.token]);
 
   useEffect(() => {
     setComposerDraftText(value);
@@ -116,6 +115,23 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
       event.preventDefault();
       setSuggestionsDismissed(true);
       return;
+    }
+    if (mode !== 'none' && suggestionItems.length) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSelectedSuggestionIndex((index) => (index + 1) % suggestionItems.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSelectedSuggestionIndex((index) => (index - 1 + suggestionItems.length) % suggestionItems.length);
+        return;
+      }
+      if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+        event.preventDefault();
+        pickSuggestion(suggestionItems[Math.min(selectedSuggestionIndex, suggestionItems.length - 1)].value);
+        return;
+      }
     }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -228,6 +244,15 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     });
   }
 
+  const updateSuggestionItems = useCallback((items: CommandPaletteItem[]) => {
+    setSuggestionItems((current) => {
+      const currentKey = current.map((item) => `${item.key}:${item.value}`).join('|');
+      const nextKey = items.map((item) => `${item.key}:${item.value}`).join('|');
+      return currentKey === nextKey ? current : items;
+    });
+    setSelectedSuggestionIndex((index) => Math.min(index, Math.max(items.length - 1, 0)));
+  }, []);
+
   function selectModel(profileId: string | null) {
     setModelMenuOpen(false);
     void updateSessionLlmProfile(profileId).then(() => {
@@ -249,9 +274,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     selectedAgentId: currentSession?.default_agent_id,
   });
   const composerStyle = {
-    '--composer-textarea-height': `${composerMetrics.height}px`,
-    '--composer-card-radius': composerMetrics.multiline ? '24px' : '999px',
-    '--composer-textarea-radius': composerMetrics.multiline ? '16px' : '999px',
+    '--composer-textarea-height': `${composerHeight}px`,
   } as CSSProperties;
 
   return (
@@ -270,9 +293,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
         }
       }}
     >
+      <CommandPalette mode={mode} token={activeToken?.token ?? ''} selectedIndex={selectedSuggestionIndex} onPick={pickSuggestion} onItemsChange={updateSuggestionItems} />
       <div className="composer-card">
         {dragActive ? <div className="composer-drag-overlay">Drop files to attach</div> : null}
-        <CommandPalette mode={mode} token={activeToken?.token ?? ''} onPick={pickSuggestion} />
         <AttachmentPreview attachments={attachments} onRemove={removeAttachment} onPreviewImage={onPreviewImage} />
         <textarea
           ref={textareaRef}
@@ -517,7 +540,7 @@ function getActiveToken(value: string, cursorPosition: number): { token: string;
   const token = value.slice(tokenStart, cursor);
 
   if (!token || token.includes(' ') || token.includes('\n') || token.includes('\t')) return null;
-  if (!token.startsWith('@') && !token.startsWith('/')) return null;
+  if (!token.startsWith('@') && !token.startsWith('/') && !token.startsWith(':')) return null;
 
   return { token, start: tokenStart, end: cursor };
 }
