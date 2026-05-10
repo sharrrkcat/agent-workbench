@@ -12,6 +12,7 @@ import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues 
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
 import type { GeneralSettingsCategory, KnowledgeSettingsCategory } from './SettingsObjectList';
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
+import { PetSettingsDetail } from './PetSettingsPanel';
 
 export function SettingsDetailPanel({
   section,
@@ -117,6 +118,14 @@ export function SettingsDetailPanel({
     return (
       <section className="settings-detail-panel">
         <GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} />
+      </section>
+    );
+  }
+
+  if (section === 'appearance') {
+    return (
+      <section className="settings-detail-panel">
+        <PetSettingsDetail activeTab={activeTab} onTabChange={onTabChange} onDirtyChange={onDirtyChange} />
       </section>
     );
   }

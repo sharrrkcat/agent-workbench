@@ -116,7 +116,7 @@ function currentLocationKey(): string {
 }
 
 function explicitSettingsSection(): SettingsSection | null {
-  const sections: SettingsSection[] = ['general', 'llm', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
+  const sections: SettingsSection[] = ['general', 'appearance', 'llm', 'knowledge', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
   const queryTab = new URLSearchParams(window.location.search).get('tab');
   const hashMatch = window.location.hash.match(/^#settings:([a-z-]+)$/);
   const stateTab = window.history.state?.settingsTab;

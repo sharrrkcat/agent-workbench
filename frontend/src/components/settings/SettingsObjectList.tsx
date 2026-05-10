@@ -1,4 +1,4 @@
-import { Boxes, Plus, SlidersHorizontal } from 'lucide-react';
+import { Boxes, PawPrint, Plus, SlidersHorizontal } from 'lucide-react';
 import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
@@ -94,6 +94,25 @@ export function SettingsObjectList({
               onClick={() => onSelectAgent(config.agent_id)}
             />
           ))}
+        </div>
+      </aside>
+    );
+  }
+
+  if (section === 'appearance') {
+    return (
+      <aside className="settings-object-list" aria-label="Appearance items">
+        <ObjectListHeader title="Appearance" count={1} />
+        <div className="settings-list-scroll">
+          <button type="button" className="settings-object-row active">
+            <div className="settings-object-avatar">
+              <PawPrint size={16} />
+            </div>
+            <div className="settings-object-copy">
+              <strong>Pet</strong>
+              <small>Workbench pet settings and local library</small>
+            </div>
+          </button>
         </div>
       </aside>
     );

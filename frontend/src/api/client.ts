@@ -33,6 +33,9 @@ import type {
   KnowledgeModelScan,
   KnowledgeSearchResponse,
   KnowledgeSettings,
+  PetListResponse,
+  PetSettings,
+  PetSettingsResponse,
   RuntimeResponse,
   Session,
   SendMessageAttachment,
@@ -228,6 +231,18 @@ export const api = {
     request<KnowledgeSearchResponse>('/api/knowledge/search', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+  getPetSettings: () => request<PetSettingsResponse>('/api/pets/settings'),
+  updatePetSettings: (values: Partial<PetSettings>) =>
+    request<PetSettingsResponse>('/api/pets/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ values }),
+    }),
+  listPets: () => request<PetListResponse>('/api/pets'),
+  scanPets: () => request<PetListResponse>('/api/pets/scan', { method: 'POST' }),
+  deletePet: (petId: string) =>
+    request<{ deleted: boolean; pet_id: string }>(`/api/pets/${encodeURIComponent(petId)}`, {
+      method: 'DELETE',
     }),
   listSessionKnowledgeBases: (sessionId: string) => request<SessionKnowledgeBinding[]>(`/api/sessions/${sessionId}/knowledge-bases`),
   updateSessionKnowledgeBases: (sessionId: string, knowledgeBaseIds: string[]) =>
