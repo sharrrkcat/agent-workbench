@@ -199,10 +199,24 @@ def _debug_metadata(response: dict[str, Any]) -> dict[str, Any]:
     embedding_groups = debug.get("embedding_groups")
     if isinstance(embedding_groups, list):
         vector_count = 0
+        profile_names: list[str] = []
+        dimensions: list[int] = []
         for group in embedding_groups:
             if isinstance(group, dict) and isinstance(group.get("candidate_count"), int):
                 vector_count += group["candidate_count"]
+            if isinstance(group, dict):
+                profile_name = group.get("embedding_model_profile_name") or group.get("embedding_model_profile_alias") or group.get("embedding_model_profile_id")
+                if isinstance(profile_name, str) and profile_name:
+                    profile_names.append(profile_name)
+                dimension = group.get("embedding_dimension")
+                if isinstance(dimension, int):
+                    dimensions.append(dimension)
         metadata["vector_candidate_count"] = vector_count
+        if profile_names:
+            metadata["embedding_model_profile_name"] = profile_names[0]
+            metadata["embedding_model_profiles"] = sorted(set(profile_names))
+        if dimensions:
+            metadata["embedding_dimension"] = dimensions[0] if len(set(dimensions)) == 1 else dimensions
     for key in ("keyword_candidate_count", "merged_candidate_count"):
         value = debug.get(key)
         if isinstance(value, int):
@@ -211,7 +225,41 @@ def _debug_metadata(response: dict[str, Any]) -> dict[str, Any]:
         value = debug.get(key)
         if isinstance(value, bool):
             metadata[key] = value
+    for key in ("reranker_input_count", "reranker_output_count"):
+        value = debug.get(key)
+        if isinstance(value, int):
+            metadata[key] = value
     return metadata
+
+
+def knowledge_step_metadata(knowledge_context: dict[str, Any]) -> dict[str, Any]:
+    """Return compact run-step metadata without query text or snippet details."""
+    if not isinstance(knowledge_context, dict):
+        return {}
+    allowed_keys = {
+        "enabled",
+        "effective_mode",
+        "source",
+        "knowledge_base_ids",
+        "knowledge_base_names",
+        "knowledge_bases",
+        "embedding_model_profile_name",
+        "embedding_model_profiles",
+        "embedding_model_profile_alias",
+        "embedding_dimension",
+        "vector_candidate_count",
+        "keyword_candidate_count",
+        "merged_candidate_count",
+        "reranker_used",
+        "reranker_failed",
+        "reranker_input_count",
+        "reranker_output_count",
+        "result_count",
+        "injected",
+        "reason",
+        "warnings",
+    }
+    return {key: value for key, value in knowledge_context.items() if key in allowed_keys}
 
 
 def _skipped(reason: str, *, effective_mode: str, source: str, query: str) -> KnowledgeContextResult:

@@ -55,7 +55,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const snippetRefs = isAgentMessage ? knowledgeSnippetRefs(message.metadata) : [];
   const runSteps = storeRunSteps || messageRunSteps(message);
   const messageRun = storeRun || message.run;
-  const knowledgeDebug = knowledgeDebugFromMetadata(message.metadata, messageRun?.metadata);
+  const runKnowledge = knowledgeRetrievalFromMetadata(message.metadata, messageRun?.metadata);
   if (!editing && !message.client_status && !hasVisibleRun(messageRun) && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
@@ -113,7 +113,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
               <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
-              <RunStepsPanel run={messageRun} steps={runSteps} knowledgeDebug={knowledgeDebug} />
+              <RunStepsPanel run={messageRun} steps={runSteps} runKnowledge={runKnowledge} />
             </>
           )}
           {message.client_status === 'pending' ? (
@@ -184,16 +184,20 @@ type KnowledgeSnippet = KnowledgeSnippetRef & {
   chunk?: KnowledgeChunk;
 };
 
-type KnowledgeDebugSummary = {
-  query?: string;
+type KnowledgeRetrievalSummary = {
+  source?: string;
   kbLabels: string[];
   injected?: boolean;
   resultCount?: number;
+  embeddingLabel?: string;
+  embeddingDimension?: number | string;
   vectorCandidateCount?: number;
   keywordCandidateCount?: number;
   mergedCandidateCount?: number;
   rerankerUsed?: boolean;
   rerankerFailed?: boolean;
+  rerankerInputCount?: number;
+  rerankerOutputCount?: number;
   warnings: string[];
 };
 
@@ -373,7 +377,7 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
   );
 }
 
-function RunStepsPanel({ run, steps, knowledgeDebug, forceExpanded = false }: { run?: Run; steps: RunStep[]; knowledgeDebug?: KnowledgeDebugSummary | null; forceExpanded?: boolean }) {
+function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { run?: Run; steps: RunStep[]; runKnowledge?: KnowledgeRetrievalSummary | null; forceExpanded?: boolean }) {
   const cancelActiveRun = useWorkbenchStore((state) => state.cancelActiveRun);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
   const expandedByRunId = useWorkbenchStore((state) => state.runStepsExpandedByRunId);
@@ -392,7 +396,7 @@ function RunStepsPanel({ run, steps, knowledgeDebug, forceExpanded = false }: { 
     return () => window.clearInterval(interval);
   }, [hasRunningStep]);
 
-  if (!steps.length && !run && !knowledgeDebug) return null;
+  if (!steps.length && !run && !runKnowledge) return null;
   const duration = runDurationLabel(run, steps);
   const progressSummary = run?.progress_total && run.progress_current !== undefined && run.progress_current !== null ? `${run.progress_current} / ${run.progress_total}` : '';
   const stepSummary = progressSummary || (steps.length ? `${steps.length} steps` : runStatusLabel(run?.status));
@@ -416,41 +420,12 @@ function RunStepsPanel({ run, steps, knowledgeDebug, forceExpanded = false }: { 
       </div>
       {expanded ? (
         <>
-          {knowledgeDebug ? <KnowledgeDebugBlock summary={knowledgeDebug} /> : null}
           {steps.length ? (
             <ol className="run-step-list">
-              {stepTree.map((step) => <RunStepTreeItem step={step} key={step.step_id} depth={0} />)}
+              {stepTree.map((step) => <RunStepTreeItem step={step} key={step.step_id} depth={0} runKnowledge={runKnowledge} />)}
             </ol>
           ) : null}
         </>
-      ) : null}
-    </section>
-  );
-}
-
-function KnowledgeDebugBlock({ summary }: { summary: KnowledgeDebugSummary }) {
-  return (
-    <section className="knowledge-debug-block" aria-label="Knowledge debug">
-      <header>
-        <BookOpen size={13} />
-        <strong>Knowledge Debug</strong>
-      </header>
-      <div className="knowledge-debug-grid">
-        {summary.query ? <DebugRow label="Query" value={summary.query} wide /> : null}
-        {summary.kbLabels.length ? <DebugRow label="KBs" value={summary.kbLabels.join(', ')} wide /> : null}
-        <DebugRow label="Injected" value={summary.injected === undefined ? 'unknown' : summary.injected ? 'yes' : 'no'} />
-        <DebugRow label="Results" value={summary.resultCount} />
-        <DebugRow label="Vector" value={summary.vectorCandidateCount} />
-        <DebugRow label="Keyword" value={summary.keywordCandidateCount} />
-        <DebugRow label="Merged" value={summary.mergedCandidateCount} />
-        <DebugRow label="Reranker" value={rerankerLabel(summary)} />
-      </div>
-      {summary.warnings.length ? (
-        <div className="knowledge-debug-warnings">
-          {summary.warnings.map((warning, index) => (
-            <span key={`${warning}-${index}`}>{warning}</span>
-          ))}
-        </div>
       ) : null}
     </section>
   );
@@ -466,8 +441,9 @@ function DebugRow({ label, value, wide = false }: { label: string; value: ReactN
   );
 }
 
-function RunStepTreeItem({ step, depth }: { step: RunStepNode; depth: number }) {
+function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; depth: number; runKnowledge?: KnowledgeRetrievalSummary | null }) {
   const duration = stepDurationLabel(step);
+  const knowledgeSummaries = knowledgeRetrievalsForStep(step, runKnowledge);
   return (
     <li className={`run-step-item ${step.status} depth-${Math.min(depth, 4)}`}>
       <div className="run-step-row">
@@ -477,12 +453,41 @@ function RunStepTreeItem({ step, depth }: { step: RunStepNode; depth: number }) 
           {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
         </span>
       </div>
+      {knowledgeSummaries.length ? (
+        <div className="run-step-knowledge-list">
+          {knowledgeSummaries.map((summary, index) => <KnowledgeRetrievalBlock summary={summary} key={`${step.step_id}-knowledge-${index}`} />)}
+        </div>
+      ) : null}
       {step.children.length ? (
         <ol className="run-step-children">
           {step.children.map((child) => <RunStepTreeItem step={child} key={child.step_id} depth={depth + 1} />)}
         </ol>
       ) : null}
     </li>
+  );
+}
+
+function KnowledgeRetrievalBlock({ summary }: { summary: KnowledgeRetrievalSummary }) {
+  return (
+    <div className="run-step-knowledge" aria-label="Knowledge retrieval">
+      <strong>Knowledge retrieval</strong>
+      <div className="run-step-knowledge-grid">
+        {summary.kbLabels.length ? <DebugRow label="KB" value={summary.kbLabels.join(', ')} wide /> : null}
+        <DebugRow label="Embedding" value={embeddingSummaryLabel(summary)} />
+        <DebugRow label="Vector" value={summary.vectorCandidateCount} />
+        <DebugRow label="Keyword" value={summary.keywordCandidateCount} />
+        <DebugRow label="Merged" value={summary.mergedCandidateCount} />
+        <DebugRow label="Reranker" value={rerankerLabel(summary)} />
+        <DebugRow label="Injected" value={injectedLabel(summary)} />
+      </div>
+      {summary.warnings.length ? (
+        <div className="run-step-knowledge-warnings">
+          {summary.warnings.map((warning, index) => (
+            <span key={`${warning}-${index}`}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1502,10 +1507,46 @@ function normalizeKbSearchResponse(value: unknown): KbSearchResponse | null {
   };
 }
 
-function knowledgeDebugFromMetadata(messageMetadata: Record<string, unknown> | undefined, runMetadata: Record<string, unknown> | undefined): KnowledgeDebugSummary | null {
+function knowledgeRetrievalFromMetadata(messageMetadata: Record<string, unknown> | undefined, runMetadata: Record<string, unknown> | undefined): KnowledgeRetrievalSummary | null {
   const context = firstPlainRecord([messageMetadata?.knowledge_context, runMetadata?.knowledge_context]);
-  if (!context) return null;
+  return knowledgeRetrievalSummary(context);
+}
+
+function knowledgeRetrievalsForStep(step: RunStep, runKnowledge?: KnowledgeRetrievalSummary | null): KnowledgeRetrievalSummary[] {
+  const summaries: KnowledgeRetrievalSummary[] = [];
+  const stepMetadata = step.metadata;
+  if (isPlainRecord(stepMetadata?.knowledge_context)) {
+    const summary = knowledgeRetrievalSummary(stepMetadata.knowledge_context);
+    if (summary) summaries.push(summary);
+  }
+  if (Array.isArray(stepMetadata?.knowledge_contexts)) {
+    stepMetadata.knowledge_contexts.forEach((item) => {
+      const summary = knowledgeRetrievalSummary(item);
+      if (summary) summaries.push(summary);
+    });
+  }
+  if (!summaries.length && runKnowledge && fallbackKnowledgeStepLabel(step.label, runKnowledge)) {
+    summaries.push(runKnowledge);
+  }
+  return summaries;
+}
+
+function fallbackKnowledgeStepLabel(label: string, summary: KnowledgeRetrievalSummary): boolean {
+  const normalized = label.trim().toLowerCase();
+  const source = summary.source;
+  if (source === 'prompt_agent') return normalized === 'building context';
+  if (source === 'script_agent') return normalized === 'running script' || normalized === 'calling llm' || normalized.includes('llm');
+  return normalized === 'building context' || normalized === 'running script';
+}
+
+function knowledgeRetrievalSummary(value: unknown): KnowledgeRetrievalSummary | null {
+  if (!isPlainRecord(value)) return null;
+  const context = value;
+  const enabled = booleanValue(context.enabled);
+  const injected = booleanValue(context.injected);
+  const hasCounts = ['result_count', 'vector_candidate_count', 'keyword_candidate_count', 'merged_candidate_count'].some((key) => numberValue(context[key]) !== undefined);
   const warnings = Array.isArray(context.warnings) ? context.warnings.map(String).filter(Boolean) : [];
+  if (enabled === false && !warnings.length && !hasCounts) return null;
   const kbLabels = [
     ...(Array.isArray(context.knowledge_base_names) ? context.knowledge_base_names.map(String) : []),
     ...(Array.isArray(context.knowledge_bases) ? context.knowledge_bases.map(kbLabel).filter((item): item is string => Boolean(item)) : []),
@@ -1514,15 +1555,23 @@ function knowledgeDebugFromMetadata(messageMetadata: Record<string, unknown> | u
     kbLabels.push(...context.knowledge_base_ids.map(String));
   }
   return {
-    query: textValue(context.query),
+    source: textValue(context.source),
     kbLabels: Array.from(new Set(kbLabels.filter(Boolean))),
-    injected: booleanValue(context.injected),
+    injected,
     resultCount: numberValue(context.result_count),
+    embeddingLabel: firstText([
+      context.embedding_model_profile_name,
+      context.embedding_model_profile_alias,
+      Array.isArray(context.embedding_model_profiles) ? context.embedding_model_profiles.map(String).join(', ') : undefined,
+    ]),
+    embeddingDimension: embeddingDimensionValue(context.embedding_dimension),
     vectorCandidateCount: numberValue(context.vector_candidate_count),
     keywordCandidateCount: numberValue(context.keyword_candidate_count),
     mergedCandidateCount: numberValue(context.merged_candidate_count),
     rerankerUsed: booleanValue(context.reranker_used),
     rerankerFailed: booleanValue(context.reranker_failed),
+    rerankerInputCount: numberValue(context.reranker_input_count),
+    rerankerOutputCount: numberValue(context.reranker_output_count),
     warnings,
   };
 }
@@ -1537,11 +1586,40 @@ function firstPlainRecord(values: unknown[]): Record<string, unknown> | undefine
   return values.find(isPlainRecord);
 }
 
-function rerankerLabel(summary: KnowledgeDebugSummary): string {
+function rerankerLabel(summary: KnowledgeRetrievalSummary): string {
   if (summary.rerankerFailed) return 'failed';
-  if (summary.rerankerUsed) return 'used';
+  if (summary.rerankerUsed) {
+    if (summary.rerankerInputCount !== undefined || summary.rerankerOutputCount !== undefined) {
+      return `${summary.rerankerOutputCount ?? 0} / ${summary.rerankerInputCount ?? 0}`;
+    }
+    return 'used';
+  }
   if (summary.rerankerUsed === false) return 'not used';
   return 'unknown';
+}
+
+function embeddingSummaryLabel(summary: KnowledgeRetrievalSummary): string | undefined {
+  const label = summary.embeddingLabel;
+  const dimension = summary.embeddingDimension;
+  if (label && dimension) return `${label} / ${dimension}d`;
+  if (label) return label;
+  if (dimension) return `${dimension}d`;
+  return undefined;
+}
+
+function injectedLabel(summary: KnowledgeRetrievalSummary): string | undefined {
+  if (summary.resultCount !== undefined) return `${summary.resultCount} snippets`;
+  if (summary.injected === undefined) return undefined;
+  return summary.injected ? 'yes' : 'no';
+}
+
+function embeddingDimensionValue(value: unknown): number | string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (Array.isArray(value)) {
+    const values = value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
+    if (values.length) return Array.from(new Set(values)).join('/');
+  }
+  return undefined;
 }
 
 function normalizeError(message: Message): { code?: string; message?: string } {

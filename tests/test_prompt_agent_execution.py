@@ -216,6 +216,8 @@ def test_prompt_agent_injects_session_knowledge_by_default(monkeypatch) -> None:
     result = run(fixture.runtime.handle_input(session, "what is alpha?"))
     sent = llm.calls[0]["messages"]
     metadata = fixture.runs.get_run(result.run_id).metadata["knowledge_context"]
+    context_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Building context")
+    step_metadata = context_step.metadata["knowledge_context"]
 
     assert "# Retrieved Knowledge" in sent[0]["content"]
     assert "Alpha knowledge." in sent[0]["content"]
@@ -239,6 +241,11 @@ def test_prompt_agent_injects_session_knowledge_by_default(monkeypatch) -> None:
         }
     ]
     assert "Alpha knowledge." not in str(metadata)
+    assert step_metadata["source"] == "prompt_agent"
+    assert step_metadata["knowledge_base_names"] == ["Project KB"]
+    assert step_metadata["result_count"] == 1
+    assert "query" not in step_metadata
+    assert "snippet_refs" not in step_metadata
     message_metadata = fixture.messages.list_messages(session.session_id)[-1].metadata["knowledge_context"]
     assert message_metadata["snippet_refs"][0]["chunk_id"] == "chunk-1"
     assert "Alpha knowledge." not in str(message_metadata)

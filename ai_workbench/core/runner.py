@@ -20,7 +20,7 @@ from ai_workbench.core.context import ContextBuilder, LLMContextError, group_tra
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
-from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
+from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.provider_status import (
     MODEL_MISMATCH,
     MODEL_NOT_AVAILABLE,
@@ -408,7 +408,7 @@ class AgentRunner:
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
-        self.run_lifecycle.complete_step(context_step.step_id)
+        self.run_lifecycle.complete_step(context_step.step_id, metadata={"knowledge_context": knowledge_step_metadata(knowledge_context.metadata)})
 
         llm_config = None
         llm_use_key = None

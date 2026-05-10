@@ -295,6 +295,8 @@ Run metadata records `metadata.knowledge_context` without full snippet content:
 }
 ```
 
+Run step metadata may also carry compact Knowledge retrieval summaries for step-level display. Prompt Agents attach `metadata.knowledge_context` to `Building context`. Script Agents append compact summaries to `Running script.metadata.knowledge_contexts` for LLM calls. Step-level Knowledge metadata must not include `query`, full snippet content, `snippet_refs`, or vector blobs; those remain in run/message metadata only where explicitly allowed for snippets button wiring.
+
 Skipped or failed retrieval records `enabled=false` or `injected=false` with a `reason` such as `agent_disabled`, `no_active_kbs`, `empty_query`, `no_results`, or `retrieval_failed`. Query metadata is truncated and full retrieved content is not stored in run or message metadata. Assistant/agent messages that used automatic Knowledge context copy this compact `knowledge_context` metadata so the UI can show a snippets button. Full chunk content is fetched on demand with `GET /api/knowledge/chunks/{chunk_id}`, which returns chunk content and minimal KB/source metadata without vectors or full source originals.
 
 ## Speaker Identity

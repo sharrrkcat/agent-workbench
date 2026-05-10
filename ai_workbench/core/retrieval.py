@@ -81,6 +81,9 @@ def search_knowledge(
         debug["embedding_groups"].append(
             {
                 "embedding_model_profile_id": profile.id,
+                "embedding_model_profile_name": profile.name,
+                "embedding_model_profile_alias": profile.alias,
+                "embedding_dimension": embedding_result.get("dimension") or profile.dimension,
                 "knowledge_base_ids": [kb.id for kb in group_kbs],
                 "candidate_count": len(results),
             }
@@ -226,6 +229,7 @@ def _rerank_candidates(
         return candidates
     limited = candidates[: settings.reranker_candidate_limit]
     documents = [{"id": candidate.chunk_id, "text": candidate.content} for candidate in limited]
+    debug["reranker_input_count"] = len(documents)
     try:
         response = rerank_documents(
             backend=backend,
@@ -235,6 +239,7 @@ def _rerank_candidates(
             device=settings.local_model_device,
         )
         scores = {str(item["id"]): float(item["score"]) for item in response.get("results", [])}
+        debug["reranker_output_count"] = len(scores)
         for candidate in limited:
             candidate.rerank_score = scores.get(candidate.chunk_id)
         debug["reranker_used"] = True

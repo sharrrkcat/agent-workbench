@@ -232,7 +232,15 @@ def test_script_agent_override_enabled_injects_knowledge_for_text_json_and_strea
 
     assert len(fixture.llm.calls) == 3
     assert all("Script knowledge." in call["messages"][0]["content"] for call in fixture.llm.calls)
-    assert all(fixture.runs.get_run(run_item.run_id).metadata.get("knowledge_context", {}).get("injected") is not False for run_item in fixture.runs.list_runs(session.session_id))
+    script_runs = fixture.runs.list_runs(session.session_id)
+    assert all(fixture.runs.get_run(run_item.run_id).metadata.get("knowledge_context", {}).get("injected") is not False for run_item in script_runs)
+    for run_item in script_runs:
+        running_step = next(step for step in fixture.runs.list_steps(run_item.run_id) if step.label == "Running script")
+        step_contexts = running_step.metadata["knowledge_contexts"]
+        assert step_contexts[0]["source"] == "script_agent"
+        assert step_contexts[0]["result_count"] == 1
+        assert "query" not in step_contexts[0]
+        assert "snippet_refs" not in step_contexts[0]
     messages = [message for message in fixture.messages.list_messages(session.session_id) if message.agent_id == "script_llm_kb" and message.role in {"assistant", "agent"}]
     assert all(message.metadata["knowledge_context"]["snippet_refs"][0]["chunk_id"] == "chunk-1" for message in messages)
     assert all("Script knowledge." not in str(message.metadata["knowledge_context"]) for message in messages)

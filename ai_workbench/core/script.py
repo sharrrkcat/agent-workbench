@@ -25,7 +25,7 @@ from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
-from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
+from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.agent import AgentSchema
@@ -505,6 +505,21 @@ class LLMProxy:
             existing.extend(str(item) for item in warnings)
             metadata["warnings"] = existing
         self.run_store.update_metadata(self.run_id, metadata)
+        self._record_knowledge_context_step_metadata(knowledge_context)
+
+    def _record_knowledge_context_step_metadata(self, knowledge_context: dict[str, Any]) -> None:
+        if self.run_lifecycle is None or not self.parent_step_id:
+            return
+        compact = knowledge_step_metadata(knowledge_context)
+        if not compact:
+            return
+        step = self.run_store.get_step(self.parent_step_id)
+        step_metadata = dict(step.metadata or {})
+        contexts = list(step_metadata.get("knowledge_contexts") or [])
+        contexts.append(compact)
+        step_metadata["knowledge_contexts"] = contexts
+        updated = self.run_store.update_step(self.parent_step_id, metadata=step_metadata)
+        self.run_lifecycle._emit_step("run_step_updated", updated)
 
     async def _maybe_generate_session_title(self) -> None:
         if self._title_generation_checked:
