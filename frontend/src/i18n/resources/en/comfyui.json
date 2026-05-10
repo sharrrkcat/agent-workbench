@@ -1,0 +1,21 @@
+{
+  "presets": {
+    "title": "Preset library",
+    "scan": "Scan presets",
+    "validate": "Validate preset",
+    "empty": "No presets found."
+  },
+  "workflows": {
+    "title": "Workflow library",
+    "scan": "Scan workflows",
+    "empty": "No workflows found."
+  },
+  "generation": {
+    "status": "Generation status",
+    "gallery": "Image gallery"
+  },
+  "validation": {
+    "valid": "Valid",
+    "failed": "Validation failed"
+  }
+}

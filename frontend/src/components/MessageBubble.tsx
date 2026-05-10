@@ -336,6 +336,7 @@ function scoreLabel(label: string, value: number | undefined): ReactNode {
 }
 
 function ThoughtBlock({ content, streaming }: { content: string; streaming: boolean }) {
+  const { t } = useTranslation(['renderers']);
   const [expanded, setExpanded] = useState(false);
   const contentRef = useRef<HTMLPreElement | null>(null);
   const autoScrollRef = useRef(true);
@@ -368,8 +369,8 @@ function ThoughtBlock({ content, streaming }: { content: string; streaming: bool
     <section className={`thought-block ${expanded ? 'expanded' : ''}`}>
       <button className="thought-toggle" type="button" onClick={toggleExpanded} aria-expanded={expanded}>
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span>Thought</span>
-        {streaming ? <small>Thinking...</small> : null}
+        <span>{t('renderers:labels.thought')}</span>
+        {streaming ? <small>{t('renderers:labels.thinking')}</small> : null}
       </button>
       {expanded ? (
         <pre className="thought-content" ref={contentRef} onScroll={handleThoughtScroll}>
@@ -454,7 +455,7 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
       <div className="run-step-row">
         <RunStepIcon status={step.status} />
         <span>
-          <strong>{getRunStepLabel(step.label, t)}{duration ? ` · ${duration}` : ''}</strong>
+          <strong>{getRunStepLabel(step.label, t)}{duration ? ` / ${duration}` : ''}</strong>
           {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
         </span>
       </div>
@@ -716,6 +717,7 @@ export function PlainTextRenderer({ content }: { content: unknown }) {
 }
 
 function UserMessageRenderer({ content, attachments, onPreviewImage, onPreviewFile }: { content: unknown; attachments: Attachment[]; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
+  const { t } = useTranslation(['renderers']);
   const text = contentToText(content);
   const collapsible = shouldCollapseUserMessage(text);
   const [expanded, setExpanded] = useState(false);
@@ -730,7 +732,7 @@ function UserMessageRenderer({ content, attachments, onPreviewImage, onPreviewFi
       {text ? <div className={`message-content plain-text ${collapsible && !expanded ? 'collapsed-user-content' : ''}`}>{text}</div> : null}
       {collapsible ? (
         <button className="message-expand-button" type="button" onClick={() => setExpanded((current) => !current)}>
-          {expanded ? 'Show less' : 'Show more'}
+          {expanded ? t('renderers:actions.showLess') : t('renderers:actions.showMore')}
         </button>
       ) : null}
     </div>
@@ -738,13 +740,14 @@ function UserMessageRenderer({ content, attachments, onPreviewImage, onPreviewFi
 }
 
 function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { attachments: Attachment[]; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
+  const { t } = useTranslation(['renderers']);
   return (
     <div className={`message-attachments ${attachments.length === 1 ? 'single' : 'multi'}`}>
       {attachments.map((attachment) =>
         attachment.type === 'image' ? (
           <figure className="message-attachment" key={attachment.id}>
-            <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachmentUrl(attachment), alt: attachment.name || 'Attached image', title: attachment.name })}>
-              <img src={attachmentUrl(attachment)} alt={attachment.name || 'Attached image'} loading="lazy" />
+            <button className="message-image-preview-trigger" type="button" onClick={() => onPreviewImage({ url: attachmentUrl(attachment), alt: attachment.name || t('renderers:labels.attachedImage'), title: attachment.name })}>
+              <img src={attachmentUrl(attachment)} alt={attachment.name || t('renderers:labels.attachedImage')} loading="lazy" />
             </button>
           </figure>
         ) : (
@@ -757,20 +760,20 @@ function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { att
               if (url) {
                 onPreviewFile({
                   url,
-                  name: attachment.name || 'File',
+                  name: attachment.name || t('renderers:labels.file'),
                   mime_type: attachment.mime_type,
                   size: attachment.size,
                   language: languageForFilename(attachment.name),
                 });
               }
             }}
-            title={isPreviewableFile(attachment) ? `Preview ${attachment.name}` : 'Preview not available'}
+            title={isPreviewableFile(attachment) ? t('renderers:actions.preview', { name: attachment.name }) : t('renderers:actions.previewUnavailable')}
             disabled={!isPreviewableFile(attachment) || !resolveAttachmentUrl(attachment)}
           >
             <FileText size={18} />
             <span>
-              <strong>{attachment.name || 'File'}</strong>
-              <small>{fileKindLabel(attachment.mime_type, attachment.name)} · {formatBytes(attachment.size)}</small>
+              <strong>{attachment.name || t('renderers:labels.file')}</strong>
+              <small>{fileKindLabel(attachment.mime_type, attachment.name)} / {formatBytes(attachment.size)}</small>
             </span>
           </button>
         ),
@@ -899,9 +902,10 @@ function KbSearchDebugView({ debug }: { debug: KbSearchDebug }) {
 }
 
 export function FileContentRenderer({ payload, variant = 'card', wrapLines }: { payload: FileContentPayload; variant?: 'card' | 'modal'; wrapLines?: boolean }) {
+  const { t } = useTranslation(['renderers', 'common']);
   const setError = useWorkbenchStore((state) => state.setError);
   const [copied, setCopied] = useState(false);
-  const filename = payload.filename?.trim() || 'File content';
+  const filename = payload.filename?.trim() || t('renderers:labels.fileContent');
   const language = payload.language?.trim() || 'text';
   const size = typeof payload.size === 'number' && Number.isFinite(payload.size) ? formatBytes(payload.size) : '';
   const [cardWrapLines, setCardWrapLines] = useState(defaultWrapLines(filename, language));
@@ -914,7 +918,7 @@ export function FileContentRenderer({ payload, variant = 'card', wrapLines }: { 
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1300);
     } catch (error) {
-      setError(error, 'Failed to copy file content');
+      setError(error, t('renderers:errors.copyFileContent'));
     }
   }
 
@@ -926,20 +930,20 @@ export function FileContentRenderer({ payload, variant = 'card', wrapLines }: { 
             <strong title={filename}>{filename}</strong>
             <span>{language}</span>
             {size ? <span>{size}</span> : null}
-            {payload.truncated ? <span className="file-content-truncated">Truncated</span> : null}
+            {payload.truncated ? <span className="file-content-truncated">{t('renderers:labels.truncated')}</span> : null}
           </div>
           <div className="file-content-actions">
             <button type="button" className="file-content-wrap-toggle" onClick={() => setCardWrapLines((current) => !current)}>
-              {effectiveWrapLines ? 'No wrap' : 'Wrap lines'}
+              {effectiveWrapLines ? t('renderers:actions.noWrap') : t('renderers:actions.wrapLines')}
             </button>
-            <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title="Copy file content">
+            <button type="button" className="file-content-copy" onClick={() => void copyFileContent()} title={t('renderers:actions.copyFileContent')}>
               {copied ? <Check size={13} /> : <Copy size={13} />}
-              <span>{copied ? 'Copied' : 'Copy'}</span>
+              <span>{copied ? t('renderers:labels.copied') : t('common:copy')}</span>
             </button>
           </div>
         </header>
       ) : null}
-      {payload.truncated ? <div className="file-content-notice">Content truncated · showing first 1 MB</div> : null}
+      {payload.truncated ? <div className="file-content-notice">{t('renderers:notices.contentTruncated')}</div> : null}
       <pre className={`file-content-body ${effectiveWrapLines ? 'wrap' : 'no-wrap'}`}>
         <code>{payload.content}</code>
       </pre>
@@ -1008,13 +1012,14 @@ function RichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId:
 }
 
 function CommandButtonsRenderer({ block }: { block: CommandButtonsBlock }) {
+  const { t } = useTranslation(['renderers']);
   const sendMessage = useWorkbenchStore((state) => state.sendMessage);
   const sending = useWorkbenchStore((state) => state.sending);
   const buttons = block.buttons.filter((button) => button.label.trim() && button.message.trim());
 
   if (!buttons.length) return null;
   return (
-    <div className="command-buttons" aria-label="Command shortcuts">
+    <div className="command-buttons" aria-label={t('renderers:labels.commandShortcuts')}>
       {buttons.map((button) => (
         <button key={`${button.label}:${button.message}`} type="button" onClick={() => void sendMessage(button.message)} disabled={sending} title={button.message}>
           <Send size={14} />
@@ -1026,6 +1031,7 @@ function CommandButtonsRenderer({ block }: { block: CommandButtonsBlock }) {
 }
 
 function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormBlock; messageId: string; blockIndex: number }) {
+  const { t } = useTranslation(['renderers']);
   const submitForm = useWorkbenchStore((state) => state.submitForm);
   const pendingActionKey = useWorkbenchStore((state) => state.pendingActionKey);
   const [values, setValues] = useState<Record<string, unknown>>(() => initialFormValues(form));
@@ -1037,6 +1043,8 @@ function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormB
   const sections = groupActionFormFields(form);
   const collapsed = !expanded;
   const formDomKey = `${messageId}-${blockIndex}-${form.form_id}`;
+  const collapsedMessage = form.ui?.collapsed_message || 'Click to expand.';
+  const displayCollapsedMessage = form.ui?.collapsed_message || t('renderers:notices.clickToExpand', { defaultValue: collapsedMessage });
 
   useEffect(() => {
     setValues(initialFormValues(form));
@@ -1063,7 +1071,7 @@ function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormB
         setNotice(result?.message || form.submit.success_message || 'Saved');
       }
     } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : 'Form submission failed';
+      const message = submitError instanceof Error ? submitError.message : t('renderers:notices.formSubmissionFailed');
       setError(message);
     }
   }
@@ -1075,7 +1083,7 @@ function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormB
           <ChevronRight size={14} />
           <span>
             <strong>{form.title}</strong>
-            <small>{form.ui?.collapsed_message || 'Click to expand.'}</small>
+            <small>{displayCollapsedMessage}</small>
           </span>
         </button>
       </section>
@@ -1086,7 +1094,7 @@ function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormB
     <form className="action-form-card" onSubmit={(event) => void onSubmit(event)}>
       <header className="action-form-header">
         <div className="action-form-title-row">
-          <button type="button" className="action-form-header-toggle" onClick={() => setExpanded(false)} aria-expanded={true} title="Collapse form">
+          <button type="button" className="action-form-header-toggle" onClick={() => setExpanded(false)} aria-expanded={true} title={t('renderers:actions.collapse')}>
             <ChevronDown size={14} />
           </button>
           <strong>{form.title}</strong>
@@ -1110,11 +1118,11 @@ function ActionFormRenderer({ form, messageId, blockIndex }: { form: ActionFormB
       <div className="action-form-actions">
         <button type="button" onClick={() => setValues(initialFormValues(form))} disabled={pending}>
           <RotateCcw size={14} />
-          <span>Reset</span>
+          <span>{t('renderers:actions.reset')}</span>
         </button>
         <button type="submit" className="primary" disabled={pending || !messageId}>
           {pending ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
-          <span>{pending ? 'Submitting' : form.submit.label || 'Submit'}</span>
+          <span>{pending ? t('renderers:actions.submitting') : form.submit.label || t('renderers:actions.submit')}</span>
         </button>
       </div>
     </form>
@@ -1750,7 +1758,7 @@ function formatMetrics(value: unknown, interrupted: boolean, t: ReturnType<typeo
   } else if (durationMs !== undefined) {
     parts.push(formatSeconds(durationMs));
   }
-  return parts.join(' · ');
+  return parts.join(' / ');
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -1810,3 +1818,4 @@ function shouldCollapseUserMessage(value: string): boolean {
   if (value.split(/\r\n|\r|\n/).length > 8) return true;
   return value.split(/\s+/).some((token) => token.length > 160);
 }
+

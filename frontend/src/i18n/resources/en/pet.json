@@ -1,0 +1,72 @@
+{
+  "title": "Pet",
+  "subtitle": "appearance capability settings",
+  "tabs": {
+    "config": "Config",
+    "petList": "Pet List"
+  },
+  "sections": {
+    "general": "General",
+    "library": "Pet Library",
+    "runningBubble": "Running Bubble",
+    "statusBubbleTexts": "Status Bubble Texts",
+    "commandTexts": "Command Texts",
+    "interaction": "Interaction",
+    "petList": "Pet List"
+  },
+  "labels": {
+    "enablePet": "Enable Pet",
+    "defaultPet": "Default Pet",
+    "scale": "Scale",
+    "showStatusBubble": "Show Status Bubble",
+    "bubbleOffsetX": "Bubble Offset X",
+    "bubbleOffsetY": "Bubble Offset Y",
+    "runningPrefix": "Running Prefix",
+    "jumpOnHover": "Jump on Hover",
+    "preview": "Pet Preview",
+    "state": "State"
+  },
+  "buttons": {
+    "resetPosition": "Reset Position",
+    "scanPets": "Scan Pets",
+    "scanning": "Scanning...",
+    "importPet": "Import Pet",
+    "importing": "Importing...",
+    "deleting": "Deleting..."
+  },
+  "empty": {
+    "loading": "Loading pet settings.",
+    "unavailable": "Pet settings unavailable.",
+    "noValidPets": "No valid pets",
+    "noDefaultPet": "No default pet",
+    "noValidPetSelected": "No valid pet selected",
+    "noPetsFound": "No pets found under data/pet.",
+    "noDescription": "No description"
+  },
+  "import": {
+    "dropFiles": "Drop pet.json and spritesheet.webp",
+    "acceptedFiles": "Only Codex-compatible pet files with these exact names are accepted.",
+    "savedUnder": "Imported pets are saved under data/pet/<pet_id>/ and selected as the default pet."
+  },
+  "help": {
+    "runningPrefix": "Running status text is built from running_prefix + task. The task is supplied by later run step integration.",
+    "jumpOnHover": "Play the jump animation when the chat pet is hovered.",
+    "example": "Example: {{text}}"
+  },
+  "preview": {
+    "bubble": "I am {{name}}"
+  },
+  "notice": {
+    "positionReset": "Position reset"
+  },
+  "confirm": {
+    "delete": "Delete pet \"{{name}}\"?"
+  },
+  "errors": {
+    "load": "Failed to load pet settings.",
+    "save": "Failed to save pet settings.",
+    "resetPosition": "Failed to reset pet position.",
+    "scan": "Failed to scan pets.",
+    "importFilesRequired": "Drop exactly pet.json and spritesheet.webp."
+  }
+}

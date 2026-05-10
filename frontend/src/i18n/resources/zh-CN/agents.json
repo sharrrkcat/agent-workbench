@@ -1,0 +1,102 @@
+{
+  "tabs": {
+    "overview": "概览",
+    "overrides": "覆盖项",
+    "actions": "动作",
+    "config": "配置",
+    "runtime": "运行时",
+    "manifest": "Manifest"
+  },
+  "sections": {
+    "basic": "基础信息",
+    "prompt": "Prompt",
+    "knowledgeRuntime": "知识库运行时设置",
+    "llmRuntime": "LLM 运行时设置",
+    "contextPolicy": "上下文策略",
+    "modelLifecycle": "模型生命周期",
+    "llmRouting": "LLM 路由",
+    "legacyModel": "Legacy 模型"
+  },
+  "labels": {
+    "agent": "agent",
+    "name": "名称",
+    "avatar": "头像",
+    "description": "描述",
+    "type": "类型",
+    "capabilities": "Capabilities",
+    "contextPolicy": "上下文策略",
+    "modelLifecycle": "模型生命周期",
+    "llm": "LLM",
+    "action": "动作",
+    "label": "Label",
+    "instruction": "Instruction",
+    "callable": "可调用",
+    "context": "上下文",
+    "systemPrompt": "系统 prompt",
+    "useSessionKnowledgeBases": "使用会话知识库",
+    "modelProfile": "模型配置",
+    "allowSessionOverride": "允许会话覆盖",
+    "maxHistoryMessages": "最大历史消息数",
+    "modelLifecycleUnload": "模型生命周期卸载",
+    "unloadFailureBehavior": "卸载失败行为",
+    "timeoutSeconds": "超时秒数",
+    "load": "加载",
+    "unload": "卸载",
+    "unloadFailure": "卸载失败",
+    "sessionOverride": "会话覆盖",
+    "source": "来源",
+    "overrides": "覆盖项",
+    "provider": "Provider",
+    "baseUrl": "Base URL",
+    "mode": "模式",
+    "maxMessages": "最大消息数",
+    "maxChars": "最大字符数",
+    "originalUserMessage": "原始用户消息",
+    "lastAgentMessage": "上一条 Agent 消息"
+  },
+  "buttons": {
+    "resetOverrides": "重置覆盖项",
+    "writeOverridesToManifest": "写入覆盖项到 manifest"
+  },
+  "empty": {
+    "noConfigurableFields": "此 Agent 没有可配置字段。",
+    "noActions": "此 Agent 未声明动作。",
+    "noDeclaredCapabilities": "没有声明的 Capability",
+    "usesGlobalLlmFallback": "使用全局 LLM fallback。"
+  },
+  "help": {
+    "knowledgeRuntime": "Prompt Agent 默认使用会话知识库。LLM Script Agent 只有在这里启用后才会使用。",
+    "scriptTrusted": "Script Agent 是受信任的本地 Python 代码，不会被沙箱隔离。"
+  },
+  "placeholders": {
+    "generatedInitials": "生成首字母",
+    "noDescription": "无描述",
+    "noManifestPrompt": "没有 manifest prompt"
+  },
+  "confirm": {
+    "resetOverrides": "要重置此 Agent 的显示和运行时覆盖项吗？Config tab 中的值会保留。",
+    "writeManifest": "要把当前覆盖项写入 agents/{{agentId}}/agent.yaml 吗？\n\n这会修改 Agent package 文件。仅在开发或自定义本地 Agent 时使用。格式和注释可能被重写。"
+  },
+  "errors": {
+    "saveConfig": "保存 Agent 配置失败。",
+    "saveOverrides": "保存 Agent 覆盖项失败。",
+    "resetOverrides": "重置 Agent 覆盖项失败。",
+    "writeManifest": "写入 Agent manifest 失败。"
+  },
+  "source": {
+    "override": "覆盖",
+    "unsaved": "未保存 *",
+    "manifest": "Manifest",
+    "default": "默认"
+  },
+  "summary": {
+    "overrideCount": "{{count}} 个覆盖项",
+    "overrideCount_one": "{{count}} 个覆盖项",
+    "inheritedDefault": "继承/默认",
+    "messages": "{{count}} 条消息",
+    "chars": "{{count}} 字符",
+    "llmProfile": "LLM 配置：{{profile}}",
+    "legacyModel": "Legacy 模型：{{model}}",
+    "usesGlobalLlmFallback": "使用全局 LLM fallback"
+  }
+}

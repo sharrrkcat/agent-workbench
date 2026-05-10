@@ -1,0 +1,50 @@
+{
+  "tabs": {
+    "overview": "Overview",
+    "commands": "Commands",
+    "config": "Config",
+    "health": "Health",
+    "manifest": "Manifest"
+  },
+  "labels": {
+    "capability": "capability",
+    "description": "Description",
+    "permissionHint": "Permission hint",
+    "version": "Version",
+    "exposedCommands": "Exposed commands",
+    "configFields": "Config fields",
+    "runtime": "Runtime",
+    "command": "Command",
+    "method": "Method",
+    "safe": "Safe",
+    "confirm": "Confirm"
+  },
+  "sections": {
+    "permissions": "Permissions",
+    "readLimits": "Read limits",
+    "commands": "Commands",
+    "networkAccess": "Network access",
+    "responseLimits": "Response limits"
+  },
+  "empty": {
+    "noConfigurableFields": "This capability has no configurable fields.",
+    "noFields": "No configurable fields.",
+    "noHealthChecks": "No health checks available for this capability.",
+    "noCommands": "This capability does not expose slash commands."
+  },
+  "help": {
+    "fileSettings": "File Capability settings apply only to /read-file and /read-image. General upload limits are configured in General.",
+    "httpSettings": "HTTP settings apply only to /http-get, /fetch-page, and /fetch-image. They do not affect chat uploads."
+  },
+  "runtime": {
+    "llm": "OpenAI-compatible LLM runtime",
+    "localPython": "Local Python capability"
+  },
+  "permissions": {
+    "filesystemRead": "Can read local files from configured allowed directories",
+    "networkHttp": "Can make HTTP GET requests without private browser cookies"
+  },
+  "errors": {
+    "saveConfig": "Failed to save capability config."
+  }
+}

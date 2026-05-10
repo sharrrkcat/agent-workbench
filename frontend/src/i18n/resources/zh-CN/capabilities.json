@@ -1,0 +1,50 @@
+{
+  "tabs": {
+    "overview": "概览",
+    "commands": "命令",
+    "config": "配置",
+    "health": "健康",
+    "manifest": "Manifest"
+  },
+  "labels": {
+    "capability": "capability",
+    "description": "描述",
+    "permissionHint": "权限提示",
+    "version": "版本",
+    "exposedCommands": "暴露的命令",
+    "configFields": "配置字段",
+    "runtime": "运行时",
+    "command": "命令",
+    "method": "方法",
+    "safe": "安全",
+    "confirm": "确认"
+  },
+  "sections": {
+    "permissions": "权限",
+    "readLimits": "读取限制",
+    "commands": "命令",
+    "networkAccess": "网络访问",
+    "responseLimits": "响应限制"
+  },
+  "empty": {
+    "noConfigurableFields": "此 Capability 没有可配置字段。",
+    "noFields": "没有可配置字段。",
+    "noHealthChecks": "此 Capability 没有可用健康检查。",
+    "noCommands": "此 Capability 未暴露 slash command。"
+  },
+  "help": {
+    "fileSettings": "File Capability 设置只应用于 /read-file 和 /read-image。通用上传限制在 General 中配置。",
+    "httpSettings": "HTTP 设置只应用于 /http-get、/fetch-page 和 /fetch-image。它们不会影响聊天上传。"
+  },
+  "runtime": {
+    "llm": "OpenAI-compatible LLM 运行时",
+    "localPython": "本地 Python Capability"
+  },
+  "permissions": {
+    "filesystemRead": "可从配置的允许目录读取本地文件",
+    "networkHttp": "可发起不带私有浏览器 cookie 的 HTTP GET 请求"
+  },
+  "errors": {
+    "saveConfig": "保存 Capability 配置失败。"
+  }
+}

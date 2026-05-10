@@ -1,0 +1,36 @@
+{
+  "actions": {
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "preview": "Preview {{name}}",
+    "previewUnavailable": "Preview not available",
+    "copyFileContent": "Copy file content",
+    "wrapLines": "Wrap lines",
+    "noWrap": "No wrap",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "reset": "Reset",
+    "submit": "Submit",
+    "submitting": "Submitting"
+  },
+  "labels": {
+    "attachedImage": "Attached image",
+    "file": "File",
+    "fileContent": "File content",
+    "truncated": "Truncated",
+    "copied": "Copied",
+    "commandShortcuts": "Command shortcuts",
+    "thought": "Thought",
+    "thinking": "Thinking..."
+  },
+  "notices": {
+    "contentTruncated": "Content truncated - showing first 1 MB",
+    "clickToExpand": "Click to expand.",
+    "saved": "Saved",
+    "formSubmissionFailed": "Form submission failed"
+  },
+  "errors": {
+    "copyFileContent": "Failed to copy file content",
+    "copyNotification": "Failed to copy notification"
+  }
+}

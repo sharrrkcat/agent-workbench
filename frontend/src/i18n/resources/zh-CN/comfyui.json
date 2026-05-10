@@ -1,0 +1,21 @@
+{
+  "presets": {
+    "title": "Preset 库",
+    "scan": "扫描 presets",
+    "validate": "验证 preset",
+    "empty": "没有找到 presets。"
+  },
+  "workflows": {
+    "title": "Workflow 库",
+    "scan": "扫描 workflows",
+    "empty": "没有找到 workflows。"
+  },
+  "generation": {
+    "status": "生成状态",
+    "gallery": "图片画廊"
+  },
+  "validation": {
+    "valid": "有效",
+    "failed": "验证失败"
+  }
+}

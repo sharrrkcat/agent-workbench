@@ -1,5 +1,6 @@
 import { PawPrint, RefreshCw, RotateCcw, Save, Search, Trash2, Upload } from 'lucide-react';
 import { DragEvent, FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api, joinApiUrl, API_BASE_URL } from '../../api/client';
 import type { PetBubbleTexts, PetCommandTexts, PetItem, PetSettings } from '../../types';
 import { PetSprite, type PetSpriteState } from '../PetSprite';
@@ -90,6 +91,7 @@ export function PetSettingsDetail({
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation(['pet', 'common']);
   const normalizedTab = activeTab === 'pet-list' ? 'pet-list' : 'config';
   const [settings, setSettings] = useState<PetSettings | null>(null);
   const [values, setValues] = useState<PetSettings | null>(null);
@@ -120,7 +122,7 @@ export function PetSettingsDetail({
       setValues(nextSettings);
       setPets(petsResponse.pets);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to load pet settings.'));
+      setLocalError(toSettingsError(error, t('pet:errors.load')));
     } finally {
       setBusy('');
     }
@@ -145,7 +147,7 @@ export function PetSettingsDetail({
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1400);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to save pet settings.'));
+      setLocalError(toSettingsError(error, t('pet:errors.save')));
     } finally {
       setBusy('');
     }
@@ -160,10 +162,10 @@ export function PetSettingsDetail({
       const nextSettings = normalizeSettings(response.settings);
       setSettings(nextSettings);
       setValues(nextSettings);
-      setNotice('Position reset');
+      setNotice(t('pet:notice.positionReset'));
       window.setTimeout(() => setNotice(''), 1400);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to reset pet position.'));
+      setLocalError(toSettingsError(error, t('pet:errors.resetPosition')));
     } finally {
       setBusy('');
     }
@@ -178,14 +180,14 @@ export function PetSettingsDetail({
       setNotice(values?.bubble_texts.reload || DEFAULT_BUBBLE_TEXTS.reload);
       window.setTimeout(() => setNotice(''), 1600);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to scan pets.'));
+      setLocalError(toSettingsError(error, t('pet:errors.scan')));
     } finally {
       setBusy('');
     }
   }
 
   async function deletePet(pet: PetItem) {
-    if (!window.confirm(`Delete pet "${pet.display_name || pet.id}"?`)) return;
+    if (!window.confirm(t('pet:confirm.delete', { name: pet.display_name || pet.id }))) return;
     setBusy(`delete:${pet.id}`);
     try {
       setLocalError(null);
@@ -216,7 +218,7 @@ export function PetSettingsDetail({
     if (unexpected.length || !petJson || !spritesheet) {
       setLocalError({
         code: 'PET_IMPORT_FILES_REQUIRED',
-        message: 'Drop exactly pet.json and spritesheet.webp.',
+        message: t('pet:errors.importFilesRequired'),
         details: { received: names },
       });
       return;
@@ -261,28 +263,28 @@ export function PetSettingsDetail({
             <PawPrint size={18} />
           </div>
           <div>
-            <h2>Pet</h2>
+            <h2>{t('pet:title')}</h2>
             <p>
               <code>pet</code>
-              <span>appearance capability settings</span>
+              <span>{t('pet:subtitle')}</span>
             </p>
           </div>
         </div>
         <div className="settings-detail-actions">
           {notice ? <span className="settings-badge success">{notice}</span> : null}
-          {saved ? <span className="settings-badge success">Saved</span> : null}
+          {saved ? <span className="settings-badge success">{t('common:saved')}</span> : null}
           {normalizedTab === 'config' && dirty ? (
             <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
               <Save size={14} />
-              {busy === 'save' ? 'Saving...' : 'Save'}
+              {busy === 'save' ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
         </div>
       </header>
       <DetailTabs
         tabs={[
-          { id: 'config', label: 'Config' },
-          { id: 'pet-list', label: 'Pet List' },
+          { id: 'config', label: t('pet:tabs.config') },
+          { id: 'pet-list', label: t('pet:tabs.petList') },
         ]}
         activeTab={normalizedTab}
         onChange={onTabChange}
@@ -290,7 +292,7 @@ export function PetSettingsDetail({
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
         {!values ? (
-          <div className="settings-empty-state compact">{busy ? 'Loading pet settings.' : 'Pet settings unavailable.'}</div>
+          <div className="settings-empty-state compact">{busy ? t('pet:empty.loading') : t('pet:empty.unavailable')}</div>
         ) : normalizedTab === 'config' ? (
           <PetConfigTab
             values={values}
@@ -332,6 +334,7 @@ function PetConfigTab({
   onScanPets: () => void;
   onImportPet: (files: File[]) => void;
 }) {
+  const { t } = useTranslation(['pet', 'common']);
   const [dragging, setDragging] = useState(false);
   const [previewState, setPreviewState] = useState<PetSpriteState>('idle');
 
@@ -345,7 +348,7 @@ function PetConfigTab({
   return (
     <>
       <section className="detail-section">
-        <div className="detail-section-heading"><h3>General</h3></div>
+        <div className="detail-section-heading"><h3>{t('pet:sections.general')}</h3></div>
         <div className="pet-general-layout">
           <PetPreviewPanel
             values={values}
@@ -355,21 +358,21 @@ function PetConfigTab({
           />
           <div className="pet-general-fields">
             <label className="config-field settings-config-field boolean-field">
-              <span>Enable Pet</span>
+              <span>{t('pet:labels.enablePet')}</span>
               <ToggleSwitch checked={values.pet_enabled} onChange={(checked) => onSetValue('pet_enabled', checked)} />
             </label>
             <div className="settings-detail-grid">
               <label className="config-field settings-config-field">
-                <span>Default Pet</span>
+                <span>{t('pet:labels.defaultPet')}</span>
                 <select value={values.default_pet_id} disabled={!validPets.length} onChange={(event) => onSetValue('default_pet_id', event.currentTarget.value)}>
-                  {!validPets.length ? <option value="">No valid pets</option> : <option value="">No default pet</option>}
+                  {!validPets.length ? <option value="">{t('pet:empty.noValidPets')}</option> : <option value="">{t('pet:empty.noDefaultPet')}</option>}
                   {validPets.map((pet) => (
                     <option key={pet.id} value={pet.id}>{pet.display_name || pet.id}</option>
                   ))}
                 </select>
               </label>
               <label className="config-field settings-config-field pet-scale-field">
-                <span>Scale</span>
+                <span>{t('pet:labels.scale')}</span>
                 <div className="pet-scale-row">
                   <input type="range" min="0.5" max="2" step="0.05" value={values.pet_scale} onChange={(event) => onSetValue('pet_scale', Number(event.currentTarget.value))} />
                   <input type="number" min="0.5" max="2" step="0.05" value={values.pet_scale} onChange={(event) => onSetValue('pet_scale', Number(event.currentTarget.value))} />
@@ -377,12 +380,12 @@ function PetConfigTab({
               </label>
             </div>
             <label className="config-field settings-config-field boolean-field">
-              <span>Show Status Bubble</span>
+              <span>{t('pet:labels.showStatusBubble')}</span>
               <ToggleSwitch checked={values.show_status_bubble} onChange={(checked) => onSetValue('show_status_bubble', checked)} />
             </label>
             <div className="settings-detail-grid">
               <label className="config-field settings-config-field">
-                <span>Bubble Offset X</span>
+                <span>{t('pet:labels.bubbleOffsetX')}</span>
                 <input
                   type="number"
                   min="-240"
@@ -393,7 +396,7 @@ function PetConfigTab({
                 />
               </label>
               <label className="config-field settings-config-field">
-                <span>Bubble Offset Y</span>
+                <span>{t('pet:labels.bubbleOffsetY')}</span>
                 <input
                   type="number"
                   min="-240"
@@ -407,7 +410,7 @@ function PetConfigTab({
             <div className="settings-button-row">
               <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onResetPosition}>
                 <RotateCcw size={14} />
-                Reset Position
+                {t('pet:buttons.resetPosition')}
               </button>
             </div>
           </div>
@@ -415,15 +418,15 @@ function PetConfigTab({
       </section>
 
       <section className="detail-section">
-        <div className="detail-section-heading"><h3>Pet Library</h3></div>
+        <div className="detail-section-heading"><h3>{t('pet:sections.library')}</h3></div>
         <div className="settings-button-row">
           <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onScanPets}>
             <Search size={14} />
-            {busy === 'scan' ? 'Scanning...' : 'Scan Pets'}
+            {busy === 'scan' ? t('pet:buttons.scanning') : t('pet:buttons.scanPets')}
           </button>
           <button className="settings-secondary-button" type="button" disabled={busy === 'import'}>
             <Upload size={14} />
-            {busy === 'import' ? 'Importing...' : 'Import Pet'}
+            {busy === 'import' ? t('pet:buttons.importing') : t('pet:buttons.importPet')}
           </button>
         </div>
         <div
@@ -443,27 +446,27 @@ function PetConfigTab({
           onDrop={handleDrop}
         >
           <Upload size={18} />
-          <strong>Drop pet.json and spritesheet.webp</strong>
-          <span>Only Codex-compatible pet files with these exact names are accepted.</span>
-          <small>Imported pets are saved under <code>data/pet/&lt;pet_id&gt;/</code> and selected as the default pet.</small>
+          <strong>{t('pet:import.dropFiles')}</strong>
+          <span>{t('pet:import.acceptedFiles')}</span>
+          <small>{t('pet:import.savedUnder')}</small>
         </div>
       </section>
 
       <section className="detail-section">
-        <div className="detail-section-heading"><h3>Running Bubble</h3></div>
+        <div className="detail-section-heading"><h3>{t('pet:sections.runningBubble')}</h3></div>
         <label className="config-field settings-config-field">
-          <span>Running Prefix</span>
+          <span>{t('pet:labels.runningPrefix')}</span>
           <input type="text" value={values.running_prefix} onChange={(event) => onSetValue('running_prefix', event.currentTarget.value)} />
-          <small>Running status text is built from running_prefix + task. The task is supplied by later run step integration.</small>
+          <small>{t('pet:help.runningPrefix')}</small>
         </label>
         <div className="settings-chip-row">
-          <small>Example: {values.running_prefix || 'Running'} Calling model</small>
-          <small>Example: {values.running_prefix || 'Running'} Searching knowledge base</small>
+          <small>{t('pet:help.example', { text: `${values.running_prefix || 'Running'} Calling model` })}</small>
+          <small>{t('pet:help.example', { text: `${values.running_prefix || 'Running'} Searching knowledge base` })}</small>
         </div>
       </section>
 
       <section className="detail-section">
-        <div className="detail-section-heading"><h3>Status Bubble Texts</h3></div>
+        <div className="detail-section-heading"><h3>{t('pet:sections.statusBubbleTexts')}</h3></div>
         <div className="pet-bubble-grid">
           {BUBBLE_TEXT_KEYS.map((key) => (
             <label key={key} className="config-field settings-config-field">
@@ -475,7 +478,7 @@ function PetConfigTab({
       </section>
 
       <section className="detail-section">
-        <div className="detail-section-heading"><h3>Command Texts</h3></div>
+        <div className="detail-section-heading"><h3>{t('pet:sections.commandTexts')}</h3></div>
         <div className="pet-bubble-grid">
           {COMMAND_TEXT_KEYS.map((key) => (
             <label key={key} className="config-field settings-config-field">
@@ -487,11 +490,11 @@ function PetConfigTab({
       </section>
 
       <section className="detail-section">
-        <div className="detail-section-heading"><h3>Interaction</h3></div>
+        <div className="detail-section-heading"><h3>{t('pet:sections.interaction')}</h3></div>
         <label className="config-field settings-config-field boolean-field">
-          <span>Jump on Hover</span>
+          <span>{t('pet:labels.jumpOnHover')}</span>
           <ToggleSwitch checked={values.jump_on_hover} onChange={(checked) => onSetValue('jump_on_hover', checked)} />
-          <small>Play the jump animation when the chat pet is hovered.</small>
+          <small>{t('pet:help.jumpOnHover')}</small>
         </label>
       </section>
     </>
@@ -509,6 +512,7 @@ function PetPreviewPanel({
   previewState: PetSpriteState;
   onPreviewStateChange: (state: PetSpriteState) => void;
 }) {
+  const { t } = useTranslation(['pet']);
   const renderablePets = useMemo(() => validPets.filter((pet) => pet.spritesheet_url), [validPets]);
   const pet = useMemo(() => {
     if (!renderablePets.length) return null;
@@ -519,14 +523,14 @@ function PetPreviewPanel({
   const scale = clampFloat(Number(values.pet_scale), 0.5, 2);
 
   return (
-    <div className="pet-preview-panel" aria-label="Pet Preview">
+    <div className="pet-preview-panel" aria-label={t('pet:labels.preview')}>
       <div className="pet-preview-header">
         <div>
-          <strong>Pet Preview</strong>
-          <span>{pet ? petName : 'No valid pet selected'}</span>
+          <strong>{t('pet:labels.preview')}</strong>
+          <span>{pet ? petName : t('pet:empty.noValidPetSelected')}</span>
         </div>
         <label className="pet-preview-state-select">
-          <span>State</span>
+          <span>{t('pet:labels.state')}</span>
           <select value={previewState} onChange={(event) => onPreviewStateChange(event.currentTarget.value as PetSpriteState)}>
             {PET_PREVIEW_STATES.map((state) => (
               <option key={state} value={state}>{state}</option>
@@ -546,14 +550,14 @@ function PetPreviewPanel({
               aria-label={petName}
               title={petName}
             >
-              {values.show_status_bubble ? <div className="pet-status-bubble pet-preview-bubble">我是 {petName}</div> : null}
+              {values.show_status_bubble ? <div className="pet-status-bubble pet-preview-bubble">{t('pet:preview.bubble', { name: petName })}</div> : null}
               <PetSprite spritesheetUrl={spriteUrl} state={previewState} scale={scale} className="pet-sprite" />
             </div>
           </div>
           {pet.description ? <p className="pet-preview-description">{pet.description}</p> : null}
         </>
       ) : (
-        <div className="settings-empty-state compact pet-preview-empty">No valid pet selected</div>
+        <div className="settings-empty-state compact pet-preview-empty">{t('pet:empty.noValidPetSelected')}</div>
       )}
     </div>
   );
@@ -570,13 +574,14 @@ function PetListTab({
   onScanPets: () => void;
   onDeletePet: (pet: PetItem) => void;
 }) {
+  const { t } = useTranslation(['pet']);
   return (
     <section className="detail-section">
       <div className="detail-section-heading">
-        <h3>Pet List</h3>
+        <h3>{t('pet:sections.petList')}</h3>
         <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onScanPets}>
           <RefreshCw size={14} />
-          {busy === 'scan' ? 'Scanning...' : 'Scan Pets'}
+          {busy === 'scan' ? t('pet:buttons.scanning') : t('pet:buttons.scanPets')}
         </button>
       </div>
       {pets.length ? (
@@ -586,13 +591,14 @@ function PetListTab({
           ))}
         </div>
       ) : (
-        <div className="settings-empty-state compact">No pets found under <code>data/pet</code>.</div>
+        <div className="settings-empty-state compact">{t('pet:empty.noPetsFound')}</div>
       )}
     </section>
   );
 }
 
 function PetListItem({ pet, busy, onDeletePet }: { pet: PetItem; busy: string; onDeletePet: (pet: PetItem) => void }) {
+  const { t } = useTranslation(['pet', 'common']);
   const canDelete = pet.can_delete && !pet.is_builtin;
   const deleting = busy === `delete:${pet.id}`;
   const spriteUrl = pet.valid && pet.spritesheet_url ? joinApiUrl(API_BASE_URL, pet.spritesheet_url) : '';
@@ -607,7 +613,7 @@ function PetListItem({ pet, busy, onDeletePet }: { pet: PetItem; busy: string; o
       )}
       <div className="pet-list-copy">
         <strong>{pet.display_name || pet.id}</strong>
-        <span>{pet.description || 'No description'}</span>
+        <span>{pet.description || t('pet:empty.noDescription')}</span>
         <div className="pet-list-meta">
           <span>{pet.source}</span>
           <span className={pet.valid ? 'settings-badge success' : 'settings-badge warning'}>{pet.status}</span>
@@ -617,7 +623,7 @@ function PetListItem({ pet, busy, onDeletePet }: { pet: PetItem; busy: string; o
       {canDelete ? (
         <button className="settings-secondary-button danger pet-delete-button" type="button" disabled={deleting} onClick={() => onDeletePet(pet)}>
           <Trash2 size={14} />
-          {deleting ? 'Deleting...' : 'Delete'}
+          {deleting ? t('pet:buttons.deleting') : t('common:delete')}
         </button>
       ) : null}
     </div>
@@ -655,3 +661,4 @@ function clampFloat(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
 }
+

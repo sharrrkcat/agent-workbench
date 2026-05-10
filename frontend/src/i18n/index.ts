@@ -8,6 +8,11 @@ import enStatus from './resources/en/status.json';
 import enRuns from './resources/en/runs.json';
 import enLlm from './resources/en/llm.json';
 import enKnowledge from './resources/en/knowledge.json';
+import enAgents from './resources/en/agents.json';
+import enCapabilities from './resources/en/capabilities.json';
+import enPet from './resources/en/pet.json';
+import enRenderers from './resources/en/renderers.json';
+import enComfyui from './resources/en/comfyui.json';
 import zhCommon from './resources/zh-CN/common.json';
 import zhSettings from './resources/zh-CN/settings.json';
 import zhChat from './resources/zh-CN/chat.json';
@@ -16,6 +21,11 @@ import zhStatus from './resources/zh-CN/status.json';
 import zhRuns from './resources/zh-CN/runs.json';
 import zhLlm from './resources/zh-CN/llm.json';
 import zhKnowledge from './resources/zh-CN/knowledge.json';
+import zhAgents from './resources/zh-CN/agents.json';
+import zhCapabilities from './resources/zh-CN/capabilities.json';
+import zhPet from './resources/zh-CN/pet.json';
+import zhRenderers from './resources/zh-CN/renderers.json';
+import zhComfyui from './resources/zh-CN/comfyui.json';
 
 export const LOCALE_STORAGE_KEY = 'agent-workbench.locale';
 export const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const;
@@ -38,6 +48,11 @@ void i18n.use(initReactI18next).init({
       runs: enRuns,
       llm: enLlm,
       knowledge: enKnowledge,
+      agents: enAgents,
+      capabilities: enCapabilities,
+      pet: enPet,
+      renderers: enRenderers,
+      comfyui: enComfyui,
     },
     'zh-CN': {
       common: zhCommon,
@@ -48,12 +63,17 @@ void i18n.use(initReactI18next).init({
       runs: zhRuns,
       llm: zhLlm,
       knowledge: zhKnowledge,
+      agents: zhAgents,
+      capabilities: zhCapabilities,
+      pet: zhPet,
+      renderers: zhRenderers,
+      comfyui: zhComfyui,
     },
   },
   lng: storedLocale(),
   fallbackLng: 'en',
   defaultNS: 'common',
-  ns: ['common', 'settings', 'chat', 'errors', 'status', 'runs', 'llm', 'knowledge'],
+  ns: ['common', 'settings', 'chat', 'errors', 'status', 'runs', 'llm', 'knowledge', 'agents', 'capabilities', 'pet', 'renderers', 'comfyui'],
   interpolation: {
     escapeValue: false,
   },

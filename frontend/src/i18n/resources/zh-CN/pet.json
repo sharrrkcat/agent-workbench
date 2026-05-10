@@ -1,0 +1,72 @@
+{
+  "title": "宠物",
+  "subtitle": "外观 Capability 设置",
+  "tabs": {
+    "config": "配置",
+    "petList": "宠物列表"
+  },
+  "sections": {
+    "general": "通用",
+    "library": "宠物库",
+    "runningBubble": "运行气泡",
+    "statusBubbleTexts": "状态气泡文本",
+    "commandTexts": "命令文本",
+    "interaction": "交互",
+    "petList": "宠物列表"
+  },
+  "labels": {
+    "enablePet": "启用宠物",
+    "defaultPet": "默认宠物",
+    "scale": "缩放",
+    "showStatusBubble": "显示状态气泡",
+    "bubbleOffsetX": "气泡 X 偏移",
+    "bubbleOffsetY": "气泡 Y 偏移",
+    "runningPrefix": "运行前缀",
+    "jumpOnHover": "悬停时跳跃",
+    "preview": "宠物预览",
+    "state": "状态"
+  },
+  "buttons": {
+    "resetPosition": "重置位置",
+    "scanPets": "扫描宠物",
+    "scanning": "扫描中...",
+    "importPet": "导入宠物",
+    "importing": "导入中...",
+    "deleting": "删除中..."
+  },
+  "empty": {
+    "loading": "正在加载宠物设置。",
+    "unavailable": "宠物设置不可用。",
+    "noValidPets": "没有有效宠物",
+    "noDefaultPet": "没有默认宠物",
+    "noValidPetSelected": "未选择有效宠物",
+    "noPetsFound": "data/pet 下没有找到宠物。",
+    "noDescription": "无描述"
+  },
+  "import": {
+    "dropFiles": "拖放 pet.json 和 spritesheet.webp",
+    "acceptedFiles": "只接受文件名完全匹配的 Codex 兼容宠物文件。",
+    "savedUnder": "导入的宠物会保存到 data/pet/<pet_id>/，并选为默认宠物。"
+  },
+  "help": {
+    "runningPrefix": "运行状态文本由 running_prefix + task 组成。task 由后续运行步骤集成提供。",
+    "jumpOnHover": "鼠标悬停聊天宠物时播放跳跃动画。",
+    "example": "示例：{{text}}"
+  },
+  "preview": {
+    "bubble": "我是 {{name}}"
+  },
+  "notice": {
+    "positionReset": "位置已重置"
+  },
+  "confirm": {
+    "delete": "删除宠物“{{name}}”？"
+  },
+  "errors": {
+    "load": "加载宠物设置失败。",
+    "save": "保存宠物设置失败。",
+    "resetPosition": "重置宠物位置失败。",
+    "scan": "扫描宠物失败。",
+    "importFilesRequired": "请只拖放 pet.json 和 spritesheet.webp。"
+  }
+}

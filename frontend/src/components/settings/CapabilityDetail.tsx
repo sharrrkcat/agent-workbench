@@ -1,5 +1,6 @@
 import { Boxes, Save } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { CapabilityConfig, Command } from '../../types';
 import { ConfigForm } from './ConfigForm';
@@ -10,13 +11,7 @@ import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './Se
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, type ConfigValues } from './configUtils';
 
-const baseTabs = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'commands', label: 'Commands' },
-  { id: 'config', label: 'Config' },
-  { id: 'health', label: 'Health' },
-  { id: 'manifest', label: 'Manifest' },
-];
+const baseTabIds = ['overview', 'commands', 'config', 'health', 'manifest'] as const;
 
 export function CapabilityDetail({
   config,
@@ -31,6 +26,7 @@ export function CapabilityDetail({
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation(['capabilities', 'common']);
   const { updateCapabilityConfig, savingConfigId, testingLlm } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
@@ -50,16 +46,17 @@ export function CapabilityDetail({
   const manifest = useMemo(() => ({ config, commands: visibleCommands }), [config, visibleCommands]);
   const tabs = useMemo(
     () =>
-      baseTabs.map((tab) => ({
-        ...tab,
+      baseTabIds.map((id) => ({
+        id,
+        label: t(`capabilities:tabs.${id}`),
         enabled:
-          tab.id === 'overview' ||
-          (tab.id === 'commands' && hasCommands) ||
-          (tab.id === 'config' && hasConfigFields) ||
-          (tab.id === 'health' && hasHealth) ||
-          tab.id === 'manifest',
+          id === 'overview' ||
+          (id === 'commands' && hasCommands) ||
+          (id === 'config' && hasConfigFields) ||
+          (id === 'health' && hasHealth) ||
+          id === 'manifest',
       })),
-    [hasCommands, hasConfigFields, hasHealth],
+    [hasCommands, hasConfigFields, hasHealth, t],
   );
   const normalizedActiveTab = tabs.some((tab) => tab.id === activeTab && tab.enabled !== false) ? activeTab : 'overview';
 
@@ -86,7 +83,7 @@ export function CapabilityDetail({
       setLocalError(null);
       await updateCapabilityConfig(config.capability_id, { enabled, user_config: buildUserConfig(config.config_schema || [], values) });
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to save capability config.'));
+      setLocalError(toSettingsError(error, t('capabilities:errors.saveConfig')));
     }
   }
 
@@ -99,7 +96,7 @@ export function CapabilityDetail({
             <h2>{name}</h2>
             <p>
               <code>{config.capability_id}</code>
-              <span>capability</span>
+              <span>{t('capabilities:labels.capability')}</span>
             </p>
           </div>
         </div>
@@ -107,7 +104,7 @@ export function CapabilityDetail({
           {dirty ? (
             <button className="settings-primary-button" type="submit" disabled={saveDisabled}>
               <Save size={14} />
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
           <ToggleSwitch checked={enabled} onChange={setEnabled} disabled={isSaving} />
@@ -125,7 +122,7 @@ export function CapabilityDetail({
           config.capability_id === 'llm' ? (
             <LlmSettingsPanel config={config} values={values} onValuesChange={setValues} showConfig={false} onBusyChange={setHealthBusy} />
           ) : (
-            <div className="settings-empty-state">No health checks available for this capability.</div>
+            <div className="settings-empty-state">{t('capabilities:empty.noHealthChecks')}</div>
           )
         ) : null}
         {normalizedActiveTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
@@ -146,22 +143,23 @@ function CapabilityConfigTab({
   values: ConfigValues;
   onChange: (values: ConfigValues) => void;
 }) {
+  const { t } = useTranslation(['capabilities']);
   const fields = config.config_schema || [];
   if (config.capability_id === 'file') {
     return (
       <div className="settings-config-sections">
         <p className="settings-helper-text">
-          File Capability settings apply only to <code>/read-file</code> and <code>/read-image</code>. General upload limits are configured in General.
+          {t('capabilities:help.fileSettings')}
         </p>
-        <ConfigSection title="Permissions" fieldNames={['allowed_directories']} fields={fields} values={values} onChange={onChange} />
+        <ConfigSection title={t('capabilities:sections.permissions')} fieldNames={['allowed_directories']} fields={fields} values={values} onChange={onChange} />
         <ConfigSection
-          title="Read limits"
+          title={t('capabilities:sections.readLimits')}
           fieldNames={['max_local_text_read_size_mb', 'max_local_image_read_size_mb', 'allowed_text_extensions']}
           fields={fields}
           values={values}
           onChange={onChange}
         />
-        <ConfigSection title="Commands" fieldNames={['enable_read_file', 'enable_read_image']} fields={fields} values={values} onChange={onChange} />
+        <ConfigSection title={t('capabilities:sections.commands')} fieldNames={['enable_read_file', 'enable_read_image']} fields={fields} values={values} onChange={onChange} />
       </div>
     );
   }
@@ -169,17 +167,17 @@ function CapabilityConfigTab({
     return (
       <div className="settings-config-sections">
         <p className="settings-helper-text">
-          HTTP settings apply only to <code>/http-get</code>, <code>/fetch-page</code>, and <code>/fetch-image</code>. They do not affect chat uploads.
+          {t('capabilities:help.httpSettings')}
         </p>
         <ConfigSection
-          title="Network access"
+          title={t('capabilities:sections.networkAccess')}
           fieldNames={['enable_http_get', 'enable_fetch_image', 'allowed_schemes', 'timeout_seconds', 'allow_redirects', 'max_redirects']}
           fields={fields}
           values={values}
           onChange={onChange}
         />
         <ConfigSection
-          title="Response limits"
+          title={t('capabilities:sections.responseLimits')}
           fieldNames={['max_text_response_size_mb', 'max_image_response_size_mb']}
           fields={fields}
           values={values}
@@ -193,7 +191,7 @@ function CapabilityConfigTab({
       fields={fields}
       values={values}
       onChange={onChange}
-      emptyMessage="This capability has no configurable fields."
+      emptyMessage={t('capabilities:empty.noConfigurableFields')}
     />
   );
 }
@@ -211,54 +209,57 @@ function ConfigSection({
   values: ConfigValues;
   onChange: (values: ConfigValues) => void;
 }) {
+  const { t } = useTranslation(['capabilities']);
   const sectionFields = fields.filter((field) => fieldNames.includes(field.name));
   if (!sectionFields.length) return null;
   return (
     <section className="settings-config-section">
       <h3>{title}</h3>
-      <ConfigForm fields={sectionFields} values={values} onChange={onChange} emptyMessage="No configurable fields." />
+      <ConfigForm fields={sectionFields} values={values} onChange={onChange} emptyMessage={t('capabilities:empty.noFields')} />
     </section>
   );
 }
 
 function OverviewTab({ config, commandCount }: { config: CapabilityConfig; commandCount: number }) {
+  const { t } = useTranslation(['capabilities']);
   const summary = config.manifest_summary;
   const configFieldCount = config.config_schema?.length ?? 0;
-  const permissionHint = permissionHintText(summary.permissions);
+  const permissionHint = permissionHintText(summary.permissions, t);
   return (
     <div className="settings-detail-grid">
-      <InfoRow label="Description" value={summary.description} wide />
-      {permissionHint ? <InfoRow label="Permission hint" value={permissionHint} wide /> : null}
-      <InfoRow label="Version" value={(summary as { version?: string }).version} />
-      <InfoRow label="Exposed commands" value={commandCount} />
-      <InfoRow label="Config fields" value={configFieldCount} />
-      <InfoRow label="Runtime" value={config.capability_id === 'llm' ? 'OpenAI-compatible LLM runtime' : 'Local Python capability'} />
+      <InfoRow label={t('capabilities:labels.description')} value={summary.description} wide />
+      {permissionHint ? <InfoRow label={t('capabilities:labels.permissionHint')} value={permissionHint} wide /> : null}
+      <InfoRow label={t('capabilities:labels.version')} value={(summary as { version?: string }).version} />
+      <InfoRow label={t('capabilities:labels.exposedCommands')} value={commandCount} />
+      <InfoRow label={t('capabilities:labels.configFields')} value={configFieldCount} />
+      <InfoRow label={t('capabilities:labels.runtime')} value={config.capability_id === 'llm' ? t('capabilities:runtime.llm') : t('capabilities:runtime.localPython')} />
     </div>
   );
 }
 
-function permissionHintText(permissions: CapabilityConfig['manifest_summary']['permissions']): string {
+function permissionHintText(permissions: CapabilityConfig['manifest_summary']['permissions'], t: ReturnType<typeof useTranslation>['t']): string {
   if (!permissions) return '';
   const hints: string[] = [];
-  if (permissions.filesystem?.read) hints.push('Can read local files from configured allowed directories');
-  if (permissions.network?.http) hints.push('Can make HTTP GET requests without private browser cookies');
+  if (permissions.filesystem?.read) hints.push(t('capabilities:permissions.filesystemRead'));
+  if (permissions.network?.http) hints.push(t('capabilities:permissions.networkHttp'));
   return hints.join('; ');
 }
 
 function CommandsTab({ commands, capabilityEnabled }: { commands: Command[]; capabilityEnabled: boolean }) {
+  const { t } = useTranslation(['capabilities', 'status']);
   if (!commands.length) {
-    return <div className="settings-empty-state">This capability does not expose slash commands.</div>;
+    return <div className="settings-empty-state">{t('capabilities:empty.noCommands')}</div>;
   }
   return (
     <div className={`settings-table-wrap ${capabilityEnabled ? '' : 'disabled'}`}>
       <table className="settings-table">
         <thead>
           <tr>
-            <th>Command</th>
-            <th>Method</th>
-            <th>Description</th>
-            <th>Safe</th>
-            <th>Confirm</th>
+            <th>{t('capabilities:labels.command')}</th>
+            <th>{t('capabilities:labels.method')}</th>
+            <th>{t('capabilities:labels.description')}</th>
+            <th>{t('capabilities:labels.safe')}</th>
+            <th>{t('capabilities:labels.confirm')}</th>
           </tr>
         </thead>
         <tbody>
@@ -268,12 +269,12 @@ function CommandsTab({ commands, capabilityEnabled }: { commands: Command[]; cap
                 <code>{command.name}</code>
               </td>
               <td>{command.method}</td>
-              <td>{command.description || 'None'}</td>
+              <td>{command.description || t('status:common.none')}</td>
               <td>
-                <span className={`settings-badge ${command.safe ? 'success' : 'muted'}`}>{command.safe ? 'yes' : 'no'}</span>
+                <span className={`settings-badge ${command.safe ? 'success' : 'muted'}`}>{command.safe ? t('status:common.yes') : t('status:common.no')}</span>
               </td>
               <td>
-                <span className={`settings-badge ${command.confirm ? 'warning' : 'muted'}`}>{command.confirm || 'no'}</span>
+                <span className={`settings-badge ${command.confirm ? 'warning' : 'muted'}`}>{command.confirm || t('status:common.no')}</span>
               </td>
             </tr>
           ))}

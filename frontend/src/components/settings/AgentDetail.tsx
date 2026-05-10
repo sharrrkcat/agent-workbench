@@ -1,6 +1,7 @@
 import { RotateCcw, Save, Upload } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { Agent, AgentAction, AgentConfig, AgentDisplayOverrides, AgentRuntimeOverrides, ContextPolicy, ModelLifecyclePolicy } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
@@ -11,14 +12,7 @@ import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import { getResolvedAgentDisplay, resolvedAgentProfileLabel } from '../../utils/agents';
 
-const baseTabs = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'overrides', label: 'Overrides' },
-  { id: 'actions', label: 'Actions' },
-  { id: 'config', label: 'Config' },
-  { id: 'runtime', label: 'Runtime' },
-  { id: 'manifest', label: 'Manifest' },
-];
+const baseTabIds = ['overview', 'overrides', 'actions', 'config', 'runtime', 'manifest'] as const;
 
 export function AgentDetail({
   config,
@@ -33,6 +27,7 @@ export function AgentDetail({
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation(['agents', 'common']);
   const { llmProfiles, updateAgentConfig, resetAgentOverrides, writeAgentOverridesToManifest, savingConfigId } = useWorkbenchStore();
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
@@ -53,17 +48,18 @@ export function AgentDetail({
   const manifest = useMemo(() => ({ agent, config }), [agent, config]);
   const tabs = useMemo(
     () =>
-      baseTabs.map((tab) => ({
-        ...tab,
+      baseTabIds.map((id) => ({
+        id,
+        label: t(`agents:tabs.${id}`),
         enabled:
-          tab.id === 'overview' ||
-          tab.id === 'overrides' ||
-          (tab.id === 'actions' && hasActions) ||
-          (tab.id === 'config' && hasConfigFields) ||
-          (tab.id === 'runtime' && hasRuntime) ||
-          tab.id === 'manifest',
+          id === 'overview' ||
+          id === 'overrides' ||
+          (id === 'actions' && hasActions) ||
+          (id === 'config' && hasConfigFields) ||
+          (id === 'runtime' && hasRuntime) ||
+          id === 'manifest',
       })),
-    [hasActions, hasConfigFields, hasRuntime],
+    [hasActions, hasConfigFields, hasRuntime, t],
   );
   const normalizedActiveTab = tabs.some((tab) => tab.id === activeTab && tab.enabled !== false) ? activeTab : 'overview';
   const showOverridesSave = overridesDirty;
@@ -93,7 +89,7 @@ export function AgentDetail({
       setLocalError('');
       await updateAgentConfig(config.agent_id, { enabled, user_config: buildUserConfig(config.config_schema || [], values) });
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to save agent config.');
+      setLocalError(error instanceof Error ? error.message : t('agents:errors.saveConfig'));
     }
   }
 
@@ -106,24 +102,24 @@ export function AgentDetail({
         runtime: normalizedRuntimeDraft(runtimeDraft, config),
       });
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to save agent overrides.');
+      setLocalError(error instanceof Error ? error.message : t('agents:errors.saveOverrides'));
     }
   }
 
   async function resetOverrides() {
-    if (!window.confirm('Reset display and runtime overrides for this agent? Config tab values will be kept.')) return;
+    if (!window.confirm(t('agents:confirm.resetOverrides'))) return;
     try {
       setLocalError('');
       await resetAgentOverrides(config.agent_id);
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to reset agent overrides.');
+      setLocalError(error instanceof Error ? error.message : t('agents:errors.resetOverrides'));
     }
   }
 
   async function writeManifest() {
     if (
       !window.confirm(
-        `Write current overrides to agents/${config.agent_id}/agent.yaml?\n\nThis modifies the agent package file. Use this only when developing or customizing local agents. This may rewrite formatting/comments.`,
+        t('agents:confirm.writeManifest', { agentId: config.agent_id }),
       )
     ) {
       return;
@@ -138,7 +134,7 @@ export function AgentDetail({
       }
       await writeAgentOverridesToManifest(config.agent_id);
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Failed to write agent manifest.');
+      setLocalError(error instanceof Error ? error.message : t('agents:errors.writeManifest'));
     }
   }
 
@@ -159,13 +155,13 @@ export function AgentDetail({
           {showOverridesSave ? (
             <button className="settings-primary-button" type="button" disabled={isSaving} onClick={saveOverrides}>
               <Save size={14} />
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
           {showConfigSave ? (
             <button className="settings-primary-button" type="submit" disabled={isSaving}>
               <Save size={14} />
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
           <ToggleSwitch checked={enabled} onChange={setEnabled} disabled={isSaving} />
@@ -181,7 +177,7 @@ export function AgentDetail({
             fields={config.config_schema || []}
             values={values}
             onChange={setValues}
-            emptyMessage="This agent has no configurable fields."
+            emptyMessage={t('agents:empty.noConfigurableFields')}
           />
         ) : null}
         {normalizedActiveTab === 'overrides' ? (
@@ -198,6 +194,7 @@ export function AgentDetail({
             hasSavedOverrides={hasSavedOverrides}
             onReset={resetOverrides}
             onWriteManifest={writeManifest}
+            t={t}
           />
         ) : null}
         {normalizedActiveTab === 'runtime' ? <RuntimeTab agent={agent} /> : null}
@@ -221,6 +218,7 @@ function OverridesTab({
   hasSavedOverrides,
   onReset,
   onWriteManifest,
+  t,
 }: {
   config: AgentConfig;
   agent?: Agent;
@@ -234,6 +232,7 @@ function OverridesTab({
   hasSavedOverrides: boolean;
   onReset: () => void;
   onWriteManifest: () => void;
+  t: ReturnType<typeof useTranslation>['t'];
 }) {
   const resolved = config.resolved;
   const sections = resolved?.sections || [];
@@ -245,11 +244,11 @@ function OverridesTab({
     <div className="settings-runtime-stack">
       <section className="settings-override-section">
         <div className="detail-section-heading">
-          <h3>Basic information</h3>
-          <span className="settings-badge muted">{overrideCount(displayDraft)} overrides</span>
+          <h3>{t('agents:sections.basic')}</h3>
+          <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount(displayDraft) })}</span>
         </div>
         <OverrideTextField
-          label="Name"
+          label={t('agents:labels.name')}
           field="display.name"
           value={displayDraft.name || ''}
           placeholder={resolved?.display?.name || config.manifest_summary.name || config.agent_id}
@@ -258,20 +257,20 @@ function OverridesTab({
           onChange={(name) => onDisplayChange({ ...displayDraft, name })}
         />
         <OverrideTextField
-          label="Avatar"
+          label={t('agents:labels.avatar')}
           field="display.avatar"
           value={displayDraft.avatar || ''}
-          placeholder={resolved?.display?.avatar || config.manifest_summary.avatar || 'Generated initials'}
+          placeholder={resolved?.display?.avatar || config.manifest_summary.avatar || t('agents:placeholders.generatedInitials')}
           config={config}
           savedValue={config.display?.avatar}
           onChange={(avatar) => onDisplayChange({ ...displayDraft, avatar })}
           previewAgent={avatarPreviewAgent(config, displayDraft)}
         />
         <OverrideTextField
-          label="Description"
+          label={t('agents:labels.description')}
           field="display.description"
           value={displayDraft.description || ''}
-          placeholder={resolved?.display?.description || config.manifest_summary.description || 'No description'}
+          placeholder={resolved?.display?.description || config.manifest_summary.description || t('agents:placeholders.noDescription')}
           config={config}
           savedValue={config.display?.description}
           onChange={(description) => onDisplayChange({ ...displayDraft, description })}
@@ -282,14 +281,14 @@ function OverridesTab({
       {isPromptAgent ? (
         <section className="settings-override-section">
           <div className="detail-section-heading">
-            <h3>Prompt</h3>
-            <span className="settings-badge muted">{runtimeDraft.prompt ? 1 : 0} overrides</span>
+            <h3>{t('agents:sections.prompt')}</h3>
+            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: runtimeDraft.prompt ? 1 : 0 })}</span>
           </div>
           <OverrideTextField
-            label="System prompt"
+            label={t('agents:labels.systemPrompt')}
             field="runtime.prompt"
             value={runtimeDraft.prompt || ''}
-            placeholder={String(runtime.prompt || 'No manifest prompt')}
+            placeholder={String(runtime.prompt || t('agents:placeholders.noManifestPrompt'))}
             config={config}
             savedValue={config.runtime?.prompt}
             onChange={(prompt) => onRuntimeChange({ ...runtimeDraft, prompt })}
@@ -301,14 +300,14 @@ function OverridesTab({
       {hasKnowledgeSection ? (
         <section className="settings-override-section">
           <div className="detail-section-heading">
-            <h3>Knowledge Runtime Settings</h3>
-            <span className="settings-badge muted">{runtimeDraft.knowledge_context_mode ? 1 : 0} overrides</span>
+            <h3>{t('agents:sections.knowledgeRuntime', { defaultValue: 'Knowledge Runtime Settings' })}</h3>
+            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: runtimeDraft.knowledge_context_mode ? 1 : 0 })}</span>
           </div>
           <p className="settings-muted-text">
-            Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.
+            {t('agents:help.knowledgeRuntime', { defaultValue: 'Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.' })}
           </p>
           <OverrideSelect
-            label="Use session knowledge bases"
+            label={t('agents:labels.useSessionKnowledgeBases', { defaultValue: 'Use session knowledge bases' })}
             field="runtime.knowledge_context_mode"
             value={runtimeDraft.knowledge_context_mode || ''}
             config={config}
@@ -320,8 +319,8 @@ function OverridesTab({
             }
           >
             <option value="">Use default ({runtime.knowledge_context_effective_mode || runtime.knowledge_context_default_effective_mode || (isPromptAgent ? 'enabled' : 'disabled')})</option>
-            <option value="enabled">Enabled</option>
-            <option value="disabled">Disabled</option>
+            <option value="enabled">{t('common:enabled')}</option>
+            <option value="disabled">{t('common:disabled')}</option>
           </OverrideSelect>
         </section>
       ) : null}
@@ -329,11 +328,11 @@ function OverridesTab({
       {hasLlmSection ? (
         <section className="settings-override-section">
           <div className="detail-section-heading">
-            <h3>LLM Runtime Settings</h3>
-            <span className="settings-badge muted">{overrideCount(omitKeys(runtimeDraft, ['prompt']))} overrides</span>
+            <h3>{t('agents:sections.llmRuntime')}</h3>
+            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount(omitKeys(runtimeDraft, ['prompt'])) })}</span>
           </div>
           <OverrideSelect
-            label="Model profile"
+            label={t('agents:labels.modelProfile')}
             field="runtime.llm_profile_id"
             value={runtimeDraft.llm_profile_id || ''}
             config={config}
@@ -342,12 +341,12 @@ function OverridesTab({
             <option value="">Use manifest/default</option>
             {profiles.map((profile) => (
               <option key={profile.id} value={profile.id} disabled={!profile.enabled}>
-                {profile.name} ({profile.alias}){profile.enabled ? '' : ' - disabled'}
+                {profile.name} ({profile.alias}){profile.enabled ? '' : ` - ${t('common:disabled')}`}
               </option>
             ))}
           </OverrideSelect>
           <OverrideSelect
-            label="Allow session override"
+            label={t('agents:labels.allowSessionOverride')}
             field="runtime.allow_session_override"
             value={runtimeDraft.allow_session_override === undefined ? '' : String(runtimeDraft.allow_session_override)}
             config={config}
@@ -358,7 +357,7 @@ function OverridesTab({
             <option value="false">No</option>
           </OverrideSelect>
           <OverrideSelect
-            label="Context policy"
+            label={t('agents:labels.contextPolicy')}
             field="runtime.context_policy"
             value={runtimeDraft.context_policy?.mode || ''}
             config={config}
@@ -377,7 +376,7 @@ function OverridesTab({
             <option value="none">none</option>
           </OverrideSelect>
           <OverrideNumber
-            label="Max history messages"
+            label={t('agents:labels.maxHistoryMessages')}
             field="runtime.context_policy"
             value={runtimeDraft.context_policy?.max_messages ?? ''}
             config={config}
@@ -396,7 +395,7 @@ function OverridesTab({
             }
           />
           <OverrideSelect
-            label="Model lifecycle unload"
+            label={t('agents:labels.modelLifecycleUnload')}
             field="runtime.model_lifecycle"
             value={runtimeDraft.model_lifecycle?.unload || ''}
             config={config}
@@ -412,7 +411,7 @@ function OverridesTab({
             <option value="after_run">after_run</option>
           </OverrideSelect>
           <OverrideSelect
-            label="Unload failure behavior"
+            label={t('agents:labels.unloadFailureBehavior')}
             field="runtime.model_lifecycle"
             value={runtimeDraft.model_lifecycle?.unload_failure || ''}
             config={config}
@@ -429,7 +428,7 @@ function OverridesTab({
             <option value="fail">fail</option>
           </OverrideSelect>
           <OverrideNumber
-            label="Timeout seconds"
+            label={t('agents:labels.timeoutSeconds')}
             field="runtime.timeout_seconds"
             value={runtimeDraft.timeout_seconds ?? ''}
             config={config}
@@ -443,11 +442,11 @@ function OverridesTab({
       <div className="settings-override-footer">
         <button className="settings-secondary-button" type="button" disabled={!hasSavedOverrides || saving} onClick={onReset}>
           <RotateCcw size={14} />
-          Reset overrides
+          {t('agents:buttons.resetOverrides')}
         </button>
         <button className="settings-secondary-button danger" type="button" disabled={(!hasSavedOverrides && !dirty) || saving} onClick={onWriteManifest}>
           <Upload size={14} />
-          Write overrides to manifest
+          {t('agents:buttons.writeOverridesToManifest')}
         </button>
       </div>
     </div>
@@ -467,10 +466,10 @@ function OverrideTextField(props: {
 }) {
   const badge = sourceBadge(props.config, props.field, props.value, props.savedValue);
   return (
-    <label className={`settings-override-field ${badge === 'Override' ? 'overridden' : ''}`}>
+    <label className={`settings-override-field ${badge === 'override' ? 'overridden' : ''}`}>
       <span>
         {props.label}
-        {badge === 'Unsaved *' ? ' *' : ''}
+        {badge === 'unsaved' ? ' *' : ''}
         <SourceBadge value={badge} />
       </span>
       <div className="settings-override-input-row">
@@ -488,10 +487,10 @@ function OverrideTextField(props: {
 function OverrideSelect({ label, field, value, config, onChange, children }: { label: string; field: string; value: string; config: AgentConfig; onChange: (value: string) => void; children: ReactNode }) {
   const badge = sourceBadge(config, field, value, value || undefined);
   return (
-    <label className={`settings-override-field ${badge === 'Override' ? 'overridden' : ''}`}>
+    <label className={`settings-override-field ${badge === 'override' ? 'overridden' : ''}`}>
       <span>
         {label}
-        {badge === 'Unsaved *' ? ' *' : ''}
+        {badge === 'unsaved' ? ' *' : ''}
         <SourceBadge value={badge} />
       </span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
@@ -504,10 +503,10 @@ function OverrideSelect({ label, field, value, config, onChange, children }: { l
 function OverrideNumber(props: { label: string; field: string; value: number | ''; config: AgentConfig; min: number; max: number; disabled?: boolean; onChange: (value: number | '') => void }) {
   const badge = sourceBadge(props.config, props.field, props.value, props.value === '' ? undefined : String(props.value));
   return (
-    <label className={`settings-override-field ${badge === 'Override' ? 'overridden' : ''}`}>
+    <label className={`settings-override-field ${badge === 'override' ? 'overridden' : ''}`}>
       <span>
         {props.label}
-        {badge === 'Unsaved *' ? ' *' : ''}
+        {badge === 'unsaved' ? ' *' : ''}
         <SourceBadge value={badge} />
       </span>
       <input
@@ -523,20 +522,21 @@ function OverrideNumber(props: { label: string; field: string; value: number | '
 }
 
 function SourceBadge({ value }: { value: string }) {
-  const className = value === 'Override' ? 'success' : value === 'Unsaved *' ? 'warning' : 'muted';
-  return <span className={`settings-badge ${className}`}>{value}</span>;
+  const { t } = useTranslation(['agents']);
+  const className = value === 'override' ? 'success' : value === 'unsaved' ? 'warning' : 'muted';
+  return <span className={`settings-badge ${className}`}>{t(`agents:source.${value}`, { defaultValue: value })}</span>;
 }
 
 function sourceBadge(config: AgentConfig, field: string, draftValue: unknown, savedValue: unknown): string {
   const empty = draftValue === '' || draftValue === undefined || draftValue === null;
   const savedEmpty = savedValue === '' || savedValue === undefined || savedValue === null;
   if (!empty || !savedEmpty) {
-    if (JSON.stringify(draftValue || '') !== JSON.stringify(savedValue || '')) return 'Unsaved *';
+    if (JSON.stringify(draftValue || '') !== JSON.stringify(savedValue || '')) return 'unsaved';
   }
   const source = config.field_sources?.[field] || config.resolved?.field_sources?.[field] || 'default';
-  if (source === 'override') return 'Override';
-  if (source === 'manifest') return 'Manifest';
-  return 'Default';
+  if (source === 'override') return 'override';
+  if (source === 'manifest') return 'manifest';
+  return 'default';
 }
 
 function overrideCount(value: Record<string, unknown>): number {
@@ -585,43 +585,45 @@ function omitKeys<T extends Record<string, unknown>>(value: T, keys: string[]): 
 }
 
 function OverviewTab({ config, agent }: { config: AgentConfig; agent?: Agent }) {
+  const { t } = useTranslation(['agents']);
   const summary = config.manifest_summary;
   return (
     <div className="settings-detail-grid">
-      <InfoRow label="Description" value={config.resolved?.display?.description || summary.description || agent?.description || 'No description.'} wide />
-      <InfoRow label="Type" value={summary.type || agent?.type || 'agent'} />
+      <InfoRow label={t('agents:labels.description')} value={config.resolved?.display?.description || summary.description || agent?.description || t('agents:placeholders.noDescription')} wide />
+      <InfoRow label={t('agents:labels.type')} value={summary.type || agent?.type || 'agent'} />
       <div className="settings-info-row">
-        <span>Capabilities</span>
+        <span>{t('agents:labels.capabilities')}</span>
         <div className="settings-chip-row">
           {agent?.capabilities?.length ? (
             agent.capabilities.map((capability) => <span key={capability}>{capability}</span>)
           ) : (
-            <small>No declared capabilities</small>
+            <small>{t('agents:empty.noDeclaredCapabilities')}</small>
           )}
         </div>
       </div>
-      <InfoRow label="Context policy" value={summarizeContextPolicy(agent?.context_policy)} />
-      <InfoRow label="Model lifecycle" value={summarizeLifecycle(agent?.model_lifecycle)} />
-      <InfoRow label="LLM" value={summarizeLlm(agent)} />
+      <InfoRow label={t('agents:labels.contextPolicy')} value={summarizeContextPolicy(agent?.context_policy, t)} />
+      <InfoRow label={t('agents:labels.modelLifecycle')} value={summarizeLifecycle(agent?.model_lifecycle, t)} />
+      <InfoRow label={t('agents:labels.llm')} value={summarizeLlm(agent, t)} />
     </div>
   );
 }
 
 function ActionsTab({ actions }: { actions: AgentAction[] }) {
+  const { t } = useTranslation(['agents', 'common', 'status']);
   if (!actions.length) {
-    return <div className="settings-empty-state">This agent does not declare actions.</div>;
+    return <div className="settings-empty-state">{t('agents:empty.noActions')}</div>;
   }
   return (
     <div className="settings-table-wrap">
       <table className="settings-table">
         <thead>
           <tr>
-            <th>Action</th>
-            <th>Label</th>
-            <th>Description</th>
-            <th>Instruction</th>
-            <th>Callable</th>
-            <th>Context</th>
+            <th>{t('agents:labels.action')}</th>
+            <th>{t('agents:labels.label')}</th>
+            <th>{t('agents:labels.description')}</th>
+            <th>{t('agents:labels.instruction')}</th>
+            <th>{t('agents:labels.callable')}</th>
+            <th>{t('agents:labels.context')}</th>
           </tr>
         </thead>
         <tbody>
@@ -630,11 +632,11 @@ function ActionsTab({ actions }: { actions: AgentAction[] }) {
               <td>
                 <code>{action.id}</code>
               </td>
-              <td>{action.label || (action.id === 'default' ? 'Default' : 'Unset')}</td>
-              <td>{action.description || 'None'}</td>
-              <td>{action.instruction || 'None'}</td>
-              <td>{action.callable ? 'Yes' : 'No'}</td>
-              <td>{summarizeContextPolicy(action.context_policy)}</td>
+              <td>{action.label || (action.id === 'default' ? t('common:default') : t('status:common.unset'))}</td>
+              <td>{action.description || t('status:common.none')}</td>
+              <td>{action.instruction || t('status:common.none')}</td>
+              <td>{action.callable ? t('status:common.yes') : t('status:common.no')}</td>
+              <td>{summarizeContextPolicy(action.context_policy, t)}</td>
             </tr>
           ))}
         </tbody>
@@ -644,65 +646,67 @@ function ActionsTab({ actions }: { actions: AgentAction[] }) {
 }
 
 function RuntimeTab({ agent }: { agent?: Agent }) {
+  const { t } = useTranslation(['agents', 'status']);
   return (
     <div className="settings-runtime-stack">
       <section className="detail-section">
-        <h3>Context policy</h3>
+        <h3>{t('agents:sections.contextPolicy')}</h3>
         <PolicyGrid policy={agent?.context_policy} />
       </section>
       <section className="detail-section">
-        <h3>Model lifecycle</h3>
+        <h3>{t('agents:sections.modelLifecycle')}</h3>
         <dl className="settings-definition-grid">
           <div>
-            <dt>Load</dt>
-            <dd>{agent?.model_lifecycle?.load || 'Unset'}</dd>
+            <dt>{t('agents:labels.load')}</dt>
+            <dd>{agent?.model_lifecycle?.load || t('status:common.unset')}</dd>
           </div>
           <div>
-            <dt>Unload</dt>
-            <dd>{agent?.model_lifecycle?.unload || 'Unset'}</dd>
+            <dt>{t('agents:labels.unload')}</dt>
+            <dd>{agent?.model_lifecycle?.unload || t('status:common.unset')}</dd>
           </div>
           <div>
-            <dt>Unload failure</dt>
-            <dd>{agent?.model_lifecycle?.unload_failure || 'Unset'}</dd>
+            <dt>{t('agents:labels.unloadFailure')}</dt>
+            <dd>{agent?.model_lifecycle?.unload_failure || t('status:common.unset')}</dd>
           </div>
         </dl>
       </section>
       <section className="detail-section">
-        <h3>LLM routing</h3>
+        <h3>{t('agents:sections.llmRouting')}</h3>
         <LlmRuntimeSummary agent={agent} />
       </section>
       <section className="detail-section">
-        <h3>Legacy model</h3>
-        {agent?.model ? <ManifestViewer value={agent.model} /> : <div className="settings-empty-state">Uses global LLM fallback.</div>}
+        <h3>{t('agents:sections.legacyModel')}</h3>
+        {agent?.model ? <ManifestViewer value={agent.model} /> : <div className="settings-empty-state">{t('agents:empty.usesGlobalLlmFallback')}</div>}
       </section>
       {agent?.type === 'script' ? (
-        <p className="settings-warning-text">Script Agents are trusted local Python code and are not sandboxed.</p>
+        <p className="settings-warning-text">{t('agents:help.scriptTrusted')}</p>
       ) : null}
     </div>
   );
 }
 
 function PolicyGrid({ policy }: { policy?: ContextPolicy | null }) {
+  const { t } = useTranslation(['agents', 'status']);
   return (
     <dl className="settings-definition-grid">
       <div>
-        <dt>Mode</dt>
-        <dd>{policy?.mode || 'Unset'}</dd>
+        <dt>{t('agents:labels.mode')}</dt>
+        <dd>{policy?.mode || t('status:common.unset')}</dd>
       </div>
       <div>
-        <dt>Max messages</dt>
+        <dt>{t('agents:labels.maxMessages')}</dt>
         <dd>{displayValue(policy?.max_messages)}</dd>
       </div>
       <div>
-        <dt>Max chars</dt>
+        <dt>{t('agents:labels.maxChars')}</dt>
         <dd>{displayValue(policy?.max_chars)}</dd>
       </div>
       <div>
-        <dt>Original user message</dt>
+        <dt>{t('agents:labels.originalUserMessage')}</dt>
         <dd>{displayValue(policy?.include_original_user_message)}</dd>
       </div>
       <div>
-        <dt>Last agent message</dt>
+        <dt>{t('agents:labels.lastAgentMessage')}</dt>
         <dd>{displayValue(policy?.include_last_agent_message)}</dd>
       </div>
     </dl>
@@ -710,21 +714,22 @@ function PolicyGrid({ policy }: { policy?: ContextPolicy | null }) {
 }
 
 function LlmRuntimeSummary({ agent }: { agent?: Agent }) {
+  const { t } = useTranslation(['agents', 'common', 'status']);
   const profiles = useWorkbenchStore((state) => state.llmProfiles);
   const resolvedLabel = resolvedAgentProfileLabel(agent, profiles);
   if (agent?.resolved_runtime?.llm_profile_id || agent?.resolved_runtime?.llm_profile_status === 'missing' || agent?.resolved_runtime?.llm_profile_status === 'disabled') {
     return (
       <dl className="settings-definition-grid">
         <div>
-          <dt>LLM profile</dt>
-          <dd>{resolvedLabel || agent.resolved_runtime.llm_profile_id || 'Default'}</dd>
+          <dt>{t('agents:labels.modelProfile')}</dt>
+          <dd>{resolvedLabel || agent.resolved_runtime.llm_profile_id || t('common:default')}</dd>
         </div>
         <div>
-          <dt>Session override</dt>
-          <dd>{agent.resolved_runtime.allow_session_override === false ? 'no' : 'yes'}</dd>
+          <dt>{t('agents:labels.sessionOverride')}</dt>
+          <dd>{agent.resolved_runtime.allow_session_override === false ? t('status:common.no') : t('status:common.yes')}</dd>
         </div>
         <div>
-          <dt>Source</dt>
+          <dt>{t('agents:labels.source')}</dt>
           <dd>{agent.resolved_runtime.llm_profile_source || 'default'}</dd>
         </div>
       </dl>
@@ -737,16 +742,16 @@ function LlmRuntimeSummary({ agent }: { agent?: Agent }) {
     return (
       <dl className="settings-definition-grid">
         <div>
-          <dt>LLM profile</dt>
+          <dt>{t('agents:labels.modelProfile')}</dt>
           <dd>{agent.llm.profile}</dd>
         </div>
         <div>
-          <dt>Session override</dt>
-          <dd>{agent.llm.allow_session_override === false ? 'no' : 'yes'}</dd>
+          <dt>{t('agents:labels.sessionOverride')}</dt>
+          <dd>{agent.llm.allow_session_override === false ? t('status:common.no') : t('status:common.yes')}</dd>
         </div>
         <div>
-          <dt>Overrides</dt>
-          <dd>{overrides.length ? overrides.map(([key, value]) => `${key}: ${value}`).join(', ') : 'None'}</dd>
+          <dt>{t('agents:labels.overrides')}</dt>
+          <dd>{overrides.length ? overrides.map(([key, value]) => `${key}: ${value}`).join(', ') : t('status:common.none')}</dd>
         </div>
       </dl>
     );
@@ -758,21 +763,21 @@ function LlmRuntimeSummary({ agent }: { agent?: Agent }) {
     return (
       <dl className="settings-definition-grid">
         <div>
-          <dt>Legacy model</dt>
+          <dt>{t('agents:sections.legacyModel')}</dt>
           <dd>{model}</dd>
         </div>
         <div>
-          <dt>Provider</dt>
+          <dt>{t('agents:labels.provider')}</dt>
           <dd>{provider}</dd>
         </div>
         <div>
-          <dt>Base URL</dt>
+          <dt>{t('agents:labels.baseUrl')}</dt>
           <dd>{baseUrl}</dd>
         </div>
       </dl>
     );
   }
-  return <div className="settings-empty-state">Uses global LLM fallback.</div>;
+  return <div className="settings-empty-state">{t('agents:empty.usesGlobalLlmFallback')}</div>;
 }
 
 function InfoRow({ label, value, wide = false }: { label: string; value: unknown; wide?: boolean }) {
@@ -784,21 +789,22 @@ function InfoRow({ label, value, wide = false }: { label: string; value: unknown
   );
 }
 
-function summarizeContextPolicy(policy?: ContextPolicy | null): string {
-  if (!policy) return 'Inherited/default';
+function summarizeContextPolicy(policy: ContextPolicy | null | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!policy) return t('agents:summary.inheritedDefault');
   const parts: string[] = [policy.mode];
-  if (policy.max_messages) parts.push(`${policy.max_messages} messages`);
-  if (policy.max_chars) parts.push(`${policy.max_chars} chars`);
-  return parts.join(' · ');
+  if (policy.max_messages) parts.push(t('agents:summary.messages', { count: policy.max_messages }));
+  if (policy.max_chars) parts.push(t('agents:summary.chars', { count: policy.max_chars }));
+  return parts.join(' / ');
 }
 
-function summarizeLlm(agent?: Agent): string {
-  if (agent?.llm?.profile) return `LLM profile: ${agent.llm.profile}`;
-  if (agent?.model) return `Legacy model: ${String(agent.model.model || agent.model.model_id || 'unset')}`;
-  return 'Uses global LLM fallback';
+function summarizeLlm(agent: Agent | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (agent?.llm?.profile) return t('agents:summary.llmProfile', { profile: agent.llm.profile });
+  if (agent?.model) return t('agents:summary.legacyModel', { model: String(agent.model.model || agent.model.model_id || 'unset') });
+  return t('agents:summary.usesGlobalLlmFallback');
 }
 
-function summarizeLifecycle(policy?: ModelLifecyclePolicy): string {
-  if (!policy) return 'Unset';
-  return `${policy.load} · unload ${policy.unload} · failure ${policy.unload_failure}`;
+function summarizeLifecycle(policy: ModelLifecyclePolicy | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!policy) return t('status:common.unset');
+  return `${policy.load} / unload ${policy.unload} / failure ${policy.unload_failure}`;
 }
+
