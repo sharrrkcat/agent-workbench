@@ -1,4 +1,4 @@
-import { BookOpen, Minus, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { AgentSwitcher } from './AgentSwitcher';
@@ -54,7 +54,6 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
 
 function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const currentSession = useWorkbenchStore((state) => state.currentSession);
-  const renameSession = useWorkbenchStore((state) => state.renameSession);
   const deleteSession = useWorkbenchStore((state) => state.deleteSession);
   const updateSessionContextMode = useWorkbenchStore((state) => state.updateSessionContextMode);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -81,20 +80,6 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [onOpenChange, open]);
-
-  async function promptRename() {
-    if (!currentSession) return;
-    const currentTitle = currentSession.title || `Session ${currentSession.session_id.slice(0, 6)}`;
-    const nextTitle = window.prompt('Rename session', currentTitle);
-    if (nextTitle === null) return;
-    if (!nextTitle.trim()) return;
-    try {
-      await renameSession(currentSession.session_id, nextTitle);
-      onOpenChange(false);
-    } catch {
-      // The store surfaces the error banner; keep the menu open.
-    }
-  }
 
   function confirmDelete() {
     if (!currentSession) return;
@@ -125,10 +110,6 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
       </button>
       {open ? (
         <div className="session-menu" role="menu">
-          <button type="button" role="menuitem" className="session-menu-item" onClick={() => void promptRename()}>
-            <Pencil size={14} />
-            <span>Rename session</span>
-          </button>
           <div className="session-menu-mode" aria-label="Conversation mode">
             <span>Mode</span>
             <div className="mode-switcher compact">
@@ -317,14 +298,13 @@ function KnowledgePickerSection({
             <button
               key={base.id}
               type="button"
-              className={`knowledge-pill ${action === 'remove' ? 'enabled' : 'available'} ${base.enabled ? '' : 'disabled'}`}
+              className={`knowledge-pill ${action === 'remove' ? 'enabled' : 'available'} ${base.index_status === 'ready' ? '' : 'danger'} ${base.enabled ? '' : 'disabled'}`}
               disabled={busy || !base.enabled}
               onClick={() => void onToggle(base)}
               title={base.enabled ? `${action === 'add' ? 'Enable' : 'Disable'} ${base.name}` : `${base.name} is disabled`}
             >
               <span>
                 <strong>{base.name}</strong>
-                <small>{base.enabled ? base.index_status : 'disabled'}</small>
               </span>
               {action === 'add' ? <Plus size={14} className="knowledge-pill-action" /> : <Minus size={14} className="knowledge-pill-action" />}
             </button>
