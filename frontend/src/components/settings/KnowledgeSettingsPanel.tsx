@@ -1,5 +1,5 @@
-import { BrainCircuit, Play, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Trash2, Upload } from 'lucide-react';
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource } from '../../types';
 import { DetailTabs } from './DetailTabs';
@@ -8,6 +8,8 @@ import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './Se
 import { ToggleSwitch } from './ToggleSwitch';
 
 type FormMode = 'list' | 'new' | string;
+type SourceSortKey = 'title' | 'source_type' | 'chunks' | 'status' | 'indexed_at';
+type SortDirection = 'asc' | 'desc';
 
 const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
@@ -404,10 +406,15 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
+  const [sourceError, setSourceError] = useState<SettingsErrorValue | null>(null);
+  const [sourceSort, setSourceSort] = useState<{ key: SourceSortKey; direction: SortDirection }>({ key: 'indexed_at', direction: 'desc' });
+  const [dragActive, setDragActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResponse, setSearchResponse] = useState<KnowledgeSearchResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'config' | 'sources'>('config');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedProfile = profiles.find((profile) => profile.id === values.embedding_model_profile_id);
+  const sortedSources = useMemo(() => sortSources(sources, sourceSort), [sourceSort, sources]);
 
   useEffect(() => {
     setValues(initial);
@@ -467,7 +474,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
     if (!values.id || !sourceText.trim()) return;
     setBusy('indexing');
     try {
-      setLocalError(null);
+      setSourceError(null);
       const indexed = await api.createPastedKnowledgeSource(values.id, { title: sourceTitle || 'Pasted text', text: sourceText });
       setSourceTitle('');
       setSourceText('');
@@ -475,10 +482,65 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
       await onRefresh(values.id);
       setResult(`Indexed ${indexed.chunks} chunks.`);
     } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to index pasted text source.'));
+      setSourceError(toSettingsError(error, 'Failed to index pasted text source.'));
     } finally {
       setBusy('');
     }
+  }
+  async function addFiles(files: FileList | File[]) {
+    if (!values.id) return;
+    const accepted = Array.from(files).filter(isSupportedTextFile);
+    const rejected = Array.from(files).filter((file) => !isSupportedTextFile(file));
+    if (rejected.length) {
+      setSourceError({ code: 'UNSUPPORTED_FILE_TYPE', message: `Unsupported file type: ${rejected[0].name || rejected[0].type || 'file'}` });
+      if (!accepted.length) return;
+    }
+    setBusy('indexing file');
+    try {
+      setSourceError(null);
+      let indexedCount = 0;
+      for (const file of accepted) {
+        const attachment = await api.uploadAttachment(file);
+        const attachmentId = (attachment.uri || '').replace(/^local:\/\/attachments\//, '');
+        if (!attachmentId) throw new Error('Uploaded attachment did not return a local attachment id.');
+        const indexed = await api.createAttachmentKnowledgeSource(values.id, { attachment_id: attachmentId, title: file.name || 'Attachment text' });
+        indexedCount += indexed.chunks;
+      }
+      await loadSources(values.id);
+      await onRefresh(values.id);
+      setResult(`Indexed ${indexedCount} chunks from ${accepted.length} file${accepted.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      setSourceError(toSettingsError(error, 'Failed to index text file source.'));
+    } finally {
+      setBusy('');
+    }
+  }
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.currentTarget.files;
+    if (files) void addFiles(files);
+    event.currentTarget.value = '';
+  }
+  function onDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    setDragActive(true);
+  }
+  function onDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragActive(false);
+    }
+  }
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    if (!hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    setDragActive(false);
+    void addFiles(event.dataTransfer.files);
+  }
+  function toggleSourceSort(key: SourceSortKey) {
+    setSourceSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
   }
   async function deleteSource(sourceId: string) {
     if (!values.id) return;
@@ -576,33 +638,6 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
         {activeTab === 'sources' && !isNew && values.id ? (
           <>
             <section className="detail-section">
-              <div className="detail-section-heading"><h3>Sources</h3></div>
-              {sources.length ? (
-                <div className="settings-object-table">
-                  {sources.map((source) => (
-                    <div className="settings-object-row" key={source.id}>
-                      <div>
-                        <strong>{source.title}</strong>
-                        <p>{source.source_type} / {source.status} / {source.chunks} chunks{source.indexed_at ? ` / ${new Date(source.indexed_at).toLocaleString()}` : ''}</p>
-                        {source.error ? <p className="settings-error-text">{source.error}</p> : null}
-                      </div>
-                      <div className="settings-button-row compact">
-                        <button className="settings-secondary-button" type="button" onClick={() => reindexSource(source.id)} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
-                        <button className="settings-secondary-button danger" type="button" onClick={() => deleteSource(source.id)} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : <Empty title="No sources" message="No sources have been indexed for this knowledge base." />}
-              <div className="settings-detail-grid">
-                <TextField label="Pasted source title" value={sourceTitle} onChange={setSourceTitle} />
-              </div>
-              <TextAreaField label="Pasted text" value={sourceText} onChange={setSourceText} />
-              <div className="settings-button-row">
-                <button className="settings-secondary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}><Play size={14} />Index pasted text</button>
-              </div>
-            </section>
-            <section className="detail-section">
               <div className="detail-section-heading"><h3>Search Test</h3></div>
               <div className="settings-detail-grid">
                 <TextField label="Query" value={searchQuery} onChange={setSearchQuery} />
@@ -611,6 +646,47 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
                 <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />Search</button>
               </div>
               {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
+            </section>
+            <section className="detail-section">
+              <div className="detail-section-heading"><h3>Adding Sources</h3></div>
+              {sourceError ? <SettingsApiError error={sourceError} /> : null}
+              <div className="settings-detail-grid">
+                <TextField label="Pasted source title" value={sourceTitle} onChange={setSourceTitle} />
+              </div>
+              <TextAreaField label="Pasted text" value={sourceText} onChange={setSourceText} />
+              <div className="settings-button-row">
+                <button className="settings-secondary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}><Play size={14} />Index pasted text</button>
+              </div>
+              <div
+                className={`knowledge-dropzone ${dragActive ? 'active' : ''}`}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+              >
+                <Upload size={18} />
+                <div>
+                  <strong>Drop text files here</strong>
+                  <p>Supports text, code, and config files already accepted by attachments.</p>
+                </div>
+                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => fileInputRef.current?.click()}>
+                  <FileText size={14} />
+                  Choose files
+                </button>
+                <input ref={fileInputRef} className="sr-only" type="file" multiple accept={TEXT_ATTACHMENT_ACCEPT} onChange={onFileChange} />
+              </div>
+            </section>
+            <section className="detail-section">
+              <div className="detail-section-heading"><h3>Sources list</h3></div>
+              {sources.length ? (
+                <SourcesTable
+                  sources={sortedSources}
+                  sort={sourceSort}
+                  onSort={toggleSourceSort}
+                  onReindex={reindexSource}
+                  onDelete={deleteSource}
+                  busy={busy}
+                />
+              ) : <Empty title="No sources" message="No sources have been indexed for this knowledge base." />}
             </section>
           </>
         ) : null}
@@ -622,17 +698,24 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
 
 function KnowledgeSearchResults({ response }: { response: KnowledgeSearchResponse }) {
   return (
-    <div className="settings-object-table">
+    <div className="knowledge-search-results">
       {response.results.length ? response.results.map((result) => (
-        <div className="settings-object-row" key={result.chunk_id}>
-          <div>
-            <strong>#{result.rank} {result.title || result.source_id}</strong>
+        <article className="knowledge-result-card" key={result.chunk_id}>
+          <div className="knowledge-result-rank">#{result.rank}</div>
+          <div className="knowledge-result-body">
+            <div className="knowledge-result-title">
+              <strong>{result.title || result.source_id}</strong>
+              {result.heading_path ? <span>{result.heading_path}</span> : null}
+            </div>
             <p>{result.content}{result.truncated ? '...' : ''}</p>
-            <p className="settings-muted-text">
-              vector {scoreLabel(result.vector_score)} / keyword {scoreLabel(result.keyword_score)} / rrf {scoreLabel(result.rrf_score)} / rerank {scoreLabel(result.rerank_score)}
-            </p>
+            <div className="settings-chip-row knowledge-score-row">
+              <span>Vector <small>{rankScoreLabel(result.vector_rank, result.vector_score)}</small></span>
+              <span>Keyword <small>{rankScoreLabel(result.keyword_rank, result.keyword_score)}</small></span>
+              <span>RRF <small>{scoreLabel(result.rrf_score)}</small></span>
+              <span>Rerank <small>{scoreLabel(result.rerank_score)}</small></span>
+            </div>
           </div>
-        </div>
+        </article>
       )) : <Empty title="No results" message="No chunks matched this query." />}
       {response.debug ? (
         <details className="settings-debug-details">
@@ -644,8 +727,72 @@ function KnowledgeSearchResults({ response }: { response: KnowledgeSearchRespons
   );
 }
 
+function SourcesTable({ sources, sort, onSort, onReindex, onDelete, busy }: {
+  sources: KnowledgeSource[];
+  sort: { key: SourceSortKey; direction: SortDirection };
+  onSort: (key: SourceSortKey) => void;
+  onReindex: (sourceId: string) => void;
+  onDelete: (sourceId: string) => void;
+  busy: string;
+}) {
+  return (
+    <div className="knowledge-table-scroll">
+      <table className="knowledge-sources-table">
+        <thead>
+          <tr>
+            <SortableHeader label="Name" sortKey="title" activeSort={sort} onSort={onSort} />
+            <SortableHeader label="Type" sortKey="source_type" activeSort={sort} onSort={onSort} />
+            <SortableHeader label="Chunks" sortKey="chunks" activeSort={sort} onSort={onSort} />
+            <SortableHeader label="Indexed" sortKey="status" activeSort={sort} onSort={onSort} />
+            <SortableHeader label="Indexed date" sortKey="indexed_at" activeSort={sort} onSort={onSort} />
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sources.map((source) => (
+            <tr key={source.id}>
+              <td>
+                <strong>{source.title || source.uri || source.id}</strong>
+                {source.error ? <small className="settings-error-text">{source.error}</small> : null}
+              </td>
+              <td>{source.source_type}</td>
+              <td>{source.chunks}</td>
+              <td><span className={`settings-badge ${source.status === 'indexed' ? 'success' : ''}`}>{source.status}</span></td>
+              <td>{formatDate(source.indexed_at)}</td>
+              <td>
+                <div className="settings-button-row compact">
+                  <button className="settings-secondary-button" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
+                  <button className="settings-secondary-button danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SortableHeader({ label, sortKey, activeSort, onSort }: { label: string; sortKey: SourceSortKey; activeSort: { key: SourceSortKey; direction: SortDirection }; onSort: (key: SourceSortKey) => void }) {
+  const active = activeSort.key === sortKey;
+  return (
+    <th>
+      <button className="knowledge-sort-button" type="button" onClick={() => onSort(sortKey)} aria-sort={active ? (activeSort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+        {label}
+        <ArrowUpDown size={12} />
+        {active ? <span>{activeSort.direction === 'asc' ? 'Asc' : 'Desc'}</span> : null}
+      </button>
+    </th>
+  );
+}
+
 function scoreLabel(value?: number | null): string {
   return typeof value === 'number' ? value.toFixed(4) : 'n/a';
+}
+
+function rankScoreLabel(rank?: number | null, score?: number | null): string {
+  const rankText = typeof rank === 'number' ? `#${rank}` : 'n/a';
+  return `${rankText} / ${scoreLabel(score)}`;
 }
 
 function NumberGroup({ title, values, setValues, fields }: { title: string; values: KnowledgeSettings; setValues: (values: KnowledgeSettings) => void; fields: [keyof KnowledgeSettings, string][] }) {
@@ -745,6 +892,47 @@ function parseOptionalInteger(value: number | string | null | undefined, label: 
   }
   return numberValue;
 }
+
+function sortSources(sources: KnowledgeSource[], sort: { key: SourceSortKey; direction: SortDirection }): KnowledgeSource[] {
+  const direction = sort.direction === 'asc' ? 1 : -1;
+  return [...sources].sort((left, right) => {
+    const leftValue = sourceSortValue(left, sort.key);
+    const rightValue = sourceSortValue(right, sort.key);
+    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+      return (leftValue - rightValue) * direction;
+    }
+    return String(leftValue).localeCompare(String(rightValue)) * direction;
+  });
+}
+
+function sourceSortValue(source: KnowledgeSource, key: SourceSortKey): string | number {
+  if (key === 'chunks') return source.chunks;
+  if (key === 'indexed_at') return source.indexed_at ? new Date(source.indexed_at).getTime() : 0;
+  return String(source[key] || '').toLowerCase();
+}
+
+function formatDate(value?: string | null): string {
+  return value ? new Date(value).toLocaleString() : 'Not indexed';
+}
+
+function hasFiles(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes('Files');
+}
+
+function isSupportedTextFile(file: File): boolean {
+  const extension = fileExtension(file.name);
+  const mimeType = file.type.trim().toLowerCase();
+  return TEXT_ATTACHMENT_EXTENSIONS.includes(extension) || mimeType.startsWith('text/') || TEXT_ATTACHMENT_MIME_TYPES.includes(mimeType);
+}
+
+function fileExtension(name: string): string {
+  const match = name.toLowerCase().match(/(\.[^.]+)$/);
+  return match ? match[1] : '';
+}
+
+const TEXT_ATTACHMENT_EXTENSIONS = ['.txt', '.md', '.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml', '.toml', '.xml', '.html', '.css', '.env', '.log', '.csv', '.sql', '.sh', '.ps1', '.bat', '.ini', '.cfg'];
+const TEXT_ATTACHMENT_MIME_TYPES = ['application/json', 'application/xml', 'application/yaml', 'application/x-yaml', 'application/toml', 'application/sql'];
+const TEXT_ATTACHMENT_ACCEPT = [...TEXT_ATTACHMENT_EXTENSIONS, 'text/*', ...TEXT_ATTACHMENT_MIME_TYPES].join(',');
 
 function Empty({ title, message }: { title: string; message: string }) {
   return <div className="settings-placeholder"><h2>{title}</h2><p>{message}</p></div>;

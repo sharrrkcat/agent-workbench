@@ -119,6 +119,23 @@ def test_attachment_api_returns_bytes_and_rejects_traversal(monkeypatch, tmp_pat
     assert escaped.status_code == 404
 
 
+def test_attachment_api_accepts_text_file_upload(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+
+    response = client.post(
+        "/api/attachments",
+        files={"file": ("note.txt", b"hello knowledge", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "file"
+    assert payload["name"] == "note.txt"
+    assert payload["uri"].startswith("local://attachments/")
+    assert resolve_attachment_uri(payload["uri"]).read_text(encoding="utf-8") == "hello knowledge"
+
+
 def test_attachment_api_returns_text_file_bytes(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     stored = save_attachment_from_upload("note.txt", "text/plain", b"hello text")

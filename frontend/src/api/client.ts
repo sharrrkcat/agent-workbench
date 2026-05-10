@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentConfig,
+  Attachment,
   CapabilityConfig,
   Command,
   DeleteMessageResponse,
@@ -238,6 +239,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ source_type: 'pasted_text', ...payload }),
     }),
+  createAttachmentKnowledgeSource: (knowledgeBaseId: string, payload: { attachment_id: string; title?: string }) =>
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${knowledgeBaseId}/sources`, {
+      method: 'POST',
+      body: JSON.stringify({ source_type: 'attachment_text', ...payload }),
+    }),
   deleteKnowledgeSource: (sourceId: string) =>
     request<{ deleted: boolean; source_id: string }>(`/api/knowledge/sources/${sourceId}`, { method: 'DELETE' }),
   reindexKnowledgeSource: (sourceId: string) =>
@@ -249,6 +255,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  uploadAttachment: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file, file.name || 'attachment.txt');
+    return requestForm<Attachment>('/api/attachments', formData);
+  },
   getPetSettings: () => request<PetSettingsResponse>('/api/pets/settings'),
   updatePetSettings: (values: Partial<PetSettings>) =>
     request<PetSettingsResponse>('/api/pets/settings', {

@@ -196,7 +196,7 @@ def test_attachment_text_source_indexes_and_binary_attachment_is_rejected(monkey
 
     indexed = client.post(
         f"/api/knowledge/bases/{kb['id']}/sources",
-        json={"source_type": "attachment_text", "attachment_id": text_attachment["uri"]},
+        json={"source_type": "attachment_text", "attachment_id": text_attachment["uri"], "title": "Readable note"},
     )
     rejected = client.post(
         f"/api/knowledge/bases/{kb['id']}/sources",
@@ -206,6 +206,7 @@ def test_attachment_text_source_indexes_and_binary_attachment_is_rejected(monkey
     assert indexed.status_code == 200, indexed.text
     source = client.get(f"/api/knowledge/sources/{indexed.json()['source_id']}").json()
     assert source["source_type"] == "attachment_text"
+    assert source["title"] == "Readable note"
     assert source["uri"] == text_attachment["uri"]
     assert rejected.status_code == 400
     assert rejected.json()["error"]["code"] == "KNOWLEDGE_ATTACHMENT_NOT_TEXT"

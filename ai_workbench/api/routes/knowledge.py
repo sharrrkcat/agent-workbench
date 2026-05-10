@@ -427,6 +427,8 @@ def _prepare_source_input(knowledge_base_id: str, payload: KnowledgeSourceCreate
         if not payload.attachment_id:
             raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND", "attachment_id is required.")
         prepared = prepare_attachment_text_source(attachment_id=payload.attachment_id)
+        if payload.title and payload.title.strip():
+            prepared = prepared.__class__(**{**prepared.__dict__, "title": payload.title.strip()})
     return prepared
 
 
