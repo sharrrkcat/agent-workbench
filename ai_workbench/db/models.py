@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Column, LargeBinary, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from ai_workbench.core.time import utc_now
@@ -235,6 +235,58 @@ class SessionKnowledgeBindingRecord(SQLModel, table=True):
     session_id: str = Field(index=True)
     knowledge_base_id: str = Field(index=True)
     enabled: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeSourceRecord(SQLModel, table=True):
+    __tablename__ = "kb_sources"
+
+    id: str = Field(primary_key=True)
+    knowledge_base_id: str = Field(index=True)
+    source_type: str = Field(index=True)
+    uri: str = ""
+    title: str = ""
+    mime_type: Optional[str] = None
+    size_bytes: int = 0
+    content_hash: str = Field(index=True)
+    indexed_at: Optional[datetime] = None
+    status: str = Field(default="pending", index=True)
+    error: Optional[str] = None
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeChunkRecord(SQLModel, table=True):
+    __tablename__ = "kb_chunks"
+    __table_args__ = (UniqueConstraint("source_id", "chunk_index"),)
+
+    id: str = Field(primary_key=True)
+    knowledge_base_id: str = Field(index=True)
+    source_id: str = Field(index=True)
+    chunk_index: int
+    heading_path: str = ""
+    content: str
+    char_start: int
+    char_end: int
+    token_count: Optional[int] = None
+    content_hash: str = Field(index=True)
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeEmbeddingRecord(SQLModel, table=True):
+    __tablename__ = "kb_embeddings"
+
+    id: str = Field(primary_key=True)
+    knowledge_base_id: str = Field(index=True)
+    source_id: str = Field(index=True)
+    chunk_id: str = Field(index=True)
+    embedding_model_profile_id: str = Field(index=True)
+    embedding_model_id_snapshot: str
+    embedding_dimension: int
+    embedding_normalize_snapshot: bool = True
+    vector_blob: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     created_at: datetime = Field(default_factory=utc_now)
 
 

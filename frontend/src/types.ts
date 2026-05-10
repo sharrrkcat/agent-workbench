@@ -389,6 +389,37 @@ export type KnowledgeBase = {
   updated_at: string;
 };
 
+export type KnowledgeSource = {
+  id: string;
+  knowledge_base_id: string;
+  source_type: 'pasted_text' | 'attachment_text' | string;
+  uri: string;
+  title: string;
+  mime_type?: string | null;
+  size_bytes: number;
+  content_hash: string;
+  indexed_at?: string | null;
+  status: 'pending' | 'indexing' | 'indexed' | 'failed' | 'deleted' | string;
+  error?: string | null;
+  metadata: Record<string, unknown>;
+  chunks: number;
+  embedding_model_profile_id?: string | null;
+  embedding_dimension?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeSourceIndexResult = {
+  source_id: string;
+  status: string;
+  chunks: number;
+  embedding_model_profile_id?: string | null;
+  embedding_dimension?: number | null;
+  indexed_at?: string | null;
+  error?: string | null;
+  skipped?: boolean;
+};
+
 export type LlmResolvedConfig = {
   source?: string | null;
   profile_id?: string | null;

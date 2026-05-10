@@ -182,6 +182,45 @@ class SessionKnowledgeBinding(BaseModel):
     knowledge_base: KnowledgeBase | None = None
 
 
+KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "failed", "deleted"]
+KnowledgeSourceType = Literal["pasted_text", "attachment_text"]
+
+
+class KnowledgeSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    knowledge_base_id: str
+    source_type: KnowledgeSourceType
+    uri: str = ""
+    title: str
+    mime_type: str | None = None
+    size_bytes: int = 0
+    content_hash: str
+    indexed_at: datetime | None = None
+    status: KnowledgeSourceStatus = "pending"
+    error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    chunks: int = 0
+    embedding_model_profile_id: str | None = None
+    embedding_dimension: int | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeSourceIndexResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    status: str
+    chunks: int
+    embedding_model_profile_id: str | None = None
+    embedding_dimension: int | None = None
+    indexed_at: datetime | None = None
+    error: str | None = None
+    skipped: bool = False
+
+
 class KnowledgeStore:
     def get_settings(self) -> Any:
         raise NotImplementedError
@@ -226,6 +265,33 @@ class KnowledgeStore:
         raise NotImplementedError
 
     def delete_session_bindings(self, session_id: str) -> None:
+        raise NotImplementedError
+
+    def list_sources(self, knowledge_base_id: str) -> list[KnowledgeSource]:
+        raise NotImplementedError
+
+    def get_source(self, source_id: str) -> KnowledgeSource:
+        raise NotImplementedError
+
+    def upsert_indexed_source(
+        self,
+        *,
+        source: KnowledgeSource,
+        chunks: list[Any],
+        vectors: list[list[float]],
+        embedding_model_profile: EmbeddingModelProfile,
+        embedding_dimension: int,
+        search_texts: list[str],
+    ) -> KnowledgeSourceIndexResult:
+        raise NotImplementedError
+
+    def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
+        raise NotImplementedError
+
+    def delete_source(self, source_id: str) -> KnowledgeSource:
+        raise NotImplementedError
+
+    def source_text_reference(self, source_id: str) -> dict[str, Any]:
         raise NotImplementedError
 
 

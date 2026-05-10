@@ -1,4 +1,5 @@
 import json
+from array import array
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -17,6 +18,8 @@ from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSet
 from ai_workbench.core.knowledge_store import (
     EmbeddingModelProfile,
     KnowledgeBase,
+    KnowledgeSource,
+    KnowledgeSourceIndexResult,
     SessionKnowledgeBinding,
 )
 from ai_workbench.core.time import ensure_utc, utc_now
@@ -27,7 +30,10 @@ from ai_workbench.db.models import (
     CapabilityConfigRecord,
     EmbeddingModelProfileRecord,
     KnowledgeBaseRecord,
+    KnowledgeChunkRecord,
+    KnowledgeEmbeddingRecord,
     KnowledgeSettingsRecord,
+    KnowledgeSourceRecord,
     LLMProfileRecord,
     MessageRecord,
     ProviderProfileRecord,
@@ -1110,10 +1116,170 @@ class SqlKnowledgeStore:
             if record is None:
                 raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
             knowledge_base = _knowledge_base_from_record(record)
+            source_ids = [
+                item.id
+                for item in session.exec(
+                    select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id == record.id)
+                ).all()
+            ]
+            for source_id in source_ids:
+                _delete_source_index_rows(session, source_id)
+            session.exec(delete(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id == record.id))
             session.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.knowledge_base_id == record.id))
             session.delete(record)
             session.commit()
             return knowledge_base
+
+    def list_sources(self, knowledge_base_id: str) -> List[KnowledgeSource]:
+        with DbSession(self.engine) as session:
+            if session.get(KnowledgeBaseRecord, knowledge_base_id) is None:
+                raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+            records = session.exec(
+                select(KnowledgeSourceRecord)
+                .where(KnowledgeSourceRecord.knowledge_base_id == knowledge_base_id)
+                .where(KnowledgeSourceRecord.status != "deleted")
+                .order_by(KnowledgeSourceRecord.created_at)
+            ).all()
+            return [_knowledge_source_from_record(session, record) for record in records]
+
+    def get_source(self, source_id: str) -> KnowledgeSource:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeSourceRecord, source_id)
+            if record is None or record.status == "deleted":
+                raise KeyError(f"unknown knowledge source: {source_id}")
+            return _knowledge_source_from_record(session, record)
+
+    def upsert_indexed_source(
+        self,
+        *,
+        source: KnowledgeSource,
+        chunks: list[Any],
+        vectors: list[list[float]],
+        embedding_model_profile: EmbeddingModelProfile,
+        embedding_dimension: int,
+        search_texts: list[str],
+    ) -> KnowledgeSourceIndexResult:
+        with DbSession(self.engine) as session:
+            kb_record = session.get(KnowledgeBaseRecord, source.knowledge_base_id)
+            if kb_record is None:
+                raise KeyError(f"unknown knowledge base: {source.knowledge_base_id}")
+            now = utc_now()
+            record = session.get(KnowledgeSourceRecord, source.id)
+            if record is None:
+                record = KnowledgeSourceRecord(id=source.id, knowledge_base_id=source.knowledge_base_id, source_type=source.source_type, content_hash=source.content_hash)
+            record.knowledge_base_id = source.knowledge_base_id
+            record.source_type = source.source_type
+            record.uri = source.uri
+            record.title = source.title
+            record.mime_type = source.mime_type
+            record.size_bytes = source.size_bytes
+            record.content_hash = source.content_hash
+            record.indexed_at = now
+            record.status = "indexed"
+            record.error = None
+            record.metadata_json = _dumps(source.metadata)
+            record.updated_at = now
+            session.add(record)
+            session.flush()
+
+            _delete_source_index_rows(session, source.id)
+            for chunk, vector, search_text in zip(chunks, vectors, search_texts):
+                chunk_id = str(uuid4())
+                session.add(
+                    KnowledgeChunkRecord(
+                        id=chunk_id,
+                        knowledge_base_id=source.knowledge_base_id,
+                        source_id=source.id,
+                        chunk_index=chunk.chunk_index,
+                        heading_path=chunk.heading_path,
+                        content=chunk.content,
+                        char_start=chunk.char_start,
+                        char_end=chunk.char_end,
+                        token_count=chunk.token_count,
+                        content_hash=chunk.content_hash,
+                    )
+                )
+                session.add(
+                    KnowledgeEmbeddingRecord(
+                        id=str(uuid4()),
+                        knowledge_base_id=source.knowledge_base_id,
+                        source_id=source.id,
+                        chunk_id=chunk_id,
+                        embedding_model_profile_id=embedding_model_profile.id,
+                        embedding_model_id_snapshot=embedding_model_profile.model_path,
+                        embedding_dimension=embedding_dimension,
+                        embedding_normalize_snapshot=embedding_model_profile.normalize,
+                        vector_blob=array("f", [float(value) for value in vector]).tobytes(),
+                    )
+                )
+                session.connection().exec_driver_sql(
+                    "INSERT INTO kb_chunk_fts (chunk_id, knowledge_base_id, source_id, title, heading_path, content, search_text) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (chunk_id, source.knowledge_base_id, source.id, source.title, chunk.heading_path, chunk.content, search_text),
+                )
+
+            _refresh_kb_index_status(session, source.knowledge_base_id)
+            session.commit()
+            return KnowledgeSourceIndexResult(
+                source_id=source.id,
+                status="indexed",
+                chunks=len(chunks),
+                embedding_model_profile_id=embedding_model_profile.id,
+                embedding_dimension=embedding_dimension,
+                indexed_at=record.indexed_at,
+            )
+
+    def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
+        with DbSession(self.engine) as session:
+            existing = session.get(KnowledgeSourceRecord, source.id)
+            now = utc_now()
+            if existing is None:
+                existing = KnowledgeSourceRecord(
+                    id=source.id,
+                    knowledge_base_id=source.knowledge_base_id,
+                    source_type=source.source_type,
+                    uri=source.uri,
+                    title=source.title,
+                    mime_type=source.mime_type,
+                    size_bytes=source.size_bytes,
+                    content_hash=source.content_hash,
+                    status="failed",
+                    error=error,
+                    metadata_json=_dumps(source.metadata),
+                )
+            else:
+                if existing.status != "indexed":
+                    existing.status = "failed"
+                existing.error = error
+                existing.updated_at = now
+            session.add(existing)
+            _refresh_kb_index_status(session, source.knowledge_base_id)
+            session.commit()
+            return KnowledgeSourceIndexResult(
+                source_id=source.id,
+                status="failed",
+                chunks=_source_chunk_count(session, source.id),
+                indexed_at=existing.indexed_at,
+                error=error,
+            )
+
+    def delete_source(self, source_id: str) -> KnowledgeSource:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeSourceRecord, source_id)
+            if record is None or record.status == "deleted":
+                raise KeyError(f"unknown knowledge source: {source_id}")
+            source = _knowledge_source_from_record(session, record)
+            _delete_source_index_rows(session, source_id)
+            session.delete(record)
+            _refresh_kb_index_status(session, source.knowledge_base_id)
+            session.commit()
+            return source
+
+    def source_text_reference(self, source_id: str) -> Dict[str, Any]:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeSourceRecord, source_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge source: {source_id}")
+            return {"source_type": record.source_type, "uri": record.uri, "title": record.title}
 
     def list_session_bindings(self, session_id: str) -> List[SessionKnowledgeBinding]:
         with DbSession(self.engine) as session:
@@ -1388,6 +1554,58 @@ def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )
+
+
+def _knowledge_source_from_record(session: DbSession, record: KnowledgeSourceRecord) -> KnowledgeSource:
+    latest_embedding = session.exec(
+        select(KnowledgeEmbeddingRecord)
+        .where(KnowledgeEmbeddingRecord.source_id == record.id)
+        .order_by(KnowledgeEmbeddingRecord.created_at.desc())
+    ).first()
+    return KnowledgeSource(
+        id=record.id,
+        knowledge_base_id=record.knowledge_base_id,
+        source_type=record.source_type,
+        uri=record.uri,
+        title=record.title,
+        mime_type=record.mime_type,
+        size_bytes=record.size_bytes,
+        content_hash=record.content_hash,
+        indexed_at=ensure_utc(record.indexed_at),
+        status=record.status,
+        error=record.error,
+        metadata=_loads(record.metadata_json, {}),
+        chunks=_source_chunk_count(session, record.id),
+        embedding_model_profile_id=latest_embedding.embedding_model_profile_id if latest_embedding is not None else None,
+        embedding_dimension=latest_embedding.embedding_dimension if latest_embedding is not None else None,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
+def _source_chunk_count(session: DbSession, source_id: str) -> int:
+    return len(session.exec(select(KnowledgeChunkRecord.id).where(KnowledgeChunkRecord.source_id == source_id)).all())
+
+
+def _delete_source_index_rows(session: DbSession, source_id: str) -> None:
+    session.exec(delete(KnowledgeEmbeddingRecord).where(KnowledgeEmbeddingRecord.source_id == source_id))
+    session.exec(delete(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id == source_id))
+    session.connection().exec_driver_sql("DELETE FROM kb_chunk_fts WHERE source_id = ?", (source_id,))
+
+
+def _refresh_kb_index_status(session: DbSession, knowledge_base_id: str) -> None:
+    kb_record = session.get(KnowledgeBaseRecord, knowledge_base_id)
+    if kb_record is None:
+        return
+    indexed = session.exec(
+        select(KnowledgeSourceRecord.id)
+        .where(KnowledgeSourceRecord.knowledge_base_id == knowledge_base_id)
+        .where(KnowledgeSourceRecord.status == "indexed")
+    ).first()
+    kb_record.index_status = "ready" if indexed is not None else "empty"
+    kb_record.index_error = None
+    kb_record.updated_at = utc_now()
+    session.add(kb_record)
 
 
 def _session_knowledge_binding_from_record(

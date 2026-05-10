@@ -244,9 +244,11 @@ Settings -> General -> Context Rendering exposes prompt-text overrides for group
 
 ## Knowledge Context
 
-Knowledge RAG v1 Phase 1 only defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, and local embedding/reranker APIs.
+Knowledge RAG v1 Phase 2 defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, local embedding/reranker APIs, and synchronous source indexing.
 
-Phase 1 does not inject retrieved snippets into Prompt Agent `Building context`, Script Agent `ctx.llm`, command result context, session title generation, or any provider-bound message payload. Prompt Agent and Script Agent run-step contracts remain unchanged.
+Phase 2 source indexing supports `pasted_text` and text attachment sources. Pasted source originals are stored as text files under `data/knowledge/sources`; full source originals are not stored in SQLite. The indexer chunks source text, embeds chunks with the Knowledge Base embedding profile using `purpose=document`, stores float32 vectors in SQLite BLOB rows, and writes FTS5/BM25-ready rows. The current runtime only builds the index.
+
+Phase 2 does not inject retrieved snippets into Prompt Agent `Building context`, Script Agent `ctx.llm`, command result context, session title generation, or any provider-bound message payload. Prompt Agent and Script Agent run-step contracts remain unchanged.
 
 Future phases may use active session knowledge bases to retrieve snippets and append a bounded Knowledge context block before provider calls. That work must update this protocol when it changes Prompt Agent context building, Script Agent LLM helpers, run metadata, or message warnings.
 

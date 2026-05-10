@@ -2,7 +2,7 @@ import { BrainCircuit, Play, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, KnowledgeBase, KnowledgeModelScan, KnowledgeSettings } from '../../types';
+import type { EmbeddingModelProfile, KnowledgeBase, KnowledgeModelScan, KnowledgeSettings, KnowledgeSource } from '../../types';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -131,7 +131,7 @@ export function KnowledgeSettingsDetail({
 
   if (category === 'knowledge_bases') {
     return (
-      <KnowledgeShell title="Knowledge Bases" description="Config-only knowledge bases. Sources and indexing arrive in the next phase." busy={busy} result={result}>
+      <KnowledgeShell title="Knowledge Bases" description="Knowledge base configuration, sources, and local indexes." busy={busy} result={result}>
         {localError ? <SettingsApiError error={localError} /> : null}
         <KnowledgeBasesEditor
           knowledgeBases={knowledgeBases}
@@ -381,10 +381,30 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setRe
   setLocalError: (value: SettingsErrorValue | null) => void;
 }) {
   const [values, setValues] = useState<Partial<KnowledgeBase>>(initial);
+  const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [sourceTitle, setSourceTitle] = useState('');
+  const [sourceText, setSourceText] = useState('');
 
   useEffect(() => {
     setValues(initial);
   }, [initial]);
+
+  useEffect(() => {
+    if (!initial.id || isNew) {
+      setSources([]);
+      return;
+    }
+    void loadSources(initial.id);
+  }, [initial.id, isNew]);
+
+  async function loadSources(knowledgeBaseId = values.id || '') {
+    if (!knowledgeBaseId) return;
+    try {
+      setSources(await api.listKnowledgeSources(knowledgeBaseId));
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to load knowledge sources.'));
+    }
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -414,6 +434,53 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setRe
       setBusy('');
     }
   }
+  async function addPastedSource() {
+    if (!values.id || !sourceText.trim()) return;
+    setBusy('indexing');
+    try {
+      setLocalError(null);
+      const indexed = await api.createPastedKnowledgeSource(values.id, { title: sourceTitle || 'Pasted text', text: sourceText });
+      setSourceTitle('');
+      setSourceText('');
+      await loadSources(values.id);
+      await onRefresh(values.id);
+      setResult(`Indexed ${indexed.chunks} chunks.`);
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to index pasted text source.'));
+    } finally {
+      setBusy('');
+    }
+  }
+  async function deleteSource(sourceId: string) {
+    if (!values.id) return;
+    setBusy('deleting source');
+    try {
+      setLocalError(null);
+      await api.deleteKnowledgeSource(sourceId);
+      await loadSources(values.id);
+      await onRefresh(values.id);
+      setResult('Source deleted.');
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to delete source.'));
+    } finally {
+      setBusy('');
+    }
+  }
+  async function reindexSource(sourceId: string) {
+    if (!values.id) return;
+    setBusy('reindexing');
+    try {
+      setLocalError(null);
+      const result = await api.reindexKnowledgeSource(sourceId);
+      await loadSources(values.id);
+      await onRefresh(values.id);
+      setResult(`Reindexed ${result.chunks} chunks.`);
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to reindex source.'));
+    } finally {
+      setBusy('');
+    }
+  }
   return (
     <form onSubmit={save}>
       <div className="settings-detail-grid">
@@ -435,6 +502,35 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setRe
         <button className="settings-primary-button" type="submit"><Save size={14} />Save</button>
         {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove}><Trash2 size={14} />Delete</button> : null}
       </div>
+      {!isNew && values.id ? (
+        <div className="detail-section">
+          <div className="detail-section-heading"><h3>Sources</h3></div>
+          {sources.length ? (
+            <div className="settings-object-table">
+              {sources.map((source) => (
+                <div className="settings-object-row" key={source.id}>
+                  <div>
+                    <strong>{source.title}</strong>
+                    <p>{source.source_type} · {source.status} · {source.chunks} chunks{source.indexed_at ? ` · ${new Date(source.indexed_at).toLocaleString()}` : ''}</p>
+                    {source.error ? <p className="settings-error-text">{source.error}</p> : null}
+                  </div>
+                  <div className="settings-button-row compact">
+                    <button className="settings-secondary-button" type="button" onClick={() => reindexSource(source.id)}><RefreshCw size={14} />Reindex</button>
+                    <button className="settings-secondary-button danger" type="button" onClick={() => deleteSource(source.id)}><Trash2 size={14} />Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <Empty title="No sources" message="No sources have been indexed for this knowledge base." />}
+          <div className="settings-detail-grid">
+            <TextField label="Pasted source title" value={sourceTitle} onChange={setSourceTitle} />
+          </div>
+          <TextAreaField label="Pasted text" value={sourceText} onChange={setSourceText} />
+          <div className="settings-button-row">
+            <button className="settings-secondary-button" type="button" disabled={!sourceText.trim()} onClick={addPastedSource}><Play size={14} />Index pasted text</button>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }

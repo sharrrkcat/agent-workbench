@@ -34,6 +34,7 @@ def get_engine(database_url: Optional[str] = None):
 
 def init_db(engine) -> None:
     SQLModel.metadata.create_all(engine)
+    ensure_knowledge_index_tables(engine)
     ensure_session_model_columns(engine)
     ensure_message_speaker_columns(engine)
     ensure_agent_config_columns(engine)
@@ -41,6 +42,29 @@ def init_db(engine) -> None:
     ensure_run_lifecycle_columns(engine)
     migrate_llm_provider_profiles(engine)
     ensure_schema_version(engine)
+
+
+def ensure_knowledge_index_tables(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        connection.execute(
+            text(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunk_fts
+                USING fts5(
+                  chunk_id UNINDEXED,
+                  knowledge_base_id UNINDEXED,
+                  source_id UNINDEXED,
+                  title,
+                  heading_path,
+                  content,
+                  search_text,
+                  tokenize = 'unicode61'
+                )
+                """
+            )
+        )
 
 
 def ensure_session_model_columns(engine) -> None:

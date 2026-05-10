@@ -25,6 +25,8 @@ import type {
   OrphanScanResult,
   EmbeddingModelProfile,
   KnowledgeBase,
+  KnowledgeSource,
+  KnowledgeSourceIndexResult,
   KnowledgeModelScan,
   KnowledgeSettings,
   RuntimeResponse,
@@ -206,6 +208,18 @@ export const api = {
     }),
   deleteKnowledgeBase: (knowledgeBaseId: string) =>
     request<{ deleted: boolean; knowledge_base_id: string }>(`/api/knowledge/bases/${knowledgeBaseId}`, { method: 'DELETE' }),
+  listKnowledgeSources: (knowledgeBaseId: string) => request<KnowledgeSource[]>(`/api/knowledge/bases/${knowledgeBaseId}/sources`),
+  createPastedKnowledgeSource: (knowledgeBaseId: string, payload: { title: string; text: string }) =>
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${knowledgeBaseId}/sources`, {
+      method: 'POST',
+      body: JSON.stringify({ source_type: 'pasted_text', ...payload }),
+    }),
+  deleteKnowledgeSource: (sourceId: string) =>
+    request<{ deleted: boolean; source_id: string }>(`/api/knowledge/sources/${sourceId}`, { method: 'DELETE' }),
+  reindexKnowledgeSource: (sourceId: string) =>
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/sources/${sourceId}/reindex`, { method: 'POST' }),
+  reindexKnowledgeBase: (knowledgeBaseId: string) =>
+    request<{ knowledge_base_id: string; sources: KnowledgeSourceIndexResult[] }>(`/api/knowledge/bases/${knowledgeBaseId}/reindex`, { method: 'POST' }),
   getStorageStats: () => request<StorageStats>('/api/data/storage-stats'),
   getDiagnostics: () => request<Diagnostics>('/api/diagnostics'),
   scanOrphanAttachments: () => request<OrphanScanResult>('/api/data/attachments/scan-orphans', { method: 'POST' }),

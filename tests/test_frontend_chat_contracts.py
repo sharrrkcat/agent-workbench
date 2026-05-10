@@ -433,17 +433,18 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
 
     assert "'knowledge'" in nav
     assert "label: 'Knowledge'" in nav
-    assert "type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases'" in object_list
+    assert "export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection" in object_list
+    assert "export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases'" in read_frontend("types.ts")
     assert "Defaults" in object_list
-    assert "Embedding Models" in object_list
-    assert "Knowledge Bases" in object_list
+    assert "EMBEDDING MODELS" in object_list
+    assert "KNOWLEDGE BASES" in object_list
     assert "if (section === 'knowledge')" in object_list
-    assert "onSelectKnowledgeCategory?.(category.id)" in object_list
-    assert "useState<KnowledgeSettingsCategory>('defaults')" in console
-    assert "setKnowledgeCategory('defaults')" in console
-    assert "knowledgeCategory={knowledgeCategory}" in console
-    assert "onSelectKnowledgeCategory={setKnowledgeCategory}" in console
-    assert "<KnowledgeSettingsDetail category={knowledgeCategory} onDirtyChange={onDirtyChange} />" in panel
+    assert "knowledgeSubsection === 'defaults'" in object_list
+    assert "useState<KnowledgeSettingsSubsection>('defaults')" in console
+    assert "setSelectedKnowledgeSubsection('defaults')" in console
+    assert "knowledgeSubsection={selectedKnowledgeSubsection}" in console
+    assert "onKnowledgeSubsectionChange={changeKnowledgeSubsection}" in console
+    assert "<KnowledgeSettingsDetail" in panel
 
     assert "Local Models" in knowledge
     assert "Embedding" in knowledge
@@ -457,7 +458,13 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "Test" in knowledge
     assert "No embedding model profiles yet." in knowledge
     assert "No knowledge bases yet." in knowledge
-    assert "Sources and indexing arrive in the next phase." in knowledge
+    assert "Knowledge base configuration, sources, and local indexes." in knowledge
+    assert "No sources have been indexed for this knowledge base." in knowledge
+    assert "Index pasted text" in knowledge
+    assert "api.listKnowledgeSources" in knowledge
+    assert "api.createPastedKnowledgeSource" in knowledge
+    assert "api.deleteKnowledgeSource" in knowledge
+    assert "api.reindexKnowledgeSource" in knowledge
     assert "api.scanKnowledgeModels()" in knowledge
     assert "api.updateKnowledgeSettings" in knowledge
     assert "api.testEmbeddingModel" in knowledge
@@ -469,6 +476,8 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "/api/knowledge/models/scan" in client
     assert "/api/knowledge/embedding-models" in client
     assert "/api/knowledge/bases" in client
+    assert "/api/knowledge/bases/${knowledgeBaseId}/sources" in client
+    assert "/api/knowledge/sources/${sourceId}/reindex" in client
     assert "/api/knowledge/rerank" in client
 
 

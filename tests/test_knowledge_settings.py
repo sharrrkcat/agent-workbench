@@ -71,7 +71,15 @@ def test_knowledge_tables_exist_and_existing_db_upgrades(tmp_path: Path) -> None
     init_db(engine)
     init_db(engine)
     tables = set(inspect(engine).get_table_names())
-    assert {"knowledge_settings", "embedding_model_profiles", "knowledge_bases", "session_knowledge_bindings"}.issubset(tables)
+    assert {
+        "knowledge_settings",
+        "embedding_model_profiles",
+        "knowledge_bases",
+        "session_knowledge_bindings",
+        "kb_sources",
+        "kb_chunks",
+        "kb_embeddings",
+    }.issubset(tables)
     client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{db_path}"))
     assert client.get("/api/knowledge/settings").status_code == 200
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -6,6 +7,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.embedding import embed_texts
+from ai_workbench.core.knowledge_indexing import (
+    KnowledgeIndexError,
+    build_search_text,
+    chunk_source_text,
+    embed_chunks,
+    model_error_to_index_error,
+    prepare_attachment_text_source,
+    prepare_pasted_text_source,
+    source_content_hash,
+    validate_source_limits,
+)
 from ai_workbench.core.knowledge_models import (
     KnowledgeModelError,
     normalize_model_path,
@@ -19,6 +31,7 @@ from ai_workbench.core.knowledge_store import (
     KnowledgeBase,
     KnowledgeBaseCreate,
     KnowledgeBasePatch,
+    KnowledgeSource,
 )
 from ai_workbench.core.rerank import rerank_documents
 
@@ -59,6 +72,15 @@ class SessionKnowledgePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     knowledge_base_ids: list[str]
+
+
+class KnowledgeSourceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: Literal["pasted_text", "attachment_text"]
+    title: str | None = None
+    text: str | None = None
+    attachment_id: str | None = None
 
 
 @router.get("/settings")
@@ -267,6 +289,70 @@ def delete_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
 
 
+@router.get("/bases/{knowledge_base_id}/sources")
+def list_knowledge_sources(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
+    try:
+        return [source.model_dump() for source in state.knowledge.list_sources(knowledge_base_id)]
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
+
+
+@router.post("/bases/{knowledge_base_id}/sources")
+def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        source_text = _prepare_source_input(knowledge_base_id, payload, state)
+        return _index_prepared_source(knowledge_base_id, source_text, state).model_dump()
+    except KnowledgeIndexError as exc:
+        raise_error(400 if exc.code.startswith("KNOWLEDGE_ATTACHMENT") else 422, exc.code, exc.message, exc.details)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
+
+
+@router.get("/sources/{source_id}")
+def get_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        return state.knowledge.get_source(source_id).model_dump()
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
+
+
+@router.delete("/sources/{source_id}")
+def delete_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        source = state.knowledge.delete_source(source_id)
+        return {"deleted": True, "source_id": source.id}
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
+
+
+@router.post("/sources/{source_id}/reindex")
+def reindex_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        source = state.knowledge.get_source(source_id)
+        source_text = _load_existing_source_text(source_id, state)
+        return _index_prepared_source(source.knowledge_base_id, source_text, state).model_dump()
+    except KnowledgeIndexError as exc:
+        raise_error(400 if exc.code.startswith("KNOWLEDGE_ATTACHMENT") else 422, exc.code, exc.message, exc.details)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
+
+
+@router.post("/bases/{knowledge_base_id}/reindex")
+def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        sources = state.knowledge.list_sources(knowledge_base_id)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
+    results = []
+    for source in sources:
+        try:
+            source_text = _load_existing_source_text(source.id, state)
+            results.append(_index_prepared_source(knowledge_base_id, source_text, state).model_dump())
+        except KnowledgeIndexError as exc:
+            results.append({"source_id": source.id, "status": "failed", "chunks": source.chunks, "error": exc.message})
+    return {"knowledge_base_id": knowledge_base_id, "sources": results}
+
+
 def list_session_knowledge_bases(session_id: str, state: RuntimeState) -> list[dict]:
     _require_session(state, session_id)
     return [binding.model_dump() for binding in state.knowledge.list_session_bindings(session_id)]
@@ -287,6 +373,79 @@ def _require_embedding_profile(state: RuntimeState, profile_id: str) -> None:
         raise_error(400, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
     if not profile.enabled:
         raise_error(400, "KNOWLEDGE_EMBEDDING_MODEL_DISABLED", f"Embedding model profile is disabled: {profile_id}")
+
+
+def _prepare_source_input(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState):
+    state.knowledge.get_knowledge_base(knowledge_base_id)
+    if payload.source_type == "pasted_text":
+        if not payload.text or not payload.text.strip():
+            raise KnowledgeIndexError("KNOWLEDGE_EMPTY_INPUT", "Pasted text must not be empty.")
+        prepared = prepare_pasted_text_source(root=state.repo_root or Path("."), title=payload.title or "Pasted text", text=payload.text)
+    else:
+        if not payload.attachment_id:
+            raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND", "attachment_id is required.")
+        prepared = prepare_attachment_text_source(attachment_id=payload.attachment_id)
+    return prepared
+
+
+def _load_existing_source_text(source_id: str, state: RuntimeState):
+    source = state.knowledge.get_source(source_id)
+    if source.source_type == "pasted_text":
+        root = state.repo_root or Path(".")
+        path = (root / source.uri).resolve()
+        sources_root = (root / "data" / "knowledge" / "sources").resolve()
+        try:
+            path.relative_to(sources_root)
+        except ValueError as exc:
+            raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Pasted text source path is invalid.") from exc
+        if not path.is_file():
+            raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Pasted text source file was not found.")
+        text = path.read_text(encoding="utf-8")
+        return prepare_pasted_text_source(root=root, title=source.title, text=text, source_id=source.id)
+    prepared = prepare_attachment_text_source(attachment_id=source.uri)
+    return prepared.__class__(**{**prepared.__dict__, "source_id": source.id, "title": source.title})
+
+
+def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeState):
+    settings = state.knowledge.get_settings()
+    knowledge_base = state.knowledge.get_knowledge_base(knowledge_base_id)
+    profile = state.knowledge.get_embedding_profile(knowledge_base.embedding_model_profile_id)
+    source = KnowledgeSource(
+        id=source_text.source_id,
+        knowledge_base_id=knowledge_base_id,
+        source_type=source_text.source_type,
+        uri=source_text.uri,
+        title=source_text.title,
+        mime_type=source_text.mime_type,
+        size_bytes=source_text.size_bytes,
+        content_hash=source_text.content_hash,
+        status="indexing",
+        metadata=source_text.metadata,
+    )
+    try:
+        validate_source_limits(source_text.text, source_text.size_bytes, settings)
+        chunks = chunk_source_text(source_text.text, settings=settings, knowledge_base=knowledge_base)
+        try:
+            embedding_result = embed_chunks(
+                backend=state.knowledge_model_backend,
+                profile=profile,
+                chunks=chunks,
+                device=settings.local_model_device,
+            )
+        except KnowledgeModelError as exc:
+            raise model_error_to_index_error(exc) from exc
+        search_texts = [build_search_text(source.title, chunk.heading_path, chunk.content) for chunk in chunks]
+        return state.knowledge.upsert_indexed_source(
+            source=source,
+            chunks=chunks,
+            vectors=embedding_result["vectors"],
+            embedding_model_profile=profile,
+            embedding_dimension=embedding_result["dimension"],
+            search_texts=search_texts,
+        )
+    except KnowledgeIndexError as exc:
+        state.knowledge.mark_source_failed(source, exc.message)
+        raise
 
 
 def _require_session(state: RuntimeState, session_id: str) -> None:

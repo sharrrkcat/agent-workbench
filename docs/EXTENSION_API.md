@@ -319,9 +319,9 @@ The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `ref
 
 General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
-## Knowledge Settings And Local Model APIs
+## Knowledge Settings, Local Model APIs, And Indexing
 
-Knowledge RAG v1 Phase 1 adds Workbench-owned settings and model APIs. These are internal Workbench JSON APIs, not provider function calling, tool calling, or OpenAI-compatible embedding endpoints.
+Knowledge RAG v1 adds Workbench-owned settings, local model APIs, and source indexing APIs. These are internal Workbench JSON APIs, not provider function calling, tool calling, or OpenAI-compatible embedding endpoints.
 
 Settings:
 
@@ -367,12 +367,39 @@ Knowledge base APIs:
 - `PATCH /api/knowledge/bases/{id}`
 - `DELETE /api/knowledge/bases/{id}`
 
+Knowledge source indexing APIs:
+
+- `GET /api/knowledge/bases/{id}/sources`
+- `POST /api/knowledge/bases/{id}/sources`
+- `GET /api/knowledge/sources/{source_id}`
+- `DELETE /api/knowledge/sources/{source_id}`
+- `POST /api/knowledge/sources/{source_id}/reindex`
+- `POST /api/knowledge/bases/{id}/reindex`
+
+`POST /api/knowledge/bases/{id}/sources` supports pasted text:
+
+```json
+{"source_type": "pasted_text", "title": "Notes", "text": "..."}
+```
+
+and text attachments:
+
+```json
+{"source_type": "attachment_text", "attachment_id": "local://attachments/<id>.txt"}
+```
+
+The indexer validates source size and chunk limits, chunks text, embeds chunks with the KB embedding model profile using `purpose=document`, stores vectors as float32 SQLite BLOBs, and writes FTS5 rows. Pasted source originals are saved under `data/knowledge/sources/<source_id>.txt`; full pasted source text is not stored in `kb_sources`. Attachment indexing reads existing local text attachments and does not delete or modify the original attachment.
+
+Index responses include `source_id`, `status`, `chunks`, `embedding_model_profile_id`, `embedding_dimension`, `indexed_at`, and `error`.
+
+Current non-goals: retrieval ranking, vector search, RRF, reranker retrieval, Prompt Agent context injection, Script Agent context injection, Knowledge Capability, and `/kb-search`.
+
 Session bindings:
 
 - `GET /api/sessions/{session_id}/knowledge-bases`
 - `PATCH /api/sessions/{session_id}/knowledge-bases`
 
-Phase 1 bindings are configuration only. They do not alter Prompt Agent or Script Agent context.
+Phase 2 bindings are configuration only. They do not alter Prompt Agent or Script Agent context.
 
 ## Capability Config
 
