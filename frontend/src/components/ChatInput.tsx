@@ -1,4 +1,4 @@
-import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
@@ -15,6 +15,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [isFocused, setIsFocused] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [composerMetrics, setComposerMetrics] = useState({ height: 38, multiline: false });
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
@@ -39,16 +40,27 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
+    const form = formRef.current;
     if (!textarea) return;
-    textarea.style.height = 'auto';
+    textarea.style.height = '0px';
+    let nextHeight = 38;
+    let overflowY = 'hidden';
     if (isCompact) {
-      textarea.style.height = '38px';
-      textarea.style.overflowY = 'hidden';
-      return;
+      nextHeight = 38;
+    } else {
+      nextHeight = Math.max(Math.min(textarea.scrollHeight, 200), 44);
+      overflowY = textarea.scrollHeight > 200 ? 'auto' : 'hidden';
     }
-    const nextHeight = Math.min(textarea.scrollHeight, 200);
-    textarea.style.height = `${Math.max(nextHeight, 44)}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 200 ? 'auto' : 'hidden';
+    const multiline = nextHeight > 52 || value.includes('\n');
+    const radius = multiline ? '24px' : '999px';
+    const textareaRadius = multiline ? '16px' : '999px';
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.setProperty('--composer-textarea-height', `${nextHeight}px`);
+    textarea.style.overflowY = overflowY;
+    form?.style.setProperty('--composer-card-radius', radius);
+    form?.style.setProperty('--composer-textarea-radius', textareaRadius);
+    form?.style.setProperty('--composer-textarea-height', `${nextHeight}px`);
+    setComposerMetrics((current) => (current.height === nextHeight && current.multiline === multiline ? current : { height: nextHeight, multiline }));
   }, [isCompact, value]);
 
   useEffect(() => {
@@ -236,11 +248,17 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     defaultModelProfileId: llmDefaults?.default_model_profile_id,
     selectedAgentId: currentSession?.default_agent_id,
   });
+  const composerStyle = {
+    '--composer-textarea-height': `${composerMetrics.height}px`,
+    '--composer-card-radius': composerMetrics.multiline ? '24px' : '999px',
+    '--composer-textarea-radius': composerMetrics.multiline ? '16px' : '999px',
+  } as CSSProperties;
 
   return (
     <form
       ref={formRef}
       className={`composer-shell ${isCompact ? 'compact' : 'expanded'}`}
+      style={composerStyle}
       onSubmit={submit}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}

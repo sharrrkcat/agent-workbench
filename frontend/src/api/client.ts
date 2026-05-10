@@ -33,6 +33,7 @@ import type {
   KnowledgeSourceIndexResult,
   KnowledgeModelScan,
   KnowledgeSearchResponse,
+  KnowledgeChunk,
   KnowledgeSettings,
   PetListResponse,
   PetImportResponse,
@@ -255,6 +256,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  getKnowledgeChunk: (chunkId: string) => request<KnowledgeChunk>(`/api/knowledge/chunks/${encodeURIComponent(chunkId)}`),
   uploadAttachment: (file: File) => {
     const formData = new FormData();
     formData.append('file', file, file.name || 'attachment.txt');

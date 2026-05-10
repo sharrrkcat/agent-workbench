@@ -275,11 +275,27 @@ Run metadata records `metadata.knowledge_context` without full snippet content:
   "query": "short truncated query",
   "result_count": 4,
   "injected": true,
+  "snippet_refs": [
+    {
+      "index": "K1",
+      "chunk_id": "chunk_id",
+      "knowledge_base_id": "kb_id",
+      "knowledge_base_name": "Project KB",
+      "source_id": "source_id",
+      "source_title": "Spec",
+      "rank": 1,
+      "heading_path": "Intro",
+      "vector_score": 0.72,
+      "keyword_score": -3.1,
+      "rrf_score": 0.031,
+      "rerank_score": 0.91
+    }
+  ],
   "warnings": []
 }
 ```
 
-Skipped or failed retrieval records `enabled=false` or `injected=false` with a `reason` such as `agent_disabled`, `no_active_kbs`, `empty_query`, `no_results`, or `retrieval_failed`. Query metadata is truncated and full retrieved content is not stored in run or message metadata.
+Skipped or failed retrieval records `enabled=false` or `injected=false` with a `reason` such as `agent_disabled`, `no_active_kbs`, `empty_query`, `no_results`, or `retrieval_failed`. Query metadata is truncated and full retrieved content is not stored in run or message metadata. Assistant/agent messages that used automatic Knowledge context copy this compact `knowledge_context` metadata so the UI can show a snippets button. Full chunk content is fetched on demand with `GET /api/knowledge/chunks/{chunk_id}`, which returns chunk content and minimal KB/source metadata without vectors or full source originals.
 
 ## Speaker Identity
 

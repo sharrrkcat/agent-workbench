@@ -69,6 +69,22 @@ def test_composer_draft_text_drives_pet_waiting_state() -> None:
     assert "composerDraftText.trim().length > 0" in overlay_source
 
 
+def test_message_knowledge_snippets_modal_contract() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    client = read_frontend("api/client.ts")
+    styles = read_frontend("styles.css")
+
+    assert "BookOpen" in source
+    assert "knowledgeSnippetRefs" in source
+    assert "KnowledgeSnippetsModal" in source
+    assert "api.getKnowledgeChunk" in source
+    assert "snippet_refs" in source
+    assert "getKnowledgeChunk" in client
+    assert "/api/knowledge/chunks/" in client
+    assert ".knowledge-snippets-modal" in styles
+    assert "white-space: pre-wrap" in styles
+
+
 def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:
     source = read_frontend("components/StatusBar.tsx")
 

@@ -202,7 +202,10 @@ def test_prompt_agent_injects_session_knowledge_by_default(monkeypatch) -> None:
                     "heading_path": "Intro",
                     "content": "Alpha knowledge.",
                     "truncated": False,
+                    "vector_score": 0.72,
+                    "keyword_score": -3.1,
                     "rrf_score": 1.0,
+                    "rerank_score": 0.91,
                 }
             ],
             "debug": {"warnings": []},
@@ -219,6 +222,26 @@ def test_prompt_agent_injects_session_knowledge_by_default(monkeypatch) -> None:
     assert metadata["enabled"] is True
     assert metadata["injected"] is True
     assert metadata["knowledge_base_ids"] == [kb.id]
+    assert metadata["snippet_refs"] == [
+        {
+            "index": "K1",
+            "chunk_id": "chunk-1",
+            "knowledge_base_id": kb.id,
+            "knowledge_base_name": "Project KB",
+            "source_id": "source-1",
+            "source_title": "Spec",
+            "rank": 1,
+            "heading_path": "Intro",
+            "vector_score": 0.72,
+            "keyword_score": -3.1,
+            "rrf_score": 1.0,
+            "rerank_score": 0.91,
+        }
+    ]
+    assert "Alpha knowledge." not in str(metadata)
+    message_metadata = fixture.messages.list_messages(session.session_id)[-1].metadata["knowledge_context"]
+    assert message_metadata["snippet_refs"][0]["chunk_id"] == "chunk-1"
+    assert "Alpha knowledge." not in str(message_metadata)
 
 
 def test_prompt_agent_knowledge_override_disabled_skips_retrieval(monkeypatch) -> None:

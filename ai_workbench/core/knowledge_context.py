@@ -87,7 +87,13 @@ def build_session_knowledge_context(
     return KnowledgeContextResult(
         rendered_text=rendered_text,
         snippets=snippets,
-        metadata={**metadata_base, "result_count": len(snippets), "injected": bool(rendered_text), "warnings": warnings},
+        metadata={
+            **metadata_base,
+            "result_count": len(snippets),
+            "injected": bool(rendered_text),
+            "snippet_refs": [_snippet_ref(snippet) for snippet in snippets] if rendered_text else [],
+            "warnings": warnings,
+        },
         warnings=warnings,
     )
 
@@ -133,6 +139,24 @@ def _snippet_payload(item: dict[str, Any], index: int, kb_names: dict[str, str])
         "heading_path": item.get("heading_path") or "",
         "content": item.get("content") or "",
     }
+
+
+def _snippet_ref(snippet: dict[str, Any]) -> dict[str, Any]:
+    ref: dict[str, Any] = {
+        "index": snippet.get("index"),
+        "chunk_id": snippet.get("chunk_id"),
+        "knowledge_base_id": snippet.get("knowledge_base_id"),
+        "knowledge_base_name": snippet.get("knowledge_base_name"),
+        "source_id": snippet.get("source_id"),
+        "source_title": snippet.get("source_title"),
+        "rank": snippet.get("rank"),
+        "heading_path": snippet.get("heading_path") or "",
+    }
+    for key in ("vector_score", "keyword_score", "rrf_score", "rerank_score"):
+        value = snippet.get(key)
+        if isinstance(value, (int, float)):
+            ref[key] = value
+    return {key: value for key, value in ref.items() if value not in (None, "") or key == "heading_path"}
 
 
 def _render_block(*, instruction: str, snippet_template: str, snippets: list[dict[str, Any]]) -> str:

@@ -549,6 +549,9 @@ class AgentRunner:
         if llm_result.reasoning_content:
             metadata["reasoning_content"] = llm_result.reasoning_content
         self._record_llm_metadata(run.run_id, llm_config, llm_metrics, vision_input["metadata"], file_context["metadata"], llm_raw=llm_result.raw)
+        knowledge_context = self.run_store.get_run(run.run_id).metadata.get("knowledge_context")
+        if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
+            metadata["knowledge_context"] = knowledge_context
         saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
         if suppress_output:
             self.run_lifecycle.complete_step(saving_step.step_id)
@@ -842,6 +845,9 @@ class AgentRunner:
             "reasoning": _reasoning_metadata(llm_config, reasoning_content),
             "llm": _llm_message_metadata(llm_config, llm_raw),
         }
+        knowledge_context = self.run_store.get_run(run_id).metadata.get("knowledge_context")
+        if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
+            metadata["knowledge_context"] = knowledge_context
         if reasoning_content:
             metadata["reasoning_content"] = reasoning_content
         if interrupted:

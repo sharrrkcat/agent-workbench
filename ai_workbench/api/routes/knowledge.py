@@ -3,6 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlmodel import Session as DbSession
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
@@ -35,6 +36,7 @@ from ai_workbench.core.knowledge_store import (
 )
 from ai_workbench.core.rerank import rerank_documents
 from ai_workbench.core.retrieval import search_knowledge
+from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeSourceRecord
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -284,6 +286,31 @@ def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_st
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", str(exc))
     except KnowledgeModelError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
+
+
+@router.get("/chunks/{chunk_id}")
+def get_knowledge_chunk(chunk_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    engine = getattr(state.knowledge, "engine", None)
+    if engine is None:
+        raise_error(400, "KNOWLEDGE_STORE_UNAVAILABLE", "Knowledge chunks require the SQLite knowledge store.")
+    with DbSession(engine) as session:
+        chunk = session.get(KnowledgeChunkRecord, chunk_id)
+        if chunk is None:
+            raise_error(404, "KNOWLEDGE_CHUNK_NOT_FOUND", f"Knowledge chunk not found: {chunk_id}")
+        source = session.get(KnowledgeSourceRecord, chunk.source_id)
+        knowledge_base = session.get(KnowledgeBaseRecord, chunk.knowledge_base_id)
+        if source is None or knowledge_base is None:
+            raise_error(404, "KNOWLEDGE_CHUNK_NOT_FOUND", f"Knowledge chunk not found: {chunk_id}")
+        return {
+            "chunk_id": chunk.id,
+            "knowledge_base_id": chunk.knowledge_base_id,
+            "knowledge_base_name": knowledge_base.name,
+            "source_id": chunk.source_id,
+            "source_title": source.title,
+            "heading_path": chunk.heading_path,
+            "content": chunk.content,
+            "chunk_index": chunk.chunk_index,
+        }
 
 
 @router.get("/bases")

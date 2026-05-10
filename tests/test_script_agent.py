@@ -233,6 +233,9 @@ def test_script_agent_override_enabled_injects_knowledge_for_text_json_and_strea
     assert len(fixture.llm.calls) == 3
     assert all("Script knowledge." in call["messages"][0]["content"] for call in fixture.llm.calls)
     assert all(fixture.runs.get_run(run_item.run_id).metadata.get("knowledge_context", {}).get("injected") is not False for run_item in fixture.runs.list_runs(session.session_id))
+    messages = [message for message in fixture.messages.list_messages(session.session_id) if message.agent_id == "script_llm_kb" and message.role in {"assistant", "agent"}]
+    assert all(message.metadata["knowledge_context"]["snippet_refs"][0]["chunk_id"] == "chunk-1" for message in messages)
+    assert all("Script knowledge." not in str(message.metadata["knowledge_context"]) for message in messages)
 
 
 def test_script_agent_empty_and_silent_query_skip_knowledge(monkeypatch, tmp_path: Path) -> None:

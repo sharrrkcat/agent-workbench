@@ -245,7 +245,7 @@ function SessionKnowledgePicker({
           {!bases.length ? (
             <div className="settings-empty-state compact">
               No knowledge bases yet.
-              <button type="button" className="settings-secondary-button" onClick={onOpenSettings}>Open settings</button>
+              <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title="Settings &gt; Knowledge">Open settings</button>
             </div>
           ) : null}
           {bases.length ? (

@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Send, Trash2, XCircle } from 'lucide-react';
-import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, Message, Run, RunStep } from '../types';
+import { BookOpen, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Send, Trash2, X, XCircle } from 'lucide-react';
+import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, KnowledgeChunk, Message, Run, RunStep } from '../types';
+import { api } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
 import { AgentAvatar } from './AgentAvatar';
@@ -32,6 +33,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(contentToText(message.content));
+  const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false);
 
   if (message.output_type === 'event') {
     return <SystemEventSeparator message={message} />;
@@ -50,6 +52,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted)) : '';
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
+  const snippetRefs = isAgentMessage ? knowledgeSnippetRefs(message.metadata) : [];
   const runSteps = storeRunSteps || messageRunSteps(message);
   const messageRun = storeRun || message.run;
   if (!editing && !message.client_status && !hasVisibleRun(messageRun) && !hasRenderableMessage(message, reasoningContent)) {
@@ -147,12 +150,138 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
                 <Trash2 size={13} />
               </button>
             ) : null}
+            {snippetRefs.length ? (
+              <button type="button" onClick={() => setKnowledgeModalOpen(true)} disabled={operationPending} title="View knowledge snippets">
+                <BookOpen size={13} />
+              </button>
+            ) : null}
             {metricsLabel ? <span className="message-metrics">{metricsLabel}</span> : null}
           </div>
         ) : null}
       </div>
+      {knowledgeModalOpen ? <KnowledgeSnippetsModal refs={snippetRefs} onClose={() => setKnowledgeModalOpen(false)} /> : null}
     </article>
   );
+}
+
+type KnowledgeSnippetRef = {
+  index: string;
+  chunk_id: string;
+  knowledge_base_id?: string;
+  knowledge_base_name?: string;
+  source_id?: string;
+  source_title?: string;
+  rank?: number;
+  heading_path?: string;
+  vector_score?: number;
+  keyword_score?: number;
+  rrf_score?: number;
+  rerank_score?: number;
+};
+
+type KnowledgeSnippet = KnowledgeSnippetRef & {
+  chunk?: KnowledgeChunk;
+};
+
+function KnowledgeSnippetsModal({ refs, onClose }: { refs: KnowledgeSnippetRef[]; onClose: () => void }) {
+  const [snippets, setSnippets] = useState<KnowledgeSnippet[]>(() => refs.map((ref) => ({ ...ref })));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    Promise.all(refs.map((ref) => api.getKnowledgeChunk(ref.chunk_id)))
+      .then((chunks) => {
+        if (cancelled) return;
+        setSnippets(refs.map((ref, index) => ({ ...ref, chunk: chunks[index] })));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to load knowledge snippets.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refs]);
+
+  return (
+    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="Knowledge snippets" onClick={onClose}>
+      <section className="knowledge-snippets-modal" onClick={(event) => event.stopPropagation()}>
+        <header className="file-preview-header">
+          <div className="file-preview-title">
+            <strong>Knowledge snippets</strong>
+            <span>{refs.length} snippets used</span>
+          </div>
+          <button type="button" className="image-preview-close" onClick={onClose} title="Close">
+            <X size={16} />
+          </button>
+        </header>
+        <div className="knowledge-snippets-body">
+          {loading ? <p className="knowledge-snippets-state">Loading snippets...</p> : null}
+          {error ? <p className="knowledge-snippets-state error">{error}</p> : null}
+          {!loading && !error && !snippets.length ? <p className="knowledge-snippets-state">No knowledge snippets were recorded.</p> : null}
+          {!loading && !error
+            ? snippets.map((snippet) => (
+                <article className="knowledge-snippet-card" key={`${snippet.index}:${snippet.chunk_id}`}>
+                  <div className="knowledge-snippet-heading">
+                    <span>{snippet.index}</span>
+                    <div>
+                      <strong>{snippet.chunk?.knowledge_base_name || snippet.knowledge_base_name || snippet.knowledge_base_id || 'Knowledge base'}</strong>
+                      <small>{snippet.chunk?.source_title || snippet.source_title || snippet.source_id || 'Source'}</small>
+                      {snippet.chunk?.heading_path || snippet.heading_path ? <small>{snippet.chunk?.heading_path || snippet.heading_path}</small> : null}
+                    </div>
+                  </div>
+                  <pre className="knowledge-snippet-content">{snippet.chunk?.content || ''}</pre>
+                  <div className="knowledge-snippet-scores">
+                    {scoreLabel('rank', snippet.rank)}
+                    {scoreLabel('vector', snippet.vector_score)}
+                    {scoreLabel('keyword', snippet.keyword_score)}
+                    {scoreLabel('rrf', snippet.rrf_score)}
+                    {scoreLabel('rerank', snippet.rerank_score)}
+                    {scoreLabel('chunk', snippet.chunk?.chunk_index)}
+                  </div>
+                </article>
+              ))
+            : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function knowledgeSnippetRefs(metadata: Record<string, unknown> | undefined): KnowledgeSnippetRef[] {
+  const context = metadata?.knowledge_context;
+  if (!isPlainRecord(context) || !Array.isArray(context.snippet_refs)) return [];
+  const refs: KnowledgeSnippetRef[] = [];
+  context.snippet_refs.forEach((item, index) => {
+    if (!isPlainRecord(item) || typeof item.chunk_id !== 'string' || !item.chunk_id) return;
+    refs.push({
+        index: textValue(item.index) || `K${index + 1}`,
+        chunk_id: item.chunk_id,
+        knowledge_base_id: textValue(item.knowledge_base_id),
+        knowledge_base_name: textValue(item.knowledge_base_name),
+        source_id: textValue(item.source_id),
+        source_title: textValue(item.source_title),
+        rank: numberValue(item.rank),
+        heading_path: textValue(item.heading_path),
+        vector_score: numberValue(item.vector_score),
+        keyword_score: numberValue(item.keyword_score),
+        rrf_score: numberValue(item.rrf_score),
+        rerank_score: numberValue(item.rerank_score),
+    });
+  });
+  return refs;
+}
+
+function scoreLabel(label: string, value: number | undefined): ReactNode {
+  if (value === undefined) return null;
+  const display = Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  return <span>{label}: {display}</span>;
 }
 
 function ThoughtBlock({ content, streaming }: { content: string; streaming: boolean }) {

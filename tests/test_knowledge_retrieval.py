@@ -109,6 +109,23 @@ def test_vector_search_returns_top_candidates_from_indexed_embeddings(tmp_path: 
     assert backend.embedding_calls == [{"model_path": "embeddings/mock-a", "texts": ["alpha"], "normalize": False, "device": "auto"}]
 
 
+def test_get_knowledge_chunk_returns_content_without_vector_blob(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    search_response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]]})
+    chunk_id = search_response.json()["results"][0]["chunk_id"]
+
+    response = client.get(f"/api/knowledge/chunks/{chunk_id}")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["chunk_id"] == chunk_id
+    assert payload["knowledge_base_name"] == "Docs"
+    assert payload["source_title"] == "Alpha"
+    assert "alpha" in payload["content"]
+    assert "vector_blob" not in payload
+
+
 def test_vector_search_groups_by_embedding_model_profile_and_embeds_each_group_once(tmp_path: Path) -> None:
     client, backend = make_client(tmp_path)
     profile_a, kb_a = setup_indexed_kbs(client)

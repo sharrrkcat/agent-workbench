@@ -493,6 +493,17 @@ export type KnowledgeSearchResponse = {
   };
 };
 
+export type KnowledgeChunk = {
+  chunk_id: string;
+  knowledge_base_id: string;
+  knowledge_base_name: string;
+  source_id: string;
+  source_title: string;
+  heading_path: string;
+  content: string;
+  chunk_index: number;
+};
+
 export type PetPosition = {
   mode: 'default' | string;
   x: number | null;

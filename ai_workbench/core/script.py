@@ -586,18 +586,21 @@ class LLMProxy:
             )
 
     def message_metadata(self) -> Dict[str, Any]:
+        metadata: Dict[str, Any] = {}
+        if self.run_store is not None and self.run_id:
+            knowledge_context = self.run_store.get_run(self.run_id).metadata.get("knowledge_context")
+            if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
+                metadata["knowledge_context"] = knowledge_context
         if not self.default_llm_resolution:
-            return {}
+            return metadata
         try:
             from ai_workbench.core.runner import _llm_message_metadata
 
             llm_config = SimpleNamespace(values=self.default_model_config, metadata=_resolution_as_config_metadata(self.default_llm_resolution))
-            return {
-                "llm_resolution": self.default_llm_resolution,
-                "llm": _llm_message_metadata(llm_config, self.last_raw),
-            }
+            metadata.update({"llm_resolution": self.default_llm_resolution, "llm": _llm_message_metadata(llm_config, self.last_raw)})
+            return metadata
         except Exception:
-            return {"llm_resolution": self.default_llm_resolution}
+            return {**metadata, "llm_resolution": self.default_llm_resolution}
 
     def record_run_llm_metadata(self) -> None:
         if self.run_store is None or not self.run_id or not self.default_llm_resolution:
