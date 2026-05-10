@@ -17,6 +17,26 @@ def test_status_bar_does_not_render_global_error_text() -> None:
     assert "{error}" not in source
 
 
+def test_pet_sprite_uses_codex_animation_frame_counts() -> None:
+    source = read_frontend("components/PetSprite.tsx")
+
+    assert "CODEX_PET_ATLAS" in source
+    assert "columns: 8" in source
+    assert "rows: 9" in source
+    assert "frameCount: 6" in source[source.index("idle:") : source.index("'running-right':")]
+    assert "frameCount: 8" in source[source.index("'running-right':") : source.index("'running-left':")]
+    assert "frameCount: 8" in source[source.index("'running-left':") : source.index("waving:")]
+    assert "frameCount: 4" in source[source.index("waving:") : source.index("jumping:")]
+    assert "frameCount: 5" in source[source.index("jumping:") : source.index("failed:")]
+    assert "frameCount: 8" in source[source.index("failed:") : source.index("waiting:")]
+    assert "frameCount: 6" in source[source.index("waiting:") : source.index("running:")]
+    assert "frameCount: 6" in source[source.index("running:") : source.index("review:")]
+    assert "frameCount: 6" in source[source.index("review:") : source.index("export function PetSprite")]
+    assert "% CODEX_PET_ATLAS.columns" not in source
+    assert "% COLS" not in source
+    assert "% 8" not in source
+
+
 def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:
     source = read_frontend("components/StatusBar.tsx")
 

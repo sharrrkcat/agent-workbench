@@ -18,7 +18,6 @@ const BASE_HEIGHT = 208;
 const DEFAULT_MARGIN_RIGHT = 28;
 const DEFAULT_MARGIN_BOTTOM = 92;
 const TERMINAL_HOLD_MS = 4200;
-const JUMP_MS = 720;
 const PET_REFRESH_MS = 6000;
 
 const PET_RUN_STEP_TASK_LABELS: Record<string, string> = {
@@ -205,8 +204,13 @@ export function PetOverlay() {
   const startJump = useCallback(() => {
     if (!settings?.jump_on_hover || drag) return;
     setJumping(true);
-    window.setTimeout(() => setJumping(false), JUMP_MS);
   }, [drag, settings?.jump_on_hover]);
+
+  const handleAnimationComplete = useCallback((state: PetSpriteState) => {
+    if (state === 'jumping') {
+      setJumping(false);
+    }
+  }, []);
 
   function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !position) return;
@@ -243,7 +247,13 @@ export function PetOverlay() {
       title={selectedPet.display_name || selectedPet.id}
     >
       {settings.show_status_bubble && bubbleText && !drag ? <div className="pet-status-bubble">{bubbleText}</div> : null}
-      <PetSprite spritesheetUrl={spriteUrl} state={animationState} scale={scale} className="pet-sprite" />
+      <PetSprite
+        spritesheetUrl={spriteUrl}
+        state={animationState}
+        scale={scale}
+        className="pet-sprite"
+        onAnimationComplete={handleAnimationComplete}
+      />
     </div>
   );
 }

@@ -438,7 +438,7 @@ function PetConfigTab({
         <label className="config-field settings-config-field boolean-field">
           <span>Jump on Hover</span>
           <ToggleSwitch checked={values.jump_on_hover} onChange={(checked) => onSetValue('jump_on_hover', checked)} />
-          <small>This round only saves the setting. Hover jumping is not implemented here.</small>
+          <small>Play the jump animation when the chat pet is hovered.</small>
         </label>
       </section>
     </>
