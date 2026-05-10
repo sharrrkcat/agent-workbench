@@ -1,0 +1,111 @@
+id: pet
+name: Pet
+description: Manage local Codex-compatible Workbench Pet assets and settings.
+
+config_schema:
+  - name: pet_enabled
+    type: boolean
+    label: Enable Pet
+    default: true
+
+  - name: default_pet_id
+    type: string
+    label: Default Pet
+    default: ""
+
+  - name: pet_scale
+    type: float
+    label: Scale
+    default: 1.0
+    minimum: 0.5
+    maximum: 2.0
+
+  - name: show_status_bubble
+    type: boolean
+    label: Show Status Bubble
+    default: true
+
+  - name: jump_on_hover
+    type: boolean
+    label: Jump on Hover
+    default: true
+
+  - name: running_prefix
+    type: string
+    label: Running Prefix
+    default: "正在"
+
+  - name: position
+    type: json
+    label: Pet Position
+    default:
+      mode: default
+      x: null
+      y: null
+
+  - name: bubble_texts
+    type: json
+    label: Bubble Texts
+    default:
+      idle: ""
+      waiting: "等你一下"
+      done: "完成啦"
+      failed: "出错了"
+      cancelled: "已取消"
+      interrupted: "已中断"
+      wake: "我来啦"
+      tuck: "先睡一会儿"
+      status: "我在这里"
+      select: "换好啦"
+      reload: "重新扫描完成"
+      no_pet: "还没有可用的宠物"
+      import_success: "导入成功"
+      import_failed: "导入失败"
+      delete_success: "已删除"
+      delete_failed: "删除失败"
+
+methods:
+  - id: get_settings
+    description: Return resolved Pet capability settings.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: update_settings
+    description: Update Pet capability settings.
+    input_schema:
+      values:
+        type: json
+        required: true
+    output:
+      type: json
+
+  - id: list_pets
+    description: List Codex-compatible pet directories under data/pet.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: scan_pets
+    description: Rescan Codex-compatible pet directories under data/pet.
+    input_schema: {}
+    output:
+      type: json
+
+  - id: validate_pet
+    description: Validate one Codex-compatible pet under data/pet.
+    input_schema:
+      pet_id:
+        type: string
+        required: true
+    output:
+      type: json
+
+  - id: delete_pet
+    description: Delete one non-builtin pet under data/pet.
+    input_schema:
+      pet_id:
+        type: string
+        required: true
+    output:
+      type: json

@@ -27,6 +27,7 @@ Do not edit manually.
 | http | HTTP Capability | get_text, fetch_page, fetch_image | /http-get, /fetch-page, /fetch-image | text, markdown, image | enable_http_get, enable_fetch_image, allowed_schemes, timeout_seconds, max_text_response_size_mb, max_image_response_size_mb, allow_redirects, max_redirects |
 | knowledge | Knowledge | search, list_bases, stats | /kb-search | json, json, json |  |
 | llm | LLM Capability | generate, chat, unload |  | text, text, json | base_url, api_key, model, default_profile, timeout |
+| pet | Pet | get_settings, update_settings, list_pets, scan_pets, validate_pet, delete_pet |  | json, json, json, json, json, json | pet_enabled, default_pet_id, pet_scale, show_status_bubble, jump_on_hover, running_prefix, position, bubble_texts |
 | storage | Storage | get, set |  |  |  |
 
 ## Notes
