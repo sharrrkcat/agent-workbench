@@ -1259,7 +1259,10 @@ def test_prompt_agent_uses_streaming_when_profile_supports_streaming() -> None:
     assert messages[-1].content == "hello"
     assert messages[-1].metadata["llm_resolution"]["profile_id"] == profile.id
     assert messages[-1].metadata["llm_metrics"]["usage_source"] == "provider"
+    assert messages[-1].metadata["llm_metrics"]["prompt_tokens"] == 3
     assert messages[-1].metadata["llm_metrics"]["completion_tokens"] == 2
+    assert fixture.runs.get_run(result.run_id).metadata["llm_metrics"]["prompt_tokens"] == 3
+    assert fixture.runs.get_run(result.run_id).metadata["llm_metrics"]["completion_tokens"] == 2
     assert messages[-1].metadata["llm_metrics"]["time_to_first_token_ms"] is not None
     assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == ["he", "llo"]
     assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]

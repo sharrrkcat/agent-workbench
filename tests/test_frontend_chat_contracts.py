@@ -209,6 +209,16 @@ def test_chat_renders_run_steps_panel_and_step_statuses() -> None:
     assert "skipped" in source
 
 
+def test_message_metrics_label_distinguishes_input_and_output_tokens() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "metrics.prompt_tokens" in source
+    assert "输入 ${promptTokens} tokens" in source
+    assert "输出 ${estimated ? '~' : ''}${tokens} tokens" in source
+    assert "metrics.total_tokens" not in source[source.index("function formatMetrics") : source.index("function numberValue")]
+    assert source.index("输入 ${promptTokens} tokens") < source.index("输出 ${estimated ? '~' : ''}${tokens} tokens")
+
+
 def test_failed_producer_messages_keep_identity_and_send_errors_are_local() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     store = read_frontend("store/useWorkbenchStore.ts")

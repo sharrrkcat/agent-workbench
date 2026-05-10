@@ -1722,6 +1722,7 @@ function formatMetrics(value: unknown, interrupted: boolean): string {
   if (!value || typeof value !== 'object') return '';
   const metrics = value as Record<string, unknown>;
   const usageSource = typeof metrics.usage_source === 'string' ? metrics.usage_source : '';
+  const promptTokens = numberValue(metrics.prompt_tokens);
   const providerTokens = numberValue(metrics.completion_tokens);
   const estimatedTokens = numberValue(metrics.estimated_completion_tokens);
   const tokens = providerTokens ?? estimatedTokens;
@@ -1730,9 +1731,12 @@ function formatMetrics(value: unknown, interrupted: boolean): string {
   const tokensPerSecond = numberValue(metrics.tokens_per_second);
   const parts: string[] = [];
   if (interrupted) parts.push('Stopped');
+  if (promptTokens !== undefined) {
+    parts.push(`输入 ${promptTokens} tokens`);
+  }
   if (tokens !== undefined) {
     const estimated = usageSource === 'estimated' || (providerTokens === undefined && estimatedTokens !== undefined);
-    parts.push(`${estimated ? '~' : ''}${tokens} tokens`);
+    parts.push(`输出 ${estimated ? '~' : ''}${tokens} tokens`);
   }
   if (tokensPerSecond !== undefined) {
     parts.push(`${tokensPerSecond.toFixed(1)} tok/s`);
