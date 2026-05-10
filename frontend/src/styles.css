@@ -4273,6 +4273,93 @@ input:disabled {
   }
 }
 
+.pet-overlay {
+  position: fixed;
+  z-index: 6;
+  display: grid;
+  place-items: end center;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.34));
+}
+
+.pet-overlay.dragging {
+  z-index: 7;
+  cursor: grabbing;
+}
+
+.pet-sprite {
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-position-x: 0;
+  background-size: 800% 900%;
+  animation: pet-overlay-frames 0.9s steps(8) infinite;
+  image-rendering: auto;
+}
+
+.pet-sprite[data-state="jumping"] {
+  animation-duration: 0.72s;
+  animation-iteration-count: 1;
+}
+
+.pet-sprite[data-state="running"],
+.pet-sprite[data-state="running-left"],
+.pet-sprite[data-state="running-right"] {
+  animation-duration: 0.72s;
+}
+
+.pet-sprite[data-state="waiting"],
+.pet-sprite[data-state="review"] {
+  animation-duration: 1.08s;
+}
+
+.pet-sprite[data-state="failed"] {
+  animation-duration: 1.2s;
+}
+
+@keyframes pet-overlay-frames {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: 100%;
+  }
+}
+
+.pet-status-bubble {
+  position: absolute;
+  right: 78%;
+  bottom: 72%;
+  max-width: min(220px, 48vw);
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(31, 31, 31, 0.92);
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.32);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+}
+
+.pet-status-bubble::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  bottom: 14px;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(31, 31, 31, 0.92);
+  transform: rotate(45deg);
+}
+
 .pet-list-copy {
   display: grid;
   gap: 5px;

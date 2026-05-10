@@ -5,6 +5,7 @@ import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
 import { FilePreviewModal } from './components/FilePreviewModal';
 import { ImagePreviewModal } from './components/ImagePreviewModal';
+import { PetOverlay } from './components/PetOverlay';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
@@ -102,6 +103,7 @@ export default function App() {
         <ChatHeader onOpenSettings={() => navigate('/settings')} />
         <ErrorBanner />
         <ChatView onPreviewImage={setPreviewImage} onPreviewFile={setPreviewFile} />
+        <PetOverlay />
         <ChatInput onPreviewImage={setPreviewImage} />
         <StatusBar />
       </main>
