@@ -34,6 +34,7 @@ from ai_workbench.core.knowledge_store import (
     KnowledgeSource,
 )
 from ai_workbench.core.rerank import rerank_documents
+from ai_workbench.core.retrieval import search_knowledge
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -81,6 +82,17 @@ class KnowledgeSourceCreate(BaseModel):
     title: str | None = None
     text: str | None = None
     attachment_id: str | None = None
+
+
+class KnowledgeSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1)
+    knowledge_base_ids: list[str] | None = None
+    session_id: str | None = None
+    top_k: int | None = Field(default=None, ge=1, le=100)
+    max_context_chars: int | None = Field(default=None, ge=100, le=200000)
+    debug: bool = False
 
 
 @router.get("/settings")
@@ -240,6 +252,36 @@ def rerank(payload: RerankRequest, state: RuntimeState = Depends(get_state)) -> 
         )
     except ValueError as exc:
         raise_error(422, "INVALID_KNOWLEDGE_MODEL_PATH", str(exc))
+    except KnowledgeModelError as exc:
+        raise_error(400, exc.code, exc.message, exc.details)
+
+
+@router.post("/search")
+def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    query = payload.query.strip()
+    if not query:
+        raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Query must not be empty.")
+    if not payload.knowledge_base_ids and not payload.session_id:
+        raise_error(422, "KNOWLEDGE_SEARCH_TARGET_REQUIRED", "knowledge_base_ids or session_id is required.")
+    if payload.session_id and not payload.knowledge_base_ids:
+        _require_session(state, payload.session_id)
+    engine = getattr(state.knowledge, "engine", None)
+    if engine is None:
+        raise_error(400, "KNOWLEDGE_SEARCH_STORE_UNAVAILABLE", "Knowledge search requires the SQLite knowledge store.")
+    try:
+        return search_knowledge(
+            engine=engine,
+            knowledge_store=state.knowledge,
+            model_backend=state.knowledge_model_backend,
+            query=query,
+            knowledge_base_ids=payload.knowledge_base_ids,
+            session_id=payload.session_id,
+            top_k=payload.top_k,
+            max_context_chars=payload.max_context_chars,
+            include_debug=payload.debug,
+        )
+    except KeyError as exc:
+        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", str(exc))
     except KnowledgeModelError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
 

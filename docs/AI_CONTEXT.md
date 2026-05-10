@@ -251,6 +251,9 @@ Read:
 - `docs/generated/REGISTRY.md`
 
 Likely source:
+- `ai_workbench/core/vector_store.py`
+- `ai_workbench/core/keyword_search.py`
+- `ai_workbench/core/retrieval.py`
 - `ai_workbench/core/knowledge_models.py`
 - `ai_workbench/core/knowledge_settings.py`
 - `ai_workbench/core/embedding.py`
@@ -266,11 +269,12 @@ Likely source:
 Tests:
 - `uv run pytest tests/test_knowledge_settings.py tests/test_knowledge_models.py`
 - `uv run pytest tests/test_knowledge_indexing.py`
+- `uv run pytest tests/test_knowledge_retrieval.py`
 - `uv run pytest tests/test_frontend_chat_contracts.py`
 - `cd frontend && npm run build`
 
 Avoid unless explicitly in scope:
-- Do not add retrieval ranking, RRF, reranker retrieval, Knowledge Capability, `/kb-search`, automatic model download, or Prompt/Script Agent context changes for Knowledge indexing/settings work unless explicitly requested.
+- Do not add Knowledge Capability, `/kb-search`, automatic model download, or Prompt/Script Agent context changes for Knowledge search/settings work unless explicitly requested.
 
 ## Documentation Update Rules
 

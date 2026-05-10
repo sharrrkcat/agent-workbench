@@ -1,8 +1,8 @@
-import { BrainCircuit, Play, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { BrainCircuit, Play, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, KnowledgeBase, KnowledgeModelScan, KnowledgeSettings, KnowledgeSource } from '../../types';
+import type { EmbeddingModelProfile, KnowledgeBase, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource } from '../../types';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -384,6 +384,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setRe
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResponse, setSearchResponse] = useState<KnowledgeSearchResponse | null>(null);
 
   useEffect(() => {
     setValues(initial);
@@ -481,6 +483,18 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setRe
       setBusy('');
     }
   }
+  async function runSearch() {
+    if (!values.id || !searchQuery.trim()) return;
+    setBusy('searching');
+    try {
+      setLocalError(null);
+      setSearchResponse(await api.searchKnowledge({ query: searchQuery, knowledge_base_ids: [values.id], debug: true }));
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Knowledge search failed.'));
+    } finally {
+      setBusy('');
+    }
+  }
   return (
     <form onSubmit={save}>
       <div className="settings-detail-grid">
@@ -529,10 +543,48 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, setBusy, setRe
           <div className="settings-button-row">
             <button className="settings-secondary-button" type="button" disabled={!sourceText.trim()} onClick={addPastedSource}><Play size={14} />Index pasted text</button>
           </div>
+          <div className="detail-section">
+            <div className="detail-section-heading"><h3>Search Test</h3></div>
+            <div className="settings-detail-grid">
+              <TextField label="Query" value={searchQuery} onChange={setSearchQuery} />
+            </div>
+            <div className="settings-button-row">
+              <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim()} onClick={runSearch}><Search size={14} />Search</button>
+            </div>
+            {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
+          </div>
         </div>
       ) : null}
     </form>
   );
+}
+
+function KnowledgeSearchResults({ response }: { response: KnowledgeSearchResponse }) {
+  return (
+    <div className="settings-object-table">
+      {response.results.length ? response.results.map((result) => (
+        <div className="settings-object-row" key={result.chunk_id}>
+          <div>
+            <strong>#{result.rank} {result.title || result.source_id}</strong>
+            <p>{result.content}{result.truncated ? '...' : ''}</p>
+            <p className="settings-muted-text">
+              vector {scoreLabel(result.vector_score)} / keyword {scoreLabel(result.keyword_score)} / rrf {scoreLabel(result.rrf_score)} / rerank {scoreLabel(result.rerank_score)}
+            </p>
+          </div>
+        </div>
+      )) : <Empty title="No results" message="No chunks matched this query." />}
+      {response.debug ? (
+        <details className="settings-debug-details">
+          <summary>Debug</summary>
+          <pre>{JSON.stringify(response.debug, null, 2)}</pre>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function scoreLabel(value?: number | null): string {
+  return typeof value === 'number' ? value.toFixed(4) : 'n/a';
 }
 
 function NumberGroup({ title, values, setValues, fields }: { title: string; values: KnowledgeSettings; setValues: (values: KnowledgeSettings) => void; fields: [keyof KnowledgeSettings, string][] }) {

@@ -420,6 +420,36 @@ export type KnowledgeSourceIndexResult = {
   skipped?: boolean;
 };
 
+export type KnowledgeSearchResult = {
+  rank: number;
+  chunk_id: string;
+  knowledge_base_id: string;
+  source_id: string;
+  title: string;
+  heading_path: string;
+  content: string;
+  truncated: boolean;
+  vector_rank?: number | null;
+  vector_score?: number | null;
+  keyword_rank?: number | null;
+  keyword_score?: number | null;
+  rrf_score: number;
+  rerank_score?: number | null;
+};
+
+export type KnowledgeSearchResponse = {
+  query: string;
+  results: KnowledgeSearchResult[];
+  debug?: {
+    embedding_groups: { embedding_model_profile_id: string; knowledge_base_ids: string[]; candidate_count: number }[];
+    keyword_candidate_count: number;
+    merged_candidate_count: number;
+    reranker_used: boolean;
+    reranker_failed: boolean;
+    warnings: string[];
+  };
+};
+
 export type LlmResolvedConfig = {
   source?: string | null;
   profile_id?: string | null;

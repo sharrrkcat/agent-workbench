@@ -28,6 +28,7 @@ import type {
   KnowledgeSource,
   KnowledgeSourceIndexResult,
   KnowledgeModelScan,
+  KnowledgeSearchResponse,
   KnowledgeSettings,
   RuntimeResponse,
   Session,
@@ -220,6 +221,11 @@ export const api = {
     request<KnowledgeSourceIndexResult>(`/api/knowledge/sources/${sourceId}/reindex`, { method: 'POST' }),
   reindexKnowledgeBase: (knowledgeBaseId: string) =>
     request<{ knowledge_base_id: string; sources: KnowledgeSourceIndexResult[] }>(`/api/knowledge/bases/${knowledgeBaseId}/reindex`, { method: 'POST' }),
+  searchKnowledge: (payload: { query: string; knowledge_base_ids?: string[]; session_id?: string | null; top_k?: number; max_context_chars?: number; debug?: boolean }) =>
+    request<KnowledgeSearchResponse>('/api/knowledge/search', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   getStorageStats: () => request<StorageStats>('/api/data/storage-stats'),
   getDiagnostics: () => request<Diagnostics>('/api/diagnostics'),
   scanOrphanAttachments: () => request<OrphanScanResult>('/api/data/attachments/scan-orphans', { method: 'POST' }),

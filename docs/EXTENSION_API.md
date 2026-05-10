@@ -319,7 +319,7 @@ The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `ref
 
 General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
-## Knowledge Settings, Local Model APIs, And Indexing
+## Knowledge Settings, Local Model APIs, Indexing, And Search
 
 Knowledge RAG v1 adds Workbench-owned settings, local model APIs, and source indexing APIs. These are internal Workbench JSON APIs, not provider function calling, tool calling, or OpenAI-compatible embedding endpoints.
 
@@ -392,7 +392,25 @@ The indexer validates source size and chunk limits, chunks text, embeds chunks w
 
 Index responses include `source_id`, `status`, `chunks`, `embedding_model_profile_id`, `embedding_dimension`, `indexed_at`, and `error`.
 
-Current non-goals: retrieval ranking, vector search, RRF, reranker retrieval, Prompt Agent context injection, Script Agent context injection, Knowledge Capability, and `/kb-search`.
+Knowledge search:
+
+- `POST /api/knowledge/search`
+
+Request shape:
+
+```json
+{"query": "...", "knowledge_base_ids": ["kb_id"], "session_id": null, "top_k": 6, "max_context_chars": 10000, "debug": true}
+```
+
+`query` is required and non-empty. Provide either explicit `knowledge_base_ids` or `session_id`; explicit KB ids win. Search uses only enabled KBs. Vector search is grouped by embedding model profile and never compares scores across different embedding models directly. Keyword search uses FTS5/BM25 across selected KBs. Candidates are deduped by `chunk_id`, merged with RRF, optionally reranked once globally, then trimmed by `top_k` and `max_context_chars`.
+
+Response shape:
+
+```json
+{"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "debug": {"warnings": []}}
+```
+
+Current non-goals: Prompt Agent context injection, Script Agent context injection, Agent Knowledge overrides, chat session KB picker, Knowledge Capability, and `/kb-search`.
 
 Session bindings:
 

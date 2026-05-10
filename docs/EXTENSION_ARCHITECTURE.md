@@ -146,6 +146,7 @@ Agent Workbench Knowledge v1 local model foundation:
 
 - Phase 1 owns local Knowledge settings and model APIs in the core application rather than a Capability manifest.
 - Phase 2 owns source indexing, chunk storage, vector BLOB storage, and FTS5 rows in the core application rather than a Capability manifest.
+- Phase 3 owns explicit retrieval search in the core application rather than a Capability manifest: SQLite vector BLOB brute-force search, FTS5/BM25 keyword search, RRF merge, one optional global rerank pass, and context-budget trimming.
 - Local model directories are `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
 - Local source staging starts at `data/knowledge/sources`; pasted source originals are written there as `<source_id>.txt`.
 - Embedding model profiles bind a user-named profile to an `embeddings/<folder>` model path.
@@ -155,7 +156,7 @@ Agent Workbench Knowledge v1 local model foundation:
 - `kb_chunks` owns indexed chunk content and source offsets.
 - `kb_embeddings` owns embedding snapshots and float32 vector BLOBs.
 - `kb_chunk_fts` owns keyword-search rows for future BM25 retrieval.
-- Retrieval ranking, RRF, reranker integration into retrieval, Prompt Agent injection, Script Agent injection, Knowledge Capability, and `/kb-search` are later phases.
+- Prompt Agent injection, Script Agent injection, Knowledge Capability, and `/kb-search` are later phases.
 
 Common pitfalls:
 

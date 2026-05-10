@@ -185,7 +185,7 @@ Settings -> Knowledge follows the same Settings Console three-column structure. 
 - Embedding Models: local embedding model profiles backed by `embedding_model_profiles`.
 - Knowledge Bases: knowledge base records backed by `knowledge_bases`, plus source indexing status.
 
-Knowledge RAG v1 Phase 2 provides the local foundation plus synchronous source indexing:
+Knowledge RAG v1 Phase 3 provides the local foundation, synchronous source indexing, and explicit retrieval search:
 
 - local model directories under `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
 - source staging directory `data/knowledge/sources`.
@@ -195,11 +195,14 @@ Knowledge RAG v1 Phase 2 provides the local foundation plus synchronous source i
 - test embedding/reranker endpoints and Workbench-native JSON embedding/reranker APIs.
 - pasted text and uploaded text attachment source indexing.
 - `kb_sources`, `kb_chunks`, `kb_embeddings`, and `kb_chunk_fts` storage.
-- chunk embeddings stored as float32 SQLite BLOBs and keyword rows stored in FTS5 for future BM25 retrieval.
+- chunk embeddings stored as float32 SQLite BLOBs and keyword rows stored in FTS5.
+- `POST /api/knowledge/search` for selected KBs or session-bound KBs.
+- brute-force vector search per embedding model profile, FTS5/BM25 keyword search, RRF merge, one global optional rerank pass, and context-budget trimming.
+- a small Settings -> Knowledge Base search/test panel.
 
 Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. Install them with the `knowledge` extra when desired. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
 
-Phase 2 intentionally does not implement retrieval ranking, complete vector search, RRF, reranker retrieval, retrieval injection into Prompt Agents or Script Agents, `local_file` sources, `/kb-search`, Knowledge Capability, or automatic model download. Local model paths must be relative paths inside `data/models`; embedding profiles use `embeddings/<folder>` and the global reranker path uses `rerankers/<folder>`.
+Phase 3 intentionally does not implement retrieval injection into Prompt Agents or Script Agents, Agent Knowledge overrides, a chat session KB picker, `local_file` sources, `/kb-search`, Knowledge Capability, or automatic model download. Local model paths must be relative paths inside `data/models`; embedding profiles use `embeddings/<folder>` and the global reranker path uses `rerankers/<folder>`.
 
 Existing LLM Profiles are migrated automatically. Legacy profile connection fields (`provider`, `base_url`, `api_key`, `timeout`) are moved into deduplicated Provider Profiles and the original `llm_profiles` rows become Model Profiles that reference those providers. The migration is idempotent and keeps capability flags and generation defaults. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
 
