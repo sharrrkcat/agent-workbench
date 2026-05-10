@@ -722,7 +722,7 @@ function DiagnosticsDetail() {
                 <Metric label={t('settings:data.status')} value={getStatusLabel(diagnostics.attachments.status, t)} />
                 <Metric label={t('settings:data.attachmentCount')} value={String(diagnostics.attachments.count ?? 0)} />
                 <Metric label={t('settings:data.totalSize')} value={formatBytes(diagnostics.attachments.total_size_bytes || 0)} />
-                <Metric label="Writable" value={diagnostics.attachments.writable ? t('status:common.yes') : t('status:common.no')} />
+                <Metric label={t('settings:diagnostics.writable')} value={diagnostics.attachments.writable ? t('status:common.yes') : t('status:common.no')} />
               </DiagnosticsCard>
               <DiagnosticsCard title={t('settings:diagnostics.realtime')}>
                 <Metric label={t('settings:diagnostics.eventBusSubscribers')} value={String(diagnostics.event_bus.subscriber_count ?? 0)} />
@@ -842,11 +842,12 @@ function formatDateTime(value: string): string {
 }
 
 function PlaceholderDetail({ section }: { section: SettingsSection }) {
+  const { t } = useTranslation(['settings', 'common']);
   if (section === 'developer') {
     return (
       <div className="settings-placeholder">
-        <h2>Developer</h2>
-        <p>Agent development docs and utilities:</p>
+        <h2>{t('settings:developer.title')}</h2>
+        <p>{t('settings:developer.description')}</p>
         <ul>
           <li>
             <code>scripts/check_agents.py</code>
@@ -864,21 +865,21 @@ function PlaceholderDetail({ section }: { section: SettingsSection }) {
   if (section === 'about') {
     return (
       <div className="settings-placeholder">
-        <h2>About</h2>
+        <h2>{t('settings:about.title')}</h2>
         <dl className="settings-definition-grid">
           <div>
-            <dt>Version</dt>
+            <dt>{t('common:version')}</dt>
             <dd>0.1.0-alpha</dd>
           </div>
           <div>
-            <dt>Project status</dt>
-            <dd>Technical Alpha</dd>
+            <dt>{t('settings:about.projectStatus')}</dt>
+            <dd>{t('settings:about.technicalAlpha')}</dd>
           </div>
         </dl>
       </div>
     );
   }
-  return <EmptyDetail title="Settings" message="This settings section will be added later." />;
+  return <EmptyDetail title={t('settings:title')} message={t('settings:placeholder')} />;
 }
 
 function EmptyDetail({ title, message }: { title: string; message: string }) {

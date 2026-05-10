@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function ToggleSwitch({
   checked,
@@ -11,6 +12,7 @@ export function ToggleSwitch({
   label?: ReactNode;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       className={`toggle-switch settings-toggle ${checked ? 'checked' : ''}`}
@@ -25,7 +27,7 @@ export function ToggleSwitch({
       }}
     >
       <span aria-hidden="true" />
-      <small>{label || (checked ? 'Enabled' : 'Disabled')}</small>
+      <small>{label || (checked ? t('common:enabled') : t('common:disabled'))}</small>
     </button>
   );
 }

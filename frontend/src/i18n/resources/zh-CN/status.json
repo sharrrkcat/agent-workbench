@@ -24,6 +24,28 @@
     "UNLOAD_FAILED": "卸载失败",
     "MODEL_UNLOAD_FAILED": "模型卸载失败"
   },
+  "modelProfile": {
+    "NO_MODEL_PROFILE": "无模型",
+    "MODEL_PROFILE_DISABLED": "模型已禁用",
+    "PROVIDER_PROFILE_MISSING": "缺失 Provider",
+    "MODEL_STATUS_UNKNOWN": "未知",
+    "PROVIDER_UNREACHABLE": "不可达",
+    "MODEL_NOT_AVAILABLE": "未找到模型",
+    "READY": "就绪",
+    "MODEL_NOT_LOADED": "未加载",
+    "MODEL_MISMATCH": "不匹配"
+  },
+  "modelProfileTitle": {
+    "NO_MODEL_PROFILE": "此 Agent 没有模型配置。",
+    "MODEL_PROFILE_DISABLED": "模型配置已禁用。",
+    "PROVIDER_PROFILE_MISSING": "模型配置没有 Provider 配置。",
+    "MODEL_STATUS_UNKNOWN": "Provider 状态尚未刷新。",
+    "PROVIDER_UNREACHABLE": "Provider 不可达。",
+    "MODEL_NOT_AVAILABLE": "Provider 模型列表中未找到请求的模型。",
+    "READY": "Provider 可达且模型已加载。",
+    "MODEL_NOT_LOADED": "Provider 可达且模型存在，但尚未加载。",
+    "MODEL_MISMATCH": "请求的模型在此 Provider 中不可用。"
+  },
   "knowledgeIndex": {
     "empty": "空",
     "ready": "就绪",

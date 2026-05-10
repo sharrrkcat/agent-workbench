@@ -6,6 +6,7 @@
     "previewUnavailable": "无法预览",
     "copyFileContent": "复制文件内容",
     "wrapLines": "自动换行",
+    "wrap": "换行",
     "noWrap": "不换行",
     "expand": "展开",
     "collapse": "折叠",
@@ -23,6 +24,13 @@
     "thought": "思考",
     "thinking": "思考中..."
   },
+  "modals": {
+    "filePreview": "文件预览",
+    "closeFilePreview": "关闭文件预览",
+    "imagePreview": "图片预览",
+    "closeImagePreview": "关闭图片预览",
+    "imageUnavailable": "图片不可用"
+  },
   "notices": {
     "contentTruncated": "内容已截断 - 显示前 1 MB",
     "clickToExpand": "点击展开。",
@@ -30,6 +38,8 @@
     "formSubmissionFailed": "表单提交失败"
   },
   "errors": {
+    "previewFailed": "预览失败：{{status}}",
+    "previewFrontendApp": "附件预览返回了前端应用，而不是文件内容。",
     "copyFileContent": "复制文件内容失败",
     "copyNotification": "复制通知失败"
   }

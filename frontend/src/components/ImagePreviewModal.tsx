@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ImagePreview } from '../utils/images';
 
 export function ImagePreviewModal({ image, onClose }: { image: ImagePreview | null; onClose: () => void }) {
+  const { t } = useTranslation();
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -25,12 +27,12 @@ export function ImagePreviewModal({ image, onClose }: { image: ImagePreview | nu
 
   if (!image) return null;
 
-  const fallbackText = image.alt || image.title || image.caption || 'Image unavailable';
+  const fallbackText = image.alt || image.title || image.caption || t('renderers:modals.imageUnavailable');
 
   return (
-    <div className="image-preview-overlay" role="dialog" aria-modal="true" aria-label={image.title || image.alt || 'Image preview'} onClick={onClose}>
+    <div className="image-preview-overlay" role="dialog" aria-modal="true" aria-label={image.title || image.alt || t('renderers:modals.imagePreview')} onClick={onClose}>
       <div className="image-preview-modal" onClick={(event) => event.stopPropagation()}>
-        <button className="image-preview-close" type="button" onClick={onClose} title="Close image preview" aria-label="Close image preview">
+        <button className="image-preview-close" type="button" onClick={onClose} title={t('renderers:modals.closeImagePreview')} aria-label={t('renderers:modals.closeImagePreview')}>
           <X size={20} />
         </button>
         {image.title ? <div className="image-preview-title">{image.title}</div> : null}

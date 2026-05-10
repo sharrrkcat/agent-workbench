@@ -193,7 +193,9 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
       }
       const maxBytes = kind === 'image' ? maxImageBytes : maxFileBytes;
       if (file.size > maxBytes) {
-        setError(new Error(`${file.name || 'Attachment'} is larger than ${kind === 'image' ? generalSettings?.max_image_size_mb ?? 10 : generalSettings?.max_file_size_mb ?? 10} MB.`), 'Attachment too large');
+        const size = kind === 'image' ? generalSettings?.max_image_size_mb ?? 10 : generalSettings?.max_file_size_mb ?? 10;
+        const message = t('attachmentTooLarge', { name: file.name || t('attachment'), size });
+        setError(new Error(message), message);
         continue;
       }
       accepted.push(file);

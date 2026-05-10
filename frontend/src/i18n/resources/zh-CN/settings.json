@@ -1,6 +1,7 @@
 {
   "title": "设置",
   "description": "配置本地 Agent、Capability 和 LLM 连接详情。",
+  "placeholder": "此设置分区稍后添加。",
   "summary": {
     "agents": "{{count}} 个 Agent",
     "capabilities": "{{count}} 个 Capability"
@@ -89,6 +90,7 @@
     "databasePath": "数据库路径",
     "databaseSize": "数据库大小",
     "attachments": "附件",
+    "writable": "可写",
     "directory": "目录",
     "attachmentCount": "附件数量",
     "totalSize": "总大小",
@@ -151,6 +153,15 @@
   "appearance": {
     "pet": "宠物",
     "petDescription": "工作台宠物设置和本地库"
+  },
+  "developer": {
+    "title": "开发者",
+    "description": "Agent 开发文档和工具："
+  },
+  "about": {
+    "title": "关于",
+    "projectStatus": "项目状态",
+    "technicalAlpha": "技术 Alpha"
   },
   "knowledge": {
     "defaultsName": "知识库默认值",

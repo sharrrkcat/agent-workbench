@@ -7,5 +7,8 @@
   "LLM_MODEL_NOT_SELECTED": "未选择 LLM 模型。",
   "LLM_PROVIDER_PROFILE_NOT_FOUND": "未找到 Provider 配置。",
   "UNSUPPORTED_FILE_TYPE": "不支持的文件类型。",
-  "RUN_FAILED": "运行失败。"
+  "RUN_FAILED": "运行失败。",
+  "NO_ENABLED_AGENT": "创建会话前至少启用一个 Agent。",
+  "SESSION_TITLE_EMPTY": "会话标题不能为空。",
+  "AGENT_DISABLED": "不能选择已禁用的 Agent。"
 }

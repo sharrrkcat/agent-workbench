@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 type PaletteMode = 'commands' | 'agents' | 'actions' | 'current-actions' | 'none';
@@ -24,6 +25,7 @@ export function CommandPalette({
   onPick: (value: string) => void;
   onItemsChange?: (items: CommandPaletteItem[]) => void;
 }) {
+  const { t } = useTranslation();
   const { agents, commands, currentSession } = useWorkbenchStore();
   const actionAgentId = token.match(/^@([a-zA-Z][a-zA-Z0-9_-]*):/)?.[1];
   const agent = agents.find((item) => item.id === actionAgentId);
@@ -64,14 +66,14 @@ export function CommandPalette({
                 .map((action) => ({
                   key: action.id,
                   label: `:${action.id}`,
-                  detail: action.description || `Current agent: ${currentAgent.name}`,
+                  detail: action.description || t('chat:currentAgentDetail', { name: currentAgent.name }),
                   value: `:${action.id} `,
                   disabled: !currentAgent.enabled,
                 }))
             : [
                 {
                   key: 'no-current-agent',
-                  label: 'No current agent selected.',
+                  label: t('chat:noCurrentAgent'),
                   detail: '',
                   value: '',
                   disabled: true,
@@ -81,7 +83,7 @@ export function CommandPalette({
             .filter((item) => item.id.toLowerCase().startsWith(query))
             .map((item) => ({
               key: item.id,
-              label: item.enabled ? `@${item.id}` : `@${item.id} (disabled)`,
+            label: item.enabled ? `@${item.id}` : `@${item.id} (${t('chat:disabledSuffix')})`,
               detail: item.description,
               value: `@${item.id} `,
               disabled: !item.enabled,
@@ -92,7 +94,7 @@ export function CommandPalette({
       ? [
           {
             key: 'no-current-agent-actions',
-            label: 'No matching actions for current agent.',
+            label: t('chat:noMatchingActions'),
             detail: '',
             value: '',
             disabled: true,

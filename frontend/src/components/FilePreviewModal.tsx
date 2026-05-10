@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { FileContentRenderer, defaultWrapLines, type FilePreview } from './MessageBubble';
 import type { FileContentPayload } from '../types';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
 export function FilePreviewModal({ file, onClose }: { file: FilePreview | null; onClose: () => void }) {
+  const { t } = useTranslation();
   const setWorkbenchError = useWorkbenchStore((state) => state.setError);
   const [payload, setPayload] = useState<FileContentPayload | null>(null);
   const [error, setError] = useState('');
@@ -21,14 +23,14 @@ export function FilePreviewModal({ file, onClose }: { file: FilePreview | null; 
     setCopied(false);
     fetch(file.url)
       .then(async (response) => {
-        if (!response.ok) throw new Error(`Preview failed: ${response.status}`);
+        if (!response.ok) throw new Error(t('renderers:errors.previewFailed', { status: response.status }));
         const contentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() || file.mime_type.toLowerCase();
         if (!isPreviewableText(contentType, file.name)) {
-          throw new Error('Preview not available');
+          throw new Error(t('renderers:actions.previewUnavailable'));
         }
         const text = await response.text();
         if (looksLikeViteIndexHtml(text, contentType)) {
-          throw new Error('Attachment preview returned the frontend app instead of file content.');
+          throw new Error(t('renderers:errors.previewFrontendApp'));
         }
         return {
           filename: file.name,
@@ -46,7 +48,7 @@ export function FilePreviewModal({ file, onClose }: { file: FilePreview | null; 
         }
       })
       .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Preview not available');
+        if (!cancelled) setError(cause instanceof Error ? cause.message : t('renderers:actions.previewUnavailable'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -65,37 +67,37 @@ export function FilePreviewModal({ file, onClose }: { file: FilePreview | null; 
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1300);
     } catch (cause) {
-      setWorkbenchError(cause, 'Failed to copy file content');
+      setWorkbenchError(cause, t('renderers:errors.copyFileContent'));
     }
   }
 
   return (
-    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="File preview" onClick={onClose}>
+    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label={t('renderers:modals.filePreview')} onClick={onClose}>
       <div className="file-preview-modal" onClick={(event) => event.stopPropagation()}>
         <header className="file-preview-header">
           <div className="file-preview-title">
             <strong>{file.name}</strong>
-            <span>{file.mime_type} · {formatBytes(file.size)}</span>
+            <span>{file.mime_type} | {formatBytes(file.size)}</span>
           </div>
           <div className="file-preview-header-actions">
             {payload && !loading && !error ? (
               <>
                 <button type="button" className="file-preview-action-button" onClick={() => setWrapLines((current) => !current)}>
-                  {wrapLines ? 'No wrap' : 'Wrap'}
+                  {wrapLines ? t('renderers:actions.noWrap') : t('renderers:actions.wrap')}
                 </button>
-                <button type="button" className="file-preview-action-button" onClick={() => void copyFileContent()} title="Copy file content">
+                <button type="button" className="file-preview-action-button" onClick={() => void copyFileContent()} title={t('renderers:actions.copyFileContent')}>
                   {copied ? <Check size={13} /> : <Copy size={13} />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                  <span>{copied ? t('renderers:labels.copied') : t('common:copy')}</span>
                 </button>
               </>
             ) : null}
-            <button type="button" className="file-preview-close-button" onClick={onClose} title="Close file preview">
+            <button type="button" className="file-preview-close-button" onClick={onClose} title={t('renderers:modals.closeFilePreview')}>
               <X size={18} />
             </button>
           </div>
         </header>
-        {loading ? <div className="file-preview-status">Loading...</div> : null}
-        {error ? <div className="file-preview-status">{error || 'Preview not available'}</div> : null}
+        {loading ? <div className="file-preview-status">{t('common:loading')}</div> : null}
+        {error ? <div className="file-preview-status">{error || t('renderers:actions.previewUnavailable')}</div> : null}
         {!loading && !error && payload ? <FileContentRenderer payload={payload} variant="modal" wrapLines={wrapLines} /> : null}
       </div>
     </div>

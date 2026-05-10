@@ -1,4 +1,5 @@
 import { Brain, Eye, Hammer, Radio } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { LlmProfile } from '../types';
 
 export type ModelCapabilities = {
@@ -9,32 +10,33 @@ export type ModelCapabilities = {
 };
 
 export function ModelCapabilityIcons({ capabilities, className = '' }: { capabilities: ModelCapabilities; className?: string }) {
+  const { t } = useTranslation('llm');
   const visible = Boolean(capabilities.vision || capabilities.tools || capabilities.reasoning || capabilities.streaming);
   if (!visible) return null;
 
   return (
-    <div className={`capability-icons ${className}`.trim()} aria-label="Current model capabilities">
+    <div className={`capability-icons ${className}`.trim()} aria-label={t('labels.currentModelCapabilities')}>
       {capabilities.vision ? (
-        <span className="capability-icon vision" title="Vision supported" aria-label="Vision supported">
+        <span className="capability-icon vision" title={t('labels.visionSupported')} aria-label={t('labels.visionSupported')}>
           <Eye size={14} aria-hidden="true" />
         </span>
       ) : null}
       {capabilities.tools ? (
-        <span className="capability-icon tools" title="Tools supported" aria-label="Tools supported">
+        <span className="capability-icon tools" title={t('labels.toolsSupported')} aria-label={t('labels.toolsSupported')}>
           <Hammer size={14} aria-hidden="true" />
         </span>
       ) : null}
       {capabilities.reasoning ? (
         <span
           className="capability-icon reasoning"
-          title="Reasoning output: this profile is expected to return reasoning content. It does not change provider request parameters."
-          aria-label="Reasoning output"
+          title={t('help.reasoningOutput')}
+          aria-label={t('labels.reasoningOutput')}
         >
           <Brain size={14} aria-hidden="true" />
         </span>
       ) : null}
       {capabilities.streaming ? (
-        <span className="capability-icon streaming" title="Streaming supported" aria-label="Streaming supported">
+        <span className="capability-icon streaming" title={t('labels.streamingSupported')} aria-label={t('labels.streamingSupported')}>
           <Radio size={14} aria-hidden="true" />
         </span>
       ) : null}

@@ -19,6 +19,10 @@
     "duplicate": "Duplicate"
   },
   "labels": {
+    "currentModelCapabilities": "Current model capabilities",
+    "visionSupported": "Vision supported",
+    "toolsSupported": "Tools supported",
+    "streamingSupported": "Streaming supported",
     "source": "Source",
     "provider": "Provider",
     "providerProfile": "Provider profile",

@@ -1,6 +1,7 @@
 {
   "title": "Settings",
   "description": "Configure local agents, capabilities, and LLM connection details.",
+  "placeholder": "This settings section will be added later.",
   "summary": {
     "agents": "{{count}} agents",
     "capabilities": "{{count}} capabilities"
@@ -89,6 +90,7 @@
     "databasePath": "Database path",
     "databaseSize": "Database size",
     "attachments": "Attachments",
+    "writable": "Writable",
     "directory": "Directory",
     "attachmentCount": "Attachment count",
     "totalSize": "Total size",
@@ -151,6 +153,15 @@
   "appearance": {
     "pet": "Pet",
     "petDescription": "Workbench pet settings and local library"
+  },
+  "developer": {
+    "title": "Developer",
+    "description": "Agent development docs and utilities:"
+  },
+  "about": {
+    "title": "About",
+    "projectStatus": "Project status",
+    "technicalAlpha": "Technical Alpha"
   },
   "knowledge": {
     "defaultsName": "Knowledge defaults",

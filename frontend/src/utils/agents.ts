@@ -1,4 +1,5 @@
 import type { Agent, AgentConfig, AvatarType, LlmProfile, ManifestSummary, ResolvedAgentDisplay } from '../types';
+import type { TFunction } from 'i18next';
 
 export type AgentDisplaySource = Pick<Agent, 'id' | 'name' | 'avatar' | 'avatar_type' | 'avatar_url' | 'resolved_display' | 'resolved_runtime' | 'llm' | 'model' | 'type' | 'capabilities'> | AgentConfig | ManifestSummary;
 
@@ -24,13 +25,13 @@ export function getResolvedAgentDisplay(source?: AgentDisplaySource | null): Res
   return normalizeDisplay(source.id, resolved, source);
 }
 
-export function resolvedAgentProfileLabel(agent: Agent | undefined, profiles: LlmProfile[]): string {
+export function resolvedAgentProfileLabel(agent: Agent | undefined, profiles: LlmProfile[], t?: TFunction): string {
   if (!agent) return '';
   const runtime = agent.resolved_runtime;
-  const locked = runtime?.allow_session_override === false || agent.llm?.allow_session_override === false ? ' - locked' : '';
+  const locked = runtime?.allow_session_override === false || agent.llm?.allow_session_override === false ? ` - ${t ? t('common:locked') : 'locked'}` : '';
   if (runtime?.llm_profile_label) return `${runtime.llm_profile_label}${locked}`;
-  if (runtime?.llm_profile_status === 'missing' && runtime.llm_profile_id) return `Missing: ${runtime.llm_profile_id}${locked}`;
-  if (runtime?.llm_profile_status === 'disabled' && runtime.llm_profile_id) return `Disabled: ${runtime.llm_profile_id}${locked}`;
+  if (runtime?.llm_profile_status === 'missing' && runtime.llm_profile_id) return `${t ? t('chat:missingModelProfile') : 'Missing'}: ${runtime.llm_profile_id}${locked}`;
+  if (runtime?.llm_profile_status === 'disabled' && runtime.llm_profile_id) return `${t ? t('common:disabled') : 'Disabled'}: ${runtime.llm_profile_id}${locked}`;
   if (runtime?.llm_profile_id) {
     const profile = profiles.find((item) => item.id === runtime.llm_profile_id || item.alias === runtime.llm_profile_id);
     return `${profile?.name || runtime.llm_profile_id}${locked}`;
@@ -42,8 +43,8 @@ export function resolvedAgentProfileLabel(agent: Agent | undefined, profiles: Ll
   const legacyModel =
     typeof agent.model?.model === 'string' ? agent.model.model : typeof agent.model?.model_id === 'string' ? agent.model.model_id : '';
   if (legacyModel) return `legacy: ${legacyModel}${locked}`;
-  if (agent.type === 'prompt' || agent.capabilities?.includes('llm')) return `uses global default${locked}`;
-  return 'no llm';
+  if (agent.type === 'prompt' || agent.capabilities?.includes('llm')) return `${t ? t('settings:llm.globalFallback') : 'uses global default'}${locked}`;
+  return t ? t('chat:statusBar.llmNoLlm') : 'no llm';
 }
 
 function normalizeDisplay(id: string, resolved: ResolvedAgentDisplay | undefined, fallback: Partial<ResolvedAgentDisplayView>): ResolvedAgentDisplayView {

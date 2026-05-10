@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageSquarePlus, Pencil, Settings, Sparkles, Trash2 } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Session } from '../types';
 
 export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { t } = useTranslation();
   const { sessions, currentSession, createSession, creatingSession, selectSession, deleteSession, renameSession } = useWorkbenchStore();
 
   function confirmDelete(sessionId: string) {
-    const confirmed = window.confirm('Delete this session?\nThis will remove its messages and runs.');
+    const confirmed = window.confirm(t('chat:confirmDeleteSession'));
     if (confirmed) {
       void deleteSession(sessionId);
     }
@@ -21,15 +23,15 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
         </div>
         <div>
           <strong>Agent Workbench</strong>
-          <span>Local AI console</span>
+          <span>{t('chat:appSubtitle')}</span>
         </div>
-        <button className="sidebar-settings-button" type="button" title="Open settings" aria-label="Open settings" onClick={onOpenSettings}>
+        <button className="sidebar-settings-button" type="button" title={t('common:openSettings')} aria-label={t('common:openSettings')} onClick={onOpenSettings}>
           <Settings size={16} />
         </button>
       </div>
       <button className="new-chat-button" onClick={() => void createSession()} type="button" disabled={creatingSession}>
         <MessageSquarePlus size={17} />
-        {creatingSession ? 'Creating...' : 'New Chat'}
+        {creatingSession ? t('common:creating') : t('chat:newChat')}
       </button>
       <div className="session-list">
         {sessions.map((session) => {
@@ -46,7 +48,7 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
           );
         })}
       </div>
-      <div className="sidebar-footer">Agents, commands, and local runs</div>
+      <div className="sidebar-footer">{t('chat:sidebarFooter')}</div>
     </aside>
   );
 }
@@ -64,6 +66,7 @@ function SessionRow({
   onRename: (sessionId: string, title: string) => Promise<void>;
   onSelect: (sessionId: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
   const [saving, setSaving] = useState(false);
@@ -119,7 +122,7 @@ function SessionRow({
           value={draft}
           maxLength={120}
           disabled={saving}
-          aria-label={`Rename ${label}`}
+          aria-label={t('chat:renameSession', { name: label })}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => void saveRename()}
           onKeyDown={(event) => {
@@ -141,8 +144,8 @@ function SessionRow({
       <button
         className="session-rename-button"
         type="button"
-        title="Rename session"
-        aria-label={`Rename ${label}`}
+        title={t('chat:renameSession', { name: label })}
+        aria-label={t('chat:renameSession', { name: label })}
         disabled={saving}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setEditing(true)}
@@ -152,8 +155,8 @@ function SessionRow({
       <button
         className="session-delete-button"
         type="button"
-        title="Delete session"
-        aria-label={`Delete ${label}`}
+        title={t('chat:deleteSession', { name: label })}
+        aria-label={t('chat:deleteSession', { name: label })}
         disabled={saving}
         onClick={() => onDelete(session.session_id)}
       >

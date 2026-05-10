@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { AgentAvatar } from './AgentAvatar';
 import { getResolvedAgentDisplay, resolvedAgentProfileLabel } from '../utils/agents';
 
 export function AgentSwitcher() {
+  const { t } = useTranslation();
   const { agents, currentSession, llmProfiles, updateDefaultAgent } = useWorkbenchStore();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -48,7 +50,7 @@ export function AgentSwitcher() {
       >
         <AgentAvatar agent={currentDisplay} label={currentSession?.default_agent_id || 'AI'} className="agent-switcher-avatar" iconSize={14} />
         <span className="agent-switcher-copy">
-          <strong>{currentAgent ? currentDisplay.name : currentSession?.default_agent_id || 'No agent'}</strong>
+          <strong>{currentAgent ? currentDisplay.name : currentSession?.default_agent_id || t('chat:noAgent')}</strong>
           {currentSummary ? <small>{currentSummary}</small> : null}
         </span>
         <ChevronDown size={15} className="agent-switcher-caret" />
@@ -71,7 +73,7 @@ export function AgentSwitcher() {
                 <AgentAvatar agent={display} className="agent-menu-avatar" iconSize={14} />
                 <span className="agent-menu-copy">
                   <strong>{display.name}</strong>
-                  <small>{agent.enabled ? `${agent.id} - ${resolvedAgentProfileLabel(agent, llmProfiles)}` : `${agent.id} - disabled`}</small>
+                  <small>{agent.enabled ? `${agent.id} - ${resolvedAgentProfileLabel(agent, llmProfiles, t)}` : `${agent.id} - ${t('chat:disabledSuffix')}`}</small>
                 </span>
                 {selected ? <Check size={15} /> : null}
               </button>

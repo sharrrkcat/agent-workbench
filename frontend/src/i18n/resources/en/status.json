@@ -24,6 +24,28 @@
     "UNLOAD_FAILED": "Unload failed",
     "MODEL_UNLOAD_FAILED": "Model unload failed"
   },
+  "modelProfile": {
+    "NO_MODEL_PROFILE": "No model",
+    "MODEL_PROFILE_DISABLED": "Model disabled",
+    "PROVIDER_PROFILE_MISSING": "Missing provider",
+    "MODEL_STATUS_UNKNOWN": "Unknown",
+    "PROVIDER_UNREACHABLE": "Unreachable",
+    "MODEL_NOT_AVAILABLE": "Model not found",
+    "READY": "Ready",
+    "MODEL_NOT_LOADED": "Not loaded",
+    "MODEL_MISMATCH": "Mismatch"
+  },
+  "modelProfileTitle": {
+    "NO_MODEL_PROFILE": "This agent has no model profile.",
+    "MODEL_PROFILE_DISABLED": "Model profile is disabled.",
+    "PROVIDER_PROFILE_MISSING": "Model profile has no provider profile.",
+    "MODEL_STATUS_UNKNOWN": "Provider status has not been refreshed.",
+    "PROVIDER_UNREACHABLE": "Provider is unreachable.",
+    "MODEL_NOT_AVAILABLE": "Requested model was not found in the provider model list.",
+    "READY": "Provider is reachable and the model is loaded.",
+    "MODEL_NOT_LOADED": "Provider is reachable and the model exists, but it is not loaded.",
+    "MODEL_MISMATCH": "Requested model is not available from this provider."
+  },
   "knowledgeIndex": {
     "empty": "Empty",
     "ready": "Ready",

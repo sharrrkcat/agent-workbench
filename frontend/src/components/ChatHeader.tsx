@@ -1,12 +1,15 @@
 import { BookOpen, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
+import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
 import type { ContextMode, KnowledgeBase, SessionKnowledgeBinding } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { t } = useTranslation();
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const state = useWorkbenchStore();
   const currentProfile = resolveCurrentLlmProfile(state);
@@ -19,7 +22,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="topbar-left">
         <AgentSwitcher />
         <span className="session-chip">
-          {currentSession ? currentSession.title || `Session ${currentSession.session_id.slice(0, 6)}` : 'No session'}
+          {currentSession ? currentSession.title || t('chat:statusBar.session', { id: currentSession.session_id.slice(0, 6) }) : t('common:noSession')}
         </span>
       </div>
       <div className="topbar-actions">
@@ -35,10 +38,10 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
           className={`status-pill ${statusClass(modelStatus)}`}
           type="button"
           onClick={() => void state.refreshProviderStatuses()}
-          title={statusTitle(modelStatus, currentProfile)}
+          title={statusTitle(modelStatus, currentProfile, t)}
         >
           <span />
-          {modelStatus.label}
+          {getModelProfileStatusLabel(modelStatus.code, modelStatus.label, t)}
         </button>
         <SessionMenu
           open={sessionMenuOpen}
@@ -53,6 +56,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation();
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const deleteSession = useWorkbenchStore((state) => state.deleteSession);
   const updateSessionContextMode = useWorkbenchStore((state) => state.updateSessionContextMode);
@@ -83,7 +87,7 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
 
   function confirmDelete() {
     if (!currentSession) return;
-    const confirmed = window.confirm('Delete this session?\nThis will remove its messages and runs.');
+    const confirmed = window.confirm(t('chat:confirmDeleteSession'));
     if (!confirmed) return;
     onOpenChange(false);
     void deleteSession(currentSession.session_id);
@@ -100,8 +104,8 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
         className="icon-button"
         type="button"
         disabled={!currentSession}
-        title="Session options"
-        aria-label="Session options"
+        title={t('chat:sessionOptions')}
+        aria-label={t('chat:sessionOptions')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
@@ -110,30 +114,30 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
       </button>
       {open ? (
         <div className="session-menu" role="menu">
-          <div className="session-menu-mode" aria-label="Conversation mode">
-            <span>Mode</span>
+          <div className="session-menu-mode" aria-label={t('chat:conversationMode')}>
+            <span>{t('chat:mode')}</span>
             <div className="mode-switcher compact">
               <button
                 type="button"
                 className={contextMode === 'single_assistant' ? 'selected' : ''}
                 onClick={() => changeContextMode('single_assistant')}
-                title="Single assistant: Treat agent history like a normal assistant conversation."
+                title={t('chat:modeSingleTitle')}
               >
-                Single
+                {t('chat:modeSingle')}
               </button>
               <button
                 type="button"
                 className={contextMode === 'group_transcript' ? 'selected' : ''}
                 onClick={() => changeContextMode('group_transcript')}
-                title="Group transcript: Label user, agents, and command results in context so agents can distinguish speakers."
+                title={t('chat:modeGroupTitle')}
               >
-                Group
+                {t('chat:modeGroup')}
               </button>
             </div>
           </div>
           <button type="button" role="menuitem" className="session-menu-item danger" onClick={confirmDelete}>
             <Trash2 size={14} />
-            <span>Delete session</span>
+            <span>{t('chat:deleteSession', { name: '' }).trim()}</span>
           </button>
         </div>
       ) : null}
@@ -150,6 +154,7 @@ function SessionKnowledgePicker({
   onOpenChange: (open: boolean) => void;
   onOpenSettings: () => void;
 }) {
+  const { t } = useTranslation();
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
@@ -197,7 +202,7 @@ function SessionKnowledgePicker({
         setBases(nextBases);
         setBindings(nextBindings);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load knowledge bases.');
+        if (!cancelled) setError(err instanceof Error ? err.message : t('chat:loadKnowledgeBasesFailed'));
       }
     }
     void load();
@@ -217,7 +222,7 @@ function SessionKnowledgePicker({
       setBindings(nextBindings);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save knowledge bases.');
+      setError(err instanceof Error ? err.message : t('chat:saveKnowledgeBasesFailed'));
     } finally {
       setBusy(false);
     }
@@ -230,7 +235,7 @@ function SessionKnowledgePicker({
         className="status-pill"
         disabled={!currentSession}
         onClick={() => onOpenChange(!open)}
-        title="Select session knowledge bases"
+        title={t('chat:selectKnowledgeBases')}
       >
         <BookOpen size={14} />
         KB: {selectedIds.size}
@@ -238,29 +243,29 @@ function SessionKnowledgePicker({
       {open ? (
         <div className="knowledge-picker-menu">
           <div className="knowledge-picker-title">
-            <strong>Knowledge</strong>
-            <span>{selectedIds.size} selected</span>
+            <strong>{t('chat:knowledge')}</strong>
+            <span>{t('chat:selectedCount', { count: selectedIds.size })}</span>
           </div>
           {error ? <p className="settings-error-text">{error}</p> : null}
           {!bases.length ? (
             <div className="settings-empty-state compact">
-              No knowledge bases yet.
-              <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title="Settings &gt; Knowledge">Open settings</button>
+              {t('chat:noKnowledgeBases')}
+              <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>
             </div>
           ) : null}
           {bases.length ? (
             <div className="knowledge-picker-sections">
               <KnowledgePickerSection
-                title="Enabled"
-                empty="No enabled knowledge bases."
+                title={t('chat:enabledKnowledgeBases')}
+                empty={t('chat:noEnabledKnowledgeBases')}
                 bases={enabledBases}
                 busy={busy}
                 action="remove"
                 onToggle={toggleBase}
               />
               <KnowledgePickerSection
-                title="Available"
-                empty="No available knowledge bases."
+                title={t('chat:availableKnowledgeBases')}
+                empty={t('chat:noAvailableKnowledgeBases')}
                 bases={availableBases}
                 busy={busy}
                 action="add"
@@ -289,6 +294,7 @@ function KnowledgePickerSection({
   action: 'add' | 'remove';
   onToggle: (base: KnowledgeBase) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   return (
     <section className="knowledge-picker-section">
       <h3>{title}</h3>
@@ -301,7 +307,7 @@ function KnowledgePickerSection({
               className={`knowledge-pill ${action === 'remove' ? 'enabled' : 'available'} ${base.index_status === 'ready' ? '' : 'danger'} ${base.enabled ? '' : 'disabled'}`}
               disabled={busy || !base.enabled}
               onClick={() => void onToggle(base)}
-              title={base.enabled ? `${action === 'add' ? 'Enable' : 'Disable'} ${base.name}` : `${base.name} is disabled`}
+              title={base.enabled ? t(action === 'add' ? 'chat:enableKnowledgeBase' : 'chat:disableKnowledgeBase', { name: base.name }) : t('chat:knowledgeBaseDisabled', { name: base.name })}
             >
               <span>
                 <strong>{base.name}</strong>
@@ -317,12 +323,12 @@ function KnowledgePickerSection({
   );
 }
 
-function statusTitle(modelStatus: ReturnType<typeof getModelProfileStatus>, currentProfile: ReturnType<typeof resolveCurrentLlmProfile>): string {
+function statusTitle(modelStatus: ReturnType<typeof getModelProfileStatus>, currentProfile: ReturnType<typeof resolveCurrentLlmProfile>, t: ReturnType<typeof useTranslation>['t']): string {
   return [
-    currentProfile?.name || currentProfile?.alias || 'Default',
-    `Requested: ${currentProfile?.model_id || 'none'}`,
-    `Status: ${modelStatus.label}`,
-    modelStatus.title,
+    currentProfile?.name || currentProfile?.alias || t('common:default'),
+    t('chat:statusBar.requested', { model: currentProfile?.model_id || t('chat:statusBar.none') }),
+    `Status: ${modelStatus.code}`,
+    getModelProfileStatusTitle(modelStatus.code, modelStatus.title, t),
   ].filter(Boolean).join('\n');
 }
 

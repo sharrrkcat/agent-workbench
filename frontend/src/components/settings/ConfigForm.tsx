@@ -50,7 +50,7 @@ function ConfigFieldEditor({
           {label}
           {field.required ? <em>required</em> : null}
         </span>
-        <ToggleSwitch checked={Boolean(value)} onChange={onChange} label={Boolean(value) ? 'Enabled' : 'Disabled'} />
+        <ToggleSwitch checked={Boolean(value)} onChange={onChange} />
         {field.description ? <small>{field.description}</small> : null}
       </div>
     );

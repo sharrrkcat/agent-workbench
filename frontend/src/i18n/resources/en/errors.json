@@ -7,5 +7,8 @@
   "LLM_MODEL_NOT_SELECTED": "No LLM model is selected.",
   "LLM_PROVIDER_PROFILE_NOT_FOUND": "Provider profile was not found.",
   "UNSUPPORTED_FILE_TYPE": "Unsupported file type.",
-  "RUN_FAILED": "The run failed."
+  "RUN_FAILED": "The run failed.",
+  "NO_ENABLED_AGENT": "Enable at least one agent before creating a session.",
+  "SESSION_TITLE_EMPTY": "Session title cannot be empty.",
+  "AGENT_DISABLED": "Cannot select a disabled agent."
 }

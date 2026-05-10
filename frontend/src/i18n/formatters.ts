@@ -23,6 +23,16 @@ export function getProviderStatusLabel(status: string | undefined | null, t: TFu
   return t(`status:llmProvider.${status}`, { defaultValue: humanizeStatus(status) });
 }
 
+export function getModelProfileStatusLabel(code: string | undefined | null, fallback: string | undefined, t: TFunction): string {
+  if (!code) return fallback || '';
+  return t(`status:modelProfile.${code}`, { defaultValue: fallback || humanizeStatus(code) });
+}
+
+export function getModelProfileStatusTitle(code: string | undefined | null, fallback: string | undefined, t: TFunction): string {
+  if (!code) return fallback || '';
+  return t(`status:modelProfileTitle.${code}`, { defaultValue: fallback || humanizeStatus(code) });
+}
+
 export function getKnowledgeIndexStatusLabel(status: string | undefined | null, t: TFunction): string {
   if (!status) return '';
   return t(`status:knowledgeIndex.${status}`, { defaultValue: humanizeStatus(status) });

@@ -6,6 +6,7 @@
     "previewUnavailable": "Preview not available",
     "copyFileContent": "Copy file content",
     "wrapLines": "Wrap lines",
+    "wrap": "Wrap",
     "noWrap": "No wrap",
     "expand": "Expand",
     "collapse": "Collapse",
@@ -23,6 +24,13 @@
     "thought": "Thought",
     "thinking": "Thinking..."
   },
+  "modals": {
+    "filePreview": "File preview",
+    "closeFilePreview": "Close file preview",
+    "imagePreview": "Image preview",
+    "closeImagePreview": "Close image preview",
+    "imageUnavailable": "Image unavailable"
+  },
   "notices": {
     "contentTruncated": "Content truncated - showing first 1 MB",
     "clickToExpand": "Click to expand.",
@@ -30,6 +38,8 @@
     "formSubmissionFailed": "Form submission failed"
   },
   "errors": {
+    "previewFailed": "Preview failed: {{status}}",
+    "previewFrontendApp": "Attachment preview returned the frontend app instead of file content.",
     "copyFileContent": "Failed to copy file content",
     "copyNotification": "Failed to copy notification"
   }

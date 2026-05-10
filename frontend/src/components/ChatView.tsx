@@ -1,11 +1,13 @@
 import { useLayoutEffect, useRef } from 'react';
 import { MessageSquarePlus, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Message, SystemNotification, TimelineItem } from '../types';
 import { MessageBubble, type FilePreview } from './MessageBubble';
 import type { ImagePreview } from '../utils/images';
 
 export function ChatView({ onPreviewImage, onPreviewFile }: { onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
+  const { t } = useTranslation();
   const { messages, currentSession, createSession, loading, creatingSession, sendMessage, sending } = useWorkbenchStore();
   const scrollRef = useRef<HTMLElement | null>(null);
   const autoScrollRef = useRef(true);
@@ -45,10 +47,10 @@ export function ChatView({ onPreviewImage, onPreviewFile }: { onPreviewImage: (i
           <div className="empty-icon">
             <MessageSquarePlus size={22} />
           </div>
-          <h1>Start a local AI session</h1>
-          <p>Create a session to talk to the default agent or call an agent/command directly.</p>
+          <h1>{t('chat:startSessionTitle')}</h1>
+          <p>{t('chat:startSessionDescription')}</p>
           <button className="empty-primary" onClick={() => void createSession()} disabled={loading || creatingSession}>
-            {creatingSession ? 'Creating...' : 'New Chat'}
+            {creatingSession ? t('common:creating') : t('chat:newChat')}
           </button>
         </div>
       </section>
@@ -63,8 +65,8 @@ export function ChatView({ onPreviewImage, onPreviewFile }: { onPreviewImage: (i
             <Sparkles size={22} />
           </div>
           <h1>Agent Workbench</h1>
-          <p>Chat with the default agent, invoke a named agent, or run a slash command.</p>
-          <div className="prompt-chips" aria-label="Example prompts">
+          <p>{t('chat:emptySessionDescription')}</p>
+          <div className="prompt-chips" aria-label={t('chat:examplePrompts')}>
             {['hello', '@translate 你好', '/base64 hello'].map((prompt) => (
               <button key={prompt} type="button" onClick={() => void sendMessage(prompt)} disabled={sending}>
                 {prompt}
