@@ -608,6 +608,30 @@ def test_list_commands_returns_base64_commands() -> None:
     assert all("capability_enabled" in command for command in response.json())
 
 
+def test_unknown_command_returns_structured_api_error_without_run() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/pppp"})
+    runs = client.get(f"/api/sessions/{session['session_id']}/runs").json()
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unknown_command"
+    assert response.json()["error"]["message"] == "Unknown command: /pppp"
+    assert runs == []
+
+
+def test_multiline_command_args_route_and_preserve_args() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    payload = post_message(client, session["session_id"], "/base64 hello\n\nworld")
+
+    assert payload["success"] is True
+    assert payload["data"] == "aGVsbG8KCndvcmxk"
+    assert payload["run"]["metadata"]["args"] == "hello\n\nworld"
+
+
 def test_create_session() -> None:
     session = create_session(make_client())
 

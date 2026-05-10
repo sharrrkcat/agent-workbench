@@ -37,14 +37,14 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
     return <SystemEventSeparator message={message} />;
   }
 
-  if (message.output_type === 'error' || message.client_error || message.metadata?.success === false) {
+  if ((message.output_type === 'error' || message.client_error || message.metadata?.success === false) && !hasProducerIdentity(message)) {
     return <InlineErrorBlock message={message} />;
   }
 
   const agent = message.agent_id ? agents.find((item) => item.id === message.agent_id) : undefined;
   const agentDisplay = getResolvedAgentDisplay(agent);
   const isUser = message.role === 'user';
-  const isCommand = message.role === 'command' || Boolean(message.command_name);
+  const isCommand = message.role === 'command' || message.speaker_type === 'capability' || Boolean(message.command_name);
   const kind = isUser ? 'user' : isCommand ? 'command' : 'agent';
   const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
   const operationPending = pendingMessageActionId === message.message_id;
@@ -369,7 +369,7 @@ function MessageHeader({
   modelLabel?: string;
   modelMismatch?: boolean;
 }) {
-  const name = kind === 'user' ? 'You' : message.command_name || agentName || agent?.name || message.agent_id || 'Assistant';
+  const name = kind === 'user' ? 'You' : message.command_name || message.speaker_name || agentName || agent?.name || message.agent_id || 'Assistant';
   const action = message.action_id && message.action_id !== 'default' ? message.action_id : '';
   const secondary = modelLabel || action;
 
@@ -442,6 +442,9 @@ function InlineErrorBlock({ message }: { message: Message }) {
 }
 
 function MessageContent({ message, kind, onPreviewImage, onPreviewFile }: { message: Message; kind: 'user' | 'agent' | 'command'; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
+  if (message.output_type === 'error' || message.metadata?.success === false) {
+    return <MessageErrorCard message={message} />;
+  }
   if (kind === 'user') {
     return <UserMessageRenderer content={message.content} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
   }
@@ -467,6 +470,20 @@ function MessageContent({ message, kind, onPreviewImage, onPreviewFile }: { mess
     return <RichContentRenderer messageId={message.message_id} blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
   }
   return <PlainTextRenderer content={message.content} />;
+}
+
+function MessageErrorCard({ message }: { message: Message }) {
+  const error = normalizeError(message);
+  const title = error.code || (message.speaker_type === 'capability' ? 'Command failed' : 'Agent failed');
+  return (
+    <div className="inline-error-block message-error-card">
+      <CircleAlert size={16} />
+      <div>
+        <strong>{title}</strong>
+        <p>{error.message || contentToText(message.content) || 'The run failed.'}</p>
+      </div>
+    </div>
+  );
 }
 
 export function PlainTextRenderer({ content }: { content: unknown }) {
@@ -1128,6 +1145,14 @@ function normalizeError(message: Message): { code?: string; message?: string } {
   if (message.client_error) {
     return message.client_error;
   }
+  const metadataError = message.metadata?.error;
+  if (metadataError && typeof metadataError === 'object' && !Array.isArray(metadataError)) {
+    const error = metadataError as Record<string, unknown>;
+    return {
+      code: typeof error.code === 'string' ? error.code : undefined,
+      message: typeof error.message === 'string' ? error.message : undefined,
+    };
+  }
   if (message.content && typeof message.content === 'object') {
     const content = message.content as Record<string, unknown>;
     return {
@@ -1144,6 +1169,10 @@ function resolvedModelLabel(message: Message): string | undefined {
   const fromMessage = extractResolutionLabel(message.metadata?.llm_resolution);
   if (fromMessage) return fromMessage;
   return undefined;
+}
+
+function hasProducerIdentity(message: Message): boolean {
+  return message.speaker_type === 'agent' || message.speaker_type === 'capability' || Boolean(message.agent_id || message.command_name);
 }
 
 function resolveMessageModelBadge(message: Message): { label?: string; title?: string } {

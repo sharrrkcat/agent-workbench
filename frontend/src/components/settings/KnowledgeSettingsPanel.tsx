@@ -530,6 +530,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, busy, result, error, onRe
           <div>
             <h2>{values.name || 'New knowledge base'}</h2>
             <p>
+              <span>Knowledge base configuration, sources, and local indexes.</span>
               <span>{'index_status' in values ? values.index_status || 'empty' : 'unsaved'}</span>
               <span>{selectedProfile?.alias || 'missing model'}</span>
             </p>

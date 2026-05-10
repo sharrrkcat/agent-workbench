@@ -540,11 +540,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         error: undefined,
         lastError: undefined,
         sending: false,
-        messages: get().messages.map((message) =>
-          message.message_id === optimisticMessage.message_id
-            ? { ...message, client_status: 'failed', client_error: formatted.lastError }
-            : message,
-        ),
+        messages: [
+          ...get().messages.map((message) =>
+            message.message_id === optimisticMessage.message_id
+              ? { ...message, client_status: 'failed' as const }
+              : message,
+          ),
+          createInlineErrorMessage(session.session_id, formatted.lastError, optimisticMessage.message_id),
+        ],
       });
       return false;
     }
@@ -871,6 +874,10 @@ function createInlineErrorMessage(sessionId: string, error: AppError, parentMess
     session_id: sessionId,
     role: 'system',
     content: { code: error.code, message: error.message },
+    speaker_type: 'system',
+    speaker_id: 'system',
+    speaker_name: commandErrorTitle(error),
+    origin: 'system_notice',
     agent_id: null,
     command_name: null,
     action_id: null,
@@ -882,6 +889,12 @@ function createInlineErrorMessage(sessionId: string, error: AppError, parentMess
     client_status: 'failed',
     client_error: error,
   };
+}
+
+function commandErrorTitle(error: AppError): string {
+  const code = String(error.code || '').toLowerCase();
+  if (code.includes('command')) return 'Command error';
+  return 'System';
 }
 
 function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Message {

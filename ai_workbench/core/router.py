@@ -11,15 +11,25 @@ from ai_workbench.core.session import Session
 
 ACTION_ID_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_\-]*$")
 AGENT_INVOKE_RE = re.compile(r"^@(?P<agent>[a-zA-Z][a-zA-Z0-9_\-]*)(?::(?P<action>[a-zA-Z][a-zA-Z0-9_\-]*))?(?:\s+(?P<args>.*))?$")
-COMMAND_INVOKE_RE = re.compile(r"^(?P<command>/[a-zA-Z][a-zA-Z0-9_\-]*)(?:\s+(?P<args>.*))?$")
 CURRENT_AGENT_ACTION_RE = re.compile(r"^:(?P<action>[A-Za-z][A-Za-z0-9_\-]*)(?:\s+(?P<args>[\s\S]*))?$")
 
 
 def parse_command_input(raw_input: str) -> Optional[Tuple[str, str]]:
-    match = COMMAND_INVOKE_RE.match(raw_input)
-    if not match:
+    if not raw_input.startswith("/"):
         return None
-    return match.group("command"), match.group("args") or ""
+    stripped = raw_input.strip()
+    if not stripped:
+        return None
+    command_end = None
+    for index, char in enumerate(stripped):
+        if char.isspace():
+            command_end = index
+            break
+    if command_end is None:
+        return stripped, ""
+    command_name = stripped[:command_end]
+    args = stripped[command_end:].strip()
+    return command_name, args
 
 
 def parse_agent_input(raw_input: str) -> Optional[Tuple[str, str, str]]:
@@ -67,11 +77,11 @@ class Router:
     def _route_command(self, session: Session, raw_input: str) -> RouteTarget:
         parsed = parse_command_input(raw_input)
         if parsed is None:
-            return self._error(session, raw_input, "invalid_command", "Invalid command syntax.")
+            return self._error(session, raw_input, "invalid_command", "Command must start with a slash command name, for example /base64 text.")
 
         command_name, args = parsed
         if not COMMAND_NAME_RE.match(command_name):
-            return self._error(session, raw_input, "invalid_command", "Invalid command name.")
+            return self._error(session, raw_input, "invalid_command", f"Invalid command name: {command_name}")
 
         try:
             self.command_registry.get(command_name)

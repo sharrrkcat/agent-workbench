@@ -1667,6 +1667,26 @@ def test_streaming_failure_marks_run_failed() -> None:
     assert prompt_run.status == RunStatus.FAILED
 
 
+def test_prompt_agent_failure_persists_agent_error_message() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(fail=True))
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+    messages = fixture.messages.list_messages(session.session_id)
+    assistant = messages[-1]
+
+    assert result.success is False
+    assert assistant.role == "assistant"
+    assert assistant.agent_id == "chat"
+    assert assistant.speaker_type == "agent"
+    assert assistant.speaker_name == "Chat Agent"
+    assert assistant.origin == "agent_reply"
+    assert assistant.output_type == "error"
+    assert assistant.run_id == result.run_id
+    assert assistant.metadata["success"] is False
+    assert assistant.content == {"code": "RUN_FAILED", "message": "LLM failed"}
+
+
 def test_friendly_error_mapping_for_provider_unreachable() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(fail=True))
     fixture.llm.response = ""

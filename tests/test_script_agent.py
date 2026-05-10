@@ -1201,6 +1201,31 @@ def test_script_agent_save_attachment_base64_rejects_invalid_data(tmp_path: Path
     assert "base64 is invalid" in result.error
 
 
+def test_script_agent_failure_keeps_agent_error_message(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "failing_script",
+        "async def run(ctx):\n    raise RuntimeError('script boom')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@failing_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    steps = fixture.runs.list_steps(result.run_id)
+
+    assert result.success is False
+    assert message.role == "assistant"
+    assert message.agent_id == "failing_script"
+    assert message.speaker_type == "agent"
+    assert message.speaker_name == "failing_script"
+    assert message.origin == "agent_reply"
+    assert message.output_type == "error"
+    assert message.metadata["success"] is False
+    assert message.content == {"code": "RUN_FAILED", "message": "script boom"}
+    assert any(step.status.value == "failed" for step in steps)
+
+
 def test_generated_attachment_is_linked_for_cleanup(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     registry = write_script_agent(

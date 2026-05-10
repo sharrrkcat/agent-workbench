@@ -11,7 +11,7 @@ from ai_workbench.core.runner import CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.capability import CapabilitySchema
 from ai_workbench.core.schema.message import FileContentPayload
-from ai_workbench.core.schema.run import RunStatus
+from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 
 
@@ -273,7 +273,7 @@ def test_declared_image_output_validation_failure_fails_run() -> None:
 
     assert result.success is False
     assert failed_run.status == RunStatus.FAILED
-    assert message.output_type == "text"
+    assert message.output_type == "error"
     assert message.metadata["success"] is False
 
 
@@ -373,9 +373,12 @@ def test_success_event_bus_records_started_and_done() -> None:
     result = run(fixture.runtime.handle_input(session, "/base64 hello"))
     events = fixture.events.list_events()
 
-    assert [event.type for event in events] == ["run_started", "run_done", "message_done"]
+    assert "run_started" in [event.type for event in events]
+    assert "run_completed" in [event.type for event in events]
+    assert "run_done" in [event.type for event in events]
+    assert "message_done" in [event.type for event in events]
     assert events[0].run_id == result.run_id
-    assert events[1].run_id == result.run_id
+    assert all(event.run_id == result.run_id for event in events if event.run_id)
 
 
 def test_failure_event_bus_records_started_and_failed() -> None:
@@ -385,10 +388,13 @@ def test_failure_event_bus_records_started_and_failed() -> None:
     result = run(fixture.runtime.handle_input(session, "/base64-decode invalid!!!"))
     events = fixture.events.list_events()
 
-    assert [event.type for event in events] == ["run_started", "run_failed", "message_done"]
+    assert "run_started" in [event.type for event in events]
+    assert "run_failed" in [event.type for event in events]
+    assert "message_done" in [event.type for event in events]
     assert events[0].run_id == result.run_id
-    assert events[1].run_id == result.run_id
-    assert events[1].payload == {"error": "Invalid base64 input."}
+    failed_event = next(event for event in events if event.type == "run_failed")
+    assert failed_event.run_id == result.run_id
+    assert failed_event.payload["error"] == "Invalid base64 input."
 
 
 def test_command_uses_current_args_not_session_history() -> None:
@@ -403,6 +409,38 @@ def test_command_uses_current_args_not_session_history() -> None:
     result = run(fixture.runtime.handle_input(session, "/base64 hello"))
 
     assert result.data == "aGVsbG8="
+
+
+def test_command_parser_preserves_multiline_args() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/base64 hello\n\nworld"))
+    run_record = fixture.runs.get_run(result.run_id)
+
+    assert result.success is True
+    assert result.data == "aGVsbG8KCndvcmxk"
+    assert run_record.metadata["args"] == "hello\n\nworld"
+
+
+def test_failed_command_persists_capability_error_message_and_steps() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/pet new"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    steps = fixture.runs.list_steps(result.run_id)
+
+    assert result.success is False
+    assert message.role == "assistant"
+    assert message.speaker_type == "capability"
+    assert message.speaker_id == "pet"
+    assert message.origin == "command_result"
+    assert message.output_type == "error"
+    assert message.metadata["kind"] == "command_result"
+    assert message.metadata["success"] is False
+    assert [step.label for step in steps] == ["Resolving command", "Running command"]
+    assert steps[-1].status == RunStepStatus.FAILED
 
 
 def test_unknown_command_returns_structured_error_without_run() -> None:

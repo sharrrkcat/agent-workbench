@@ -193,6 +193,18 @@ def test_chat_renders_run_steps_panel_and_step_statuses() -> None:
     assert "skipped" in source
 
 
+def test_failed_producer_messages_keep_identity_and_send_errors_are_local() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    store = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "hasProducerIdentity(message)" in source
+    assert "message.speaker_type === 'capability'" in source
+    assert "MessageErrorCard" in source
+    assert "message.speaker_name" in source
+    assert "createInlineErrorMessage(session.session_id, formatted.lastError, optimisticMessage.message_id)" in store
+    assert "speaker_name: commandErrorTitle(error)" in store
+
+
 def test_store_merges_run_step_updates_by_step_id() -> None:
     source = read_frontend("store/useWorkbenchStore.ts")
 

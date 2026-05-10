@@ -214,7 +214,7 @@ def test_kb_search_without_query_fails_clearly() -> None:
     assert result.success is False
     assert result.error == "Query is required for /kb-search."
     assert runs.get_run(result.run_id).status == RunStatus.FAILED
-    assert messages.list_messages(session.session_id)[-1].content == "Query is required for /kb-search."
+    assert messages.list_messages(session.session_id)[-1].content == {"code": "COMMAND_FAILED", "message": "Query is required for /kb-search."}
 
 
 def test_list_bases_returns_compact_kb_list() -> None:

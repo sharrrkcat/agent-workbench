@@ -1306,10 +1306,46 @@ class ScriptAgentRunner:
 
     def _fail(self, run_id: str, session_id: str, error: str, error_code: str = None) -> RunResult:
         failed_run = self.run_lifecycle.fail_run(run_id, error_code, error)
-        payload = {"error": error}
-        if error_code:
-            payload["error_code"] = error_code
+        self._persist_failed_output_message(run_id, session_id, error, error_code or "RUN_FAILED")
         return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=error_code)
+
+    def _persist_failed_output_message(self, run_id: str, session_id: str, error: str, error_code: str) -> None:
+        try:
+            run = self.run_store.get_run(run_id)
+        except KeyError:
+            return
+        message_id = (run.metadata or {}).get("message_id")
+        if not message_id:
+            return
+        try:
+            message = self.message_store.get_message(str(message_id))
+        except KeyError:
+            return
+        if message.content not in ("", None) or (message.metadata or {}).get("placeholder") is not True:
+            return
+        metadata = {
+            **(message.metadata or {}),
+            "success": False,
+            "streaming": False,
+            "placeholder": False,
+            "error": {"code": error_code, "message": error},
+        }
+        updated = message.model_copy(update={"content": {"code": error_code, "message": error}, "output_type": "error", "metadata": metadata})
+        updated = self.message_store.update_message(updated)
+        self.event_bus.emit(
+            "message_completed",
+            session_id=session_id,
+            run_id=run_id,
+            message_id=updated.message_id,
+            payload={"seq": 1, "message": updated.model_dump(mode="json"), "draft_message_id": updated.message_id},
+        )
+        self.event_bus.emit(
+            "message_done",
+            session_id=session_id,
+            run_id=run_id,
+            message_id=updated.message_id,
+            payload={"available_actions": updated.available_actions},
+        )
 
     def _apply_model_lifecycle(self, ctx: AgentContext, lifecycle) -> dict | None:
         if lifecycle.unload != "after_run" or not ctx.llm.used:

@@ -383,6 +383,8 @@ class AgentRunner:
             error = str(exc)
             self.run_lifecycle.fail_step(context_step.step_id, error_message=error)
             failed_run = self.run_lifecycle.fail_run(run.run_id, "CONTEXT_BUILD_FAILED", error)
+            if not suppress_output:
+                self._persist_prompt_error_message(agent, action_id, error, "CONTEXT_BUILD_FAILED", session_id, failed_run.run_id, parent_id)
             return RunResult(success=False, run_id=failed_run.run_id, error=error)
 
         messages = []
@@ -494,11 +496,15 @@ class AgentRunner:
             if resolving_model_step is not None:
                 self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=exc.code, error_message=exc.message)
             failed_run = self.run_lifecycle.fail_run(run.run_id, exc.code, exc.message)
+            if not suppress_output:
+                self._persist_prompt_error_message(agent, action_id, exc.message, exc.code, session_id, failed_run.run_id, parent_id)
             return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
         except LLMContextError as exc:
             if resolving_model_step is not None:
                 self.run_lifecycle.fail_step(resolving_model_step.step_id, error_code=exc.code, error_message=exc.message)
             failed_run = self.run_lifecycle.fail_run(run.run_id, exc.code, exc.message)
+            if not suppress_output:
+                self._persist_prompt_error_message(agent, action_id, exc.message, exc.code, session_id, failed_run.run_id, parent_id)
             return RunResult(success=False, run_id=failed_run.run_id, error=exc.message, error_code=exc.code)
         except asyncio.CancelledError:
             if llm_started and not cleanup_done and llm_config is not None:
@@ -517,6 +523,8 @@ class AgentRunner:
             if llm_started and not cleanup_done and llm_config is not None:
                 self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, failed_run.run_id, session_id)
                 cleanup_done = True
+            if not suppress_output:
+                self._persist_prompt_error_message(agent, action_id, error, friendly["code"], session_id, failed_run.run_id, parent_id, friendly)
             return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         if self._is_cancelled(run.run_id):
@@ -743,6 +751,8 @@ class AgentRunner:
             failed_run = self.run_lifecycle.fail_run(run.run_id, friendly["code"], error)
             self._record_run_error_metadata(run.run_id, friendly)
             self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, failed_run.run_id, session_id)
+            if not content_parts and not reasoning_parts:
+                self._persist_prompt_error_message(agent, action_id, error, friendly["code"], session_id, failed_run.run_id, parent_id, friendly)
             return RunResult(success=False, run_id=failed_run.run_id, error=error, error_code=friendly["code"])
 
         content = "".join(content_parts)
@@ -856,6 +866,57 @@ class AgentRunner:
         if message_actions:
             message = message.model_copy(update={"available_actions": message_actions})
             self.message_store.update_message(message)
+        return message
+
+    def _persist_prompt_error_message(
+        self,
+        agent,
+        action_id: str,
+        error: str,
+        error_code: str,
+        session_id: str,
+        run_id: str,
+        parent_id: str,
+        details: dict | None = None,
+    ):
+        existing = [message for message in self.message_store.list_messages(session_id) if message.run_id == run_id and message.origin == "agent_reply"]
+        if existing:
+            return existing[-1]
+        metadata = {
+            "success": False,
+            "error": {"code": error_code or "RUN_FAILED", "message": error, "details": (details or {}).get("details")},
+            "streaming": False,
+        }
+        message = self.message_store.add_message(
+            session_id=session_id,
+            role="assistant",
+            content={"code": error_code or "RUN_FAILED", "message": error},
+            agent_id=agent.id,
+            action_id=action_id,
+            run_id=run_id,
+            output_type="error",
+            parent_message_id=parent_id or None,
+            available_actions=[],
+            metadata=metadata,
+            speaker_type="agent",
+            speaker_id=agent.id,
+            speaker_name=agent.name,
+            origin="agent_reply",
+        )
+        self.event_bus.emit(
+            "message_completed",
+            session_id=session_id,
+            run_id=run_id,
+            message_id=message.message_id,
+            payload={"seq": 1, "message": message.model_dump(mode="json"), "draft_message_id": f"draft-{run_id}"},
+        )
+        self.event_bus.emit(
+            "message_done",
+            session_id=session_id,
+            run_id=run_id,
+            message_id=message.message_id,
+            payload={"available_actions": message.available_actions},
+        )
         return message
 
     def _resolve_llm_model_config(self, agent, action, session_id: str):
@@ -1726,6 +1787,7 @@ class CommandRunner:
         self.event_bus = event_bus
         self.capability_config_store = capability_config_store
         self.capability_registry = capability_registry
+        self.run_lifecycle = RunLifecycle(run_store, event_bus)
 
     async def run(self, command_name: str, args: str, session_id: str, input_message_id: str = "") -> CommandResult:
         try:
@@ -1753,7 +1815,10 @@ class CommandRunner:
             metadata={"args": args, "input_message_id": input_message_id or None, "parent_message_id": input_message_id or None},
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
-        self.run_store.update_status(run.run_id, RunStatus.RUNNING, current_step="running")
+        self.run_lifecycle.start_run(run.run_id, stage="running")
+        resolving_step = self.run_lifecycle.start_step(run.run_id, "Resolving command")
+        self.run_lifecycle.complete_step(resolving_step.step_id)
+        running_step = self.run_lifecycle.start_step(run.run_id, "Running command")
 
         try:
             method = self.runtime_registry.get_method(command.capability_id, command.method)
@@ -1762,26 +1827,25 @@ class CommandRunner:
             self._validate_output_payload(output_type, data)
         except Exception as exc:
             error = str(exc) or "Command failed."
-            failed_run = self.run_store.update_status(
-                run.run_id,
-                RunStatus.FAILED,
-                current_step="failed",
-                error=error,
-            )
+            error_code = getattr(exc, "code", None) or "COMMAND_FAILED"
+            details = getattr(exc, "detail", None)
+            self.run_lifecycle.fail_step(running_step.step_id, error_code=error_code, error_message=error)
+            failed_run = self.run_lifecycle.fail_run(run.run_id, error_code, error)
             command_metadata = self._command_result_metadata(
                 command_name=command_name,
                 command=command,
-                output_type="text",
+                output_type="error",
                 input_message_id=input_message_id,
                 success=False,
             )
+            command_metadata["error"] = {"code": error_code, "message": error, "details": details if isinstance(details, dict) else None}
             message = self.message_store.add_message(
                 session_id=session_id,
                 role="assistant",
-                content=error,
+                content={"code": error_code, "message": error},
                 command_name=command_name,
                 run_id=failed_run.run_id,
-                output_type="text",
+                output_type="error",
                 parent_message_id=input_message_id or None,
                 metadata=command_metadata,
                 speaker_type="capability",
@@ -1790,20 +1854,15 @@ class CommandRunner:
                 origin="command_result",
             )
             self.event_bus.emit(
-                "run_failed",
-                session_id=session_id,
-                run_id=failed_run.run_id,
-                payload={"error": error},
-            )
-            self.event_bus.emit(
                 "message_done",
                 session_id=session_id,
                 run_id=failed_run.run_id,
                 message_id=message.message_id,
             )
-            return CommandResult(success=False, run_id=failed_run.run_id, error=error)
+            return CommandResult(success=False, run_id=failed_run.run_id, error=error, error_code=error_code)
 
-        done_run = self.run_store.update_status(run.run_id, RunStatus.DONE, current_step="done")
+        self.run_lifecycle.complete_step(running_step.step_id)
+        saving_step = self.run_lifecycle.start_step(run.run_id, "Saving result")
         command_metadata = self._command_result_metadata(
             command_name=command_name,
             command=command,
@@ -1816,7 +1875,7 @@ class CommandRunner:
             role="assistant",
             content=data,
             command_name=command_name,
-            run_id=done_run.run_id,
+            run_id=run.run_id,
             output_type=output_type,
             parent_message_id=input_message_id or None,
             metadata=command_metadata,
@@ -1825,6 +1884,8 @@ class CommandRunner:
             speaker_name=command_metadata.get("capability_name") or command_name,
             origin="command_result",
         )
+        self.run_lifecycle.complete_step(saving_step.step_id)
+        done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
         self.event_bus.emit(
             "message_done",
