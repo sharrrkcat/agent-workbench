@@ -4198,6 +4198,124 @@ input:disabled {
   width: 100%;
 }
 
+.pet-general-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.pet-general-fields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pet-preview-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: #242424;
+}
+
+.pet-preview-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(116px, 136px);
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
+.pet-preview-header > div,
+.pet-preview-state-select {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pet-preview-header strong {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-preview-header span,
+.pet-preview-state-select span,
+.pet-preview-description {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pet-preview-header > div > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-preview-state-select select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: #1f1f1f;
+  color: #f5f5f5;
+  font-size: 12px;
+}
+
+.pet-preview-scene {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 252px;
+  overflow: auto;
+  padding: 24px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #1f1f1f;
+  background-size: 24px 24px;
+}
+
+.pet-preview-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: fit-content;
+  min-width: 0;
+  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.34));
+}
+
+.pet-preview-bubble {
+  max-width: 220px;
+}
+
+.pet-preview-description {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.pet-preview-empty {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  margin: 0;
+  text-align: center;
+}
+
 .pet-import-placeholder {
   display: grid;
   gap: 5px;
@@ -4281,10 +4399,6 @@ input:disabled {
   width: 52px;
   height: 52px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 10px;
-  background-color: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.46);
 }
 
 .pet-avatar-animated {
@@ -4844,7 +4958,8 @@ input:disabled {
   .settings-detail-grid,
   .settings-diagnostics-grid,
   .settings-definition-grid,
-  .pet-bubble-grid {
+  .pet-bubble-grid,
+  .pet-general-layout {
     grid-template-columns: 1fr;
   }
 

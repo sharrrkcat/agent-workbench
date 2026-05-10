@@ -1,8 +1,8 @@
 import { PawPrint, RefreshCw, RotateCcw, Save, Search, Trash2, Upload } from 'lucide-react';
-import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api, joinApiUrl, API_BASE_URL } from '../../api/client';
 import type { PetBubbleTexts, PetCommandTexts, PetItem, PetSettings } from '../../types';
-import { PetSprite } from '../PetSprite';
+import { PetSprite, type PetSpriteState } from '../PetSprite';
 import { DetailTabs } from './DetailTabs';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -64,6 +64,8 @@ const DEFAULT_COMMAND_TEXTS: PetCommandTexts = {
   no_pet: 'No pet available',
   select_missing: 'Pet not found: {pet_id}',
 };
+
+const PET_PREVIEW_STATES: PetSpriteState[] = ['idle', 'waving', 'jumping', 'waiting', 'running', 'review', 'failed'];
 
 const DEFAULT_SETTINGS: PetSettings = {
   pet_enabled: true,
@@ -331,6 +333,7 @@ function PetConfigTab({
   onImportPet: (files: File[]) => void;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [previewState, setPreviewState] = useState<PetSpriteState>('idle');
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -343,61 +346,71 @@ function PetConfigTab({
     <>
       <section className="detail-section">
         <div className="detail-section-heading"><h3>General</h3></div>
-        <label className="config-field settings-config-field boolean-field">
-          <span>Enable Pet</span>
-          <ToggleSwitch checked={values.pet_enabled} onChange={(checked) => onSetValue('pet_enabled', checked)} />
-        </label>
-        <div className="settings-detail-grid">
-          <label className="config-field settings-config-field">
-            <span>Default Pet</span>
-            <select value={values.default_pet_id} disabled={!validPets.length} onChange={(event) => onSetValue('default_pet_id', event.currentTarget.value)}>
-              {!validPets.length ? <option value="">No valid pets</option> : <option value="">No default pet</option>}
-              {validPets.map((pet) => (
-                <option key={pet.id} value={pet.id}>{pet.display_name || pet.id}</option>
-              ))}
-            </select>
-          </label>
-          <label className="config-field settings-config-field pet-scale-field">
-            <span>Scale</span>
-            <div className="pet-scale-row">
-              <input type="range" min="0.5" max="2" step="0.05" value={values.pet_scale} onChange={(event) => onSetValue('pet_scale', Number(event.currentTarget.value))} />
-              <input type="number" min="0.5" max="2" step="0.05" value={values.pet_scale} onChange={(event) => onSetValue('pet_scale', Number(event.currentTarget.value))} />
+        <div className="pet-general-layout">
+          <PetPreviewPanel
+            values={values}
+            validPets={validPets}
+            previewState={previewState}
+            onPreviewStateChange={setPreviewState}
+          />
+          <div className="pet-general-fields">
+            <label className="config-field settings-config-field boolean-field">
+              <span>Enable Pet</span>
+              <ToggleSwitch checked={values.pet_enabled} onChange={(checked) => onSetValue('pet_enabled', checked)} />
+            </label>
+            <div className="settings-detail-grid">
+              <label className="config-field settings-config-field">
+                <span>Default Pet</span>
+                <select value={values.default_pet_id} disabled={!validPets.length} onChange={(event) => onSetValue('default_pet_id', event.currentTarget.value)}>
+                  {!validPets.length ? <option value="">No valid pets</option> : <option value="">No default pet</option>}
+                  {validPets.map((pet) => (
+                    <option key={pet.id} value={pet.id}>{pet.display_name || pet.id}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="config-field settings-config-field pet-scale-field">
+                <span>Scale</span>
+                <div className="pet-scale-row">
+                  <input type="range" min="0.5" max="2" step="0.05" value={values.pet_scale} onChange={(event) => onSetValue('pet_scale', Number(event.currentTarget.value))} />
+                  <input type="number" min="0.5" max="2" step="0.05" value={values.pet_scale} onChange={(event) => onSetValue('pet_scale', Number(event.currentTarget.value))} />
+                </div>
+              </label>
             </div>
-          </label>
-        </div>
-        <label className="config-field settings-config-field boolean-field">
-          <span>Show Status Bubble</span>
-          <ToggleSwitch checked={values.show_status_bubble} onChange={(checked) => onSetValue('show_status_bubble', checked)} />
-        </label>
-        <div className="settings-detail-grid">
-          <label className="config-field settings-config-field">
-            <span>Bubble Offset X</span>
-            <input
-              type="number"
-              min="-240"
-              max="240"
-              step="1"
-              value={values.bubble_offset_x}
-              onChange={(event) => onSetValue('bubble_offset_x', clampNumber(Number(event.currentTarget.value), -240, 240))}
-            />
-          </label>
-          <label className="config-field settings-config-field">
-            <span>Bubble Offset Y</span>
-            <input
-              type="number"
-              min="-240"
-              max="240"
-              step="1"
-              value={values.bubble_offset_y}
-              onChange={(event) => onSetValue('bubble_offset_y', clampNumber(Number(event.currentTarget.value), -240, 240))}
-            />
-          </label>
-        </div>
-        <div className="settings-button-row">
-          <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onResetPosition}>
-            <RotateCcw size={14} />
-            Reset Position
-          </button>
+            <label className="config-field settings-config-field boolean-field">
+              <span>Show Status Bubble</span>
+              <ToggleSwitch checked={values.show_status_bubble} onChange={(checked) => onSetValue('show_status_bubble', checked)} />
+            </label>
+            <div className="settings-detail-grid">
+              <label className="config-field settings-config-field">
+                <span>Bubble Offset X</span>
+                <input
+                  type="number"
+                  min="-240"
+                  max="240"
+                  step="1"
+                  value={values.bubble_offset_x}
+                  onChange={(event) => onSetValue('bubble_offset_x', clampNumber(Number(event.currentTarget.value), -240, 240))}
+                />
+              </label>
+              <label className="config-field settings-config-field">
+                <span>Bubble Offset Y</span>
+                <input
+                  type="number"
+                  min="-240"
+                  max="240"
+                  step="1"
+                  value={values.bubble_offset_y}
+                  onChange={(event) => onSetValue('bubble_offset_y', clampNumber(Number(event.currentTarget.value), -240, 240))}
+                />
+              </label>
+            </div>
+            <div className="settings-button-row">
+              <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onResetPosition}>
+                <RotateCcw size={14} />
+                Reset Position
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -482,6 +495,67 @@ function PetConfigTab({
         </label>
       </section>
     </>
+  );
+}
+
+function PetPreviewPanel({
+  values,
+  validPets,
+  previewState,
+  onPreviewStateChange,
+}: {
+  values: PetSettings;
+  validPets: PetItem[];
+  previewState: PetSpriteState;
+  onPreviewStateChange: (state: PetSpriteState) => void;
+}) {
+  const renderablePets = useMemo(() => validPets.filter((pet) => pet.spritesheet_url), [validPets]);
+  const pet = useMemo(() => {
+    if (!renderablePets.length) return null;
+    return renderablePets.find((item) => item.id === values.default_pet_id) || renderablePets[0];
+  }, [renderablePets, values.default_pet_id]);
+  const spriteUrl = pet?.spritesheet_url ? joinApiUrl(API_BASE_URL, pet.spritesheet_url) : '';
+  const petName = pet?.display_name || pet?.id || '';
+  const scale = clampFloat(Number(values.pet_scale), 0.5, 2);
+
+  return (
+    <div className="pet-preview-panel" aria-label="Pet Preview">
+      <div className="pet-preview-header">
+        <div>
+          <strong>Pet Preview</strong>
+          <span>{pet ? petName : 'No valid pet selected'}</span>
+        </div>
+        <label className="pet-preview-state-select">
+          <span>State</span>
+          <select value={previewState} onChange={(event) => onPreviewStateChange(event.currentTarget.value as PetSpriteState)}>
+            {PET_PREVIEW_STATES.map((state) => (
+              <option key={state} value={state}>{state}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {pet && spriteUrl ? (
+        <>
+          <div className="pet-preview-scene">
+            <div
+              className="pet-preview-stage"
+              style={{
+                '--pet-bubble-offset-x': `${values.bubble_offset_x}px`,
+                '--pet-bubble-offset-y': `${values.bubble_offset_y}px`,
+              } as CSSProperties}
+              aria-label={petName}
+              title={petName}
+            >
+              {values.show_status_bubble ? <div className="pet-status-bubble pet-preview-bubble">我是 {petName}</div> : null}
+              <PetSprite spritesheetUrl={spriteUrl} state={previewState} scale={scale} className="pet-sprite" />
+            </div>
+          </div>
+          {pet.description ? <p className="pet-preview-description">{pet.description}</p> : null}
+        </>
+      ) : (
+        <div className="settings-empty-state compact pet-preview-empty">No valid pet selected</div>
+      )}
+    </div>
   );
 }
 
@@ -575,4 +649,9 @@ function normalizeSettings(value: Partial<PetSettings> | null | undefined): PetS
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function clampFloat(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
