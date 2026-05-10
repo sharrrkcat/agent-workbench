@@ -110,6 +110,31 @@ def test_pasted_text_source_indexes_chunks_vectors_fts_and_raw_file(tmp_path: Pa
     assert client.get(f"/api/knowledge/bases/{kb['id']}").json()["index_status"] == "ready"
 
 
+def test_source_preview_and_chunk_list_hide_vectors(tmp_path: Path) -> None:
+    client, _db_path, _backend = make_client(tmp_path)
+    kb = create_kb(client)
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "Preview", "text": "alpha " * 60},
+    ).json()
+    source_id = created["source_id"]
+
+    preview = client.get(f"/api/knowledge/sources/{source_id}/preview")
+    chunks = client.get(f"/api/knowledge/sources/{source_id}/chunks")
+
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["source_id"] == source_id
+    assert preview.json()["preview"].startswith("alpha alpha")
+    assert preview.json()["size_bytes"] == len(("alpha " * 60).encode("utf-8"))
+    assert "vector_blob" not in preview.text
+    assert chunks.status_code == 200, chunks.text
+    payload = chunks.json()
+    assert [item["chunk_index"] for item in payload["chunks"]] == [0, 1, 2, 3, 4]
+    assert payload["chunks"][0]["content_preview"].startswith("alpha")
+    assert payload["chunks"][0]["embedding_dimension"] == 3
+    assert "vector_blob" not in chunks.text
+
+
 def test_source_limit_and_dimension_errors_are_structured(tmp_path: Path) -> None:
     client, _db_path, _backend = make_client(tmp_path)
     kb = create_kb(client)
@@ -224,3 +249,34 @@ def test_kb_reindex_reindexes_all_sources(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert {item["source_id"] for item in response.json()["sources"]} == {first["source_id"], second["source_id"]}
     assert len(backend.calls) == 2
+
+
+def test_kb_and_embedding_profile_changes_mark_existing_index_needs_reindex(tmp_path: Path) -> None:
+    client, _db_path, _backend = make_client(tmp_path)
+    kb = create_kb(client)
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "Stale", "text": "a" * 180},
+    ).json()
+    source_id = created["source_id"]
+
+    changed_kb = client.patch(f"/api/knowledge/bases/{kb['id']}", json={"chunk_size_override": 120})
+
+    assert changed_kb.status_code == 200, changed_kb.text
+    assert changed_kb.json()["index_status"] == "needs_reindex"
+    assert client.get(f"/api/knowledge/sources/{source_id}").json()["status"] == "needs_reindex"
+
+    reindexed = client.post(f"/api/knowledge/bases/{kb['id']}/reindex")
+
+    assert reindexed.status_code == 200, reindexed.text
+    assert client.get(f"/api/knowledge/bases/{kb['id']}").json()["index_status"] == "ready"
+    assert client.get(f"/api/knowledge/sources/{source_id}").json()["status"] == "indexed"
+
+    changed_profile = client.patch(
+        f"/api/knowledge/embedding-models/{kb['embedding_model_profile_id']}",
+        json={"normalize": False, "document_instruction": "Doc:"},
+    )
+
+    assert changed_profile.status_code == 200, changed_profile.text
+    assert client.get(f"/api/knowledge/bases/{kb['id']}").json()["index_status"] == "needs_reindex"
+    assert client.get(f"/api/knowledge/sources/{source_id}").json()["status"] == "needs_reindex"

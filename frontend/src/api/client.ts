@@ -30,7 +30,9 @@ import type {
   KnowledgeBaseInput,
   SessionKnowledgeBinding,
   KnowledgeSource,
+  KnowledgeSourceChunksResponse,
   KnowledgeSourceIndexResult,
+  KnowledgeSourcePreview,
   KnowledgeModelScan,
   KnowledgeSearchResponse,
   KnowledgeChunk,
@@ -251,6 +253,10 @@ export const api = {
     request<KnowledgeSourceIndexResult>(`/api/knowledge/sources/${sourceId}/reindex`, { method: 'POST' }),
   reindexKnowledgeBase: (knowledgeBaseId: string) =>
     request<{ knowledge_base_id: string; sources: KnowledgeSourceIndexResult[] }>(`/api/knowledge/bases/${knowledgeBaseId}/reindex`, { method: 'POST' }),
+  getKnowledgeSourcePreview: (sourceId: string) =>
+    request<KnowledgeSourcePreview>(`/api/knowledge/sources/${sourceId}/preview`),
+  listKnowledgeSourceChunks: (sourceId: string) =>
+    request<KnowledgeSourceChunksResponse>(`/api/knowledge/sources/${sourceId}/chunks`),
   searchKnowledge: (payload: { query: string; knowledge_base_ids?: string[]; session_id?: string | null; top_k?: number; max_context_chars?: number; debug?: boolean }) =>
     request<KnowledgeSearchResponse>('/api/knowledge/search', {
       method: 'POST',

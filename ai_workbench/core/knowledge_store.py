@@ -182,7 +182,7 @@ class SessionKnowledgeBinding(BaseModel):
     knowledge_base: KnowledgeBase | None = None
 
 
-KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "failed", "deleted"]
+KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "needs_reindex", "failed", "deleted"]
 KnowledgeSourceType = Literal["pasted_text", "attachment_text"]
 
 
@@ -309,7 +309,13 @@ class MemoryKnowledgeStore(KnowledgeStore):
     def patch_settings(self, values: dict[str, Any]) -> KnowledgeSettings:
         patch = KnowledgeSettingsPatch.model_validate(values)
         updates = knowledge_settings_patch_updates(patch)
+        changed_chunk_defaults = any(
+            key in updates and getattr(self._settings, key) != updates[key]
+            for key in ("default_chunk_size", "default_chunk_overlap")
+        )
         self._settings = KnowledgeSettings.model_validate({**self._settings.model_dump(), **updates})
+        if changed_chunk_defaults:
+            self._mark_kbs_using_default_chunking_needs_reindex()
         return self._settings
 
     def list_embedding_profiles(self) -> list[EmbeddingModelProfile]:
@@ -331,8 +337,12 @@ class MemoryKnowledgeStore(KnowledgeStore):
         existing = self.get_embedding_profile(profile_id)
         if "alias" in values and any(item.alias == values["alias"] and item.id != existing.id for item in self._embedding_profiles.values()):
             raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
+        stale_keys = {"model_path", "dimension", "normalize", "document_instruction"}
+        needs_reindex = any(key in values and getattr(existing, key) != values[key] for key in stale_keys)
         updated = EmbeddingModelProfile.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
         self._embedding_profiles[existing.id] = updated
+        if needs_reindex:
+            self._mark_kbs_for_profile_needs_reindex(existing.id)
         return updated
 
     def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
@@ -357,9 +367,23 @@ class MemoryKnowledgeStore(KnowledgeStore):
 
     def update_knowledge_base(self, knowledge_base_id: str, values: dict[str, Any]) -> KnowledgeBase:
         existing = self.get_knowledge_base(knowledge_base_id)
+        stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override"}
+        needs_reindex = any(key in values and getattr(existing, key) != values[key] for key in stale_keys)
         updated = KnowledgeBase.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
+        if needs_reindex and existing.index_status in {"ready", "needs_reindex", "failed"}:
+            updated = updated.model_copy(update={"index_status": "needs_reindex", "index_error": None})
         self._knowledge_bases[existing.id] = updated
         return updated
+
+    def _mark_kbs_for_profile_needs_reindex(self, profile_id: str) -> None:
+        for kb in list(self._knowledge_bases.values()):
+            if kb.embedding_model_profile_id == profile_id and kb.index_status in {"ready", "needs_reindex", "failed"}:
+                self._knowledge_bases[kb.id] = kb.model_copy(update={"index_status": "needs_reindex", "index_error": None, "updated_at": utc_now()})
+
+    def _mark_kbs_using_default_chunking_needs_reindex(self) -> None:
+        for kb in list(self._knowledge_bases.values()):
+            if kb.chunk_size_override is None and kb.chunk_overlap_override is None and kb.index_status in {"ready", "needs_reindex", "failed"}:
+                self._knowledge_bases[kb.id] = kb.model_copy(update={"index_status": "needs_reindex", "index_error": None, "updated_at": utc_now()})
 
     def delete_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
         existing = self.get_knowledge_base(knowledge_base_id)

@@ -3,6 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlmodel import select
 from sqlmodel import Session as DbSession
 
 from ai_workbench.api.deps import RuntimeState, get_state
@@ -36,10 +37,12 @@ from ai_workbench.core.knowledge_store import (
 )
 from ai_workbench.core.rerank import rerank_documents
 from ai_workbench.core.retrieval import search_knowledge
-from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeSourceRecord
+from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord, KnowledgeSourceRecord
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
+SOURCE_PREVIEW_MAX_CHARS = 20_000
+CHUNK_CONTENT_PREVIEW_MAX_CHARS = 2_000
 
 
 class EmbeddingTestRequest(BaseModel):
@@ -311,6 +314,64 @@ def get_knowledge_chunk(chunk_id: str, state: RuntimeState = Depends(get_state))
             "content": chunk.content,
             "chunk_index": chunk.chunk_index,
         }
+
+
+@router.get("/sources/{source_id}/preview")
+def get_knowledge_source_preview(source_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        source = state.knowledge.get_source(source_id)
+        source_text = _load_existing_source_text(source_id, state)
+    except KnowledgeIndexError as exc:
+        raise_error(404, exc.code, exc.message, exc.details)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
+    preview = source_text.text[:SOURCE_PREVIEW_MAX_CHARS]
+    return {
+        "source_id": source.id,
+        "title": source.title,
+        "source_type": source.source_type,
+        "preview": preview,
+        "truncated": len(source_text.text) > SOURCE_PREVIEW_MAX_CHARS,
+        "size_bytes": source_text.size_bytes,
+    }
+
+
+@router.get("/sources/{source_id}/chunks")
+def list_knowledge_source_chunks(source_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    engine = getattr(state.knowledge, "engine", None)
+    if engine is None:
+        raise_error(400, "KNOWLEDGE_STORE_UNAVAILABLE", "Knowledge chunks require the SQLite knowledge store.")
+    with DbSession(engine) as session:
+        source = session.get(KnowledgeSourceRecord, source_id)
+        if source is None or source.status == "deleted":
+            raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
+        chunks = session.exec(
+            select(KnowledgeChunkRecord)
+            .where(KnowledgeChunkRecord.source_id == source_id)
+            .order_by(KnowledgeChunkRecord.chunk_index)
+        ).all()
+        payload = []
+        for chunk in chunks:
+            embedding = session.exec(
+                select(KnowledgeEmbeddingRecord)
+                .where(KnowledgeEmbeddingRecord.chunk_id == chunk.id)
+                .order_by(KnowledgeEmbeddingRecord.created_at.desc())
+            ).first()
+            content_preview = chunk.content[:CHUNK_CONTENT_PREVIEW_MAX_CHARS]
+            payload.append(
+                {
+                    "chunk_id": chunk.id,
+                    "chunk_index": chunk.chunk_index,
+                    "heading_path": chunk.heading_path,
+                    "char_start": chunk.char_start,
+                    "char_end": chunk.char_end,
+                    "content": chunk.content,
+                    "content_preview": content_preview,
+                    "truncated": len(chunk.content) > CHUNK_CONTENT_PREVIEW_MAX_CHARS,
+                    "embedding_dimension": embedding.embedding_dimension if embedding is not None else None,
+                }
+            )
+        return {"source_id": source_id, "chunks": payload}
 
 
 @router.get("/bases")

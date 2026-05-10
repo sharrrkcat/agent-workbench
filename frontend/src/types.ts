@@ -442,7 +442,7 @@ export type KnowledgeSource = {
   size_bytes: number;
   content_hash: string;
   indexed_at?: string | null;
-  status: 'pending' | 'indexing' | 'indexed' | 'failed' | 'deleted' | string;
+  status: 'pending' | 'indexing' | 'indexed' | 'needs_reindex' | 'failed' | 'deleted' | string;
   error?: string | null;
   metadata: Record<string, unknown>;
   chunks: number;
@@ -461,6 +461,32 @@ export type KnowledgeSourceIndexResult = {
   indexed_at?: string | null;
   error?: string | null;
   skipped?: boolean;
+};
+
+export type KnowledgeSourcePreview = {
+  source_id: string;
+  title: string;
+  source_type: 'pasted_text' | 'attachment_text' | string;
+  preview: string;
+  truncated: boolean;
+  size_bytes: number;
+};
+
+export type KnowledgeSourceChunk = {
+  chunk_id: string;
+  chunk_index: number;
+  heading_path: string;
+  char_start: number;
+  char_end: number;
+  content: string;
+  content_preview: string;
+  truncated?: boolean;
+  embedding_dimension?: number | null;
+};
+
+export type KnowledgeSourceChunksResponse = {
+  source_id: string;
+  chunks: KnowledgeSourceChunk[];
 };
 
 export type KnowledgeSearchResult = {

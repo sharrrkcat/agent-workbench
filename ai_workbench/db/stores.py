@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlmodel import Session as DbSession
 from sqlmodel import delete
 from sqlmodel import select
+from sqlmodel import update
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
@@ -1008,10 +1009,16 @@ class SqlKnowledgeStore:
             if record is None:
                 record = KnowledgeSettingsRecord(id=1)
             current = _knowledge_settings_from_record(record)
+            chunk_defaults_changed = any(
+                key in updates and getattr(current, key) != updates[key]
+                for key in ("default_chunk_size", "default_chunk_overlap")
+            )
             next_settings = KnowledgeSettings.model_validate({**current.model_dump(), **updates})
             _apply_knowledge_settings_to_record(record, next_settings)
             record.updated_at = utc_now()
             session.add(record)
+            if chunk_defaults_changed:
+                _mark_kbs_using_default_chunking_needs_reindex(session)
             session.commit()
             session.refresh(record)
             return _knowledge_settings_from_record(record)
@@ -1050,11 +1057,15 @@ class SqlKnowledgeStore:
                 conflict = _find_embedding_profile_by_alias(session, str(alias))
                 if conflict is not None and conflict.id != record.id:
                     raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
+            stale_keys = {"model_path", "dimension", "normalize", "document_instruction"}
+            needs_reindex = any(key in values and getattr(record, key) != values[key] for key in stale_keys)
             candidate = _embedding_profile_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
             profile = EmbeddingModelProfile.model_validate(candidate.model_dump())
             for key, value in profile.model_dump().items():
                 setattr(record, key, value)
             session.add(record)
+            if needs_reindex:
+                _mark_kbs_for_profile_needs_reindex(session, record.id)
             session.commit()
             session.refresh(record)
             return _embedding_profile_from_record(record)
@@ -1101,10 +1112,14 @@ class SqlKnowledgeStore:
             record = session.get(KnowledgeBaseRecord, knowledge_base_id)
             if record is None:
                 raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+            stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override"}
+            needs_reindex = any(key in values and getattr(record, key) != values[key] for key in stale_keys)
             candidate = _knowledge_base_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
             knowledge_base = KnowledgeBase.model_validate(candidate.model_dump())
             for key, value in knowledge_base.model_dump().items():
                 setattr(record, key, value)
+            if needs_reindex:
+                _mark_kb_needs_reindex(session, record.id)
             session.add(record)
             session.commit()
             session.refresh(record)
@@ -1247,7 +1262,7 @@ class SqlKnowledgeStore:
                     metadata_json=_dumps(source.metadata),
                 )
             else:
-                if existing.status != "indexed":
+                if existing.status not in {"indexed", "needs_reindex"}:
                     existing.status = "failed"
                 existing.error = error
                 existing.updated_at = now
@@ -1593,9 +1608,62 @@ def _delete_source_index_rows(session: DbSession, source_id: str) -> None:
     session.connection().exec_driver_sql("DELETE FROM kb_chunk_fts WHERE source_id = ?", (source_id,))
 
 
+def _mark_kbs_for_profile_needs_reindex(session: DbSession, profile_id: str) -> None:
+    kb_records = session.exec(
+        select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.embedding_model_profile_id == profile_id)
+    ).all()
+    for kb_record in kb_records:
+        _mark_kb_needs_reindex(session, kb_record.id)
+
+
+def _mark_kbs_using_default_chunking_needs_reindex(session: DbSession) -> None:
+    kb_records = session.exec(
+        select(KnowledgeBaseRecord)
+        .where(KnowledgeBaseRecord.chunk_size_override == None)  # noqa: E711
+        .where(KnowledgeBaseRecord.chunk_overlap_override == None)  # noqa: E711
+    ).all()
+    for kb_record in kb_records:
+        _mark_kb_needs_reindex(session, kb_record.id)
+
+
+def _mark_kb_needs_reindex(session: DbSession, knowledge_base_id: str) -> None:
+    kb_record = session.get(KnowledgeBaseRecord, knowledge_base_id)
+    if kb_record is None:
+        return
+    has_indexed_data = session.exec(
+        select(KnowledgeSourceRecord.id)
+        .where(KnowledgeSourceRecord.knowledge_base_id == knowledge_base_id)
+        .where(KnowledgeSourceRecord.status.in_(["indexed", "needs_reindex"]))
+    ).first()
+    if has_indexed_data is None and kb_record.index_status == "empty":
+        return
+    now = utc_now()
+    session.exec(
+        update(KnowledgeSourceRecord)
+        .where(KnowledgeSourceRecord.knowledge_base_id == knowledge_base_id)
+        .where(KnowledgeSourceRecord.status == "indexed")
+        .values(status="needs_reindex", updated_at=now)
+    )
+    kb_record.index_status = "needs_reindex"
+    kb_record.index_error = None
+    kb_record.updated_at = now
+    session.add(kb_record)
+
+
 def _refresh_kb_index_status(session: DbSession, knowledge_base_id: str) -> None:
     kb_record = session.get(KnowledgeBaseRecord, knowledge_base_id)
     if kb_record is None:
+        return
+    needs_reindex = session.exec(
+        select(KnowledgeSourceRecord.id)
+        .where(KnowledgeSourceRecord.knowledge_base_id == knowledge_base_id)
+        .where(KnowledgeSourceRecord.status == "needs_reindex")
+    ).first()
+    if needs_reindex is not None:
+        kb_record.index_status = "needs_reindex"
+        kb_record.index_error = None
+        kb_record.updated_at = utc_now()
+        session.add(kb_record)
         return
     indexed = session.exec(
         select(KnowledgeSourceRecord.id)

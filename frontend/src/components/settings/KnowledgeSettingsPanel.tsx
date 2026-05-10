@@ -1,7 +1,7 @@
 import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Trash2, Upload } from 'lucide-react';
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource } from '../../types';
+import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
 import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
@@ -406,6 +406,11 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [sourceText, setSourceText] = useState('');
   const [sourceError, setSourceError] = useState<SettingsErrorValue | null>(null);
   const [sourceSort, setSourceSort] = useState<{ key: SourceSortKey; direction: SortDirection }>({ key: 'indexed_at', direction: 'desc' });
+  const [selectedSourceId, setSelectedSourceId] = useState('');
+  const [sourcePreview, setSourcePreview] = useState<KnowledgeSourcePreview | null>(null);
+  const [sourceChunks, setSourceChunks] = useState<KnowledgeSourceChunk[]>([]);
+  const [sourceDetailError, setSourceDetailError] = useState<SettingsErrorValue | null>(null);
+  const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResponse, setSearchResponse] = useState<KnowledgeSearchResponse | null>(null);
@@ -418,6 +423,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const scopeId = isNew ? 'new' : initial.id || '';
   const selectedProfile = profiles.find((profile) => profile.id === values.embedding_model_profile_id);
   const sortedSources = useMemo(() => sortSources(sources, sourceSort), [sourceSort, sources]);
+  const selectedSource = sources.find((source) => source.id === selectedSourceId) || null;
   const dirty = stableConfigString(buildKnowledgeBasePayload(values)) !== stableConfigString(buildKnowledgeBasePayload(initial));
 
   useEffect(() => {
@@ -440,6 +446,10 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setSourceResult('');
     setSourceTitle('');
     setSourceText('');
+    setSelectedSourceId('');
+    setSourcePreview(null);
+    setSourceChunks([]);
+    setSourceDetailError(null);
     searchRequestRef.current += 1;
     currentKnowledgeBaseIdRef.current = initial.id || '';
   }, [initial.id, isNew]);
@@ -467,12 +477,19 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     void loadSources(initial.id);
   }, [initial.id, isNew]);
 
+  useEffect(() => {
+    if (activeTab === 'sources' && values.id && !isNew) {
+      void loadSources(values.id);
+    }
+  }, [activeTab, values.id, isNew]);
+
   async function loadSources(knowledgeBaseId = values.id || '') {
     if (!knowledgeBaseId) return;
     try {
       const loadedSources = await api.listKnowledgeSources(knowledgeBaseId);
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSources(loadedSources);
+        setSelectedSourceId((current) => current && loadedSources.some((source) => source.id === current) ? current : '');
       }
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
@@ -480,6 +497,44 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       }
     }
   }
+
+  async function loadSourceDetail(sourceId: string) {
+    if (!sourceId) return;
+    const knowledgeBaseId = values.id || '';
+    setSourceDetailLoading(true);
+    try {
+      setSourceDetailError(null);
+      const [preview, chunks] = await Promise.all([
+        api.getKnowledgeSourcePreview(sourceId),
+        api.listKnowledgeSourceChunks(sourceId),
+      ]);
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId && selectedSourceId === sourceId) {
+        setSourcePreview(preview);
+        setSourceChunks(chunks.chunks);
+      }
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId && selectedSourceId === sourceId) {
+        setSourcePreview(null);
+        setSourceChunks([]);
+        setSourceDetailError(toSettingsError(error, 'Failed to load source detail.'));
+      }
+    } finally {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId && selectedSourceId === sourceId) {
+        setSourceDetailLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedSourceId) {
+      setSourcePreview(null);
+      setSourceChunks([]);
+      setSourceDetailError(null);
+      setSourceDetailLoading(false);
+      return;
+    }
+    void loadSourceDetail(selectedSourceId);
+  }, [selectedSourceId]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -489,6 +544,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       const payload = buildKnowledgeBasePayload(values);
       const saved = isNew ? await api.createKnowledgeBase(payload) : await api.patchKnowledgeBase(values.id || '', payload);
       await onRefresh(saved.id);
+      if (!isNew) await loadSources(saved.id);
       setConfigResult('Knowledge base saved.');
     } catch (error) {
       setConfigError(toSettingsError(error, 'Failed to save knowledge base.'));
@@ -521,6 +577,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       setSourceTitle('');
       setSourceText('');
+      setSelectedSourceId(indexed.source_id);
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
       setSourceResult(`Indexed ${indexed.chunks} chunks.`);
@@ -601,6 +658,11 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setSourceResult('');
       await api.deleteKnowledgeSource(sourceId);
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      if (selectedSourceId === sourceId) {
+        setSelectedSourceId('');
+        setSourcePreview(null);
+        setSourceChunks([]);
+      }
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
       setSourceResult('Source deleted.');
@@ -622,11 +684,34 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       const result = await api.reindexKnowledgeSource(sourceId);
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       await loadSources(knowledgeBaseId);
+      if (selectedSourceId === sourceId) await loadSourceDetail(sourceId);
       await onRefresh(knowledgeBaseId);
       setSourceResult(`Reindexed ${result.chunks} chunks.`);
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to reindex source.'));
+      }
+    } finally {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+    }
+  }
+  async function reindexAllSources() {
+    if (!values.id) return;
+    const knowledgeBaseId = values.id;
+    setBusy('reindexing all');
+    try {
+      setSourceError(null);
+      setSourceResult('');
+      const result = await api.reindexKnowledgeBase(knowledgeBaseId);
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      await loadSources(knowledgeBaseId);
+      if (selectedSourceId) await loadSourceDetail(selectedSourceId);
+      await onRefresh(knowledgeBaseId);
+      const failed = result.sources.filter((source) => source.status === 'failed').length;
+      setSourceResult(failed ? `Reindexed ${result.sources.length - failed} sources; ${failed} failed.` : `Reindexed ${result.sources.length} sources.`);
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to reindex knowledge base.'));
       }
     } finally {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
@@ -751,18 +836,38 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               </div>
             </section>
             <section className="detail-section">
-              <div className="detail-section-heading"><h3>Sources list</h3></div>
+              <div className="detail-section-heading">
+                <h3>Sources list</h3>
+                <button className="settings-secondary-button" type="button" disabled={!sources.length || Boolean(busy)} onClick={reindexAllSources}>
+                  <RefreshCw size={14} />
+                  {busy === 'reindexing all' ? 'Reindexing...' : 'Reindex all'}
+                </button>
+              </div>
               {sources.length ? (
                 <SourcesTable
                   sources={sortedSources}
                   sort={sourceSort}
                   onSort={toggleSourceSort}
+                  selectedSourceId={selectedSourceId}
+                  onSelect={setSelectedSourceId}
                   onReindex={reindexSource}
                   onDelete={deleteSource}
                   busy={busy}
                 />
               ) : <Empty title="No sources" message="No sources have been indexed for this knowledge base." />}
             </section>
+            {selectedSource ? (
+              <SourceDetail
+                source={selectedSource}
+                preview={sourcePreview}
+                chunks={sourceChunks}
+                loading={sourceDetailLoading}
+                error={sourceDetailError}
+                busy={busy}
+                onReindex={() => reindexSource(selectedSource.id)}
+                onDelete={() => deleteSource(selectedSource.id)}
+              />
+            ) : null}
           </>
         ) : null}
         {activeTab === 'sources' && (isNew || !values.id) ? <Empty title="Save first" message="Save this knowledge base before adding sources." /> : null}
@@ -802,10 +907,12 @@ function KnowledgeSearchResults({ response }: { response: KnowledgeSearchRespons
   );
 }
 
-function SourcesTable({ sources, sort, onSort, onReindex, onDelete, busy }: {
+function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onReindex, onDelete, busy }: {
   sources: KnowledgeSource[];
   sort: { key: SourceSortKey; direction: SortDirection };
   onSort: (key: SourceSortKey) => void;
+  selectedSourceId: string;
+  onSelect: (sourceId: string) => void;
   onReindex: (sourceId: string) => void;
   onDelete: (sourceId: string) => void;
   busy: string;
@@ -825,17 +932,17 @@ function SourcesTable({ sources, sort, onSort, onReindex, onDelete, busy }: {
         </thead>
         <tbody>
           {sources.map((source) => (
-            <tr key={source.id}>
+            <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
               <td>
                 <strong>{source.title || source.uri || source.id}</strong>
                 {source.error ? <small className="settings-error-text">{source.error}</small> : null}
               </td>
               <td>{source.source_type}</td>
               <td>{source.chunks}</td>
-              <td><span className={`settings-badge ${source.status === 'indexed' ? 'success' : ''}`}>{source.status}</span></td>
+              <td><StatusBadge status={source.status} /></td>
               <td>{formatDate(source.indexed_at)}</td>
               <td>
-                <div className="settings-button-row compact">
+                <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
                   <button className="settings-secondary-button" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
                   <button className="settings-secondary-button danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
                 </div>
@@ -846,6 +953,81 @@ function SourcesTable({ sources, sort, onSort, onReindex, onDelete, busy }: {
       </table>
     </div>
   );
+}
+
+function SourceDetail({ source, preview, chunks, loading, error, busy, onReindex, onDelete }: {
+  source: KnowledgeSource;
+  preview: KnowledgeSourcePreview | null;
+  chunks: KnowledgeSourceChunk[];
+  loading: boolean;
+  error: SettingsErrorValue | null;
+  busy: string;
+  onReindex: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <section className="detail-section knowledge-source-detail">
+      <div className="detail-section-heading">
+        <h3>Source detail</h3>
+        <div className="settings-button-row compact">
+          <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy)}><RefreshCw size={14} />Reindex</button>
+          <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}><Trash2 size={14} />Delete</button>
+        </div>
+      </div>
+      {error ? <SettingsApiError error={error} /> : null}
+      <section className="knowledge-source-subsection">
+        <h4>Overview</h4>
+        <dl className="settings-definition-grid">
+          <Metric label="Title" value={source.title || source.uri || source.id} />
+          <Metric label="Type" value={source.source_type} />
+          <Metric label="Status" value={source.status} />
+          <Metric label="Indexed at" value={formatDate(source.indexed_at)} />
+          <Metric label="Chunks" value={String(source.chunks)} />
+          <Metric label="Size" value={formatBytes(source.size_bytes)} />
+          <Metric label="Content hash" value={source.content_hash || 'n/a'} />
+          <Metric label="Embedding dimension" value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
+        </dl>
+        {source.error ? <p className="settings-error-text">{source.error}</p> : null}
+      </section>
+      <section className="knowledge-source-subsection">
+        <div className="detail-section-heading">
+          <h4>Source preview</h4>
+          {preview?.truncated ? <span className="settings-badge warning">truncated</span> : null}
+        </div>
+        {loading && !preview ? <p className="settings-muted-text">Loading source preview...</p> : null}
+        {!loading && !preview && !error ? <p className="settings-muted-text">Source preview is unavailable.</p> : null}
+        {preview ? <pre className="knowledge-source-preview">{preview.preview}</pre> : null}
+      </section>
+      <section className="knowledge-source-subsection">
+        <div className="detail-section-heading">
+          <h4>Chunks</h4>
+          <span className="settings-badge muted">{chunks.length}</span>
+        </div>
+        {loading && !chunks.length ? <p className="settings-muted-text">Loading chunks...</p> : null}
+        {!loading && !chunks.length ? <Empty title="No chunks" message="No chunks are currently stored for this source." /> : null}
+        {chunks.length ? (
+          <div className="knowledge-chunk-list">
+            {chunks.map((chunk) => (
+              <article className="knowledge-chunk-card" key={chunk.chunk_id}>
+                <header>
+                  <strong>Chunk {chunk.chunk_index}</strong>
+                  <span>{chunk.char_start}-{chunk.char_end}</span>
+                  {chunk.embedding_dimension ? <span>{chunk.embedding_dimension}d</span> : null}
+                </header>
+                {chunk.heading_path ? <small>{chunk.heading_path}</small> : null}
+                <pre>{chunk.content_preview || chunk.content}{chunk.truncated ? '\n...' : ''}</pre>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    </section>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const className = status === 'indexed' || status === 'ready' ? 'success' : status === 'needs_reindex' || status === 'failed' ? 'warning' : '';
+  return <span className={`settings-badge ${className}`}>{status}</span>;
 }
 
 function SortableHeader({ label, sortKey, activeSort, onSort }: { label: string; sortKey: SourceSortKey; activeSort: { key: SourceSortKey; direction: SortDirection }; onSort: (key: SourceSortKey) => void }) {
@@ -988,6 +1170,13 @@ function sourceSortValue(source: KnowledgeSource, key: SourceSortKey): string | 
 
 function formatDate(value?: string | null): string {
   return value ? new Date(value).toLocaleString() : 'Not indexed';
+}
+
+function formatBytes(value?: number | null): string {
+  if (!value) return '0 B';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function hasFiles(dataTransfer: DataTransfer): boolean {
