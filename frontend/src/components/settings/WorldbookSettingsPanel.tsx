@@ -46,7 +46,7 @@ export function WorldbookSettingsDetail({
   const entryDirty = useMemo(() => {
     return Object.entries(entryDrafts).some(([entryId, draft]) => {
       const source = entryId === 'new' ? emptyEntry : entries.find((entry) => entry.id === entryId);
-      return Boolean(source) && JSON.stringify(draft) !== JSON.stringify(source);
+      return source ? isEntryDraftDirty(draft, source) : false;
     });
   }, [entries, entryDrafts]);
 
@@ -179,6 +179,7 @@ export function WorldbookSettingsDetail({
   async function saveEntryEnabled(entry: WorldbookEntry, enabled: boolean) {
     const entryId = entry.id;
     const previousEnabled = entry.enabled;
+    setMessage('');
     setEntryToggleBusy((current) => ({ ...current, [entryId]: true }));
     setEntryToggleErrors((current) => {
       const { [entryId]: _old, ...rest } = current;
@@ -197,7 +198,6 @@ export function WorldbookSettingsDetail({
         const draft = current[entryId] || saved;
         return { ...current, [entryId]: { ...draft, enabled: saved.enabled } };
       });
-      setMessage(t('worldbook:results.entryEnabledSaved'));
     } catch (error) {
       setEntries((current) => current.map((item) => item.id === entryId ? { ...item, enabled: previousEnabled } : item));
       setEntryDrafts((current) => {
@@ -367,7 +367,7 @@ export function WorldbookSettingsDetail({
                     entryId="new"
                     draft={entryDrafts.new || emptyEntry}
                     expanded
-                    dirty={JSON.stringify(entryDrafts.new || emptyEntry) !== JSON.stringify(emptyEntry)}
+                    dirty={isEntryDraftDirty(entryDrafts.new || emptyEntry, emptyEntry)}
                     busy={busy}
                     draggable={false}
                     onToggle={() => toggleEntry('new')}
@@ -387,7 +387,7 @@ export function WorldbookSettingsDetail({
                       entry={entry}
                       draft={draft}
                       expanded={expanded}
-                      dirty={JSON.stringify(draft) !== JSON.stringify(entry)}
+                      dirty={isEntryDraftDirty(draft, entry)}
                       busy={busy}
                       draggable={!busy}
                       dragging={dragEntryId === entry.id}
@@ -616,17 +616,27 @@ function MatchResults({ response }: { response: WorldbookMatchTestResponse }) {
   const { t } = useTranslation('worldbook');
   return (
     <div className="worldbook-match-results">
-      <h4>{t('worldbook:labels.matchedEntries')}</h4>
+      <div className="detail-section-heading worldbook-match-results-heading"><h3>{t('worldbook:labels.matchedEntries')}</h3></div>
       {response.warnings.length ? <ul className="settings-warning-list">{response.warnings.map((warning, index) => <li key={index}>{warning.message}</li>)}</ul> : null}
-      {response.results.length ? response.results.map((result) => (
-        <article className="knowledge-result-card" key={result.entry_id}>
-          <strong>{result.entry_name}</strong>
-          <small>{result.worldbook_name} / {result.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
-          {result.matched_keywords.length ? <small>{result.matched_keywords.join(', ')}</small> : null}
-          {result.matched_by_recursion ? <small>{t('worldbook:labels.matchedByRecursion', { depth: result.recursion_depth ?? 0 })}</small> : null}
-          <p>{result.content_preview}</p>
-        </article>
-      )) : <div className="settings-empty-state compact">{t('worldbook:empty.noMatchedEntries')}</div>}
+      {response.results.length ? <div className="worldbook-match-entry-list">{response.results.map((result) => {
+        const activationModeLabel = result.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered');
+        const triggerText = result.activation_mode === 'always'
+          ? activationModeLabel
+          : result.matched_keywords.length ? result.matched_keywords.join(', ') : t('worldbook:labels.noKeywords');
+        return (
+          <article className="worldbook-match-entry-card" key={result.entry_id}>
+            <div className="worldbook-match-entry-main">
+              <strong>{result.entry_name}</strong>
+              <span className="settings-badge muted worldbook-match-mode-chip">{activationModeLabel}</span>
+            </div>
+            <div className="worldbook-match-entry-triggers">
+              <span>{triggerText}</span>
+              {result.matched_by_recursion ? <span>{t('worldbook:labels.matchedByRecursion', { depth: result.recursion_depth ?? 0 })}</span> : null}
+            </div>
+            <p>{result.content_preview}</p>
+          </article>
+        );
+      })}</div> : <div className="settings-empty-state compact">{t('worldbook:empty.noMatchedEntries')}</div>}
     </div>
   );
 }
@@ -657,4 +667,18 @@ function entryPayload(values: Partial<WorldbookEntry>): WorldbookEntryInput {
     activation_mode: values.activation_mode || 'keyword',
     enabled: values.enabled ?? true,
   };
+}
+
+function entryComparable(values: Partial<WorldbookEntry>) {
+  return {
+    name: values.name || '',
+    keywords_text: values.keywords_text || '',
+    content: values.content || '',
+    activation_mode: values.activation_mode || 'keyword',
+    enabled: values.enabled ?? true,
+  };
+}
+
+function isEntryDraftDirty(draft: Partial<WorldbookEntry>, source: Partial<WorldbookEntry>): boolean {
+  return JSON.stringify(entryComparable(draft)) !== JSON.stringify(entryComparable(source));
 }

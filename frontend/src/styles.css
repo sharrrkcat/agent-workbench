@@ -6155,6 +6155,92 @@ input:disabled {
   resize: vertical;
 }
 
+.worldbook-match-results,
+.worldbook-match-entry-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.worldbook-match-results-heading {
+  margin-top: 4px;
+}
+
+.worldbook-match-entry-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.worldbook-match-entry-main,
+.worldbook-match-entry-triggers {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.worldbook-match-entry-main strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldbook-match-mode-chip {
+  flex: 0 0 auto;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldbook-match-entry-triggers {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+}
+
+.worldbook-match-entry-triggers span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldbook-match-entry-triggers span:first-child {
+  flex: 1 1 auto;
+}
+
+.worldbook-match-entry-triggers span + span {
+  flex: 0 0 auto;
+  max-width: 220px;
+  color: rgba(255, 210, 145, 0.82);
+}
+
+.worldbook-match-entry-card p {
+  display: -webkit-box;
+  min-width: 0;
+  max-height: 38px;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .settings-config-field.boolean-field.compact {
   grid-template-columns: auto auto;
   gap: 8px;
