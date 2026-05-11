@@ -275,7 +275,6 @@ export function WorldbookSettingsDetail({
   const worldbookHeaderActions = category === 'worldbooks' ? (
     <>
       {message ? <span className="settings-badge success">{message}</span> : null}
-      <BooleanField label={t('worldbook:labels.enabled')} checked={worldbookValues.enabled ?? true} onChange={(enabled) => setWorldbookValues({ ...worldbookValues, enabled })} compact />
       {worldbookDirty ? (
         <button className="settings-primary-button" type="button" onClick={() => void saveWorldbook()} disabled={busy === 'save-worldbook'}>
           <Save size={14} />
@@ -288,6 +287,7 @@ export function WorldbookSettingsDetail({
           {t('common:delete')}
         </button>
       ) : null}
+      <ToggleSwitch checked={worldbookValues.enabled ?? true} onChange={(enabled) => setWorldbookValues({ ...worldbookValues, enabled })} disabled={Boolean(busy)} />
     </>
   ) : undefined;
 
@@ -427,10 +427,7 @@ function EntryCard({
 }) {
   const { t } = useTranslation(['worldbook', 'common']);
   const title = draft.name || (entryId === 'new' ? t('worldbook:titles.newEntry') : t('worldbook:titles.entry'));
-  const keywordCount = countKeywords(draft.keywords_text || '');
-  const keywordText = keywordCount
-    ? t('worldbook:labels.keywordCount', { count: keywordCount })
-    : t('worldbook:labels.noKeywords');
+  const activationModeLabel = draft.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered');
 
   return (
     <article
@@ -464,34 +461,42 @@ function EntryCard({
         >
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        <span className={`settings-badge ${draft.enabled ?? true ? 'success' : 'muted'}`}>{draft.enabled ?? true ? t('worldbook:labels.enabled') : t('worldbook:labels.disabled')}</span>
+        <ToggleSwitch
+          checked={draft.enabled ?? true}
+          onChange={(enabled) => onUpdate({ enabled })}
+          showLabel={false}
+          size="small"
+          disabled={Boolean(busy)}
+        />
         <div className="worldbook-entry-card-title">
           <strong>{title}</strong>
-          <small>{draft.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
         </div>
-        <span className="settings-badge muted">{draft.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : keywordText}</span>
-        {dirty ? <span className="settings-badge warning">{t('worldbook:labels.unsavedChanges')}</span> : null}
-        <button
-          className="settings-secondary-button danger icon-only"
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-          disabled={Boolean(busy)}
-          title={t('common:delete')}
-          aria-label={t('common:delete')}
-        >
-          <Trash2 size={14} />
-        </button>
+        <div className="worldbook-entry-card-actions">
+          {dirty ? <span className="settings-badge warning">{t('worldbook:labels.unsavedChanges')}</span> : null}
+          <span className="settings-badge muted worldbook-entry-mode-chip">{activationModeLabel}</span>
+          <button
+            className="settings-secondary-button danger icon-only"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            disabled={Boolean(busy)}
+            title={t('common:delete')}
+            aria-label={t('common:delete')}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </header>
       {expanded ? (
         <form className="worldbook-entry-card-body" onSubmit={onSave}>
-          <TextField label={t('worldbook:labels.name')} value={draft.name || ''} onChange={(name) => onUpdate({ name })} />
-          <SelectField label={t('worldbook:labels.activationMode')} value={draft.activation_mode || 'keyword'} onChange={(activation_mode) => onUpdate({ activation_mode })} />
-          <TextAreaField label={t('worldbook:labels.keywords')} value={draft.keywords_text || ''} onChange={(keywords_text) => onUpdate({ keywords_text })} />
+          <div className="worldbook-entry-form-row">
+            <TextField label={t('worldbook:labels.name')} value={draft.name || ''} onChange={(name) => onUpdate({ name })} />
+            <SelectField label={t('worldbook:labels.activationMode')} value={draft.activation_mode || 'keyword'} onChange={(activation_mode) => onUpdate({ activation_mode })} />
+          </div>
+          <TextField label={t('worldbook:labels.keywords')} value={draft.keywords_text || ''} onChange={(keywords_text) => onUpdate({ keywords_text })} />
           <TextAreaField label={t('worldbook:labels.entryContent')} rows={8} value={draft.content || ''} onChange={(content) => onUpdate({ content })} />
-          <BooleanField label={t('worldbook:labels.enabled')} checked={draft.enabled ?? true} onChange={(enabled) => onUpdate({ enabled })} />
           <div className="settings-button-row">
             <button className="settings-primary-button" type="submit" disabled={busy === 'save-entry'}>
               <Save size={14} />
@@ -566,10 +571,6 @@ function MatchResults({ response }: { response: WorldbookMatchTestResponse }) {
       )) : <div className="settings-empty-state compact">{t('worldbook:empty.noMatchedEntries')}</div>}
     </div>
   );
-}
-
-function countKeywords(value: string): number {
-  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).length;
 }
 
 function uniqueIds(values: string[]): string[] {

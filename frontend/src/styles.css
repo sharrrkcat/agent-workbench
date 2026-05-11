@@ -4022,6 +4022,26 @@ input:disabled {
   background: #86efac;
 }
 
+.toggle-switch.small {
+  gap: 0;
+}
+
+.toggle-switch.small > span {
+  width: 30px;
+  height: 18px;
+}
+
+.toggle-switch.small > span::after {
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+}
+
+.toggle-switch.small.checked > span::after {
+  transform: translateX(12px);
+}
+
 .config-fields {
   display: grid;
   gap: 9px;
@@ -6042,7 +6062,7 @@ input:disabled {
 
 .worldbook-entry-card-header {
   display: grid;
-  grid-template-columns: 30px 30px auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 30px 30px auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 46px;
@@ -6054,6 +6074,21 @@ input:disabled {
   display: grid;
   min-width: 0;
   gap: 2px;
+}
+
+.worldbook-entry-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 8px;
+}
+
+.worldbook-entry-mode-chip {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .worldbook-entry-card-title strong,
@@ -6094,6 +6129,12 @@ input:disabled {
   display: grid;
   gap: 12px;
   padding: 0 12px 12px;
+}
+
+.worldbook-entry-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(180px, 1fr);
+  gap: 12px;
 }
 
 .worldbook-entry-card-body textarea {
@@ -6481,6 +6522,7 @@ input:disabled {
   .settings-detail-grid,
   .settings-diagnostics-grid,
   .settings-definition-grid,
+  .worldbook-entry-form-row,
   .pet-bubble-grid,
   .pet-general-layout {
     grid-template-columns: 1fr;

@@ -5,20 +5,26 @@ export function ToggleSwitch({
   checked,
   onChange,
   label,
+  showLabel = true,
+  size = 'default',
   disabled = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: ReactNode;
+  showLabel?: boolean;
+  size?: 'default' | 'small';
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  const statusLabel = label || (checked ? t('common:enabled') : t('common:disabled'));
   return (
     <button
-      className={`toggle-switch settings-toggle ${checked ? 'checked' : ''}`}
+      className={`toggle-switch settings-toggle ${size === 'small' ? 'small' : ''} ${checked ? 'checked' : ''}`}
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={typeof statusLabel === 'string' ? statusLabel : undefined}
       disabled={disabled}
       onClick={(event) => {
         event.preventDefault();
@@ -27,7 +33,7 @@ export function ToggleSwitch({
       }}
     >
       <span aria-hidden="true" />
-      <small>{label || (checked ? t('common:enabled') : t('common:disabled'))}</small>
+      {showLabel ? <small>{statusLabel}</small> : null}
     </button>
   );
 }
