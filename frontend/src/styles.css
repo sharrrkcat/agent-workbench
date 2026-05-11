@@ -480,7 +480,27 @@ input:disabled {
   text-align: left;
 }
 
-.session-menu-item:hover {
+.session-menu-item:disabled {
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.36);
+}
+
+.session-menu-item span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-menu-item small {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-menu-item:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.07);
   color: #f5f5f5;
 }
@@ -489,23 +509,41 @@ input:disabled {
   color: #fca5a5;
 }
 
-.session-menu-item.danger:hover {
+.session-menu-item.danger:hover:not(:disabled) {
   background: rgba(127, 29, 29, 0.24);
   color: #fecaca;
 }
 
-.session-menu-mode {
+.session-menu-mode,
+.session-menu-memory {
   display: grid;
   gap: 6px;
   padding: 7px 9px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.session-menu-mode > span {
+.session-menu-mode > span,
+.session-menu-memory > span {
   color: rgba(255, 255, 255, 0.48);
   font-size: 11px;
   font-weight: 760;
   text-transform: uppercase;
+}
+
+.session-menu-feedback,
+.session-menu-error {
+  margin: 2px 0 0;
+  white-space: pre-line;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.session-menu-feedback {
+  color: rgba(187, 247, 208, 0.82);
+}
+
+.session-menu-error {
+  color: #fecaca;
 }
 
 .knowledge-picker {

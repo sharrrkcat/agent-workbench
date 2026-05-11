@@ -13,6 +13,7 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.runtime_memory import RuntimeMemoryService
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.knowledge_models import LocalKnowledgeModelBackend, ensure_knowledge_directories
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
@@ -59,6 +60,7 @@ class RuntimeState:
     command_runner: CommandRunner
     agent_runner: AgentRunner
     runtime: WorkbenchRuntime
+    runtime_memory: Any
     active_runs: ActiveRunRegistry
     agent_configs: Any = None
     capability_configs: Any = None
@@ -173,6 +175,27 @@ def build_runtime_state(
         knowledge_store=knowledge,
         knowledge_model_backend=knowledge_model_backend,
     )
+    runtime_memory = RuntimeMemoryService(
+        agents=agents,
+        runtimes=runtimes,
+        sessions=sessions,
+        runs=runs,
+        agent_configs=agent_configs,
+        capability_configs=capability_configs,
+        capabilities=capabilities,
+        llm_profiles=llm_profiles,
+        provider_profiles=provider_profiles,
+        llm_defaults=llm_defaults,
+        knowledge_model_backend=knowledge_model_backend,
+        agent_runner=agent_runner,
+    )
+    try:
+        runtime_control = runtimes.get_runtime("runtime")
+        configure = getattr(runtime_control, "configure", None)
+        if callable(configure):
+            configure(runtime_memory)
+    except KeyError:
+        pass
     runtime = WorkbenchRuntime(router=router, command_runner=command_runner, agent_runner=agent_runner)
     return RuntimeState(
         agents=agents,
@@ -188,6 +211,7 @@ def build_runtime_state(
         command_runner=command_runner,
         agent_runner=agent_runner,
         runtime=runtime,
+        runtime_memory=runtime_memory,
         active_runs=active_runs,
         agent_configs=agent_configs,
         capability_configs=capability_configs,

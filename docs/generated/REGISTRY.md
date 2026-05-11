@@ -28,6 +28,7 @@ Do not edit manually.
 | knowledge | Knowledge | search, list_bases, stats | /kb-search | json, json, json |  |
 | llm | LLM Capability | generate, chat, unload |  | text, text, json | base_url, api_key, model, default_profile, timeout |
 | pet | Pet | command, get_settings, update_settings, list_pets, scan_pets, validate_pet, delete_pet, import_pet | /pet | markdown, json, json, json, json, json, json, json | pet_enabled, default_pet_id, pet_scale, show_status_bubble, bubble_offset_x, bubble_offset_y, jump_on_hover, running_prefix, position, bubble_texts, command_texts |
+| runtime | Runtime Control | free_memory | /free-memory | markdown |  |
 | storage | Storage | get, set |  |  |  |
 
 ## Notes

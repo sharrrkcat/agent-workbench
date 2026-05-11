@@ -126,34 +126,44 @@ class LocalKnowledgeModelBackend:
         self.root = root or repo_root()
         self._embedding_cache: dict[tuple[str, str], Any] = {}
         self._reranker_cache: dict[tuple[str, str], Any] = {}
+        self._active_embedding_calls = 0
+        self._active_reranker_calls = 0
 
     def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
-        availability = backend_availability()
-        if not availability["sentence_transformers_available"] or not availability["torch_available"]:
-            raise KnowledgeModelError(LOCAL_MODEL_BACKEND_UNAVAILABLE, "Optional local model dependencies are not installed.", availability)
-        resolved_device = resolve_device(device)
-        absolute_path = resolve_model_path(model_path, "embeddings", self.root)
-        if not absolute_path.is_dir():
-            raise KnowledgeModelError(MODEL_NOT_FOUND, f"Embedding model not found: {model_path}")
-        model = self._load_embedding_model(absolute_path, resolved_device)
-        vectors = model.encode(texts, convert_to_numpy=True, normalize_embeddings=normalize)
-        return _vectors_to_lists(vectors, normalize=normalize)
+        self._active_embedding_calls += 1
+        try:
+            availability = backend_availability()
+            if not availability["sentence_transformers_available"] or not availability["torch_available"]:
+                raise KnowledgeModelError(LOCAL_MODEL_BACKEND_UNAVAILABLE, "Optional local model dependencies are not installed.", availability)
+            resolved_device = resolve_device(device)
+            absolute_path = resolve_model_path(model_path, "embeddings", self.root)
+            if not absolute_path.is_dir():
+                raise KnowledgeModelError(MODEL_NOT_FOUND, f"Embedding model not found: {model_path}")
+            model = self._load_embedding_model(absolute_path, resolved_device)
+            vectors = model.encode(texts, convert_to_numpy=True, normalize_embeddings=normalize)
+            return _vectors_to_lists(vectors, normalize=normalize)
+        finally:
+            self._active_embedding_calls = max(0, self._active_embedding_calls - 1)
 
     def rerank(self, model_path: str, query: str, documents: list[dict[str, str]], device: str) -> list[dict[str, Any]]:
-        availability = backend_availability()
-        if not availability["sentence_transformers_available"] or not availability["torch_available"]:
-            raise KnowledgeModelError(LOCAL_MODEL_BACKEND_UNAVAILABLE, "Optional local model dependencies are not installed.", availability)
-        resolved_device = resolve_device(device)
-        absolute_path = resolve_model_path(model_path, "rerankers", self.root)
-        if not absolute_path.is_dir():
-            raise KnowledgeModelError(MODEL_NOT_FOUND, f"Reranker model not found: {model_path}")
-        model = self._load_reranker_model(absolute_path, resolved_device)
-        scores = model.predict([(query, document["text"]) for document in documents])
-        results = [
-            {"id": document["id"], "score": float(score)}
-            for document, score in zip(documents, list(scores), strict=False)
-        ]
-        return sorted(results, key=lambda item: item["score"], reverse=True)
+        self._active_reranker_calls += 1
+        try:
+            availability = backend_availability()
+            if not availability["sentence_transformers_available"] or not availability["torch_available"]:
+                raise KnowledgeModelError(LOCAL_MODEL_BACKEND_UNAVAILABLE, "Optional local model dependencies are not installed.", availability)
+            resolved_device = resolve_device(device)
+            absolute_path = resolve_model_path(model_path, "rerankers", self.root)
+            if not absolute_path.is_dir():
+                raise KnowledgeModelError(MODEL_NOT_FOUND, f"Reranker model not found: {model_path}")
+            model = self._load_reranker_model(absolute_path, resolved_device)
+            scores = model.predict([(query, document["text"]) for document in documents])
+            results = [
+                {"id": document["id"], "score": float(score)}
+                for document, score in zip(documents, list(scores), strict=False)
+            ]
+            return sorted(results, key=lambda item: item["score"], reverse=True)
+        finally:
+            self._active_reranker_calls = max(0, self._active_reranker_calls - 1)
 
     def _load_embedding_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
@@ -200,6 +210,12 @@ class LocalKnowledgeModelBackend:
         if removed:
             _collect_model_memory()
         return removed
+
+    def embedding_busy(self) -> bool:
+        return self._active_embedding_calls > 0
+
+    def reranker_busy(self) -> bool:
+        return self._active_reranker_calls > 0
 
 
 def safe_unload_embedding_model(

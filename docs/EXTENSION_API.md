@@ -319,6 +319,16 @@ Built-in `knowledge` Capability:
 - `stats(knowledge_base_id=None)` returns compact source/chunk/embedding counts globally or for one KB. It does not read full source originals or return vectors.
 - `/kb-search <query>` passes the remaining text as `query`, searches current session active KBs, returns JSON, and does not call an LLM or create an Agent run. Empty input fails clearly; no active KBs returns an empty result with a `No active knowledge bases for this session.` warning.
 
+Built-in `runtime` Capability:
+- `/free-memory <target>` calls the core runtime memory control service. Targets are `llm`, `comfyui`, `embedding`, `reranker`, and `all`.
+- The command returns a compact readable markdown result list. Empty input returns `/free-memory [llm|comfyui|embedding|reranker|all]`.
+- Memory release is best-effort per target and never deletes model files, knowledge bases, indexes, sessions, or settings.
+- Busy targets return `busy` and are not force-released. In this alpha, manual LLM release is limited to LM Studio provider profiles.
+
+Runtime memory API:
+- `GET /api/runtime/memory?session_id=<id>` returns target availability summaries with `target`, `available`, `enabled`, `reason`, and `status`.
+- `POST /api/runtime/free-memory` accepts `{"targets":["llm"|"comfyui"|"embedding"|"reranker"|"all"],"session_id":"..."}` and returns `{"results":[{"target":"...","status":"freed|skipped|busy|unavailable|failed","message":"..."}]}`.
+
 Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, object-info, and `free_memory` methods. `free_memory` posts to ComfyUI `/free` with `unload_models` and `free_memory` booleans and returns a structured JSON outcome; it is not a slash command or user-facing Agent action. The Capability returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, memory-release workflow choices, and final rendering.
 
 The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, report per-workflow draft preset skip reasons, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.

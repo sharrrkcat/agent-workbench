@@ -199,6 +199,31 @@ Tests:
 Avoid unless needed:
 - Do not update Agent manifest docs for provider-only behavior.
 
+### Change runtime memory control
+
+Read:
+- `docs/RUNTIME_PROTOCOLS.md#provider-and-model-status`
+- `docs/EXTENSION_API.md#capabilities`
+- `docs/generated/REGISTRY.md#capabilities`
+
+Likely source:
+- `ai_workbench/core/runtime_memory.py`
+- `ai_workbench/api/routes/runtime.py`
+- `capabilities/runtime`
+- `ai_workbench/core/knowledge_models.py` for local embedding/reranker cache release
+- `capabilities/comfyui/__init__.py` for ComfyUI `/free`
+- `frontend/src/components/ChatHeader.tsx`
+- `frontend/src/i18n/resources/*/chat.json`
+
+Tests:
+- `uv run pytest tests/test_runtime_memory.py`
+- `uv run python scripts/generate_registry_docs.py --check` when the runtime command manifest changes
+- `cd frontend && npm run build`
+
+Avoid unless needed:
+- Do not delete model files, knowledge bases, indexes, sessions, or settings from memory release paths.
+- Do not generalize LLM unload beyond LM Studio until the provider exposes a reliable unload API.
+
 ### Change attachments / vision / file input
 
 Read:

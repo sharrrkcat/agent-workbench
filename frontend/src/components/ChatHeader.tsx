@@ -1,4 +1,4 @@
-import { BookOpen, Hash, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, DatabaseZap, Hash, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -6,7 +6,7 @@ import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
-import type { ContextMode, KnowledgeBase, Message, SessionKnowledgeBinding } from '../types';
+import type { ContextMode, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, SessionKnowledgeBinding } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation();
@@ -85,6 +85,10 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
   const updateSessionContextMode = useWorkbenchStore((state) => state.updateSessionContextMode);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const contextMode = currentSession?.context_mode === 'group_transcript' ? 'group_transcript' : 'single_assistant';
+  const [memoryTargets, setMemoryTargets] = useState<RuntimeMemoryTargetSummary[]>([]);
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const [memoryFeedback, setMemoryFeedback] = useState('');
+  const [memoryError, setMemoryError] = useState('');
 
   useEffect(() => {
     onOpenChange(false);
@@ -108,6 +112,24 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
     };
   }, [onOpenChange, open]);
 
+  useEffect(() => {
+    if (!open || !currentSession?.session_id) return;
+    let cancelled = false;
+    async function loadMemorySummary() {
+      try {
+        setMemoryError('');
+        const summary = await api.getRuntimeMemory(currentSession!.session_id);
+        if (!cancelled) setMemoryTargets(summary.targets);
+      } catch (err) {
+        if (!cancelled) setMemoryError(err instanceof Error ? err.message : t('chat:memory.loadFailed'));
+      }
+    }
+    void loadMemorySummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSession?.session_id, open, t]);
+
   function confirmDelete() {
     if (!currentSession) return;
     const confirmed = window.confirm(t('chat:confirmDeleteSession'));
@@ -120,6 +142,25 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
     if (!currentSession) return;
     void updateSessionContextMode(nextMode);
   }
+
+  async function freeMemory(target: RuntimeMemoryTarget) {
+    if (!currentSession || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      const result = await api.freeRuntimeMemory([target], currentSession.session_id);
+      setMemoryFeedback(formatMemoryFeedback(result.results, t));
+      const summary = await api.getRuntimeMemory(currentSession.session_id);
+      setMemoryTargets(summary.targets);
+      setMemoryError('');
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : t('chat:memory.freeFailed'));
+    } finally {
+      setMemoryBusy(false);
+    }
+  }
+
+  const memoryByTarget = useMemo(() => new Map(memoryTargets.map((target) => [target.target, target])), [memoryTargets]);
+  const hasFreeableTarget = memoryTargets.some((target) => isMemoryTargetEnabled(target));
 
   return (
     <div className="session-menu-wrap" ref={menuRef}>
@@ -158,6 +199,26 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
               </button>
             </div>
           </div>
+          <div className="session-menu-memory" aria-label={t('chat:memory.freeMemory')}>
+            <span>{t('chat:memory.freeMemory')}</span>
+            <MemoryMenuItem target="llm" summary={memoryByTarget.get('llm')} busy={memoryBusy} onFree={freeMemory} />
+            <MemoryMenuItem target="comfyui" summary={memoryByTarget.get('comfyui')} busy={memoryBusy} onFree={freeMemory} />
+            <MemoryMenuItem target="embedding" summary={memoryByTarget.get('embedding')} busy={memoryBusy} onFree={freeMemory} />
+            <MemoryMenuItem target="reranker" summary={memoryByTarget.get('reranker')} busy={memoryBusy} onFree={freeMemory} />
+            <button
+              type="button"
+              role="menuitem"
+              className="session-menu-item"
+              disabled={memoryBusy || !hasFreeableTarget}
+              title={hasFreeableTarget ? t('chat:memory.freeAll') : t('chat:memory.noAvailableTargets')}
+              onClick={() => void freeMemory('all')}
+            >
+              <DatabaseZap size={14} />
+              <span>{t('chat:memory.freeAll')}</span>
+            </button>
+            {memoryFeedback ? <p className="session-menu-feedback">{memoryFeedback}</p> : null}
+            {memoryError ? <p className="session-menu-error">{memoryError}</p> : null}
+          </div>
           <button type="button" role="menuitem" className="session-menu-item danger" onClick={confirmDelete}>
             <Trash2 size={14} />
             <span>{t('chat:deleteSession', { name: '' }).trim()}</span>
@@ -166,6 +227,101 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
       ) : null}
     </div>
   );
+}
+
+function MemoryMenuItem({
+  target,
+  summary,
+  busy,
+  onFree,
+}: {
+  target: Exclude<RuntimeMemoryTarget, 'all'>;
+  summary?: RuntimeMemoryTargetSummary;
+  busy: boolean;
+  onFree: (target: RuntimeMemoryTarget) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const disabled = busy || !summary || !isMemoryTargetEnabled(summary);
+  const reason = summary ? memoryReason(summary, t) : t('chat:memory.statusUnknown');
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className="session-menu-item"
+      disabled={disabled}
+      title={disabled ? reason : memoryActionLabel(target, t)}
+      onClick={() => void onFree(target)}
+    >
+      <DatabaseZap size={14} />
+      <span>
+        {memoryActionLabel(target, t)}
+        {disabled && reason ? <small>{reason}</small> : null}
+      </span>
+    </button>
+  );
+}
+
+function isMemoryTargetEnabled(summary: RuntimeMemoryTargetSummary): boolean {
+  return summary.available && summary.enabled && summary.status !== 'busy' && summary.status !== 'unavailable';
+}
+
+function memoryActionLabel(target: RuntimeMemoryTarget, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = {
+    llm: 'chat:memory.freeLlm',
+    comfyui: 'chat:memory.freeComfyui',
+    embedding: 'chat:memory.freeEmbedding',
+    reranker: 'chat:memory.freeReranker',
+    all: 'chat:memory.freeAll',
+  }[target];
+  return t(key);
+}
+
+function memoryReason(summary: RuntimeMemoryTargetSummary, t: ReturnType<typeof useTranslation>['t']): string {
+  const reason = summary.reason || '';
+  if (summary.status === 'busy') return t('chat:memory.busy');
+  if (summary.status === 'not_loaded') return t('chat:memory.noModelLoaded');
+  if (reason === 'Not connected.') return t('chat:memory.notConnected');
+  if (reason === 'Current provider is not LM Studio.') return t('chat:memory.notLmStudio');
+  if (reason === 'No model loaded.') return t('chat:memory.noModelLoaded');
+  return reason || t('chat:memory.statusUnknown');
+}
+
+function formatMemoryFeedback(results: RuntimeMemoryResultItem[], t: ReturnType<typeof useTranslation>['t']): string {
+  if (!results.length) return t('chat:memory.releaseResult');
+  return [
+    t('chat:memory.releaseResult'),
+    ...results.map((item) => `${memoryTargetLabel(item.target, t)}: ${memoryStatusLabel(item.status, t)}${item.message ? ` - ${localizeMemoryMessage(item.message, t)}` : ''}`),
+  ].join('\n');
+}
+
+function memoryTargetLabel(target: RuntimeMemoryResultItem['target'], t: ReturnType<typeof useTranslation>['t']): string {
+  const key = {
+    llm: 'chat:memory.llm',
+    comfyui: 'chat:memory.comfyui',
+    embedding: 'chat:memory.embedding',
+    reranker: 'chat:memory.reranker',
+  }[target];
+  return t(key);
+}
+
+function memoryStatusLabel(status: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = {
+    freed: 'chat:memory.freed',
+    skipped: 'chat:memory.skipped',
+    busy: 'chat:memory.busy',
+    unavailable: 'chat:memory.unavailable',
+    failed: 'chat:memory.failed',
+  }[status];
+  return key ? t(key) : status;
+}
+
+function localizeMemoryMessage(message: string, t: ReturnType<typeof useTranslation>['t']): string {
+  if (message === 'Freed.') return t('chat:memory.freed');
+  if (message === 'Not connected.') return t('chat:memory.notConnected');
+  if (message === 'No model loaded.') return t('chat:memory.noModelLoaded');
+  if (message === 'Current provider is not LM Studio.') return t('chat:memory.notLmStudio');
+  if (message.toLowerCase().includes('busy')) return t('chat:memory.busy');
+  return message;
 }
 
 function SessionKnowledgePicker({

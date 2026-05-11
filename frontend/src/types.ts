@@ -926,6 +926,30 @@ export type RuntimeResponse = {
   messages: Message[];
 };
 
+export type RuntimeMemoryTarget = 'llm' | 'comfyui' | 'embedding' | 'reranker' | 'all';
+
+export type RuntimeMemoryTargetSummary = {
+  target: Exclude<RuntimeMemoryTarget, 'all'>;
+  available: boolean;
+  enabled: boolean;
+  reason: string;
+  status: 'loaded' | 'not_loaded' | 'busy' | 'unavailable' | 'unknown' | string;
+};
+
+export type RuntimeMemorySummary = {
+  targets: RuntimeMemoryTargetSummary[];
+};
+
+export type RuntimeMemoryResultItem = {
+  target: Exclude<RuntimeMemoryTarget, 'all'>;
+  status: 'freed' | 'skipped' | 'busy' | 'unavailable' | 'failed' | string;
+  message: string;
+};
+
+export type RuntimeMemoryFreeResult = {
+  results: RuntimeMemoryResultItem[];
+};
+
 export type DeleteSessionResponse = {
   deleted: boolean;
   session_id: string;

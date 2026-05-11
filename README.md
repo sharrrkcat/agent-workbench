@@ -87,6 +87,7 @@ hello
 @translate 你好
 @translate:formal
 /base64 hello
+/free-memory all
 ```
 
 Message action buttons use the same Agent action system as text calls.
@@ -319,7 +320,7 @@ Chat model status:
 - Opening the composer model dropdown does not perform network refresh. It only shows cached status dots.
 - The bottom status bar shows the Provider Profile and requested model id that will be used for the next request. This is intentionally separate from the actual model recorded on a completed assistant message.
 
-Model unload is only exposed to trusted script agent runtime through `ctx.llm.unload_model(...)`. There is no user-facing unload button or slash command. LM Studio unload uses native loaded instance ids from `/api/v1/models` and posts each instance to `/api/v1/models/unload`. llama.cpp single mode and OpenAI-compatible providers return `MODEL_UNLOAD_UNSUPPORTED`.
+Model unload is exposed to trusted script agent runtime through `ctx.llm.unload_model(...)`, and the Chat session menu also provides a manual Free memory group for temporary runtime cleanup. `/free-memory <target>` supports `llm`, `comfyui`, `embedding`, `reranker`, and `all`. The command only releases loaded runtime memory or VRAM; it does not delete model files, knowledge bases, indexes, sessions, or settings. LLM release is limited to LM Studio in this alpha and uses native loaded instance ids from `/api/v1/models`, then posts each instance to `/api/v1/models/unload`. llama.cpp single mode and OpenAI-compatible providers return unsupported/unavailable for manual LLM release.
 
 Prompt Agent replies also store `llm_metrics` in run and assistant message metadata. The Chat UI shows a compact line with output tokens, tokens per second, first-token latency for streaming responses, or total duration when first-token timing is unavailable. When a provider returns usage, those token counts are used. When usage is absent, completion tokens are estimated from output characters and displayed with a `~` prefix.
 

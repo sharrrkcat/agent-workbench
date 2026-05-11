@@ -42,6 +42,9 @@ import type {
   PetSettings,
   PetSettingsResponse,
   RuntimeResponse,
+  RuntimeMemoryFreeResult,
+  RuntimeMemorySummary,
+  RuntimeMemoryTarget,
   Session,
   SendMessageAttachment,
   StorageStats,
@@ -314,6 +317,13 @@ export const api = {
   listLlmProfileModels: (profileIdOrAlias: string) =>
     request<{ success: boolean; models: { id: string }[] }>(`/api/llm-profiles/${profileIdOrAlias}/models`),
   getHealthDetails: () => request<HealthDetails>('/api/health/details'),
+  getRuntimeMemory: (sessionId?: string | null) =>
+    request<RuntimeMemorySummary>(`/api/runtime/memory${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
+  freeRuntimeMemory: (targets: RuntimeMemoryTarget[], sessionId?: string | null) =>
+    request<RuntimeMemoryFreeResult>('/api/runtime/free-memory', {
+      method: 'POST',
+      body: JSON.stringify({ targets, session_id: sessionId || null }),
+    }),
   listSessions: () => request<Session[]>('/api/sessions'),
   createSession: (title = '', default_agent_id = 'chat') =>
     request<Session>('/api/sessions', {

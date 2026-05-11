@@ -1,0 +1,19 @@
+id: runtime
+name: Runtime Control
+description: Core runtime control commands.
+
+methods:
+  - id: free_memory
+    description: Release runtime model memory for supported local services.
+    input_schema:
+      target:
+        type: string
+        required: false
+    output:
+      type: markdown
+
+commands:
+  - name: /free-memory
+    method: free_memory
+    description: Release runtime memory for LLM, ComfyUI, embedding, reranker, or all.
+    safe: true
