@@ -41,7 +41,10 @@
     "reindex": "重建索引",
     "reindexAll": "全部重建索引",
     "reindexing": "重建中...",
-    "closeSourceDetail": "关闭来源详情"
+    "closeSourceDetail": "关闭来源详情",
+    "copyCommand": "复制命令",
+    "switchToCpu": "切换到 CPU",
+    "switchToAuto": "切换到 Auto"
   },
   "labels": {
     "modelsRoot": "模型根目录",
@@ -135,7 +138,9 @@
     "sourceDeleted": "来源已删除。",
     "reindexedChunks": "已重建 {{count}} 个 chunks。",
     "reindexedSources": "已重建 {{count}} 个来源。",
-    "reindexedSourcesWithFailures": "已重建 {{count}} 个来源；{{failed}} 个失败。"
+    "reindexedSourcesWithFailures": "已重建 {{count}} 个来源；{{failed}} 个失败。",
+    "commandCopied": "命令已复制。",
+    "localModelDeviceSet": "本地模型设备已设置为 {{device}}。"
   },
   "dropzone": {
     "title": "将文本文件拖到这里",
@@ -145,5 +150,64 @@
     "notScanned": "未扫描",
     "available": "可用",
     "unavailableOptionalDeps": "不可用：缺少可选依赖"
+  },
+  "tabs": {
+    "overview": "概览",
+    "models": "模型",
+    "retrieval": "检索",
+    "chunking": "分块与索引",
+    "context": "上下文",
+    "download": "下载"
+  },
+  "install": {
+    "title": "安装命令",
+    "missingOptionalDependencies": "缺少可选的 Knowledge 依赖。请在项目环境中安装，然后重启后端并重新扫描。",
+    "cudaWarningTitle": "已选择 CUDA，但 torch CUDA 不可用。",
+    "cudaWarningBody": "这通常表示 torch 是 CPU-only 版本、CUDA wheel 与驱动不匹配，或当前环境看不到 GPU。",
+    "cudaDepends": "启用 CUDA 的 PyTorch 取决于操作系统、Python 版本、NVIDIA 驱动和 CUDA wheel。",
+    "pytorchSelector": "请使用 PyTorch install selector 确认适合当前环境的命令。",
+    "restartAndScan": "安装 CUDA 版 torch 后，重启后端并再次运行扫描本地模型。",
+    "cudaUnavailableExplanation": "如果已选择 CUDA 但不可用，当前 torch build 很可能是 CPU-only，或 CUDA wheel/driver 不匹配。",
+    "commands": {
+      "projectExtra": "Project extra / 推荐",
+      "pipExtra": "pip extra",
+      "fallback": "fallback",
+      "cuda128": "CUDA 12.8 示例",
+      "cuda126": "CUDA 12.6 示例"
+    }
+  },
+  "download": {
+    "modelPresets": "模型预设",
+    "generatedCommand": "生成的命令",
+    "runFromProjectRoot": "请在项目根目录执行生成的命令。",
+    "scanAfterDownload": "执行完成后，回到概览并点击扫描本地模型。",
+    "modelType": "模型类型",
+    "customModelId": "自定义模型 ID",
+    "targetFolder": "目标文件夹",
+    "groups": {
+      "recommendedEmbeddings": "推荐 Embedding",
+      "advancedEmbeddings": "进阶 Embedding",
+      "recommendedRerankers": "推荐 Reranker",
+      "advancedRerankers": "进阶 Reranker"
+    },
+    "modelTypes": {
+      "embedding": "Embedding",
+      "reranker": "Reranker"
+    },
+    "notes": {
+      "allMiniLm": "轻量 smoke test / 英文基线 / 384d",
+      "paraphraseMultilingualMiniLm": "轻量多语言基线",
+      "embeddingGemma": "现代轻量多语言本地 embedding",
+      "bgeM3": "推荐的多语言 RAG 模型",
+      "qwen3Embedding06b": "进阶多语言 embedding，质量更高也更重",
+      "jinaEmbeddingsV3": "进阶多语言长上下文 embedding",
+      "nomicEmbedTextV15": "偏英文 / 长上下文 / 支持可变维度",
+      "mxbaiEmbedLarge": "强英文 RAG 基线",
+      "bgeRerankerV2M3": "推荐的多语言 reranker",
+      "qwen3Reranker06b": "进阶 Qwen reranker，更重且可能需要额外验证"
+    }
+  },
+  "errors": {
+    "copyCommandFailed": "复制命令失败。请选中文本后手动复制。"
   }
 }

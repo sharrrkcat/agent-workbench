@@ -219,7 +219,27 @@ If you manage the active environment manually, the equivalent project extra inst
 uv pip install ".[knowledge]"
 ```
 
-The optional dependencies are `sentence-transformers`, `torch`, and `transformers`. CUDA-enabled PyTorch depends on your CUDA version and platform; use the PyTorch install selector for the correct torch command, then restart the backend and use Settings -> Knowledge -> Defaults -> Overview -> Scan local models.
+The fallback basic install is:
+
+```powershell
+uv pip install sentence-transformers torch transformers
+```
+
+The optional dependencies are `sentence-transformers`, `torch`, and `transformers`. CUDA-enabled PyTorch depends on your OS, Python version, NVIDIA driver, and CUDA wheel. Use the [PyTorch install selector](https://pytorch.org/get-started/locally/) to confirm the command for your environment.
+
+Example CUDA commands:
+
+```powershell
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+uv pip install sentence-transformers transformers
+```
+
+```powershell
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+uv pip install sentence-transformers transformers
+```
+
+After installing CUDA-enabled torch, restart the backend and use Settings -> Knowledge -> Defaults -> Overview -> Scan local models. If CUDA is selected but unavailable, the current torch build is probably CPU-only, the CUDA wheel does not match your driver, or the GPU is not visible to the backend environment.
 
 Local Knowledge models must be stored under the project model root:
 
@@ -235,7 +255,29 @@ uv run python scripts/download_knowledge_model.py --type embedding --model-id se
 uv run python scripts/download_knowledge_model.py --type reranker --model-id BAAI/bge-reranker-v2-m3 --target bge-reranker-v2-m3
 ```
 
-The script validates that `--target` is a safe folder name, saves embedding models under `data/models/embeddings`, saves rerankers under `data/models/rerankers`, and does not modify the database, create profiles, or scan models. After a download completes, return to Settings -> Knowledge -> Defaults -> Overview and run Scan local models.
+Recommended embeddings:
+
+- `sentence-transformers/all-MiniLM-L6-v2` -> `all-MiniLM-L6-v2`: lightweight smoke test / English baseline / 384d.
+- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` -> `paraphrase-multilingual-MiniLM-L12-v2`: lightweight multilingual baseline.
+- `google/embeddinggemma-300m` -> `embeddinggemma-300m`: modern lightweight multilingual local embedding.
+- `BAAI/bge-m3` -> `bge-m3`: recommended multilingual RAG model.
+
+Advanced embeddings:
+
+- `Qwen/Qwen3-Embedding-0.6B` -> `Qwen3-Embedding-0.6B`: advanced multilingual embedding, higher quality and heavier.
+- `jinaai/jina-embeddings-v3` -> `jina-embeddings-v3`: advanced multilingual long-context embedding.
+- `nomic-ai/nomic-embed-text-v1.5` -> `nomic-embed-text-v1.5`: English-focused / long-context / variable-dimension capable.
+- `mixedbread-ai/mxbai-embed-large-v1` -> `mxbai-embed-large-v1`: strong English RAG baseline.
+
+Recommended rerankers:
+
+- `BAAI/bge-reranker-v2-m3` -> `bge-reranker-v2-m3`: recommended multilingual reranker.
+
+Advanced rerankers:
+
+- `Qwen/Qwen3-Reranker-0.6B` -> `Qwen3-Reranker-0.6B`: advanced Qwen reranker, heavier and may need extra validation.
+
+The Settings -> Knowledge -> Defaults -> Download tab only generates copyable commands. It does not call a download API, execute shell commands, install dependencies, or automatically download models. The script validates that `--target` is a safe folder name, saves embedding models under `data/models/embeddings`, saves rerankers under `data/models/rerankers`, and does not modify the database, create profiles, or scan models. After a download completes, return to Settings -> Knowledge -> Defaults -> Overview and run Scan local models.
 
 Phase 5 intentionally does not implement `local_file` sources, automatic model download, or changes to retrieval/indexing/model backends. Local model paths must be relative paths inside `data/models`; embedding profiles use `embeddings/<folder>` and the global reranker path uses `rerankers/<folder>`.
 

@@ -4512,13 +4512,41 @@ input:disabled {
   background: rgba(0, 0, 0, 0.16);
 }
 
+.knowledge-command-card-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.knowledge-command-card-body strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+}
+
 .knowledge-command-card code {
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
   color: rgba(255, 255, 255, 0.82);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.knowledge-model-preset-group {
+  display: grid;
+  gap: 8px;
+}
+
+.knowledge-model-preset-group + .knowledge-model-preset-group {
+  margin-top: 14px;
+}
+
+.knowledge-model-preset-group h4 {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .knowledge-model-preset-list {

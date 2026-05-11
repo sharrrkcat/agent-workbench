@@ -29,9 +29,20 @@
     "sourcePreview": "Source preview",
     "chunks": "Chunks"
   },
+  "tabs": {
+    "overview": "Overview",
+    "models": "Models",
+    "retrieval": "Retrieval",
+    "chunking": "Chunking & Indexing",
+    "context": "Context",
+    "download": "Download"
+  },
   "actions": {
     "scanLocalModels": "Scan local models",
     "scanning": "Scanning...",
+    "copyCommand": "Copy command",
+    "switchToCpu": "Switch to CPU",
+    "switchToAuto": "Switch to Auto",
     "testReranker": "Test reranker",
     "test": "Test",
     "testing": "Testing...",
@@ -123,6 +134,8 @@
   },
   "results": {
     "defaultsSaved": "Defaults saved.",
+    "commandCopied": "Command copied.",
+    "localModelDeviceSet": "Local model device set to {{device}}.",
     "rerankerReturned": "Reranker test returned {{count}} results.",
     "embeddingSaved": "Embedding model saved.",
     "embeddingDeleted": "Embedding model deleted.",
@@ -140,6 +153,57 @@
   "dropzone": {
     "title": "Drop text files here",
     "description": "Supports text, code, and config files already accepted by attachments."
+  },
+  "install": {
+    "title": "Install commands",
+    "missingOptionalDependencies": "Optional Knowledge dependencies are missing. Install them in your project environment, then restart the backend and scan again.",
+    "cudaWarningTitle": "CUDA is selected, but torch CUDA is not available.",
+    "cudaWarningBody": "This usually means torch is installed as CPU-only, the CUDA wheel does not match your driver, or the GPU is not visible to this environment.",
+    "cudaDepends": "CUDA-enabled PyTorch depends on your OS, Python version, NVIDIA driver, and CUDA wheel.",
+    "pytorchSelector": "Use the PyTorch install selector to confirm the command for your environment.",
+    "restartAndScan": "After installing CUDA-enabled torch, restart the backend and run Scan local models again.",
+    "cudaUnavailableExplanation": "If CUDA is selected but unavailable, the current torch build is probably CPU-only or the CUDA wheel/driver does not match.",
+    "commands": {
+      "projectExtra": "Project extra / recommended",
+      "pipExtra": "pip extra",
+      "fallback": "fallback",
+      "cuda128": "CUDA 12.8 example",
+      "cuda126": "CUDA 12.6 example"
+    }
+  },
+  "download": {
+    "modelPresets": "Model presets",
+    "generatedCommand": "Generated command",
+    "runFromProjectRoot": "Run the generated command from the project root.",
+    "scanAfterDownload": "When it finishes, return to Overview and click Scan local models.",
+    "modelType": "Model type",
+    "customModelId": "Custom model id",
+    "targetFolder": "Target folder",
+    "groups": {
+      "recommendedEmbeddings": "Recommended embeddings",
+      "advancedEmbeddings": "Advanced embeddings",
+      "recommendedRerankers": "Recommended rerankers",
+      "advancedRerankers": "Advanced rerankers"
+    },
+    "modelTypes": {
+      "embedding": "Embedding",
+      "reranker": "Reranker"
+    },
+    "notes": {
+      "allMiniLm": "Lightweight smoke test / English baseline / 384d",
+      "paraphraseMultilingualMiniLm": "Lightweight multilingual baseline",
+      "embeddingGemma": "Modern lightweight multilingual local embedding",
+      "bgeM3": "Recommended multilingual RAG model",
+      "qwen3Embedding06b": "Advanced multilingual embedding, higher quality and heavier",
+      "jinaEmbeddingsV3": "Advanced multilingual long-context embedding",
+      "nomicEmbedTextV15": "English-focused / long-context / variable-dimension capable",
+      "mxbaiEmbedLarge": "Strong English RAG baseline",
+      "bgeRerankerV2M3": "Recommended multilingual reranker",
+      "qwen3Reranker06b": "Advanced Qwen reranker, heavier and may need extra validation"
+    }
+  },
+  "errors": {
+    "copyCommandFailed": "Failed to copy command. Select and copy it manually."
   },
   "backend": {
     "notScanned": "Not scanned",

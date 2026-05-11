@@ -367,7 +367,14 @@ The scan creates the expected local model directories, lists direct child folder
 }
 ```
 
-There is intentionally no `/api/knowledge/models/download` endpoint in this alpha. The frontend may show copyable install and download commands, and `scripts/download_knowledge_model.py` can be run manually from the project root, but the backend does not install dependencies, download models, create profiles, or start model scan jobs.
+There is intentionally no `/api/knowledge/models/download` endpoint in this alpha. The frontend may show copyable install and download commands, and `scripts/download_knowledge_model.py` can be run manually from the project root, but the backend does not install dependencies, download models, create profiles, or start model scan jobs. The Download tab must only generate commands; it must not execute shell commands or create background download tasks.
+
+Current Download tab presets:
+
+- Recommended embeddings: `sentence-transformers/all-MiniLM-L6-v2` -> `all-MiniLM-L6-v2`, `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` -> `paraphrase-multilingual-MiniLM-L12-v2`, `google/embeddinggemma-300m` -> `embeddinggemma-300m`, `BAAI/bge-m3` -> `bge-m3`.
+- Advanced embeddings: `Qwen/Qwen3-Embedding-0.6B` -> `Qwen3-Embedding-0.6B`, `jinaai/jina-embeddings-v3` -> `jina-embeddings-v3`, `nomic-ai/nomic-embed-text-v1.5` -> `nomic-embed-text-v1.5`, `mixedbread-ai/mxbai-embed-large-v1` -> `mxbai-embed-large-v1`.
+- Recommended rerankers: `BAAI/bge-reranker-v2-m3` -> `bge-reranker-v2-m3`.
+- Advanced rerankers: `Qwen/Qwen3-Reranker-0.6B` -> `Qwen3-Reranker-0.6B`.
 
 Embedding model profile APIs:
 

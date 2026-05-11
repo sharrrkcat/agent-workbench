@@ -273,6 +273,7 @@ Likely source:
 - `frontend/src/components/settings/SettingsConsole.tsx`
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
+- `frontend/src/i18n/resources/*/knowledge.json` when changing user-visible Knowledge UI text
 
 Tests:
 - `uv run pytest tests/test_knowledge_settings.py tests/test_knowledge_models.py`
@@ -284,7 +285,11 @@ Tests:
 
 Avoid unless explicitly in scope:
 - Do not add Knowledge Capability, `/kb-search`, automatic model download, local-file sources, or retrieval/indexing/backend changes for Knowledge injection work unless explicitly requested.
-- Knowledge environment/download-command UI work should route through Settings -> Knowledge docs and `frontend/src/components/settings/KnowledgeSettingsPanel.tsx`. The project may provide local helper scripts that print user-run commands, but do not add a backend download API, background download task, automatic dependency install, or frontend shell execution unless a task explicitly asks for that behavior.
+- Knowledge environment/download-command UI work should route through Settings -> Knowledge docs and `frontend/src/components/settings/KnowledgeSettingsPanel.tsx`. The project may provide local helper scripts that print user-run commands, but do not add a backend download API, background download task, automatic dependency install, automatic model download, or frontend shell execution unless a task explicitly asks for that behavior.
+- The Knowledge Defaults Download tab generates copyable `uv run python scripts/download_knowledge_model.py --type ... --model-id ... --target ...` commands only. Presets should stay grouped as recommended/advanced embeddings and recommended/advanced rerankers, with the same model IDs and target folder names documented in `README.md`.
+
+UI/i18n rule:
+- Any new or changed user-visible frontend text must update every supported locale file in `frontend/src/i18n/resources`. Do not leave new Knowledge Defaults, Download, or Install text hardcoded in JSX.
 
 ## Documentation Update Rules
 

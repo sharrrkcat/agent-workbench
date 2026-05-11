@@ -16,40 +16,99 @@ type SortDirection = 'asc' | 'desc';
 type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
 type DownloadModelType = 'embedding' | 'reranker';
 
-const KNOWLEDGE_INSTALL_COMMANDS = ['uv sync --extra knowledge', 'uv pip install ".[knowledge]"'];
-const KNOWLEDGE_FALLBACK_INSTALL_COMMAND = 'uv pip install sentence-transformers torch transformers';
+const KNOWLEDGE_INSTALL_COMMANDS = [
+  { key: 'projectExtra', command: 'uv sync --extra knowledge' },
+  { key: 'pipExtra', command: 'uv pip install ".[knowledge]"' },
+  { key: 'fallback', command: 'uv pip install sentence-transformers torch transformers' },
+  { key: 'cuda128', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\nuv pip install sentence-transformers transformers' },
+  { key: 'cuda126', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126\nuv pip install sentence-transformers transformers' },
+] as const;
 
 const KNOWLEDGE_MODEL_PRESETS: {
   type: DownloadModelType;
+  group: 'recommendedEmbeddings' | 'advancedEmbeddings' | 'recommendedRerankers' | 'advancedRerankers';
   modelId: string;
   target: string;
-  description: string;
+  noteKey: string;
 }[] = [
   {
     type: 'embedding',
+    group: 'recommendedEmbeddings',
     modelId: 'sentence-transformers/all-MiniLM-L6-v2',
     target: 'all-MiniLM-L6-v2',
-    description: 'lightweight English/basic test',
+    noteKey: 'allMiniLm',
   },
   {
     type: 'embedding',
+    group: 'recommendedEmbeddings',
     modelId: 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
     target: 'paraphrase-multilingual-MiniLM-L12-v2',
-    description: 'lightweight multilingual',
+    noteKey: 'paraphraseMultilingualMiniLm',
   },
   {
     type: 'embedding',
+    group: 'recommendedEmbeddings',
+    modelId: 'google/embeddinggemma-300m',
+    target: 'embeddinggemma-300m',
+    noteKey: 'embeddingGemma',
+  },
+  {
+    type: 'embedding',
+    group: 'recommendedEmbeddings',
     modelId: 'BAAI/bge-m3',
     target: 'bge-m3',
-    description: 'stronger multilingual RAG',
+    noteKey: 'bgeM3',
+  },
+  {
+    type: 'embedding',
+    group: 'advancedEmbeddings',
+    modelId: 'Qwen/Qwen3-Embedding-0.6B',
+    target: 'Qwen3-Embedding-0.6B',
+    noteKey: 'qwen3Embedding06b',
+  },
+  {
+    type: 'embedding',
+    group: 'advancedEmbeddings',
+    modelId: 'jinaai/jina-embeddings-v3',
+    target: 'jina-embeddings-v3',
+    noteKey: 'jinaEmbeddingsV3',
+  },
+  {
+    type: 'embedding',
+    group: 'advancedEmbeddings',
+    modelId: 'nomic-ai/nomic-embed-text-v1.5',
+    target: 'nomic-embed-text-v1.5',
+    noteKey: 'nomicEmbedTextV15',
+  },
+  {
+    type: 'embedding',
+    group: 'advancedEmbeddings',
+    modelId: 'mixedbread-ai/mxbai-embed-large-v1',
+    target: 'mxbai-embed-large-v1',
+    noteKey: 'mxbaiEmbedLarge',
   },
   {
     type: 'reranker',
+    group: 'recommendedRerankers',
     modelId: 'BAAI/bge-reranker-v2-m3',
     target: 'bge-reranker-v2-m3',
-    description: 'multilingual reranker',
+    noteKey: 'bgeRerankerV2M3',
+  },
+  {
+    type: 'reranker',
+    group: 'advancedRerankers',
+    modelId: 'Qwen/Qwen3-Reranker-0.6B',
+    target: 'Qwen3-Reranker-0.6B',
+    noteKey: 'qwen3Reranker06b',
   },
 ];
+
+const KNOWLEDGE_MODEL_PRESET_GROUPS = [
+  'recommendedEmbeddings',
+  'advancedEmbeddings',
+  'recommendedRerankers',
+  'advancedRerankers',
+] as const;
 
 const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
@@ -156,7 +215,7 @@ export function KnowledgeSettingsDetail({
       const saved = await api.updateKnowledgeSettings({ local_model_device: device });
       setSettings(saved);
       setValues((current) => current ? { ...current, local_model_device: saved.local_model_device } : saved);
-      setResult(`Local model device set to ${device}.`);
+      setResult(t('knowledge:results.localModelDeviceSet', { device }));
     } catch (error) {
       setLocalError(toSettingsError(error, 'Failed to update local model device.'));
     } finally {
@@ -167,9 +226,9 @@ export function KnowledgeSettingsDetail({
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setResult('Command copied.');
+      setResult(t('knowledge:results.commandCopied'));
     } catch {
-      setLocalError({ code: 'COPY_FAILED', message: 'Failed to copy command. Select and copy it manually.', details: {} });
+      setLocalError({ code: 'COPY_FAILED', message: t('knowledge:errors.copyCommandFailed'), details: {} });
     }
   }
 
@@ -248,12 +307,12 @@ export function KnowledgeSettingsDetail({
       </header>
       <DetailTabs
         tabs={[
-          { id: 'overview', label: 'Overview' },
-          { id: 'models', label: 'Models' },
-          { id: 'retrieval', label: 'Retrieval' },
-          { id: 'chunking', label: 'Chunking & Indexing' },
-          { id: 'context', label: 'Context' },
-          { id: 'download', label: 'Download' },
+          { id: 'overview', label: t('knowledge:tabs.overview') },
+          { id: 'models', label: t('knowledge:tabs.models') },
+          { id: 'retrieval', label: t('knowledge:tabs.retrieval') },
+          { id: 'chunking', label: t('knowledge:tabs.chunking') },
+          { id: 'context', label: t('knowledge:tabs.context') },
+          { id: 'download', label: t('knowledge:tabs.download') },
         ]}
         activeTab={defaultsTab}
         onChange={(tab) => setDefaultsTab(tab as KnowledgeDefaultsTab)}
@@ -343,26 +402,33 @@ function KnowledgeOverviewTab({
       </div>
       {cudaMismatch ? (
         <div className="detail-section knowledge-warning-section">
-          <div className="detail-section-heading"><h3>CUDA warning</h3></div>
-          <p className="settings-warning-text">CUDA is selected, but torch CUDA is not available.</p>
+          <div className="detail-section-heading"><h3>{t('knowledge:install.cudaWarningTitle')}</h3></div>
+          <p className="settings-warning-text">{t('knowledge:install.cudaWarningBody')}</p>
           <div className="settings-button-row">
             <button className="settings-secondary-button" type="button" onClick={() => onSwitchDevice('cpu')} disabled={Boolean(busy)}>
-              Switch to CPU
+              {t('knowledge:actions.switchToCpu')}
             </button>
             <button className="settings-secondary-button" type="button" onClick={() => onSwitchDevice('auto')} disabled={Boolean(busy)}>
-              Switch to Auto
+              {t('knowledge:actions.switchToAuto')}
             </button>
           </div>
         </div>
       ) : null}
       <div className="detail-section">
-        <div className="detail-section-heading"><h3>Install commands</h3></div>
-        {missingOptionalDependencies ? <p className="settings-muted-text">Optional Knowledge dependencies are missing. Install them in your project environment, then restart the backend and scan again.</p> : null}
-        {KNOWLEDGE_INSTALL_COMMANDS.map((command) => <CommandCard key={command} command={command} onCopy={onCopy} />)}
-        <CommandCard command={KNOWLEDGE_FALLBACK_INSTALL_COMMAND} onCopy={onCopy} />
-        <p className="settings-muted-text">
-          CUDA-enabled PyTorch depends on CUDA version and platform. Use the PyTorch install selector to choose the correct command. After installing CUDA-enabled torch, restart the backend and run Scan local models again.
-        </p>
+        <div className="detail-section-heading"><h3>{t('knowledge:install.title')}</h3></div>
+        {missingOptionalDependencies ? <p className="settings-muted-text">{t('knowledge:install.missingOptionalDependencies')}</p> : null}
+        {KNOWLEDGE_INSTALL_COMMANDS.map((item) => (
+          <CommandCard
+            key={item.key}
+            title={t(`knowledge:install.commands.${item.key}`)}
+            command={item.command}
+            onCopy={onCopy}
+          />
+        ))}
+        <p className="settings-muted-text">{t('knowledge:install.cudaDepends')}</p>
+        <p className="settings-muted-text">{t('knowledge:install.pytorchSelector')}</p>
+        <p className="settings-muted-text">{t('knowledge:install.restartAndScan')}</p>
+        <p className="settings-muted-text">{t('knowledge:install.cudaUnavailableExplanation')}</p>
       </div>
     </>
   );
@@ -495,28 +561,37 @@ function KnowledgeDownloadTab({
   onSetTarget: (value: string) => void;
   onCopy: (text: string) => void;
 }) {
+  const { t } = useTranslation('knowledge');
   return (
     <>
       <div className="detail-section">
-        <div className="detail-section-heading"><h3>Recommended models</h3></div>
-        <div className="knowledge-model-preset-list">
-          {KNOWLEDGE_MODEL_PRESETS.map((preset, index) => (
-            <button className="knowledge-model-preset" type="button" key={preset.modelId} onClick={() => onSelectPreset(index)}>
-              <strong>{preset.modelId}</strong>
-              <span>{preset.type} - {preset.description}</span>
-              <code>{preset.target}</code>
-            </button>
-          ))}
-        </div>
+        <div className="detail-section-heading"><h3>{t('download.modelPresets')}</h3></div>
+        {KNOWLEDGE_MODEL_PRESET_GROUPS.map((group) => (
+          <div className="knowledge-model-preset-group" key={group}>
+            <h4>{t(`download.groups.${group}`)}</h4>
+            <div className="knowledge-model-preset-list">
+              {KNOWLEDGE_MODEL_PRESETS.map((preset, index) => ({ preset, index }))
+                .filter(({ preset }) => preset.group === group)
+                .map(({ preset, index }) => (
+                  <button className="knowledge-model-preset" type="button" key={preset.modelId} onClick={() => onSelectPreset(index)}>
+                    <strong>{preset.modelId}</strong>
+                    <span>{t(`download.modelTypes.${preset.type}`)} - {t(`download.notes.${preset.noteKey}`)}</span>
+                    <code>{preset.target}</code>
+                  </button>
+                ))}
+            </div>
+          </div>
+        ))}
       </div>
       <div className="detail-section">
-        <div className="detail-section-heading"><h3>Download command</h3></div>
-        <p className="settings-muted-text">Run the generated command from the project root. When it finishes, return to Overview and click Scan local models.</p>
+        <div className="detail-section-heading"><h3>{t('download.generatedCommand')}</h3></div>
+        <p className="settings-muted-text">{t('download.runFromProjectRoot')}</p>
+        <p className="settings-muted-text">{t('download.scanAfterDownload')}</p>
         <div className="settings-detail-grid">
-          <SelectField label="Model type" value={downloadType} options={['embedding', 'reranker']} onChange={(value) => onSetType(value as DownloadModelType)} />
-          <TextField label="Target folder" value={downloadTarget} onChange={onSetTarget} />
+          <SelectField label={t('download.modelType')} value={downloadType} options={['embedding', 'reranker']} labels={{ embedding: t('download.modelTypes.embedding'), reranker: t('download.modelTypes.reranker') }} onChange={(value) => onSetType(value as DownloadModelType)} />
+          <TextField label={t('download.targetFolder')} value={downloadTarget} onChange={onSetTarget} />
         </div>
-        <TextField label="Model id" value={downloadModelId} onChange={onSetModelId} />
+        <TextField label={t('download.customModelId')} value={downloadModelId} onChange={onSetModelId} />
         <CommandCard command={downloadCommand} onCopy={onCopy} />
       </div>
     </>
@@ -1394,13 +1469,17 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd title={value}>{value}</dd></div>;
 }
 
-function CommandCard({ command, onCopy }: { command: string; onCopy: (text: string) => void }) {
+function CommandCard({ command, title, onCopy }: { command: string; title?: string; onCopy: (text: string) => void }) {
+  const { t } = useTranslation('knowledge');
   return (
     <div className="knowledge-command-card">
-      <code>{command}</code>
+      <div className="knowledge-command-card-body">
+        {title ? <strong>{title}</strong> : null}
+        <code>{command}</code>
+      </div>
       <button className="settings-secondary-button" type="button" onClick={() => onCopy(command)}>
         <Clipboard size={14} />
-        Copy command
+        {t('actions.copyCommand')}
       </button>
     </div>
   );
