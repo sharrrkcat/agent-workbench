@@ -374,7 +374,7 @@ Secret fields render as password inputs. API responses return the fixed mask `**
 
 Secret masking is API/UI masking only. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
 
-Settings -> General stores local app settings in SQLite. The General page is split into `Files` and `LLM & Prompts` sub-tabs. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides.
+Settings -> General stores local app settings in SQLite. The General page is split into `Files`, `LLM & Prompts`, and `Memory` categories. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides. `Memory` stores manually maintained Core Memory text and separate Prompt Agent / Script Agent enablement flags. Core Memory storage exists in this round, but runtime injection is not implemented yet.
 
 The General settings API exposes:
 
@@ -389,8 +389,11 @@ The General settings API exposes:
 - session title generation input character limit
 - whether streaming `message_delta` events are persisted for debugging
 - Context Rendering overrides for Group transcript and Command result context instructions
+- Core Memory content and Prompt Agent / Script Agent enablement flags
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, empty title prompts are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
+
+Settings -> Worldbook stores global Worldbook defaults and editable Worldbooks with ordered entries. Defaults control Prompt Agent / Script Agent enablement flags, max entries per call, max context chars, and regex case-insensitive matching. Worldbook entries support `always` and `keyword` activation modes; each keyword line is treated as a regex pattern. The backend exposes CRUD, entry reorder, session binding, and match-test APIs. Worldbook storage and match testing exist in this round, but Prompt Agent / Script Agent runtime context injection is not implemented yet.
 
 ## SQLite Data
 
@@ -409,6 +412,8 @@ AGENT_WORKBENCH_DATABASE_URL=sqlite:///./data/agent_workbench.db
 The current schema version is stored in app metadata as `schema_version`.
 
 This project still uses a lightweight schema version guard plus `SQLModel.metadata.create_all`. New tables can be created during startup, but there is no Alembic migration system yet.
+
+Worldbook data is stored in SQLite tables for `worldbook_settings`, `worldbooks`, `worldbook_entries`, and `session_worldbook_bindings`. Deleting a worldbook deletes its entries and session bindings. Worldbook data does not use vectors, Knowledge indexes, or FTS.
 
 Settings -> Data shows the database path and size, the attachment directory, attachment count and size, orphan attachment count and size, optional last scan time, and the `Persist streaming message deltas` debugging toggle. The toggle is off by default; final messages, run steps, errors, and warnings are still stored. Use:
 

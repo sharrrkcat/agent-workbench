@@ -348,6 +348,43 @@ General settings include `auto_generate_session_titles`, `session_title_prompt`,
 
 Knowledge RAG v1 adds Workbench-owned settings, local model APIs, and source indexing APIs. These are internal Workbench JSON APIs, not provider function calling, tool calling, or OpenAI-compatible embedding endpoints.
 
+Core Memory and Worldbook are also Workbench-owned settings/storage APIs. They are not Agent or Capability manifest fields, and they are not provider tool/function schemas.
+
+Core Memory:
+
+- Stored in General settings through `GET /api/settings/general` and `PATCH /api/settings/general`.
+- Fields are `core_memory_content`, `core_memory_enabled_for_prompt_agents`, and `core_memory_enabled_for_script_agents`.
+- Defaults are empty content, Prompt Agents enabled, and Script Agents disabled.
+- Runtime injection is not implemented in this round.
+
+Worldbook settings:
+
+- `GET /api/worldbook/settings`
+- `PATCH /api/worldbook/settings`
+
+Fields are `worldbook_enabled_for_prompt_agents`, `worldbook_enabled_for_script_agents`, `worldbook_max_entries_per_call`, `worldbook_max_context_chars`, and `worldbook_regex_case_insensitive`. Unknown fields are rejected. Max entries is bounded to 1-200 and max context chars to 1000-200000.
+
+Worldbook APIs:
+
+- `GET /api/worldbooks`
+- `POST /api/worldbooks`
+- `GET /api/worldbooks/{worldbook_id}`
+- `PATCH /api/worldbooks/{worldbook_id}`
+- `DELETE /api/worldbooks/{worldbook_id}`
+- `GET /api/worldbooks/{worldbook_id}/entries`
+- `POST /api/worldbooks/{worldbook_id}/entries`
+- `GET /api/worldbook-entries/{entry_id}`
+- `PATCH /api/worldbook-entries/{entry_id}`
+- `DELETE /api/worldbook-entries/{entry_id}`
+- `PATCH /api/worldbooks/{worldbook_id}/entries/reorder`
+- `GET /api/sessions/{session_id}/worldbooks`
+- `PATCH /api/sessions/{session_id}/worldbooks`
+- `POST /api/worldbooks/match-test`
+
+Worldbook fields are `id`, `name`, `description`, `enabled`, timestamps, and optional counts. Entry fields are `id`, `worldbook_id`, `name`, `keywords_text`, `content`, `activation_mode`, `enabled`, `sort_order`, and timestamps. `activation_mode` is `always` or `keyword`; each non-empty `keywords_text` line is a regex pattern. Invalid regex is rejected on save and reported as a structured warning by match-test if legacy bad data is encountered.
+
+Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. It matches only the provided text, does not call an LLM, does not call Knowledge RAG, and returns content previews rather than full entry content.
+
 Settings:
 
 - `GET /api/knowledge/settings`

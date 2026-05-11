@@ -203,6 +203,8 @@ def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) ->
     state.runs.delete_session(session_id)
     state.messages.delete_session(session_id)
     state.knowledge.delete_session_bindings(session_id)
+    if state.worldbooks is not None:
+        state.worldbooks.delete_session_bindings(session_id)
     for message in deleted_messages:
         attachments = (message.metadata or {}).get("attachments")
         if isinstance(attachments, list):

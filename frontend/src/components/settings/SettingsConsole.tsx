@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
+import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, Worldbook } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
-import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsSection } from './SettingsNav';
+import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsSection, type WorldbookSettingsSubsection } from './SettingsNav';
 import { SettingsObjectList, type AppearanceSettingsCategory, type GeneralSettingsCategory } from './SettingsObjectList';
 
 export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
@@ -21,6 +21,9 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
   const [selectedKnowledgeItemId, setSelectedKnowledgeItemId] = useState<string>('global');
+  const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
+  const [selectedWorldbookSubsection, setSelectedWorldbookSubsection] = useState<WorldbookSettingsSubsection>('defaults');
+  const [selectedWorldbookItemId, setSelectedWorldbookItemId] = useState<string>('global');
   const [generalCategory, setGeneralCategory] = useState<GeneralSettingsCategory>('files');
   const [appearanceCategory, setAppearanceCategory] = useState<AppearanceSettingsCategory>('pet');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
@@ -33,6 +36,9 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   useEffect(() => {
     if (activeSection === 'knowledge') {
       void refreshKnowledgeObjects().catch(() => undefined);
+    }
+    if (activeSection === 'worldbook') {
+      void refreshWorldbookObjects().catch(() => undefined);
     }
   }, [activeSection]);
 
@@ -83,6 +89,11 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
       setSelectedKnowledgeSubsection('defaults');
       setSelectedKnowledgeItemId('global');
       void refreshKnowledgeObjects().catch(() => undefined);
+    }
+    if (section === 'worldbook') {
+      setSelectedWorldbookSubsection('defaults');
+      setSelectedWorldbookItemId('global');
+      void refreshWorldbookObjects().catch(() => undefined);
     }
   }
 
@@ -143,6 +154,18 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
   }
 
+  async function refreshWorldbookObjects(nextSelectedId?: string) {
+    const items = await api.listWorldbooks();
+    setWorldbooks(items);
+    if (nextSelectedId) {
+      setSelectedWorldbookItemId(nextSelectedId);
+      return;
+    }
+    if (selectedWorldbookSubsection === 'worldbooks' && selectedWorldbookItemId && selectedWorldbookItemId !== 'new' && !items.some((item) => item.id === selectedWorldbookItemId)) {
+      setSelectedWorldbookItemId(items[0]?.id || '');
+    }
+  }
+
   function changeLlmSubsection(subsection: LlmSettingsSubsection) {
     if (subsection === selectedLlmSubsection) return;
     if (!confirmDirtyNavigation()) return;
@@ -175,6 +198,14 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
   }
 
+  function changeWorldbookSubsection(subsection: WorldbookSettingsSubsection) {
+    if (subsection === selectedWorldbookSubsection) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedWorldbookSubsection(subsection);
+    setSelectedWorldbookItemId(subsection === 'defaults' ? 'global' : worldbooks[0]?.id || '');
+  }
+
   function selectLlmItem(itemId: string) {
     if (itemId === selectedLlmItemId) return;
     if (!confirmDirtyNavigation()) return;
@@ -187,6 +218,13 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     if (!confirmDirtyNavigation()) return;
     setDetailDirty(false);
     setSelectedKnowledgeItemId(itemId);
+  }
+
+  function selectWorldbookItem(itemId: string) {
+    if (itemId === selectedWorldbookItemId) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedWorldbookItemId(itemId);
   }
 
   const selectedAgentConfig = agentConfigs.find((config) => config.agent_id === selectedAgentId) || agentConfigs[0];
@@ -204,14 +242,17 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         activeSection={activeSection}
         activeLlmSubsection={selectedLlmSubsection}
         activeKnowledgeSubsection={selectedKnowledgeSubsection}
+        activeWorldbookSubsection={selectedWorldbookSubsection}
         onChange={changeSection}
         onLlmSubsectionChange={changeLlmSubsection}
         onKnowledgeSubsectionChange={changeKnowledgeSubsection}
+        onWorldbookSubsectionChange={changeWorldbookSubsection}
       />
       <SettingsObjectList
         section={activeSection}
         llmSubsection={selectedLlmSubsection}
         knowledgeSubsection={selectedKnowledgeSubsection}
+        worldbookSubsection={selectedWorldbookSubsection}
         generalCategory={generalCategory}
         appearanceCategory={appearanceCategory}
         agentConfigs={agentConfigs}
@@ -224,12 +265,15 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         embeddingProfiles={embeddingProfiles}
         knowledgeBases={knowledgeBases}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
+        worldbooks={worldbooks}
+        selectedWorldbookItemId={selectedWorldbookItemId}
         onSelectGeneralCategory={setGeneralCategory}
         onSelectAppearanceCategory={setAppearanceCategory}
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
         onSelectLlmItem={selectLlmItem}
         onSelectKnowledgeItem={selectKnowledgeItem}
+        onSelectWorldbookItem={selectWorldbookItem}
       />
       <SettingsDetailPanel
         section={activeSection}
@@ -246,8 +290,11 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         appearanceCategory={appearanceCategory}
         knowledgeSubsection={selectedKnowledgeSubsection}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
+        worldbookSubsection={selectedWorldbookSubsection}
+        selectedWorldbookItemId={selectedWorldbookItemId}
         onLlmProfilesChanged={refreshLlmProfiles}
         onKnowledgeObjectsChanged={refreshKnowledgeObjects}
+        onWorldbookObjectsChanged={refreshWorldbookObjects}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}
         onDirtyChange={setDetailDirty}

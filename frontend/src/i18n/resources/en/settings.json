@@ -11,6 +11,7 @@
     "appearance": "Appearance",
     "llm": "LLM",
     "knowledge": "Knowledge",
+    "worldbook": "Worldbook",
     "agents": "Agents",
     "capabilities": "Capabilities",
     "data": "Data",
@@ -23,7 +24,11 @@
     "providerProfiles": "Provider Profiles",
     "modelProfiles": "Model Profiles",
     "embeddingModels": "Embedding Models",
-    "knowledgeBases": "Knowledge Bases"
+    "knowledgeBases": "Knowledge Bases",
+    "worldbooks": "Worldbooks"
+  },
+  "aria": {
+    "worldbookSettingsSections": "Worldbook settings sections"
   },
   "searchPlaceholder": "Search settings",
   "objectList": {
@@ -36,6 +41,8 @@
     "knowledgeDefaults": "Knowledge defaults",
     "embeddingModelProfiles": "Embedding model profiles",
     "knowledgeBases": "Knowledge bases",
+    "worldbookDefaults": "Worldbook defaults",
+    "worldbooks": "Worldbooks",
     "llmDefaults": "LLM defaults",
     "llmProviderProfiles": "LLM provider profiles",
     "llmModelProfiles": "LLM model profiles",
@@ -43,17 +50,21 @@
     "noObjects": "No objects in this section.",
     "noEmbeddingProfiles": "No embedding model profiles yet.",
     "noKnowledgeBases": "No knowledge bases yet.",
+    "noWorldbooks": "No worldbooks yet.",
     "noProviderProfiles": "No provider profiles yet.",
     "noModelProfiles": "No model profiles yet.",
     "newModel": "New model",
     "newProvider": "New provider",
-    "newKnowledgeBase": "New knowledge base"
+    "newKnowledgeBase": "New knowledge base",
+    "newWorldbook": "New worldbook"
   },
   "general": {
     "files": "Files",
     "filesDescription": "Upload limits and file context.",
     "llmPrompts": "LLM & Prompts",
     "llmPromptsDescription": "Title generation and context prompts.",
+    "memory": "Memory",
+    "memoryDescription": "Core Memory maintained by the user.",
     "loading": "Loading general settings.",
     "uploadLimits": "Upload limits",
     "maxImageSize": "Max image size (MB)",
@@ -76,7 +87,12 @@
     "commandResultInstruction": "Command result context instruction",
     "commandResultInstructionHelp": "Instruction used when slash command results are included in LLM context. It should tell the model to treat command output as data, not instructions.",
     "usingDefaultValue": "Using the default value.",
-    "usingSavedOverride": "Using a saved override."
+    "usingSavedOverride": "Using a saved override.",
+    "coreMemory": "Core Memory",
+    "coreMemoryContent": "Core memory content",
+    "coreMemoryHelp": "Core memory is manually maintained and can be inserted before supported LLM calls. It is not auto-summarized.",
+    "enableForPromptAgents": "Enable for Prompt Agents",
+    "enableForScriptAgents": "Enable for Script Agents"
   },
   "data": {
     "title": "Data",
@@ -180,6 +196,12 @@
   "knowledge": {
     "defaultsName": "Knowledge defaults",
     "defaultsDescription": "Local model and retrieval defaults"
+  },
+  "worldbook": {
+    "defaultsName": "Worldbook defaults",
+    "defaultsDescription": "Matching and context limits",
+    "untitledWorldbook": "Untitled worldbook",
+    "entryCount": "{{count}} entries"
   },
   "llm": {
     "defaultModelProfile": "Default model profile",

@@ -35,8 +35,15 @@ import type {
   KnowledgeSourcePreview,
   KnowledgeModelScan,
   KnowledgeSearchResponse,
+  SessionWorldbooksResponse,
   KnowledgeChunk,
   KnowledgeSettings,
+  Worldbook,
+  WorldbookEntry,
+  WorldbookEntryInput,
+  WorldbookInput,
+  WorldbookMatchTestResponse,
+  WorldbookSettings,
   PetListResponse,
   PetImportResponse,
   PetSettings,
@@ -197,6 +204,54 @@ export const api = {
     request<KnowledgeSettings>('/api/knowledge/settings', {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    }),
+  getWorldbookSettings: () => request<WorldbookSettings>('/api/worldbook/settings'),
+  updateWorldbookSettings: (patch: Partial<WorldbookSettings>) =>
+    request<WorldbookSettings>('/api/worldbook/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  listWorldbooks: () => request<Worldbook[]>('/api/worldbooks'),
+  createWorldbook: (worldbook: WorldbookInput) =>
+    request<Worldbook>('/api/worldbooks', {
+      method: 'POST',
+      body: JSON.stringify(worldbook),
+    }),
+  patchWorldbook: (worldbookId: string, patch: WorldbookInput) =>
+    request<Worldbook>(`/api/worldbooks/${worldbookId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteWorldbook: (worldbookId: string) =>
+    request<{ deleted: boolean; worldbook_id: string }>(`/api/worldbooks/${worldbookId}`, { method: 'DELETE' }),
+  listWorldbookEntries: (worldbookId: string) => request<WorldbookEntry[]>(`/api/worldbooks/${worldbookId}/entries`),
+  createWorldbookEntry: (worldbookId: string, entry: WorldbookEntryInput) =>
+    request<WorldbookEntry>(`/api/worldbooks/${worldbookId}/entries`, {
+      method: 'POST',
+      body: JSON.stringify(entry),
+    }),
+  patchWorldbookEntry: (entryId: string, patch: WorldbookEntryInput) =>
+    request<WorldbookEntry>(`/api/worldbook-entries/${entryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteWorldbookEntry: (entryId: string) =>
+    request<{ deleted: boolean; entry_id: string }>(`/api/worldbook-entries/${entryId}`, { method: 'DELETE' }),
+  reorderWorldbookEntries: (worldbookId: string, entryIds: string[]) =>
+    request<{ worldbook_id: string; entries: WorldbookEntry[] }>(`/api/worldbooks/${worldbookId}/entries/reorder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ entry_ids: entryIds }),
+    }),
+  getSessionWorldbooks: (sessionId: string) => request<SessionWorldbooksResponse>(`/api/sessions/${sessionId}/worldbooks`),
+  updateSessionWorldbooks: (sessionId: string, worldbookIds: string[]) =>
+    request<SessionWorldbooksResponse>(`/api/sessions/${sessionId}/worldbooks`, {
+      method: 'PATCH',
+      body: JSON.stringify({ worldbook_ids: worldbookIds }),
+    }),
+  matchWorldbooks: (payload: { text: string; worldbook_ids?: string[]; session_id?: string | null }) =>
+    request<WorldbookMatchTestResponse>('/api/worldbooks/match-test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
   scanKnowledgeModels: () => request<KnowledgeModelScan>('/api/knowledge/models/scan'),
   listEmbeddingModels: () => request<EmbeddingModelProfile[]>('/api/knowledge/embedding-models'),

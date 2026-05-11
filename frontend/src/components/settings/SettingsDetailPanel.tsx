@@ -11,10 +11,11 @@ import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './Se
 import { getStatusLabel } from '../../i18n/formatters';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
-import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
-import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSettingsCategory } from './SettingsObjectList';
+import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
+import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSettingsCategory, WorldbookSettingsCategory } from './SettingsObjectList';
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
+import { WorldbookSettingsDetail } from './WorldbookSettingsPanel';
 
 export function SettingsDetailPanel({
   section,
@@ -31,8 +32,11 @@ export function SettingsDetailPanel({
   appearanceCategory = 'pet',
   knowledgeSubsection = 'defaults',
   selectedKnowledgeItemId = 'global',
+  worldbookSubsection = 'defaults',
+  selectedWorldbookItemId = 'global',
   onLlmProfilesChanged,
   onKnowledgeObjectsChanged,
+  onWorldbookObjectsChanged,
   activeTab,
   onTabChange,
   onDirtyChange,
@@ -51,8 +55,11 @@ export function SettingsDetailPanel({
   appearanceCategory?: AppearanceSettingsCategory;
   knowledgeSubsection?: KnowledgeSettingsSubsection;
   selectedKnowledgeItemId?: string;
+  worldbookSubsection?: WorldbookSettingsSubsection;
+  selectedWorldbookItemId?: string;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
+  onWorldbookObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -145,6 +152,19 @@ export function SettingsDetailPanel({
           category={knowledgeSubsection as KnowledgeSettingsCategory}
           selectedItemId={selectedKnowledgeItemId}
           onObjectsChanged={onKnowledgeObjectsChanged}
+          onDirtyChange={onDirtyChange}
+        />
+      </section>
+    );
+  }
+
+  if (section === 'worldbook') {
+    return (
+      <section className="settings-detail-panel">
+        <WorldbookSettingsDetail
+          category={worldbookSubsection as WorldbookSettingsCategory}
+          selectedItemId={selectedWorldbookItemId}
+          onObjectsChanged={onWorldbookObjectsChanged}
           onDirtyChange={onDirtyChange}
         />
       </section>
@@ -250,8 +270,8 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
-  const title = category === 'files' ? t('settings:general.files') : t('settings:general.llmPrompts');
-  const description = category === 'files' ? t('settings:general.filesDescription') : t('settings:general.llmPromptsDescription');
+  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : t('settings:general.llmPrompts');
+  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : t('settings:general.llmPromptsDescription');
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -335,6 +355,8 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
         {localError ? <SettingsApiError error={localError} /> : null}
         {category === 'files' ? (
           <GeneralFilesSettings values={values} setValues={setValues} setNumber={setNumber} />
+        ) : category === 'memory' ? (
+          <GeneralMemorySettings values={values} setValues={setValues} />
         ) : (
           <GeneralPromptSettings values={values} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
         )}
@@ -578,6 +600,30 @@ function GeneralPromptSettings({
   );
 }
 
+function GeneralMemorySettings({ values, setValues }: { values: GeneralSettings; setValues: (values: GeneralSettings) => void }) {
+  const { t } = useTranslation('settings');
+  return (
+    <div className="detail-section">
+      <div className="detail-section-heading">
+        <h3>{t('general.coreMemory')}</h3>
+      </div>
+      <label className="config-field settings-config-field">
+        <span>{t('general.coreMemoryContent')}</span>
+        <textarea rows={12} value={values.core_memory_content} onChange={(event) => setValues({ ...values, core_memory_content: event.currentTarget.value })} />
+        <small>{t('general.coreMemoryHelp')}</small>
+      </label>
+      <label className="config-field settings-config-field boolean-field">
+        <span>{t('general.enableForPromptAgents')}</span>
+        <ToggleSwitch checked={values.core_memory_enabled_for_prompt_agents} onChange={(checked) => setValues({ ...values, core_memory_enabled_for_prompt_agents: checked })} />
+      </label>
+      <label className="config-field settings-config-field boolean-field">
+        <span>{t('general.enableForScriptAgents')}</span>
+        <ToggleSwitch checked={values.core_memory_enabled_for_script_agents} onChange={(checked) => setValues({ ...values, core_memory_enabled_for_script_agents: checked })} />
+      </label>
+    </div>
+  );
+}
+
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
   return {
     max_image_size_mb: values.max_image_size_mb,
@@ -592,6 +638,9 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     session_title_max_input_chars: values.session_title_max_input_chars,
     group_transcript_system_instruction: values.group_transcript_system_instruction,
     command_result_context_instruction: values.command_result_context_instruction,
+    core_memory_content: values.core_memory_content,
+    core_memory_enabled_for_prompt_agents: values.core_memory_enabled_for_prompt_agents,
+    core_memory_enabled_for_script_agents: values.core_memory_enabled_for_script_agents,
   };
 }
 

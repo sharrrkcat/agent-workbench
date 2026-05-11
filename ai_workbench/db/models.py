@@ -204,6 +204,58 @@ class KnowledgeSettingsRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class WorldbookSettingsRecord(SQLModel, table=True):
+    __tablename__ = "worldbook_settings"
+
+    id: int = Field(default=1, primary_key=True)
+    worldbook_enabled_for_prompt_agents: bool = True
+    worldbook_enabled_for_script_agents: bool = False
+    worldbook_max_entries_per_call: int = 20
+    worldbook_max_context_chars: int = 8000
+    worldbook_regex_case_insensitive: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class WorldbookRecord(SQLModel, table=True):
+    __tablename__ = "worldbooks"
+
+    id: str = Field(primary_key=True)
+    name: str
+    description: str = ""
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class WorldbookEntryRecord(SQLModel, table=True):
+    __tablename__ = "worldbook_entries"
+
+    id: str = Field(primary_key=True)
+    worldbook_id: str = Field(index=True)
+    name: str
+    keywords_text: str = ""
+    content: str
+    activation_mode: str = "keyword"
+    enabled: bool = True
+    sort_order: int = Field(default=0, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class SessionWorldbookBindingRecord(SQLModel, table=True):
+    __tablename__ = "session_worldbook_bindings"
+    __table_args__ = (UniqueConstraint("session_id", "worldbook_id"),)
+
+    id: str = Field(primary_key=True)
+    session_id: str = Field(index=True)
+    worldbook_id: str = Field(index=True)
+    enabled: bool = True
+    sort_order: int = Field(default=0, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class EmbeddingModelProfileRecord(SQLModel, table=True):
     __tablename__ = "embedding_model_profiles"
 

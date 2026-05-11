@@ -8,6 +8,7 @@ import enStatus from './resources/en/status.json';
 import enRuns from './resources/en/runs.json';
 import enLlm from './resources/en/llm.json';
 import enKnowledge from './resources/en/knowledge.json';
+import enWorldbook from './resources/en/worldbook.json';
 import enAgents from './resources/en/agents.json';
 import enCapabilities from './resources/en/capabilities.json';
 import enPet from './resources/en/pet.json';
@@ -21,6 +22,7 @@ import zhStatus from './resources/zh-CN/status.json';
 import zhRuns from './resources/zh-CN/runs.json';
 import zhLlm from './resources/zh-CN/llm.json';
 import zhKnowledge from './resources/zh-CN/knowledge.json';
+import zhWorldbook from './resources/zh-CN/worldbook.json';
 import zhAgents from './resources/zh-CN/agents.json';
 import zhCapabilities from './resources/zh-CN/capabilities.json';
 import zhPet from './resources/zh-CN/pet.json';
@@ -48,6 +50,7 @@ void i18n.use(initReactI18next).init({
       runs: enRuns,
       llm: enLlm,
       knowledge: enKnowledge,
+      worldbook: enWorldbook,
       agents: enAgents,
       capabilities: enCapabilities,
       pet: enPet,
@@ -63,6 +66,7 @@ void i18n.use(initReactI18next).init({
       runs: zhRuns,
       llm: zhLlm,
       knowledge: zhKnowledge,
+      worldbook: zhWorldbook,
       agents: zhAgents,
       capabilities: zhCapabilities,
       pet: zhPet,
@@ -73,7 +77,7 @@ void i18n.use(initReactI18next).init({
   lng: storedLocale(),
   fallbackLng: 'en',
   defaultNS: 'common',
-  ns: ['common', 'settings', 'chat', 'errors', 'status', 'runs', 'llm', 'knowledge', 'agents', 'capabilities', 'pet', 'renderers', 'comfyui'],
+  ns: ['common', 'settings', 'chat', 'errors', 'status', 'runs', 'llm', 'knowledge', 'worldbook', 'agents', 'capabilities', 'pet', 'renderers', 'comfyui'],
   interpolation: {
     escapeValue: false,
   },

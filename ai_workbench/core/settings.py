@@ -61,6 +61,9 @@ class AppSettings(BaseModel):
     resource_status_ram_display_mode: str = "percent"
     resource_status_vram_display_mode: str = "percent"
     resource_status_show_tokens: StrictBool = True
+    core_memory_content: str = ""
+    core_memory_enabled_for_prompt_agents: StrictBool = True
+    core_memory_enabled_for_script_agents: StrictBool = False
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -122,6 +125,9 @@ class AppSettingsPatch(BaseModel):
     resource_status_ram_display_mode: str | None = None
     resource_status_vram_display_mode: str | None = None
     resource_status_show_tokens: StrictBool | None = None
+    core_memory_content: str | None = None
+    core_memory_enabled_for_prompt_agents: StrictBool | None = None
+    core_memory_enabled_for_script_agents: StrictBool | None = None
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod

@@ -331,6 +331,13 @@ Knowledge configuration ownership:
 - Session Knowledge Bindings store which KBs are active for a session and Phase 4 uses them for Prompt Agent and opted-in Script Agent context injection.
 - AgentConfig may store only the tri-state `knowledge_context_mode` runtime override. Do not store Knowledge model paths in AgentConfig or CapabilityConfig.
 
+Core Memory and Worldbook configuration ownership:
+
+- Core Memory content and enablement flags are Workbench-owned General settings, not Agent manifest fields.
+- Worldbook Defaults, Worldbooks, entries, and Session Worldbook Bindings are Workbench-owned data.
+- Worldbook matching is regex/text storage in SQLite only; it does not own Knowledge indexes, vectors, rerankers, or FTS rows.
+- Runtime injection for Core Memory and Worldbook is intentionally not implemented in the storage/API round. Do not store per-Agent Worldbook overrides in AgentConfig until that runtime behavior is explicitly designed.
+
 Obsidian CapabilityConfig:
 
 - `vault_path`.

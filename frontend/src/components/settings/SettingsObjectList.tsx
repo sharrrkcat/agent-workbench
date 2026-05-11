@@ -1,20 +1,22 @@
 import { Boxes, Gauge, PawPrint, Plus, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
+import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, Worldbook } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
-import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
+import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
 import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
 
-export type GeneralSettingsCategory = 'files' | 'llm_prompts';
+export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory';
 export type AppearanceSettingsCategory = 'pet' | 'chat_status_panel';
 export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
+export type WorldbookSettingsCategory = WorldbookSettingsSubsection;
 
 export function SettingsObjectList({
   section,
   llmSubsection = 'defaults',
   knowledgeSubsection = 'defaults',
+  worldbookSubsection = 'defaults',
   generalCategory = 'files',
   appearanceCategory = 'pet',
   agentConfigs,
@@ -27,16 +29,20 @@ export function SettingsObjectList({
   embeddingProfiles = [],
   knowledgeBases = [],
   selectedKnowledgeItemId = 'global',
+  worldbooks = [],
+  selectedWorldbookItemId = 'global',
   onSelectGeneralCategory,
   onSelectAppearanceCategory,
   onSelectAgent,
   onSelectCapability,
   onSelectLlmItem,
   onSelectKnowledgeItem,
+  onSelectWorldbookItem,
 }: {
   section: SettingsSection;
   llmSubsection?: LlmSettingsSubsection;
   knowledgeSubsection?: KnowledgeSettingsSubsection;
+  worldbookSubsection?: WorldbookSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
   appearanceCategory?: AppearanceSettingsCategory;
   agentConfigs: AgentConfig[];
@@ -49,17 +55,21 @@ export function SettingsObjectList({
   embeddingProfiles?: EmbeddingModelProfile[];
   knowledgeBases?: KnowledgeBase[];
   selectedKnowledgeItemId?: string;
+  worldbooks?: Worldbook[];
+  selectedWorldbookItemId?: string;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
   onSelectAppearanceCategory?: (category: AppearanceSettingsCategory) => void;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
   onSelectLlmItem?: (itemId: string) => void;
   onSelectKnowledgeItem?: (itemId: string) => void;
+  onSelectWorldbookItem?: (itemId: string) => void;
 }) {
   const { t } = useTranslation(['settings', 'common']);
   const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
     { id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') },
     { id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') },
+    { id: 'memory', name: t('settings:general.memory'), description: t('settings:general.memoryDescription') },
   ];
   const appearanceCategories: { id: AppearanceSettingsCategory; name: string; description: string; icon: typeof PawPrint }[] = [
     { id: 'pet', name: t('settings:appearance.pet'), description: t('settings:appearance.petDescription'), icon: PawPrint },
@@ -199,6 +209,50 @@ export function SettingsObjectList({
             ))
           ) : (
             <div className="settings-empty-state compact">{t('settings:objectList.noKnowledgeBases')}</div>
+          )}
+        </div>
+      </aside>
+    );
+  }
+
+  if (section === 'worldbook') {
+    if (worldbookSubsection === 'defaults') {
+      return (
+        <aside className="settings-object-list" aria-label={t('settings:objectList.worldbookDefaults')}>
+          <ObjectListHeader title={t('settings:subsections.defaults')} count={1} />
+          <button
+            type="button"
+            className={`settings-object-row ${selectedWorldbookItemId === 'global' ? 'active' : ''}`}
+            onClick={() => onSelectWorldbookItem?.('global')}
+          >
+            <div className="settings-object-avatar">
+              <SlidersHorizontal size={16} />
+            </div>
+            <div className="settings-object-copy">
+              <strong>{t('settings:worldbook.defaultsName')}</strong>
+              <small>{t('settings:worldbook.defaultsDescription')}</small>
+            </div>
+          </button>
+        </aside>
+      );
+    }
+    return (
+      <aside className="settings-object-list" aria-label={t('settings:objectList.worldbooks')}>
+        <ObjectListHeader title={t('settings:subsections.worldbooks')} count={worldbooks.length} actionLabel={t('settings:objectList.newWorldbook')} onAction={() => onSelectWorldbookItem?.('new')} />
+        <div className="settings-list-scroll">
+          {worldbooks.length ? (
+            worldbooks.map((worldbook) => (
+              <button key={worldbook.id} type="button" className={`settings-object-row ${selectedWorldbookItemId === worldbook.id ? 'active' : ''} ${worldbook.enabled ? '' : 'disabled'}`} onClick={() => onSelectWorldbookItem?.(worldbook.id)}>
+                <div className="settings-object-avatar">{initials(worldbook.name) || <SlidersHorizontal size={16} />}</div>
+                <div className="settings-object-copy">
+                  <strong>{worldbook.name || t('settings:worldbook.untitledWorldbook')}</strong>
+                  <small>{t('settings:worldbook.entryCount', { count: worldbook.entry_count || 0 })}</small>
+                </div>
+                <span className={`settings-status-dot ${worldbook.enabled ? 'enabled' : ''}`}>{worldbook.enabled ? t('common:enabled') : t('common:disabled')}</span>
+              </button>
+            ))
+          ) : (
+            <div className="settings-empty-state compact">{t('settings:objectList.noWorldbooks')}</div>
           )}
         </div>
       </aside>

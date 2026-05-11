@@ -24,6 +24,13 @@ from ai_workbench.core.knowledge_store import (
     SessionKnowledgeBinding,
 )
 from ai_workbench.core.time import ensure_utc, utc_now
+from ai_workbench.core.worldbook import (
+    SessionWorldbookBinding,
+    Worldbook,
+    WorldbookEntry,
+    WorldbookSettings,
+    WorldbookSettingsPatch,
+)
 from ai_workbench.core.session_titles import is_default_session_title
 from ai_workbench.db.models import (
     AgentConfigRecord,
@@ -44,6 +51,10 @@ from ai_workbench.db.models import (
     SessionRecord,
     SessionAgentStateRecord,
     SessionKnowledgeBindingRecord,
+    SessionWorldbookBindingRecord,
+    WorldbookEntryRecord,
+    WorldbookRecord,
+    WorldbookSettingsRecord,
 )
 
 
@@ -987,6 +998,185 @@ class SqlLLMDefaultsStore:
         return next_values
 
 
+class SqlWorldbookStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def get_settings(self) -> WorldbookSettings:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookSettingsRecord, 1)
+            if record is None:
+                record = WorldbookSettingsRecord(id=1)
+                session.add(record)
+                session.commit()
+                session.refresh(record)
+            return _worldbook_settings_from_record(record)
+
+    def patch_settings(self, values: Dict[str, Any]) -> WorldbookSettings:
+        patch = WorldbookSettingsPatch.model_validate(values)
+        updates = patch.model_dump(exclude_unset=True)
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookSettingsRecord, 1) or WorldbookSettingsRecord(id=1)
+            current = _worldbook_settings_from_record(record)
+            next_settings = WorldbookSettings.model_validate({**current.model_dump(), **updates, "updated_at": utc_now()})
+            for key, value in next_settings.model_dump().items():
+                if key != "id" and hasattr(record, key):
+                    setattr(record, key, value)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _worldbook_settings_from_record(record)
+
+    def list_worldbooks(self) -> List[Worldbook]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(WorldbookRecord).order_by(WorldbookRecord.name, WorldbookRecord.created_at)).all()
+            return [_worldbook_from_record(session, record) for record in records]
+
+    def create_worldbook(self, worldbook: Worldbook) -> Worldbook:
+        with DbSession(self.engine) as session:
+            record = WorldbookRecord(**_worldbook_record_data(worldbook))
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _worldbook_from_record(session, record)
+
+    def get_worldbook(self, worldbook_id: str) -> Worldbook:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookRecord, worldbook_id)
+            if record is None:
+                raise KeyError(f"unknown worldbook: {worldbook_id}")
+            return _worldbook_from_record(session, record)
+
+    def update_worldbook(self, worldbook_id: str, values: Dict[str, Any]) -> Worldbook:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookRecord, worldbook_id)
+            if record is None:
+                raise KeyError(f"unknown worldbook: {worldbook_id}")
+            candidate = _worldbook_from_record(session, record).model_copy(update={**values, "updated_at": utc_now()})
+            updated = Worldbook.model_validate(candidate.model_dump())
+            for key, value in _worldbook_record_data(updated).items():
+                setattr(record, key, value)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _worldbook_from_record(session, record)
+
+    def delete_worldbook(self, worldbook_id: str) -> Worldbook:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookRecord, worldbook_id)
+            if record is None:
+                raise KeyError(f"unknown worldbook: {worldbook_id}")
+            worldbook = _worldbook_from_record(session, record)
+            session.exec(delete(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id == worldbook_id))
+            session.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.worldbook_id == worldbook_id))
+            session.delete(record)
+            session.commit()
+            return worldbook
+
+    def list_entries(self, worldbook_id: str) -> List[WorldbookEntry]:
+        with DbSession(self.engine) as session:
+            if session.get(WorldbookRecord, worldbook_id) is None:
+                raise KeyError(f"unknown worldbook: {worldbook_id}")
+            records = session.exec(
+                select(WorldbookEntryRecord)
+                .where(WorldbookEntryRecord.worldbook_id == worldbook_id)
+                .order_by(WorldbookEntryRecord.sort_order, WorldbookEntryRecord.created_at)
+            ).all()
+            return [_worldbook_entry_from_record(record) for record in records]
+
+    def create_entry(self, entry: WorldbookEntry) -> WorldbookEntry:
+        with DbSession(self.engine) as session:
+            if session.get(WorldbookRecord, entry.worldbook_id) is None:
+                raise KeyError(f"unknown worldbook: {entry.worldbook_id}")
+            record = WorldbookEntryRecord(**entry.model_dump())
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _worldbook_entry_from_record(record)
+
+    def get_entry(self, entry_id: str) -> WorldbookEntry:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookEntryRecord, entry_id)
+            if record is None:
+                raise KeyError(f"unknown worldbook entry: {entry_id}")
+            return _worldbook_entry_from_record(record)
+
+    def update_entry(self, entry_id: str, values: Dict[str, Any]) -> WorldbookEntry:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookEntryRecord, entry_id)
+            if record is None:
+                raise KeyError(f"unknown worldbook entry: {entry_id}")
+            candidate = _worldbook_entry_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
+            updated = WorldbookEntry.model_validate(candidate.model_dump())
+            for key, value in updated.model_dump().items():
+                setattr(record, key, value)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _worldbook_entry_from_record(record)
+
+    def delete_entry(self, entry_id: str) -> WorldbookEntry:
+        with DbSession(self.engine) as session:
+            record = session.get(WorldbookEntryRecord, entry_id)
+            if record is None:
+                raise KeyError(f"unknown worldbook entry: {entry_id}")
+            entry = _worldbook_entry_from_record(record)
+            session.delete(record)
+            session.commit()
+            return entry
+
+    def reorder_entries(self, worldbook_id: str, entry_ids: List[str]) -> List[WorldbookEntry]:
+        with DbSession(self.engine) as session:
+            existing = session.exec(select(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id == worldbook_id)).all()
+            by_id = {record.id: record for record in existing}
+            if set(entry_ids) != set(by_id):
+                raise ValueError("WORLDBOOK_REORDER_IDS_MISMATCH")
+            now = utc_now()
+            for index, entry_id in enumerate(entry_ids):
+                by_id[entry_id].sort_order = (index + 1) * 10
+                by_id[entry_id].updated_at = now
+                session.add(by_id[entry_id])
+            session.commit()
+        return self.list_entries(worldbook_id)
+
+    def list_session_bindings(self, session_id: str) -> List[SessionWorldbookBinding]:
+        with DbSession(self.engine) as session:
+            records = session.exec(
+                select(SessionWorldbookBindingRecord)
+                .where(SessionWorldbookBindingRecord.session_id == session_id)
+                .order_by(SessionWorldbookBindingRecord.sort_order, SessionWorldbookBindingRecord.created_at)
+            ).all()
+            return [_session_worldbook_binding_from_record(session, record) for record in records]
+
+    def replace_session_bindings(self, session_id: str, worldbook_ids: List[str]) -> tuple[List[SessionWorldbookBinding], List[str]]:
+        warnings: list[str] = []
+        with DbSession(self.engine) as session:
+            seen: set[str] = set()
+            valid_ids: list[str] = []
+            for worldbook_id in worldbook_ids:
+                if worldbook_id in seen:
+                    continue
+                record = session.get(WorldbookRecord, worldbook_id)
+                if record is None:
+                    raise KeyError(f"unknown worldbook: {worldbook_id}")
+                if not record.enabled:
+                    warnings.append(f"Worldbook is disabled and was not bound: {worldbook_id}")
+                    continue
+                seen.add(worldbook_id)
+                valid_ids.append(worldbook_id)
+            session.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.session_id == session_id))
+            now = utc_now()
+            for index, worldbook_id in enumerate(valid_ids):
+                session.add(SessionWorldbookBindingRecord(id=str(uuid4()), session_id=session_id, worldbook_id=worldbook_id, enabled=True, sort_order=(index + 1) * 10, created_at=now, updated_at=now))
+            session.commit()
+        return self.list_session_bindings(session_id), warnings
+
+    def delete_session_bindings(self, session_id: str) -> None:
+        with DbSession(self.engine) as session:
+            session.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.session_id == session_id))
+            session.commit()
+
+
 class SqlKnowledgeStore:
     def __init__(self, engine) -> None:
         self.engine = engine
@@ -1520,6 +1710,69 @@ def _provider_from_record(record: ProviderProfileRecord) -> ProviderProfileSchem
 def _knowledge_settings_from_record(record: KnowledgeSettingsRecord) -> KnowledgeSettings:
     return KnowledgeSettings.model_validate(
         {key: getattr(record, key) for key in KnowledgeSettings.model_fields if hasattr(record, key)}
+    )
+
+
+def _worldbook_settings_from_record(record: WorldbookSettingsRecord) -> WorldbookSettings:
+    return WorldbookSettings.model_validate(
+        {key: getattr(record, key) for key in WorldbookSettings.model_fields if hasattr(record, key)}
+    )
+
+
+def _worldbook_record_data(worldbook: Worldbook) -> Dict[str, Any]:
+    data = worldbook.model_dump()
+    data.pop("entry_count", None)
+    data.pop("active_binding_count", None)
+    return data
+
+
+def _worldbook_from_record(session: DbSession, record: WorldbookRecord) -> Worldbook:
+    entry_count = len(session.exec(select(WorldbookEntryRecord.id).where(WorldbookEntryRecord.worldbook_id == record.id)).all())
+    active_binding_count = len(
+        session.exec(
+            select(SessionWorldbookBindingRecord.id)
+            .where(SessionWorldbookBindingRecord.worldbook_id == record.id)
+            .where(SessionWorldbookBindingRecord.enabled == True)  # noqa: E712
+        ).all()
+    )
+    return Worldbook(
+        id=record.id,
+        name=record.name,
+        description=record.description,
+        enabled=record.enabled,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+        entry_count=entry_count,
+        active_binding_count=active_binding_count,
+    )
+
+
+def _worldbook_entry_from_record(record: WorldbookEntryRecord) -> WorldbookEntry:
+    return WorldbookEntry(
+        id=record.id,
+        worldbook_id=record.worldbook_id,
+        name=record.name,
+        keywords_text=record.keywords_text,
+        content=record.content,
+        activation_mode=record.activation_mode,
+        enabled=record.enabled,
+        sort_order=record.sort_order,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
+def _session_worldbook_binding_from_record(session: DbSession, record: SessionWorldbookBindingRecord) -> SessionWorldbookBinding:
+    worldbook_record = session.get(WorldbookRecord, record.worldbook_id)
+    return SessionWorldbookBinding(
+        id=record.id,
+        session_id=record.session_id,
+        worldbook_id=record.worldbook_id,
+        enabled=record.enabled,
+        sort_order=record.sort_order,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+        worldbook=_worldbook_from_record(session, worldbook_record) if worldbook_record is not None else None,
     )
 
 

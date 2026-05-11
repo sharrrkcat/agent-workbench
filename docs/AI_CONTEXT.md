@@ -263,6 +263,49 @@ Tests:
 Avoid unless needed:
 - Do not rewrite tutorial docs for Settings-only changes.
 
+### Change Core Memory / Worldbook settings and APIs
+
+Read:
+- `README.md#settings`
+- `README.md#sqlite-data`
+- `docs/EXTENSION_API.md#capability-config`
+- `docs/EXTENSION_API.md#agent-overrides`
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+- `docs/RUNTIME_PROTOCOLS.md#knowledge-context`
+- `docs/EXTENSION_ARCHITECTURE.md#configuration-ownership`
+
+Likely source:
+- `ai_workbench/core/settings.py` for Core Memory General settings
+- `ai_workbench/core/worldbook.py`
+- `ai_workbench/db/models.py`
+- `ai_workbench/db/stores.py`
+- `ai_workbench/api/routes/settings.py`
+- `ai_workbench/api/routes/worldbook.py`
+- `ai_workbench/api/routes/sessions.py` for session binding route wiring
+- `frontend/src/components/settings/SettingsConsole.tsx`
+- `frontend/src/components/settings/SettingsNav.tsx`
+- `frontend/src/components/settings/SettingsObjectList.tsx`
+- `frontend/src/components/settings/SettingsDetailPanel.tsx`
+- `frontend/src/components/settings/WorldbookSettingsPanel.tsx`
+- `frontend/src/api/client.ts`
+- `frontend/src/types.ts`
+- `frontend/src/i18n/resources`
+
+Tests:
+- `uv run pytest tests/test_settings_data.py`
+- `uv run pytest tests/test_worldbook.py`
+- `uv run pytest tests/test_frontend_chat_contracts.py` if frontend settings contract changes
+- `cd frontend && npm run build`
+- `cd frontend && node scripts/check-i18n.mjs`
+
+UI/i18n rule:
+- Any new or changed user-visible Core Memory or Worldbook frontend text must update every supported locale file in `frontend/src/i18n/resources`.
+
+Avoid unless explicitly in scope:
+- Do not modify Agent or Capability manifests for Worldbook storage/API work.
+- Do not implement Prompt Agent or Script Agent runtime context injection until the runtime protocol is updated for that behavior.
+- Do not use Knowledge indexes, vector storage, RAG retrieval, or FTS for Worldbook matching.
+
 ### Change Knowledge / RAG settings, injection, or local model APIs
 
 Read:

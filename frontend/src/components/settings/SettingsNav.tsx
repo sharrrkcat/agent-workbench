@@ -1,15 +1,17 @@
-import { Activity, Bot, Boxes, BrainCircuit, Code2, Database, Info, Palette, Settings, SlidersHorizontal } from 'lucide-react';
+import { Activity, Bot, BookOpenText, Boxes, BrainCircuit, Code2, Database, Info, Palette, Settings, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-export type SettingsSection = 'general' | 'appearance' | 'llm' | 'knowledge' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
+export type SettingsSection = 'general' | 'appearance' | 'llm' | 'knowledge' | 'worldbook' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
 export type LlmSettingsSubsection = 'defaults' | 'providers' | 'models';
 export type KnowledgeSettingsSubsection = 'defaults' | 'embedding_models' | 'knowledge_bases';
+export type WorldbookSettingsSubsection = 'defaults' | 'worldbooks';
 
 const sections: { id: SettingsSection; labelKey: string; icon: typeof Settings }[] = [
   { id: 'general', labelKey: 'sections.general', icon: Settings },
   { id: 'appearance', labelKey: 'sections.appearance', icon: Palette },
   { id: 'llm', labelKey: 'sections.llm', icon: SlidersHorizontal },
   { id: 'knowledge', labelKey: 'sections.knowledge', icon: BrainCircuit },
+  { id: 'worldbook', labelKey: 'sections.worldbook', icon: BookOpenText },
   { id: 'agents', labelKey: 'sections.agents', icon: Bot },
   { id: 'capabilities', labelKey: 'sections.capabilities', icon: Boxes },
   { id: 'data', labelKey: 'sections.data', icon: Database },
@@ -22,16 +24,20 @@ export function SettingsNav({
   activeSection,
   activeLlmSubsection = 'defaults',
   activeKnowledgeSubsection = 'defaults',
+  activeWorldbookSubsection = 'defaults',
   onChange,
   onLlmSubsectionChange,
   onKnowledgeSubsectionChange,
+  onWorldbookSubsectionChange,
 }: {
   activeSection: SettingsSection;
   onChange: (section: SettingsSection) => void;
   activeLlmSubsection?: LlmSettingsSubsection;
   activeKnowledgeSubsection?: KnowledgeSettingsSubsection;
+  activeWorldbookSubsection?: WorldbookSettingsSubsection;
   onLlmSubsectionChange?: (subsection: LlmSettingsSubsection) => void;
   onKnowledgeSubsectionChange?: (subsection: KnowledgeSettingsSubsection) => void;
+  onWorldbookSubsectionChange?: (subsection: WorldbookSettingsSubsection) => void;
 }) {
   const { t } = useTranslation('settings');
 
@@ -96,6 +102,24 @@ export function SettingsNav({
                   onClick={() => onKnowledgeSubsectionChange?.('knowledge_bases')}
                 >
                   <span>{t('subsections.knowledgeBases')}</span>
+                </button>
+              </div>
+            ) : null}
+            {section.id === 'worldbook' && activeSection === 'worldbook' ? (
+              <div className="settings-subnav" aria-label={t('aria.worldbookSettingsSections')}>
+                <button
+                  type="button"
+                  className={activeWorldbookSubsection === 'defaults' ? 'active' : ''}
+                  onClick={() => onWorldbookSubsectionChange?.('defaults')}
+                >
+                  <span>{t('subsections.defaults')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={activeWorldbookSubsection === 'worldbooks' ? 'active' : ''}
+                  onClick={() => onWorldbookSubsectionChange?.('worldbooks')}
+                >
+                  <span>{t('subsections.worldbooks')}</span>
                 </button>
               </div>
             ) : null}

@@ -1,0 +1,68 @@
+{
+  "titles": {
+    "defaults": "世界书默认值",
+    "worldbook": "世界书",
+    "newWorldbook": "新建世界书",
+    "entry": "世界书条目",
+    "newEntry": "新建条目"
+  },
+  "descriptions": {
+    "defaults": "全局世界书限制和匹配默认值。",
+    "worldbook": "世界书配置、条目、排序和匹配测试。"
+  },
+  "sections": {
+    "runtimeDefaults": "运行默认值",
+    "config": "配置",
+    "entries": "条目",
+    "matchTest": "匹配测试"
+  },
+  "labels": {
+    "enabled": "启用",
+    "enableForPromptAgents": "为 Prompt Agents 启用",
+    "enableForScriptAgents": "为 Script Agents 启用",
+    "maxEntriesPerCall": "每次调用最大条目数",
+    "maxContextChars": "最大上下文字符数",
+    "regexCaseInsensitive": "正则忽略大小写",
+    "name": "名称",
+    "description": "描述",
+    "activationMode": "激活模式",
+    "alwaysActive": "始终激活",
+    "keywordTriggered": "关键词触发",
+    "keywords": "关键词",
+    "entryContent": "条目内容",
+    "matchText": "匹配文本",
+    "matchedEntries": "匹配条目"
+  },
+  "actions": {
+    "newEntry": "新建条目",
+    "up": "上移",
+    "down": "下移",
+    "matchTest": "匹配测试"
+  },
+  "empty": {
+    "loadingSettings": "正在加载世界书设置。",
+    "noWorldbookSelected": "未选择世界书",
+    "selectWorldbook": "从列表中选择一个世界书。",
+    "noEntries": "暂无条目。",
+    "noMatchedEntries": "没有匹配条目。"
+  },
+  "results": {
+    "defaultsSaved": "世界书默认值已保存。",
+    "worldbookSaved": "世界书已保存。",
+    "worldbookDeleted": "世界书已删除。",
+    "entrySaved": "条目已保存。",
+    "entryDeleted": "条目已删除。",
+    "entriesReordered": "条目已重新排序。"
+  },
+  "errors": {
+    "loadFailed": "加载世界书设置失败。",
+    "saveDefaultsFailed": "保存世界书默认值失败。",
+    "saveWorldbookFailed": "保存世界书失败。",
+    "deleteWorldbookFailed": "删除世界书失败。",
+    "saveEntryFailed": "保存世界书条目失败。",
+    "deleteEntryFailed": "删除世界书条目失败。",
+    "reorderFailed": "重新排序条目失败。",
+    "matchFailed": "匹配测试失败。",
+    "invalidRegex": "无效正则。"
+  }
+}

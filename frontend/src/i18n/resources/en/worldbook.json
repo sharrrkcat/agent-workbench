@@ -1,0 +1,68 @@
+{
+  "titles": {
+    "defaults": "Worldbook Defaults",
+    "worldbook": "Worldbook",
+    "newWorldbook": "New worldbook",
+    "entry": "Worldbook entry",
+    "newEntry": "New entry"
+  },
+  "descriptions": {
+    "defaults": "Global Worldbook limits and matching defaults.",
+    "worldbook": "Worldbook config, entries, order, and match testing."
+  },
+  "sections": {
+    "runtimeDefaults": "Runtime defaults",
+    "config": "Config",
+    "entries": "Entries",
+    "matchTest": "Match test"
+  },
+  "labels": {
+    "enabled": "Enabled",
+    "enableForPromptAgents": "Enable for Prompt Agents",
+    "enableForScriptAgents": "Enable for Script Agents",
+    "maxEntriesPerCall": "Max entries per call",
+    "maxContextChars": "Max context chars",
+    "regexCaseInsensitive": "Regex case-insensitive",
+    "name": "Name",
+    "description": "Description",
+    "activationMode": "Activation mode",
+    "alwaysActive": "Always active",
+    "keywordTriggered": "Keyword triggered",
+    "keywords": "Keywords",
+    "entryContent": "Entry content",
+    "matchText": "Match text",
+    "matchedEntries": "Matched entries"
+  },
+  "actions": {
+    "newEntry": "New entry",
+    "up": "Up",
+    "down": "Down",
+    "matchTest": "Match test"
+  },
+  "empty": {
+    "loadingSettings": "Loading Worldbook settings.",
+    "noWorldbookSelected": "No worldbook selected",
+    "selectWorldbook": "Select a worldbook from the list.",
+    "noEntries": "No entries yet.",
+    "noMatchedEntries": "No matched entries."
+  },
+  "results": {
+    "defaultsSaved": "Worldbook defaults saved.",
+    "worldbookSaved": "Worldbook saved.",
+    "worldbookDeleted": "Worldbook deleted.",
+    "entrySaved": "Entry saved.",
+    "entryDeleted": "Entry deleted.",
+    "entriesReordered": "Entries reordered."
+  },
+  "errors": {
+    "loadFailed": "Failed to load Worldbook settings.",
+    "saveDefaultsFailed": "Failed to save Worldbook defaults.",
+    "saveWorldbookFailed": "Failed to save worldbook.",
+    "deleteWorldbookFailed": "Failed to delete worldbook.",
+    "saveEntryFailed": "Failed to save worldbook entry.",
+    "deleteEntryFailed": "Failed to delete worldbook entry.",
+    "reorderFailed": "Failed to reorder entries.",
+    "matchFailed": "Failed to run match test.",
+    "invalidRegex": "Invalid regex."
+  }
+}

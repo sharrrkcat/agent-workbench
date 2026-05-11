@@ -72,6 +72,7 @@ class RuntimeState:
     app_settings: Any = None
     session_agent_states: Any = None
     knowledge: Any = None
+    worldbooks: Any = None
     knowledge_model_backend: Any = None
     repo_root: Path | None = None
     database_url: str | None = None
@@ -102,6 +103,7 @@ def build_runtime_state(
 
     agent_configs = None
     capability_configs = None
+    worldbooks = None
     if use_memory:
         sessions = SessionStore()
         messages = MessageStore(session_store=sessions)
@@ -129,11 +131,12 @@ def build_runtime_state(
         provider_profiles = SqlProviderProfileStore(engine)
         llm_defaults = SqlLLMDefaultsStore(engine)
         from ai_workbench.db.database import get_database_url
-        from ai_workbench.db.stores import SqlAppSettingsStore, SqlKnowledgeStore
+        from ai_workbench.db.stores import SqlAppSettingsStore, SqlKnowledgeStore, SqlWorldbookStore
 
         app_settings = SqlAppSettingsStore(engine)
         session_agent_states = SqlSessionAgentStateStore(engine)
         knowledge = SqlKnowledgeStore(engine)
+        worldbooks = SqlWorldbookStore(engine)
         resolved_database_url = get_database_url(database_url)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
@@ -225,6 +228,7 @@ def build_runtime_state(
         app_settings=app_settings,
         session_agent_states=session_agent_states,
         knowledge=knowledge,
+        worldbooks=worldbooks if not use_memory else None,
         knowledge_model_backend=knowledge_model_backend,
         repo_root=repo_root,
         database_url=resolved_database_url,

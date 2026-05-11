@@ -32,6 +32,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["command_result_context_instruction"] is None
     assert response.json()["resource_status_panel_enabled"] is False
     assert response.json()["resource_status_show_tokens"] is True
+    assert response.json()["core_memory_content"] == ""
+    assert response.json()["core_memory_enabled_for_prompt_agents"] is True
+    assert response.json()["core_memory_enabled_for_script_agents"] is False
     assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["command_result_context_instruction_default"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
@@ -51,6 +54,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "resource_status_panel_enabled": True,
             "resource_status_show_tokens": False,
             "resource_status_ram_display_mode": "value",
+            "core_memory_content": "Remember local preferences.",
+            "core_memory_enabled_for_prompt_agents": False,
+            "core_memory_enabled_for_script_agents": True,
         },
     )
     assert patched.status_code == 200
@@ -67,6 +73,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["resource_status_panel_enabled"] is True
     assert patched.json()["resource_status_show_tokens"] is False
     assert patched.json()["resource_status_ram_display_mode"] == "value"
+    assert patched.json()["core_memory_content"] == "Remember local preferences."
+    assert patched.json()["core_memory_enabled_for_prompt_agents"] is False
+    assert patched.json()["core_memory_enabled_for_script_agents"] is True
 
     reset = client.patch(
         "/api/settings/general",
@@ -91,6 +100,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["session_title_prompt"] == "Title from {user_input}"
     assert restarted.get("/api/settings/general").json()["group_transcript_system_instruction"] is None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

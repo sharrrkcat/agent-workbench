@@ -316,6 +316,7 @@ export type LlmDefaults = {
 };
 
 export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases';
+export type WorldbookSettingsCategory = 'defaults' | 'worldbooks';
 
 export type KnowledgeBackendStatus = {
   sentence_transformers_available: boolean;
@@ -547,6 +548,80 @@ export type KnowledgeChunk = {
   heading_path: string;
   content: string;
   chunk_index: number;
+};
+
+export type WorldbookSettings = {
+  id: number;
+  worldbook_enabled_for_prompt_agents: boolean;
+  worldbook_enabled_for_script_agents: boolean;
+  worldbook_max_entries_per_call: number;
+  worldbook_max_context_chars: number;
+  worldbook_regex_case_insensitive: boolean;
+};
+
+export type Worldbook = {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  entry_count?: number;
+  active_binding_count?: number;
+};
+
+export type WorldbookInput = Partial<Pick<Worldbook, 'name' | 'description' | 'enabled'>>;
+
+export type WorldbookEntry = {
+  id: string;
+  worldbook_id: string;
+  name: string;
+  keywords_text: string;
+  content: string;
+  activation_mode: 'always' | 'keyword';
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorldbookEntryInput = Partial<Pick<WorldbookEntry, 'name' | 'keywords_text' | 'content' | 'activation_mode' | 'enabled' | 'sort_order'>>;
+
+export type SessionWorldbookBinding = {
+  id: string;
+  session_id: string;
+  worldbook_id: string;
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  worldbook?: Worldbook | null;
+};
+
+export type SessionWorldbooksResponse = {
+  session_id: string;
+  enabled_worldbooks: SessionWorldbookBinding[];
+  available_worldbooks: Worldbook[];
+  warnings?: string[];
+};
+
+export type WorldbookMatchResult = {
+  worldbook_id: string;
+  worldbook_name: string;
+  entry_id: string;
+  entry_name: string;
+  activation_mode: 'always' | 'keyword';
+  matched_keywords: string[];
+  sort_order: number;
+  content_preview: string;
+};
+
+export type WorldbookMatchTestResponse = {
+  matched_count: number;
+  included_count: number;
+  truncated: boolean;
+  warnings: { code: string; message: string; [key: string]: unknown }[];
+  results: WorldbookMatchResult[];
 };
 
 export type PetPosition = {
@@ -1030,6 +1105,9 @@ export type GeneralSettings = {
   resource_status_ram_display_mode: 'percent' | 'value';
   resource_status_vram_display_mode: 'percent' | 'value';
   resource_status_show_tokens: boolean;
+  core_memory_content: string;
+  core_memory_enabled_for_prompt_agents: boolean;
+  core_memory_enabled_for_script_agents: boolean;
 };
 
 export type StorageStats = {

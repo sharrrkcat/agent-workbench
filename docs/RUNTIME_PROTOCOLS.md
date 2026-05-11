@@ -68,6 +68,8 @@ Run status values:
 - `CANCELLED`
 - `INTERRUPTED`
 
+Core Memory and Worldbook storage/settings exist, but runtime injection is not implemented yet. Prompt Agent and Script Agent provider-bound context must not include Core Memory or Worldbook content until a later runtime protocol update defines injection order, metadata, trimming, warnings, and override behavior.
+
 RunStep status values:
 - `pending`
 - `running`
