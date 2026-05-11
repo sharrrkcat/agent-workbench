@@ -329,6 +329,12 @@ Runtime memory API:
 - `GET /api/runtime/memory?session_id=<id>` returns target availability summaries with `target`, `available`, `enabled`, `reason`, and `status`.
 - `POST /api/runtime/free-memory` accepts `{"targets":["llm"|"comfyui"|"embedding"|"reranker"|"all"],"session_id":"..."}` and returns `{"results":[{"target":"...","status":"freed|skipped|busy|unavailable|failed","message":"..."}]}`.
 
+Runtime resources API:
+- `GET /api/runtime/resources` returns a cached local resource snapshot for the Chat header status panel.
+- The response includes `cpu`, `memory`, `gpus`, `process.backend_memory_bytes`, and `updated_at`.
+- CPU/RAM and backend process memory use `psutil` when available. GPU/VRAM uses NVML-compatible Python bindings when available. Missing optional backends return unavailable fields instead of failing the API.
+- Sampling is cached for a few seconds so Chat polling does not resample hardware on every request.
+
 Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, object-info, and `free_memory` methods. `free_memory` posts to ComfyUI `/free` with `unload_models` and `free_memory` booleans and returns a structured JSON outcome; it is not a slash command or user-facing Agent action. The Capability returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, memory-release workflow choices, and final rendering.
 
 The `comfyui` Capability also manages local workflow and preset library directories through CapabilityConfig. It can scan top-level API-format workflow JSON files, compute canonical workflow hashes, detect duplicate workflow content, load and validate preset YAML files, report per-workflow draft preset skip reasons, and create unmapped draft presets when configured. Preset files remain the durable user asset; session recipes are runtime state.

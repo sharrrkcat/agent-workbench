@@ -77,10 +77,24 @@
   "attachmentTooLarge": "{{name}} 大于 {{size}} MB。",
   "attachment": "附件",
   "tokens": {
-    "total": "Tokens: {{count}}",
+    "total": "Tokens {{count}}",
     "input": "输入：{{count}}",
     "output": "输出：{{count}}",
     "tooltip": "输入：{{input}}\n输出：{{output}}\n总计：{{total}}"
+  },
+  "resources": {
+    "statusPanel": "Chat 状态面板",
+    "title": "资源",
+    "loading": "正在加载资源。",
+    "unavailable": "资源不可用",
+    "backendMemory": "后端内存",
+    "updated": "更新时间",
+    "gpuUnavailable": "GPU 不可用",
+    "cpu": "CPU",
+    "ram": "内存",
+    "gpu": "GPU",
+    "vram": "显存",
+    "tokens": "Tokens"
   },
   "actions": {
     "messageActions": "消息操作",

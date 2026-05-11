@@ -950,6 +950,41 @@ export type RuntimeMemoryFreeResult = {
   results: RuntimeMemoryResultItem[];
 };
 
+export type RuntimeResourceCpu = {
+  available: boolean;
+  percent: number | null;
+};
+
+export type RuntimeResourceMemory = {
+  available: boolean;
+  used_bytes: number | null;
+  total_bytes: number | null;
+  percent: number | null;
+};
+
+export type RuntimeResourceGpu = {
+  index: number;
+  name: string;
+  available: boolean;
+  utilization_percent: number | null;
+  memory_used_bytes: number | null;
+  memory_total_bytes: number | null;
+  memory_percent: number | null;
+  backend: string;
+  reason?: string | null;
+};
+
+export type RuntimeResources = {
+  cpu: RuntimeResourceCpu;
+  memory: RuntimeResourceMemory;
+  gpus: RuntimeResourceGpu[];
+  process: {
+    backend_memory_bytes: number | null;
+  };
+  updated_at: string | null;
+  error?: string | null;
+};
+
 export type DeleteSessionResponse = {
   deleted: boolean;
   session_id: string;
@@ -984,6 +1019,14 @@ export type GeneralSettings = {
   command_result_context_instruction: string | null;
   command_result_context_instruction_default: string;
   command_result_context_instruction_effective: string;
+  resource_status_panel_enabled: boolean;
+  resource_status_show_cpu: boolean;
+  resource_status_show_ram: boolean;
+  resource_status_show_gpu: boolean;
+  resource_status_show_vram: boolean;
+  resource_status_ram_display_mode: 'percent' | 'value';
+  resource_status_vram_display_mode: 'percent' | 'value';
+  resource_status_show_tokens: boolean;
 };
 
 export type StorageStats = {

@@ -89,10 +89,10 @@ def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:
     source = read_frontend("components/StatusBar.tsx")
 
     assert "Default:" not in source
-    assert "return `LLM - ${provider.name} - ${profile.model_id || 'No model ID'}`;" in source
-    assert "LLM - Missing provider profile" in source
-    assert "LLM - No model profile selected" in source
-    assert "LLM - No LLM" in source
+    assert "chat:statusBar.llmProviderModel" in source
+    assert "chat:statusBar.llmMissingProviderProfile" in source
+    assert "chat:statusBar.llmNoModelProfile" in source
+    assert "chat:statusBar.llmNoLlm" in source
 
 
 def test_default_model_menu_uses_agent_default_profile_not_effective_override() -> None:
@@ -107,7 +107,7 @@ def test_default_model_menu_uses_agent_default_profile_not_effective_override() 
 def test_composer_placeholder_mentions_current_agent_action_shortcut() -> None:
     source = read_frontend("components/ChatInput.tsx")
 
-    assert "Ask anything, use @agent, :action, or /command" in source
+    assert "placeholder={t('placeholder')}" in source
 
 
 def test_composer_current_agent_action_autocomplete_trigger_contract() -> None:
@@ -126,8 +126,8 @@ def test_command_palette_current_agent_action_autocomplete_contract() -> None:
     assert ".filter((action) => action.callable !== false)" in source
     assert "label: `:${action.id}`" in source
     assert "value: `:${action.id} `" in source
-    assert "No current agent selected." in source
-    assert "No matching actions for current agent." in source
+    assert "chat:noCurrentAgent" in source
+    assert "chat:noMatchingActions" in source
     assert "save_recipe_from_form" not in source
     assert "value: `@${agent.id}:${action.id} `" in source
     assert "commands" in source
@@ -181,7 +181,7 @@ def test_chat_header_has_session_knowledge_picker_contract() -> None:
     assert "api.listSessionKnowledgeBases" in source
     assert "api.updateSessionKnowledgeBases" in source
     assert "KB: {selectedIds.size}" in source
-    assert "Settings &gt; Knowledge" in source
+    assert "common:openSettings" in source
     assert "SessionKnowledgeBinding" in types
     assert "listSessionKnowledgeBases" in client
     assert "updateSessionKnowledgeBases" in client
@@ -230,7 +230,10 @@ def test_chat_header_renders_session_token_summary_before_knowledge_picker() -> 
     assert "metrics.completion_tokens" in source
     assert "metrics.estimated_completion_tokens" in source
     assert "chat:tokens.tooltip" in source
-    assert source.index("<SessionTokenPill summary={tokenSummary} />") < source.index("<SessionKnowledgePicker")
+    assert "ChatStatusPill" in source
+    assert "api.getRuntimeResources()" in source
+    assert "document.visibilityState === 'hidden'" in source
+    assert source.index("<ChatStatusPill summary={tokenSummary} settings={generalSettings} />") < source.index("<SessionKnowledgePicker")
 
 
 def test_failed_producer_messages_keep_identity_and_send_errors_are_local() -> None:
@@ -472,15 +475,15 @@ def test_chat_header_displays_and_switches_conversation_mode() -> None:
     source = read_frontend("components/ChatHeader.tsx")
 
     assert "mode-switcher" in source
-    assert "aria-label=\"Conversation mode\"" in source
-    assert ">Mode</span>" in source
-    assert "Single" in source
-    assert "Group" in source
+    assert "aria-label={t('chat:conversationMode')}" in source
+    assert "{t('chat:mode')}</span>" in source
+    assert "chat:modeSingle" in source
+    assert "chat:modeGroup" in source
     assert "contextMode === 'group_transcript'" in source
     assert "changeContextMode('group_transcript')" in source
     assert "changeContextMode('single_assistant')" in source
-    assert "Single assistant: Treat agent history like a normal assistant conversation." in source
-    assert "Group transcript: Label user, agents, and command results in context so agents can distinguish speakers." in source
+    assert "chat:modeSingleTitle" in source
+    assert "chat:modeGroupTitle" in source
 
 
 def test_store_patches_and_normalizes_session_context_mode() -> None:
@@ -512,16 +515,16 @@ def test_general_settings_context_rendering_fields_are_exposed() -> None:
     assert "session_title_prompt: string" in types
     assert "session_title_max_input_chars: number" in types
     assert "Files" in panel
-    assert "LLM & Prompts" in panel
-    assert "Auto-generate session titles" in panel
-    assert "Session title prompt" in panel
-    assert "Session title max input chars" in panel
-    assert "Max image size (MB)" in panel
-    assert "Send text file attachments to LLM" in panel
-    assert "Context Rendering" in panel
-    assert "Group transcript system instruction" in panel
-    assert "Command result context instruction" in panel
-    assert "Reset to default" in panel
+    assert "settings:general.llmPrompts" in panel
+    assert "general.autoGenerateTitles" in panel
+    assert "general.sessionTitlePrompt" in panel
+    assert "general.sessionTitleMaxChars" in panel
+    assert "general.maxImageSize" in panel
+    assert "general.sendTextFiles" in panel
+    assert "general.contextRendering" in panel
+    assert "general.groupTranscriptInstruction" in panel
+    assert "general.commandResultInstruction" in panel
+    assert "t('reset')" in panel
     assert "generalSettingsPatch(values)" in panel
     assert "group_transcript_system_instruction_default" not in panel[panel.index("function generalSettingsPatch") :]
 
@@ -532,11 +535,11 @@ def test_general_settings_uses_middle_category_list() -> None:
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
 
     assert "type GeneralSettingsCategory = 'files' | 'llm_prompts'" in object_list
-    assert "{ id: 'files', name: 'Files', description: 'Upload limits and file context.' }" in object_list
-    assert "{ id: 'llm_prompts', name: 'LLM & Prompts', description: 'Title generation and context prompts.' }" in object_list
+    assert "{ id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') }" in object_list
+    assert "{ id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') }" in object_list
     assert "if (section === 'general')" in object_list
     general_branch = object_list[object_list.index("if (section === 'general')") : object_list.index("if (section === 'agents')")]
-    assert '<ObjectListHeader title="Category" count={generalCategories.length} />' in general_branch
+    assert "<ObjectListHeader title={t('settings:objectList.category')} count={generalCategories.length} />" in general_branch
     assert "No objects in this section." not in general_branch
     assert "generalCategory === category.id ? 'active' : ''" in general_branch
     assert "onSelectGeneralCategory?.(category.id)" in general_branch
@@ -555,6 +558,22 @@ def test_general_settings_uses_middle_category_list() -> None:
     assert "generalTab" not in panel
 
 
+def test_appearance_settings_has_chat_status_panel_category() -> None:
+    console = read_frontend("components/settings/SettingsConsole.tsx")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    types = read_frontend("types.ts")
+
+    assert "type AppearanceSettingsCategory = 'pet' | 'chat_status_panel'" in object_list
+    assert "settings:appearance.chatStatusPanel" in object_list
+    assert "appearanceCategory={appearanceCategory}" in console
+    assert "onSelectAppearanceCategory={setAppearanceCategory}" in console
+    assert "appearanceCategory === 'pet'" in panel
+    assert "ChatStatusPanelDetail" in panel
+    assert "resource_status_panel_enabled: boolean" in types
+    assert "resource_status_show_tokens: boolean" in types
+
+
 def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     nav = read_frontend("components/settings/SettingsNav.tsx")
     console = read_frontend("components/settings/SettingsConsole.tsx")
@@ -564,12 +583,12 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     client = read_frontend("api/client.ts")
 
     assert "'knowledge'" in nav
-    assert "label: 'Knowledge'" in nav
+    assert "labelKey: 'sections.knowledge'" in nav
     assert "export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection" in object_list
     assert "export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases'" in read_frontend("types.ts")
-    assert "Defaults" in object_list
-    assert "EMBEDDING MODELS" in object_list
-    assert "KNOWLEDGE BASES" in object_list
+    assert "settings:subsections.defaults" in object_list
+    assert "settings:subsections.embeddingModels" in object_list
+    assert "settings:subsections.knowledgeBases" in object_list
     assert "if (section === 'knowledge')" in object_list
     assert "knowledgeSubsection === 'defaults'" in object_list
     assert "useState<KnowledgeSettingsSubsection>('defaults')" in console
@@ -578,21 +597,21 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "onKnowledgeSubsectionChange={changeKnowledgeSubsection}" in console
     assert "<KnowledgeSettingsDetail" in panel
 
-    assert "Local Models" in knowledge
-    assert "Embedding" in knowledge
-    assert "Reranker" in knowledge
-    assert "Retrieval" in knowledge
-    assert "Chunking" in knowledge
-    assert "Index limits" in knowledge
-    assert "Context Injection" in knowledge
-    assert "Scan local models" in knowledge
-    assert "Test reranker" in knowledge
-    assert "Test" in knowledge
-    assert "No embedding model profiles yet." in knowledge
-    assert "No knowledge bases yet." in knowledge
-    assert "Knowledge base configuration, sources, and local indexes." in knowledge
-    assert "No sources have been indexed for this knowledge base." in knowledge
-    assert "Index pasted text" in knowledge
+    assert "knowledge:sections.localModels" in knowledge
+    assert "knowledge:sections.embedding" in knowledge
+    assert "knowledge:sections.reranker" in knowledge
+    assert "t('sections.retrieval')" in knowledge
+    assert "t('sections.chunking')" in knowledge
+    assert "t('sections.indexLimits')" in knowledge
+    assert "t('sections.contextInjection')" in knowledge
+    assert "knowledge:actions.scanLocalModels" in knowledge
+    assert "knowledge:actions.testReranker" in knowledge
+    assert "knowledge:actions.test" in knowledge
+    assert "empty.noEmbeddingProfiles" in knowledge
+    assert "empty.noKnowledgeBases" in knowledge
+    assert "descriptions.knowledgeBase" in knowledge
+    assert "empty.noSources" in knowledge
+    assert "knowledge:actions.indexPastedText" in knowledge
     assert "api.listKnowledgeSources" in knowledge
     assert "api.createPastedKnowledgeSource" in knowledge
     assert "api.deleteKnowledgeSource" in knowledge
@@ -601,8 +620,8 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "api.updateKnowledgeSettings" in knowledge
     assert "api.testEmbeddingModel" in knowledge
     assert "api.rerankKnowledge" in knowledge
-    assert "backendLabel(scan?.backend)" in knowledge
-    assert "Unavailable: optional dependencies missing" in knowledge
+    assert "backendLabel(scan?.backend, t)" in knowledge
+    assert "knowledge:backend.unavailableOptionalDeps" in knowledge
 
     assert "/api/knowledge/settings" in client
     assert "/api/knowledge/models/scan" in client

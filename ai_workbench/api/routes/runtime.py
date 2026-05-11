@@ -26,6 +26,21 @@ def get_runtime_memory(
     return state.runtime_memory.memory_summary(session_id=session_id)
 
 
+@router.get("/resources")
+def get_runtime_resources(state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        return state.runtime_resources.resources()
+    except Exception:
+        return {
+            "cpu": {"available": False, "percent": None},
+            "memory": {"available": False, "used_bytes": None, "total_bytes": None, "percent": None},
+            "gpus": [],
+            "process": {"backend_memory_bytes": None},
+            "updated_at": None,
+            "error": "Runtime resources unavailable.",
+        }
+
+
 @router.post("/free-memory")
 def free_runtime_memory(payload: FreeMemoryRequest, state: RuntimeState = Depends(get_state)) -> dict:
     try:

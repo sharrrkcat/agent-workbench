@@ -5,7 +5,7 @@ import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsSection } from './SettingsNav';
-import { SettingsObjectList, type GeneralSettingsCategory } from './SettingsObjectList';
+import { SettingsObjectList, type AppearanceSettingsCategory, type GeneralSettingsCategory } from './SettingsObjectList';
 
 export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
@@ -22,6 +22,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
   const [selectedKnowledgeItemId, setSelectedKnowledgeItemId] = useState<string>('global');
   const [generalCategory, setGeneralCategory] = useState<GeneralSettingsCategory>('files');
+  const [appearanceCategory, setAppearanceCategory] = useState<AppearanceSettingsCategory>('pet');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
   const [detailDirty, setDetailDirty] = useState(false);
 
@@ -74,6 +75,9 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     }
     if (section === 'general') {
       setGeneralCategory('files');
+    }
+    if (section === 'appearance') {
+      setAppearanceCategory('pet');
     }
     if (section === 'knowledge') {
       setSelectedKnowledgeSubsection('defaults');
@@ -209,6 +213,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         llmSubsection={selectedLlmSubsection}
         knowledgeSubsection={selectedKnowledgeSubsection}
         generalCategory={generalCategory}
+        appearanceCategory={appearanceCategory}
         agentConfigs={agentConfigs}
         capabilityConfigs={capabilityConfigs}
         selectedAgentId={selectedAgentConfig?.agent_id}
@@ -220,6 +225,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         knowledgeBases={knowledgeBases}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
         onSelectGeneralCategory={setGeneralCategory}
+        onSelectAppearanceCategory={setAppearanceCategory}
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
         onSelectLlmItem={selectLlmItem}
@@ -237,6 +243,7 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
         selectedLlmItemId={selectedLlmItemId}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}
+        appearanceCategory={appearanceCategory}
         knowledgeSubsection={selectedKnowledgeSubsection}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
         onLlmProfilesChanged={refreshLlmProfiles}

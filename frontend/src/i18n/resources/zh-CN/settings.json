@@ -152,7 +152,21 @@
   },
   "appearance": {
     "pet": "宠物",
-    "petDescription": "工作台宠物设置和本地库"
+    "petDescription": "工作台宠物设置和本地库",
+    "chatStatusPanel": "Chat 状态面板",
+    "chatStatusPanelDescription": "CPU、内存、GPU、显存和会话 token 显示",
+    "enableResourceStatusPanel": "启用资源状态面板",
+    "showCpu": "显示 CPU",
+    "showRam": "显示内存",
+    "showGpu": "显示 GPU",
+    "showVram": "显示显存",
+    "ramDisplayMode": "内存显示模式",
+    "vramDisplayMode": "显存显示模式",
+    "percent": "百分比",
+    "value": "具体数值",
+    "tokens": "Tokens",
+    "showSessionTokens": "显示会话 Tokens",
+    "saveChatStatusPanelFailed": "保存 Chat 状态面板设置失败。"
   },
   "developer": {
     "title": "开发者",

@@ -44,6 +44,7 @@ import type {
   RuntimeResponse,
   RuntimeMemoryFreeResult,
   RuntimeMemorySummary,
+  RuntimeResources,
   RuntimeMemoryTarget,
   Session,
   SendMessageAttachment,
@@ -319,6 +320,7 @@ export const api = {
   getHealthDetails: () => request<HealthDetails>('/api/health/details'),
   getRuntimeMemory: (sessionId?: string | null) =>
     request<RuntimeMemorySummary>(`/api/runtime/memory${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
+  getRuntimeResources: () => request<RuntimeResources>('/api/runtime/resources'),
   freeRuntimeMemory: (targets: RuntimeMemoryTarget[], sessionId?: string | null) =>
     request<RuntimeMemoryFreeResult>('/api/runtime/free-memory', {
       method: 'POST',

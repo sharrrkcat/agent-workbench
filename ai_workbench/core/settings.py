@@ -53,6 +53,14 @@ class AppSettings(BaseModel):
     session_title_max_input_chars: int = Field(default=1200, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
     command_result_context_instruction: str | None = None
+    resource_status_panel_enabled: StrictBool = False
+    resource_status_show_cpu: StrictBool = True
+    resource_status_show_ram: StrictBool = True
+    resource_status_show_gpu: StrictBool = True
+    resource_status_show_vram: StrictBool = True
+    resource_status_ram_display_mode: str = "percent"
+    resource_status_vram_display_mode: str = "percent"
+    resource_status_show_tokens: StrictBool = True
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -66,6 +74,13 @@ class AppSettings(BaseModel):
     @classmethod
     def _normalize_instruction_override(cls, value: Any) -> str | None:
         return normalize_optional_instruction(value)
+
+    @field_validator("resource_status_ram_display_mode", "resource_status_vram_display_mode")
+    @classmethod
+    def _validate_resource_display_mode(cls, value: str) -> str:
+        if value not in {"percent", "value"}:
+            raise ValueError("Display mode must be percent or value.")
+        return value
 
     @property
     def max_image_size_bytes(self) -> int:
@@ -99,6 +114,14 @@ class AppSettingsPatch(BaseModel):
     session_title_max_input_chars: int | None = Field(default=None, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
     command_result_context_instruction: str | None = None
+    resource_status_panel_enabled: StrictBool | None = None
+    resource_status_show_cpu: StrictBool | None = None
+    resource_status_show_ram: StrictBool | None = None
+    resource_status_show_gpu: StrictBool | None = None
+    resource_status_show_vram: StrictBool | None = None
+    resource_status_ram_display_mode: str | None = None
+    resource_status_vram_display_mode: str | None = None
+    resource_status_show_tokens: StrictBool | None = None
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -114,6 +137,15 @@ class AppSettingsPatch(BaseModel):
     @classmethod
     def _normalize_instruction_override(cls, value: Any) -> str | None:
         return normalize_optional_instruction(value)
+
+    @field_validator("resource_status_ram_display_mode", "resource_status_vram_display_mode")
+    @classmethod
+    def _validate_resource_display_mode(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in {"percent", "value"}:
+            raise ValueError("Display mode must be percent or value.")
+        return value
 
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:

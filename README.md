@@ -629,6 +629,10 @@ ComfyUI Agent Alpha: `@comfyui_agent` provides a workflow/preset library, sessio
 
 Settings -> Appearance -> Pet controls the local Workbench Pet overlay. Workbench Pet v1 supports Codex-compatible pets only: each pet lives under `data/pet/<pet_id>/` and contains `pet.json` plus `spritesheet.webp`. The Settings import area accepts browser drag-in of exactly those two files and saves them under `data/pet/`; it does not import external directories, arbitrary paths, zip files, network URLs, or non-Codex pet schemas.
 
+Settings -> Appearance -> Chat status panel controls the compact Chat header status pill. Session token display is on by default and can be hidden there. Resource monitoring is off by default; when enabled, the Chat page polls `GET /api/runtime/resources` every few seconds while the page is visible and can show CPU, RAM, GPU, VRAM, and Tokens in one pill. RAM and VRAM can be displayed as percentages or used/total values. Clicking the pill opens a small resource detail panel.
+
+Resource monitoring uses `psutil` for CPU/RAM when available and NVML-compatible Python bindings for GPU/VRAM when available. Missing GPU/NVML support safely degrades to unavailable GPU fields and does not affect normal chat.
+
 The `pet` Capability exposes `/pet`, `/pet wake`, `/pet tuck`, `/pet status`, `/pet reload`, and `/pet select <pet_id>`. These commands update Pet settings directly and do not call an LLM or create a Pet Agent. The overlay is an in-app chat overlay only; there is no desktop-level overlay or random movement.
 
 Permission hints and CapabilityConfig settings are local alpha safety controls and operator documentation, not a sandbox or full authorization system. Script Agents remain trusted local Python code and can call capabilities.

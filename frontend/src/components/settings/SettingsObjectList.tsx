@@ -1,4 +1,4 @@
-import { Boxes, PawPrint, Plus, SlidersHorizontal } from 'lucide-react';
+import { Boxes, Gauge, PawPrint, Plus, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
@@ -8,6 +8,7 @@ import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts';
+export type AppearanceSettingsCategory = 'pet' | 'chat_status_panel';
 export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
 
 export function SettingsObjectList({
@@ -15,6 +16,7 @@ export function SettingsObjectList({
   llmSubsection = 'defaults',
   knowledgeSubsection = 'defaults',
   generalCategory = 'files',
+  appearanceCategory = 'pet',
   agentConfigs,
   capabilityConfigs,
   selectedAgentId,
@@ -26,6 +28,7 @@ export function SettingsObjectList({
   knowledgeBases = [],
   selectedKnowledgeItemId = 'global',
   onSelectGeneralCategory,
+  onSelectAppearanceCategory,
   onSelectAgent,
   onSelectCapability,
   onSelectLlmItem,
@@ -35,6 +38,7 @@ export function SettingsObjectList({
   llmSubsection?: LlmSettingsSubsection;
   knowledgeSubsection?: KnowledgeSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
+  appearanceCategory?: AppearanceSettingsCategory;
   agentConfigs: AgentConfig[];
   capabilityConfigs: CapabilityConfig[];
   selectedAgentId?: string;
@@ -46,6 +50,7 @@ export function SettingsObjectList({
   knowledgeBases?: KnowledgeBase[];
   selectedKnowledgeItemId?: string;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
+  onSelectAppearanceCategory?: (category: AppearanceSettingsCategory) => void;
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
   onSelectLlmItem?: (itemId: string) => void;
@@ -55,6 +60,10 @@ export function SettingsObjectList({
   const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
     { id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') },
     { id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') },
+  ];
+  const appearanceCategories: { id: AppearanceSettingsCategory; name: string; description: string; icon: typeof PawPrint }[] = [
+    { id: 'pet', name: t('settings:appearance.pet'), description: t('settings:appearance.petDescription'), icon: PawPrint },
+    { id: 'chat_status_panel', name: t('settings:appearance.chatStatusPanel'), description: t('settings:appearance.chatStatusPanelDescription'), icon: Gauge },
   ];
 
   if (section === 'general') {
@@ -104,17 +113,27 @@ export function SettingsObjectList({
   if (section === 'appearance') {
     return (
       <aside className="settings-object-list" aria-label={t('settings:objectList.appearanceItems')}>
-        <ObjectListHeader title={t('settings:objectList.appearance')} count={1} />
+        <ObjectListHeader title={t('settings:objectList.appearance')} count={appearanceCategories.length} />
         <div className="settings-list-scroll">
-          <button type="button" className="settings-object-row active">
-            <div className="settings-object-avatar">
-              <PawPrint size={16} />
-            </div>
-            <div className="settings-object-copy">
-              <strong>{t('settings:appearance.pet')}</strong>
-              <small>{t('settings:appearance.petDescription')}</small>
-            </div>
-          </button>
+          {appearanceCategories.map((category) => {
+            const Icon = category.icon;
+            return (
+              <button
+                key={category.id}
+                type="button"
+                className={`settings-object-row ${appearanceCategory === category.id ? 'active' : ''}`}
+                onClick={() => onSelectAppearanceCategory?.(category.id)}
+              >
+                <div className="settings-object-avatar">
+                  <Icon size={16} />
+                </div>
+                <div className="settings-object-copy">
+                  <strong>{category.name}</strong>
+                  <small>{category.description}</small>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </aside>
     );

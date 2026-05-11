@@ -152,7 +152,21 @@
   },
   "appearance": {
     "pet": "Pet",
-    "petDescription": "Workbench pet settings and local library"
+    "petDescription": "Workbench pet settings and local library",
+    "chatStatusPanel": "Chat status panel",
+    "chatStatusPanelDescription": "CPU, memory, GPU, VRAM, and session token display",
+    "enableResourceStatusPanel": "Enable resource status panel",
+    "showCpu": "Show CPU",
+    "showRam": "Show RAM",
+    "showGpu": "Show GPU",
+    "showVram": "Show VRAM",
+    "ramDisplayMode": "RAM display mode",
+    "vramDisplayMode": "VRAM display mode",
+    "percent": "Percent",
+    "value": "Value",
+    "tokens": "Tokens",
+    "showSessionTokens": "Show session tokens",
+    "saveChatStatusPanelFailed": "Failed to save chat status panel settings."
   },
   "developer": {
     "title": "Developer",

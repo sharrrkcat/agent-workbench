@@ -12,7 +12,7 @@ import { getStatusLabel } from '../../i18n/formatters';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection } from './SettingsNav';
-import type { GeneralSettingsCategory, KnowledgeSettingsCategory } from './SettingsObjectList';
+import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSettingsCategory } from './SettingsObjectList';
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
 
@@ -28,6 +28,7 @@ export function SettingsDetailPanel({
   selectedLlmItemId = 'global',
   llmSubsection = 'defaults',
   generalCategory = 'files',
+  appearanceCategory = 'pet',
   knowledgeSubsection = 'defaults',
   selectedKnowledgeItemId = 'global',
   onLlmProfilesChanged,
@@ -47,6 +48,7 @@ export function SettingsDetailPanel({
   selectedLlmItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
+  appearanceCategory?: AppearanceSettingsCategory;
   knowledgeSubsection?: KnowledgeSettingsSubsection;
   selectedKnowledgeItemId?: string;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
@@ -127,7 +129,11 @@ export function SettingsDetailPanel({
   if (section === 'appearance') {
     return (
       <section className="settings-detail-panel">
-        <PetSettingsDetail activeTab={activeTab} onTabChange={onTabChange} onDirtyChange={onDirtyChange} />
+        {appearanceCategory === 'pet' ? (
+          <PetSettingsDetail activeTab={activeTab} onTabChange={onTabChange} onDirtyChange={onDirtyChange} />
+        ) : (
+          <ChatStatusPanelDetail onDirtyChange={onDirtyChange} />
+        )}
       </section>
     );
   }
@@ -335,6 +341,139 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
       </div>
     </form>
   );
+}
+
+function ChatStatusPanelDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const { t } = useTranslation(['settings', 'common']);
+  const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
+  const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
+  const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
+  const [saved, setSaved] = useState(false);
+  const dirty = Boolean(values && generalSettings && JSON.stringify(resourceStatusSettingsPatch(values)) !== JSON.stringify(resourceStatusSettingsPatch(generalSettings)));
+
+  useEffect(() => {
+    void refreshGeneralSettings();
+  }, [refreshGeneralSettings]);
+
+  useEffect(() => {
+    if (generalSettings) setValues(generalSettings);
+  }, [generalSettings]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!values) return;
+    try {
+      setLocalError(null);
+      await updateGeneralSettings(resourceStatusSettingsPatch(values));
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1400);
+    } catch (error) {
+      setLocalError(toSettingsError(error, t('settings:appearance.saveChatStatusPanelFailed')));
+    }
+  }
+
+  if (!values) return <EmptyDetail title={t('settings:appearance.chatStatusPanel')} message={t('settings:general.loading')} />;
+
+  return (
+    <form className="settings-detail-form" onSubmit={save}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">
+            <Activity size={18} />
+          </div>
+          <div>
+            <h2>{t('settings:appearance.chatStatusPanel')}</h2>
+            <p>{t('settings:appearance.chatStatusPanelDescription')}</p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {saved ? <span className="settings-badge success">{t('common:saved')}</span> : null}
+          {dirty ? (
+            <button className="settings-primary-button" type="submit">
+              <Save size={14} />
+              {t('common:save')}
+            </button>
+          ) : null}
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {localError ? <SettingsApiError error={localError} /> : null}
+        <div className="detail-section">
+          <div className="detail-section-heading">
+            <h3>{t('settings:appearance.chatStatusPanel')}</h3>
+          </div>
+          <label className="config-field settings-config-field boolean-field">
+            <span>{t('settings:appearance.enableResourceStatusPanel')}</span>
+            <ToggleSwitch checked={values.resource_status_panel_enabled} onChange={(checked) => setValues({ ...values, resource_status_panel_enabled: checked })} />
+          </label>
+          <div className="settings-detail-grid">
+            <BooleanField label={t('settings:appearance.showCpu')} checked={values.resource_status_show_cpu} onChange={(checked) => setValues({ ...values, resource_status_show_cpu: checked })} />
+            <BooleanField label={t('settings:appearance.showRam')} checked={values.resource_status_show_ram} onChange={(checked) => setValues({ ...values, resource_status_show_ram: checked })} />
+            <BooleanField label={t('settings:appearance.showGpu')} checked={values.resource_status_show_gpu} onChange={(checked) => setValues({ ...values, resource_status_show_gpu: checked })} />
+            <BooleanField label={t('settings:appearance.showVram')} checked={values.resource_status_show_vram} onChange={(checked) => setValues({ ...values, resource_status_show_vram: checked })} />
+            <DisplayModeField label={t('settings:appearance.ramDisplayMode')} value={values.resource_status_ram_display_mode} onChange={(mode) => setValues({ ...values, resource_status_ram_display_mode: mode })} />
+            <DisplayModeField label={t('settings:appearance.vramDisplayMode')} value={values.resource_status_vram_display_mode} onChange={(mode) => setValues({ ...values, resource_status_vram_display_mode: mode })} />
+          </div>
+        </div>
+        <div className="detail-section">
+          <div className="detail-section-heading">
+            <h3>{t('settings:appearance.tokens')}</h3>
+          </div>
+          <label className="config-field settings-config-field boolean-field">
+            <span>{t('settings:appearance.showSessionTokens')}</span>
+            <ToggleSwitch checked={values.resource_status_show_tokens} onChange={(checked) => setValues({ ...values, resource_status_show_tokens: checked })} />
+          </label>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function BooleanField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="config-field settings-config-field boolean-field">
+      <span>{label}</span>
+      <ToggleSwitch checked={checked} onChange={onChange} />
+    </label>
+  );
+}
+
+function DisplayModeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: 'percent' | 'value';
+  onChange: (value: 'percent' | 'value') => void;
+}) {
+  const { t } = useTranslation('settings');
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.currentTarget.value as 'percent' | 'value')}>
+        <option value="percent">{t('appearance.percent')}</option>
+        <option value="value">{t('appearance.value')}</option>
+      </select>
+    </label>
+  );
+}
+
+function resourceStatusSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
+  return {
+    resource_status_panel_enabled: values.resource_status_panel_enabled,
+    resource_status_show_cpu: values.resource_status_show_cpu,
+    resource_status_show_ram: values.resource_status_show_ram,
+    resource_status_show_gpu: values.resource_status_show_gpu,
+    resource_status_show_vram: values.resource_status_show_vram,
+    resource_status_ram_display_mode: values.resource_status_ram_display_mode,
+    resource_status_vram_display_mode: values.resource_status_vram_display_mode,
+    resource_status_show_tokens: values.resource_status_show_tokens,
+  };
 }
 
 function GeneralFilesSettings({

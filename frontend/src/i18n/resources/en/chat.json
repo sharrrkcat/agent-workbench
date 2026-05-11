@@ -77,10 +77,24 @@
   "attachmentTooLarge": "{{name}} is larger than {{size}} MB.",
   "attachment": "Attachment",
   "tokens": {
-    "total": "Tokens: {{count}}",
+    "total": "Tokens {{count}}",
     "input": "Input: {{count}}",
     "output": "Output: {{count}}",
     "tooltip": "Input: {{input}}\nOutput: {{output}}\nTotal: {{total}}"
+  },
+  "resources": {
+    "statusPanel": "Chat status panel",
+    "title": "Resources",
+    "loading": "Loading resources.",
+    "unavailable": "Resources unavailable",
+    "backendMemory": "Backend memory",
+    "updated": "Updated",
+    "gpuUnavailable": "GPU unavailable",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "gpu": "GPU",
+    "vram": "VRAM",
+    "tokens": "Tokens"
   },
   "actions": {
     "messageActions": "Message actions",

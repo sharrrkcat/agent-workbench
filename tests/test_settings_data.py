@@ -30,6 +30,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["session_title_max_input_chars"] == 1200
     assert response.json()["group_transcript_system_instruction"] is None
     assert response.json()["command_result_context_instruction"] is None
+    assert response.json()["resource_status_panel_enabled"] is False
+    assert response.json()["resource_status_show_tokens"] is True
     assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["command_result_context_instruction_default"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
@@ -46,6 +48,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "session_title_max_input_chars": 500,
             "group_transcript_system_instruction": "Group override for {agent_name}",
             "command_result_context_instruction": "Command override for {command}",
+            "resource_status_panel_enabled": True,
+            "resource_status_show_tokens": False,
+            "resource_status_ram_display_mode": "value",
         },
     )
     assert patched.status_code == 200
@@ -59,6 +64,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["group_transcript_system_instruction_effective"] == "Group override for {agent_name}"
     assert patched.json()["command_result_context_instruction"] == "Command override for {command}"
     assert patched.json()["command_result_context_instruction_effective"] == "Command override for {command}"
+    assert patched.json()["resource_status_panel_enabled"] is True
+    assert patched.json()["resource_status_show_tokens"] is False
+    assert patched.json()["resource_status_ram_display_mode"] == "value"
 
     reset = client.patch(
         "/api/settings/general",
@@ -74,6 +82,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"max_file_size_mb": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_max_input_chars": 99}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_prompt": "   "}).status_code == 422
+    assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
@@ -81,6 +90,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["auto_generate_session_titles"] is False
     assert restarted.get("/api/settings/general").json()["session_title_prompt"] == "Title from {user_input}"
     assert restarted.get("/api/settings/general").json()["group_transcript_system_instruction"] is None
+    assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

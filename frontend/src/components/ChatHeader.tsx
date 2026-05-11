@@ -1,4 +1,4 @@
-import { BookOpen, DatabaseZap, Hash, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, ChevronDown, DatabaseZap, Hash, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -6,7 +6,7 @@ import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
-import type { ContextMode, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, SessionKnowledgeBinding } from '../types';
+import type { ContextMode, GeneralSettings, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, RuntimeResources, SessionKnowledgeBinding } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation();
@@ -15,6 +15,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const currentProfile = resolveCurrentLlmProfile(state);
   const modelStatus = getModelProfileStatus(currentProfile, state.llmProviderStatuses);
   const tokenSummary = useMemo(() => summarizeSessionTokens(state.messages), [state.messages]);
+  const generalSettings = useWorkbenchStore((store) => store.generalSettings);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
 
@@ -27,7 +28,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
         </span>
       </div>
       <div className="topbar-actions">
-        <SessionTokenPill summary={tokenSummary} />
+        <ChatStatusPill summary={tokenSummary} settings={generalSettings} />
         <SessionKnowledgePicker
           open={knowledgeOpen}
           onOpenChange={(nextOpen) => {
@@ -57,24 +58,156 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
-function SessionTokenPill({ summary }: { summary: SessionTokenSummary }) {
+function ChatStatusPill({ summary, settings }: { summary: SessionTokenSummary; settings?: GeneralSettings }) {
   const { t } = useTranslation();
+  const [resources, setResources] = useState<RuntimeResources | null>(null);
+  const [resourceError, setResourceError] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const resourceEnabled = settings?.resource_status_panel_enabled ?? false;
+  const showTokens = settings?.resource_status_show_tokens ?? true;
   const total = formatTokenAmount(summary.total, summary.estimated);
   const totalDetail = formatTokenCount(summary.total, summary.estimated);
   const input = formatTokenCount(summary.input, false);
   const output = formatTokenCount(summary.output, summary.estimated);
+  const items = buildStatusItems(resources, settings, total, t);
+  const visible = resourceEnabled || showTokens;
+  const expandable = resourceEnabled;
+
+  useEffect(() => {
+    if (!resourceEnabled) {
+      setResources(null);
+      setResourceError('');
+      setOpen(false);
+      return;
+    }
+    let cancelled = false;
+    let timeoutId = 0;
+
+    async function load() {
+      if (document.visibilityState === 'hidden') {
+        timeoutId = window.setTimeout(load, 4000);
+        return;
+      }
+      try {
+        const nextResources = await api.getRuntimeResources();
+        if (!cancelled) {
+          setResources(nextResources);
+          setResourceError('');
+        }
+      } catch (err) {
+        if (!cancelled) setResourceError(err instanceof Error ? err.message : t('chat:resources.unavailable'));
+      } finally {
+        if (!cancelled) timeoutId = window.setTimeout(load, 4000);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [resourceEnabled, t]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  if (!visible) return null;
+
+  const label = items.length ? items.join(' · ') : t('chat:resources.loading');
+  const tokenTooltip = t('chat:tokens.tooltip', {
+    input,
+    output,
+    total: totalDetail,
+  });
+  const title = [label, tokenTooltip].filter(Boolean).join('\n');
+
   return (
-    <span
-      className="status-pill token-pill"
-      title={t('chat:tokens.tooltip', {
-        input,
-        output,
-        total: totalDetail,
-      })}
-    >
-      <Hash size={14} />
-      {t('chat:tokens.total', { count: total })}
-    </span>
+    <div className="chat-status-wrap" ref={wrapRef}>
+      <button
+        className={`status-pill token-pill chat-status-pill ${expandable ? 'expandable' : ''}`}
+        type="button"
+        title={title}
+        aria-label={t('chat:resources.statusPanel')}
+        aria-expanded={open}
+        onClick={() => {
+          if (expandable) setOpen(!open);
+        }}
+      >
+        <Hash size={14} />
+        <span className="chat-status-text">{label}</span>
+        {expandable ? <ChevronDown size={13} className={`chat-status-chevron ${open ? 'open' : ''}`} /> : null}
+      </button>
+      <div className={`chat-status-panel ${open ? 'open' : ''}`} aria-hidden={!open}>
+        <ChatStatusPanel resources={resources} resourceError={resourceError} settings={settings} summary={summary} />
+      </div>
+    </div>
+  );
+}
+
+function ChatStatusPanel({
+  resources,
+  resourceError,
+  settings,
+  summary,
+}: {
+  resources: RuntimeResources | null;
+  resourceError: string;
+  settings?: GeneralSettings;
+  summary: SessionTokenSummary;
+}) {
+  const { t } = useTranslation();
+  const gpu = resources?.gpus.find((item) => item.available) || resources?.gpus[0];
+  const rows: { label: string; value: string }[] = [];
+  if (resources?.cpu.available) rows.push({ label: t('chat:resources.cpu'), value: formatPercent(resources.cpu.percent) });
+  if (resources?.memory.available) rows.push({ label: t('chat:resources.ram'), value: formatBytesPair(resources.memory.used_bytes, resources.memory.total_bytes, resources.memory.percent) });
+  if (gpu?.available) {
+    rows.push({ label: t('chat:resources.gpu'), value: `${gpu.name || t('chat:resources.gpu')} · ${formatPercent(gpu.utilization_percent)}` });
+    rows.push({ label: t('chat:resources.vram'), value: formatBytesPair(gpu.memory_used_bytes, gpu.memory_total_bytes, gpu.memory_percent) });
+  } else if (settings?.resource_status_show_gpu || settings?.resource_status_show_vram) {
+    rows.push({ label: t('chat:resources.gpu'), value: t('chat:resources.gpuUnavailable') });
+  }
+  if (resources?.process.backend_memory_bytes != null) {
+    rows.push({ label: t('chat:resources.backendMemory'), value: formatBytes(resources.process.backend_memory_bytes) });
+  }
+  if (settings?.resource_status_show_tokens ?? true) {
+    rows.push({ label: t('chat:resources.tokens'), value: formatTokenCount(summary.total, summary.estimated) });
+  }
+  if (resources?.updated_at) {
+    rows.push({ label: t('chat:resources.updated'), value: formatDateTime(resources.updated_at) });
+  }
+
+  return (
+    <div className="chat-status-panel-inner">
+      <strong>{t('chat:resources.title')}</strong>
+      {resourceError || resources?.error ? <p className="chat-status-panel-error">{t('chat:resources.unavailable')}</p> : null}
+      {!resourceError && !resources ? <p className="chat-status-panel-muted">{t('chat:resources.loading')}</p> : null}
+      {rows.length ? (
+        <dl>
+          {rows.map((row) => (
+            <div key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
   );
 }
 
@@ -513,6 +646,64 @@ function statusTitle(modelStatus: ReturnType<typeof getModelProfileStatus>, curr
 
 function statusClass(modelStatus: ReturnType<typeof getModelProfileStatus>): string {
   return statusPillClass(modelStatus);
+}
+
+function buildStatusItems(resources: RuntimeResources | null, settings: GeneralSettings | undefined, total: string, t: ReturnType<typeof useTranslation>['t']): string[] {
+  const resourceEnabled = settings?.resource_status_panel_enabled ?? false;
+  const items: string[] = [];
+  const gpu = resources?.gpus.find((item) => item.available);
+  if (resourceEnabled && resources?.cpu.available && (settings?.resource_status_show_cpu ?? true)) {
+    items.push(`${t('chat:resources.cpu')} ${formatPercent(resources.cpu.percent)}`);
+  }
+  if (resourceEnabled && resources?.memory.available && (settings?.resource_status_show_ram ?? true)) {
+    const value = settings?.resource_status_ram_display_mode === 'value'
+      ? formatByteValuePair(resources.memory.used_bytes, resources.memory.total_bytes)
+      : formatPercent(resources.memory.percent);
+    items.push(`${t('chat:resources.ram')} ${value}`);
+  }
+  if (resourceEnabled && gpu?.available && (settings?.resource_status_show_gpu ?? true)) {
+    items.push(`${t('chat:resources.gpu')} ${formatPercent(gpu.utilization_percent)}`);
+  }
+  if (resourceEnabled && gpu?.available && (settings?.resource_status_show_vram ?? true)) {
+    const value = settings?.resource_status_vram_display_mode === 'value'
+      ? formatByteValuePair(gpu.memory_used_bytes, gpu.memory_total_bytes)
+      : formatPercent(gpu.memory_percent);
+    items.push(`${t('chat:resources.vram')} ${value}`);
+  }
+  if (settings?.resource_status_show_tokens ?? true) {
+    items.push(t('chat:tokens.total', { count: total }));
+  }
+  return items;
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  return `${Math.round(value)}%`;
+}
+
+function formatBytesPair(used: number | null | undefined, total: number | null | undefined, percent: number | null | undefined): string {
+  const value = formatByteValuePair(used, total);
+  const pct = formatPercent(percent);
+  return pct === '-' ? value : `${value} · ${pct}`;
+}
+
+function formatByteValuePair(used: number | null | undefined, total: number | null | undefined): string {
+  if (typeof used !== 'number' || typeof total !== 'number' || !Number.isFinite(used) || !Number.isFinite(total) || total <= 0) {
+    return '-';
+  }
+  return `${formatBytes(used)} / ${formatBytes(total)}`;
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${Math.round(value)} B`;
+  if (value < 1024 * 1024) return `${trimTrailingZero((value / 1024).toFixed(1))} KB`;
+  if (value < 1024 * 1024 * 1024) return `${trimTrailingZero((value / (1024 * 1024)).toFixed(1))} MB`;
+  return `${trimTrailingZero((value / (1024 * 1024 * 1024)).toFixed(1))} GB`;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString();
 }
 
 type SessionTokenSummary = {

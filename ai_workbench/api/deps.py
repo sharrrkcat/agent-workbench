@@ -14,6 +14,7 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.runtime_memory import RuntimeMemoryService
+from ai_workbench.core.runtime_resources import RuntimeResourcesService
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.knowledge_models import LocalKnowledgeModelBackend, ensure_knowledge_directories
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
@@ -61,6 +62,7 @@ class RuntimeState:
     agent_runner: AgentRunner
     runtime: WorkbenchRuntime
     runtime_memory: Any
+    runtime_resources: Any
     active_runs: ActiveRunRegistry
     agent_configs: Any = None
     capability_configs: Any = None
@@ -189,6 +191,7 @@ def build_runtime_state(
         knowledge_model_backend=knowledge_model_backend,
         agent_runner=agent_runner,
     )
+    runtime_resources = RuntimeResourcesService()
     try:
         runtime_control = runtimes.get_runtime("runtime")
         configure = getattr(runtime_control, "configure", None)
@@ -212,6 +215,7 @@ def build_runtime_state(
         agent_runner=agent_runner,
         runtime=runtime,
         runtime_memory=runtime_memory,
+        runtime_resources=runtime_resources,
         active_runs=active_runs,
         agent_configs=agent_configs,
         capability_configs=capability_configs,
