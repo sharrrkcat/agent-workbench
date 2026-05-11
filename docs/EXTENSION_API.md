@@ -346,6 +346,29 @@ Local model directories:
 
 Model paths must be relative to `data/models`, use POSIX-style storage, and match either `embeddings/<folder>` for embedding profiles or `rerankers/<folder>` for the global reranker. Absolute paths and `..` segments are rejected.
 
+Local model scan:
+
+- `GET /api/knowledge/models/scan`
+
+The scan creates the expected local model directories, lists direct child folders without loading model weights, and returns:
+
+```json
+{
+  "models_root": "data/models",
+  "embedding_models": [{"model_path": "embeddings/example", "name": "example", "exists": true}],
+  "reranker_models": [{"model_path": "rerankers/example", "name": "example", "exists": true}],
+  "backend": {
+    "sentence_transformers_available": true,
+    "torch_available": true,
+    "transformers_available": true,
+    "cuda_available": false,
+    "available": true
+  }
+}
+```
+
+There is intentionally no `/api/knowledge/models/download` endpoint in this alpha. The frontend may show copyable install and download commands, and `scripts/download_knowledge_model.py` can be run manually from the project root, but the backend does not install dependencies, download models, create profiles, or start model scan jobs.
+
 Embedding model profile APIs:
 
 - `GET /api/knowledge/embedding-models`

@@ -284,6 +284,7 @@ Tests:
 
 Avoid unless explicitly in scope:
 - Do not add Knowledge Capability, `/kb-search`, automatic model download, local-file sources, or retrieval/indexing/backend changes for Knowledge injection work unless explicitly requested.
+- Knowledge environment/download-command UI work should route through Settings -> Knowledge docs and `frontend/src/components/settings/KnowledgeSettingsPanel.tsx`. The project may provide local helper scripts that print user-run commands, but do not add a backend download API, background download task, automatic dependency install, or frontend shell execution unless a task explicitly asks for that behavior.
 
 ## Documentation Update Rules
 

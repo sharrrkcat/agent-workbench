@@ -1,4 +1,4 @@
-import { ArrowUpDown, BrainCircuit, FileText, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { ArrowUpDown, BrainCircuit, Clipboard, FileText, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
@@ -13,6 +13,43 @@ import { getKnowledgeIndexStatusLabel, getKnowledgeSourceStatusLabel } from '../
 type FormMode = 'list' | 'new' | string;
 type SourceSortKey = 'title' | 'source_type' | 'chunks' | 'status' | 'indexed_at';
 type SortDirection = 'asc' | 'desc';
+type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
+type DownloadModelType = 'embedding' | 'reranker';
+
+const KNOWLEDGE_INSTALL_COMMANDS = ['uv sync --extra knowledge', 'uv pip install ".[knowledge]"'];
+const KNOWLEDGE_FALLBACK_INSTALL_COMMAND = 'uv pip install sentence-transformers torch transformers';
+
+const KNOWLEDGE_MODEL_PRESETS: {
+  type: DownloadModelType;
+  modelId: string;
+  target: string;
+  description: string;
+}[] = [
+  {
+    type: 'embedding',
+    modelId: 'sentence-transformers/all-MiniLM-L6-v2',
+    target: 'all-MiniLM-L6-v2',
+    description: 'lightweight English/basic test',
+  },
+  {
+    type: 'embedding',
+    modelId: 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+    target: 'paraphrase-multilingual-MiniLM-L12-v2',
+    description: 'lightweight multilingual',
+  },
+  {
+    type: 'embedding',
+    modelId: 'BAAI/bge-m3',
+    target: 'bge-m3',
+    description: 'stronger multilingual RAG',
+  },
+  {
+    type: 'reranker',
+    modelId: 'BAAI/bge-reranker-v2-m3',
+    target: 'bge-reranker-v2-m3',
+    description: 'multilingual reranker',
+  },
+];
 
 const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
@@ -59,7 +96,12 @@ export function KnowledgeSettingsDetail({
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
+  const [defaultsTab, setDefaultsTab] = useState<KnowledgeDefaultsTab>('overview');
+  const [downloadType, setDownloadType] = useState<DownloadModelType>('embedding');
+  const [downloadModelId, setDownloadModelId] = useState(KNOWLEDGE_MODEL_PRESETS[0].modelId);
+  const [downloadTarget, setDownloadTarget] = useState(KNOWLEDGE_MODEL_PRESETS[0].target);
   const dirty = Boolean(values && settings && JSON.stringify(values) !== JSON.stringify(settings));
+  const downloadCommand = `uv run python scripts/download_knowledge_model.py --type ${downloadType} --model-id ${downloadModelId || '<model-id>'} --target ${downloadTarget || '<target-folder>'}`;
 
   async function refresh() {
     const [nextSettings, nextProfiles, nextBases] = await Promise.all([
@@ -79,7 +121,10 @@ export function KnowledgeSettingsDetail({
   }
 
   useEffect(() => {
-    void refresh().catch((error) => setLocalError(toSettingsError(error, 'Failed to load Knowledge settings.')));
+    void refresh()
+      .then(() => api.scanKnowledgeModels())
+      .then(setScan)
+      .catch((error) => setLocalError(toSettingsError(error, 'Failed to load Knowledge settings.')));
   }, []);
 
   useEffect(() => {
@@ -102,6 +147,37 @@ export function KnowledgeSettingsDetail({
     } finally {
       setBusy('');
     }
+  }
+
+  async function switchLocalModelDevice(device: KnowledgeSettings['local_model_device']) {
+    setBusy(`device:${device}`);
+    try {
+      setLocalError(null);
+      const saved = await api.updateKnowledgeSettings({ local_model_device: device });
+      setSettings(saved);
+      setValues((current) => current ? { ...current, local_model_device: saved.local_model_device } : saved);
+      setResult(`Local model device set to ${device}.`);
+    } catch (error) {
+      setLocalError(toSettingsError(error, 'Failed to update local model device.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setResult('Command copied.');
+    } catch {
+      setLocalError({ code: 'COPY_FAILED', message: 'Failed to copy command. Select and copy it manually.', details: {} });
+    }
+  }
+
+  function selectPreset(index: number) {
+    const preset = KNOWLEDGE_MODEL_PRESETS[index];
+    setDownloadType(preset.type);
+    setDownloadModelId(preset.modelId);
+    setDownloadTarget(preset.target);
   }
 
   async function saveDefaults(event: FormEvent) {
@@ -170,91 +246,280 @@ export function KnowledgeSettingsDetail({
           ) : null}
         </div>
       </header>
+      <DetailTabs
+        tabs={[
+          { id: 'overview', label: 'Overview' },
+          { id: 'models', label: 'Models' },
+          { id: 'retrieval', label: 'Retrieval' },
+          { id: 'chunking', label: 'Chunking & Indexing' },
+          { id: 'context', label: 'Context' },
+          { id: 'download', label: 'Download' },
+        ]}
+        activeTab={defaultsTab}
+        onChange={(tab) => setDefaultsTab(tab as KnowledgeDefaultsTab)}
+      />
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
-        <div className="detail-section">
-          <div className="detail-section-heading">
-            <h3>{t('knowledge:sections.localModels')}</h3>
-          </div>
-          <dl className="settings-definition-grid">
-            <Metric label={t('knowledge:labels.modelsRoot')} value={values.models_root} />
-            <Metric label={t('knowledge:labels.backend')} value={backendLabel(scan?.backend, t)} />
-          </dl>
-          <div className="settings-detail-grid">
-            <SelectField label={t('knowledge:labels.localModelDevice')} value={values.local_model_device} options={['auto', 'cpu', 'cuda']} onChange={(value) => setValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })} />
-          </div>
-          <div className="settings-button-row">
-            <button className="settings-secondary-button" type="button" onClick={runScan} disabled={busy === 'scan'}>
-              <RefreshCw size={14} />
-              {busy === 'scan' ? t('knowledge:actions.scanning') : t('knowledge:actions.scanLocalModels')}
-            </button>
-          </div>
-          {scan ? <ModelScanSummary scan={scan} /> : null}
-        </div>
-        <NumberGroup title={t('knowledge:sections.embedding')} values={values} setValues={setValues} fields={[['embedding_batch_size', t('knowledge:labels.batchSize')], ['embedding_timeout_seconds', t('knowledge:labels.timeoutSeconds')]]} />
-        <div className="detail-section">
-          <div className="detail-section-heading"><h3>{t('knowledge:sections.reranker')}</h3></div>
-          <label className="config-field settings-config-field boolean-field">
-            <span>{t('knowledge:labels.enabled')}</span>
-            <ToggleSwitch checked={values.reranker_enabled} onChange={(checked) => setValues({ ...values, reranker_enabled: checked })} />
-          </label>
-          <div className="settings-detail-grid">
-            <TextField label={t('knowledge:labels.rerankerModelPath')} value={values.reranker_model_path || ''} onChange={(value) => setValues({ ...values, reranker_model_path: value || null })} />
-            <NumberField label={t('knowledge:labels.batchSize')} value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
-            <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
-            <NumberField label={t('knowledge:labels.candidateLimit')} value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
-          </div>
-          <div className="settings-button-row">
-            <button className="settings-secondary-button" type="button" onClick={async () => {
-              setBusy('rerank');
-              try {
-                setLocalError(null);
-                const response = await api.rerankKnowledge({ query: 'What is RAG?', documents: [{ id: 'doc1', text: 'Retrieval augmented generation uses retrieved context.' }, { id: 'doc2', text: 'Other text.' }] });
-                setResult(t('knowledge:results.rerankerReturned', { count: response.results.length }));
-              } catch (error) {
-                setLocalError(toSettingsError(error, 'Reranker unavailable.'));
-              } finally {
-                setBusy('');
-              }
-            }}>
-              <Play size={14} />
-              {t('knowledge:actions.testReranker')}
-            </button>
-          </div>
-        </div>
-        <NumberGroup title={t('knowledge:sections.retrieval')} values={values} setValues={setValues} fields={[['default_vector_candidate_k', t('knowledge:labels.vectorCandidateK')], ['default_keyword_candidate_k', t('knowledge:labels.keywordCandidateK')], ['default_final_top_k', t('knowledge:labels.finalTopK')], ['default_max_context_chars', t('knowledge:labels.maxContextChars')], ['rrf_k', t('knowledge:labels.rrfK')]]} />
-        <div className="detail-section">
-          <div className="detail-section-heading"><h3>{t('knowledge:sections.retrievalSwitches')}</h3></div>
-          <label className="config-field settings-config-field boolean-field">
-            <span>{t('knowledge:labels.enabled')}</span>
-            <ToggleSwitch checked={values.hybrid_search_enabled} onChange={(checked) => setValues({ ...values, hybrid_search_enabled: checked })} />
-          </label>
-          <div className="settings-detail-grid">
-            <NumberField label={t('knowledge:labels.minScoreThreshold')} value={values.min_score_threshold ?? ''} onChange={(value) => setValues({ ...values, min_score_threshold: value === '' ? null : Number(value) })} />
-            <NumberField label={t('knowledge:labels.perSourceMaxChunks')} value={values.retrieval_max_chunks_per_source ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_source: value === '' ? null : Number(value) })} />
-            <NumberField label={t('knowledge:labels.perKbMaxChunks')} value={values.retrieval_max_chunks_per_knowledge_base ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_knowledge_base: value === '' ? null : Number(value) })} />
-          </div>
-        </div>
-        <div className="detail-section">
-          <div className="detail-section-heading"><h3>{t('knowledge:sections.queryExpansion')}</h3></div>
-          <label className="config-field settings-config-field boolean-field">
-            <span>{t('knowledge:labels.enabled')}</span>
-            <ToggleSwitch checked={values.query_expansion_enabled} onChange={(checked) => setValues({ ...values, query_expansion_enabled: checked })} />
-          </label>
-          <div className="settings-detail-grid">
-            <NumberField label={t('knowledge:labels.maxVariants')} value={values.query_expansion_max_variants} onChange={(value) => { if (value !== '') setValues({ ...values, query_expansion_max_variants: value }); }} />
-          </div>
-          <TextAreaField label={t('knowledge:labels.expansionPrompt')} value={values.query_expansion_prompt} onChange={(value) => setValues({ ...values, query_expansion_prompt: value })} />
-        </div>
-        <NumberGroup title={t('knowledge:sections.chunking')} values={values} setValues={setValues} fields={[['default_chunk_size', t('knowledge:labels.chunkSize')], ['default_chunk_overlap', t('knowledge:labels.chunkOverlap')]]} />
-        <NumberGroup title={t('knowledge:sections.indexLimits')} values={values} setValues={setValues} fields={[['max_source_size_bytes', t('knowledge:labels.maxSourceSizeBytes')], ['max_chunks_per_source', t('knowledge:labels.maxChunksPerSource')], ['max_total_index_chars_per_source', t('knowledge:labels.maxTotalIndexCharsPerSource')]]} />
-        <div className="detail-section">
-          <div className="detail-section-heading"><h3>{t('knowledge:sections.contextInjection')}</h3></div>
-          <TextAreaField label={t('knowledge:labels.knowledgeContextInstruction')} value={values.knowledge_context_instruction} onChange={(value) => setValues({ ...values, knowledge_context_instruction: value })} />
-          <TextAreaField label={t('knowledge:labels.snippetTemplate')} value={values.knowledge_context_snippet_template} onChange={(value) => setValues({ ...values, knowledge_context_snippet_template: value })} />
-        </div>
+        {defaultsTab === 'overview' ? (
+          <KnowledgeOverviewTab
+            values={values}
+            scan={scan}
+            busy={busy}
+            onRunScan={runScan}
+            onSwitchDevice={switchLocalModelDevice}
+            onSetValues={setValues}
+            onCopy={copyText}
+          />
+        ) : null}
+        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
+        {defaultsTab === 'retrieval' ? <KnowledgeRetrievalTab values={values} setValues={setValues} /> : null}
+        {defaultsTab === 'chunking' ? <KnowledgeChunkingTab values={values} setValues={setValues} /> : null}
+        {defaultsTab === 'context' ? <KnowledgeContextTab values={values} setValues={setValues} /> : null}
+        {defaultsTab === 'download' ? (
+          <KnowledgeDownloadTab
+            downloadType={downloadType}
+            downloadModelId={downloadModelId}
+            downloadTarget={downloadTarget}
+            downloadCommand={downloadCommand}
+            onSelectPreset={selectPreset}
+            onSetType={setDownloadType}
+            onSetModelId={setDownloadModelId}
+            onSetTarget={setDownloadTarget}
+            onCopy={copyText}
+          />
+        ) : null}
       </div>
     </form>
+  );
+}
+
+function KnowledgeOverviewTab({
+  values,
+  scan,
+  busy,
+  onRunScan,
+  onSwitchDevice,
+  onSetValues,
+  onCopy,
+}: {
+  values: KnowledgeSettings;
+  scan: KnowledgeModelScan | null;
+  busy: string;
+  onRunScan: () => void;
+  onSwitchDevice: (device: KnowledgeSettings['local_model_device']) => void;
+  onSetValues: (values: KnowledgeSettings) => void;
+  onCopy: (text: string) => void;
+}) {
+  const { t } = useTranslation(['knowledge', 'status']);
+  const backend = scan?.backend;
+  const missingOptionalDependencies = backend ? !backend.sentence_transformers_available || !backend.torch_available || !backend.transformers_available : false;
+  const cudaMismatch = values.local_model_device === 'cuda' && backend?.cuda_available === false;
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('knowledge:sections.localModels')}</h3>
+        </div>
+        <dl className="settings-definition-grid">
+          <Metric label={t('knowledge:labels.modelsRoot')} value={values.models_root} />
+          <Metric label={t('knowledge:labels.backend')} value={backendLabel(scan?.backend, t)} />
+          <Metric label={t('knowledge:labels.embeddingFolders')} value={scan ? String(scan.embedding_models.length) : 'Not scanned'} />
+          <Metric label={t('knowledge:labels.rerankerFolders')} value={scan ? String(scan.reranker_models.length) : 'Not scanned'} />
+          <Metric label="sentence-transformers" value={dependencyLabel(backend?.sentence_transformers_available, t)} />
+          <Metric label="torch" value={dependencyLabel(backend?.torch_available, t)} />
+          <Metric label="transformers" value={dependencyLabel(backend?.transformers_available, t)} />
+          <Metric label="CUDA" value={backend?.cuda_available ? 'yes' : backend ? 'no' : 'Not scanned'} />
+          <Metric label={t('knowledge:labels.localModelDevice')} value={values.local_model_device} />
+        </dl>
+        <div className="settings-detail-grid">
+          <SelectField label={t('knowledge:labels.localModelDevice')} value={values.local_model_device} options={['auto', 'cpu', 'cuda']} onChange={(value) => onSetValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })} />
+        </div>
+        <div className="settings-button-row">
+          <button className="settings-secondary-button" type="button" onClick={onRunScan} disabled={busy === 'scan'}>
+            <RefreshCw size={14} />
+            {busy === 'scan' ? t('knowledge:actions.scanning') : t('knowledge:actions.scanLocalModels')}
+          </button>
+        </div>
+      </div>
+      {cudaMismatch ? (
+        <div className="detail-section knowledge-warning-section">
+          <div className="detail-section-heading"><h3>CUDA warning</h3></div>
+          <p className="settings-warning-text">CUDA is selected, but torch CUDA is not available.</p>
+          <div className="settings-button-row">
+            <button className="settings-secondary-button" type="button" onClick={() => onSwitchDevice('cpu')} disabled={Boolean(busy)}>
+              Switch to CPU
+            </button>
+            <button className="settings-secondary-button" type="button" onClick={() => onSwitchDevice('auto')} disabled={Boolean(busy)}>
+              Switch to Auto
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>Install commands</h3></div>
+        {missingOptionalDependencies ? <p className="settings-muted-text">Optional Knowledge dependencies are missing. Install them in your project environment, then restart the backend and scan again.</p> : null}
+        {KNOWLEDGE_INSTALL_COMMANDS.map((command) => <CommandCard key={command} command={command} onCopy={onCopy} />)}
+        <CommandCard command={KNOWLEDGE_FALLBACK_INSTALL_COMMAND} onCopy={onCopy} />
+        <p className="settings-muted-text">
+          CUDA-enabled PyTorch depends on CUDA version and platform. Use the PyTorch install selector to choose the correct command. After installing CUDA-enabled torch, restart the backend and run Scan local models again.
+        </p>
+      </div>
+    </>
+  );
+}
+
+function KnowledgeModelsTab({
+  values,
+  setValues,
+  busy,
+  setBusy,
+  setResult,
+  setLocalError,
+}: {
+  values: KnowledgeSettings;
+  setValues: (values: KnowledgeSettings) => void;
+  busy: string;
+  setBusy: (busy: string) => void;
+  setResult: (result: string) => void;
+  setLocalError: (error: SettingsErrorValue | null) => void;
+}) {
+  const { t } = useTranslation(['knowledge']);
+  return (
+    <>
+      <NumberGroup title={t('knowledge:sections.embedding')} values={values} setValues={setValues} fields={[['embedding_batch_size', t('knowledge:labels.batchSize')], ['embedding_timeout_seconds', t('knowledge:labels.timeoutSeconds')]]} />
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>{t('knowledge:sections.reranker')}</h3></div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('knowledge:labels.enabled')}</span>
+          <ToggleSwitch checked={values.reranker_enabled} onChange={(checked) => setValues({ ...values, reranker_enabled: checked })} />
+        </label>
+        <div className="settings-detail-grid">
+          <TextField label={t('knowledge:labels.rerankerModelPath')} value={values.reranker_model_path || ''} onChange={(value) => setValues({ ...values, reranker_model_path: value || null })} />
+          <NumberField label={t('knowledge:labels.batchSize')} value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
+          <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
+          <NumberField label={t('knowledge:labels.candidateLimit')} value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
+        </div>
+        <div className="settings-button-row">
+          <button className="settings-secondary-button" type="button" onClick={async () => {
+            setBusy('rerank');
+            try {
+              setLocalError(null);
+              const response = await api.rerankKnowledge({ query: 'What is RAG?', documents: [{ id: 'doc1', text: 'Retrieval augmented generation uses retrieved context.' }, { id: 'doc2', text: 'Other text.' }] });
+              setResult(t('knowledge:results.rerankerReturned', { count: response.results.length }));
+            } catch (error) {
+              setLocalError(toSettingsError(error, 'Reranker unavailable.'));
+            } finally {
+              setBusy('');
+            }
+          }} disabled={Boolean(busy)}>
+            <Play size={14} />
+            {t('knowledge:actions.testReranker')}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function KnowledgeRetrievalTab({ values, setValues }: { values: KnowledgeSettings; setValues: (values: KnowledgeSettings) => void }) {
+  const { t } = useTranslation('knowledge');
+  return (
+    <>
+      <NumberGroup title={t('sections.retrieval')} values={values} setValues={setValues} fields={[['default_vector_candidate_k', t('labels.vectorCandidateK')], ['default_keyword_candidate_k', t('labels.keywordCandidateK')], ['default_final_top_k', t('labels.finalTopK')], ['default_max_context_chars', t('labels.maxContextChars')], ['rrf_k', t('labels.rrfK')]]} />
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>{t('sections.retrievalSwitches')}</h3></div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('labels.enabled')}</span>
+          <ToggleSwitch checked={values.hybrid_search_enabled} onChange={(checked) => setValues({ ...values, hybrid_search_enabled: checked })} />
+        </label>
+        <div className="settings-detail-grid">
+          <NumberField label={t('labels.minScoreThreshold')} value={values.min_score_threshold ?? ''} onChange={(value) => setValues({ ...values, min_score_threshold: value === '' ? null : Number(value) })} />
+          <NumberField label={t('labels.perSourceMaxChunks')} value={values.retrieval_max_chunks_per_source ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_source: value === '' ? null : Number(value) })} />
+          <NumberField label={t('labels.perKbMaxChunks')} value={values.retrieval_max_chunks_per_knowledge_base ?? ''} onChange={(value) => setValues({ ...values, retrieval_max_chunks_per_knowledge_base: value === '' ? null : Number(value) })} />
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>{t('sections.queryExpansion')}</h3></div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('labels.enabled')}</span>
+          <ToggleSwitch checked={values.query_expansion_enabled} onChange={(checked) => setValues({ ...values, query_expansion_enabled: checked })} />
+        </label>
+        <div className="settings-detail-grid">
+          <NumberField label={t('labels.maxVariants')} value={values.query_expansion_max_variants} onChange={(value) => { if (value !== '') setValues({ ...values, query_expansion_max_variants: value }); }} />
+        </div>
+        <TextAreaField label={t('labels.expansionPrompt')} value={values.query_expansion_prompt} onChange={(value) => setValues({ ...values, query_expansion_prompt: value })} />
+      </div>
+    </>
+  );
+}
+
+function KnowledgeChunkingTab({ values, setValues }: { values: KnowledgeSettings; setValues: (values: KnowledgeSettings) => void }) {
+  const { t } = useTranslation('knowledge');
+  return (
+    <>
+      <NumberGroup title={t('sections.chunking')} values={values} setValues={setValues} fields={[['default_chunk_size', t('labels.chunkSize')], ['default_chunk_overlap', t('labels.chunkOverlap')]]} />
+      <NumberGroup title={t('sections.indexLimits')} values={values} setValues={setValues} fields={[['max_source_size_bytes', t('labels.maxSourceSizeBytes')], ['max_chunks_per_source', t('labels.maxChunksPerSource')], ['max_total_index_chars_per_source', t('labels.maxTotalIndexCharsPerSource')]]} />
+    </>
+  );
+}
+
+function KnowledgeContextTab({ values, setValues }: { values: KnowledgeSettings; setValues: (values: KnowledgeSettings) => void }) {
+  const { t } = useTranslation('knowledge');
+  return (
+    <div className="detail-section">
+      <div className="detail-section-heading"><h3>{t('sections.contextInjection')}</h3></div>
+      <TextAreaField label={t('labels.knowledgeContextInstruction')} value={values.knowledge_context_instruction} onChange={(value) => setValues({ ...values, knowledge_context_instruction: value })} />
+      <TextAreaField label={t('labels.snippetTemplate')} value={values.knowledge_context_snippet_template} onChange={(value) => setValues({ ...values, knowledge_context_snippet_template: value })} />
+    </div>
+  );
+}
+
+function KnowledgeDownloadTab({
+  downloadType,
+  downloadModelId,
+  downloadTarget,
+  downloadCommand,
+  onSelectPreset,
+  onSetType,
+  onSetModelId,
+  onSetTarget,
+  onCopy,
+}: {
+  downloadType: DownloadModelType;
+  downloadModelId: string;
+  downloadTarget: string;
+  downloadCommand: string;
+  onSelectPreset: (index: number) => void;
+  onSetType: (type: DownloadModelType) => void;
+  onSetModelId: (value: string) => void;
+  onSetTarget: (value: string) => void;
+  onCopy: (text: string) => void;
+}) {
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>Recommended models</h3></div>
+        <div className="knowledge-model-preset-list">
+          {KNOWLEDGE_MODEL_PRESETS.map((preset, index) => (
+            <button className="knowledge-model-preset" type="button" key={preset.modelId} onClick={() => onSelectPreset(index)}>
+              <strong>{preset.modelId}</strong>
+              <span>{preset.type} - {preset.description}</span>
+              <code>{preset.target}</code>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>Download command</h3></div>
+        <p className="settings-muted-text">Run the generated command from the project root. When it finishes, return to Overview and click Scan local models.</p>
+        <div className="settings-detail-grid">
+          <SelectField label="Model type" value={downloadType} options={['embedding', 'reranker']} onChange={(value) => onSetType(value as DownloadModelType)} />
+          <TextField label="Target folder" value={downloadTarget} onChange={onSetTarget} />
+        </div>
+        <TextField label="Model id" value={downloadModelId} onChange={onSetModelId} />
+        <CommandCard command={downloadCommand} onCopy={onCopy} />
+      </div>
+    </>
   );
 }
 
@@ -1129,6 +1394,18 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd title={value}>{value}</dd></div>;
 }
 
+function CommandCard({ command, onCopy }: { command: string; onCopy: (text: string) => void }) {
+  return (
+    <div className="knowledge-command-card">
+      <code>{command}</code>
+      <button className="settings-secondary-button" type="button" onClick={() => onCopy(command)}>
+        <Clipboard size={14} />
+        Copy command
+      </button>
+    </div>
+  );
+}
+
 function ModelScanSummary({ scan }: { scan: KnowledgeModelScan }) {
   const { t } = useTranslation(['knowledge', 'status']);
   return (
@@ -1144,6 +1421,11 @@ function ModelScanSummary({ scan }: { scan: KnowledgeModelScan }) {
 function backendLabel(backend: KnowledgeModelScan['backend'] | undefined, t: ReturnType<typeof useTranslation>['t']): string {
   if (!backend) return t('knowledge:backend.notScanned');
   return backend.available ? t('knowledge:backend.available') : t('knowledge:backend.unavailableOptionalDeps');
+}
+
+function dependencyLabel(value: boolean | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (value === undefined) return t('knowledge:backend.notScanned');
+  return value ? t('status:common.available') : t('status:common.unavailable');
 }
 
 function knowledgeSettingsPatch(values: KnowledgeSettings): Partial<KnowledgeSettings> {

@@ -207,6 +207,36 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 
 Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. Install them with the `knowledge` extra when desired. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
 
+Knowledge local environment setup:
+
+```powershell
+uv sync --extra knowledge
+```
+
+If you manage the active environment manually, the equivalent project extra install is:
+
+```powershell
+uv pip install ".[knowledge]"
+```
+
+The optional dependencies are `sentence-transformers`, `torch`, and `transformers`. CUDA-enabled PyTorch depends on your CUDA version and platform; use the PyTorch install selector for the correct torch command, then restart the backend and use Settings -> Knowledge -> Defaults -> Overview -> Scan local models.
+
+Local Knowledge models must be stored under the project model root:
+
+```text
+data/models/embeddings/<model-folder>
+data/models/rerankers/<model-folder>
+```
+
+Use the helper script from the project root to download Hugging Face / Sentence Transformers models into those directories:
+
+```powershell
+uv run python scripts/download_knowledge_model.py --type embedding --model-id sentence-transformers/all-MiniLM-L6-v2 --target all-MiniLM-L6-v2
+uv run python scripts/download_knowledge_model.py --type reranker --model-id BAAI/bge-reranker-v2-m3 --target bge-reranker-v2-m3
+```
+
+The script validates that `--target` is a safe folder name, saves embedding models under `data/models/embeddings`, saves rerankers under `data/models/rerankers`, and does not modify the database, create profiles, or scan models. After a download completes, return to Settings -> Knowledge -> Defaults -> Overview and run Scan local models.
+
 Phase 5 intentionally does not implement `local_file` sources, automatic model download, or changes to retrieval/indexing/model backends. Local model paths must be relative paths inside `data/models`; embedding profiles use `embeddings/<folder>` and the global reranker path uses `rerankers/<folder>`.
 
 Existing LLM Profiles are migrated automatically. Legacy profile connection fields (`provider`, `base_url`, `api_key`, `timeout`) are moved into deduplicated Provider Profiles and the original `llm_profiles` rows become Model Profiles that reference those providers. The migration is idempotent and keeps capability flags and generation defaults. API/UI responses mask `api_key` as `********`; PATCHing `api_key: "********"` preserves the stored secret. Secrets are still stored as plaintext in SQLite in this alpha and are not encrypted yet.
