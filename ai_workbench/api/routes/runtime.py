@@ -32,10 +32,10 @@ def get_runtime_resources(state: RuntimeState = Depends(get_state)) -> dict:
         return state.runtime_resources.resources()
     except Exception:
         return {
-            "cpu": {"available": False, "percent": None},
-            "memory": {"available": False, "used_bytes": None, "total_bytes": None, "percent": None},
+            "cpu": {"available": False, "percent": None, "reason": "Runtime resources unavailable."},
+            "memory": {"available": False, "used_bytes": None, "total_bytes": None, "percent": None, "reason": "Runtime resources unavailable."},
             "gpus": [],
-            "process": {"backend_memory_bytes": None},
+            "process": {"backend_memory_bytes": None, "reason": "Runtime resources unavailable."},
             "updated_at": None,
             "error": "Runtime resources unavailable.",
         }

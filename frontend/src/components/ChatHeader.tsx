@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, DatabaseZap, Hash, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, ChevronDown, DatabaseZap, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -6,11 +6,11 @@ import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
+import { usePopoverPresence } from '../hooks/usePopoverPresence';
 import type { ContextMode, GeneralSettings, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, RuntimeResources, SessionKnowledgeBinding } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation();
-  const currentSession = useWorkbenchStore((state) => state.currentSession);
   const state = useWorkbenchStore();
   const currentProfile = resolveCurrentLlmProfile(state);
   const modelStatus = getModelProfileStatus(currentProfile, state.llmProviderStatuses);
@@ -23,9 +23,6 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
     <header className="topbar">
       <div className="topbar-left">
         <AgentSwitcher />
-        <span className="session-chip">
-          {currentSession ? currentSession.title || t('chat:statusBar.session', { id: currentSession.session_id.slice(0, 6) }) : t('common:noSession')}
-        </span>
       </div>
       <div className="topbar-actions">
         <ChatStatusPill summary={tokenSummary} settings={generalSettings} />
@@ -149,7 +146,6 @@ function ChatStatusPill({ summary, settings }: { summary: SessionTokenSummary; s
           if (expandable) setOpen(!open);
         }}
       >
-        <Hash size={14} />
         <span className="chat-status-text">{label}</span>
         {expandable ? <ChevronDown size={13} className={`chat-status-chevron ${open ? 'open' : ''}`} /> : null}
       </button>
@@ -175,18 +171,32 @@ function ChatStatusPanel({
   const gpu = resources?.gpus.find((item) => item.available) || resources?.gpus[0];
   const rows: { label: string; value: string }[] = [];
   if (resources?.cpu.available) rows.push({ label: t('chat:resources.cpu'), value: formatPercent(resources.cpu.percent) });
+  if (resources?.cpu && !resources.cpu.available && (settings?.resource_status_show_cpu ?? true)) {
+    rows.push({ label: t('chat:resources.cpuUnavailable'), value: resourceUnavailableReason(resources.cpu.reason, 'cpu', t) });
+  }
   if (resources?.memory.available) rows.push({ label: t('chat:resources.ram'), value: formatBytesPair(resources.memory.used_bytes, resources.memory.total_bytes, resources.memory.percent) });
+  if (resources?.memory && !resources.memory.available && (settings?.resource_status_show_ram ?? true)) {
+    rows.push({ label: t('chat:resources.ramUnavailable'), value: resourceUnavailableReason(resources.memory.reason, 'ram', t) });
+  }
   if (gpu?.available) {
     rows.push({ label: t('chat:resources.gpu'), value: `${gpu.name || t('chat:resources.gpu')} · ${formatPercent(gpu.utilization_percent)}` });
     rows.push({ label: t('chat:resources.vram'), value: formatBytesPair(gpu.memory_used_bytes, gpu.memory_total_bytes, gpu.memory_percent) });
-  } else if (settings?.resource_status_show_gpu || settings?.resource_status_show_vram) {
-    rows.push({ label: t('chat:resources.gpu'), value: t('chat:resources.gpuUnavailable') });
+  } else if (gpu) {
+    const reason = resourceUnavailableReason(gpu.reason, 'gpu', t);
+    if (settings?.resource_status_show_gpu ?? true) rows.push({ label: t('chat:resources.gpuUnavailable'), value: reason });
+    if (settings?.resource_status_show_vram ?? true) rows.push({ label: t('chat:resources.vramUnavailable'), value: reason });
+  } else if (resources) {
+    const reason = resourceUnavailableReason(resources.error, 'gpu', t);
+    if (settings?.resource_status_show_gpu ?? true) rows.push({ label: t('chat:resources.gpuUnavailable'), value: reason });
+    if (settings?.resource_status_show_vram ?? true) rows.push({ label: t('chat:resources.vramUnavailable'), value: reason });
   }
   if (resources?.process.backend_memory_bytes != null) {
     rows.push({ label: t('chat:resources.backendMemory'), value: formatBytes(resources.process.backend_memory_bytes) });
   }
   if (settings?.resource_status_show_tokens ?? true) {
-    rows.push({ label: t('chat:resources.tokens'), value: formatTokenCount(summary.total, summary.estimated) });
+    rows.push({ label: t('chat:resources.totalTokens'), value: formatTokenAmount(summary.total, summary.estimated) });
+    rows.push({ label: t('chat:resources.inputTokens'), value: formatTokenAmount(summary.input, false) });
+    rows.push({ label: t('chat:resources.outputTokens'), value: formatTokenAmount(summary.output, summary.estimated) });
   }
   if (resources?.updated_at) {
     rows.push({ label: t('chat:resources.updated'), value: formatDateTime(resources.updated_at) });
@@ -222,6 +232,7 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [memoryFeedback, setMemoryFeedback] = useState('');
   const [memoryError, setMemoryError] = useState('');
+  const menuRendered = usePopoverPresence(open);
 
   useEffect(() => {
     onOpenChange(false);
@@ -309,8 +320,8 @@ function SessionMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
       >
         <MoreHorizontal size={18} />
       </button>
-      {open ? (
-        <div className="session-menu" role="menu">
+      {menuRendered ? (
+        <div className={`session-menu popover-surface ${open ? '' : 'closing'}`} role="menu" aria-hidden={!open}>
           <div className="session-menu-mode" aria-label={t('chat:conversationMode')}>
             <span>{t('chat:mode')}</span>
             <div className="mode-switcher compact">
@@ -476,6 +487,7 @@ function SessionKnowledgePicker({
   const selectedIds = useMemo(() => new Set(bindings.filter((binding) => binding.enabled).map((binding) => binding.knowledge_base_id)), [bindings]);
   const enabledBases = bases.filter((base) => selectedIds.has(base.id));
   const availableBases = bases.filter((base) => !selectedIds.has(base.id));
+  const menuRendered = usePopoverPresence(open);
 
   useEffect(() => {
     if (!open) return;
@@ -552,8 +564,8 @@ function SessionKnowledgePicker({
         <BookOpen size={14} />
         KB: {selectedIds.size}
       </button>
-      {open ? (
-        <div className="knowledge-picker-menu">
+      {menuRendered ? (
+        <div className={`knowledge-picker-menu popover-surface ${open ? '' : 'closing'}`} aria-hidden={!open}>
           <div className="knowledge-picker-title">
             <strong>{t('chat:knowledge')}</strong>
             <span>{t('chat:selectedCount', { count: selectedIds.size })}</span>
@@ -646,6 +658,15 @@ function statusTitle(modelStatus: ReturnType<typeof getModelProfileStatus>, curr
 
 function statusClass(modelStatus: ReturnType<typeof getModelProfileStatus>): string {
   return statusPillClass(modelStatus);
+}
+
+function resourceUnavailableReason(reason: string | null | undefined, kind: 'cpu' | 'ram' | 'gpu', t: ReturnType<typeof useTranslation>['t']): string {
+  const normalized = (reason || '').trim().toLowerCase();
+  if (normalized.includes('psutil')) return t('chat:resources.missingPsutilDependency');
+  if (kind === 'gpu' && (!normalized || normalized.includes('nvml') || normalized.includes('pynvml'))) {
+    return t('chat:resources.installNvmlDependency');
+  }
+  return reason?.trim() || t('chat:resources.notAvailable');
 }
 
 function buildStatusItems(resources: RuntimeResources | null, settings: GeneralSettings | undefined, total: string, t: ReturnType<typeof useTranslation>['t']): string[] {

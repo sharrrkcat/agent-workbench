@@ -332,7 +332,8 @@ Runtime memory API:
 Runtime resources API:
 - `GET /api/runtime/resources` returns a cached local resource snapshot for the Chat header status panel.
 - The response includes `cpu`, `memory`, `gpus`, `process.backend_memory_bytes`, and `updated_at`.
-- CPU/RAM and backend process memory use `psutil` when available. GPU/VRAM uses NVML-compatible Python bindings when available. Missing optional backends return unavailable fields instead of failing the API.
+- CPU/RAM and backend process memory use base dependency `psutil`. GPU/VRAM uses NVML-compatible Python bindings when available. Missing or failed backends return unavailable fields instead of failing the API.
+- Unavailable resource objects may include `reason`, for example `{"available": false, "reason": "psutil unavailable"}` for CPU/RAM or a NVML error for GPU/VRAM.
 - Sampling is cached for a few seconds so Chat polling does not resample hardware on every request.
 
 Reusable integration Capabilities should expose narrow protocol methods plus small helpers when that makes Agent code simpler. For example, the `comfyui` Capability exposes REST-only workflow submission, non-blocking prompt status, queue/history reads, blocking convenience polling, output extraction, image fetching, interrupt, upload, object-info, and `free_memory` methods. `free_memory` posts to ComfyUI `/free` with `unload_models` and `free_memory` booleans and returns a structured JSON outcome; it is not a slash command or user-facing Agent action. The Capability returns JSON contracts with image references or optional base64 image content; Script Agents remain responsible for attachments, user-visible progress, memory-release workflow choices, and final rendering.

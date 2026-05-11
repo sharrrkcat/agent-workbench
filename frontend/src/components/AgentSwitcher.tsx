@@ -4,6 +4,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { AgentAvatar } from './AgentAvatar';
 import { getResolvedAgentDisplay, resolvedAgentProfileLabel } from '../utils/agents';
+import { usePopoverPresence } from '../hooks/usePopoverPresence';
 
 export function AgentSwitcher() {
   const { t } = useTranslation();
@@ -13,6 +14,7 @@ export function AgentSwitcher() {
   const currentAgent = agents.find((agent) => agent.id === currentSession?.default_agent_id);
   const currentDisplay = getResolvedAgentDisplay(currentAgent);
   const currentSummary = resolvedAgentProfileLabel(currentAgent, llmProfiles);
+  const menuRendered = usePopoverPresence(open);
 
   useEffect(() => {
     if (!open) return;
@@ -55,8 +57,8 @@ export function AgentSwitcher() {
         </span>
         <ChevronDown size={15} className="agent-switcher-caret" />
       </button>
-      {open ? (
-        <div className="agent-menu" role="listbox">
+      {menuRendered ? (
+        <div className={`agent-menu popover-surface ${open ? '' : 'closing'}`} role="listbox" aria-hidden={!open}>
           {agents.map((agent) => {
             const selected = agent.id === currentSession?.default_agent_id;
             const display = getResolvedAgentDisplay(agent);

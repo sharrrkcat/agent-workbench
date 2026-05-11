@@ -34,6 +34,22 @@ def test_runtime_resources_unavailable_gpu_backend_does_not_raise(monkeypatch) -
 
     assert payload["gpus"][0]["available"] is False
     assert payload["gpus"][0]["backend"] == "unavailable"
+    assert payload["gpus"][0]["reason"]
+
+
+def test_runtime_resources_missing_psutil_reports_reason(monkeypatch) -> None:
+    import ai_workbench.core.runtime_resources as runtime_resources
+
+    monkeypatch.setattr(runtime_resources, "_import_psutil", lambda: None)
+    service = RuntimeResourcesService(cache_ttl_seconds=0)
+
+    payload = service.resources()
+
+    assert payload["cpu"] == {"available": False, "percent": None, "reason": "psutil unavailable"}
+    assert payload["memory"]["available"] is False
+    assert payload["memory"]["reason"] == "psutil unavailable"
+    assert payload["process"]["backend_memory_bytes"] is None
+    assert payload["process"]["reason"] == "psutil unavailable"
 
 
 def test_resource_status_settings_defaults_are_safe(tmp_path) -> None:

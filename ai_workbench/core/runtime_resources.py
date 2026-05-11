@@ -40,16 +40,16 @@ class RuntimeResourcesService:
 
 def _cpu_status(psutil: Any) -> dict[str, Any]:
     if psutil is None:
-        return {"available": False, "percent": None}
+        return {"available": False, "percent": None, "reason": "psutil unavailable"}
     try:
         return {"available": True, "percent": float(psutil.cpu_percent(interval=None))}
-    except Exception:
-        return {"available": False, "percent": None}
+    except Exception as exc:
+        return {"available": False, "percent": None, "reason": str(exc) or "CPU unavailable"}
 
 
 def _memory_status(psutil: Any) -> dict[str, Any]:
     if psutil is None:
-        return {"available": False, "used_bytes": None, "total_bytes": None, "percent": None}
+        return {"available": False, "used_bytes": None, "total_bytes": None, "percent": None, "reason": "psutil unavailable"}
     try:
         memory = psutil.virtual_memory()
         return {
@@ -58,18 +58,18 @@ def _memory_status(psutil: Any) -> dict[str, Any]:
             "total_bytes": int(memory.total),
             "percent": float(memory.percent),
         }
-    except Exception:
-        return {"available": False, "used_bytes": None, "total_bytes": None, "percent": None}
+    except Exception as exc:
+        return {"available": False, "used_bytes": None, "total_bytes": None, "percent": None, "reason": str(exc) or "RAM unavailable"}
 
 
 def _process_status(psutil: Any) -> dict[str, Any]:
     if psutil is None:
-        return {"backend_memory_bytes": None}
+        return {"backend_memory_bytes": None, "reason": "psutil unavailable"}
     try:
         process = psutil.Process(os.getpid())
         return {"backend_memory_bytes": int(process.memory_info().rss)}
-    except Exception:
-        return {"backend_memory_bytes": None}
+    except Exception as exc:
+        return {"backend_memory_bytes": None, "reason": str(exc) or "Process memory unavailable"}
 
 
 def _gpu_statuses() -> list[dict[str, Any]]:

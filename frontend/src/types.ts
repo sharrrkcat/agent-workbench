@@ -953,6 +953,7 @@ export type RuntimeMemoryFreeResult = {
 export type RuntimeResourceCpu = {
   available: boolean;
   percent: number | null;
+  reason?: string | null;
 };
 
 export type RuntimeResourceMemory = {
@@ -960,6 +961,7 @@ export type RuntimeResourceMemory = {
   used_bytes: number | null;
   total_bytes: number | null;
   percent: number | null;
+  reason?: string | null;
 };
 
 export type RuntimeResourceGpu = {
@@ -980,6 +982,7 @@ export type RuntimeResources = {
   gpus: RuntimeResourceGpu[];
   process: {
     backend_memory_bytes: number | null;
+    reason?: string | null;
   };
   updated_at: string | null;
   error?: string | null;

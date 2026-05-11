@@ -8,6 +8,7 @@ import { CommandPalette, type CommandPaletteItem } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
+import { usePopoverPresence } from '../hooks/usePopoverPresence';
 
 export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePreview) => void }) {
   const { t } = useTranslation('chat');
@@ -29,6 +30,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [modelMenuStyle, setModelMenuStyle] = useState<CSSProperties>({});
   const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError, setComposerDraftText } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
+  const modelMenuRendered = usePopoverPresence(modelMenuOpen);
 
   const canSend = Boolean(currentSession && (value.trim() || attachments.length) && !sending);
 
@@ -382,11 +384,12 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
                 <strong>{selectedModelLabel}</strong>
                 <ChevronDown size={13} aria-hidden="true" />
               </button>
-              {modelMenuOpen
+              {modelMenuRendered
                 ? createPortal(
                     <ModelSelectorMenu
                       ref={modelMenuRef}
                       style={modelMenuStyle}
+                      open={modelMenuOpen}
                       currentSession={currentSession}
                       enabledProfiles={enabledProfiles}
                       agentDefaultProfile={agentDefaultProfile}
@@ -461,16 +464,17 @@ function AttachmentPreview({
 
 const ModelSelectorMenu = forwardRef<HTMLDivElement, {
   style: CSSProperties;
+  open: boolean;
   currentSession?: Session | null;
   enabledProfiles: LlmProfile[];
   agentDefaultProfile?: LlmProfile;
   llmProviderStatuses: Record<string, LlmProviderStatus>;
   onSelect: (profileId: string | null) => void;
 }>(
-  ({ style, currentSession, enabledProfiles, agentDefaultProfile, llmProviderStatuses, onSelect }, ref) => {
+  ({ style, open, currentSession, enabledProfiles, agentDefaultProfile, llmProviderStatuses, onSelect }, ref) => {
     const { t } = useTranslation('chat');
     return (
-      <div ref={ref} className="model-selector-menu model-selector-menu-portal" role="menu" style={style}>
+      <div ref={ref} className={`model-selector-menu model-selector-menu-portal popover-surface ${open ? '' : 'closing'}`} role="menu" style={style} aria-hidden={!open}>
         <button
           type="button"
           role="menuitemradio"
