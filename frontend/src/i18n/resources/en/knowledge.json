@@ -83,6 +83,7 @@
     "name": "Name",
     "profileKey": "Profile key",
     "modelPath": "Model path",
+    "modelPathChooseFirst": "Model path (choose first)",
     "dimension": "Dimension",
     "normalize": "Normalize",
     "documentInstruction": "Document instruction",
@@ -128,6 +129,9 @@
     "noResults": "No results",
     "noResultsMessage": "No chunks matched this query.",
     "noContext": "No context would be injected.",
+    "noModelPath": "No model path",
+    "noLocalEmbeddingModels": "No local embedding models found",
+    "noLocalRerankerModels": "No local reranker models found",
     "sourcePreviewUnavailable": "Source preview is unavailable.",
     "noChunks": "No chunks",
     "noChunksMessage": "No chunks are currently stored for this source."
@@ -140,6 +144,7 @@
     "embeddingSaved": "Embedding model saved.",
     "embeddingDeleted": "Embedding model deleted.",
     "embeddingDimension": "Embedding dimension {{dimension}}.",
+    "recommendedPresetApplied": "Recommended preset applied.",
     "knowledgeBaseSaved": "Knowledge base saved.",
     "knowledgeBaseDeleted": "Knowledge base deleted.",
     "indexedChunks": "Indexed {{count}} chunks.",
@@ -210,6 +215,13 @@
       "about2to4gb": "~2-4 GB",
       "about2to5gb": "~2-5 GB"
     }
+  },
+  "hints": {
+    "chooseScannedEmbeddingModel": "Choose a scanned local model first.",
+    "presetFieldsFilledWhenAvailable": "Preset fields will be filled when available.",
+    "scanLocalModelsInOverviewFirst": "Scan local models in Overview first.",
+    "chooseScannedRerankerModel": "Choose a scanned local reranker model.",
+    "currentSavedPathNotScanned": "Current saved path is not in scanned folders."
   },
   "errors": {
     "copyCommandFailed": "Failed to copy command. Select and copy it manually."

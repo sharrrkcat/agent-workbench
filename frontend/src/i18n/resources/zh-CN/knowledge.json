@@ -75,6 +75,7 @@
     "name": "名称",
     "profileKey": "配置 key",
     "modelPath": "模型路径",
+    "modelPathChooseFirst": "模型路径（请先选择）",
     "dimension": "维度",
     "normalize": "归一化",
     "documentInstruction": "文档 instruction",
@@ -120,6 +121,9 @@
     "noResults": "没有结果",
     "noResultsMessage": "没有 chunks 匹配此查询。",
     "noContext": "不会注入上下文。",
+    "noModelPath": "未设置模型路径",
+    "noLocalEmbeddingModels": "未找到本地 Embedding 模型",
+    "noLocalRerankerModels": "未找到本地 Reranker 模型",
     "sourcePreviewUnavailable": "来源预览不可用。",
     "noChunks": "没有 chunks",
     "noChunksMessage": "此来源当前没有存储 chunks。"
@@ -130,6 +134,7 @@
     "embeddingSaved": "Embedding 模型已保存。",
     "embeddingDeleted": "Embedding 模型已删除。",
     "embeddingDimension": "Embedding 维度 {{dimension}}。",
+    "recommendedPresetApplied": "已应用推荐预设。",
     "knowledgeBaseSaved": "知识库已保存。",
     "knowledgeBaseDeleted": "知识库已删除。",
     "indexedChunks": "已索引 {{count}} 个 chunks。",
@@ -215,6 +220,13 @@
       "about2to4gb": "~2-4 GB",
       "about2to5gb": "~2-5 GB"
     }
+  },
+  "hints": {
+    "chooseScannedEmbeddingModel": "请先选择已扫描到的本地模型。",
+    "presetFieldsFilledWhenAvailable": "如果有推荐预设，将自动填充相关字段。",
+    "scanLocalModelsInOverviewFirst": "请先在概览中扫描本地模型。",
+    "chooseScannedRerankerModel": "请选择已扫描到的本地 Reranker 模型。",
+    "currentSavedPathNotScanned": "当前已保存路径不在已扫描文件夹中。"
   },
   "errors": {
     "copyCommandFailed": "复制命令失败。请选中文本后手动复制。"

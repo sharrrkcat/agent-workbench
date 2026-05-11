@@ -15,6 +15,14 @@ type SourceSortKey = 'title' | 'source_type' | 'chunks' | 'status' | 'indexed_at
 type SortDirection = 'asc' | 'desc';
 type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
 type DownloadModelType = 'embedding' | 'reranker';
+type EmbeddingProfilePreset = {
+  name: string;
+  alias: string;
+  dimension?: number;
+  normalize: boolean;
+  document_instruction?: string;
+  query_instruction?: string;
+};
 
 const KNOWLEDGE_INSTALL_COMMANDS = [
   { key: 'basicCpu', command: 'uv pip install sentence-transformers torch transformers' },
@@ -29,6 +37,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
   target: string;
   noteKey: string;
   estimatedVramKey: string;
+  profile?: EmbeddingProfilePreset;
 }[] = [
   {
     type: 'embedding',
@@ -37,6 +46,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'all-MiniLM-L6-v2',
     noteKey: 'allMiniLm',
     estimatedVramKey: 'under1gb',
+    profile: { name: 'all-MiniLM-L6-v2', alias: 'all-minilm-l6-v2', dimension: 384, normalize: true },
   },
   {
     type: 'embedding',
@@ -45,6 +55,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'paraphrase-multilingual-MiniLM-L12-v2',
     noteKey: 'paraphraseMultilingualMiniLm',
     estimatedVramKey: 'about1gb',
+    profile: { name: 'paraphrase-multilingual-MiniLM-L12-v2', alias: 'paraphrase-multilingual-minilm-l12-v2', dimension: 384, normalize: true },
   },
   {
     type: 'embedding',
@@ -53,6 +64,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'embeddinggemma-300m',
     noteKey: 'embeddingGemma',
     estimatedVramKey: 'about1to2gb',
+    profile: { name: 'embeddinggemma-300m', alias: 'embeddinggemma-300m', normalize: true },
   },
   {
     type: 'embedding',
@@ -61,6 +73,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'bge-m3',
     noteKey: 'bgeM3',
     estimatedVramKey: 'about2to4gb',
+    profile: { name: 'bge-m3', alias: 'bge-m3', dimension: 1024, normalize: true },
   },
   {
     type: 'embedding',
@@ -69,6 +82,14 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'Qwen3-Embedding-0.6B',
     noteKey: 'qwen3Embedding06b',
     estimatedVramKey: 'about2to4gb',
+    profile: {
+      name: 'Qwen3 Embedding 0.6B',
+      alias: 'qwen3-embedding-0-6b',
+      dimension: 1024,
+      normalize: true,
+      document_instruction: 'Represent this document for retrieval:',
+      query_instruction: 'Represent this query for retrieving relevant documents:',
+    },
   },
   {
     type: 'embedding',
@@ -77,6 +98,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'jina-embeddings-v3',
     noteKey: 'jinaEmbeddingsV3',
     estimatedVramKey: 'about2to4gb',
+    profile: { name: 'jina-embeddings-v3', alias: 'jina-embeddings-v3', dimension: 1024, normalize: true },
   },
   {
     type: 'embedding',
@@ -85,6 +107,14 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'nomic-embed-text-v1.5',
     noteKey: 'nomicEmbedTextV15',
     estimatedVramKey: 'about1to2gb',
+    profile: {
+      name: 'nomic-embed-text-v1.5',
+      alias: 'nomic-embed-text-v1-5',
+      dimension: 768,
+      normalize: true,
+      document_instruction: 'search_document:',
+      query_instruction: 'search_query:',
+    },
   },
   {
     type: 'embedding',
@@ -93,6 +123,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     target: 'mxbai-embed-large-v1',
     noteKey: 'mxbaiEmbedLarge',
     estimatedVramKey: 'about15to3gb',
+    profile: { name: 'mxbai-embed-large-v1', alias: 'mxbai-embed-large-v1', dimension: 1024, normalize: true },
   },
   {
     type: 'reranker',
@@ -122,7 +153,7 @@ const KNOWLEDGE_MODEL_PRESET_GROUPS = [
 const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
   alias: '',
-  model_path: 'embeddings/',
+  model_path: '',
   dimension: null,
   normalize: true,
   document_instruction: '',
@@ -273,6 +304,7 @@ export function KnowledgeSettingsDetail({
     return (
       <EmbeddingModelsEditor
         profiles={embeddingProfiles}
+        scan={scan}
         mode={selectedItemId}
         onRefresh={refreshObjects}
         onDirtyChange={onDirtyChange}
@@ -339,7 +371,7 @@ export function KnowledgeSettingsDetail({
             onCopy={copyText}
           />
         ) : null}
-        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
+        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} scan={scan} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
         {defaultsTab === 'retrieval' ? <KnowledgeRetrievalTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'chunking' ? <KnowledgeChunkingTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'context' ? <KnowledgeContextTab values={values} setValues={setValues} /> : null}
@@ -446,6 +478,7 @@ function KnowledgeOverviewTab({
 function KnowledgeModelsTab({
   values,
   setValues,
+  scan,
   busy,
   setBusy,
   setResult,
@@ -453,12 +486,15 @@ function KnowledgeModelsTab({
 }: {
   values: KnowledgeSettings;
   setValues: (values: KnowledgeSettings) => void;
+  scan: KnowledgeModelScan | null;
   busy: string;
   setBusy: (busy: string) => void;
   setResult: (result: string) => void;
   setLocalError: (error: SettingsErrorValue | null) => void;
 }) {
   const { t } = useTranslation(['knowledge']);
+  const rerankerOptions = modelPathOptions(scan?.reranker_models ?? [], values.reranker_model_path || '');
+  const currentRerankerMissing = scan ? Boolean(values.reranker_model_path) && !scan.reranker_models.some((model) => model.model_path === values.reranker_model_path) : false;
   return (
     <>
       <NumberGroup title={t('knowledge:sections.embedding')} values={values} setValues={setValues} fields={[['embedding_batch_size', t('knowledge:labels.batchSize')], ['embedding_timeout_seconds', t('knowledge:labels.timeoutSeconds')]]} />
@@ -469,7 +505,20 @@ function KnowledgeModelsTab({
           <ToggleSwitch checked={values.reranker_enabled} onChange={(checked) => setValues({ ...values, reranker_enabled: checked })} />
         </label>
         <div className="settings-detail-grid">
-          <TextField label={t('knowledge:labels.rerankerModelPath')} value={values.reranker_model_path || ''} onChange={(value) => setValues({ ...values, reranker_model_path: value || null })} />
+          <div>
+            <SelectField
+              label={t('knowledge:labels.rerankerModelPath')}
+              value={values.reranker_model_path || ''}
+              options={rerankerOptions}
+              labels={modelPathLabels(rerankerOptions)}
+              disabled={!rerankerOptions.length}
+              placeholder={t('knowledge:empty.noLocalRerankerModels')}
+              onChange={(value) => setValues({ ...values, reranker_model_path: value || null })}
+            />
+            <p className="settings-muted-text">{t('knowledge:hints.chooseScannedRerankerModel')}</p>
+            {!rerankerOptions.length ? <p className="settings-muted-text">{t('knowledge:hints.scanLocalModelsInOverviewFirst')}</p> : null}
+            {currentRerankerMissing ? <p className="settings-muted-text">{t('knowledge:hints.currentSavedPathNotScanned')}</p> : null}
+          </div>
           <NumberField label={t('knowledge:labels.batchSize')} value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
           <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
           <NumberField label={t('knowledge:labels.candidateLimit')} value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
@@ -610,8 +659,9 @@ function KnowledgeDownloadTab({
   );
 }
 
-function EmbeddingModelsEditor({ profiles, mode, onRefresh, onDirtyChange }: {
+function EmbeddingModelsEditor({ profiles, scan, mode, onRefresh, onDirtyChange }: {
   profiles: EmbeddingModelProfile[];
+  scan: KnowledgeModelScan | null;
   mode: FormMode;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -622,11 +672,12 @@ function EmbeddingModelsEditor({ profiles, mode, onRefresh, onDirtyChange }: {
   if (!initial) {
     return <Empty title={t('empty.noEmbeddingSelected')} message={profiles.length ? t('empty.selectEmbedding') : t('empty.noEmbeddingProfiles')} />;
   }
-  return <EmbeddingProfileForm initial={initial} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
+  return <EmbeddingProfileForm initial={initial} scan={scan} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
 
-function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
+function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }: {
   initial: Partial<EmbeddingModelProfile>;
+  scan: KnowledgeModelScan | null;
   isNew: boolean;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -636,11 +687,15 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [normalizeTouched, setNormalizeTouched] = useState(false);
   const scopeId = isNew ? 'new' : initial.id || '';
   const dirty = stableConfigString(buildEmbeddingModelPayload(values)) !== stableConfigString(buildEmbeddingModelPayload(initial));
+  const embeddingOptions = modelPathOptions(scan?.embedding_models ?? [], values.model_path || '');
+  const currentEmbeddingMissing = scan ? Boolean(values.model_path) && !scan.embedding_models.some((model) => model.model_path === values.model_path) : false;
 
   useEffect(() => {
     setValues(initial);
+    setNormalizeTouched(false);
   }, [initial]);
 
   useEffect(() => {
@@ -695,6 +750,29 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
       setBusy('');
     }
   }
+  function selectModelPath(modelPath: string) {
+    const preset = embeddingPresetForPath(modelPath);
+    const folderName = modelFolderName(modelPath);
+    const fallback: EmbeddingProfilePreset = {
+      name: folderName,
+      alias: safeProfileKey(folderName),
+      normalize: values.normalize ?? true,
+    };
+    const profile = preset?.profile ?? fallback;
+    setValues({
+      ...values,
+      model_path: modelPath,
+      name: values.name?.trim() ? values.name : profile.name,
+      alias: values.alias?.trim() ? values.alias : profile.alias,
+      dimension: values.dimension || values.dimension === 0 ? values.dimension : (profile.dimension ?? null),
+      normalize: normalizeTouched ? (values.normalize ?? true) : profile.normalize,
+      document_instruction: values.document_instruction?.trim() ? values.document_instruction : (profile.document_instruction ?? ''),
+      query_instruction: values.query_instruction?.trim() ? values.query_instruction : (profile.query_instruction ?? ''),
+    });
+    if (preset) {
+      setResult(t('knowledge:results.recommendedPresetApplied'));
+    }
+  }
   return (
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
@@ -704,7 +782,7 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
             <h2>{values.name || t('knowledge:titles.newEmbeddingModel')}</h2>
             <p>
               <code>{values.alias || 'profile_key'}</code>
-              <span>{values.model_path || 'No model path'}</span>
+              <span>{values.model_path || t('knowledge:empty.noModelPath')}</span>
             </p>
           </div>
         </div>
@@ -728,13 +806,27 @@ function EmbeddingProfileForm({ initial, isNew, onRefresh, onDirtyChange }: {
           <div className="settings-detail-grid">
             <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
             <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
-            <TextField label={t('knowledge:labels.modelPath')} value={values.model_path || ''} onChange={(value) => setValues({ ...values, model_path: value })} />
+            <div>
+              <SelectField
+                label={t('knowledge:labels.modelPathChooseFirst')}
+                value={values.model_path || ''}
+                options={embeddingOptions}
+                labels={modelPathLabels(embeddingOptions)}
+                disabled={!embeddingOptions.length}
+                placeholder={t('knowledge:empty.noLocalEmbeddingModels')}
+                onChange={selectModelPath}
+              />
+              <p className="settings-muted-text">{t('knowledge:hints.chooseScannedEmbeddingModel')}</p>
+              <p className="settings-muted-text">{t('knowledge:hints.presetFieldsFilledWhenAvailable')}</p>
+              {!embeddingOptions.length ? <p className="settings-muted-text">{t('knowledge:hints.scanLocalModelsInOverviewFirst')}</p> : null}
+              {currentEmbeddingMissing ? <p className="settings-muted-text">{t('knowledge:hints.currentSavedPathNotScanned')}</p> : null}
+            </div>
             <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
           </div>
         </section>
         <section className="detail-section">
           <h3>{t('knowledge:sections.runtime')}</h3>
-          <label className="config-field settings-config-field boolean-field"><span>{t('knowledge:labels.normalize')}</span><ToggleSwitch checked={values.normalize ?? true} onChange={(checked) => setValues({ ...values, normalize: checked })} /></label>
+          <label className="config-field settings-config-field boolean-field"><span>{t('knowledge:labels.normalize')}</span><ToggleSwitch checked={values.normalize ?? true} onChange={(checked) => { setNormalizeTouched(true); setValues({ ...values, normalize: checked }); }} /></label>
           <TextAreaField label={t('knowledge:labels.documentInstruction')} value={values.document_instruction || ''} onChange={(value) => setValues({ ...values, document_instruction: value })} />
           <TextAreaField label={t('knowledge:labels.queryInstruction')} value={values.query_instruction || ''} onChange={(value) => setValues({ ...values, query_instruction: value })} />
           <TextAreaField label={t('knowledge:labels.notes')} value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
@@ -1473,8 +1565,17 @@ function TextAreaField({ label, value, onChange }: { label: string; value: strin
   return <label className="config-field settings-config-field"><span>{label}</span><textarea className="settings-form-control" rows={6} value={value} onChange={(event) => onChange(event.currentTarget.value)} /></label>;
 }
 
-function SelectField({ label, value, options, labels, onChange }: { label: string; value: string; options: string[]; labels?: Record<string, string>; onChange: (value: string) => void }) {
-  return <label className="config-field settings-config-field"><span>{label}</span><select className="settings-form-control" value={value} onChange={(event) => onChange(event.currentTarget.value)}>{options.map((option) => <option key={option} value={option}>{labels?.[option] || option}</option>)}</select></label>;
+function SelectField({ label, value, options, labels, placeholder, disabled, onChange }: { label: string; value: string; options: string[]; labels?: Record<string, string>; placeholder?: string; disabled?: boolean; onChange: (value: string) => void }) {
+  const optionValues = value && !options.includes(value) ? [value, ...options] : options;
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      <select className="settings-form-control" value={value} disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)}>
+        {!value && placeholder ? <option value="">{placeholder}</option> : null}
+        {optionValues.map((option) => <option key={option} value={option}>{labels?.[option] || option}</option>)}
+      </select>
+    </label>
+  );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -1524,6 +1625,30 @@ function knowledgeSettingsPatch(values: KnowledgeSettings): Partial<KnowledgeSet
   void id;
   void models_root;
   return patch;
+}
+
+function modelPathOptions(models: { model_path: string }[], currentPath: string): string[] {
+  const paths = models.map((model) => model.model_path);
+  return currentPath && !paths.includes(currentPath) ? [currentPath, ...paths] : paths;
+}
+
+function modelPathLabels(paths: string[]): Record<string, string> {
+  return Object.fromEntries(paths.map((path) => [path, modelFolderName(path)]));
+}
+
+function embeddingPresetForPath(modelPath: string) {
+  const folderName = modelFolderName(modelPath).toLowerCase();
+  return KNOWLEDGE_MODEL_PRESETS.find((preset) => preset.type === 'embedding' && preset.target.toLowerCase() === folderName && preset.profile);
+}
+
+function modelFolderName(modelPath: string): string {
+  const normalized = modelPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts[parts.length - 1] || modelPath;
+}
+
+function safeProfileKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'embedding-model';
 }
 
 function buildEmbeddingModelPayload(values: Partial<EmbeddingModelProfile>): EmbeddingModelProfileInput {
