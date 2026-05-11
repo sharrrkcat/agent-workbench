@@ -18,6 +18,7 @@ from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
 from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
+from ai_workbench.core.worldbook import MemoryWorldbookStore, Worldbook, WorldbookEntry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,6 +101,7 @@ class PromptRuntimeFixture:
         self.agent_configs = AgentConfigStore()
         self.knowledge = MemoryKnowledgeStore()
         self.knowledge.engine = object()
+        self.worldbooks = MemoryWorldbookStore()
         self.app_settings = AppSettingsStore()
         self.app_settings.patch({"auto_generate_session_titles": False})
         self.llm = llm or FakeLLMRuntime()
@@ -127,6 +129,7 @@ class PromptRuntimeFixture:
             app_settings_store=self.app_settings,
             knowledge_store=self.knowledge,
             knowledge_model_backend=object(),
+            worldbook_store=self.worldbooks,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -289,6 +292,83 @@ def test_prompt_agent_knowledge_failure_warns_and_continues(monkeypatch) -> None
     assert metadata["reason"] == "retrieval_failed"
     assert metadata["warnings"]
     assert "Retrieved Knowledge" not in str(llm.calls[0]["messages"])
+
+
+def test_prompt_agent_injects_core_memory_by_default_and_respects_toggle() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.app_settings.patch({"core_memory_content": "User prefers concise answers."})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    first = run(fixture.runtime.handle_input(session, "hello"))
+    fixture.app_settings.patch({"core_memory_enabled_for_prompt_agents": False})
+    second = run(fixture.runtime.handle_input(session, "again"))
+
+    assert first.success is True
+    assert "# Core Memory" in llm.calls[0]["messages"][0]["content"]
+    assert "User prefers concise answers." in llm.calls[0]["messages"][0]["content"]
+    first_metadata = fixture.runs.get_run(first.run_id).metadata["core_memory_context"]
+    assert first_metadata == {
+        "enabled": True,
+        "injected": True,
+        "content_chars": len("User prefers concise answers."),
+        "skipped_reason": None,
+        "warnings": [],
+    }
+    assert second.success is True
+    assert "# Core Memory" not in llm.calls[1]["messages"][0]["content"]
+    assert fixture.runs.get_run(second.run_id).metadata["core_memory_context"]["skipped_reason"] == "disabled"
+
+
+def test_prompt_agent_injects_worldbook_by_session_order_and_current_input_only() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="old dragon mention")
+    first = fixture.worldbooks.create_worldbook(Worldbook(name="First Lore"))
+    second = fixture.worldbooks.create_worldbook(Worldbook(name="Second Lore"))
+    fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=first.id, name="Dragon", keywords_text="dragon", content="Historical dragon should not match.")
+    )
+    second_always = fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=second.id, name="Always", activation_mode="always", content="Always second.")
+    )
+    second_keyword = fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=second.id, name="Wyvern", keywords_text="wyvern", content="Wyvern second.")
+    )
+    fixture.worldbooks.replace_session_bindings(session.session_id, [second.id, first.id])
+
+    result = run(fixture.runtime.handle_input(session, "a wyvern arrives"))
+    system = llm.calls[0]["messages"][0]["content"]
+    metadata = fixture.runs.get_run(result.run_id).metadata["worldbook_context"]
+
+    assert result.success is True
+    assert "# Worldbook" in system
+    assert system.index("Always second.") < system.index("Wyvern second.")
+    assert "Historical dragon should not match." not in system
+    assert metadata["worldbook_ids"] == [second.id, first.id]
+    assert metadata["matched_entry_count"] == 2
+    assert metadata["injected_entry_count"] == 2
+    assert [ref["entry_id"] for ref in metadata["entry_refs"]] == [second_always.id, second_keyword.id]
+    assert "Always second." not in str(metadata)
+
+
+def test_prompt_agent_worldbook_toggle_disables_injection() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    worldbook = fixture.worldbooks.create_worldbook(Worldbook(name="Lore"))
+    fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=worldbook.id, name="Always", activation_mode="always", content="Do not inject.")
+    )
+    fixture.worldbooks.replace_session_bindings(session.session_id, [worldbook.id])
+    fixture.worldbooks.patch_settings({"worldbook_enabled_for_prompt_agents": False})
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is True
+    assert "# Worldbook" not in llm.calls[0]["messages"][0]["content"]
+    assert fixture.runs.get_run(result.run_id).metadata["worldbook_context"]["skipped_reason"] == "disabled"
 
 
 def test_chat_agent_session_context_includes_history() -> None:

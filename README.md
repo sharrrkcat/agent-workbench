@@ -201,8 +201,8 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - brute-force vector search per embedding model profile, FTS5/BM25 keyword search, RRF merge, one global optional rerank pass, and context-budget trimming.
 - a small Settings -> Knowledge Base search/test panel.
 - a Chat header Context Sources modal that binds ordered Knowledge Bases and Worldbooks to the current session.
-- Prompt Agents use active Session KBs by default and append a `Retrieved Knowledge` block during context building.
-- Script Agents that declare the `llm` capability default to not using Session KBs, but Settings -> Agents -> Overrides can enable them per Agent.
+- Prompt Agents use Core Memory, active Session Worldbooks, and active Session KBs by default, appending system-context blocks during context building in that order before conversation context.
+- Script Agents that declare the `llm` capability default to not using Core Memory, Worldbooks, or Session KBs. General Memory and Worldbook Defaults can enable Core Memory and Worldbook for Script Agent `ctx.llm.*`; Settings -> Agents -> Overrides can enable Session KBs per Agent.
 - `knowledge` Capability methods `search`, `list_bases`, and `stats` wrap the core Knowledge store and retrieval service for Script Agents.
 - `/kb-search <query>` runs an explicit command search against the current session active KBs and returns JSON for debugging/manual lookup. It does not call an LLM or participate in automatic context injection.
 
@@ -374,7 +374,7 @@ Secret fields render as password inputs. API responses return the fixed mask `**
 
 Secret masking is API/UI masking only. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
 
-Settings -> General stores local app settings in SQLite. The General page is split into `Files`, `LLM & Prompts`, and `Memory` categories. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides. `Memory` stores manually maintained Core Memory text and separate Prompt Agent / Script Agent enablement flags. Core Memory storage exists in this round, but runtime injection is not implemented yet.
+Settings -> General stores local app settings in SQLite. The General page is split into `Files`, `LLM & Prompts`, and `Memory` categories. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides. `Memory` stores manually maintained Core Memory text and separate Prompt Agent / Script Agent enablement flags. Prompt Agents inject non-empty Core Memory by default as system context. Script Agent `ctx.llm.*` calls inject Core Memory only when the Script Agent switch is enabled.
 
 The General settings API exposes:
 
@@ -393,9 +393,9 @@ The General settings API exposes:
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, empty title prompts are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
 
-Settings -> Worldbook stores global Worldbook defaults and editable Worldbooks with ordered entries. Defaults control Prompt Agent / Script Agent enablement flags, max entries per call, max context chars, and regex case-insensitive matching. Worldbook entries support `always` and `keyword` activation modes; each keyword line is treated as a regex pattern. The Settings UI manages Worldbook config, entries, drag reorder, and match testing. The backend exposes CRUD, entry reorder, ordered session binding, and match-test APIs. Worldbook storage, match testing, and session binding exist in this round, but Prompt Agent / Script Agent runtime context injection is not implemented yet.
+Settings -> Worldbook stores global Worldbook defaults and editable Worldbooks with ordered entries. Defaults control Prompt Agent / Script Agent enablement flags, max entries per call, max context chars, and regex case-insensitive matching. Worldbook entries support `always` and `keyword` activation modes; each keyword line is treated as a regex pattern. The Settings UI manages Worldbook config, entries, drag reorder, and match testing. The backend exposes CRUD, entry reorder, ordered session binding, match-test APIs, and runtime injection for Prompt Agent main LLM calls plus Script Agent `ctx.llm.*` calls when enabled. Runtime Worldbook matching scans only the current user input for the call, not historical chat, assistant output, command results, form JSON, or Knowledge snippets. Injection order follows session Worldbook binding order, then entry `sort_order`, and applies the configured entry and context limits.
 
-The Chat header now uses a single Context Sources modal instead of a separate Session KB picker. The modal has Knowledge Bases and Worldbooks tabs, each with Enabled and Available lists. Adding, removing, and dragging Enabled items saves the current session bindings immediately. Knowledge Base binding order is persisted for UI continuity and future extension, but it does not change Knowledge retrieval ranking semantics. Worldbook binding order is persisted for the later runtime injection design; Worldbooks still do not enter Prompt Agent or Script Agent context yet.
+The Chat header now uses a single Context Sources modal instead of a separate Session KB picker. The modal has Knowledge Bases and Worldbooks tabs, each with Enabled and Available lists. Adding, removing, and dragging Enabled items saves the current session bindings immediately. Knowledge Base binding order is persisted for UI continuity, but it does not change Knowledge retrieval ranking semantics. Worldbook binding order controls Worldbook runtime injection before per-entry ordering.
 
 ## SQLite Data
 
@@ -415,7 +415,7 @@ The current schema version is stored in app metadata as `schema_version`.
 
 This project still uses a lightweight schema version guard plus `SQLModel.metadata.create_all`. New tables can be created during startup, but there is no Alembic migration system yet.
 
-Worldbook data is stored in SQLite tables for `worldbook_settings`, `worldbooks`, `worldbook_entries`, and `session_worldbook_bindings`. Deleting a worldbook deletes its entries and session bindings. Worldbook data does not use vectors, Knowledge indexes, or FTS.
+Worldbook data is stored in SQLite tables for `worldbook_settings`, `worldbooks`, `worldbook_entries`, and `session_worldbook_bindings`. Deleting a worldbook deletes its entries and session bindings. Worldbook runtime matching is regex-only over the current input text and does not use vectors, Knowledge indexes, or FTS.
 
 Settings -> Data shows the database path and size, the attachment directory, attachment count and size, orphan attachment count and size, optional last scan time, and the `Persist streaming message deltas` debugging toggle. The toggle is off by default; final messages, run steps, errors, and warnings are still stored. Use:
 

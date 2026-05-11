@@ -336,7 +336,7 @@ Core Memory and Worldbook configuration ownership:
 - Core Memory content and enablement flags are Workbench-owned General settings, not Agent manifest fields.
 - Worldbook Defaults, Worldbooks, entries, and Session Worldbook Bindings are Workbench-owned data.
 - Worldbook matching is regex/text storage in SQLite only; it does not own Knowledge indexes, vectors, rerankers, or FTS rows.
-- Runtime injection for Core Memory and Worldbook is intentionally not implemented in the storage/API round. Do not store per-Agent Worldbook overrides in AgentConfig until that runtime behavior is explicitly designed.
+- Runtime injection for Core Memory and Worldbook is owned by the core runtime, not Agent or Capability manifests. Prompt Agents use the Prompt Agent enablement defaults; Script Agent `ctx.llm.*` calls use the Script Agent enablement defaults, which are off unless the user enables them. Do not store per-Agent Worldbook overrides in AgentConfig until that runtime behavior is explicitly designed.
 
 Obsidian CapabilityConfig:
 

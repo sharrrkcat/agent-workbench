@@ -21,6 +21,7 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
+from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
 from ai_workbench.core.provider_status import (
     MODEL_MISMATCH,
     MODEL_NOT_AVAILABLE,
@@ -38,6 +39,7 @@ from ai_workbench.core.session_titles import maybe_generate_session_title_before
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc, utc_now
+from ai_workbench.core.worldbook_context import build_session_worldbook_context, worldbook_step_metadata
 
 
 class ActiveRunRegistry:
@@ -118,6 +120,7 @@ class AgentRunner:
         active_runs: ActiveRunRegistry = None,
         knowledge_store=None,
         knowledge_model_backend=None,
+        worldbook_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -137,6 +140,7 @@ class AgentRunner:
         self.session_agent_state_store = session_agent_state_store
         self.knowledge_store = knowledge_store
         self.knowledge_model_backend = knowledge_model_backend
+        self.worldbook_store = worldbook_store
         self.active_runs = active_runs or ActiveRunRegistry()
         self.run_lifecycle = RunLifecycle(run_store, event_bus)
         self.active_llm_uses = ActiveLLMUseRegistry()
@@ -161,6 +165,7 @@ class AgentRunner:
                 run_lifecycle=self.run_lifecycle,
                 knowledge_store=knowledge_store,
                 knowledge_model_backend=knowledge_model_backend,
+                worldbook_store=worldbook_store,
             )
 
     async def run(
@@ -396,6 +401,23 @@ class AgentRunner:
                 prompt = f"{prompt.rstrip()}\n\n{group_transcript_identity_instruction(agent.name, agent.id, app_settings.group_transcript_system_instruction)}"
             messages.append({"role": "system", "content": prompt})
         messages.extend(context.messages)
+        core_memory_context = build_core_memory_context(
+            app_settings_store=self.app_settings_store,
+            settings=app_settings,
+            source="prompt_agent",
+        )
+        self._record_context_metadata(run.run_id, "core_memory_context", core_memory_context.metadata)
+        if core_memory_context.rendered_text:
+            messages = append_system_context(messages, core_memory_context.rendered_text)
+        worldbook_context = build_session_worldbook_context(
+            worldbook_store=self.worldbook_store,
+            session_id=session_id,
+            user_text=args,
+            source="prompt_agent",
+        )
+        self._record_context_metadata(run.run_id, "worldbook_context", worldbook_context.metadata)
+        if worldbook_context.rendered_text:
+            messages = append_system_context(messages, worldbook_context.rendered_text)
         llm_config = None
         try:
             llm_config = self._resolve_llm_model_config(agent, action, session_id)
@@ -415,7 +437,14 @@ class AgentRunner:
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
-        self.run_lifecycle.complete_step(context_step.step_id, metadata={"knowledge_context": knowledge_step_metadata(knowledge_context.metadata)})
+        self.run_lifecycle.complete_step(
+            context_step.step_id,
+            metadata={
+                "core_memory_context": context_metadata_for_step(core_memory_context.metadata),
+                "worldbook_context": worldbook_step_metadata(worldbook_context.metadata),
+                "knowledge_context": knowledge_step_metadata(knowledge_context.metadata),
+            },
+        )
 
         llm_use_key = None
         llm_started = False
@@ -442,7 +471,14 @@ class AgentRunner:
             )
             messages = vision_input["messages"]
             messages = validate_llm_context_messages(messages)
-            context_warnings = [*context.warnings, *knowledge_context.warnings, *file_context["warnings"], *vision_input["warnings"]]
+            context_warnings = [
+                *context.warnings,
+                *core_memory_context.warnings,
+                *worldbook_context.warnings,
+                *knowledge_context.warnings,
+                *file_context["warnings"],
+                *vision_input["warnings"],
+            ]
             self._record_llm_resolution(run.run_id, llm_config)
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
@@ -975,10 +1011,13 @@ class AgentRunner:
         self.run_store.update_metadata(run_id, metadata)
 
     def _record_knowledge_context_metadata(self, run_id: str, knowledge_context: dict) -> None:
+        self._record_context_metadata(run_id, "knowledge_context", knowledge_context)
+
+    def _record_context_metadata(self, run_id: str, key: str, context_metadata: dict) -> None:
         run = self.run_store.get_run(run_id)
         metadata = dict(run.metadata)
-        metadata["knowledge_context"] = knowledge_context
-        warnings = knowledge_context.get("warnings") if isinstance(knowledge_context, dict) else None
+        metadata[key] = context_metadata
+        warnings = context_metadata.get("warnings") if isinstance(context_metadata, dict) else None
         if warnings:
             existing = list(metadata.get("warnings", []))
             existing.extend(str(item) for item in warnings)

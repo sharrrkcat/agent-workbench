@@ -123,6 +123,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Prompt Agents let the core runtime build context and call the LLM.
 - Model output is treated as assistant content, not tool calls or structured commands.
 - Prompt Agents that call an LLM should declare `capabilities: [llm]`.
+- Depending on General Core Memory settings, Worldbook Defaults, and active Session Worldbook bindings, the core may append Core Memory and Worldbook system-context blocks before Retrieved Knowledge and conversation context.
 - Visible streaming is controlled by the resolved Model Profile `supports_streaming`.
 - Prompt Agent run steps, streaming, and LLM resolution follow `docs/RUNTIME_PROTOCOLS.md`.
 
@@ -188,6 +189,7 @@ async with ctx.step("Parse JSON"):
 - `ctx.output.finish(...)` completes the public streaming message.
 - `ctx.llm.unload_model(...)` is trusted script-only model unload through provider/model profiles and returns a structured `CapabilityCallResult` with unload outcome data.
 - The first real `ctx.llm.*` provider call in a pending default-titled session may trigger the core automatic session-title pre-hook. Agent authors should not call title generation manually; the pre-hook is internal, non-streaming, and creates no visible messages.
+- Depending on General Core Memory settings, Worldbook Defaults, and active Session Worldbook bindings, the core may append Core Memory and Worldbook system-context blocks before `ctx.llm.*` provider calls. Prompt-backed `ctx.llm.generate` receives these blocks prepended to the prompt. This is automatic, best-effort, and does not change script method signatures. Script Agent Core Memory and Worldbook injection are disabled by default.
 - Depending on the Agent Knowledge override and active Session KB bindings, the core may append a `Retrieved Knowledge` system-context block before `ctx.llm.*` provider calls. This is automatic, best-effort, and does not change script method signatures. Retrieval warnings are recorded in run metadata without storing full snippet content.
 - `ctx.llm.unload()` is legacy capability-runtime unload if the LLM runtime supports it and also returns structured outcome data when available.
 - Script manual unload records run metadata, refreshes affected provider status when possible, and should surface success through the current run step rather than creating another assistant message.
@@ -355,7 +357,7 @@ Core Memory:
 - Stored in General settings through `GET /api/settings/general` and `PATCH /api/settings/general`.
 - Fields are `core_memory_content`, `core_memory_enabled_for_prompt_agents`, and `core_memory_enabled_for_script_agents`.
 - Defaults are empty content, Prompt Agents enabled, and Script Agents disabled.
-- Runtime injection is not implemented in this round.
+- Runtime injects non-empty trimmed Core Memory as a system-context block for Prompt Agent main LLM calls when Prompt Agents are enabled, and for Script Agent `ctx.llm.*` calls when Script Agents are enabled. Run metadata records only enablement, injection status, character count, skipped reason, and warnings.
 
 Worldbook settings:
 
@@ -383,7 +385,7 @@ Worldbook APIs:
 
 Worldbook fields are `id`, `name`, `description`, `enabled`, timestamps, and optional counts. Entry fields are `id`, `worldbook_id`, `name`, `keywords_text`, `content`, `activation_mode`, `enabled`, `sort_order`, and timestamps. `activation_mode` is `always` or `keyword`; each non-empty `keywords_text` line is a regex pattern. Invalid regex is rejected on save and reported as a structured warning by match-test if legacy bad data is encountered.
 
-Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. `GET /api/sessions/{session_id}/worldbooks` returns enabled bindings in persisted binding order plus all available worldbooks. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. It matches only the provided text, does not call an LLM, does not call Knowledge RAG, and returns content previews rather than full entry content.
+Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. `GET /api/sessions/{session_id}/worldbooks` returns enabled bindings in persisted binding order plus all available worldbooks. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. Runtime injection uses the active session binding order, then entry `sort_order`. It matches only the current input text for that provider call, does not scan history, does not call an LLM, does not call Knowledge RAG, and records compact metadata instead of full entry content. Match-test returns content previews rather than full entry content.
 
 Settings:
 

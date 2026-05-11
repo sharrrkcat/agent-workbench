@@ -18,6 +18,7 @@ from ai_workbench.core.runtime_resources import RuntimeResourcesService
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.knowledge_models import LocalKnowledgeModelBackend, ensure_knowledge_directories
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
+from ai_workbench.core.worldbook import MemoryWorldbookStore
 from ai_workbench.core.stores import (
     AgentConfigStore,
     CapabilityConfigStore,
@@ -117,6 +118,7 @@ def build_runtime_state(
         app_settings = AppSettingsStore()
         session_agent_states = SessionAgentStateStore()
         knowledge = MemoryKnowledgeStore()
+        worldbooks = MemoryWorldbookStore()
         resolved_database_url = "sqlite:///:memory:"
     else:
         engine = get_engine(database_url)
@@ -179,6 +181,7 @@ def build_runtime_state(
         active_runs=active_runs,
         knowledge_store=knowledge,
         knowledge_model_backend=knowledge_model_backend,
+        worldbook_store=worldbooks,
     )
     runtime_memory = RuntimeMemoryService(
         agents=agents,
@@ -228,7 +231,7 @@ def build_runtime_state(
         app_settings=app_settings,
         session_agent_states=session_agent_states,
         knowledge=knowledge,
-        worldbooks=worldbooks if not use_memory else None,
+        worldbooks=worldbooks,
         knowledge_model_backend=knowledge_model_backend,
         repo_root=repo_root,
         database_url=resolved_database_url,

@@ -68,7 +68,7 @@ Run status values:
 - `CANCELLED`
 - `INTERRUPTED`
 
-Core Memory and Worldbook storage/settings exist, but runtime injection is not implemented yet. Prompt Agent and Script Agent provider-bound context must not include Core Memory or Worldbook content until a later runtime protocol update defines injection order, metadata, trimming, warnings, and override behavior.
+Core Memory and Worldbook runtime injection is implemented only in Prompt Agent main LLM calls and Script Agent `ctx.llm.*` provider calls. It is not part of routing, commands, title generation, Knowledge query expansion, embeddings, reranking, resource status, runtime memory release, or non-LLM Capability methods.
 
 RunStep status values:
 - `pending`
@@ -89,6 +89,7 @@ Run steps:
 Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
+- Prompt Agent and Script Agent LLM runs may record compact `core_memory_context` and `worldbook_context` metadata. These records include enablement, injection status, counts, ids, entry refs, truncation, and warnings, but must not store full Core Memory text, full Worldbook entry content, or rendered context blocks.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
 - Generated image workflows may record compact recipe metadata under a domain key such as `comfyui_generation`; this metadata should include attachment ids, prompt/request ids, image filtering counts, and output counts, not full workflow JSON or large binary data.
 - ComfyUI generation cleanup may record `comfyui_memory_release` with whether release was enabled, attempted, successful, requested flags, status code, and any structured error. ComfyUI memory release is separate from LLM provider unload; release failure is a cleanup/workflow warning and must not turn an already successful image generation into a failed run.
@@ -248,7 +249,7 @@ Settings -> General -> Context Rendering exposes prompt-text overrides for group
 
 Knowledge RAG v1 Phase 4 defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, local embedding/reranker APIs, synchronous source indexing, explicit retrieval search, and automatic session Knowledge context injection.
 
-Session Knowledge Base bindings and Session Worldbook bindings preserve user-defined binding order. Knowledge retrieval continues to rank retrieved chunks by the retrieval pipeline; binding order is not a retrieval ranking override. Worldbook binding order is persisted for later runtime injection design only. This round does not make Worldbook or Core Memory content part of Prompt Agent or Script Agent provider-bound context.
+Session Knowledge Base bindings and Session Worldbook bindings preserve user-defined binding order. Knowledge retrieval continues to rank retrieved chunks by the retrieval pipeline; binding order is not a retrieval ranking override. Worldbook injection uses Session Worldbook binding order first, then each Worldbook entry `sort_order`.
 
 Source indexing supports `pasted_text` and text attachment sources. Pasted source originals are stored as text files under `data/knowledge/sources`; full source originals are not stored in SQLite. The indexer chunks source text, embeds chunks with the Knowledge Base embedding profile using `purpose=document`, stores float32 vectors in SQLite BLOB rows, and writes FTS5/BM25-ready rows.
 
@@ -258,11 +259,15 @@ Retrieval quality filtering runs after RRF merge and optional reranking, before 
 
 Query expansion is disabled by default. When enabled, retrieval generates short variants from the original query using the current LLM runtime, searches the original query plus variants through both vector and keyword branches, and dedupes candidates during RRF merge. Expansion failures are warnings and fall back to the original query. Search debug metadata records whether expansion was enabled or used, the expanded query count, and failure state; normal run-step metadata must not expose full expanded query text.
 
-Prompt Agents default to session Knowledge enabled. During the existing `Building context` step, after normal `context_policy` rendering and after the Agent prompt/prompt override/action instruction are resolved, the runtime searches active session KB bindings with the current user message text. Results are rendered as a `# Retrieved Knowledge` system-context block using Knowledge Defaults `knowledge_context_instruction` and `knowledge_context_snippet_template`, then appended to the system message. If the Agent has no system message, the runtime creates one. Provider message roles are not otherwise changed.
+Prompt Agents default to Core Memory and Worldbook enabled. During the existing `Building context` step, after normal `context_policy` rendering and after the Agent prompt/prompt override/action instruction are resolved, the runtime appends system-context blocks in this order: Core Memory, Worldbook, Retrieved Knowledge, conversation context, current user message. Knowledge still searches active session KB bindings with the current user message text. Knowledge results are rendered as a `# Retrieved Knowledge` system-context block using Knowledge Defaults `knowledge_context_instruction` and `knowledge_context_snippet_template`, then appended to the system message. If the Agent has no system message, the runtime creates one. Provider message roles are not otherwise changed.
 
-Script Agents that declare the `llm` capability default to session Knowledge disabled. If their Agent override enables it, every `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.stream`, `ctx.llm.stream_to_output`, and chat-backed `ctx.llm.generate` call retrieves against active session KBs and appends the same `Retrieved Knowledge` block to that call's system context. Direct prompt-backed `ctx.llm.generate` prepends the rendered block to the generated prompt because it has no role-bearing message list. The query is `ctx.input.text` first, then the current visible user message content when available. Silent form submissions with no user-facing query skip retrieval.
+Script Agents that declare the `llm` capability default to session Knowledge disabled, Core Memory disabled, and Worldbook disabled. If settings or Agent overrides enable them, every `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.stream`, `ctx.llm.stream_to_output`, and chat-backed `ctx.llm.generate` call appends enabled Core Memory, Worldbook, and Retrieved Knowledge blocks to that call's system context. Direct prompt-backed `ctx.llm.generate` prepends the rendered blocks to the generated prompt because it has no role-bearing message list. The query/match text is `ctx.input.text` first, then the current visible user message content when available. Silent form submissions with no user-facing query skip Knowledge retrieval and keyword Worldbook matches, while Worldbook `always` entries may still inject if Script Worldbook injection is enabled.
 
-Knowledge context injection never runs for session title generation, command result context, form JSON/recipe JSON, or non-LLM Script Agents. Automatic injection failures are best-effort warnings: retrieval/rendering failure does not fail the main LLM call, does not add streaming deltas, and records warning metadata.
+Core Memory, Worldbook, and Knowledge context injection never runs for session title generation, command result context, Knowledge query expansion, embedding generation, reranking, `/kb-search`, form JSON/recipe JSON, or non-LLM Script Agents. Automatic injection failures are best-effort warnings: retrieval/rendering/matching failure does not fail the main LLM call, does not add streaming deltas, and records warning metadata.
+
+Core Memory is stored in General settings. Prompt Agent injection follows `core_memory_enabled_for_prompt_agents`, which defaults to true. Script Agent `ctx.llm.*` injection follows `core_memory_enabled_for_script_agents`, which defaults to false. Empty trimmed memory is skipped. Runtime metadata stores only `enabled`, `injected`, `content_chars`, `skipped_reason`, and compact warnings.
+
+Worldbook is stored in the Worldbook core module and Session Worldbook bindings. Prompt Agent injection follows `worldbook_enabled_for_prompt_agents`, which defaults to true. Script Agent `ctx.llm.*` injection follows `worldbook_enabled_for_script_agents`, which defaults to false. Matching scans only the current user input for that call, not historical user messages, assistant messages, command results, form JSON, recipe JSON, or retrieved Knowledge. Disabled worldbooks and disabled entries are skipped. `activation_mode=always` entries activate without keywords. `activation_mode=keyword` entries treat each non-empty `keywords_text` line as a regex pattern, with case sensitivity controlled by `worldbook_regex_case_insensitive`. Invalid legacy regex patterns are warnings and are skipped without failing the LLM call. Injected entries are capped by `worldbook_max_entries_per_call` and `worldbook_max_context_chars`.
 
 `/kb-search <query>` is an explicit Knowledge Capability command for manual search/debugging. It routes through the normal slash command path, creates a command run, searches active KBs for the current session, and returns JSON with `query`, `results`, and `debug`. It does not call Prompt Agents, does not call an LLM, does not create an Agent run, and does not participate in automatic Knowledge context injection.
 
@@ -303,7 +308,40 @@ Run metadata records `metadata.knowledge_context` without full snippet content:
 }
 ```
 
-Run step metadata may also carry compact Knowledge retrieval summaries for step-level display. Prompt Agents attach `metadata.knowledge_context` to `Building context`. Script Agents append compact summaries to `Running script.metadata.knowledge_contexts` for LLM calls. Step-level Knowledge metadata must not include `query`, full snippet content, `snippet_refs`, or vector blobs; those remain in run/message metadata only where explicitly allowed for snippets button wiring.
+Run metadata records `metadata.core_memory_context` and `metadata.worldbook_context` without full user-maintained content:
+
+```json
+{
+  "core_memory_context": {
+    "enabled": true,
+    "injected": true,
+    "content_chars": 1234,
+    "skipped_reason": null,
+    "warnings": []
+  },
+  "worldbook_context": {
+    "enabled": true,
+    "injected": true,
+    "worldbook_ids": ["worldbook_id"],
+    "matched_entry_count": 3,
+    "injected_entry_count": 2,
+    "truncated": false,
+    "warnings": [],
+    "entry_refs": [
+      {
+        "index": "W1",
+        "worldbook_id": "worldbook_id",
+        "worldbook_name": "Project Lore",
+        "entry_id": "entry_id",
+        "entry_name": "Terms",
+        "activation_mode": "keyword"
+      }
+    ]
+  }
+}
+```
+
+Run step metadata may also carry compact context summaries for step-level display. Prompt Agents attach compact Core Memory, Worldbook, and Knowledge summaries to `Building context`. Script Agents append compact summaries to `Running script.metadata.core_memory_contexts`, `worldbook_contexts`, and `knowledge_contexts` for LLM calls. Step-level metadata must not include full Core Memory text, full Worldbook content, Knowledge query text, full snippet content, `snippet_refs`, or vector blobs; those remain in run/message metadata only where explicitly allowed for snippets button wiring.
 
 Skipped or failed retrieval records `enabled=false` or `injected=false` with a `reason` such as `agent_disabled`, `no_active_kbs`, `empty_query`, `no_results`, or `retrieval_failed`. Query metadata is truncated and full retrieved content is not stored in run or message metadata. Assistant/agent messages that used automatic Knowledge context copy this compact `knowledge_context` metadata so the UI can show a snippets button. Full chunk content is fetched on demand with `GET /api/knowledge/chunks/{chunk_id}`, which returns chunk content and minimal KB/source metadata without vectors or full source originals.
 

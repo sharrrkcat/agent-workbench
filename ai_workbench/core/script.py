@@ -26,6 +26,7 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
+from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
 from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.agent import AgentSchema
@@ -36,6 +37,7 @@ from ai_workbench.core.session_titles import maybe_generate_session_title_before
 from ai_workbench.core.session import Session
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc
+from ai_workbench.core.worldbook_context import build_session_worldbook_context, worldbook_step_metadata
 
 
 @dataclass
@@ -296,6 +298,8 @@ class LLMProxy:
         parent_step_id: str = "",
         title_generation_context: Optional[Dict[str, Any]] = None,
         knowledge_context: Optional[Dict[str, Any]] = None,
+        memory_context: Optional[Dict[str, Any]] = None,
+        worldbook_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -314,6 +318,8 @@ class LLMProxy:
         self._title_generation_context = title_generation_context or {}
         self._title_generation_checked = False
         self._knowledge_context = knowledge_context or {}
+        self._memory_context = memory_context or {}
+        self._worldbook_context = worldbook_context or {}
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -334,8 +340,8 @@ class LLMProxy:
         self.used = True
         from ai_workbench.core.context import validate_llm_context_messages
 
-        knowledge_already_injected = bool(options.pop("_knowledge_injected", False))
-        messages = messages if knowledge_already_injected else self._inject_knowledge(messages)
+        context_already_injected = bool(options.pop("_runtime_context_injected", False) or options.pop("_knowledge_injected", False))
+        messages = messages if context_already_injected else self._inject_runtime_context(messages)
         messages = validate_llm_context_messages(messages)
         chat = getattr(self.llm_runtime, "chat", None)
         model_config = options.pop("model_config", None) or self.default_model_config
@@ -370,13 +376,13 @@ class LLMProxy:
         resolved_messages = _resolve_llm_messages(system=system, user=user, messages=messages)
         from ai_workbench.core.context import validate_llm_context_messages
 
-        resolved_messages = self._inject_knowledge(resolved_messages)
+        resolved_messages = self._inject_runtime_context(resolved_messages)
         resolved_messages = validate_llm_context_messages(resolved_messages)
         model_config = options.pop("model_config", None) or self.default_model_config
         if response_format is not None:
             options["response_format"] = response_format
         if model_config.get("supports_streaming") is False:
-            text = await self.chat(messages=resolved_messages, model_config=model_config, _knowledge_injected=True, **options)
+            text = await self.chat(messages=resolved_messages, model_config=model_config, _runtime_context_injected=True, **options)
             yield ScriptLLMStreamChunk(text=text, raw=None, model=_model_from_config(model_config))
             return
         try:
@@ -438,9 +444,9 @@ class LLMProxy:
                 if callable(generate):
                     await self._maybe_generate_session_title()
                     self.used = True
-                    knowledge_prompt = self._knowledge_block_for_generate_prompt()
-                    if knowledge_prompt:
-                        resolved_prompt = f"{knowledge_prompt}\n\n{resolved_prompt}" if resolved_prompt else knowledge_prompt
+                    context_prompt = self._runtime_context_block_for_generate_prompt()
+                    if context_prompt:
+                        resolved_prompt = f"{context_prompt}\n\n{resolved_prompt}" if resolved_prompt else context_prompt
                     data = generate(
                         prompt=resolved_prompt,
                         model_config=model_config or self.default_model_config,
@@ -462,6 +468,39 @@ class LLMProxy:
         except Exception as exc:
             return CapabilityCallResult(success=False, error=str(exc) or "LLM generate failed.")
 
+    def _inject_runtime_context(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        messages = self._inject_core_memory(messages)
+        messages = self._inject_worldbook(messages)
+        return self._inject_knowledge(messages)
+
+    def _inject_core_memory(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        context = self._memory_context
+        if not context:
+            return messages
+        result = build_core_memory_context(
+            app_settings_store=context.get("app_settings_store"),
+            source="script_agent",
+        )
+        self._record_named_context("core_memory_context", result.metadata, context_metadata_for_step(result.metadata))
+        if result.rendered_text:
+            return append_system_context(messages, result.rendered_text)
+        return messages
+
+    def _inject_worldbook(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        context = self._worldbook_context
+        if not context:
+            return messages
+        result = build_session_worldbook_context(
+            worldbook_store=context.get("worldbook_store"),
+            session_id=context.get("session_id") or self.session_id,
+            user_text=context.get("user_text") or "",
+            source="script_agent",
+        )
+        self._record_named_context("worldbook_context", result.metadata, worldbook_step_metadata(result.metadata))
+        if result.rendered_text:
+            return append_system_context(messages, result.rendered_text)
+        return messages
+
     def _inject_knowledge(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         context = self._knowledge_context
         if not context:
@@ -481,6 +520,33 @@ class LLMProxy:
             return append_knowledge_to_system(messages, result.rendered_text)
         return messages
 
+    def _runtime_context_block_for_generate_prompt(self) -> str:
+        blocks: list[str] = []
+        memory_context = self._memory_context
+        if memory_context:
+            result = build_core_memory_context(
+                app_settings_store=memory_context.get("app_settings_store"),
+                source="script_agent",
+            )
+            self._record_named_context("core_memory_context", result.metadata, context_metadata_for_step(result.metadata))
+            if result.rendered_text:
+                blocks.append(result.rendered_text)
+        worldbook_context = self._worldbook_context
+        if worldbook_context:
+            result = build_session_worldbook_context(
+                worldbook_store=worldbook_context.get("worldbook_store"),
+                session_id=worldbook_context.get("session_id") or self.session_id,
+                user_text=worldbook_context.get("user_text") or "",
+                source="script_agent",
+            )
+            self._record_named_context("worldbook_context", result.metadata, worldbook_step_metadata(result.metadata))
+            if result.rendered_text:
+                blocks.append(result.rendered_text)
+        knowledge_block = self._knowledge_block_for_generate_prompt()
+        if knowledge_block:
+            blocks.append(knowledge_block)
+        return "\n\n".join(blocks)
+
     def _knowledge_block_for_generate_prompt(self) -> str:
         context = self._knowledge_context
         if not context:
@@ -499,29 +565,32 @@ class LLMProxy:
         return result.rendered_text
 
     def _record_knowledge_context(self, knowledge_context: dict[str, Any]) -> None:
+        self._record_named_context("knowledge_context", knowledge_context, knowledge_step_metadata(knowledge_context))
+
+    def _record_named_context(self, key: str, context_metadata: dict[str, Any], step_metadata_item: dict[str, Any]) -> None:
         if self.run_store is None or not self.run_id:
             return
         metadata = dict(self.run_store.get_run(self.run_id).metadata)
-        metadata["knowledge_context"] = knowledge_context
-        warnings = knowledge_context.get("warnings") if isinstance(knowledge_context, dict) else None
+        metadata[key] = context_metadata
+        warnings = context_metadata.get("warnings") if isinstance(context_metadata, dict) else None
         if warnings:
             existing = list(metadata.get("warnings", []))
             existing.extend(str(item) for item in warnings)
             metadata["warnings"] = existing
         self.run_store.update_metadata(self.run_id, metadata)
-        self._record_knowledge_context_step_metadata(knowledge_context)
+        self._record_context_step_metadata(key, step_metadata_item)
 
-    def _record_knowledge_context_step_metadata(self, knowledge_context: dict[str, Any]) -> None:
+    def _record_context_step_metadata(self, key: str, compact: dict[str, Any]) -> None:
         if self.run_lifecycle is None or not self.parent_step_id:
             return
-        compact = knowledge_step_metadata(knowledge_context)
         if not compact:
             return
         step = self.run_store.get_step(self.parent_step_id)
         step_metadata = dict(step.metadata or {})
-        contexts = list(step_metadata.get("knowledge_contexts") or [])
+        contexts_key = f"{key}s"
+        contexts = list(step_metadata.get(contexts_key) or [])
         contexts.append(compact)
-        step_metadata["knowledge_contexts"] = contexts
+        step_metadata[contexts_key] = contexts
         updated = self.run_store.update_step(self.parent_step_id, metadata=step_metadata)
         self.run_lifecycle._emit_step("run_step_updated", updated)
 
@@ -733,6 +802,8 @@ class AgentContext:
         is_silent_submission: bool = False,
         suppress_output: bool = False,
         knowledge_context: Optional[Dict[str, Any]] = None,
+        memory_context: Optional[Dict[str, Any]] = None,
+        worldbook_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -786,6 +857,8 @@ class AgentContext:
                 "app_settings_store": app_settings_store,
             },
             knowledge_context=knowledge_context,
+            memory_context=memory_context,
+            worldbook_context=worldbook_context,
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -992,6 +1065,7 @@ class ScriptAgentRunner:
         run_lifecycle: RunLifecycle = None,
         knowledge_store=None,
         knowledge_model_backend=None,
+        worldbook_store=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -1011,6 +1085,7 @@ class ScriptAgentRunner:
         self.run_lifecycle = run_lifecycle or RunLifecycle(run_store, event_bus)
         self.knowledge_store = knowledge_store
         self.knowledge_model_backend = knowledge_model_backend
+        self.worldbook_store = worldbook_store
 
     async def run(
         self,
@@ -1174,6 +1249,7 @@ class ScriptAgentRunner:
                 agent_user_config = resolve_config(agent.config_schema, agent_config.get("user_config") or {})
             except Exception:
                 agent_user_config = agent_config.get("user_config") or {}
+        runtime_context_text = "" if is_silent_submission else self._knowledge_query(args, user_message, input_message_id)
 
         ctx = AgentContext(
             agent=agent,
@@ -1211,8 +1287,14 @@ class ScriptAgentRunner:
                 "knowledge_store": self.knowledge_store,
                 "knowledge_model_backend": self.knowledge_model_backend,
                 "session_id": session_id,
-                "query": "" if is_silent_submission else self._knowledge_query(args, user_message, input_message_id),
+                "query": runtime_context_text,
                 "effective_mode": str(resolved_knowledge_context_mode(agent, agent_config)["effective_mode"]),
+            },
+            memory_context={"app_settings_store": self.app_settings_store},
+            worldbook_context={
+                "worldbook_store": self.worldbook_store,
+                "session_id": session_id,
+                "user_text": runtime_context_text,
             },
         )
 

@@ -275,12 +275,14 @@ Read:
 - `docs/EXTENSION_ARCHITECTURE.md#configuration-ownership`
 
 Likely source:
-- `ai_workbench/core/settings.py` for Core Memory General settings
-- `ai_workbench/core/worldbook.py`
+- `ai_workbench/core/settings.py` and `ai_workbench/core/memory_context.py` for Core Memory General settings and runtime context rendering
+- `ai_workbench/core/worldbook.py` and `ai_workbench/core/worldbook_context.py`
 - `ai_workbench/db/models.py`
 - `ai_workbench/db/stores.py`
 - `ai_workbench/api/routes/settings.py`
 - `ai_workbench/api/routes/worldbook.py`
+- `ai_workbench/core/runner.py` if Prompt Agent runtime injection changes
+- `ai_workbench/core/script.py` if Script Agent `ctx.llm` injection changes
 - `ai_workbench/api/routes/sessions.py` for session binding route wiring
 - `frontend/src/components/settings/SettingsConsole.tsx`
 - `frontend/src/components/settings/SettingsNav.tsx`
@@ -295,6 +297,8 @@ Likely source:
 Tests:
 - `uv run pytest tests/test_settings_data.py`
 - `uv run pytest tests/test_worldbook.py`
+- `uv run pytest tests/test_core_memory_context.py tests/test_worldbook_context.py` when runtime builders change
+- `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py` when Prompt Agent or Script Agent runtime injection changes
 - `uv run pytest tests/test_frontend_chat_contracts.py` if frontend settings contract changes
 - `cd frontend && npm run build`
 - `cd frontend && node scripts/check-i18n.mjs`
@@ -304,7 +308,7 @@ UI/i18n rule:
 
 Avoid unless explicitly in scope:
 - Do not modify Agent or Capability manifests for Worldbook storage/API work.
-- Do not implement Prompt Agent or Script Agent runtime context injection until the runtime protocol is updated for that behavior.
+- Runtime context injection is implemented for Core Memory and Worldbook. Keep injection limited to Prompt Agent main LLM calls and Script Agent `ctx.llm.*`; do not route it through title generation, query expansion, embeddings, reranking, commands, `/kb-search`, or non-LLM capability calls.
 - Do not use Knowledge indexes, vector storage, RAG retrieval, or FTS for Worldbook matching.
 
 ### Change Knowledge / RAG settings, injection, or local model APIs

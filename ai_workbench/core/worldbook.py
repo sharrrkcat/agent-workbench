@@ -177,3 +177,131 @@ def validate_keyword_patterns(keywords_text: str) -> None:
 def content_preview(content: str) -> str:
     text = str(content or "")
     return text[:CONTENT_PREVIEW_CHARS]
+
+
+class MemoryWorldbookStore:
+    def __init__(self) -> None:
+        self._settings = WorldbookSettings()
+        self._worldbooks: dict[str, Worldbook] = {}
+        self._entries: dict[str, WorldbookEntry] = {}
+        self._bindings: dict[str, list[SessionWorldbookBinding]] = {}
+
+    def get_settings(self) -> WorldbookSettings:
+        return self._settings
+
+    def patch_settings(self, values: dict[str, Any]) -> WorldbookSettings:
+        patch = WorldbookSettingsPatch.model_validate(values)
+        self._settings = self._settings.model_copy(update={**patch.model_dump(exclude_unset=True), "updated_at": utc_now()})
+        return self._settings
+
+    def list_worldbooks(self) -> list[Worldbook]:
+        return [_with_counts(worldbook, self._entries.values(), self._bindings) for worldbook in self._worldbooks.values()]
+
+    def create_worldbook(self, worldbook: Worldbook) -> Worldbook:
+        self._worldbooks[worldbook.id] = worldbook
+        return _with_counts(worldbook, self._entries.values(), self._bindings)
+
+    def get_worldbook(self, worldbook_id: str) -> Worldbook:
+        if worldbook_id not in self._worldbooks:
+            raise KeyError(f"unknown worldbook: {worldbook_id}")
+        return _with_counts(self._worldbooks[worldbook_id], self._entries.values(), self._bindings)
+
+    def update_worldbook(self, worldbook_id: str, values: dict[str, Any]) -> Worldbook:
+        current = self.get_worldbook(worldbook_id)
+        updated = current.model_copy(update={**values, "updated_at": utc_now()})
+        self._worldbooks[worldbook_id] = Worldbook.model_validate(updated.model_dump(exclude={"entry_count", "active_binding_count"}))
+        return self.get_worldbook(worldbook_id)
+
+    def delete_worldbook(self, worldbook_id: str) -> Worldbook:
+        deleted = self.get_worldbook(worldbook_id)
+        self._worldbooks.pop(worldbook_id, None)
+        self._entries = {entry_id: entry for entry_id, entry in self._entries.items() if entry.worldbook_id != worldbook_id}
+        for session_id, bindings in list(self._bindings.items()):
+            self._bindings[session_id] = [binding for binding in bindings if binding.worldbook_id != worldbook_id]
+        return deleted
+
+    def list_entries(self, worldbook_id: str) -> list[WorldbookEntry]:
+        self.get_worldbook(worldbook_id)
+        return sorted(
+            [entry for entry in self._entries.values() if entry.worldbook_id == worldbook_id],
+            key=lambda item: (item.sort_order, item.created_at),
+        )
+
+    def create_entry(self, entry: WorldbookEntry) -> WorldbookEntry:
+        self.get_worldbook(entry.worldbook_id)
+        self._entries[entry.id] = entry
+        return entry
+
+    def get_entry(self, entry_id: str) -> WorldbookEntry:
+        if entry_id not in self._entries:
+            raise KeyError(f"unknown worldbook entry: {entry_id}")
+        return self._entries[entry_id]
+
+    def update_entry(self, entry_id: str, values: dict[str, Any]) -> WorldbookEntry:
+        current = self.get_entry(entry_id)
+        updated = current.model_copy(update={**values, "updated_at": utc_now()})
+        self._entries[entry_id] = WorldbookEntry.model_validate(updated.model_dump())
+        return self._entries[entry_id]
+
+    def delete_entry(self, entry_id: str) -> WorldbookEntry:
+        entry = self.get_entry(entry_id)
+        self._entries.pop(entry_id, None)
+        return entry
+
+    def reorder_entries(self, worldbook_id: str, entry_ids: list[str]) -> list[WorldbookEntry]:
+        existing = self.list_entries(worldbook_id)
+        if {entry.id for entry in existing} != set(entry_ids):
+            raise ValueError("Reorder ids must exactly match entries in this worldbook.")
+        for index, entry_id in enumerate(entry_ids):
+            self._entries[entry_id] = self._entries[entry_id].model_copy(update={"sort_order": (index + 1) * 10, "updated_at": utc_now()})
+        return self.list_entries(worldbook_id)
+
+    def list_session_bindings(self, session_id: str) -> list[SessionWorldbookBinding]:
+        bindings = self._bindings.get(session_id, [])
+        return sorted([self._binding_with_worldbook(binding) for binding in bindings], key=lambda item: (item.sort_order, item.created_at))
+
+    def replace_session_bindings(self, session_id: str, worldbook_ids: list[str]) -> tuple[list[SessionWorldbookBinding], list[str]]:
+        warnings: list[str] = []
+        bindings: list[SessionWorldbookBinding] = []
+        seen: set[str] = set()
+        now = utc_now()
+        for index, worldbook_id in enumerate(worldbook_ids):
+            if worldbook_id in seen:
+                continue
+            worldbook = self.get_worldbook(worldbook_id)
+            if not worldbook.enabled:
+                warnings.append(f"Worldbook is disabled and was not bound: {worldbook_id}")
+                continue
+            seen.add(worldbook_id)
+            bindings.append(
+                SessionWorldbookBinding(
+                    id=str(uuid4()),
+                    session_id=session_id,
+                    worldbook_id=worldbook_id,
+                    enabled=True,
+                    sort_order=(index + 1) * 10,
+                    created_at=now,
+                    updated_at=now,
+                    worldbook=worldbook,
+                )
+            )
+        self._bindings[session_id] = bindings
+        return self.list_session_bindings(session_id), warnings
+
+    def delete_session_bindings(self, session_id: str) -> None:
+        self._bindings.pop(session_id, None)
+
+    def _binding_with_worldbook(self, binding: SessionWorldbookBinding) -> SessionWorldbookBinding:
+        worldbook = self._worldbooks.get(binding.worldbook_id)
+        return binding.model_copy(update={"worldbook": _with_counts(worldbook, self._entries.values(), self._bindings) if worldbook else None})
+
+
+def _with_counts(worldbook: Worldbook, entries, bindings: dict[str, list[SessionWorldbookBinding]]) -> Worldbook:
+    entry_count = sum(1 for entry in entries if entry.worldbook_id == worldbook.id)
+    active_binding_count = sum(
+        1
+        for session_bindings in bindings.values()
+        for binding in session_bindings
+        if binding.worldbook_id == worldbook.id and binding.enabled
+    )
+    return worldbook.model_copy(update={"entry_count": entry_count, "active_binding_count": active_binding_count})

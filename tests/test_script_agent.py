@@ -19,6 +19,7 @@ from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
 from ai_workbench.core.storage_maintenance import scan_orphan_attachments
 from ai_workbench.core.stores import AgentConfigStore, LLMProfileStore, MessageStore, ProviderProfileStore, RunEventStore, RunStore, SessionStore
+from ai_workbench.core.worldbook import MemoryWorldbookStore, Worldbook, WorldbookEntry
 from tests.test_prompt_agent_execution import FakeLLMRuntime, FakeStreamingLLMRuntime, run
 
 
@@ -47,6 +48,7 @@ class ScriptRuntimeFixture:
         self.agent_configs = AgentConfigStore()
         self.knowledge = MemoryKnowledgeStore()
         self.knowledge.engine = object()
+        self.worldbooks = MemoryWorldbookStore()
         self.app_settings = AppSettingsStore()
         self.app_settings.patch({"auto_generate_session_titles": False})
         self.llm = llm or FakeLLMRuntime(response="llm reply")
@@ -74,6 +76,7 @@ class ScriptRuntimeFixture:
             app_settings_store=self.app_settings,
             knowledge_store=self.knowledge,
             knowledge_model_backend=object(),
+            worldbook_store=self.worldbooks,
         )
         self.runtime = WorkbenchRuntime(
             router=self.router,
@@ -276,6 +279,56 @@ def test_script_agent_empty_and_silent_query_skip_knowledge(monkeypatch, tmp_pat
 
     assert result.success is True
     assert fixture.runs.get_run(result.run_id).metadata["knowledge_context"]["reason"] == "empty_query"
+
+
+def test_script_agent_core_memory_defaults_off_and_can_be_enabled(tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "script_llm_memory",
+        "async def run(ctx):\n    return await ctx.llm.text(system='sys', user=ctx.input.text)\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=agents, llm=FakeLLMRuntime(response="script reply"))
+    fixture.app_settings.patch({"core_memory_content": "Script memory."})
+    session = configure_llm_profile(fixture)
+
+    first = run(fixture.runtime.handle_input(session, "@script_llm_memory hello"))
+    fixture.app_settings.patch({"core_memory_enabled_for_script_agents": True})
+    second = run(fixture.runtime.handle_input(session, "@script_llm_memory hello again"))
+
+    assert first.success is True
+    assert "# Core Memory" not in fixture.llm.calls[0]["messages"][0]["content"]
+    assert fixture.runs.get_run(first.run_id).metadata["core_memory_context"]["skipped_reason"] == "disabled"
+    assert second.success is True
+    assert "Script memory." in fixture.llm.calls[1]["messages"][0]["content"]
+    assert fixture.runs.get_run(second.run_id).metadata["core_memory_context"]["injected"] is True
+
+
+def test_script_agent_worldbook_defaults_off_and_can_be_enabled(tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "script_llm_worldbook",
+        "async def run(ctx):\n    return await ctx.llm.text(system='sys', user=ctx.input.text)\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=agents, llm=FakeLLMRuntime(response="script reply"))
+    session = configure_llm_profile(fixture)
+    worldbook = fixture.worldbooks.create_worldbook(Worldbook(name="Script Lore"))
+    fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=worldbook.id, name="Always", activation_mode="always", content="Script lore.")
+    )
+    fixture.worldbooks.replace_session_bindings(session.session_id, [worldbook.id])
+
+    first = run(fixture.runtime.handle_input(session, "@script_llm_worldbook hello"))
+    fixture.worldbooks.patch_settings({"worldbook_enabled_for_script_agents": True})
+    second = run(fixture.runtime.handle_input(session, "@script_llm_worldbook hello again"))
+
+    assert first.success is True
+    assert "# Worldbook" not in fixture.llm.calls[0]["messages"][0]["content"]
+    assert fixture.runs.get_run(first.run_id).metadata["worldbook_context"]["skipped_reason"] == "disabled"
+    assert second.success is True
+    assert "Script lore." in fixture.llm.calls[1]["messages"][0]["content"]
+    assert fixture.runs.get_run(second.run_id).metadata["worldbook_context"]["injected_entry_count"] == 1
 
 
 def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
