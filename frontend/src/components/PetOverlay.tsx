@@ -10,7 +10,6 @@ type DragState = {
   startPointerY: number;
   startX: number;
   startY: number;
-  lastX: number;
 };
 
 type PetPosition = { x: number; y: number };
@@ -105,6 +104,7 @@ export function PetOverlay() {
   const previousPetEnabledRef = useRef<boolean | null>(null);
   const initialSettingsLoadedRef = useRef(false);
   const lastPetCommandMessageIdRef = useRef('');
+  const lastDragPointerXRef = useRef(0);
 
   const validPets = useMemo(() => pets.filter((pet) => pet.valid && pet.spritesheet_url), [pets]);
   const selectedPet = useMemo(() => {
@@ -247,8 +247,9 @@ export function PetOverlay() {
         petWidth,
         petHeight,
       );
-      setDragDirection(event.clientX < drag.lastX ? 'left' : 'right');
-      setDrag((current) => (current ? { ...current, lastX: event.clientX } : current));
+      const nextDirection = event.clientX < lastDragPointerXRef.current ? 'left' : 'right';
+      lastDragPointerXRef.current = event.clientX;
+      setDragDirection((current) => (current === nextDirection ? current : nextDirection));
       setLocalPosition(next);
     };
     const onPointerUp = (event: PointerEvent) => {
@@ -348,6 +349,7 @@ export function PetOverlay() {
     if (event.button !== 0 || !localPosition) return;
     event.preventDefault();
     overlayRef.current?.setPointerCapture(event.pointerId);
+    lastDragPointerXRef.current = event.clientX;
     setHoverActive(false);
     setJumping(false);
     setDrag({
@@ -356,7 +358,6 @@ export function PetOverlay() {
       startPointerY: event.clientY,
       startX: localPosition.x,
       startY: localPosition.y,
-      lastX: event.clientX,
     });
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export type PetAnimationState =
   | 'idle'
@@ -95,8 +95,15 @@ export function PetSprite({
 }: PetSpriteProps) {
   const [frame, setFrame] = useState(0);
   const reduceMotion = usePrefersReducedMotion();
+  const loopCompleteRef = useRef(onAnimationLoopComplete);
+  const playbackCompleteRef = useRef(onPlaybackComplete);
   const spec = CODEX_PET_ANIMATIONS[state];
   const renderSpec = reduceMotion ? CODEX_PET_ANIMATIONS.idle : spec;
+
+  useEffect(() => {
+    loopCompleteRef.current = onAnimationLoopComplete;
+    playbackCompleteRef.current = onPlaybackComplete;
+  }, [onAnimationLoopComplete, onPlaybackComplete]);
 
   useEffect(() => {
     const currentSpec = CODEX_PET_ANIMATIONS[state];
@@ -120,13 +127,13 @@ export function PetSprite({
         if (cancelled) return;
         if (isLast) {
           const nextCompletedLoops = completedLoops + 1;
-          onAnimationLoopComplete?.(state, nextCompletedLoops);
+          loopCompleteRef.current?.(state, nextCompletedLoops);
           if (nextCompletedLoops < maxRepeats) {
             setFrame(0);
             tick(0, nextCompletedLoops);
             return;
           }
-          onPlaybackComplete?.(state);
+          playbackCompleteRef.current?.(state);
           return;
         }
 
@@ -144,7 +151,7 @@ export function PetSprite({
         window.clearTimeout(timeoutId);
       }
     };
-  }, [state, spritesheetUrl, repeatCount, reduceMotion, onAnimationLoopComplete, onPlaybackComplete]);
+  }, [state, spritesheetUrl, repeatCount, reduceMotion]);
 
   return (
     <div
