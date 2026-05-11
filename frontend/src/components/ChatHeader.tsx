@@ -479,11 +479,11 @@ function ContextSourcesButton({
 }) {
   const { t } = useTranslation();
   const currentSession = useWorkbenchStore((state) => state.currentSession);
-  const [counts, setCounts] = useState({ knowledge: 0, worldbooks: 0 });
+  const [summary, setSummary] = useState<ContextSourcesSummary>({ knowledge: 0, worldbooks: 0, status: 'empty' });
 
   useEffect(() => {
     if (!currentSession?.session_id) {
-      setCounts({ knowledge: 0, worldbooks: 0 });
+      setSummary({ knowledge: 0, worldbooks: 0, status: 'empty' });
       onOpenChange(false);
       return;
     }
@@ -495,13 +495,10 @@ function ContextSourcesButton({
           api.getSessionWorldbooks(currentSession!.session_id),
         ]);
         if (!cancelled) {
-          setCounts({
-            knowledge: knowledgeBindings.filter((binding) => binding.enabled).length,
-            worldbooks: worldbookResponse.enabled_worldbooks.filter((binding) => binding.enabled).length,
-          });
+          setSummary(summarizeContextSources(knowledgeBindings, worldbookResponse.enabled_worldbooks));
         }
       } catch {
-        if (!cancelled) setCounts({ knowledge: 0, worldbooks: 0 });
+        if (!cancelled) setSummary({ knowledge: 0, worldbooks: 0, status: 'empty' });
       }
     }
     void loadCounts();
@@ -510,48 +507,73 @@ function ContextSourcesButton({
     };
   }, [currentSession?.session_id, open, onOpenChange]);
 
-  const total = counts.knowledge + counts.worldbooks;
-  const label = t('chat:contextSources.buttonLabel', { knowledge: counts.knowledge, worldbooks: counts.worldbooks, total });
-  const narrowLabel = t('chat:contextSources.buttonLabelCompact', { total });
-
   return (
     <>
       <button
         type="button"
-        className="status-pill context-sources-button"
+        className={`status-pill context-sources-button ${contextSourcesStatusClass(summary.status)}`}
         disabled={!currentSession}
         onClick={() => onOpenChange(true)}
-        title={t('chat:contextSources.tooltip', { knowledge: counts.knowledge, worldbooks: counts.worldbooks })}
-        aria-label={t('chat:contextSources.title')}
+        title={t('chat:contextSources.tooltip', { knowledge: summary.knowledge, worldbooks: summary.worldbooks })}
+        aria-label={t('chat:contextSources.tooltip', { knowledge: summary.knowledge, worldbooks: summary.worldbooks })}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <Layers size={14} />
-        <span className="context-sources-label">{label}</span>
-        <span className="context-sources-label compact">{narrowLabel}</span>
+        <span aria-hidden="true" />
+        <Layers size={14} aria-hidden="true" />
       </button>
       {open && currentSession ? (
         <ContextSourcesModal
           sessionId={currentSession.session_id}
           onOpenSettings={onOpenSettings}
           onClose={() => onOpenChange(false)}
-          onCountsChange={setCounts}
+          onSummaryChange={setSummary}
         />
       ) : null}
     </>
   );
 }
 
+type ContextSourcesSummary = {
+  knowledge: number;
+  worldbooks: number;
+  status: 'empty' | 'ready' | 'warning';
+};
+
+function summarizeContextSources(knowledgeBindings: SessionKnowledgeBinding[], worldbookBindings: SessionWorldbookBinding[]): ContextSourcesSummary {
+  const enabledKnowledgeBindings = knowledgeBindings.filter((binding) => binding.enabled);
+  const enabledWorldbookBindings = worldbookBindings.filter((binding) => binding.enabled);
+  const hasWarning = enabledKnowledgeBindings.some((binding) => !isKnowledgeBaseUsable(binding.knowledge_base));
+  const hasEnabled = enabledKnowledgeBindings.length > 0 || enabledWorldbookBindings.length > 0;
+  return {
+    knowledge: enabledKnowledgeBindings.length,
+    worldbooks: enabledWorldbookBindings.length,
+    status: hasWarning ? 'warning' : hasEnabled ? 'ready' : 'empty',
+  };
+}
+
+function isKnowledgeBaseUsable(knowledgeBase: KnowledgeBase | null | undefined): boolean {
+  if (!knowledgeBase?.enabled) return false;
+  const status = (knowledgeBase.index_status || '').toLowerCase();
+  return status === 'ready' || status === 'indexed' || status === 'usable';
+}
+
+function contextSourcesStatusClass(status: ContextSourcesSummary['status']): string {
+  if (status === 'ready') return 'ok';
+  if (status === 'warning') return 'warn';
+  return '';
+}
+
 function ContextSourcesModal({
   sessionId,
   onOpenSettings,
   onClose,
-  onCountsChange,
+  onSummaryChange,
 }: {
   sessionId: string;
   onOpenSettings: () => void;
   onClose: () => void;
-  onCountsChange: (counts: { knowledge: number; worldbooks: number }) => void;
+  onSummaryChange: (summary: ContextSourcesSummary) => void;
 }) {
   const { t } = useTranslation();
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -607,10 +629,7 @@ function ContextSourcesModal({
         setKnowledgeBindings(nextKnowledgeBindings);
         setWorldbooks(nextWorldbooks.available_worldbooks);
         setWorldbookBindings(nextWorldbooks.enabled_worldbooks);
-        onCountsChange({
-          knowledge: nextKnowledgeBindings.filter((binding) => binding.enabled).length,
-          worldbooks: nextWorldbooks.enabled_worldbooks.filter((binding) => binding.enabled).length,
-        });
+        onSummaryChange(summarizeContextSources(nextKnowledgeBindings, nextWorldbooks.enabled_worldbooks));
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : t('chat:contextSources.loadFailed');
@@ -623,7 +642,7 @@ function ContextSourcesModal({
     return () => {
       cancelled = true;
     };
-  }, [onCountsChange, sessionId, t]);
+  }, [onSummaryChange, sessionId, t]);
 
   const selectedKnowledgeIds = useMemo(() => knowledgeBindings.filter((binding) => binding.enabled).map((binding) => binding.knowledge_base_id), [knowledgeBindings]);
   const selectedWorldbookIds = useMemo(() => worldbookBindings.filter((binding) => binding.enabled).map((binding) => binding.worldbook_id), [worldbookBindings]);
@@ -640,7 +659,7 @@ function ContextSourcesModal({
     try {
       const nextBindings = await api.updateSessionKnowledgeBases(sessionId, nextIds);
       setKnowledgeBindings(nextBindings);
-      onCountsChange({ knowledge: nextBindings.filter((binding) => binding.enabled).length, worldbooks: selectedWorldbookIds.length });
+      onSummaryChange(summarizeContextSources(nextBindings, worldbookBindings));
       setKnowledgeStatus({ state: 'saved', message: t('chat:contextSources.saved') });
     } catch (err) {
       setKnowledgeBindings(previousBindings);
@@ -652,7 +671,7 @@ function ContextSourcesModal({
   return (
     <div className="context-sources-backdrop" role="presentation" onMouseDown={() => { if (!dragId) onClose(); }}>
       <section
-        className="context-sources-modal popover-surface"
+        className="context-sources-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="context-sources-title"
@@ -730,7 +749,7 @@ function ContextSourcesModal({
       const response = await api.updateSessionWorldbooks(sessionId, nextIds);
       setWorldbookBindings(response.enabled_worldbooks);
       setWorldbooks(response.available_worldbooks);
-      onCountsChange({ knowledge: selectedKnowledgeIds.length, worldbooks: response.enabled_worldbooks.filter((binding) => binding.enabled).length });
+      onSummaryChange(summarizeContextSources(knowledgeBindings, response.enabled_worldbooks));
       const warningText = response.warnings?.length ? response.warnings.join(' ') : '';
       setWorldbookStatus({ state: 'saved', message: warningText || t('chat:contextSources.saved') });
     } catch (err) {

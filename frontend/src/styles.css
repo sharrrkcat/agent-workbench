@@ -562,70 +562,81 @@ input:disabled {
 }
 
 .context-sources-button {
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 42px;
+  min-width: 42px;
+  padding: 0 10px;
   text-transform: none;
 }
 
-.context-sources-label {
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  background: transparent;
-  white-space: nowrap;
-}
-
-.context-sources-label.compact {
-  display: none;
+.context-sources-button svg {
+  flex: 0 0 auto;
 }
 
 .context-sources-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: start center;
-  padding: max(72px, 8vh) 18px 18px;
-  background: rgba(0, 0, 0, 0.46);
-  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.76);
 }
 
 .context-sources-modal {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  width: min(680px, calc(100vw - 28px));
-  max-height: min(680px, calc(100dvh - 100px));
+  width: min(900px, 92vw);
+  max-height: 86vh;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  background: #262626;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #151515;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .context-sources-header {
   display: flex;
-  align-items: start;
+  align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 16px;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.context-sources-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
 
 .context-sources-header h2 {
+  overflow: hidden;
   margin: 0;
   color: #f5f5f5;
   font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .context-sources-header p {
-  margin: 4px 0 0;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 12px;
+  overflow: hidden;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .context-sources-tabs {
   display: flex;
   gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #181818;
 }
 
 .context-sources-tabs button {
@@ -654,7 +665,7 @@ input:disabled {
   gap: 14px;
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px 18px;
+  padding: 16px;
 }
 
 .context-sources-feedback {
