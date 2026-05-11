@@ -13,7 +13,11 @@ class MockKnowledgeBackend:
     def __init__(self) -> None:
         self.embedding_calls: list[dict] = []
         self.rerank_calls: list[dict] = []
+        self.unloaded_embeddings: list[dict] = []
+        self.unloaded_rerankers: list[dict] = []
         self.fail_rerank = False
+        self.fail_unload_embedding = False
+        self.fail_unload_reranker = False
 
     def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
         self.embedding_calls.append({"model_path": model_path, "texts": texts, "normalize": normalize, "device": device})
@@ -27,6 +31,18 @@ class MockKnowledgeBackend:
             {"id": document["id"], "score": 10.0 if "beta" in document["text"].lower() else 1.0}
             for document in documents
         ]
+
+    def unload_embedding_model(self, model_path: str, device: str) -> bool:
+        if self.fail_unload_embedding:
+            raise RuntimeError("mock embedding unload failed")
+        self.unloaded_embeddings.append({"model_path": model_path, "device": device})
+        return True
+
+    def unload_reranker_model(self, model_path: str, device: str) -> bool:
+        if self.fail_unload_reranker:
+            raise RuntimeError("mock reranker unload failed")
+        self.unloaded_rerankers.append({"model_path": model_path, "device": device})
+        return True
 
 
 def _vector_for_text(text: str, model_path: str) -> list[float]:
@@ -146,6 +162,52 @@ def test_vector_search_groups_by_embedding_model_profile_and_embeds_each_group_o
     assert {group["embedding_model_profile_id"] for group in groups} == {profile_a["id"], profile_b["id"]}
 
 
+def test_embedding_unload_after_use_releases_each_retrieval_profile(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile_a, kb_a = setup_indexed_kbs(client)
+    profile_b = create_profile(client, "mock_b", "other-model")
+    kb_b = create_kb(client, profile_b["id"], "Other")
+    add_source(client, kb_b["id"], "Gamma", "gamma " * 24)
+    backend.embedding_calls.clear()
+    client.patch("/api/knowledge/settings", json={"unload_embedding_model_after_use": True})
+
+    response = client.post(
+        "/api/knowledge/search",
+        json={"query": "alpha", "knowledge_base_ids": [kb_a["id"], kb_b["id"]], "debug": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert backend.unloaded_embeddings == [
+        {"model_path": "embeddings/mock-a", "device": "auto"},
+        {"model_path": "embeddings/other-model", "device": "auto"},
+    ]
+    assert response.json()["debug"]["warnings"].count("Embedding unloaded after use.") == 2
+
+
+def test_embedding_test_unload_after_use_releases_profile(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    profile = create_profile(client, "test_model", "test-model")
+    client.patch("/api/knowledge/settings", json={"unload_embedding_model_after_use": True})
+
+    response = client.post(f"/api/knowledge/embedding-models/{profile['id']}/test", json={"text": "alpha", "purpose": "query"})
+
+    assert response.status_code == 200, response.text
+    assert backend.unloaded_embeddings == [{"model_path": "embeddings/test-model", "device": "auto"}]
+
+
+def test_embedding_unload_failure_does_not_fail_search(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    backend.embedding_calls.clear()
+    backend.fail_unload_embedding = True
+    client.patch("/api/knowledge/settings", json={"unload_embedding_model_after_use": True})
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    assert any("Embedding unload after use failed" in warning for warning in response.json()["debug"]["warnings"])
+
+
 def test_bm25_search_returns_candidates_and_filters_selected_kbs(tmp_path: Path) -> None:
     client, _backend = make_client(tmp_path)
     profile_a, kb_a = setup_indexed_kbs(client)
@@ -205,11 +267,72 @@ def test_reranker_enabled_reranks_merged_candidates_once(tmp_path: Path) -> None
     assert payload["results"][0]["rerank_score"] == 10.0
 
 
+def test_reranker_unload_after_use_runs_after_successful_rerank(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    client.patch(
+        "/api/knowledge/settings",
+        json={
+            "reranker_enabled": True,
+            "reranker_model_path": "rerankers/mock-reranker",
+            "unload_reranker_model_after_use": True,
+        },
+    )
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha beta", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    assert backend.unloaded_rerankers == [{"model_path": "rerankers/mock-reranker", "device": "auto"}]
+    assert "Reranker unloaded after use." in response.json()["debug"]["warnings"]
+
+
+def test_reranker_test_unload_after_use_releases_model(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    client.patch(
+        "/api/knowledge/settings",
+        json={
+            "reranker_enabled": True,
+            "reranker_model_path": "rerankers/mock-reranker",
+            "unload_reranker_model_after_use": True,
+        },
+    )
+
+    response = client.post(
+        "/api/knowledge/rerank",
+        json={"query": "alpha", "documents": [{"id": "doc1", "text": "alpha text"}]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert backend.unloaded_rerankers == [{"model_path": "rerankers/mock-reranker", "device": "auto"}]
+
+
+def test_reranker_unload_failure_does_not_fail_search(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    backend.fail_unload_reranker = True
+    client.patch(
+        "/api/knowledge/settings",
+        json={
+            "reranker_enabled": True,
+            "reranker_model_path": "rerankers/mock-reranker",
+            "unload_reranker_model_after_use": True,
+        },
+    )
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    assert any("Reranker unload after use failed" in warning for warning in response.json()["debug"]["warnings"])
+
+
 def test_reranker_failure_falls_back_to_rrf_and_records_warning(tmp_path: Path) -> None:
     client, backend = make_client(tmp_path)
     _profile, kb = setup_indexed_kbs(client)
     backend.fail_rerank = True
-    client.patch("/api/knowledge/settings", json={"reranker_enabled": True, "reranker_model_path": "rerankers/mock-reranker"})
+    client.patch(
+        "/api/knowledge/settings",
+        json={"reranker_enabled": True, "reranker_model_path": "rerankers/mock-reranker", "unload_reranker_model_after_use": True},
+    )
 
     response = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [kb["id"]], "debug": True})
 
@@ -217,6 +340,7 @@ def test_reranker_failure_falls_back_to_rrf_and_records_warning(tmp_path: Path) 
     payload = response.json()
     assert payload["debug"]["reranker_failed"] is True
     assert any("Reranker failed" in warning for warning in payload["debug"]["warnings"])
+    assert backend.unloaded_rerankers == [{"model_path": "rerankers/mock-reranker", "device": "auto"}]
     assert payload["results"][0]["rerank_score"] is None
 
 

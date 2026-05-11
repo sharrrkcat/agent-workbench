@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import importlib.util
+import logging
 import math
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -8,6 +10,7 @@ from typing import Any
 
 LOCAL_MODEL_BACKEND_UNAVAILABLE = "KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE"
 MODEL_NOT_FOUND = "KNOWLEDGE_MODEL_NOT_FOUND"
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeModelError(Exception):
@@ -167,6 +170,102 @@ class LocalKnowledgeModelBackend:
 
             self._reranker_cache[key] = CrossEncoder(str(path), device=device)
         return self._reranker_cache[key]
+
+    def unload_embedding_model(self, model_path: str, device: str | None = None) -> bool:
+        absolute_path = resolve_model_path(model_path, "embeddings", self.root)
+        resolved_device = resolve_device(device) if device else None
+        removed = _drop_cache_entries(self._embedding_cache, str(absolute_path), resolved_device)
+        if removed:
+            _collect_model_memory()
+        return bool(removed)
+
+    def unload_all_embedding_models(self) -> int:
+        removed = len(self._embedding_cache)
+        self._embedding_cache.clear()
+        if removed:
+            _collect_model_memory()
+        return removed
+
+    def unload_reranker_model(self, model_path: str | None = None, device: str | None = None) -> bool:
+        resolved_path = str(resolve_model_path(model_path, "rerankers", self.root)) if model_path else None
+        resolved_device = resolve_device(device) if device else None
+        removed = _drop_cache_entries(self._reranker_cache, resolved_path, resolved_device)
+        if removed:
+            _collect_model_memory()
+        return bool(removed)
+
+    def unload_all_reranker_models(self) -> int:
+        removed = len(self._reranker_cache)
+        self._reranker_cache.clear()
+        if removed:
+            _collect_model_memory()
+        return removed
+
+
+def safe_unload_embedding_model(
+    backend: Any,
+    model_path: str,
+    device: str,
+    warnings: list[str] | None = None,
+) -> bool:
+    unload = getattr(backend, "unload_embedding_model", None)
+    if not callable(unload):
+        return False
+    try:
+        unloaded = bool(unload(model_path, device=device))
+        if unloaded and warnings is not None:
+            warnings.append("Embedding unloaded after use.")
+        return unloaded
+    except Exception as exc:
+        logger.warning("Failed to unload embedding model after use: %s", exc)
+        if warnings is not None:
+            warnings.append(f"Embedding unload after use failed: {exc}")
+        return False
+
+
+def safe_unload_reranker_model(
+    backend: Any,
+    model_path: str | None,
+    device: str,
+    warnings: list[str] | None = None,
+) -> bool:
+    unload = getattr(backend, "unload_reranker_model", None)
+    if not callable(unload):
+        return False
+    try:
+        unloaded = bool(unload(model_path, device=device))
+        if unloaded and warnings is not None:
+            warnings.append("Reranker unloaded after use.")
+        return unloaded
+    except Exception as exc:
+        logger.warning("Failed to unload reranker model after use: %s", exc)
+        if warnings is not None:
+            warnings.append(f"Reranker unload after use failed: {exc}")
+        return False
+
+
+def _drop_cache_entries(cache: dict[tuple[str, str], Any], path: str | None, device: str | None) -> int:
+    keys = [
+        key
+        for key in cache
+        if (path is None or key[0] == path) and (device is None or key[1] == device)
+    ]
+    for key in keys:
+        del cache[key]
+    return len(keys)
+
+
+def _collect_model_memory() -> None:
+    gc.collect()
+    if importlib.util.find_spec("torch") is None:
+        return
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as exc:
+        logger.warning("Failed to empty torch CUDA cache after model unload: %s", exc)
 
 
 def _vectors_to_lists(vectors: Any, normalize: bool) -> list[list[float]]:

@@ -54,6 +54,8 @@
     "rerankerModelPath": "Reranker 模型路径",
     "batchSize": "Batch size",
     "timeoutSeconds": "超时秒数",
+    "unloadEmbeddingModelAfterUse": "使用后卸载 embedding 模型",
+    "unloadRerankerModelAfterUse": "使用后卸载 reranker 模型",
     "candidateLimit": "候选数量限制",
     "vectorCandidateK": "向量候选 K",
     "keywordCandidateK": "关键词候选 K",
@@ -226,7 +228,9 @@
     "presetFieldsFilledWhenAvailable": "如果有推荐预设，将自动填充相关字段。",
     "scanLocalModelsInOverviewFirst": "请先在概览中扫描本地模型。",
     "chooseScannedRerankerModel": "请选择已扫描到的本地 Reranker 模型。",
-    "currentSavedPathNotScanned": "当前已保存路径不在已扫描文件夹中。"
+    "currentSavedPathNotScanned": "当前已保存路径不在已扫描文件夹中。",
+    "unloadEmbeddingModelAfterUse": "索引或搜索完成后释放本地 embedding 模型。可以降低显存占用，但下一次搜索会变慢。",
+    "unloadRerankerModelAfterUse": "Rerank 完成后释放本地 reranker。可以降低显存占用，但下一次 rerank 会变慢。"
   },
   "errors": {
     "copyCommandFailed": "复制命令失败。请选中文本后手动复制。"

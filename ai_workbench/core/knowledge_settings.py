@@ -33,11 +33,13 @@ class KnowledgeSettings(BaseModel):
     local_model_device: Literal["auto", "cpu", "cuda"] = "auto"
     embedding_batch_size: int = Field(default=16, ge=1, le=1024)
     embedding_timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    unload_embedding_model_after_use: StrictBool = False
     reranker_enabled: StrictBool = False
     reranker_model_path: str | None = None
     reranker_batch_size: int = Field(default=16, ge=1, le=1024)
     reranker_timeout_seconds: int = Field(default=60, ge=1, le=3600)
     reranker_candidate_limit: int = Field(default=50, ge=1, le=1000)
+    unload_reranker_model_after_use: StrictBool = False
     hybrid_search_enabled: StrictBool = True
     default_vector_candidate_k: int = Field(default=20, ge=1, le=1000)
     default_keyword_candidate_k: int = Field(default=20, ge=1, le=1000)
@@ -96,11 +98,13 @@ class KnowledgeSettingsPatch(BaseModel):
     local_model_device: Literal["auto", "cpu", "cuda"] | None = None
     embedding_batch_size: int | None = Field(default=None, ge=1, le=1024)
     embedding_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
+    unload_embedding_model_after_use: StrictBool | None = None
     reranker_enabled: StrictBool | None = None
     reranker_model_path: str | None = None
     reranker_batch_size: int | None = Field(default=None, ge=1, le=1024)
     reranker_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
     reranker_candidate_limit: int | None = Field(default=None, ge=1, le=1000)
+    unload_reranker_model_after_use: StrictBool | None = None
     hybrid_search_enabled: StrictBool | None = None
     default_vector_candidate_k: int | None = Field(default=None, ge=1, le=1000)
     default_keyword_candidate_k: int | None = Field(default=None, ge=1, le=1000)

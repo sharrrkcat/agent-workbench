@@ -497,7 +497,18 @@ function KnowledgeModelsTab({
   const currentRerankerMissing = scan ? Boolean(values.reranker_model_path) && !scan.reranker_models.some((model) => model.model_path === values.reranker_model_path) : false;
   return (
     <>
-      <NumberGroup title={t('knowledge:sections.embedding')} values={values} setValues={setValues} fields={[['embedding_batch_size', t('knowledge:labels.batchSize')], ['embedding_timeout_seconds', t('knowledge:labels.timeoutSeconds')]]} />
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>{t('knowledge:sections.embedding')}</h3></div>
+        <div className="settings-detail-grid">
+          <NumberField label={t('knowledge:labels.batchSize')} value={values.embedding_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, embedding_batch_size: value }); }} />
+          <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.embedding_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, embedding_timeout_seconds: value }); }} />
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('knowledge:labels.unloadEmbeddingModelAfterUse')}</span>
+          <ToggleSwitch checked={values.unload_embedding_model_after_use} onChange={(checked) => setValues({ ...values, unload_embedding_model_after_use: checked })} />
+        </label>
+        <p className="settings-muted-text">{t('knowledge:hints.unloadEmbeddingModelAfterUse')}</p>
+      </div>
       <div className="detail-section">
         <div className="detail-section-heading"><h3>{t('knowledge:sections.reranker')}</h3></div>
         <label className="config-field settings-config-field boolean-field">
@@ -523,6 +534,11 @@ function KnowledgeModelsTab({
           <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
           <NumberField label={t('knowledge:labels.candidateLimit')} value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
         </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('knowledge:labels.unloadRerankerModelAfterUse')}</span>
+          <ToggleSwitch checked={values.unload_reranker_model_after_use} onChange={(checked) => setValues({ ...values, unload_reranker_model_after_use: checked })} />
+        </label>
+        <p className="settings-muted-text">{t('knowledge:hints.unloadRerankerModelAfterUse')}</p>
         <div className="settings-button-row">
           <button className="settings-secondary-button" type="button" onClick={async () => {
             setBusy('rerank');

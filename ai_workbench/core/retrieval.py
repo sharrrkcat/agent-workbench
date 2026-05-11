@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.keyword_search import KeywordSearchResult, search_keywords
-from ai_workbench.core.knowledge_models import KnowledgeModelError
+from ai_workbench.core.knowledge_models import KnowledgeModelError, safe_unload_embedding_model, safe_unload_reranker_model
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
 from ai_workbench.core.rerank import rerank_documents
@@ -81,24 +81,28 @@ def search_knowledge(
             continue
         candidate_k = _candidate_k(settings.default_vector_candidate_k, [kb.vector_candidate_k_override for kb in group_kbs])
         group_count = 0
-        embedding_result = embed_texts(
-            backend=model_backend,
-            profile=profile,
-            texts=queries,
-            purpose="query",
-            device=settings.local_model_device,
-        )
-        for query_vector in embedding_result["vectors"]:
-            results, warnings = search_vectors(
-                engine=engine,
-                query_vector=query_vector,
-                embedding_model_profile_id=profile.id,
-                knowledge_base_ids=[kb.id for kb in group_kbs],
-                top_k=candidate_k,
+        try:
+            embedding_result = embed_texts(
+                backend=model_backend,
+                profile=profile,
+                texts=queries,
+                purpose="query",
+                device=settings.local_model_device,
             )
-            debug["warnings"].extend(warnings)
-            group_count += len(results)
-            vector_candidates.extend(_from_vector(result) for result in results)
+            for query_vector in embedding_result["vectors"]:
+                results, warnings = search_vectors(
+                    engine=engine,
+                    query_vector=query_vector,
+                    embedding_model_profile_id=profile.id,
+                    knowledge_base_ids=[kb.id for kb in group_kbs],
+                    top_k=candidate_k,
+                )
+                debug["warnings"].extend(warnings)
+                group_count += len(results)
+                vector_candidates.extend(_from_vector(result) for result in results)
+        finally:
+            if settings.unload_embedding_model_after_use:
+                safe_unload_embedding_model(model_backend, profile.model_path, settings.local_model_device, debug["warnings"])
         debug["embedding_groups"].append(
             {
                 "embedding_model_profile_id": profile.id,
@@ -364,6 +368,8 @@ def _rerank_candidates(
         return candidates
     limited = candidates[: settings.reranker_candidate_limit]
     documents = [{"id": candidate.chunk_id, "text": candidate.content} for candidate in limited]
+    if not documents:
+        return candidates
     debug["reranker_input_count"] = len(documents)
     try:
         response = rerank_documents(
@@ -383,6 +389,9 @@ def _rerank_candidates(
         debug["reranker_failed"] = True
         debug["warnings"].append(f"Reranker failed; using RRF order: {exc}")
         return candidates
+    finally:
+        if settings.unload_reranker_model_after_use:
+            safe_unload_reranker_model(backend, settings.reranker_model_path, settings.local_model_device, debug["warnings"])
 
 
 def _trim_results(candidates: list[RetrievalCandidate], top_k: int, max_context_chars: int) -> list[dict[str, Any]]:

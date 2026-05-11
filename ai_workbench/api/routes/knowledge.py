@@ -24,6 +24,8 @@ from ai_workbench.core.knowledge_context import render_knowledge_context_preview
 from ai_workbench.core.knowledge_models import (
     KnowledgeModelError,
     normalize_model_path,
+    safe_unload_embedding_model,
+    safe_unload_reranker_model,
     scan_local_models,
 )
 from ai_workbench.core.knowledge_settings import KnowledgeSettingsPatch
@@ -185,25 +187,30 @@ def delete_embedding_model(profile_id: str, state: RuntimeState = Depends(get_st
 def test_embedding_model(profile_id: str, payload: EmbeddingTestRequest, state: RuntimeState = Depends(get_state)) -> dict:
     if not payload.text.strip():
         raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Text must not be empty.")
+    settings = state.knowledge.get_settings()
     try:
         profile = state.knowledge.get_embedding_profile(profile_id)
-        result = embed_texts(
-            backend=state.knowledge_model_backend,
-            profile=profile,
-            texts=[payload.text],
-            purpose=payload.purpose,
-            device=state.knowledge.get_settings().local_model_device,
-        )
-        vector = result["vectors"][0]
-        return {
-            "ok": True,
-            "model_profile_id": profile.id,
-            "model_path": profile.model_path,
-            "purpose": payload.purpose,
-            "dimension": result["dimension"],
-            "normalized": profile.normalize,
-            "sample": vector[:8],
-        }
+        try:
+            result = embed_texts(
+                backend=state.knowledge_model_backend,
+                profile=profile,
+                texts=[payload.text],
+                purpose=payload.purpose,
+                device=settings.local_model_device,
+            )
+            vector = result["vectors"][0]
+            return {
+                "ok": True,
+                "model_profile_id": profile.id,
+                "model_path": profile.model_path,
+                "purpose": payload.purpose,
+                "dimension": result["dimension"],
+                "normalized": profile.normalize,
+                "sample": vector[:8],
+            }
+        finally:
+            if settings.unload_embedding_model_after_use:
+                safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
     except KeyError:
         raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
     except KnowledgeModelError as exc:
@@ -219,13 +226,17 @@ def create_embeddings(payload: EmbeddingsRequest, state: RuntimeState = Depends(
         raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Embedding inputs must not be empty.")
     try:
         profile = state.knowledge.get_embedding_profile(payload.model_profile_id)
-        return embed_texts(
-            backend=state.knowledge_model_backend,
-            profile=profile,
-            texts=payload.inputs,
-            purpose=payload.purpose,
-            device=settings.local_model_device,
-        )
+        try:
+            return embed_texts(
+                backend=state.knowledge_model_backend,
+                profile=profile,
+                texts=payload.inputs,
+                purpose=payload.purpose,
+                device=settings.local_model_device,
+            )
+        finally:
+            if settings.unload_embedding_model_after_use:
+                safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
     except KeyError:
         raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {payload.model_profile_id}")
     except KnowledgeModelError as exc:
@@ -253,13 +264,17 @@ def rerank(payload: RerankRequest, state: RuntimeState = Depends(get_state)) -> 
         documents.append(document.model_dump())
     try:
         model_path = normalize_model_path(settings.reranker_model_path, "rerankers")
-        return rerank_documents(
-            backend=state.knowledge_model_backend,
-            model_path=model_path,
-            query=payload.query,
-            documents=documents,
-            device=settings.local_model_device,
-        )
+        try:
+            return rerank_documents(
+                backend=state.knowledge_model_backend,
+                model_path=model_path,
+                query=payload.query,
+                documents=documents,
+                device=settings.local_model_device,
+            )
+        finally:
+            if settings.unload_reranker_model_after_use:
+                safe_unload_reranker_model(state.knowledge_model_backend, model_path, settings.local_model_device)
     except ValueError as exc:
         raise_error(422, "INVALID_KNOWLEDGE_MODEL_PATH", str(exc))
     except KnowledgeModelError as exc:
@@ -482,16 +497,23 @@ def reindex_knowledge_source(source_id: str, state: RuntimeState = Depends(get_s
 @router.post("/bases/{knowledge_base_id}/reindex")
 def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
+        knowledge_base = state.knowledge.get_knowledge_base(knowledge_base_id)
+        profile = state.knowledge.get_embedding_profile(knowledge_base.embedding_model_profile_id)
         sources = state.knowledge.list_sources(knowledge_base_id)
     except KeyError:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
     results = []
-    for source in sources:
-        try:
-            source_text = _load_existing_source_text(source.id, state)
-            results.append(_index_prepared_source(knowledge_base_id, source_text, state).model_dump())
-        except KnowledgeIndexError as exc:
-            results.append({"source_id": source.id, "status": "failed", "chunks": source.chunks, "error": exc.message})
+    settings = state.knowledge.get_settings()
+    try:
+        for source in sources:
+            try:
+                source_text = _load_existing_source_text(source.id, state)
+                results.append(_index_prepared_source(knowledge_base_id, source_text, state, unload_after_use=False).model_dump())
+            except KnowledgeIndexError as exc:
+                results.append({"source_id": source.id, "status": "failed", "chunks": source.chunks, "error": exc.message})
+    finally:
+        if settings.unload_embedding_model_after_use:
+            safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
     return {"knowledge_base_id": knowledge_base_id, "sources": results}
 
 
@@ -550,7 +572,7 @@ def _load_existing_source_text(source_id: str, state: RuntimeState):
     return prepared.__class__(**{**prepared.__dict__, "source_id": source.id, "title": source.title})
 
 
-def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeState):
+def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeState, *, unload_after_use: bool = True):
     settings = state.knowledge.get_settings()
     knowledge_base = state.knowledge.get_knowledge_base(knowledge_base_id)
     profile = state.knowledge.get_embedding_profile(knowledge_base.embedding_model_profile_id)
@@ -590,6 +612,9 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
     except KnowledgeIndexError as exc:
         state.knowledge.mark_source_failed(source, exc.message)
         raise
+    finally:
+        if unload_after_use and settings.unload_embedding_model_after_use:
+            safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
 
 
 def _require_session(state: RuntimeState, session_id: str) -> None:

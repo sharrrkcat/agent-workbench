@@ -143,6 +143,8 @@ def ensure_knowledge_settings_columns(engine) -> None:
                 "User query:\n"
                 "{query}'"
             ),
+            "unload_embedding_model_after_use": "BOOLEAN DEFAULT 0",
+            "unload_reranker_model_after_use": "BOOLEAN DEFAULT 0",
         }
         for column, ddl in additions.items():
             if column not in columns:

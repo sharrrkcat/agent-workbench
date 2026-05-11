@@ -62,6 +62,8 @@
     "rerankerModelPath": "Reranker model path",
     "batchSize": "Batch size",
     "timeoutSeconds": "Timeout seconds",
+    "unloadEmbeddingModelAfterUse": "Unload embedding model after use",
+    "unloadRerankerModelAfterUse": "Unload reranker model after use",
     "candidateLimit": "Candidate limit",
     "vectorCandidateK": "Vector candidate K",
     "keywordCandidateK": "Keyword candidate K",
@@ -221,7 +223,9 @@
     "presetFieldsFilledWhenAvailable": "Preset fields will be filled when available.",
     "scanLocalModelsInOverviewFirst": "Scan local models in Overview first.",
     "chooseScannedRerankerModel": "Choose a scanned local reranker model.",
-    "currentSavedPathNotScanned": "Current saved path is not in scanned folders."
+    "currentSavedPathNotScanned": "Current saved path is not in scanned folders.",
+    "unloadEmbeddingModelAfterUse": "Release the local embedding model after indexing or search. This can reduce VRAM usage but makes the next search slower.",
+    "unloadRerankerModelAfterUse": "Release the local reranker after reranking. This can reduce VRAM usage but makes the next rerank slower."
   },
   "errors": {
     "copyCommandFailed": "Failed to copy command. Select and copy it manually."

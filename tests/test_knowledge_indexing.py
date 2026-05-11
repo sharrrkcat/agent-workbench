@@ -20,6 +20,7 @@ class MockEmbeddingBackend:
         self.dimension = dimension
         self.fail_code = fail_code
         self.calls: list[dict] = []
+        self.unloaded_embeddings: list[dict] = []
 
     def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
         self.calls.append({"model_path": model_path, "texts": texts, "normalize": normalize, "device": device})
@@ -27,6 +28,10 @@ class MockEmbeddingBackend:
             raise KnowledgeModelError(self.fail_code, "mock embedding failed")
         base = [3.0, 4.0, 0.0]
         return [base[: self.dimension] for _ in texts]
+
+    def unload_embedding_model(self, model_path: str, device: str) -> bool:
+        self.unloaded_embeddings.append({"model_path": model_path, "device": device})
+        return True
 
 
 def make_client(tmp_path: Path, backend: MockEmbeddingBackend | None = None) -> tuple[TestClient, Path, MockEmbeddingBackend]:
@@ -108,6 +113,20 @@ def test_pasted_text_source_indexes_chunks_vectors_fts_and_raw_file(tmp_path: Pa
     assert "Notes" in fts_content
     assert table_count(db_path, "kb_chunk_fts", "source_id = ?", (payload["source_id"],)) == 3
     assert client.get(f"/api/knowledge/bases/{kb['id']}").json()["index_status"] == "ready"
+
+
+def test_embedding_unload_after_use_runs_after_single_source_index(tmp_path: Path) -> None:
+    client, _db_path, backend = make_client(tmp_path)
+    kb = create_kb(client)
+    client.patch("/api/knowledge/settings", json={"unload_embedding_model_after_use": True})
+
+    response = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "Notes", "text": "a" * 120},
+    )
+
+    assert response.status_code == 200, response.text
+    assert backend.unloaded_embeddings == [{"model_path": "embeddings/bge-m3", "device": "auto"}]
 
 
 def test_source_preview_and_chunk_list_hide_vectors(tmp_path: Path) -> None:
@@ -249,6 +268,22 @@ def test_kb_reindex_reindexes_all_sources(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert {item["source_id"] for item in response.json()["sources"]} == {first["source_id"], second["source_id"]}
     assert len(backend.calls) == 2
+
+
+def test_kb_reindex_unloads_embedding_once_after_all_sources(tmp_path: Path) -> None:
+    client, _db_path, backend = make_client(tmp_path)
+    kb = create_kb(client)
+    client.post(f"/api/knowledge/bases/{kb['id']}/sources", json={"source_type": "pasted_text", "title": "One", "text": "a" * 120})
+    client.post(f"/api/knowledge/bases/{kb['id']}/sources", json={"source_type": "pasted_text", "title": "Two", "text": "b" * 120})
+    backend.calls.clear()
+    backend.unloaded_embeddings.clear()
+    client.patch("/api/knowledge/settings", json={"unload_embedding_model_after_use": True})
+
+    response = client.post(f"/api/knowledge/bases/{kb['id']}/reindex")
+
+    assert response.status_code == 200, response.text
+    assert len(backend.calls) == 2
+    assert backend.unloaded_embeddings == [{"model_path": "embeddings/bge-m3", "device": "auto"}]
 
 
 def test_kb_and_embedding_profile_changes_mark_existing_index_needs_reindex(tmp_path: Path) -> None:

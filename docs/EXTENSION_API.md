@@ -336,7 +336,14 @@ Settings:
 - `GET /api/knowledge/settings`
 - `PATCH /api/knowledge/settings`
 
-Knowledge Defaults store local model device, embedding batch/timeout defaults, the single global reranker configuration, retrieval quality knobs, chunking/index limits, optional query expansion settings, and Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
+Knowledge Defaults store local model device, embedding batch/timeout defaults, optional local embedding unload-after-use behavior, the single global reranker configuration, optional reranker unload-after-use behavior, retrieval quality knobs, chunking/index limits, optional query expansion settings, and Knowledge context prompt templates. `models_root` is read-only in v1 and defaults to `data/models`.
+
+The local model unload fields are:
+
+- `unload_embedding_model_after_use`: boolean, default `false`. When true, local embedding model cache entries used by tests, indexing, and search query embedding are released after use.
+- `unload_reranker_model_after_use`: boolean, default `false`. When true, the local reranker cache is released after reranking.
+
+Unload is best-effort. It removes local backend cache references, runs Python garbage collection, and empties the torch CUDA cache when CUDA is available. It does not change retrieval, RRF, indexing, or reranker ranking semantics.
 
 Local model directories:
 
@@ -389,13 +396,13 @@ Embedding generation:
 
 - `POST /api/knowledge/embeddings`
 
-Request shape is `{model_profile_id, purpose, inputs}` where `purpose` is `query` or `document`. The API applies the profile instruction for that purpose, validates batch size against Knowledge Defaults, and returns `{model_profile_id, model_path, purpose, dimension, vectors}`.
+Request shape is `{model_profile_id, purpose, inputs}` where `purpose` is `query` or `document`. The API applies the profile instruction for that purpose, validates batch size against Knowledge Defaults, and returns `{model_profile_id, model_path, purpose, dimension, vectors}`. If `unload_embedding_model_after_use` is enabled, the local embedding model used by the request is released after the response is prepared.
 
 Reranking:
 
 - `POST /api/knowledge/rerank`
 
-The reranker uses Knowledge Defaults `reranker_enabled` and `reranker_model_path`. It returns sorted `{id, score}` results or structured errors such as `KNOWLEDGE_RERANKER_DISABLED`, `KNOWLEDGE_RERANKER_MODEL_NOT_CONFIGURED`, `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, or `KNOWLEDGE_MODEL_NOT_FOUND`.
+The reranker uses Knowledge Defaults `reranker_enabled` and `reranker_model_path`. It returns sorted `{id, score}` results or structured errors such as `KNOWLEDGE_RERANKER_DISABLED`, `KNOWLEDGE_RERANKER_MODEL_NOT_CONFIGURED`, `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, or `KNOWLEDGE_MODEL_NOT_FOUND`. If `unload_reranker_model_after_use` is enabled, the local reranker is released after the rerank attempt, including fallback paths where retrieval keeps RRF order.
 
 Knowledge base APIs:
 

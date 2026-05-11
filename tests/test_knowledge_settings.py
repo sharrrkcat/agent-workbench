@@ -1,9 +1,13 @@
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
 from ai_workbench.api.main import create_app
+import ai_workbench.core.knowledge_models as knowledge_models
+from ai_workbench.core.knowledge_models import LocalKnowledgeModelBackend
 from ai_workbench.db.database import get_engine, init_db
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
@@ -37,6 +41,8 @@ def test_knowledge_settings_defaults_patch_validation_and_persist(tmp_path: Path
     assert defaults.status_code == 200
     assert defaults.json()["models_root"] == "data/models"
     assert defaults.json()["reranker_enabled"] is False
+    assert defaults.json()["unload_embedding_model_after_use"] is False
+    assert defaults.json()["unload_reranker_model_after_use"] is False
     assert "{content}" in defaults.json()["knowledge_context_snippet_template"]
 
     patched = client.patch(
@@ -44,7 +50,9 @@ def test_knowledge_settings_defaults_patch_validation_and_persist(tmp_path: Path
         json={
             "local_model_device": "cpu",
             "embedding_batch_size": 2,
+            "unload_embedding_model_after_use": True,
             "reranker_model_path": "rerankers/bge-reranker",
+            "unload_reranker_model_after_use": True,
             "knowledge_context_instruction": "Use KB snippets.",
             "knowledge_context_snippet_template": "{content}",
         },
@@ -52,7 +60,9 @@ def test_knowledge_settings_defaults_patch_validation_and_persist(tmp_path: Path
     assert patched.status_code == 200
     assert patched.json()["local_model_device"] == "cpu"
     assert patched.json()["embedding_batch_size"] == 2
+    assert patched.json()["unload_embedding_model_after_use"] is True
     assert patched.json()["reranker_model_path"] == "rerankers/bge-reranker"
+    assert patched.json()["unload_reranker_model_after_use"] is True
 
     assert client.patch("/api/knowledge/settings", json={"unknown": 1}).status_code == 422
     assert client.patch("/api/knowledge/settings", json={"local_model_device": "metal"}).status_code == 422
@@ -63,6 +73,7 @@ def test_knowledge_settings_defaults_patch_validation_and_persist(tmp_path: Path
 
     restarted = make_client(tmp_path)
     assert restarted.get("/api/knowledge/settings").json()["embedding_batch_size"] == 2
+    assert restarted.get("/api/knowledge/settings").json()["unload_embedding_model_after_use"] is True
 
 
 def test_knowledge_tables_exist_and_existing_db_upgrades(tmp_path: Path) -> None:
@@ -98,6 +109,31 @@ def test_model_scan_creates_directories_and_lists_direct_child_dirs(tmp_path: Pa
     assert payload["embedding_models"] == [{"model_path": "embeddings/bge-m3", "name": "bge-m3", "exists": True}]
     assert payload["reranker_models"] == [{"model_path": "rerankers/bge-reranker", "name": "bge-reranker", "exists": True}]
     assert "sentence_transformers_available" in payload["backend"]
+
+
+def test_local_model_unload_collects_and_empties_cuda_cache(monkeypatch, tmp_path: Path) -> None:
+    backend = LocalKnowledgeModelBackend(tmp_path)
+    backend._embedding_cache[("model-a", "cuda")] = object()
+    calls: list[str] = []
+    original_find_spec = knowledge_models.importlib.util.find_spec
+
+    monkeypatch.setattr(knowledge_models.gc, "collect", lambda: calls.append("gc"))
+    monkeypatch.setattr(
+        knowledge_models.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "torch" else original_find_spec(name),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: True, empty_cache=lambda: calls.append("empty_cache"))),
+    )
+
+    removed = backend.unload_all_embedding_models()
+
+    assert removed == 1
+    assert backend._embedding_cache == {}
+    assert calls == ["gc", "empty_cache"]
 
 
 def test_embedding_model_profile_crud_and_kb_in_use_delete_rejection(tmp_path: Path) -> None:

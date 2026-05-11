@@ -338,11 +338,13 @@ export type KnowledgeSettings = {
   local_model_device: 'auto' | 'cpu' | 'cuda';
   embedding_batch_size: number;
   embedding_timeout_seconds: number;
+  unload_embedding_model_after_use: boolean;
   reranker_enabled: boolean;
   reranker_model_path: string | null;
   reranker_batch_size: number;
   reranker_timeout_seconds: number;
   reranker_candidate_limit: number;
+  unload_reranker_model_after_use: boolean;
   hybrid_search_enabled: boolean;
   default_vector_candidate_k: number;
   default_keyword_candidate_k: number;
