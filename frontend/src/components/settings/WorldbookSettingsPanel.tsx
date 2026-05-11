@@ -1,5 +1,6 @@
-import { BookOpenText, GripVertical, Pencil, Play, Save, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { BookOpenText, ChevronDown, ChevronRight, GripVertical, Play, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type { DragEventHandler, FormEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import type { Worldbook, WorldbookEntry, WorldbookEntryInput, WorldbookInput, WorldbookMatchTestResponse, WorldbookSettings } from '../../types';
@@ -28,8 +29,8 @@ export function WorldbookSettingsDetail({
   const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
   const [entries, setEntries] = useState<WorldbookEntry[]>([]);
   const [worldbookValues, setWorldbookValues] = useState<Partial<Worldbook>>(emptyWorldbook);
-  const [entryValues, setEntryValues] = useState<Partial<WorldbookEntry>>(emptyEntry);
-  const [selectedEntryId, setSelectedEntryId] = useState('');
+  const [entryDrafts, setEntryDrafts] = useState<Record<string, Partial<WorldbookEntry>>>({});
+  const [expandedEntryIds, setExpandedEntryIds] = useState<string[]>([]);
   const [matchText, setMatchText] = useState('');
   const [matchResult, setMatchResult] = useState<WorldbookMatchTestResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'config' | 'entries' | 'match'>('config');
@@ -38,10 +39,14 @@ export function WorldbookSettingsDetail({
   const [message, setMessage] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const selectedWorldbook = useMemo(() => worldbooks.find((item) => item.id === selectedItemId), [selectedItemId, worldbooks]);
-  const selectedEntry = useMemo(() => entries.find((item) => item.id === selectedEntryId), [entries, selectedEntryId]);
   const defaultsDirty = Boolean(values && settings && JSON.stringify(values) !== JSON.stringify(settings));
   const worldbookDirty = JSON.stringify(worldbookValues) !== JSON.stringify(selectedWorldbook || emptyWorldbook);
-  const entryDirty = JSON.stringify(entryValues) !== JSON.stringify(selectedEntry || emptyEntry);
+  const entryDirty = useMemo(() => {
+    return Object.entries(entryDrafts).some(([entryId, draft]) => {
+      const source = entryId === 'new' ? emptyEntry : entries.find((entry) => entry.id === entryId);
+      return Boolean(source) && JSON.stringify(draft) !== JSON.stringify(source);
+    });
+  }, [entries, entryDrafts]);
 
   async function refresh(nextSelectedId?: string) {
     const [nextSettings, nextWorldbooks] = await Promise.all([api.getWorldbookSettings(), api.listWorldbooks()]);
@@ -54,12 +59,14 @@ export function WorldbookSettingsDetail({
   async function loadEntries(worldbookId: string) {
     if (!worldbookId || worldbookId === 'new') {
       setEntries([]);
-      setSelectedEntryId('');
+      setEntryDrafts({});
+      setExpandedEntryIds([]);
       return;
     }
     const nextEntries = await api.listWorldbookEntries(worldbookId);
     setEntries(nextEntries);
-    setSelectedEntryId((current) => current && nextEntries.some((entry) => entry.id === current) ? current : nextEntries[0]?.id || '');
+    setEntryDrafts(Object.fromEntries(nextEntries.map((entry) => [entry.id, entry])));
+    setExpandedEntryIds((current) => current.filter((id) => id === 'new' || nextEntries.some((entry) => entry.id === id)));
   }
 
   useEffect(() => {
@@ -85,10 +92,6 @@ export function WorldbookSettingsDetail({
     void loadEntries(selectedItemId).catch((error) => setLocalError(toSettingsError(error, t('worldbook:errors.loadFailed'))));
   }, [category, selectedItemId, selectedWorldbook]);
 
-  useEffect(() => {
-    setEntryValues(selectedEntry || emptyEntry);
-  }, [selectedEntry]);
-
   async function saveDefaults(event: FormEvent) {
     event.preventDefault();
     if (!values) return;
@@ -105,8 +108,8 @@ export function WorldbookSettingsDetail({
     }
   }
 
-  async function saveWorldbook(event: FormEvent) {
-    event.preventDefault();
+  async function saveWorldbook(event?: FormEvent) {
+    event?.preventDefault();
     setBusy('save-worldbook');
     try {
       const saved = selectedItemId === 'new'
@@ -135,17 +138,18 @@ export function WorldbookSettingsDetail({
     }
   }
 
-  async function saveEntry(event: FormEvent) {
-    event.preventDefault();
+  async function saveEntry(entryId: string, event?: FormEvent) {
+    event?.preventDefault();
     if (!selectedWorldbook) return;
     setBusy('save-entry');
     try {
-      const saved = selectedEntryId === 'new'
-        ? await api.createWorldbookEntry(selectedWorldbook.id, entryPayload(entryValues))
-        : await api.patchWorldbookEntry(selectedEntryId, entryPayload(entryValues));
+      const draft = entryDrafts[entryId] || (entryId === 'new' ? emptyEntry : entries.find((entry) => entry.id === entryId) || emptyEntry);
+      const saved = entryId === 'new'
+        ? await api.createWorldbookEntry(selectedWorldbook.id, entryPayload(draft))
+        : await api.patchWorldbookEntry(entryId, entryPayload(draft));
       setMessage(t('worldbook:results.entrySaved'));
       await loadEntries(selectedWorldbook.id);
-      setSelectedEntryId(saved.id);
+      setExpandedEntryIds((current) => uniqueIds(current.filter((id) => id !== 'new').concat(saved.id)));
     } catch (error) {
       setLocalError(toSettingsError(error, t('worldbook:errors.saveEntryFailed')));
     } finally {
@@ -153,11 +157,14 @@ export function WorldbookSettingsDetail({
     }
   }
 
-  async function deleteEntry() {
-    if (!selectedEntry || !selectedWorldbook) return;
+  async function deleteEntry(entryId: string) {
+    if (!selectedWorldbook || entryId === 'new') {
+      resetEntry(entryId);
+      return;
+    }
     setBusy('delete-entry');
     try {
-      await api.deleteWorldbookEntry(selectedEntry.id);
+      await api.deleteWorldbookEntry(entryId);
       setMessage(t('worldbook:results.entryDeleted'));
       await loadEntries(selectedWorldbook.id);
     } catch (error) {
@@ -194,6 +201,37 @@ export function WorldbookSettingsDetail({
     const [moved] = nextEntries.splice(sourceIndex, 1);
     nextEntries.splice(targetIndex, 0, moved);
     void reorderEntries(nextEntries);
+  }
+
+  function newEntry() {
+    setEntryDrafts((current) => ({ ...current, new: { ...emptyEntry } }));
+    setExpandedEntryIds((current) => uniqueIds(['new', ...current]));
+  }
+
+  function toggleEntry(entryId: string) {
+    setExpandedEntryIds((current) => current.includes(entryId) ? current.filter((id) => id !== entryId) : [...current, entryId]);
+  }
+
+  function updateEntryDraft(entryId: string, patch: Partial<WorldbookEntry>) {
+    setEntryDrafts((current) => {
+      const source = current[entryId] || (entryId === 'new' ? emptyEntry : entries.find((entry) => entry.id === entryId) || emptyEntry);
+      return { ...current, [entryId]: { ...source, ...patch } };
+    });
+  }
+
+  function resetEntry(entryId: string) {
+    if (entryId === 'new') {
+      setEntryDrafts((current) => {
+        const { new: _newEntry, ...rest } = current;
+        void _newEntry;
+        return rest;
+      });
+      setExpandedEntryIds((current) => current.filter((id) => id !== 'new'));
+      return;
+    }
+    const source = entries.find((entry) => entry.id === entryId);
+    if (!source) return;
+    setEntryDrafts((current) => ({ ...current, [entryId]: source }));
   }
 
   async function runMatchTest() {
@@ -234,9 +272,35 @@ export function WorldbookSettingsDetail({
     return <Empty title={t('worldbook:empty.noWorldbookSelected')} message={t('worldbook:empty.selectWorldbook')} />;
   }
 
+  const worldbookHeaderActions = category === 'worldbooks' ? (
+    <>
+      {message ? <span className="settings-badge success">{message}</span> : null}
+      <BooleanField label={t('worldbook:labels.enabled')} checked={worldbookValues.enabled ?? true} onChange={(enabled) => setWorldbookValues({ ...worldbookValues, enabled })} compact />
+      {worldbookDirty ? (
+        <button className="settings-primary-button" type="button" onClick={() => void saveWorldbook()} disabled={busy === 'save-worldbook'}>
+          <Save size={14} />
+          {busy === 'save-worldbook' ? t('common:saving') : t('common:save')}
+        </button>
+      ) : null}
+      {selectedWorldbook ? (
+        <button className="settings-secondary-button danger" type="button" onClick={deleteWorldbook} disabled={Boolean(busy)}>
+          <Trash2 size={14} />
+          {t('common:delete')}
+        </button>
+      ) : null}
+    </>
+  ) : undefined;
+
   return (
     <div className="settings-detail-form">
-      <Header title={selectedItemId === 'new' ? t('worldbook:titles.newWorldbook') : selectedWorldbook?.name || t('worldbook:titles.worldbook')} description={t('worldbook:descriptions.worldbook')} dirty={false} busy={false} message={message} />
+      <Header
+        title={selectedItemId === 'new' ? t('worldbook:titles.newWorldbook') : selectedWorldbook?.name || t('worldbook:titles.worldbook')}
+        description={t('worldbook:descriptions.worldbook')}
+        dirty={false}
+        busy={false}
+        message=""
+        actions={worldbookHeaderActions}
+      />
       <DetailTabs
         tabs={[
           { id: 'config', label: t('worldbook:sections.config') },
@@ -252,68 +316,65 @@ export function WorldbookSettingsDetail({
           <div className="detail-section-heading"><h3>{t('worldbook:sections.config')}</h3></div>
           <TextField label={t('worldbook:labels.name')} value={worldbookValues.name || ''} onChange={(name) => setWorldbookValues({ ...worldbookValues, name })} />
           <TextAreaField label={t('worldbook:labels.description')} value={worldbookValues.description || ''} onChange={(description) => setWorldbookValues({ ...worldbookValues, description })} />
-          <BooleanField label={t('worldbook:labels.enabled')} checked={worldbookValues.enabled ?? true} onChange={(enabled) => setWorldbookValues({ ...worldbookValues, enabled })} />
-          <div className="settings-button-row">
-            <button className="settings-primary-button" type="submit" disabled={busy === 'save-worldbook'}><Save size={14} />{t('common:save')}</button>
-            {selectedWorldbook ? <button className="settings-secondary-button danger" type="button" onClick={deleteWorldbook} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
-          </div>
         </form> : null}
         {selectedWorldbook ? (
           <>
             {activeTab === 'entries' ? <div className="detail-section">
               <div className="detail-section-heading"><h3>{t('worldbook:sections.entries')}</h3></div>
-              <div className="settings-button-row"><button className="settings-secondary-button" type="button" onClick={() => setSelectedEntryId('new')}>{t('worldbook:actions.newEntry')}</button></div>
-              <div className="settings-list-scroll">
-                {entries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={`settings-object-row worldbook-entry-row ${selectedEntryId === entry.id ? 'active' : ''} ${entry.enabled ? '' : 'disabled'} ${dragEntryId === entry.id ? 'dragging' : ''}`}
-                    draggable={!busy}
-                    onDragStart={(event) => {
-                      setDragEntryId(entry.id);
-                      event.dataTransfer.effectAllowed = 'move';
-                    }}
-                    onDragOver={(event) => {
-                      if (dragEntryId && dragEntryId !== entry.id) event.preventDefault();
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      handleEntryDrop(entry.id);
-                    }}
-                    onDragEnd={() => setDragEntryId('')}
-                    onClick={() => setSelectedEntryId(entry.id)}
-                    title={t('worldbook:actions.dragToReorder')}
-                  >
-                    <GripVertical className="worldbook-drag-handle" size={15} aria-hidden="true" />
-                    <div className="settings-object-copy">
-                      <strong>{entry.name}</strong>
-                      <small>{entry.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
-                      {entry.keywords_text ? <small>{keywordPreview(entry.keywords_text)}</small> : null}
-                    </div>
-                    <span className={`settings-badge ${entry.enabled ? 'success' : 'muted'}`}>{entry.enabled ? t('worldbook:labels.enabled') : t('worldbook:labels.disabled')}</span>
-                    <span className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
-                      <button className="settings-secondary-button icon-only" type="button" onClick={() => setSelectedEntryId(entry.id)} title={t('worldbook:actions.editEntry')} aria-label={t('worldbook:actions.editEntry')}><Pencil size={14} /></button>
-                    </span>
-                  </button>
-                ))}
-                {!entries.length ? <div className="settings-empty-state compact">{t('worldbook:empty.noEntries')}</div> : null}
+              <div className="settings-button-row"><button className="settings-secondary-button" type="button" onClick={newEntry}>{t('worldbook:actions.newEntry')}</button></div>
+              <div className="worldbook-entry-card-list">
+                {expandedEntryIds.includes('new') ? (
+                  <EntryCard
+                    entryId="new"
+                    draft={entryDrafts.new || emptyEntry}
+                    expanded
+                    dirty={JSON.stringify(entryDrafts.new || emptyEntry) !== JSON.stringify(emptyEntry)}
+                    busy={busy}
+                    draggable={false}
+                    onToggle={() => toggleEntry('new')}
+                    onUpdate={(patch) => updateEntryDraft('new', patch)}
+                    onSave={(event) => void saveEntry('new', event)}
+                    onReset={() => resetEntry('new')}
+                    onDelete={() => resetEntry('new')}
+                  />
+                ) : null}
+                {entries.map((entry) => {
+                  const draft = entryDrafts[entry.id] || entry;
+                  const expanded = expandedEntryIds.includes(entry.id);
+                  return (
+                    <EntryCard
+                      key={entry.id}
+                      entryId={entry.id}
+                      entry={entry}
+                      draft={draft}
+                      expanded={expanded}
+                      dirty={JSON.stringify(draft) !== JSON.stringify(entry)}
+                      busy={busy}
+                      draggable={!busy}
+                      dragging={dragEntryId === entry.id}
+                      onToggle={() => toggleEntry(entry.id)}
+                      onUpdate={(patch) => updateEntryDraft(entry.id, patch)}
+                      onSave={(event) => void saveEntry(entry.id, event)}
+                      onReset={() => resetEntry(entry.id)}
+                      onDelete={() => void deleteEntry(entry.id)}
+                      onDragStart={(event) => {
+                        setDragEntryId(entry.id);
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(event) => {
+                        if (dragEntryId && dragEntryId !== entry.id) event.preventDefault();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleEntryDrop(entry.id);
+                      }}
+                      onDragEnd={() => setDragEntryId('')}
+                    />
+                  );
+                })}
+                {!entries.length && !expandedEntryIds.includes('new') ? <div className="settings-empty-state compact">{t('worldbook:empty.noEntries')}</div> : null}
               </div>
             </div> : null}
-            {(selectedEntryId === 'new' || selectedEntry) ? (
-              activeTab === 'entries' ? <form className="detail-section" onSubmit={saveEntry}>
-                <div className="detail-section-heading"><h3>{selectedEntryId === 'new' ? t('worldbook:titles.newEntry') : t('worldbook:titles.entry')}</h3></div>
-                <TextField label={t('worldbook:labels.name')} value={entryValues.name || ''} onChange={(name) => setEntryValues({ ...entryValues, name })} />
-                <SelectField label={t('worldbook:labels.activationMode')} value={entryValues.activation_mode || 'keyword'} onChange={(activation_mode) => setEntryValues({ ...entryValues, activation_mode })} />
-                <TextAreaField label={t('worldbook:labels.keywords')} value={entryValues.keywords_text || ''} onChange={(keywords_text) => setEntryValues({ ...entryValues, keywords_text })} />
-                <TextAreaField label={t('worldbook:labels.entryContent')} rows={8} value={entryValues.content || ''} onChange={(content) => setEntryValues({ ...entryValues, content })} />
-                <BooleanField label={t('worldbook:labels.enabled')} checked={entryValues.enabled ?? true} onChange={(enabled) => setEntryValues({ ...entryValues, enabled })} />
-                <div className="settings-button-row">
-                  <button className="settings-primary-button" type="submit" disabled={busy === 'save-entry'}><Save size={14} />{t('common:save')}</button>
-                  {selectedEntry ? <button className="settings-secondary-button danger" type="button" onClick={deleteEntry} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
-                </div>
-              </form> : null
-            ) : null}
             {activeTab === 'match' ? <div className="detail-section">
               <div className="detail-section-heading"><h3>{t('worldbook:sections.matchTest')}</h3></div>
               <TextAreaField label={t('worldbook:labels.matchText')} value={matchText} onChange={setMatchText} />
@@ -327,21 +388,149 @@ export function WorldbookSettingsDetail({
   );
 }
 
-function Header({ title, description, dirty, busy, message }: { title: string; description: string; dirty: boolean; busy: boolean; message: string }) {
+function EntryCard({
+  entryId,
+  entry,
+  draft,
+  expanded,
+  dirty,
+  busy,
+  draggable,
+  dragging = false,
+  onToggle,
+  onUpdate,
+  onSave,
+  onReset,
+  onDelete,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  entryId: string;
+  entry?: WorldbookEntry;
+  draft: Partial<WorldbookEntry>;
+  expanded: boolean;
+  dirty: boolean;
+  busy: string;
+  draggable: boolean;
+  dragging?: boolean;
+  onToggle: () => void;
+  onUpdate: (patch: Partial<WorldbookEntry>) => void;
+  onSave: (event: FormEvent) => void;
+  onReset: () => void;
+  onDelete: () => void;
+  onDragStart?: DragEventHandler<HTMLButtonElement>;
+  onDragOver?: DragEventHandler<HTMLElement>;
+  onDrop?: DragEventHandler<HTMLElement>;
+  onDragEnd?: DragEventHandler<HTMLButtonElement>;
+}) {
+  const { t } = useTranslation(['worldbook', 'common']);
+  const title = draft.name || (entryId === 'new' ? t('worldbook:titles.newEntry') : t('worldbook:titles.entry'));
+  const keywordCount = countKeywords(draft.keywords_text || '');
+  const keywordText = keywordCount
+    ? t('worldbook:labels.keywordCount', { count: keywordCount })
+    : t('worldbook:labels.noKeywords');
+
+  return (
+    <article
+      className={`worldbook-entry-card ${expanded ? 'expanded' : ''} ${draft.enabled ?? true ? '' : 'disabled'} ${dragging ? 'dragging' : ''}`}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <header className="worldbook-entry-card-header" onClick={onToggle}>
+        <button
+          className="worldbook-drag-button"
+          type="button"
+          draggable={draggable}
+          disabled={!draggable}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onClick={(event) => event.stopPropagation()}
+          title={t('worldbook:actions.dragToReorder')}
+          aria-label={t('worldbook:actions.dragToReorder')}
+        >
+          <GripVertical size={15} aria-hidden="true" />
+        </button>
+        <button
+          className="settings-secondary-button icon-only"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggle();
+          }}
+          title={expanded ? t('worldbook:actions.collapseEntry') : t('worldbook:actions.expandEntry')}
+          aria-label={expanded ? t('worldbook:actions.collapseEntry') : t('worldbook:actions.expandEntry')}
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <span className={`settings-badge ${draft.enabled ?? true ? 'success' : 'muted'}`}>{draft.enabled ?? true ? t('worldbook:labels.enabled') : t('worldbook:labels.disabled')}</span>
+        <div className="worldbook-entry-card-title">
+          <strong>{title}</strong>
+          <small>{draft.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
+        </div>
+        <span className="settings-badge muted">{draft.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : keywordText}</span>
+        {dirty ? <span className="settings-badge warning">{t('worldbook:labels.unsavedChanges')}</span> : null}
+        <button
+          className="settings-secondary-button danger icon-only"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          disabled={Boolean(busy)}
+          title={t('common:delete')}
+          aria-label={t('common:delete')}
+        >
+          <Trash2 size={14} />
+        </button>
+      </header>
+      {expanded ? (
+        <form className="worldbook-entry-card-body" onSubmit={onSave}>
+          <TextField label={t('worldbook:labels.name')} value={draft.name || ''} onChange={(name) => onUpdate({ name })} />
+          <SelectField label={t('worldbook:labels.activationMode')} value={draft.activation_mode || 'keyword'} onChange={(activation_mode) => onUpdate({ activation_mode })} />
+          <TextAreaField label={t('worldbook:labels.keywords')} value={draft.keywords_text || ''} onChange={(keywords_text) => onUpdate({ keywords_text })} />
+          <TextAreaField label={t('worldbook:labels.entryContent')} rows={8} value={draft.content || ''} onChange={(content) => onUpdate({ content })} />
+          <BooleanField label={t('worldbook:labels.enabled')} checked={draft.enabled ?? true} onChange={(enabled) => onUpdate({ enabled })} />
+          <div className="settings-button-row">
+            <button className="settings-primary-button" type="submit" disabled={busy === 'save-entry'}>
+              <Save size={14} />
+              {busy === 'save-entry' ? t('common:saving') : t('common:save')}
+            </button>
+            <button className="settings-secondary-button" type="button" onClick={onReset} disabled={!dirty || Boolean(busy)}>
+              <RotateCcw size={14} />
+              {t('worldbook:actions.resetEntry')}
+            </button>
+            <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}>
+              <Trash2 size={14} />
+              {t('common:delete')}
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </article>
+  );
+}
+
+function Header({ title, description, dirty, busy, message, actions }: { title: string; description: string; dirty: boolean; busy: boolean; message: string; actions?: ReactNode }) {
   const { t } = useTranslation('common');
   return (
     <header className="settings-detail-header">
       <div className="settings-detail-title"><div className="settings-detail-avatar"><BookOpenText size={18} /></div><div><h2>{title}</h2><p>{description}</p></div></div>
       <div className="settings-detail-actions">
-        {message ? <span className="settings-badge success">{message}</span> : null}
-        {dirty ? <button className="settings-primary-button" type="submit" disabled={busy}><Save size={14} />{busy ? t('saving') : t('save')}</button> : null}
+        {actions || (
+          <>
+            {message ? <span className="settings-badge success">{message}</span> : null}
+            {dirty ? <button className="settings-primary-button" type="submit" disabled={busy}><Save size={14} />{busy ? t('saving') : t('save')}</button> : null}
+          </>
+        )}
       </div>
     </header>
   );
 }
 
-function BooleanField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return <label className="config-field settings-config-field boolean-field"><span>{label}</span><ToggleSwitch checked={checked} onChange={onChange} /></label>;
+function BooleanField({ label, checked, onChange, compact = false }: { label: string; checked: boolean; onChange: (checked: boolean) => void; compact?: boolean }) {
+  return <label className={`config-field settings-config-field boolean-field ${compact ? 'compact' : ''}`}><span>{label}</span><ToggleSwitch checked={checked} onChange={onChange} /></label>;
 }
 
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
@@ -379,8 +568,12 @@ function MatchResults({ response }: { response: WorldbookMatchTestResponse }) {
   );
 }
 
-function keywordPreview(value: string): string {
-  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 3).join(', ');
+function countKeywords(value: string): number {
+  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).length;
+}
+
+function uniqueIds(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function Empty({ title, message }: { title: string; message: string }) {

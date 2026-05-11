@@ -32,7 +32,10 @@
     "entryContent": "条目内容",
     "matchText": "匹配文本",
     "matchedEntries": "匹配条目",
-    "disabled": "已禁用"
+    "disabled": "已禁用",
+    "keywordCount": "{{count}} 个关键词",
+    "noKeywords": "无关键词",
+    "unsavedChanges": "未保存更改"
   },
   "actions": {
     "newEntry": "新建条目",
@@ -40,7 +43,10 @@
     "down": "下移",
     "matchTest": "匹配测试",
     "dragToReorder": "拖动排序",
-    "editEntry": "编辑条目"
+    "editEntry": "编辑条目",
+    "expandEntry": "展开条目",
+    "collapseEntry": "折叠条目",
+    "resetEntry": "重置"
   },
   "empty": {
     "loadingSettings": "正在加载世界书设置。",

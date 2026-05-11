@@ -4,13 +4,13 @@ import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, Worldbook } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
-import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsSection, type WorldbookSettingsSubsection } from './SettingsNav';
+import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsInitialTarget, type SettingsSection, type WorldbookSettingsSubsection } from './SettingsNav';
 import { SettingsObjectList, type AppearanceSettingsCategory, type GeneralSettingsCategory } from './SettingsObjectList';
 
-export function SettingsConsole({ initialSection = 'general' }: { initialSection?: SettingsSection }) {
+export function SettingsConsole({ initialSection = 'general', initialTarget }: { initialSection?: SettingsSection; initialTarget?: SettingsInitialTarget }) {
   const { agents, commands, agentConfigs, capabilityConfigs, health } = useWorkbenchStore();
   const { t } = useTranslation('settings');
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialTarget?.section || initialSection);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
   const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);
@@ -32,6 +32,17 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
   useEffect(() => {
     void refreshLlmProfiles().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (initialTarget?.section === 'knowledge' && initialTarget.knowledgeSubsection) {
+      setSelectedKnowledgeSubsection(initialTarget.knowledgeSubsection);
+      setSelectedKnowledgeItemId(initialTarget.knowledgeSubsection === 'defaults' ? 'global' : '');
+    }
+    if (initialTarget?.section === 'worldbook' && initialTarget.worldbookSubsection) {
+      setSelectedWorldbookSubsection(initialTarget.worldbookSubsection);
+      setSelectedWorldbookItemId(initialTarget.worldbookSubsection === 'defaults' ? 'global' : '');
+    }
+  }, [initialTarget?.knowledgeSubsection, initialTarget?.section, initialTarget?.worldbookSubsection]);
 
   useEffect(() => {
     if (activeSection === 'knowledge') {
@@ -146,6 +157,12 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
       setSelectedKnowledgeItemId(nextSelectedId);
       return;
     }
+    if (selectedKnowledgeSubsection === 'embedding_models' && !selectedKnowledgeItemId) {
+      setSelectedKnowledgeItemId(profiles[0]?.id || '');
+    }
+    if (selectedKnowledgeSubsection === 'knowledge_bases' && !selectedKnowledgeItemId) {
+      setSelectedKnowledgeItemId(bases[0]?.id || '');
+    }
     if (selectedKnowledgeSubsection === 'embedding_models' && selectedKnowledgeItemId && selectedKnowledgeItemId !== 'new' && !profiles.some((profile) => profile.id === selectedKnowledgeItemId)) {
       setSelectedKnowledgeItemId(profiles[0]?.id || '');
     }
@@ -160,6 +177,9 @@ export function SettingsConsole({ initialSection = 'general' }: { initialSection
     if (nextSelectedId) {
       setSelectedWorldbookItemId(nextSelectedId);
       return;
+    }
+    if (selectedWorldbookSubsection === 'worldbooks' && !selectedWorldbookItemId) {
+      setSelectedWorldbookItemId(items[0]?.id || '');
     }
     if (selectedWorldbookSubsection === 'worldbooks' && selectedWorldbookItemId && selectedWorldbookItemId !== 'new' && !items.some((item) => item.id === selectedWorldbookItemId)) {
       setSelectedWorldbookItemId(items[0]?.id || '');

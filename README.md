@@ -200,7 +200,7 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - `POST /api/knowledge/search` for selected KBs or session-bound KBs.
 - brute-force vector search per embedding model profile, FTS5/BM25 keyword search, RRF merge, one global optional rerank pass, and context-budget trimming.
 - a small Settings -> Knowledge Base search/test panel.
-- a Chat header Context Sources modal that binds ordered Knowledge Bases and Worldbooks to the current session.
+- a Chat header Context Sources modal that binds ordered Knowledge Bases and Worldbooks to the current session. Its empty-state Open settings action deep-links to Settings -> Knowledge -> Knowledge Bases or Settings -> Worldbook -> Worldbooks, depending on the active Context Sources tab.
 - Prompt Agents use Core Memory, active Session Worldbooks, and active Session KBs by default, appending system-context blocks during context building in that order before conversation context.
 - Script Agents that declare the `llm` capability default to not using Core Memory, Worldbooks, or Session KBs. General Memory and Worldbook Defaults can enable Core Memory and Worldbook for Script Agent `ctx.llm.*`; Settings -> Agents -> Overrides can enable Session KBs per Agent.
 - `knowledge` Capability methods `search`, `list_bases`, and `stats` wrap the core Knowledge store and retrieval service for Script Agents.

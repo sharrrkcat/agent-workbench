@@ -2,11 +2,19 @@ import { ArrowLeft, Bot, Boxes, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ErrorBanner } from './ErrorBanner';
 import { SettingsConsole } from './settings/SettingsConsole';
-import type { SettingsSection } from './settings/SettingsNav';
+import type { SettingsInitialTarget, SettingsSection } from './settings/SettingsNav';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { changeLocale, type SupportedLocale } from '../i18n';
 
-export function SettingsPage({ initialSection = 'general', onBack }: { initialSection?: SettingsSection; onBack: () => void }) {
+export function SettingsPage({
+  initialSection = 'general',
+  initialTarget,
+  onBack,
+}: {
+  initialSection?: SettingsSection;
+  initialTarget?: SettingsInitialTarget;
+  onBack: () => void;
+}) {
   const { agentConfigs, capabilityConfigs } = useWorkbenchStore();
   const { t } = useTranslation(['settings', 'common']);
 
@@ -39,7 +47,7 @@ export function SettingsPage({ initialSection = 'general', onBack }: { initialSe
         </div>
       </header>
       <ErrorBanner />
-      <SettingsConsole initialSection={initialSection} />
+      <SettingsConsole initialTarget={initialTarget || { section: initialSection }} />
     </main>
   );
 }

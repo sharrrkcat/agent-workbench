@@ -13,7 +13,7 @@ import { createWebSocketUrl } from './api/client';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 import type { ImagePreview } from './utils/images';
 import type { FilePreview } from './components/MessageBubble';
-import type { SettingsSection } from './components/settings/SettingsNav';
+import type { KnowledgeSettingsSubsection, SettingsInitialTarget, SettingsSection, WorldbookSettingsSubsection } from './components/settings/SettingsNav';
 
 export default function App() {
   const { currentSession, initialize, refreshCurrent, applyRuntimeEvent } = useWorkbenchStore();
@@ -86,21 +86,39 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [currentSession?.session_id, refreshCurrent, wsUnavailable]);
 
-  function navigate(nextPath: string) {
-    window.history.pushState({}, '', nextPath);
+  function navigate(nextPath: string, state: Record<string, unknown> = {}) {
+    window.history.pushState(state, '', nextPath);
     setLocationKey(currentLocationKey());
   }
 
-  const settingsSection = explicitSettingsSection();
+  const settingsTarget = explicitSettingsTarget();
   if (window.location.pathname === '/settings' || window.location.hash.startsWith('#settings')) {
-    return <SettingsPage initialSection={settingsSection || 'general'} onBack={() => navigate('/')} />;
+    return <SettingsPage initialTarget={settingsTarget} onBack={() => navigate('/')} />;
   }
 
   return (
     <div className="app-shell">
       <SessionSidebar onOpenSettings={() => navigate('/settings')} />
       <main className="workspace">
-        <ChatHeader onOpenSettings={() => navigate('/settings')} />
+        <ChatHeader
+          onOpenSettings={(target) => {
+            if (target?.section === 'knowledge') {
+              navigate('/settings?tab=knowledge&subsection=knowledge_bases', {
+                settingsTab: 'knowledge',
+                settingsSubsection: 'knowledge_bases',
+              });
+              return;
+            }
+            if (target?.section === 'worldbook') {
+              navigate('/settings?tab=worldbook&subsection=worldbooks', {
+                settingsTab: 'worldbook',
+                settingsSubsection: 'worldbooks',
+              });
+              return;
+            }
+            navigate('/settings');
+          }}
+        />
         <ErrorBanner />
         <ChatView onPreviewImage={setPreviewImage} onPreviewFile={setPreviewFile} />
         <PetOverlay />
@@ -117,11 +135,23 @@ function currentLocationKey(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}:${JSON.stringify(window.history.state || {})}`;
 }
 
-function explicitSettingsSection(): SettingsSection | null {
-  const sections: SettingsSection[] = ['general', 'appearance', 'llm', 'knowledge', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
-  const queryTab = new URLSearchParams(window.location.search).get('tab');
+function explicitSettingsTarget(): SettingsInitialTarget {
+  const sections: SettingsSection[] = ['general', 'appearance', 'llm', 'knowledge', 'worldbook', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
+  const params = new URLSearchParams(window.location.search);
+  const queryTab = params.get('tab');
+  const querySubsection = params.get('subsection');
   const hashMatch = window.location.hash.match(/^#settings:([a-z-]+)$/);
   const stateTab = window.history.state?.settingsTab;
+  const stateSubsection = window.history.state?.settingsSubsection;
   const candidate = queryTab || hashMatch?.[1] || stateTab;
-  return sections.includes(candidate as SettingsSection) ? (candidate as SettingsSection) : null;
+  const section = sections.includes(candidate as SettingsSection) ? (candidate as SettingsSection) : 'general';
+  const subsection = querySubsection || stateSubsection;
+  const target: SettingsInitialTarget = { section };
+  if (section === 'knowledge' && ['defaults', 'embedding_models', 'knowledge_bases'].includes(subsection)) {
+    target.knowledgeSubsection = subsection as KnowledgeSettingsSubsection;
+  }
+  if (section === 'worldbook' && ['defaults', 'worldbooks'].includes(subsection)) {
+    target.worldbookSubsection = subsection as WorldbookSettingsSubsection;
+  }
+  return target;
 }

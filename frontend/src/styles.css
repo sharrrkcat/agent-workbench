@@ -6003,6 +6003,113 @@ input:disabled {
   padding: 14px;
 }
 
+.context-sources-empty-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.context-sources-empty-action > span {
+  min-width: 0;
+}
+
+.context-sources-empty-action .settings-secondary-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.worldbook-entry-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.worldbook-entry-card {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.worldbook-entry-card.disabled {
+  opacity: 0.78;
+}
+
+.worldbook-entry-card.dragging {
+  opacity: 0.58;
+}
+
+.worldbook-entry-card-header {
+  display: grid;
+  grid-template-columns: 30px 30px auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
+.worldbook-entry-card-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.worldbook-entry-card-title strong,
+.worldbook-entry-card-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldbook-entry-card-title small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+}
+
+.worldbook-drag-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.42);
+  cursor: grab;
+}
+
+.worldbook-drag-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.worldbook-drag-button:active:not(:disabled) {
+  cursor: grabbing;
+}
+
+.worldbook-entry-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.worldbook-entry-card-body textarea {
+  max-height: 260px;
+  resize: vertical;
+}
+
+.settings-config-field.boolean-field.compact {
+  grid-template-columns: auto auto;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .settings-placeholder {
   display: grid;
   gap: 12px;

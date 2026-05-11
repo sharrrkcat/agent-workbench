@@ -5,6 +5,11 @@ export type SettingsSection = 'general' | 'appearance' | 'llm' | 'knowledge' | '
 export type LlmSettingsSubsection = 'defaults' | 'providers' | 'models';
 export type KnowledgeSettingsSubsection = 'defaults' | 'embedding_models' | 'knowledge_bases';
 export type WorldbookSettingsSubsection = 'defaults' | 'worldbooks';
+export type SettingsInitialTarget = {
+  section: SettingsSection;
+  knowledgeSubsection?: KnowledgeSettingsSubsection;
+  worldbookSubsection?: WorldbookSettingsSubsection;
+};
 
 const sections: { id: SettingsSection; labelKey: string; icon: typeof Settings }[] = [
   { id: 'general', labelKey: 'sections.general', icon: Settings },

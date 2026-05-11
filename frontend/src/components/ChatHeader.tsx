@@ -10,7 +10,9 @@ import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
 import { usePopoverPresence } from '../hooks/usePopoverPresence';
 import type { ContextMode, GeneralSettings, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, RuntimeResources, SessionKnowledgeBinding, SessionWorldbookBinding, Worldbook } from '../types';
 
-export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
+type ChatSettingsTarget = { section: 'knowledge' | 'worldbook' };
+
+export function ChatHeader({ onOpenSettings }: { onOpenSettings: (target?: ChatSettingsTarget) => void }) {
   const { t } = useTranslation();
   const state = useWorkbenchStore();
   const currentProfile = resolveCurrentLlmProfile(state);
@@ -476,11 +478,12 @@ function ContextSourcesButton({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (target?: ChatSettingsTarget) => void;
 }) {
   const { t } = useTranslation();
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const [summary, setSummary] = useState<ContextSourcesSummary>({ knowledge: 0, worldbooks: 0, status: 'empty' });
+  const compactLabel = t('chat:contextSources.buttonLabelCompact', { total: summary.knowledge + summary.worldbooks });
 
   useEffect(() => {
     if (!currentSession?.session_id) {
@@ -516,7 +519,7 @@ function ContextSourcesButton({
         disabled={!currentSession}
         onClick={() => onOpenChange(true)}
         title={t('chat:contextSources.tooltip', { knowledge: summary.knowledge, worldbooks: summary.worldbooks })}
-        aria-label={t('chat:contextSources.tooltip', { knowledge: summary.knowledge, worldbooks: summary.worldbooks })}
+        aria-label={compactLabel}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -575,7 +578,7 @@ function ContextSourcesModal({
   onSummaryChange,
 }: {
   sessionId: string;
-  onOpenSettings: () => void;
+  onOpenSettings: (target?: ChatSettingsTarget) => void;
   onClose: () => void;
   onSummaryChange: (summary: ContextSourcesSummary) => void;
 }) {
@@ -713,7 +716,7 @@ function ContextSourcesModal({
             statusLabel={(base) => !base.enabled ? t('chat:contextSources.disabled') : base.index_status !== 'ready' ? t('chat:contextSources.unavailable') : ''}
             getId={(base) => base.id}
             getName={(base) => base.name}
-            onOpenSettings={onOpenSettings}
+            onOpenSettings={() => onOpenSettings({ section: 'knowledge' })}
             onAdd={(base) => void saveKnowledgeIds([...selectedKnowledgeIds, base.id])}
             onRemove={(base) => void saveKnowledgeIds(selectedKnowledgeIds.filter((id) => id !== base.id))}
             onReorder={(nextItems) => void saveKnowledgeIds(nextItems.map((item) => item.id))}
@@ -734,7 +737,7 @@ function ContextSourcesModal({
             statusLabel={(worldbook) => worldbook.enabled ? '' : t('chat:contextSources.disabled')}
             getId={(worldbook) => worldbook.id}
             getName={(worldbook) => worldbook.name}
-            onOpenSettings={onOpenSettings}
+            onOpenSettings={() => onOpenSettings({ section: 'worldbook' })}
             onAdd={(worldbook) => void saveWorldbookIds([...selectedWorldbookIds, worldbook.id])}
             onRemove={(worldbook) => void saveWorldbookIds(selectedWorldbookIds.filter((id) => id !== worldbook.id))}
             onReorder={(nextItems) => void saveWorldbookIds(nextItems.map((item) => item.id))}
@@ -885,8 +888,8 @@ function ContextSourceTab<T>({
             })}
           </div>
         ) : (
-          <div className="settings-empty-state compact">
-            {availableEmpty}
+          <div className="settings-empty-state compact context-sources-empty-action">
+            <span>{availableEmpty}</span>
             <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>
           </div>
         )}

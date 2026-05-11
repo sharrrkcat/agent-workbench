@@ -32,7 +32,10 @@
     "entryContent": "Entry content",
     "matchText": "Match text",
     "matchedEntries": "Matched entries",
-    "disabled": "Disabled"
+    "disabled": "Disabled",
+    "keywordCount": "{{count}} keywords",
+    "noKeywords": "No keywords",
+    "unsavedChanges": "Unsaved changes"
   },
   "actions": {
     "newEntry": "New entry",
@@ -40,7 +43,10 @@
     "down": "Down",
     "matchTest": "Match test",
     "dragToReorder": "Drag to reorder",
-    "editEntry": "Edit entry"
+    "editEntry": "Edit entry",
+    "expandEntry": "Expand entry",
+    "collapseEntry": "Collapse entry",
+    "resetEntry": "Reset"
   },
   "empty": {
     "loadingSettings": "Loading Worldbook settings.",
