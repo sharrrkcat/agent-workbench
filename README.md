@@ -205,41 +205,33 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - `knowledge` Capability methods `search`, `list_bases`, and `stats` wrap the core Knowledge store and retrieval service for Script Agents.
 - `/kb-search <query>` runs an explicit command search against the current session active KBs and returns JSON for debugging/manual lookup. It does not call an LLM or participate in automatic context injection.
 
-Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. Install them with the `knowledge` extra when desired. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
+Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
 
 Knowledge local environment setup:
 
-```powershell
-uv sync --extra knowledge
-```
-
-If you manage the active environment manually, the equivalent project extra install is:
-
-```powershell
-uv pip install ".[knowledge]"
-```
-
-The fallback basic install is:
+Basic / CPU install:
 
 ```powershell
 uv pip install sentence-transformers torch transformers
 ```
 
-The optional dependencies are `sentence-transformers`, `torch`, and `transformers`. CUDA-enabled PyTorch depends on your OS, Python version, NVIDIA driver, and CUDA wheel. Use the [PyTorch install selector](https://pytorch.org/get-started/locally/) to confirm the command for your environment.
+The optional dependencies are `sentence-transformers`, `torch`, and `transformers`. CUDA-enabled PyTorch depends on your OS, Python version, NVIDIA driver, and CUDA wheel. Confirm the CUDA command with the [PyTorch install selector](https://pytorch.org/get-started/locally/).
 
-Example CUDA commands:
+CUDA 12.8 example:
 
 ```powershell
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 uv pip install sentence-transformers transformers
 ```
 
+CUDA 12.6 example:
+
 ```powershell
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 uv pip install sentence-transformers transformers
 ```
 
-After installing CUDA-enabled torch, restart the backend and use Settings -> Knowledge -> Defaults -> Overview -> Scan local models. If CUDA is selected but unavailable, the current torch build is probably CPU-only, the CUDA wheel does not match your driver, or the GPU is not visible to the backend environment.
+After installing, restart the backend and use Settings -> Knowledge -> Defaults -> Overview -> Scan local models. If CUDA is selected but unavailable, the current torch build is probably CPU-only, the CUDA wheel does not match your driver, or the GPU is not visible to the backend environment.
 
 Local Knowledge models must be stored under the project model root:
 
@@ -257,25 +249,27 @@ uv run python scripts/download_knowledge_model.py --type reranker --model-id BAA
 
 Recommended embeddings:
 
-- `sentence-transformers/all-MiniLM-L6-v2` -> `all-MiniLM-L6-v2`: lightweight smoke test / English baseline / 384d.
-- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` -> `paraphrase-multilingual-MiniLM-L12-v2`: lightweight multilingual baseline.
-- `google/embeddinggemma-300m` -> `embeddinggemma-300m`: modern lightweight multilingual local embedding.
-- `BAAI/bge-m3` -> `bge-m3`: recommended multilingual RAG model.
+- `sentence-transformers/all-MiniLM-L6-v2` -> `all-MiniLM-L6-v2`: estimated VRAM `<1 GB`; lightweight smoke test / English baseline / 384d.
+- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` -> `paraphrase-multilingual-MiniLM-L12-v2`: estimated VRAM `~1 GB`; lightweight multilingual baseline.
+- `google/embeddinggemma-300m` -> `embeddinggemma-300m`: estimated VRAM `~1-2 GB`; modern lightweight multilingual local embedding.
+- `BAAI/bge-m3` -> `bge-m3`: estimated VRAM `~2-4 GB`; recommended multilingual RAG model.
 
 Advanced embeddings:
 
-- `Qwen/Qwen3-Embedding-0.6B` -> `Qwen3-Embedding-0.6B`: advanced multilingual embedding, higher quality and heavier.
-- `jinaai/jina-embeddings-v3` -> `jina-embeddings-v3`: advanced multilingual long-context embedding.
-- `nomic-ai/nomic-embed-text-v1.5` -> `nomic-embed-text-v1.5`: English-focused / long-context / variable-dimension capable.
-- `mixedbread-ai/mxbai-embed-large-v1` -> `mxbai-embed-large-v1`: strong English RAG baseline.
+- `Qwen/Qwen3-Embedding-0.6B` -> `Qwen3-Embedding-0.6B`: estimated VRAM `~2-4 GB`; advanced multilingual embedding, higher quality and heavier.
+- `jinaai/jina-embeddings-v3` -> `jina-embeddings-v3`: estimated VRAM `~2-4 GB`; advanced multilingual long-context embedding.
+- `nomic-ai/nomic-embed-text-v1.5` -> `nomic-embed-text-v1.5`: estimated VRAM `~1-2 GB`; English-focused / long-context / variable-dimension capable.
+- `mixedbread-ai/mxbai-embed-large-v1` -> `mxbai-embed-large-v1`: estimated VRAM `~1.5-3 GB`; strong English RAG baseline.
 
 Recommended rerankers:
 
-- `BAAI/bge-reranker-v2-m3` -> `bge-reranker-v2-m3`: recommended multilingual reranker.
+- `BAAI/bge-reranker-v2-m3` -> `bge-reranker-v2-m3`: estimated VRAM `~2-4 GB`; recommended multilingual reranker.
 
 Advanced rerankers:
 
-- `Qwen/Qwen3-Reranker-0.6B` -> `Qwen3-Reranker-0.6B`: advanced Qwen reranker, heavier and may need extra validation.
+- `Qwen/Qwen3-Reranker-0.6B` -> `Qwen3-Reranker-0.6B`: estimated VRAM `~2-5 GB`; advanced Qwen reranker, heavier and may need extra validation.
+
+Estimated VRAM is approximate. Actual memory use depends on dtype, batch size, device, backend, and model implementation. CPU mode uses system memory instead of VRAM.
 
 The Settings -> Knowledge -> Defaults -> Download tab only generates copyable commands. It does not call a download API, execute shell commands, install dependencies, or automatically download models. The script validates that `--target` is a safe folder name, saves embedding models under `data/models/embeddings`, saves rerankers under `data/models/rerankers`, and does not modify the database, create profiles, or scan models. After a download completes, return to Settings -> Knowledge -> Defaults -> Overview and run Scan local models.
 

@@ -55,8 +55,7 @@ def download_model(model_type: str, model_id: str, target: str, repo_root: Path 
     except ImportError as exc:
         raise RuntimeError(
             "sentence-transformers is not installed. Install Knowledge dependencies first, for example:\n"
-            '  uv sync --extra knowledge\n'
-            '  or: uv pip install ".[knowledge]"'
+            "  uv pip install sentence-transformers torch transformers"
         ) from exc
     model.save(str(destination))
     return destination

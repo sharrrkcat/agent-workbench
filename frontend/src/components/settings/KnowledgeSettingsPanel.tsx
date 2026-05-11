@@ -17,9 +17,7 @@ type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | '
 type DownloadModelType = 'embedding' | 'reranker';
 
 const KNOWLEDGE_INSTALL_COMMANDS = [
-  { key: 'projectExtra', command: 'uv sync --extra knowledge' },
-  { key: 'pipExtra', command: 'uv pip install ".[knowledge]"' },
-  { key: 'fallback', command: 'uv pip install sentence-transformers torch transformers' },
+  { key: 'basicCpu', command: 'uv pip install sentence-transformers torch transformers' },
   { key: 'cuda128', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\nuv pip install sentence-transformers transformers' },
   { key: 'cuda126', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126\nuv pip install sentence-transformers transformers' },
 ] as const;
@@ -30,6 +28,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
   modelId: string;
   target: string;
   noteKey: string;
+  estimatedVramKey: string;
 }[] = [
   {
     type: 'embedding',
@@ -37,6 +36,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'sentence-transformers/all-MiniLM-L6-v2',
     target: 'all-MiniLM-L6-v2',
     noteKey: 'allMiniLm',
+    estimatedVramKey: 'under1gb',
   },
   {
     type: 'embedding',
@@ -44,6 +44,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
     target: 'paraphrase-multilingual-MiniLM-L12-v2',
     noteKey: 'paraphraseMultilingualMiniLm',
+    estimatedVramKey: 'about1gb',
   },
   {
     type: 'embedding',
@@ -51,6 +52,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'google/embeddinggemma-300m',
     target: 'embeddinggemma-300m',
     noteKey: 'embeddingGemma',
+    estimatedVramKey: 'about1to2gb',
   },
   {
     type: 'embedding',
@@ -58,6 +60,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'BAAI/bge-m3',
     target: 'bge-m3',
     noteKey: 'bgeM3',
+    estimatedVramKey: 'about2to4gb',
   },
   {
     type: 'embedding',
@@ -65,6 +68,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'Qwen/Qwen3-Embedding-0.6B',
     target: 'Qwen3-Embedding-0.6B',
     noteKey: 'qwen3Embedding06b',
+    estimatedVramKey: 'about2to4gb',
   },
   {
     type: 'embedding',
@@ -72,6 +76,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'jinaai/jina-embeddings-v3',
     target: 'jina-embeddings-v3',
     noteKey: 'jinaEmbeddingsV3',
+    estimatedVramKey: 'about2to4gb',
   },
   {
     type: 'embedding',
@@ -79,6 +84,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'nomic-ai/nomic-embed-text-v1.5',
     target: 'nomic-embed-text-v1.5',
     noteKey: 'nomicEmbedTextV15',
+    estimatedVramKey: 'about1to2gb',
   },
   {
     type: 'embedding',
@@ -86,6 +92,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'mixedbread-ai/mxbai-embed-large-v1',
     target: 'mxbai-embed-large-v1',
     noteKey: 'mxbaiEmbedLarge',
+    estimatedVramKey: 'about15to3gb',
   },
   {
     type: 'reranker',
@@ -93,6 +100,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'BAAI/bge-reranker-v2-m3',
     target: 'bge-reranker-v2-m3',
     noteKey: 'bgeRerankerV2M3',
+    estimatedVramKey: 'about2to4gb',
   },
   {
     type: 'reranker',
@@ -100,6 +108,7 @@ const KNOWLEDGE_MODEL_PRESETS: {
     modelId: 'Qwen/Qwen3-Reranker-0.6B',
     target: 'Qwen3-Reranker-0.6B',
     noteKey: 'qwen3Reranker06b',
+    estimatedVramKey: 'about2to5gb',
   },
 ];
 
@@ -566,6 +575,8 @@ function KnowledgeDownloadTab({
     <>
       <div className="detail-section">
         <div className="detail-section-heading"><h3>{t('download.modelPresets')}</h3></div>
+        <p className="settings-muted-text">{t('download.vramEstimateDisclaimer')}</p>
+        <p className="settings-muted-text">{t('download.cpuMemoryNote')}</p>
         {KNOWLEDGE_MODEL_PRESET_GROUPS.map((group) => (
           <div className="knowledge-model-preset-group" key={group}>
             <h4>{t(`download.groups.${group}`)}</h4>
@@ -576,6 +587,7 @@ function KnowledgeDownloadTab({
                   <button className="knowledge-model-preset" type="button" key={preset.modelId} onClick={() => onSelectPreset(index)}>
                     <strong>{preset.modelId}</strong>
                     <span>{t(`download.modelTypes.${preset.type}`)} - {t(`download.notes.${preset.noteKey}`)}</span>
+                    <span>{t('download.estimatedVram', { value: t(`download.estimatedVramValues.${preset.estimatedVramKey}`) })}</span>
                     <code>{preset.target}</code>
                   </button>
                 ))}

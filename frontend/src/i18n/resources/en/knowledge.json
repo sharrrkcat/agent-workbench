@@ -160,19 +160,20 @@
     "cudaWarningTitle": "CUDA is selected, but torch CUDA is not available.",
     "cudaWarningBody": "This usually means torch is installed as CPU-only, the CUDA wheel does not match your driver, or the GPU is not visible to this environment.",
     "cudaDepends": "CUDA-enabled PyTorch depends on your OS, Python version, NVIDIA driver, and CUDA wheel.",
-    "pytorchSelector": "Use the PyTorch install selector to confirm the command for your environment.",
-    "restartAndScan": "After installing CUDA-enabled torch, restart the backend and run Scan local models again.",
+    "pytorchSelector": "Confirm the CUDA command with the PyTorch install selector.",
+    "restartAndScan": "After installing, restart the backend and run Scan local models again.",
     "cudaUnavailableExplanation": "If CUDA is selected but unavailable, the current torch build is probably CPU-only or the CUDA wheel/driver does not match.",
     "commands": {
-      "projectExtra": "Project extra / recommended",
-      "pipExtra": "pip extra",
-      "fallback": "fallback",
+      "basicCpu": "Basic / CPU install",
       "cuda128": "CUDA 12.8 example",
       "cuda126": "CUDA 12.6 example"
     }
   },
   "download": {
     "modelPresets": "Model presets",
+    "estimatedVram": "Estimated VRAM: {{value}}",
+    "vramEstimateDisclaimer": "Estimated VRAM is approximate. Actual memory use depends on dtype, batch size, device, backend, and model implementation.",
+    "cpuMemoryNote": "CPU mode uses system memory instead of VRAM.",
     "generatedCommand": "Generated command",
     "runFromProjectRoot": "Run the generated command from the project root.",
     "scanAfterDownload": "When it finishes, return to Overview and click Scan local models.",
@@ -200,6 +201,14 @@
       "mxbaiEmbedLarge": "Strong English RAG baseline",
       "bgeRerankerV2M3": "Recommended multilingual reranker",
       "qwen3Reranker06b": "Advanced Qwen reranker, heavier and may need extra validation"
+    },
+    "estimatedVramValues": {
+      "under1gb": "<1 GB",
+      "about1gb": "~1 GB",
+      "about1to2gb": "~1-2 GB",
+      "about15to3gb": "~1.5-3 GB",
+      "about2to4gb": "~2-4 GB",
+      "about2to5gb": "~2-5 GB"
     }
   },
   "errors": {

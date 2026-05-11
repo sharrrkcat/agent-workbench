@@ -165,19 +165,20 @@
     "cudaWarningTitle": "已选择 CUDA，但 torch CUDA 不可用。",
     "cudaWarningBody": "这通常表示 torch 是 CPU-only 版本、CUDA wheel 与驱动不匹配，或当前环境看不到 GPU。",
     "cudaDepends": "启用 CUDA 的 PyTorch 取决于操作系统、Python 版本、NVIDIA 驱动和 CUDA wheel。",
-    "pytorchSelector": "请使用 PyTorch install selector 确认适合当前环境的命令。",
-    "restartAndScan": "安装 CUDA 版 torch 后，重启后端并再次运行扫描本地模型。",
+    "pytorchSelector": "请使用 PyTorch install selector 确认 CUDA 命令。",
+    "restartAndScan": "安装后，重启后端并再次运行扫描本地模型。",
     "cudaUnavailableExplanation": "如果已选择 CUDA 但不可用，当前 torch build 很可能是 CPU-only，或 CUDA wheel/driver 不匹配。",
     "commands": {
-      "projectExtra": "Project extra / 推荐",
-      "pipExtra": "pip extra",
-      "fallback": "fallback",
+      "basicCpu": "Basic / CPU 安装",
       "cuda128": "CUDA 12.8 示例",
       "cuda126": "CUDA 12.6 示例"
     }
   },
   "download": {
     "modelPresets": "模型预设",
+    "estimatedVram": "预计显存：{{value}}",
+    "vramEstimateDisclaimer": "预计显存只是大致估计。实际内存占用会受 dtype、batch size、device、backend 和模型实现影响。",
+    "cpuMemoryNote": "CPU 模式使用系统内存而不是显存。",
     "generatedCommand": "生成的命令",
     "runFromProjectRoot": "请在项目根目录执行生成的命令。",
     "scanAfterDownload": "执行完成后，回到概览并点击扫描本地模型。",
@@ -205,6 +206,14 @@
       "mxbaiEmbedLarge": "强英文 RAG 基线",
       "bgeRerankerV2M3": "推荐的多语言 reranker",
       "qwen3Reranker06b": "进阶 Qwen reranker，更重且可能需要额外验证"
+    },
+    "estimatedVramValues": {
+      "under1gb": "<1 GB",
+      "about1gb": "~1 GB",
+      "about1to2gb": "~1-2 GB",
+      "about15to3gb": "~1.5-3 GB",
+      "about2to4gb": "~2-4 GB",
+      "about2to5gb": "~2-5 GB"
     }
   },
   "errors": {
