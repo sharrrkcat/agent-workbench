@@ -304,6 +304,8 @@ Tests:
 - `cd frontend && npm run build`
 - `cd frontend && node scripts/check-i18n.mjs`
 
+Worldbook matching defaults to English-comma keyword splitting, case-insensitive regex matching, whole-word matching with ASCII boundaries, and recursion depth 0. When these matching defaults change, cover both `/api/worldbooks/match-test` and runtime injection so the test UI and Prompt/Script Agent behavior cannot diverge.
+
 UI/i18n rule:
 - Any new or changed user-visible Core Memory or Worldbook frontend text must update every supported locale file in `frontend/src/i18n/resources`.
 

@@ -364,7 +364,7 @@ Worldbook settings:
 - `GET /api/worldbook/settings`
 - `PATCH /api/worldbook/settings`
 
-Fields are `worldbook_enabled_for_prompt_agents`, `worldbook_enabled_for_script_agents`, `worldbook_max_entries_per_call`, `worldbook_max_context_chars`, and `worldbook_regex_case_insensitive`. Unknown fields are rejected. Max entries is bounded to 1-200 and max context chars to 1000-200000.
+Fields are `worldbook_enabled_for_prompt_agents`, `worldbook_enabled_for_script_agents`, `worldbook_max_entries_per_call`, `worldbook_max_context_chars`, `worldbook_recursion_depth`, `worldbook_case_sensitive`, `worldbook_whole_words`, and compatibility field `worldbook_regex_case_insensitive`. Unknown fields are rejected. Max entries is bounded to 1-200, max context chars to 1000-200000, and recursion depth to 0-5. The user-facing case setting is `worldbook_case_sensitive`; when the legacy case-insensitive field is patched, the backend maps it to the inverse case-sensitive value.
 
 Worldbook APIs:
 
@@ -383,9 +383,9 @@ Worldbook APIs:
 - `PATCH /api/sessions/{session_id}/worldbooks`
 - `POST /api/worldbooks/match-test`
 
-Worldbook fields are `id`, `name`, `description`, `enabled`, timestamps, and optional counts. Entry fields are `id`, `worldbook_id`, `name`, `keywords_text`, `content`, `activation_mode`, `enabled`, `sort_order`, and timestamps. `activation_mode` is `always` or `keyword`; each non-empty `keywords_text` line is a regex pattern. Invalid regex is rejected on save and reported as a structured warning by match-test if legacy bad data is encountered.
+Worldbook fields are `id`, `name`, `description`, `enabled`, timestamps, and optional counts. Entry fields are `id`, `worldbook_id`, `name`, `keywords_text`, `content`, `activation_mode`, `enabled`, `sort_order`, and timestamps. `activation_mode` is `always` or `keyword`; `keywords_text` is split on English commas, each trimmed non-empty piece is a regex pattern. Invalid regex is rejected on save and reported as a structured warning by match-test if legacy bad data is encountered.
 
-Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. `GET /api/sessions/{session_id}/worldbooks` returns enabled bindings in persisted binding order plus all available worldbooks. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. Runtime injection uses the active session binding order, then entry `sort_order`. It matches only the current input text for that provider call, does not scan history, does not call an LLM, does not call Knowledge RAG, and records compact metadata instead of full entry content. Match-test returns content previews rather than full entry content.
+Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. `GET /api/sessions/{session_id}/worldbooks` returns enabled bindings in persisted binding order plus all available worldbooks. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. Match-test and runtime injection share the same parser and matcher: matching starts with the current input text, adds always-active entries in the initial round, then recursively scans newly activated entry content up to `worldbook_recursion_depth`. Entries are deduped and final order remains session Worldbook binding order followed by entry `sort_order`. Matching does not scan history, assistant messages, command results, Knowledge snippets, or call an LLM. Whole-word matching wraps each pattern with ASCII boundaries `(?<![A-Za-z0-9_])` and `(?![A-Za-z0-9_])`; this prevents English partial-word matches while preserving CJK substring matching. Match-test returns content previews rather than full entry content and includes compact fields such as `recursion_depth`, `recursion_rounds_used`, `case_sensitive`, `whole_words`, per-result `matched_by_recursion`, and warnings.
 
 Settings:
 

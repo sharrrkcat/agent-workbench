@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import re
 from typing import Any
 
-from ai_workbench.core.worldbook import WorldbookSettings, keyword_patterns
+from ai_workbench.core.worldbook import WorldbookSettings, collect_worldbook_matches
 
 
 @dataclass
@@ -58,37 +57,39 @@ def build_session_worldbook_context(
     if not bindings:
         return WorldbookContextResult(metadata=_skipped("no_bound_worldbooks", source=source, input_empty=input_empty))
 
-    flags = re.IGNORECASE if bool(getattr(settings, "worldbook_regex_case_insensitive", True)) else 0
-    matched: list[dict[str, Any]] = []
     worldbook_ids: list[str] = []
     for binding in bindings:
-        worldbook = binding.worldbook
-        worldbook_ids.append(worldbook.id)
-        try:
-            entries = list(worldbook_store.list_entries(worldbook.id))
-        except Exception as exc:
-            warnings.append(f"Worldbook entries unavailable for {worldbook.id}: {exc}")
-            continue
-        entries.sort(key=lambda item: (getattr(item, "sort_order", 0), getattr(item, "created_at", None)))
-        for entry in entries:
-            if not getattr(entry, "enabled", False):
-                continue
-            if _entry_matches(entry, input_text, flags, warnings):
-                matched.append({"worldbook": worldbook, "entry": entry})
+        worldbook_ids.append(binding.worldbook.id)
+    match_data = collect_worldbook_matches(
+        worldbook_store=worldbook_store,
+        worldbook_ids=worldbook_ids,
+        text=input_text,
+        settings=settings,
+    )
+    warnings.extend(_warning_messages(match_data["warnings"]))
+    matched: list[dict[str, Any]] = match_data["matched"]
 
     rendered_text, entry_refs, truncated = _render_entries(matched, settings)
     metadata = {
         "enabled": True,
         "injected": bool(rendered_text),
         "source": source,
-        "worldbook_ids": worldbook_ids,
+        "worldbook_ids": match_data["worldbook_ids"],
         "matched_entry_count": len(matched),
         "injected_entry_count": len(entry_refs),
         "truncated": truncated,
         "input_empty": input_empty,
+        "recursion_depth": match_data["recursion_depth"],
+        "recursion_rounds_used": match_data["recursion_rounds_used"],
+        "case_sensitive": match_data["case_sensitive"],
+        "whole_words": match_data["whole_words"],
         "warnings": warnings,
         "entry_refs": entry_refs,
     }
+    if truncated:
+        warning = "Worldbook context truncated by max entries or max context chars."
+        warnings.append(warning)
+        metadata["warnings"] = warnings
     if not rendered_text:
         metadata["skipped_reason"] = "no_matching_entries" if not matched else "context_budget_exhausted"
     return WorldbookContextResult(rendered_text=rendered_text, metadata=metadata, warnings=warnings)
@@ -104,6 +105,10 @@ def worldbook_step_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         "injected_entry_count",
         "truncated",
         "input_empty",
+        "recursion_depth",
+        "recursion_rounds_used",
+        "case_sensitive",
+        "whole_words",
         "skipped_reason",
         "warnings",
         "entry_refs",
@@ -115,25 +120,6 @@ def _enabled_for_source(settings: WorldbookSettings, source: str) -> bool:
     if source == "script_agent":
         return bool(settings.worldbook_enabled_for_script_agents)
     return bool(settings.worldbook_enabled_for_prompt_agents)
-
-
-def _entry_matches(entry: Any, user_text: str, flags: int, warnings: list[str]) -> bool:
-    mode = getattr(entry, "activation_mode", "keyword")
-    if mode == "always":
-        return True
-    patterns = keyword_patterns(getattr(entry, "keywords_text", ""))
-    if not patterns:
-        warnings.append(f"Worldbook entry has no keyword patterns: {getattr(entry, 'id', '')}")
-        return False
-    if not user_text.strip():
-        return False
-    for pattern in patterns:
-        try:
-            if re.search(pattern, user_text, flags=flags):
-                return True
-        except re.error as exc:
-            warnings.append(f"Invalid worldbook regex skipped for entry {getattr(entry, 'id', '')}: {exc}")
-    return False
 
 
 def _render_entries(items: list[dict[str, Any]], settings: WorldbookSettings) -> tuple[str, list[dict[str, Any]], bool]:
@@ -182,6 +168,8 @@ def _render_entries(items: list[dict[str, Any]], settings: WorldbookSettings) ->
                 "entry_id": entry.id,
                 "entry_name": entry.name,
                 "activation_mode": entry.activation_mode,
+                "matched_by_recursion": bool(item.get("matched_by_recursion", False)),
+                "recursion_depth": int(item.get("recursion_depth", 0) or 0),
                 "injected_index": matched_index,
             }
         )
@@ -200,7 +188,22 @@ def _skipped(reason: str, *, source: str, input_empty: bool) -> dict[str, Any]:
         "injected_entry_count": 0,
         "truncated": False,
         "input_empty": input_empty,
+        "recursion_depth": 0,
+        "recursion_rounds_used": 0,
+        "case_sensitive": False,
+        "whole_words": True,
         "skipped_reason": reason,
         "warnings": [],
         "entry_refs": [],
     }
+
+
+def _warning_messages(warnings: list[dict[str, Any]]) -> list[str]:
+    messages: list[str] = []
+    for warning in warnings:
+        code = warning.get("code")
+        message = str(warning.get("message") or code or "Worldbook warning.")
+        if code == "WORLDBOOK_INVALID_REGEX":
+            message = f"Invalid worldbook regex skipped for entry {warning.get('entry_id', '')}: {message.removeprefix('Invalid regex: ')}"
+        messages.append(message)
+    return messages

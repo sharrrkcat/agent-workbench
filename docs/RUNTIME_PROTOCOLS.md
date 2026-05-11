@@ -267,7 +267,9 @@ Core Memory, Worldbook, and Knowledge context injection never runs for session t
 
 Core Memory is stored in General settings. Prompt Agent injection follows `core_memory_enabled_for_prompt_agents`, which defaults to true. Script Agent `ctx.llm.*` injection follows `core_memory_enabled_for_script_agents`, which defaults to false. Empty trimmed memory is skipped. Runtime metadata stores only `enabled`, `injected`, `content_chars`, `skipped_reason`, and compact warnings.
 
-Worldbook is stored in the Worldbook core module and Session Worldbook bindings. Prompt Agent injection follows `worldbook_enabled_for_prompt_agents`, which defaults to true. Script Agent `ctx.llm.*` injection follows `worldbook_enabled_for_script_agents`, which defaults to false. Matching scans only the current user input for that call, not historical user messages, assistant messages, command results, form JSON, recipe JSON, or retrieved Knowledge. Disabled worldbooks and disabled entries are skipped. `activation_mode=always` entries activate without keywords. `activation_mode=keyword` entries treat each non-empty `keywords_text` line as a regex pattern, with case sensitivity controlled by `worldbook_regex_case_insensitive`. Invalid legacy regex patterns are warnings and are skipped without failing the LLM call. Injected entries are capped by `worldbook_max_entries_per_call` and `worldbook_max_context_chars`.
+Worldbook is stored in the Worldbook core module and Session Worldbook bindings. Prompt Agent injection follows `worldbook_enabled_for_prompt_agents`, which defaults to true. Script Agent `ctx.llm.*` injection follows `worldbook_enabled_for_script_agents`, which defaults to false. Matching starts with the current user input for that call, not historical user messages, assistant messages, command results, form JSON, recipe JSON, or retrieved Knowledge. Disabled worldbooks and disabled entries are skipped. `activation_mode=always` entries activate in the initial round without keywords. `activation_mode=keyword` entries split `keywords_text` on English commas; each trimmed non-empty piece is treated as a regex pattern. `worldbook_case_sensitive=false` uses case-insensitive regex matching, and `worldbook_case_sensitive=true` uses case-sensitive matching. `worldbook_whole_words=true` wraps patterns with ASCII word boundaries `(?<![A-Za-z0-9_])` and `(?![A-Za-z0-9_])` so English keywords do not match inside longer words while CJK keywords can still match normally. Invalid legacy regex patterns are warnings and are skipped without failing the LLM call.
+
+Worldbook recursion is controlled by `worldbook_recursion_depth`, default `0`. Depth `0` only scans the current input. Depth `1` scans the current input, then scans the content of entries newly activated in that first round; higher values repeat that content-triggered scan up to the configured depth. Recursion does not call an LLM, does not scan chat history, and does not scan Knowledge snippets. The same entry id can inject only once. Final injection order remains Session Worldbook binding order followed by entry `sort_order`; injected entries are capped by `worldbook_max_entries_per_call` and `worldbook_max_context_chars`, and recursion-related truncation records warnings.
 
 `/kb-search <query>` is an explicit Knowledge Capability command for manual search/debugging. It routes through the normal slash command path, creates a command run, searches active KBs for the current session, and returns JSON with `query`, `results`, and `debug`. It does not call Prompt Agents, does not call an LLM, does not create an Agent run, and does not participate in automatic Knowledge context injection.
 
@@ -325,6 +327,10 @@ Run metadata records `metadata.core_memory_context` and `metadata.worldbook_cont
     "worldbook_ids": ["worldbook_id"],
     "matched_entry_count": 3,
     "injected_entry_count": 2,
+    "recursion_depth": 1,
+    "recursion_rounds_used": 1,
+    "case_sensitive": false,
+    "whole_words": true,
     "truncated": false,
     "warnings": [],
     "entry_refs": [

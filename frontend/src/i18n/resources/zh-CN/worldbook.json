@@ -23,6 +23,9 @@
     "maxEntriesPerCall": "每次调用最大条目数",
     "maxContextChars": "最大上下文字符数",
     "regexCaseInsensitive": "正则忽略大小写",
+    "recursionDepth": "递归深度",
+    "caseSensitive": "区分大小写",
+    "wholeWords": "完整单词",
     "name": "名称",
     "description": "描述",
     "activationMode": "激活模式",
@@ -32,6 +35,7 @@
     "entryContent": "条目内容",
     "matchText": "匹配文本",
     "matchedEntries": "匹配条目",
+    "matchedByRecursion": "由递归深度 {{depth}} 匹配",
     "disabled": "已禁用",
     "keywordCount": "{{count}} 个关键词",
     "noKeywords": "无关键词",
@@ -48,6 +52,12 @@
     "collapseEntry": "折叠条目",
     "resetEntry": "重置"
   },
+  "placeholders": {
+    "keywords": "kelly, kelly kline, jack's mother"
+  },
+  "help": {
+    "keywords": "用英文逗号分隔关键词。每个关键词都会作为正则表达式匹配。"
+  },
   "empty": {
     "loadingSettings": "正在加载世界书设置。",
     "noWorldbookSelected": "未选择世界书",
@@ -60,6 +70,7 @@
     "worldbookSaved": "世界书已保存。",
     "worldbookDeleted": "世界书已删除。",
     "entrySaved": "条目已保存。",
+    "entryEnabledSaved": "已保存。",
     "entryDeleted": "条目已删除。",
     "entriesReordered": "条目已重新排序。"
   },
@@ -69,9 +80,10 @@
     "saveWorldbookFailed": "保存世界书失败。",
     "deleteWorldbookFailed": "删除世界书失败。",
     "saveEntryFailed": "保存世界书条目失败。",
+    "saveEntryEnabledFailed": "保存失败。",
     "deleteEntryFailed": "删除世界书条目失败。",
     "reorderFailed": "重新排序条目失败。",
-    "matchFailed": "匹配测试失败。",
-    "invalidRegex": "无效正则。"
+    "matchFailed": "运行匹配测试失败。",
+    "invalidRegex": "无效正则表达式。"
   }
 }

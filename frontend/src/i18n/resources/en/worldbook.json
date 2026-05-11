@@ -23,6 +23,9 @@
     "maxEntriesPerCall": "Max entries per call",
     "maxContextChars": "Max context chars",
     "regexCaseInsensitive": "Regex case-insensitive",
+    "recursionDepth": "Recursion depth",
+    "caseSensitive": "Case sensitive",
+    "wholeWords": "Whole words",
     "name": "Name",
     "description": "Description",
     "activationMode": "Activation mode",
@@ -32,6 +35,7 @@
     "entryContent": "Entry content",
     "matchText": "Match text",
     "matchedEntries": "Matched entries",
+    "matchedByRecursion": "Matched by recursion depth {{depth}}",
     "disabled": "Disabled",
     "keywordCount": "{{count}} keywords",
     "noKeywords": "No keywords",
@@ -48,6 +52,12 @@
     "collapseEntry": "Collapse entry",
     "resetEntry": "Reset"
   },
+  "placeholders": {
+    "keywords": "kelly, kelly kline, jack's mother"
+  },
+  "help": {
+    "keywords": "Separate keywords with commas. Each keyword is treated as a regex pattern."
+  },
   "empty": {
     "loadingSettings": "Loading Worldbook settings.",
     "noWorldbookSelected": "No worldbook selected",
@@ -60,6 +70,7 @@
     "worldbookSaved": "Worldbook saved.",
     "worldbookDeleted": "Worldbook deleted.",
     "entrySaved": "Entry saved.",
+    "entryEnabledSaved": "Saved.",
     "entryDeleted": "Entry deleted.",
     "entriesReordered": "Entries reordered."
   },
@@ -69,6 +80,7 @@
     "saveWorldbookFailed": "Failed to save worldbook.",
     "deleteWorldbookFailed": "Failed to delete worldbook.",
     "saveEntryFailed": "Failed to save worldbook entry.",
+    "saveEntryEnabledFailed": "Failed to save.",
     "deleteEntryFailed": "Failed to delete worldbook entry.",
     "reorderFailed": "Failed to reorder entries.",
     "matchFailed": "Failed to run match test.",

@@ -213,6 +213,9 @@ class WorldbookSettingsRecord(SQLModel, table=True):
     worldbook_max_entries_per_call: int = 20
     worldbook_max_context_chars: int = 8000
     worldbook_regex_case_insensitive: bool = True
+    worldbook_recursion_depth: int = 0
+    worldbook_case_sensitive: bool = False
+    worldbook_whole_words: bool = True
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

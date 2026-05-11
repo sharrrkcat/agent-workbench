@@ -30,6 +30,7 @@ from ai_workbench.core.worldbook import (
     WorldbookEntry,
     WorldbookSettings,
     WorldbookSettingsPatch,
+    sync_worldbook_settings_patch,
 )
 from ai_workbench.core.session_titles import is_default_session_title
 from ai_workbench.db.models import (
@@ -1014,7 +1015,7 @@ class SqlWorldbookStore:
 
     def patch_settings(self, values: Dict[str, Any]) -> WorldbookSettings:
         patch = WorldbookSettingsPatch.model_validate(values)
-        updates = patch.model_dump(exclude_unset=True)
+        updates = sync_worldbook_settings_patch(patch.model_dump(exclude_unset=True))
         with DbSession(self.engine) as session:
             record = session.get(WorldbookSettingsRecord, 1) or WorldbookSettingsRecord(id=1)
             current = _worldbook_settings_from_record(record)

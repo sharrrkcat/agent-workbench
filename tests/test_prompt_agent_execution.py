@@ -371,6 +371,39 @@ def test_prompt_agent_worldbook_toggle_disables_injection() -> None:
     assert fixture.runs.get_run(result.run_id).metadata["worldbook_context"]["skipped_reason"] == "disabled"
 
 
+def test_prompt_agent_worldbook_uses_comma_keywords_and_recursion() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.worldbooks.patch_settings({"worldbook_recursion_depth": 1})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    worldbook = fixture.worldbooks.create_worldbook(Worldbook(name="Recursive Lore"))
+    first = fixture.worldbooks.create_entry(
+        WorldbookEntry(
+            worldbook_id=worldbook.id,
+            name="Search",
+            keywords_text="搜索,但是不对",
+            content="This entry mentions followup-token.",
+        )
+    )
+    second = fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=worldbook.id, name="Followup", keywords_text="followup-token", content="Recursive lore.")
+    )
+    fixture.worldbooks.replace_session_bindings(session.session_id, [worldbook.id])
+
+    result = run(fixture.runtime.handle_input(session, "搜索"))
+    system = llm.calls[0]["messages"][0]["content"]
+    metadata = fixture.runs.get_run(result.run_id).metadata["worldbook_context"]
+
+    assert result.success is True
+    assert "This entry mentions followup-token." in system
+    assert "Recursive lore." in system
+    assert [ref["entry_id"] for ref in metadata["entry_refs"]] == [first.id, second.id]
+    assert metadata["recursion_depth"] == 1
+    assert metadata["recursion_rounds_used"] == 1
+    assert metadata["case_sensitive"] is False
+    assert metadata["whole_words"] is True
+
+
 def test_chat_agent_session_context_includes_history() -> None:
     llm = FakeLLMRuntime(response="chat reply")
     fixture = PromptRuntimeFixture(llm=llm)

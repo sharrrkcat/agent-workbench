@@ -17,6 +17,9 @@ def test_worldbook_settings_validate_and_persist(tmp_path: Path) -> None:
     assert response.json()["worldbook_max_entries_per_call"] == 20
     assert response.json()["worldbook_max_context_chars"] == 8000
     assert response.json()["worldbook_regex_case_insensitive"] is True
+    assert response.json()["worldbook_recursion_depth"] == 0
+    assert response.json()["worldbook_case_sensitive"] is False
+    assert response.json()["worldbook_whole_words"] is True
 
     patched = client.patch(
         "/api/worldbook/settings",
@@ -25,16 +28,24 @@ def test_worldbook_settings_validate_and_persist(tmp_path: Path) -> None:
             "worldbook_enabled_for_script_agents": True,
             "worldbook_max_entries_per_call": 2,
             "worldbook_max_context_chars": 1000,
-            "worldbook_regex_case_insensitive": False,
+            "worldbook_case_sensitive": True,
+            "worldbook_recursion_depth": 1,
+            "worldbook_whole_words": False,
         },
     )
     assert patched.status_code == 200
     assert patched.json()["worldbook_max_entries_per_call"] == 2
+    assert patched.json()["worldbook_case_sensitive"] is True
+    assert patched.json()["worldbook_regex_case_insensitive"] is False
+    assert patched.json()["worldbook_recursion_depth"] == 1
+    assert patched.json()["worldbook_whole_words"] is False
     assert client.patch("/api/worldbook/settings", json={"worldbook_max_entries_per_call": 0}).status_code == 422
+    assert client.patch("/api/worldbook/settings", json={"worldbook_recursion_depth": 6}).status_code == 422
     assert client.patch("/api/worldbook/settings", json={"unknown": True}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/worldbook/settings").json()["worldbook_max_entries_per_call"] == 2
+    assert restarted.get("/api/worldbook/settings").json()["worldbook_case_sensitive"] is True
 
 
 def test_worldbook_crud_entries_reorder_session_bindings_and_match(tmp_path: Path) -> None:
@@ -53,7 +64,7 @@ def test_worldbook_crud_entries_reorder_session_bindings_and_match(tmp_path: Pat
     )
     keyword = client.post(
         f"/api/worldbooks/{wb_id}/entries",
-        json={"name": "Dragon", "keywords_text": "dragon\nwyvern", "content": "Dragons breathe fire.", "activation_mode": "keyword", "enabled": True},
+        json={"name": "Dragon", "keywords_text": "dragon, wyvern", "content": "Dragons breathe fire.", "activation_mode": "keyword", "enabled": True},
     )
     assert always.status_code == 200
     assert keyword.status_code == 200
@@ -85,3 +96,50 @@ def test_worldbook_crud_entries_reorder_session_bindings_and_match(tmp_path: Pat
     deleted = client.delete(f"/api/worldbooks/{wb_id}")
     assert deleted.status_code == 200
     assert client.get(f"/api/sessions/{session['session_id']}/worldbooks").json()["enabled_worldbooks"] == []
+
+
+def test_worldbook_match_test_uses_comma_case_whole_words_and_recursion(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'worldbook-match.db'}"))
+    wb = client.post("/api/worldbooks", json={"name": "Lore"}).json()
+    wb_id = wb["id"]
+    search = client.post(
+        f"/api/worldbooks/{wb_id}/entries",
+        json={"name": "Search", "keywords_text": "搜索,但是不对", "content": "mentions followup", "activation_mode": "keyword"},
+    ).json()
+    client.post(
+        f"/api/worldbooks/{wb_id}/entries",
+        json={"name": "Cat", "keywords_text": "cat", "content": "cat lore", "activation_mode": "keyword"},
+    )
+    client.post(
+        f"/api/worldbooks/{wb_id}/entries",
+        json={"name": "Kelly", "keywords_text": "kelly", "content": "Kelly lore", "activation_mode": "keyword"},
+    )
+    followup = client.post(
+        f"/api/worldbooks/{wb_id}/entries",
+        json={"name": "Followup", "keywords_text": "followup", "content": "recursive lore", "activation_mode": "keyword"},
+    ).json()
+
+    match = client.post("/api/worldbooks/match-test", json={"text": "搜索", "worldbook_ids": [wb_id]})
+    assert match.status_code == 200
+    assert [result["entry_id"] for result in match.json()["results"]] == [search["id"]]
+
+    whole = client.post("/api/worldbooks/match-test", json={"text": "concatenate", "worldbook_ids": [wb_id]})
+    assert whole.status_code == 200
+    assert all(result["entry_name"] != "Cat" for result in whole.json()["results"])
+
+    case_insensitive = client.post("/api/worldbooks/match-test", json={"text": "Kelly", "worldbook_ids": [wb_id]})
+    assert case_insensitive.status_code == 200
+    assert [result["entry_name"] for result in case_insensitive.json()["results"]] == ["Kelly"]
+
+    client.patch("/api/worldbook/settings", json={"worldbook_case_sensitive": True})
+    case_sensitive = client.post("/api/worldbooks/match-test", json={"text": "Kelly", "worldbook_ids": [wb_id]})
+    assert case_sensitive.status_code == 200
+    assert case_sensitive.json()["results"] == []
+
+    client.patch("/api/worldbook/settings", json={"worldbook_case_sensitive": False, "worldbook_recursion_depth": 1})
+    recursive = client.post("/api/worldbooks/match-test", json={"text": "搜索", "worldbook_ids": [wb_id]})
+    assert recursive.status_code == 200
+    payload = recursive.json()
+    assert [result["entry_id"] for result in payload["results"]] == [search["id"], followup["id"]]
+    assert payload["recursion_rounds_used"] == 1
+    assert payload["results"][1]["matched_by_recursion"] is True

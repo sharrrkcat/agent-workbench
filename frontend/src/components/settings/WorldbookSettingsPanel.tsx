@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, ChevronRight, GripVertical, Play, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { BookOpenText, ChevronDown, ChevronRight, GripVertical, LoaderCircle, Play, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { DragEventHandler, FormEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +35,8 @@ export function WorldbookSettingsDetail({
   const [matchResult, setMatchResult] = useState<WorldbookMatchTestResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'config' | 'entries' | 'match'>('config');
   const [dragEntryId, setDragEntryId] = useState('');
+  const [entryToggleBusy, setEntryToggleBusy] = useState<Record<string, boolean>>({});
+  const [entryToggleErrors, setEntryToggleErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
@@ -174,6 +176,41 @@ export function WorldbookSettingsDetail({
     }
   }
 
+  async function saveEntryEnabled(entry: WorldbookEntry, enabled: boolean) {
+    const entryId = entry.id;
+    const previousEnabled = entry.enabled;
+    setEntryToggleBusy((current) => ({ ...current, [entryId]: true }));
+    setEntryToggleErrors((current) => {
+      const { [entryId]: _old, ...rest } = current;
+      void _old;
+      return rest;
+    });
+    setEntries((current) => current.map((item) => item.id === entryId ? { ...item, enabled } : item));
+    setEntryDrafts((current) => {
+      const source = current[entryId] || entry;
+      return { ...current, [entryId]: { ...source, enabled } };
+    });
+    try {
+      const saved = await api.patchWorldbookEntry(entryId, { enabled });
+      setEntries((current) => current.map((item) => item.id === entryId ? saved : item));
+      setEntryDrafts((current) => {
+        const draft = current[entryId] || saved;
+        return { ...current, [entryId]: { ...draft, enabled: saved.enabled } };
+      });
+      setMessage(t('worldbook:results.entryEnabledSaved'));
+    } catch (error) {
+      setEntries((current) => current.map((item) => item.id === entryId ? { ...item, enabled: previousEnabled } : item));
+      setEntryDrafts((current) => {
+        const draft = current[entryId] || entry;
+        return { ...current, [entryId]: { ...draft, enabled: previousEnabled } };
+      });
+      const settingsError = toSettingsError(error, t('worldbook:errors.saveEntryEnabledFailed'));
+      setEntryToggleErrors((current) => ({ ...current, [entryId]: settingsError.message }));
+    } finally {
+      setEntryToggleBusy((current) => ({ ...current, [entryId]: false }));
+    }
+  }
+
   async function reorderEntries(nextEntries: WorldbookEntry[]) {
     if (!selectedWorldbook) return;
     const previousEntries = entries;
@@ -257,8 +294,10 @@ export function WorldbookSettingsDetail({
             <div className="detail-section-heading"><h3>{t('worldbook:sections.runtimeDefaults')}</h3></div>
             <BooleanField label={t('worldbook:labels.enableForPromptAgents')} checked={values.worldbook_enabled_for_prompt_agents} onChange={(checked) => setValues({ ...values, worldbook_enabled_for_prompt_agents: checked })} />
             <BooleanField label={t('worldbook:labels.enableForScriptAgents')} checked={values.worldbook_enabled_for_script_agents} onChange={(checked) => setValues({ ...values, worldbook_enabled_for_script_agents: checked })} />
-            <BooleanField label={t('worldbook:labels.regexCaseInsensitive')} checked={values.worldbook_regex_case_insensitive} onChange={(checked) => setValues({ ...values, worldbook_regex_case_insensitive: checked })} />
+            <BooleanField label={t('worldbook:labels.caseSensitive')} checked={values.worldbook_case_sensitive} onChange={(checked) => setValues({ ...values, worldbook_case_sensitive: checked, worldbook_regex_case_insensitive: !checked })} />
+            <BooleanField label={t('worldbook:labels.wholeWords')} checked={values.worldbook_whole_words} onChange={(checked) => setValues({ ...values, worldbook_whole_words: checked })} />
             <div className="settings-detail-grid">
+              <NumberField label={t('worldbook:labels.recursionDepth')} value={values.worldbook_recursion_depth} min={0} max={5} onChange={(value) => setValues({ ...values, worldbook_recursion_depth: value })} />
               <NumberField label={t('worldbook:labels.maxEntriesPerCall')} value={values.worldbook_max_entries_per_call} min={1} max={200} onChange={(value) => setValues({ ...values, worldbook_max_entries_per_call: value })} />
               <NumberField label={t('worldbook:labels.maxContextChars')} value={values.worldbook_max_context_chars} min={1000} max={200000} onChange={(value) => setValues({ ...values, worldbook_max_context_chars: value })} />
             </div>
@@ -352,8 +391,11 @@ export function WorldbookSettingsDetail({
                       busy={busy}
                       draggable={!busy}
                       dragging={dragEntryId === entry.id}
+                      toggleBusy={Boolean(entryToggleBusy[entry.id])}
+                      toggleError={entryToggleErrors[entry.id]}
                       onToggle={() => toggleEntry(entry.id)}
                       onUpdate={(patch) => updateEntryDraft(entry.id, patch)}
+                      onEnabledAutoSave={(enabled) => void saveEntryEnabled(entry, enabled)}
                       onSave={(event) => void saveEntry(entry.id, event)}
                       onReset={() => resetEntry(entry.id)}
                       onDelete={() => void deleteEntry(entry.id)}
@@ -397,8 +439,11 @@ function EntryCard({
   busy,
   draggable,
   dragging = false,
+  toggleBusy = false,
+  toggleError = '',
   onToggle,
   onUpdate,
+  onEnabledAutoSave,
   onSave,
   onReset,
   onDelete,
@@ -415,8 +460,11 @@ function EntryCard({
   busy: string;
   draggable: boolean;
   dragging?: boolean;
+  toggleBusy?: boolean;
+  toggleError?: string;
   onToggle: () => void;
   onUpdate: (patch: Partial<WorldbookEntry>) => void;
+  onEnabledAutoSave?: (enabled: boolean) => void;
   onSave: (event: FormEvent) => void;
   onReset: () => void;
   onDelete: () => void;
@@ -461,15 +509,24 @@ function EntryCard({
         >
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        <ToggleSwitch
-          checked={draft.enabled ?? true}
-          onChange={(enabled) => onUpdate({ enabled })}
-          showLabel={false}
-          size="small"
-          disabled={Boolean(busy)}
-        />
+        <div
+          className="worldbook-entry-toggle-cell"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onDragStart={(event) => event.preventDefault()}
+        >
+          {toggleBusy ? <LoaderCircle className="spin worldbook-entry-toggle-spinner" size={14} aria-hidden="true" /> : null}
+          <ToggleSwitch
+            checked={draft.enabled ?? true}
+            onChange={(enabled) => onEnabledAutoSave ? onEnabledAutoSave(enabled) : onUpdate({ enabled })}
+            showLabel={false}
+            size="small"
+            disabled={Boolean(busy) || toggleBusy}
+          />
+        </div>
         <div className="worldbook-entry-card-title">
           <strong>{title}</strong>
+          {toggleError ? <small className="settings-error-text">{toggleError}</small> : null}
         </div>
         <div className="worldbook-entry-card-actions">
           {dirty ? <span className="settings-badge warning">{t('worldbook:labels.unsavedChanges')}</span> : null}
@@ -495,7 +552,7 @@ function EntryCard({
             <TextField label={t('worldbook:labels.name')} value={draft.name || ''} onChange={(name) => onUpdate({ name })} />
             <SelectField label={t('worldbook:labels.activationMode')} value={draft.activation_mode || 'keyword'} onChange={(activation_mode) => onUpdate({ activation_mode })} />
           </div>
-          <TextField label={t('worldbook:labels.keywords')} value={draft.keywords_text || ''} onChange={(keywords_text) => onUpdate({ keywords_text })} />
+          <TextField label={t('worldbook:labels.keywords')} value={draft.keywords_text || ''} onChange={(keywords_text) => onUpdate({ keywords_text })} placeholder={t('worldbook:placeholders.keywords')} helper={t('worldbook:help.keywords')} />
           <TextAreaField label={t('worldbook:labels.entryContent')} rows={8} value={draft.content || ''} onChange={(content) => onUpdate({ content })} />
           <div className="settings-button-row">
             <button className="settings-primary-button" type="submit" disabled={busy === 'save-entry'}>
@@ -538,8 +595,8 @@ function BooleanField({ label, checked, onChange, compact = false }: { label: st
   return <label className={`config-field settings-config-field boolean-field ${compact ? 'compact' : ''}`}><span>{label}</span><ToggleSwitch checked={checked} onChange={onChange} /></label>;
 }
 
-function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="config-field settings-config-field"><span>{label}</span><input className="settings-form-control" type="text" value={value} onChange={(event) => onChange(event.currentTarget.value)} /></label>;
+function TextField({ label, value, onChange, placeholder, helper }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; helper?: string }) {
+  return <label className="config-field settings-config-field"><span>{label}</span><input className="settings-form-control" type="text" value={value} placeholder={placeholder} onChange={(event) => onChange(event.currentTarget.value)} />{helper ? <small>{helper}</small> : null}</label>;
 }
 
 function TextAreaField({ label, value, onChange, rows = 4 }: { label: string; value: string; onChange: (value: string) => void; rows?: number }) {
@@ -566,6 +623,7 @@ function MatchResults({ response }: { response: WorldbookMatchTestResponse }) {
           <strong>{result.entry_name}</strong>
           <small>{result.worldbook_name} / {result.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
           {result.matched_keywords.length ? <small>{result.matched_keywords.join(', ')}</small> : null}
+          {result.matched_by_recursion ? <small>{t('worldbook:labels.matchedByRecursion', { depth: result.recursion_depth ?? 0 })}</small> : null}
           <p>{result.content_preview}</p>
         </article>
       )) : <div className="settings-empty-state compact">{t('worldbook:empty.noMatchedEntries')}</div>}

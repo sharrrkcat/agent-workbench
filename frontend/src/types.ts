@@ -558,6 +558,9 @@ export type WorldbookSettings = {
   worldbook_max_entries_per_call: number;
   worldbook_max_context_chars: number;
   worldbook_regex_case_insensitive: boolean;
+  worldbook_recursion_depth: number;
+  worldbook_case_sensitive: boolean;
+  worldbook_whole_words: boolean;
 };
 
 export type Worldbook = {
@@ -613,6 +616,8 @@ export type WorldbookMatchResult = {
   entry_name: string;
   activation_mode: 'always' | 'keyword';
   matched_keywords: string[];
+  matched_by_recursion?: boolean;
+  recursion_depth?: number;
   sort_order: number;
   content_preview: string;
 };
@@ -621,6 +626,10 @@ export type WorldbookMatchTestResponse = {
   matched_count: number;
   included_count: number;
   truncated: boolean;
+  recursion_depth?: number;
+  recursion_rounds_used?: number;
+  case_sensitive?: boolean;
+  whole_words?: boolean;
   warnings: { code: string; message: string; [key: string]: unknown }[];
   results: WorldbookMatchResult[];
 };

@@ -40,6 +40,7 @@ def init_db(engine) -> None:
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
     ensure_knowledge_settings_columns(engine)
+    ensure_worldbook_settings_columns(engine)
     ensure_session_knowledge_binding_columns(engine)
     ensure_run_lifecycle_columns(engine)
     migrate_llm_provider_profiles(engine)
@@ -162,6 +163,24 @@ def ensure_knowledge_settings_columns(engine) -> None:
         for column, ddl in additions.items():
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE knowledge_settings ADD COLUMN {column} {ddl}"))
+
+
+def ensure_worldbook_settings_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "worldbook_settings" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(worldbook_settings)").fetchall()}
+        additions = {
+            "worldbook_recursion_depth": "INTEGER DEFAULT 0",
+            "worldbook_case_sensitive": "BOOLEAN DEFAULT 0",
+            "worldbook_whole_words": "BOOLEAN DEFAULT 1",
+        }
+        for column, ddl in additions.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE worldbook_settings ADD COLUMN {column} {ddl}"))
 
 
 def ensure_run_lifecycle_columns(engine) -> None:

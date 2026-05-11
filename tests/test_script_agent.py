@@ -331,6 +331,41 @@ def test_script_agent_worldbook_defaults_off_and_can_be_enabled(tmp_path: Path) 
     assert fixture.runs.get_run(second.run_id).metadata["worldbook_context"]["injected_entry_count"] == 1
 
 
+def test_script_agent_worldbook_uses_comma_keywords_and_recursion(tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "script_llm_worldbook_recursion",
+        "async def run(ctx):\n    return await ctx.llm.text(system='sys', user=ctx.input.text)\n",
+        capabilities=["llm"],
+    )
+    fixture = ScriptRuntimeFixture(agents=agents, llm=FakeLLMRuntime(response="script reply"))
+    fixture.worldbooks.patch_settings({"worldbook_enabled_for_script_agents": True, "worldbook_recursion_depth": 1})
+    session = configure_llm_profile(fixture)
+    worldbook = fixture.worldbooks.create_worldbook(Worldbook(name="Script Recursive Lore"))
+    first = fixture.worldbooks.create_entry(
+        WorldbookEntry(
+            worldbook_id=worldbook.id,
+            name="Search",
+            keywords_text="搜索,但是不对",
+            content="This script entry mentions followup-token.",
+        )
+    )
+    second = fixture.worldbooks.create_entry(
+        WorldbookEntry(worldbook_id=worldbook.id, name="Followup", keywords_text="followup-token", content="Script recursive lore.")
+    )
+    fixture.worldbooks.replace_session_bindings(session.session_id, [worldbook.id])
+
+    result = run(fixture.runtime.handle_input(session, "@script_llm_worldbook_recursion 搜索"))
+    system = fixture.llm.calls[0]["messages"][0]["content"]
+    metadata = fixture.runs.get_run(result.run_id).metadata["worldbook_context"]
+
+    assert result.success is True
+    assert "This script entry mentions followup-token." in system
+    assert "Script recursive lore." in system
+    assert [ref["entry_id"] for ref in metadata["entry_refs"]] == [first.id, second.id]
+    assert metadata["recursion_rounds_used"] == 1
+
+
 def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
     async def fast_sleep(seconds):
         return None

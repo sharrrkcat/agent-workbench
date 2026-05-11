@@ -1,6 +1,3 @@
-import re
-from typing import Literal
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -14,8 +11,8 @@ from ai_workbench.core.worldbook import (
     WorldbookEntryPatch,
     WorldbookPatch,
     WorldbookSettingsPatch,
+    collect_worldbook_matches,
     content_preview,
-    keyword_patterns,
 )
 
 
@@ -207,58 +204,52 @@ def match_test(payload: MatchTestRequest, state: RuntimeState = Depends(get_stat
     else:
         raise_error(422, "WORLDBOOK_MATCH_TARGET_REQUIRED", "worldbook_ids or session_id is required.")
 
-    flags = re.IGNORECASE if settings.worldbook_regex_case_insensitive else 0
+    try:
+        match_data = collect_worldbook_matches(
+            worldbook_store=state.worldbooks,
+            worldbook_ids=worldbook_ids,
+            text=payload.text,
+            settings=settings,
+        )
+    except KeyError as exc:
+        raise_error(404, "WORLDBOOK_NOT_FOUND", str(exc))
+
     matched: list[dict] = []
-    matched_count = 0
     total_chars = 0
     truncated = False
-    for worldbook_id in worldbook_ids:
-        try:
-            worldbook = state.worldbooks.get_worldbook(worldbook_id)
-        except KeyError:
-            raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
-        if not worldbook.enabled:
-            warnings.append({"code": "WORLDBOOK_DISABLED", "message": f"Worldbook is disabled: {worldbook_id}", "worldbook_id": worldbook_id})
+    warnings.extend(match_data["warnings"])
+    for item in match_data["matched"]:
+        worldbook = item["worldbook"]
+        entry = item["entry"]
+        if len(matched) >= settings.worldbook_max_entries_per_call or total_chars + len(entry.content) > settings.worldbook_max_context_chars:
+            truncated = True
             continue
-        for entry in state.worldbooks.list_entries(worldbook_id):
-            if not entry.enabled:
-                continue
-            matched_keywords = _entry_matches(entry.activation_mode, entry.keywords_text, payload.text, flags, warnings, entry.id)
-            if matched_keywords is None:
-                continue
-            matched_count += 1
-            if len(matched) >= settings.worldbook_max_entries_per_call or total_chars + len(entry.content) > settings.worldbook_max_context_chars:
-                truncated = True
-                continue
-            total_chars += len(entry.content)
-            matched.append({
-                "worldbook_id": worldbook.id,
-                "worldbook_name": worldbook.name,
-                "entry_id": entry.id,
-                "entry_name": entry.name,
-                "activation_mode": entry.activation_mode,
-                "matched_keywords": matched_keywords,
-                "sort_order": entry.sort_order,
-                "content_preview": content_preview(entry.content),
-            })
-    return {"matched_count": matched_count, "included_count": len(matched), "truncated": truncated, "warnings": warnings, "results": matched}
-
-
-def _entry_matches(mode: Literal["always", "keyword"], keywords_text: str, text: str, flags: int, warnings: list[dict], entry_id: str) -> list[str] | None:
-    if mode == "always":
-        return []
-    patterns = keyword_patterns(keywords_text)
-    if not patterns:
-        warnings.append({"code": "WORLDBOOK_KEYWORDS_EMPTY", "message": "Keyword-triggered entry has no keywords.", "entry_id": entry_id})
-        return None
-    matches: list[str] = []
-    for pattern in patterns:
-        try:
-            if re.search(pattern, text or "", flags):
-                matches.append(pattern)
-        except re.error as exc:
-            warnings.append({"code": "WORLDBOOK_INVALID_REGEX", "message": f"Invalid regex: {exc}", "entry_id": entry_id, "pattern": pattern})
-    return matches or None
+        total_chars += len(entry.content)
+        matched.append({
+            "worldbook_id": worldbook.id,
+            "worldbook_name": worldbook.name,
+            "entry_id": entry.id,
+            "entry_name": entry.name,
+            "activation_mode": entry.activation_mode,
+            "matched_keywords": item["matched_keywords"],
+            "matched_by_recursion": item["matched_by_recursion"],
+            "recursion_depth": item["recursion_depth"],
+            "sort_order": entry.sort_order,
+            "content_preview": content_preview(entry.content),
+        })
+    if truncated:
+        warnings.append({"code": "WORLDBOOK_CONTEXT_TRUNCATED", "message": "Worldbook match-test results were truncated by max entries or context chars."})
+    return {
+        "matched_count": len(match_data["matched"]),
+        "included_count": len(matched),
+        "truncated": truncated,
+        "recursion_depth": match_data["recursion_depth"],
+        "recursion_rounds_used": match_data["recursion_rounds_used"],
+        "case_sensitive": match_data["case_sensitive"],
+        "whole_words": match_data["whole_words"],
+        "warnings": warnings,
+        "results": matched,
+    }
 
 
 def _require_store(state: RuntimeState) -> None:
