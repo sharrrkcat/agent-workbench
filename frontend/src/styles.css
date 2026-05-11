@@ -564,10 +564,22 @@ input:disabled {
 .context-sources-button {
   flex: 0 0 auto;
   justify-content: center;
-  width: 42px;
-  min-width: 42px;
-  padding: 0 10px;
+  width: 44px;
+  min-width: 44px;
+  gap: 7px;
+  padding: 0 9px;
   text-transform: none;
+}
+
+.context-sources-button > .context-sources-dot {
+  display: inline-block;
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  min-width: 7px;
+  min-height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.32);
 }
 
 .context-sources-button svg {
@@ -577,7 +589,7 @@ input:disabled {
 .context-sources-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -588,8 +600,8 @@ input:disabled {
 .context-sources-modal {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  width: min(900px, 92vw);
-  max-height: 86vh;
+  width: min(900px, calc(100vw - 48px));
+  max-height: calc(100dvh - 64px);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;

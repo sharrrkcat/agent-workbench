@@ -1,5 +1,6 @@
 import { BookOpen, BookOpenText, ChevronDown, DatabaseZap, GripVertical, Layers, Minus, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { AgentSwitcher } from './AgentSwitcher';
@@ -519,17 +520,20 @@ function ContextSourcesButton({
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <span aria-hidden="true" />
+        <span className="context-sources-dot" aria-hidden="true" />
         <Layers size={14} aria-hidden="true" />
       </button>
-      {open && currentSession ? (
-        <ContextSourcesModal
-          sessionId={currentSession.session_id}
-          onOpenSettings={onOpenSettings}
-          onClose={() => onOpenChange(false)}
-          onSummaryChange={setSummary}
-        />
-      ) : null}
+      {open && currentSession
+        ? createPortal(
+          <ContextSourcesModal
+            sessionId={currentSession.session_id}
+            onOpenSettings={onOpenSettings}
+            onClose={() => onOpenChange(false)}
+            onSummaryChange={setSummary}
+          />,
+          document.body,
+        )
+        : null}
     </>
   );
 }
