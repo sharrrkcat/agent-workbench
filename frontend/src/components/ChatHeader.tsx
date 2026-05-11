@@ -1,4 +1,4 @@
-import { BookOpen, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Hash, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -6,7 +6,7 @@ import { AgentSwitcher } from './AgentSwitcher';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
-import type { ContextMode, KnowledgeBase, SessionKnowledgeBinding } from '../types';
+import type { ContextMode, KnowledgeBase, Message, SessionKnowledgeBinding } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation();
@@ -14,6 +14,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const state = useWorkbenchStore();
   const currentProfile = resolveCurrentLlmProfile(state);
   const modelStatus = getModelProfileStatus(currentProfile, state.llmProviderStatuses);
+  const tokenSummary = useMemo(() => summarizeSessionTokens(state.messages), [state.messages]);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
 
@@ -26,6 +27,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
         </span>
       </div>
       <div className="topbar-actions">
+        <SessionTokenPill summary={tokenSummary} />
         <SessionKnowledgePicker
           open={knowledgeOpen}
           onOpenChange={(nextOpen) => {
@@ -52,6 +54,27 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
         />
       </div>
     </header>
+  );
+}
+
+function SessionTokenPill({ summary }: { summary: SessionTokenSummary }) {
+  const { t } = useTranslation();
+  const total = formatTokenAmount(summary.total, summary.estimated);
+  const totalDetail = formatTokenCount(summary.total, summary.estimated);
+  const input = formatTokenCount(summary.input, false);
+  const output = formatTokenCount(summary.output, summary.estimated);
+  return (
+    <span
+      className="status-pill token-pill"
+      title={t('chat:tokens.tooltip', {
+        input,
+        output,
+        total: totalDetail,
+      })}
+    >
+      <Hash size={14} />
+      {t('chat:tokens.total', { count: total })}
+    </span>
   );
 }
 
@@ -334,4 +357,62 @@ function statusTitle(modelStatus: ReturnType<typeof getModelProfileStatus>, curr
 
 function statusClass(modelStatus: ReturnType<typeof getModelProfileStatus>): string {
   return statusPillClass(modelStatus);
+}
+
+type SessionTokenSummary = {
+  input: number;
+  output: number;
+  total: number;
+  estimated: boolean;
+};
+
+function summarizeSessionTokens(messages: Message[]): SessionTokenSummary {
+  return messages.reduce<SessionTokenSummary>(
+    (summary, message) => {
+      if (message.role !== 'assistant' && message.role !== 'agent') return summary;
+      const metrics = plainRecord(message.metadata?.llm_metrics);
+      if (!metrics) return summary;
+      const input = numberValue(metrics.prompt_tokens) ?? numberValue(metrics.input_tokens) ?? 0;
+      const providerOutput = numberValue(metrics.completion_tokens) ?? numberValue(metrics.output_tokens);
+      const estimatedOutput = numberValue(metrics.estimated_completion_tokens);
+      const output = providerOutput ?? estimatedOutput ?? 0;
+      const estimated = metrics.usage_source === 'estimated' || (providerOutput === undefined && estimatedOutput !== undefined);
+      return {
+        input: summary.input + input,
+        output: summary.output + output,
+        total: summary.total + input + output,
+        estimated: summary.estimated || estimated,
+      };
+    },
+    { input: 0, output: 0, total: 0, estimated: false },
+  );
+}
+
+function formatTokenCount(value: number, estimated: boolean): string {
+  return `${formatTokenAmount(value, estimated)} tokens`;
+}
+
+function formatTokenAmount(value: number, estimated: boolean): string {
+  const rounded = Math.max(0, Math.round(value));
+  const prefix = estimated && rounded > 0 ? '~' : '';
+  return `${prefix}${formatCompactNumber(rounded)}`;
+}
+
+function formatCompactNumber(value: number): string {
+  if (value < 1000) return String(value);
+  if (value < 1_000_000) return `${trimTrailingZero((value / 1000).toFixed(1))}k`;
+  return `${trimTrailingZero((value / 1_000_000).toFixed(1))}M`;
+}
+
+function trimTrailingZero(value: string): string {
+  return value.replace(/\.0$/, '');
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return undefined;
+}
+
+function plainRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }

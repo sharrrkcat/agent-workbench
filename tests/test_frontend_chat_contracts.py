@@ -213,10 +213,24 @@ def test_message_metrics_label_distinguishes_input_and_output_tokens() -> None:
     source = read_frontend("components/MessageBubble.tsx")
 
     assert "metrics.prompt_tokens" in source
-    assert "输入 ${promptTokens} tokens" in source
-    assert "输出 ${estimated ? '~' : ''}${tokens} tokens" in source
+    assert "runs:metrics.inputTokens" in source
+    assert "runs:metrics.outputTokens" in source
+    assert "runs:metrics.estimatedOutputTokens" in source
+    assert "parts.join(' · ')" in source
     assert "metrics.total_tokens" not in source[source.index("function formatMetrics") : source.index("function numberValue")]
-    assert source.index("输入 ${promptTokens} tokens") < source.index("输出 ${estimated ? '~' : ''}${tokens} tokens")
+    assert source.index("runs:metrics.inputTokens") < source.index("runs:metrics.outputTokens")
+
+
+def test_chat_header_renders_session_token_summary_before_knowledge_picker() -> None:
+    source = read_frontend("components/ChatHeader.tsx")
+
+    assert "summarizeSessionTokens(state.messages)" in source
+    assert "metadata?.llm_metrics" in source
+    assert "metrics.prompt_tokens" in source
+    assert "metrics.completion_tokens" in source
+    assert "metrics.estimated_completion_tokens" in source
+    assert "chat:tokens.tooltip" in source
+    assert source.index("<SessionTokenPill summary={tokenSummary} />") < source.index("<SessionKnowledgePicker")
 
 
 def test_failed_producer_messages_keep_identity_and_send_errors_are_local() -> None:

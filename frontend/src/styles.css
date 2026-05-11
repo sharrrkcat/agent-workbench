@@ -659,6 +659,11 @@ input:disabled {
   text-transform: capitalize;
 }
 
+.token-pill {
+  text-transform: none;
+  cursor: default;
+}
+
 .status-pill > span {
   width: 7px;
   height: 7px;
@@ -3462,6 +3467,25 @@ input:disabled {
   color: rgba(255, 255, 255, 0.78);
   font-size: 12px;
   padding: 0 10px;
+  color-scheme: dark;
+}
+
+.language-select select:hover,
+.language-select select:focus {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.075);
+  color: #f5f5f5;
+  outline: none;
+}
+
+.language-select option {
+  background: #262626;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.language-select option:checked {
+  background: #333333;
+  color: #f5f5f5;
 }
 
 .panel-title {

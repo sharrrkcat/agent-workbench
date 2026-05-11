@@ -51,6 +51,12 @@
   "currentAgentDetail": "Current agent: {{name}}",
   "attachmentTooLarge": "{{name}} is larger than {{size}} MB.",
   "attachment": "Attachment",
+  "tokens": {
+    "total": "Tokens: {{count}}",
+    "input": "Input: {{count}}",
+    "output": "Output: {{count}}",
+    "tooltip": "Input: {{input}}\nOutput: {{output}}\nTotal: {{total}}"
+  },
   "actions": {
     "messageActions": "Message actions",
     "notificationActions": "Notification actions",

@@ -51,6 +51,12 @@
   "currentAgentDetail": "当前 Agent：{{name}}",
   "attachmentTooLarge": "{{name}} 大于 {{size}} MB。",
   "attachment": "附件",
+  "tokens": {
+    "total": "Tokens: {{count}}",
+    "input": "输入：{{count}}",
+    "output": "输出：{{count}}",
+    "tooltip": "输入：{{input}}\n输出：{{output}}\n总计：{{total}}"
+  },
   "actions": {
     "messageActions": "消息操作",
     "notificationActions": "通知操作",

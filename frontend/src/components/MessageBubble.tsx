@@ -1758,7 +1758,7 @@ function formatMetrics(value: unknown, interrupted: boolean, t: ReturnType<typeo
   } else if (durationMs !== undefined) {
     parts.push(formatSeconds(durationMs));
   }
-  return parts.join(' / ');
+  return parts.join(' · ');
 }
 
 function numberValue(value: unknown): number | undefined {
