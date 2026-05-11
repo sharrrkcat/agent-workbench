@@ -31,13 +31,16 @@
     "keywords": "关键词",
     "entryContent": "条目内容",
     "matchText": "匹配文本",
-    "matchedEntries": "匹配条目"
+    "matchedEntries": "匹配条目",
+    "disabled": "已禁用"
   },
   "actions": {
     "newEntry": "新建条目",
     "up": "上移",
     "down": "下移",
-    "matchTest": "匹配测试"
+    "matchTest": "匹配测试",
+    "dragToReorder": "拖动排序",
+    "editEntry": "编辑条目"
   },
   "empty": {
     "loadingSettings": "正在加载世界书设置。",

@@ -1491,7 +1491,7 @@ class SqlKnowledgeStore:
             records = session.exec(
                 select(SessionKnowledgeBindingRecord)
                 .where(SessionKnowledgeBindingRecord.session_id == session_id)
-                .order_by(SessionKnowledgeBindingRecord.created_at)
+                .order_by(SessionKnowledgeBindingRecord.sort_order, SessionKnowledgeBindingRecord.created_at)
             ).all()
             bindings: List[SessionKnowledgeBinding] = []
             for record in records:
@@ -1511,8 +1511,8 @@ class SqlKnowledgeStore:
                 seen.add(knowledge_base_id)
                 validated_ids.append(knowledge_base_id)
             session.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id == session_id))
-            for knowledge_base_id in validated_ids:
-                session.add(SessionKnowledgeBindingRecord(session_id=session_id, knowledge_base_id=knowledge_base_id, enabled=True))
+            for index, knowledge_base_id in enumerate(validated_ids):
+                session.add(SessionKnowledgeBindingRecord(session_id=session_id, knowledge_base_id=knowledge_base_id, enabled=True, sort_order=(index + 1) * 10))
             session.commit()
         return self.list_session_bindings(session_id)
 
@@ -1938,6 +1938,7 @@ def _session_knowledge_binding_from_record(
         session_id=record.session_id,
         knowledge_base_id=record.knowledge_base_id,
         enabled=record.enabled,
+        sort_order=record.sort_order,
         created_at=ensure_utc(record.created_at),
         knowledge_base=_knowledge_base_from_record(knowledge_base_record) if knowledge_base_record is not None else None,
     )

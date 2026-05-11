@@ -287,6 +287,7 @@ Likely source:
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
 - `frontend/src/components/settings/WorldbookSettingsPanel.tsx`
+- `frontend/src/components/ChatHeader.tsx` when changing Context Sources or session Knowledge/Worldbook binding UI
 - `frontend/src/api/client.ts`
 - `frontend/src/types.ts`
 - `frontend/src/i18n/resources`

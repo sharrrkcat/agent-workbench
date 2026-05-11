@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, DatabaseZap, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenText, ChevronDown, DatabaseZap, GripVertical, Layers, Minus, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -7,7 +7,7 @@ import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkben
 import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
 import { usePopoverPresence } from '../hooks/usePopoverPresence';
-import type { ContextMode, GeneralSettings, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, RuntimeResources, SessionKnowledgeBinding } from '../types';
+import type { ContextMode, GeneralSettings, KnowledgeBase, Message, RuntimeMemoryResultItem, RuntimeMemoryTarget, RuntimeMemoryTargetSummary, RuntimeResources, SessionKnowledgeBinding, SessionWorldbookBinding, Worldbook } from '../types';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation();
@@ -16,7 +16,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const modelStatus = getModelProfileStatus(currentProfile, state.llmProviderStatuses);
   const tokenSummary = useMemo(() => summarizeSessionTokens(state.messages), [state.messages]);
   const generalSettings = useWorkbenchStore((store) => store.generalSettings);
-  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [contextSourcesOpen, setContextSourcesOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
 
   return (
@@ -26,10 +26,10 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
       </div>
       <div className="topbar-actions">
         <ChatStatusPill summary={tokenSummary} settings={generalSettings} />
-        <SessionKnowledgePicker
-          open={knowledgeOpen}
+        <ContextSourcesButton
+          open={contextSourcesOpen}
           onOpenChange={(nextOpen) => {
-            setKnowledgeOpen(nextOpen);
+            setContextSourcesOpen(nextOpen);
             if (nextOpen) setSessionMenuOpen(false);
           }}
           onOpenSettings={onOpenSettings}
@@ -47,7 +47,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
           open={sessionMenuOpen}
           onOpenChange={(nextOpen) => {
             setSessionMenuOpen(nextOpen);
-            if (nextOpen) setKnowledgeOpen(false);
+            if (nextOpen) setContextSourcesOpen(false);
           }}
         />
       </div>
@@ -468,7 +468,7 @@ function localizeMemoryMessage(message: string, t: ReturnType<typeof useTranslat
   return message;
 }
 
-function SessionKnowledgePicker({
+function ContextSourcesButton({
   open,
   onOpenChange,
   onOpenSettings,
@@ -479,171 +479,396 @@ function SessionKnowledgePicker({
 }) {
   const { t } = useTranslation();
   const currentSession = useWorkbenchStore((state) => state.currentSession);
-  const pickerRef = useRef<HTMLDivElement | null>(null);
-  const [bases, setBases] = useState<KnowledgeBase[]>([]);
-  const [bindings, setBindings] = useState<SessionKnowledgeBinding[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const selectedIds = useMemo(() => new Set(bindings.filter((binding) => binding.enabled).map((binding) => binding.knowledge_base_id)), [bindings]);
-  const enabledBases = bases.filter((base) => selectedIds.has(base.id));
-  const availableBases = bases.filter((base) => !selectedIds.has(base.id));
-  const menuRendered = usePopoverPresence(open);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!pickerRef.current?.contains(event.target as Node)) {
-        onOpenChange(false);
-      }
-    }
-    function onKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === 'Escape') onOpenChange(false);
-    }
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [onOpenChange, open]);
+  const [counts, setCounts] = useState({ knowledge: 0, worldbooks: 0 });
 
   useEffect(() => {
     if (!currentSession?.session_id) {
-      setBases([]);
-      setBindings([]);
+      setCounts({ knowledge: 0, worldbooks: 0 });
       onOpenChange(false);
       return;
     }
     let cancelled = false;
+    async function loadCounts() {
+      try {
+        const [knowledgeBindings, worldbookResponse] = await Promise.all([
+          api.listSessionKnowledgeBases(currentSession!.session_id),
+          api.getSessionWorldbooks(currentSession!.session_id),
+        ]);
+        if (!cancelled) {
+          setCounts({
+            knowledge: knowledgeBindings.filter((binding) => binding.enabled).length,
+            worldbooks: worldbookResponse.enabled_worldbooks.filter((binding) => binding.enabled).length,
+          });
+        }
+      } catch {
+        if (!cancelled) setCounts({ knowledge: 0, worldbooks: 0 });
+      }
+    }
+    void loadCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSession?.session_id, open, onOpenChange]);
+
+  const total = counts.knowledge + counts.worldbooks;
+  const label = t('chat:contextSources.buttonLabel', { knowledge: counts.knowledge, worldbooks: counts.worldbooks, total });
+  const narrowLabel = t('chat:contextSources.buttonLabelCompact', { total });
+
+  return (
+    <>
+      <button
+        type="button"
+        className="status-pill context-sources-button"
+        disabled={!currentSession}
+        onClick={() => onOpenChange(true)}
+        title={t('chat:contextSources.tooltip', { knowledge: counts.knowledge, worldbooks: counts.worldbooks })}
+        aria-label={t('chat:contextSources.title')}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <Layers size={14} />
+        <span className="context-sources-label">{label}</span>
+        <span className="context-sources-label compact">{narrowLabel}</span>
+      </button>
+      {open && currentSession ? (
+        <ContextSourcesModal
+          sessionId={currentSession.session_id}
+          onOpenSettings={onOpenSettings}
+          onClose={() => onOpenChange(false)}
+          onCountsChange={setCounts}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ContextSourcesModal({
+  sessionId,
+  onOpenSettings,
+  onClose,
+  onCountsChange,
+}: {
+  sessionId: string;
+  onOpenSettings: () => void;
+  onClose: () => void;
+  onCountsChange: (counts: { knowledge: number; worldbooks: number }) => void;
+}) {
+  const { t } = useTranslation();
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [activeTab, setActiveTab] = useState<'knowledge' | 'worldbooks'>('knowledge');
+  const [bases, setBases] = useState<KnowledgeBase[]>([]);
+  const [knowledgeBindings, setKnowledgeBindings] = useState<SessionKnowledgeBinding[]>([]);
+  const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
+  const [worldbookBindings, setWorldbookBindings] = useState<SessionWorldbookBinding[]>([]);
+  const [knowledgeStatus, setKnowledgeStatus] = useState<SaveStatus>({ state: 'idle', message: '' });
+  const [worldbookStatus, setWorldbookStatus] = useState<SaveStatus>({ state: 'idle', message: '' });
+  const [dragId, setDragId] = useState('');
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape' && !dragId) onClose();
+      if (event.key !== 'Tab' || !modalRef.current) return;
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [dragId, onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
     async function load() {
       try {
-        setError('');
-        const [nextBases, nextBindings] = await Promise.all([
+        setKnowledgeStatus({ state: 'idle', message: '' });
+        setWorldbookStatus({ state: 'idle', message: '' });
+        const [nextBases, nextKnowledgeBindings, nextWorldbooks] = await Promise.all([
           api.listKnowledgeBases(),
-          api.listSessionKnowledgeBases(currentSession!.session_id),
+          api.listSessionKnowledgeBases(sessionId),
+          api.getSessionWorldbooks(sessionId),
         ]);
         if (cancelled) return;
         setBases(nextBases);
-        setBindings(nextBindings);
+        setKnowledgeBindings(nextKnowledgeBindings);
+        setWorldbooks(nextWorldbooks.available_worldbooks);
+        setWorldbookBindings(nextWorldbooks.enabled_worldbooks);
+        onCountsChange({
+          knowledge: nextKnowledgeBindings.filter((binding) => binding.enabled).length,
+          worldbooks: nextWorldbooks.enabled_worldbooks.filter((binding) => binding.enabled).length,
+        });
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : t('chat:loadKnowledgeBasesFailed'));
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : t('chat:contextSources.loadFailed');
+          setKnowledgeStatus({ state: 'error', message });
+          setWorldbookStatus({ state: 'error', message });
+        }
       }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [currentSession?.session_id]);
+  }, [onCountsChange, sessionId, t]);
 
-  async function toggleBase(base: KnowledgeBase) {
-    if (!currentSession || busy || !base.enabled) return;
-    const nextIds = selectedIds.has(base.id)
-      ? [...selectedIds].filter((id) => id !== base.id)
-      : [...selectedIds, base.id];
-    setBusy(true);
+  const selectedKnowledgeIds = useMemo(() => knowledgeBindings.filter((binding) => binding.enabled).map((binding) => binding.knowledge_base_id), [knowledgeBindings]);
+  const selectedWorldbookIds = useMemo(() => worldbookBindings.filter((binding) => binding.enabled).map((binding) => binding.worldbook_id), [worldbookBindings]);
+  const selectedKnowledgeSet = useMemo(() => new Set(selectedKnowledgeIds), [selectedKnowledgeIds]);
+  const selectedWorldbookSet = useMemo(() => new Set(selectedWorldbookIds), [selectedWorldbookIds]);
+  const enabledBases = selectedKnowledgeIds.map((id) => bases.find((base) => base.id === id)).filter((base): base is KnowledgeBase => Boolean(base));
+  const availableBases = bases.filter((base) => !selectedKnowledgeSet.has(base.id));
+  const enabledWorldbooks = selectedWorldbookIds.map((id) => worldbooks.find((worldbook) => worldbook.id === id)).filter((worldbook): worldbook is Worldbook => Boolean(worldbook));
+  const availableWorldbooks = worldbooks.filter((worldbook) => !selectedWorldbookSet.has(worldbook.id));
+
+  async function saveKnowledgeIds(nextIds: string[]) {
+    const previousBindings = knowledgeBindings;
+    setKnowledgeStatus({ state: 'saving', message: t('chat:contextSources.saving') });
     try {
-      const nextBindings = await api.updateSessionKnowledgeBases(currentSession.session_id, nextIds);
-      setBindings(nextBindings);
-      setError('');
+      const nextBindings = await api.updateSessionKnowledgeBases(sessionId, nextIds);
+      setKnowledgeBindings(nextBindings);
+      onCountsChange({ knowledge: nextBindings.filter((binding) => binding.enabled).length, worldbooks: selectedWorldbookIds.length });
+      setKnowledgeStatus({ state: 'saved', message: t('chat:contextSources.saved') });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('chat:saveKnowledgeBasesFailed'));
-    } finally {
-      setBusy(false);
+      setKnowledgeBindings(previousBindings);
+      setKnowledgeStatus({ state: 'error', message: err instanceof Error ? err.message : t('chat:contextSources.failedToSave') });
+      void api.listSessionKnowledgeBases(sessionId).then(setKnowledgeBindings).catch(() => undefined);
     }
   }
 
   return (
-    <div className="knowledge-picker" ref={pickerRef}>
-      <button
-        type="button"
-        className="status-pill"
-        disabled={!currentSession}
-        onClick={() => onOpenChange(!open)}
-        title={t('chat:selectKnowledgeBases')}
+    <div className="context-sources-backdrop" role="presentation" onMouseDown={() => { if (!dragId) onClose(); }}>
+      <section
+        className="context-sources-modal popover-surface"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="context-sources-title"
+        ref={modalRef}
+        onMouseDown={(event) => event.stopPropagation()}
       >
-        <BookOpen size={14} />
-        KB: {selectedIds.size}
-      </button>
-      {menuRendered ? (
-        <div className={`knowledge-picker-menu popover-surface ${open ? '' : 'closing'}`} aria-hidden={!open}>
-          <div className="knowledge-picker-title">
-            <strong>{t('chat:knowledge')}</strong>
-            <span>{t('chat:selectedCount', { count: selectedIds.size })}</span>
+        <header className="context-sources-header">
+          <div>
+            <h2 id="context-sources-title">{t('chat:contextSources.title')}</h2>
+            <p>{t('chat:contextSources.summary', { knowledge: selectedKnowledgeIds.length, worldbooks: selectedWorldbookIds.length })}</p>
           </div>
-          {error ? <p className="settings-error-text">{error}</p> : null}
-          {!bases.length ? (
-            <div className="settings-empty-state compact">
-              {t('chat:noKnowledgeBases')}
-              <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>
-            </div>
-          ) : null}
-          {bases.length ? (
-            <div className="knowledge-picker-sections">
-              <KnowledgePickerSection
-                title={t('chat:enabledKnowledgeBases')}
-                empty={t('chat:noEnabledKnowledgeBases')}
-                bases={enabledBases}
-                busy={busy}
-                action="remove"
-                onToggle={toggleBase}
-              />
-              <KnowledgePickerSection
-                title={t('chat:availableKnowledgeBases')}
-                empty={t('chat:noAvailableKnowledgeBases')}
-                bases={availableBases}
-                busy={busy}
-                action="add"
-                onToggle={toggleBase}
-              />
-            </div>
-          ) : null}
+          <button ref={closeButtonRef} className="settings-secondary-button icon-only" type="button" onClick={onClose} aria-label={t('common:close')}><X size={16} /></button>
+        </header>
+        <div className="context-sources-tabs" role="tablist">
+          <button type="button" role="tab" className={activeTab === 'knowledge' ? 'active' : ''} onClick={() => setActiveTab('knowledge')}>
+            <BookOpen size={14} />
+            {t('chat:contextSources.knowledgeBases')}
+          </button>
+          <button type="button" role="tab" className={activeTab === 'worldbooks' ? 'active' : ''} onClick={() => setActiveTab('worldbooks')}>
+            <BookOpenText size={14} />
+            {t('chat:contextSources.worldbooks')}
+          </button>
         </div>
-      ) : null}
+        {activeTab === 'knowledge' ? (
+          <ContextSourceTab<KnowledgeBase>
+            enabledTitle={t('chat:contextSources.enabled')}
+            availableTitle={t('chat:contextSources.available')}
+            enabledEmpty={t('chat:contextSources.noEnabledKnowledgeBases')}
+            availableEmpty={t('chat:contextSources.noAvailableKnowledgeBases')}
+            enabledItems={enabledBases}
+            availableItems={availableBases}
+            status={knowledgeStatus}
+            isAvailable={(base) => base.enabled}
+            isWarning={(base) => base.index_status !== 'ready'}
+            statusLabel={(base) => !base.enabled ? t('chat:contextSources.disabled') : base.index_status !== 'ready' ? t('chat:contextSources.unavailable') : ''}
+            getId={(base) => base.id}
+            getName={(base) => base.name}
+            onOpenSettings={onOpenSettings}
+            onAdd={(base) => void saveKnowledgeIds([...selectedKnowledgeIds, base.id])}
+            onRemove={(base) => void saveKnowledgeIds(selectedKnowledgeIds.filter((id) => id !== base.id))}
+            onReorder={(nextItems) => void saveKnowledgeIds(nextItems.map((item) => item.id))}
+            dragId={dragId}
+            setDragId={setDragId}
+          />
+        ) : (
+          <ContextSourceTab<Worldbook>
+            enabledTitle={t('chat:contextSources.enabled')}
+            availableTitle={t('chat:contextSources.available')}
+            enabledEmpty={t('chat:contextSources.noEnabledWorldbooks')}
+            availableEmpty={t('chat:contextSources.noAvailableWorldbooks')}
+            enabledItems={enabledWorldbooks}
+            availableItems={availableWorldbooks}
+            status={worldbookStatus}
+            isAvailable={(worldbook) => worldbook.enabled}
+            isWarning={(worldbook) => !worldbook.enabled}
+            statusLabel={(worldbook) => worldbook.enabled ? '' : t('chat:contextSources.disabled')}
+            getId={(worldbook) => worldbook.id}
+            getName={(worldbook) => worldbook.name}
+            onOpenSettings={onOpenSettings}
+            onAdd={(worldbook) => void saveWorldbookIds([...selectedWorldbookIds, worldbook.id])}
+            onRemove={(worldbook) => void saveWorldbookIds(selectedWorldbookIds.filter((id) => id !== worldbook.id))}
+            onReorder={(nextItems) => void saveWorldbookIds(nextItems.map((item) => item.id))}
+            dragId={dragId}
+            setDragId={setDragId}
+          />
+        )}
+      </section>
     </div>
   );
+
+  async function saveWorldbookIds(nextIds: string[]) {
+    const previousBindings = worldbookBindings;
+    setWorldbookStatus({ state: 'saving', message: t('chat:contextSources.saving') });
+    try {
+      const response = await api.updateSessionWorldbooks(sessionId, nextIds);
+      setWorldbookBindings(response.enabled_worldbooks);
+      setWorldbooks(response.available_worldbooks);
+      onCountsChange({ knowledge: selectedKnowledgeIds.length, worldbooks: response.enabled_worldbooks.filter((binding) => binding.enabled).length });
+      const warningText = response.warnings?.length ? response.warnings.join(' ') : '';
+      setWorldbookStatus({ state: 'saved', message: warningText || t('chat:contextSources.saved') });
+    } catch (err) {
+      setWorldbookBindings(previousBindings);
+      setWorldbookStatus({ state: 'error', message: err instanceof Error ? err.message : t('chat:contextSources.failedToSave') });
+      void api.getSessionWorldbooks(sessionId).then((response) => {
+        setWorldbookBindings(response.enabled_worldbooks);
+        setWorldbooks(response.available_worldbooks);
+      }).catch(() => undefined);
+    }
+  }
 }
 
-function KnowledgePickerSection({
-  title,
-  empty,
-  bases,
-  busy,
-  action,
-  onToggle,
+type SaveStatus = { state: 'idle' | 'saving' | 'saved' | 'error'; message: string };
+
+function ContextSourceTab<T>({
+  enabledTitle,
+  availableTitle,
+  enabledEmpty,
+  availableEmpty,
+  enabledItems,
+  availableItems,
+  status,
+  isAvailable,
+  isWarning,
+  statusLabel,
+  getId,
+  getName,
+  onOpenSettings,
+  onAdd,
+  onRemove,
+  onReorder,
+  dragId,
+  setDragId,
 }: {
-  title: string;
-  empty: string;
-  bases: KnowledgeBase[];
-  busy: boolean;
-  action: 'add' | 'remove';
-  onToggle: (base: KnowledgeBase) => Promise<void>;
+  enabledTitle: string;
+  availableTitle: string;
+  enabledEmpty: string;
+  availableEmpty: string;
+  enabledItems: T[];
+  availableItems: T[];
+  status: SaveStatus;
+  isAvailable: (item: T) => boolean;
+  isWarning: (item: T) => boolean;
+  statusLabel: (item: T) => string;
+  getId: (item: T) => string;
+  getName: (item: T) => string;
+  onOpenSettings: () => void;
+  onAdd: (item: T) => void;
+  onRemove: (item: T) => void;
+  onReorder: (items: T[]) => void;
+  dragId: string;
+  setDragId: (id: string) => void;
 }) {
   const { t } = useTranslation();
+  const busy = status.state === 'saving';
+
+  function dropOn(targetId: string) {
+    if (!dragId || dragId === targetId || busy) return;
+    const from = enabledItems.findIndex((item) => getId(item) === dragId);
+    const to = enabledItems.findIndex((item) => getId(item) === targetId);
+    if (from < 0 || to < 0) return;
+    const nextItems = [...enabledItems];
+    const [moved] = nextItems.splice(from, 1);
+    nextItems.splice(to, 0, moved);
+    onReorder(nextItems);
+    setDragId('');
+  }
+
   return (
-    <section className="knowledge-picker-section">
-      <h3>{title}</h3>
-      {bases.length ? (
-        <div className="knowledge-pill-list">
-          {bases.map((base) => (
-            <button
-              key={base.id}
-              type="button"
-              className={`knowledge-pill ${action === 'remove' ? 'enabled' : 'available'} ${base.index_status === 'ready' ? '' : 'danger'} ${base.enabled ? '' : 'disabled'}`}
-              disabled={busy || !base.enabled}
-              onClick={() => void onToggle(base)}
-              title={base.enabled ? t(action === 'add' ? 'chat:enableKnowledgeBase' : 'chat:disableKnowledgeBase', { name: base.name }) : t('chat:knowledgeBaseDisabled', { name: base.name })}
-            >
-              <span>
-                <strong>{base.name}</strong>
-              </span>
-              {action === 'add' ? <Plus size={14} className="knowledge-pill-action" /> : <Minus size={14} className="knowledge-pill-action" />}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="knowledge-picker-empty">{empty}</p>
-      )}
-    </section>
+    <div className="context-sources-body">
+      {status.message ? <p className={`context-sources-feedback ${status.state}`}>{status.message}</p> : null}
+      <section className="knowledge-picker-section">
+        <h3>{enabledTitle}</h3>
+        {enabledItems.length ? (
+          <div className="knowledge-pill-list">
+            {enabledItems.map((item) => {
+              const id = getId(item);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`knowledge-pill enabled ${isWarning(item) ? 'danger' : ''} ${dragId === id ? 'dragging' : ''}`}
+                  draggable={!busy}
+                  disabled={busy}
+                  onDragStart={(event) => {
+                    setDragId(id);
+                    event.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragOver={(event) => {
+                    if (dragId && dragId !== id) event.preventDefault();
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    dropOn(id);
+                  }}
+                  onDragEnd={() => setDragId('')}
+                  onClick={() => onRemove(item)}
+                  title={t('chat:contextSources.dragToReorder')}
+                >
+                  <GripVertical size={13} className="knowledge-pill-drag" />
+                  <span><strong>{getName(item)}</strong>{statusLabel(item) ? <small>{statusLabel(item)}</small> : null}</span>
+                  <Minus size={14} className="knowledge-pill-action" />
+                </button>
+              );
+            })}
+          </div>
+        ) : <p className="knowledge-picker-empty">{enabledEmpty}</p>}
+      </section>
+      <section className="knowledge-picker-section">
+        <h3>{availableTitle}</h3>
+        {availableItems.length ? (
+          <div className="knowledge-pill-list">
+            {availableItems.map((item) => {
+              const available = isAvailable(item);
+              return (
+                <button
+                  key={getId(item)}
+                  type="button"
+                  className={`knowledge-pill available ${isWarning(item) ? 'danger' : ''} ${available ? '' : 'disabled'}`}
+                  disabled={busy || !available}
+                  onClick={() => onAdd(item)}
+                  title={available ? t('chat:contextSources.add') : statusLabel(item)}
+                >
+                  <span><strong>{getName(item)}</strong>{statusLabel(item) ? <small>{statusLabel(item)}</small> : null}</span>
+                  <Plus size={14} className="knowledge-pill-action" />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="settings-empty-state compact">
+            {availableEmpty}
+            <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 

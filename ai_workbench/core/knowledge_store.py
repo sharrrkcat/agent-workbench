@@ -178,6 +178,7 @@ class SessionKnowledgeBinding(BaseModel):
     session_id: str
     knowledge_base_id: str
     enabled: bool = True
+    sort_order: int = 0
     created_at: datetime = Field(default_factory=utc_now)
     knowledge_base: KnowledgeBase | None = None
 
@@ -393,12 +394,13 @@ class MemoryKnowledgeStore(KnowledgeStore):
 
     def list_session_bindings(self, session_id: str) -> list[SessionKnowledgeBinding]:
         bindings = [binding for binding in self._bindings.values() if binding.session_id == session_id]
-        return [binding.model_copy(update={"knowledge_base": self._knowledge_bases.get(binding.knowledge_base_id)}) for binding in bindings]
+        ordered = sorted(bindings, key=lambda item: (item.sort_order, item.created_at))
+        return [binding.model_copy(update={"knowledge_base": self._knowledge_bases.get(binding.knowledge_base_id)}) for binding in ordered]
 
     def replace_session_bindings(self, session_id: str, knowledge_base_ids: list[str]) -> list[SessionKnowledgeBinding]:
         self.delete_session_bindings(session_id)
         seen: set[str] = set()
-        for knowledge_base_id in knowledge_base_ids:
+        for index, knowledge_base_id in enumerate(knowledge_base_ids):
             if knowledge_base_id in seen:
                 continue
             self.get_knowledge_base(knowledge_base_id)
@@ -408,6 +410,7 @@ class MemoryKnowledgeStore(KnowledgeStore):
                 session_id=session_id,
                 knowledge_base_id=knowledge_base_id,
                 enabled=True,
+                sort_order=(index + 1) * 10,
             )
             self._next_binding_id += 1
             self._bindings[(session_id, knowledge_base_id)] = binding

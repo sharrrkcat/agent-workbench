@@ -40,6 +40,7 @@ def init_db(engine) -> None:
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
     ensure_knowledge_settings_columns(engine)
+    ensure_session_knowledge_binding_columns(engine)
     ensure_run_lifecycle_columns(engine)
     migrate_llm_provider_profiles(engine)
     ensure_schema_version(engine)
@@ -84,6 +85,18 @@ def ensure_session_model_columns(engine) -> None:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN title_generation_state VARCHAR DEFAULT 'pending'"))
         if "title_generation_metadata_json" not in columns:
             connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN title_generation_metadata_json VARCHAR DEFAULT '{}'"))
+
+
+def ensure_session_knowledge_binding_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "session_knowledge_bindings" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(session_knowledge_bindings)").fetchall()}
+        if "sort_order" not in columns:
+            connection.execute(text("ALTER TABLE session_knowledge_bindings ADD COLUMN sort_order INTEGER DEFAULT 0"))
 
 
 def ensure_message_speaker_columns(engine) -> None:

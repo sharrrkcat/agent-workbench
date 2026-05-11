@@ -301,6 +301,7 @@ class SessionKnowledgeBindingRecord(SQLModel, table=True):
     session_id: str = Field(index=True)
     knowledge_base_id: str = Field(index=True)
     enabled: bool = True
+    sort_order: int = Field(default=0, index=True)
     created_at: datetime = Field(default_factory=utc_now)
 
 

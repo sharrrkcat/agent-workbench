@@ -200,7 +200,7 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - `POST /api/knowledge/search` for selected KBs or session-bound KBs.
 - brute-force vector search per embedding model profile, FTS5/BM25 keyword search, RRF merge, one global optional rerank pass, and context-budget trimming.
 - a small Settings -> Knowledge Base search/test panel.
-- a Chat header Session KB picker that binds enabled Knowledge Bases to the current session.
+- a Chat header Context Sources modal that binds ordered Knowledge Bases and Worldbooks to the current session.
 - Prompt Agents use active Session KBs by default and append a `Retrieved Knowledge` block during context building.
 - Script Agents that declare the `llm` capability default to not using Session KBs, but Settings -> Agents -> Overrides can enable them per Agent.
 - `knowledge` Capability methods `search`, `list_bases`, and `stats` wrap the core Knowledge store and retrieval service for Script Agents.
@@ -393,7 +393,9 @@ The General settings API exposes:
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, empty title prompts are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
 
-Settings -> Worldbook stores global Worldbook defaults and editable Worldbooks with ordered entries. Defaults control Prompt Agent / Script Agent enablement flags, max entries per call, max context chars, and regex case-insensitive matching. Worldbook entries support `always` and `keyword` activation modes; each keyword line is treated as a regex pattern. The backend exposes CRUD, entry reorder, session binding, and match-test APIs. Worldbook storage and match testing exist in this round, but Prompt Agent / Script Agent runtime context injection is not implemented yet.
+Settings -> Worldbook stores global Worldbook defaults and editable Worldbooks with ordered entries. Defaults control Prompt Agent / Script Agent enablement flags, max entries per call, max context chars, and regex case-insensitive matching. Worldbook entries support `always` and `keyword` activation modes; each keyword line is treated as a regex pattern. The Settings UI manages Worldbook config, entries, drag reorder, and match testing. The backend exposes CRUD, entry reorder, ordered session binding, and match-test APIs. Worldbook storage, match testing, and session binding exist in this round, but Prompt Agent / Script Agent runtime context injection is not implemented yet.
+
+The Chat header now uses a single Context Sources modal instead of a separate Session KB picker. The modal has Knowledge Bases and Worldbooks tabs, each with Enabled and Available lists. Adding, removing, and dragging Enabled items saves the current session bindings immediately. Knowledge Base binding order is persisted for UI continuity and future extension, but it does not change Knowledge retrieval ranking semantics. Worldbook binding order is persisted for the later runtime injection design; Worldbooks still do not enter Prompt Agent or Script Agent context yet.
 
 ## SQLite Data
 

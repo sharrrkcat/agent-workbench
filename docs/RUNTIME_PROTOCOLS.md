@@ -248,6 +248,8 @@ Settings -> General -> Context Rendering exposes prompt-text overrides for group
 
 Knowledge RAG v1 Phase 4 defines persisted Knowledge settings, local model directory conventions, embedding model profiles, knowledge base configuration records, session knowledge bindings, local embedding/reranker APIs, synchronous source indexing, explicit retrieval search, and automatic session Knowledge context injection.
 
+Session Knowledge Base bindings and Session Worldbook bindings preserve user-defined binding order. Knowledge retrieval continues to rank retrieved chunks by the retrieval pipeline; binding order is not a retrieval ranking override. Worldbook binding order is persisted for later runtime injection design only. This round does not make Worldbook or Core Memory content part of Prompt Agent or Script Agent provider-bound context.
+
 Source indexing supports `pasted_text` and text attachment sources. Pasted source originals are stored as text files under `data/knowledge/sources`; full source originals are not stored in SQLite. The indexer chunks source text, embeds chunks with the Knowledge Base embedding profile using `purpose=document`, stores float32 vectors in SQLite BLOB rows, and writes FTS5/BM25-ready rows.
 
 `POST /api/knowledge/search` can search explicit `knowledge_base_ids` or active session bindings. It groups vector search by `embedding_model_profile_id`, embeds one query per group with `purpose=query`, searches only matching model-profile vectors, runs FTS5/BM25 across selected KBs, merges vector and keyword candidates with RRF, and optionally runs the configured global reranker once over the merged candidate set. If reranking is disabled or fails, results use RRF order and debug warnings record the reason.

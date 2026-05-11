@@ -171,20 +171,29 @@ def test_store_applies_provider_status_update_events_to_status_cache() -> None:
     assert "[provider.provider_profile_id]: provider" in source
 
 
-def test_chat_header_has_session_knowledge_picker_contract() -> None:
+def test_chat_header_has_context_sources_modal_contract() -> None:
     source = read_frontend("components/ChatHeader.tsx")
     client = read_frontend("api/client.ts")
     types = read_frontend("types.ts")
 
-    assert "SessionKnowledgePicker" in source
+    assert "ContextSourcesButton" in source
+    assert "ContextSourcesModal" in source
     assert "api.listKnowledgeBases()" in source
     assert "api.listSessionKnowledgeBases" in source
     assert "api.updateSessionKnowledgeBases" in source
-    assert "KB: {selectedIds.size}" in source
+    assert "api.getSessionWorldbooks" in source
+    assert "api.updateSessionWorldbooks" in source
+    assert "chat:contextSources.title" in source
+    assert "buttonLabelCompact" in source
+    assert "onReorder" in source
     assert "common:openSettings" in source
     assert "SessionKnowledgeBinding" in types
+    assert "SessionWorldbookBinding" in types
+    assert "sort_order: number" in types
     assert "listSessionKnowledgeBases" in client
     assert "updateSessionKnowledgeBases" in client
+    assert "getSessionWorldbooks" in client
+    assert "updateSessionWorldbooks" in client
 
 
 def test_agent_overrides_has_knowledge_runtime_settings_contract() -> None:
@@ -233,7 +242,7 @@ def test_chat_header_renders_session_token_summary_before_knowledge_picker() -> 
     assert "ChatStatusPill" in source
     assert "api.getRuntimeResources()" in source
     assert "document.visibilityState === 'hidden'" in source
-    assert source.index("<ChatStatusPill summary={tokenSummary} settings={generalSettings} />") < source.index("<SessionKnowledgePicker")
+    assert source.index("<ChatStatusPill summary={tokenSummary} settings={generalSettings} />") < source.index("<ContextSourcesButton")
 
 
 def test_failed_producer_messages_keep_identity_and_send_errors_are_local() -> None:

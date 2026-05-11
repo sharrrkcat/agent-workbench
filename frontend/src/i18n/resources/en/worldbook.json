@@ -31,13 +31,16 @@
     "keywords": "Keywords",
     "entryContent": "Entry content",
     "matchText": "Match text",
-    "matchedEntries": "Matched entries"
+    "matchedEntries": "Matched entries",
+    "disabled": "Disabled"
   },
   "actions": {
     "newEntry": "New entry",
     "up": "Up",
     "down": "Down",
-    "matchTest": "Match test"
+    "matchTest": "Match test",
+    "dragToReorder": "Drag to reorder",
+    "editEntry": "Edit entry"
   },
   "empty": {
     "loadingSettings": "Loading Worldbook settings.",

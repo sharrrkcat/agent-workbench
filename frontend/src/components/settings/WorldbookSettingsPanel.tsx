@@ -1,9 +1,10 @@
-import { BookOpenText, Play, Save, Trash2 } from 'lucide-react';
+import { BookOpenText, GripVertical, Pencil, Play, Save, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import type { Worldbook, WorldbookEntry, WorldbookEntryInput, WorldbookInput, WorldbookMatchTestResponse, WorldbookSettings } from '../../types';
 import type { WorldbookSettingsCategory } from './SettingsObjectList';
+import { DetailTabs } from './DetailTabs';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 
@@ -31,6 +32,8 @@ export function WorldbookSettingsDetail({
   const [selectedEntryId, setSelectedEntryId] = useState('');
   const [matchText, setMatchText] = useState('');
   const [matchResult, setMatchResult] = useState<WorldbookMatchTestResponse | null>(null);
+  const [activeTab, setActiveTab] = useState<'config' | 'entries' | 'match'>('config');
+  const [dragEntryId, setDragEntryId] = useState('');
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
@@ -72,6 +75,7 @@ export function WorldbookSettingsDetail({
     setMessage('');
     setMatchResult(null);
     if (category !== 'worldbooks') return;
+    setActiveTab('config');
     if (selectedItemId === 'new') {
       setWorldbookValues(emptyWorldbook);
       void loadEntries('');
@@ -163,23 +167,33 @@ export function WorldbookSettingsDetail({
     }
   }
 
-  async function moveEntry(entryId: string, direction: -1 | 1) {
+  async function reorderEntries(nextEntries: WorldbookEntry[]) {
     if (!selectedWorldbook) return;
-    const index = entries.findIndex((entry) => entry.id === entryId);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= entries.length) return;
-    const ids = entries.map((entry) => entry.id);
-    [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+    const previousEntries = entries;
+    setEntries(nextEntries);
     setBusy('reorder');
     try {
-      const response = await api.reorderWorldbookEntries(selectedWorldbook.id, ids);
+      const response = await api.reorderWorldbookEntries(selectedWorldbook.id, nextEntries.map((entry) => entry.id));
       setEntries(response.entries);
       setMessage(t('worldbook:results.entriesReordered'));
     } catch (error) {
+      setEntries(previousEntries);
       setLocalError(toSettingsError(error, t('worldbook:errors.reorderFailed')));
     } finally {
       setBusy('');
+      setDragEntryId('');
     }
+  }
+
+  function handleEntryDrop(targetEntryId: string) {
+    if (!dragEntryId || dragEntryId === targetEntryId || busy) return;
+    const sourceIndex = entries.findIndex((entry) => entry.id === dragEntryId);
+    const targetIndex = entries.findIndex((entry) => entry.id === targetEntryId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const nextEntries = [...entries];
+    const [moved] = nextEntries.splice(sourceIndex, 1);
+    nextEntries.splice(targetIndex, 0, moved);
+    void reorderEntries(nextEntries);
   }
 
   async function runMatchTest() {
@@ -222,10 +236,19 @@ export function WorldbookSettingsDetail({
 
   return (
     <div className="settings-detail-form">
-      <Header title={selectedItemId === 'new' ? t('worldbook:titles.newWorldbook') : t('worldbook:titles.worldbook')} description={t('worldbook:descriptions.worldbook')} dirty={false} busy={false} message={message} />
+      <Header title={selectedItemId === 'new' ? t('worldbook:titles.newWorldbook') : selectedWorldbook?.name || t('worldbook:titles.worldbook')} description={t('worldbook:descriptions.worldbook')} dirty={false} busy={false} message={message} />
+      <DetailTabs
+        tabs={[
+          { id: 'config', label: t('worldbook:sections.config') },
+          { id: 'entries', label: t('worldbook:sections.entries'), enabled: Boolean(selectedWorldbook) },
+          { id: 'match', label: t('worldbook:sections.matchTest'), enabled: Boolean(selectedWorldbook) },
+        ]}
+        activeTab={activeTab}
+        onChange={(tab) => setActiveTab(tab as 'config' | 'entries' | 'match')}
+      />
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
-        <form className="detail-section" onSubmit={saveWorldbook}>
+        {activeTab === 'config' ? <form className="detail-section" onSubmit={saveWorldbook}>
           <div className="detail-section-heading"><h3>{t('worldbook:sections.config')}</h3></div>
           <TextField label={t('worldbook:labels.name')} value={worldbookValues.name || ''} onChange={(name) => setWorldbookValues({ ...worldbookValues, name })} />
           <TextAreaField label={t('worldbook:labels.description')} value={worldbookValues.description || ''} onChange={(description) => setWorldbookValues({ ...worldbookValues, description })} />
@@ -234,27 +257,51 @@ export function WorldbookSettingsDetail({
             <button className="settings-primary-button" type="submit" disabled={busy === 'save-worldbook'}><Save size={14} />{t('common:save')}</button>
             {selectedWorldbook ? <button className="settings-secondary-button danger" type="button" onClick={deleteWorldbook} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
           </div>
-        </form>
+        </form> : null}
         {selectedWorldbook ? (
           <>
-            <div className="detail-section">
+            {activeTab === 'entries' ? <div className="detail-section">
               <div className="detail-section-heading"><h3>{t('worldbook:sections.entries')}</h3></div>
               <div className="settings-button-row"><button className="settings-secondary-button" type="button" onClick={() => setSelectedEntryId('new')}>{t('worldbook:actions.newEntry')}</button></div>
               <div className="settings-list-scroll">
-                {entries.map((entry, index) => (
-                  <button key={entry.id} type="button" className={`settings-object-row ${selectedEntryId === entry.id ? 'active' : ''} ${entry.enabled ? '' : 'disabled'}`} onClick={() => setSelectedEntryId(entry.id)}>
-                    <div className="settings-object-copy"><strong>{entry.name}</strong><small>{entry.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small></div>
+                {entries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={`settings-object-row worldbook-entry-row ${selectedEntryId === entry.id ? 'active' : ''} ${entry.enabled ? '' : 'disabled'} ${dragEntryId === entry.id ? 'dragging' : ''}`}
+                    draggable={!busy}
+                    onDragStart={(event) => {
+                      setDragEntryId(entry.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(event) => {
+                      if (dragEntryId && dragEntryId !== entry.id) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      handleEntryDrop(entry.id);
+                    }}
+                    onDragEnd={() => setDragEntryId('')}
+                    onClick={() => setSelectedEntryId(entry.id)}
+                    title={t('worldbook:actions.dragToReorder')}
+                  >
+                    <GripVertical className="worldbook-drag-handle" size={15} aria-hidden="true" />
+                    <div className="settings-object-copy">
+                      <strong>{entry.name}</strong>
+                      <small>{entry.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
+                      {entry.keywords_text ? <small>{keywordPreview(entry.keywords_text)}</small> : null}
+                    </div>
+                    <span className={`settings-badge ${entry.enabled ? 'success' : 'muted'}`}>{entry.enabled ? t('worldbook:labels.enabled') : t('worldbook:labels.disabled')}</span>
                     <span className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
-                      <button className="settings-secondary-button" type="button" disabled={index === 0 || Boolean(busy)} onClick={() => moveEntry(entry.id, -1)}>{t('worldbook:actions.up')}</button>
-                      <button className="settings-secondary-button" type="button" disabled={index === entries.length - 1 || Boolean(busy)} onClick={() => moveEntry(entry.id, 1)}>{t('worldbook:actions.down')}</button>
+                      <button className="settings-secondary-button icon-only" type="button" onClick={() => setSelectedEntryId(entry.id)} title={t('worldbook:actions.editEntry')} aria-label={t('worldbook:actions.editEntry')}><Pencil size={14} /></button>
                     </span>
                   </button>
                 ))}
                 {!entries.length ? <div className="settings-empty-state compact">{t('worldbook:empty.noEntries')}</div> : null}
               </div>
-            </div>
+            </div> : null}
             {(selectedEntryId === 'new' || selectedEntry) ? (
-              <form className="detail-section" onSubmit={saveEntry}>
+              activeTab === 'entries' ? <form className="detail-section" onSubmit={saveEntry}>
                 <div className="detail-section-heading"><h3>{selectedEntryId === 'new' ? t('worldbook:titles.newEntry') : t('worldbook:titles.entry')}</h3></div>
                 <TextField label={t('worldbook:labels.name')} value={entryValues.name || ''} onChange={(name) => setEntryValues({ ...entryValues, name })} />
                 <SelectField label={t('worldbook:labels.activationMode')} value={entryValues.activation_mode || 'keyword'} onChange={(activation_mode) => setEntryValues({ ...entryValues, activation_mode })} />
@@ -265,14 +312,14 @@ export function WorldbookSettingsDetail({
                   <button className="settings-primary-button" type="submit" disabled={busy === 'save-entry'}><Save size={14} />{t('common:save')}</button>
                   {selectedEntry ? <button className="settings-secondary-button danger" type="button" onClick={deleteEntry} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
                 </div>
-              </form>
+              </form> : null
             ) : null}
-            <div className="detail-section">
+            {activeTab === 'match' ? <div className="detail-section">
               <div className="detail-section-heading"><h3>{t('worldbook:sections.matchTest')}</h3></div>
               <TextAreaField label={t('worldbook:labels.matchText')} value={matchText} onChange={setMatchText} />
               <button className="settings-secondary-button" type="button" onClick={runMatchTest} disabled={busy === 'match'}><Play size={14} />{t('worldbook:actions.matchTest')}</button>
               {matchResult ? <MatchResults response={matchResult} /> : null}
-            </div>
+            </div> : null}
           </>
         ) : null}
       </div>
@@ -323,12 +370,17 @@ function MatchResults({ response }: { response: WorldbookMatchTestResponse }) {
       {response.results.length ? response.results.map((result) => (
         <article className="knowledge-result-card" key={result.entry_id}>
           <strong>{result.entry_name}</strong>
-          <small>{result.worldbook_name} / {result.activation_mode}</small>
+          <small>{result.worldbook_name} / {result.activation_mode === 'always' ? t('worldbook:labels.alwaysActive') : t('worldbook:labels.keywordTriggered')}</small>
+          {result.matched_keywords.length ? <small>{result.matched_keywords.join(', ')}</small> : null}
           <p>{result.content_preview}</p>
         </article>
       )) : <div className="settings-empty-state compact">{t('worldbook:empty.noMatchedEntries')}</div>}
     </div>
   );
+}
+
+function keywordPreview(value: string): string {
+  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 3).join(', ');
 }
 
 function Empty({ title, message }: { title: string; message: string }) {

@@ -437,6 +437,7 @@ export type SessionKnowledgeBinding = {
   session_id: string;
   knowledge_base_id: string;
   enabled: boolean;
+  sort_order: number;
   created_at: string;
   knowledge_base?: KnowledgeBase | null;
 };

@@ -383,7 +383,7 @@ Worldbook APIs:
 
 Worldbook fields are `id`, `name`, `description`, `enabled`, timestamps, and optional counts. Entry fields are `id`, `worldbook_id`, `name`, `keywords_text`, `content`, `activation_mode`, `enabled`, `sort_order`, and timestamps. `activation_mode` is `always` or `keyword`; each non-empty `keywords_text` line is a regex pattern. Invalid regex is rejected on save and reported as a structured warning by match-test if legacy bad data is encountered.
 
-Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. It matches only the provided text, does not call an LLM, does not call Knowledge RAG, and returns content previews rather than full entry content.
+Session Worldbook binding PATCH replaces the session's enabled bindings with ordered `worldbook_ids`. Disabled worldbooks are skipped with warnings. `GET /api/sessions/{session_id}/worldbooks` returns enabled bindings in persisted binding order plus all available worldbooks. Match-test uses explicit `worldbook_ids` first, otherwise active session bindings when `session_id` is provided. It matches only the provided text, does not call an LLM, does not call Knowledge RAG, and returns content previews rather than full entry content.
 
 Settings:
 
@@ -518,7 +518,9 @@ Session bindings:
 - `GET /api/sessions/{session_id}/knowledge-bases`
 - `PATCH /api/sessions/{session_id}/knowledge-bases`
 
-Phase 2 bindings are configuration only. They do not alter Prompt Agent or Script Agent context.
+PATCH replaces the session's enabled bindings with ordered `knowledge_base_ids`. Responses are ordered `SessionKnowledgeBinding` records with `knowledge_base_id`, `enabled`, `sort_order`, timestamps, and optional compact `knowledge_base` data. Binding order is a persisted UI/session contract and future extension point; it does not change retrieval ranking semantics.
+
+The Chat header Context Sources modal is a frontend workflow over the existing Knowledge Base and Worldbook session binding APIs. It is not a new Capability, slash command, provider tool schema, or runtime injection protocol.
 
 ## Capability Config
 

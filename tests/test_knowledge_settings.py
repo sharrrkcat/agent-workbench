@@ -180,6 +180,15 @@ def test_knowledge_base_crud_and_session_bindings(tmp_path: Path) -> None:
     )
     assert saved.status_code == 200
     assert saved.json()[0]["knowledge_base_id"] == kb["id"]
+    kb2 = client.post("/api/knowledge/bases", json={"name": "More Docs", "embedding_model_profile_id": profile["id"]}).json()
+    ordered = client.patch(
+        f"/api/sessions/{session['session_id']}/knowledge-bases",
+        json={"knowledge_base_ids": [kb2["id"], kb["id"]]},
+    )
+    assert [item["knowledge_base_id"] for item in ordered.json()] == [kb2["id"], kb["id"]]
+    assert [item["sort_order"] for item in ordered.json()] == [10, 20]
     assert client.patch(f"/api/sessions/{session['session_id']}/knowledge-bases", json={"knowledge_base_ids": ["missing"]}).status_code == 404
     assert client.delete(f"/api/knowledge/bases/{kb['id']}").status_code == 200
+    assert [item["knowledge_base_id"] for item in client.get(f"/api/sessions/{session['session_id']}/knowledge-bases").json()] == [kb2["id"]]
+    assert client.delete(f"/api/knowledge/bases/{kb2['id']}").status_code == 200
     assert client.get(f"/api/sessions/{session['session_id']}/knowledge-bases").json() == []
