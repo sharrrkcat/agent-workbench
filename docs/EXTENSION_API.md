@@ -350,11 +350,25 @@ The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `ref
 
 General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
-Utility LLM is a core internal service for short local tasks. It is not a Capability, Command, Provider Profile, Model Profile, AgentConfig field, or manifest field. Its model path and device live in General Intent Routing settings. Model paths are relative to `data/models` and must be shaped as `utility_llms/<folder>`; absolute paths and `..` are rejected. The backend never downloads models or installs optional dependencies.
+Utility LLM is a core internal service for short local tasks. It is not a Capability, Command, Provider Profile, Model Profile, AgentConfig field, or manifest field. Its backend, model path, device, and llama.cpp options live in General Intent Routing settings. Model paths are relative to `data/models`, use POSIX-style separators, and reject absolute paths, `..`, empty segments, and backslashes. The backend never downloads models or installs optional dependencies.
+
+Utility LLM General settings:
+- `intent_routing_utility_llm_backend`: `"transformers"` or `"llama_cpp"`, default `"transformers"`.
+- `intent_routing_utility_llm_model_path`: empty or a backend-specific path.
+- `intent_routing_device`: `"auto"`, `"cpu"`, or `"cuda"` for the transformers backend.
+- `intent_routing_utility_llm_context_size`: llama.cpp context size, default `4096`, range `512..32768`.
+- `intent_routing_utility_llm_gpu_layers`: llama.cpp GPU layer count, default `0`, range `-1..200`.
+- `intent_routing_utility_llm_threads`: optional llama.cpp thread count, default `null`, range `1..128`.
+
+Utility LLM path contract:
+- `transformers`: `utility_llms/<folder>`, for example `utility_llms/Qwen3-0.6B`.
+- `llama_cpp`: `utility_llms/<model-folder>/<file>.gguf`, for example `utility_llms/qwen3-0.6b/Qwen3-0.6B-Q4_K_M.gguf`.
+- GGUF files directly under `utility_llms`, such as `utility_llms/model.gguf`, are invalid and ignored by scan. GGUF files must be placed under `data/models/utility_llms/<model-folder>/<file>.gguf`.
 
 Utility LLM APIs:
-- `GET /api/intent/utility-llm/status` returns availability, configuration, loaded state, model path, requested/resolved device, dependency flags, and a compact reason. It does not load the model.
-- `POST /api/intent/utility-llm/test-title` accepts `{"text":"..."}` and returns `{"ok":true,"title":"...","backend":"utility_llm","warnings":[]}` when generation succeeds. It may load the configured local model.
+- `GET /api/intent/utility-llm/status` returns availability, configuration, loaded state, selected `backend`, model path, requested/resolved device, backend options, dependency flags under `backend_status`, and a compact reason such as `model_path_not_configured`, `model_not_found`, `backend_model_path_mismatch`, `model_path_invalid`, `UTILITY_LLM_BACKEND_UNAVAILABLE`, or `llama_cpp_unavailable`. It does not load the model.
+- `GET /api/intent/utility-llm/models/scan` creates `data/models/utility_llms` if needed and returns `transformers_models`, one-level nested `gguf_models`, backend dependency flags, and warnings such as `root_gguf_ignored`. It does not load weights, download files, install dependencies, or create database records.
+- `POST /api/intent/utility-llm/test-title` accepts `{"text":"..."}` and returns `{"ok":true,"title":"...","backend":"utility_llm:transformers","warnings":[]}` or `utility_llm:llama_cpp` when generation succeeds. It may load the configured local model.
 - `POST /api/intent/utility-llm/test-json` accepts `{"text":"..."}` and returns strict extracted intent JSON plus compact slots. It may load the configured local model.
 - `POST /api/intent/utility-llm/unload` releases only the Utility LLM cache. It does not unload the main LLM, embeddings, reranker, or ComfyUI.
 - `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation.

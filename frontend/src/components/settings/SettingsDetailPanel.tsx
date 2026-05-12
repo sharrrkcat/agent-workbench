@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -647,6 +647,7 @@ function GeneralIntentRoutingSettings({
   const [result, setResult] = useState('');
   const [routeTestText, setRouteTestText] = useState('');
   const [routeTestResult, setRouteTestResult] = useState<Record<string, unknown> | null>(null);
+  const [modelScan, setModelScan] = useState<UtilityLlmModelScan | null>(null);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
 
   async function refreshStatus() {
@@ -660,7 +661,34 @@ function GeneralIntentRoutingSettings({
 
   useEffect(() => {
     void refreshStatus();
-  }, [values.intent_routing_utility_llm_model_path, values.intent_routing_device]);
+  }, [
+    values.intent_routing_utility_llm_backend,
+    values.intent_routing_utility_llm_model_path,
+    values.intent_routing_device,
+    values.intent_routing_utility_llm_context_size,
+    values.intent_routing_utility_llm_gpu_layers,
+    values.intent_routing_utility_llm_threads,
+  ]);
+
+  async function scanModels() {
+    setBusy('scan-utility');
+    try {
+      setError(null);
+      const response = await api.scanUtilityLlmModels();
+      setModelScan(response);
+      if (!response.transformers_models.length && !response.gguf_models.length) {
+        setResult(t('settings:general.noUtilityLlmModelsFound'));
+      } else if (response.warnings.includes('root_gguf_ignored')) {
+        setResult(t('settings:general.rootGgufIgnored'));
+      } else {
+        setResult(t('settings:general.utilityLlmScanComplete'));
+      }
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.utilityLlmScanFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
 
   async function runUtilityAction(action: 'title' | 'json' | 'unload') {
     setBusy(action);
@@ -788,7 +816,61 @@ function GeneralIntentRoutingSettings({
           <h3>{t('settings:general.utilityLlm')}</h3>
         </div>
         <TextField label={t('settings:general.embeddingModelPath')} value={values.intent_routing_embedding_model_path} onChange={(value) => setString('intent_routing_embedding_model_path', value)} />
-        <TextField label={t('settings:general.utilityLlmModelPath')} value={values.intent_routing_utility_llm_model_path} onChange={(value) => setString('intent_routing_utility_llm_model_path', value)} />
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.utilityLlmBackend')}</span>
+          <select
+            value={values.intent_routing_utility_llm_backend}
+            onChange={(event) =>
+              setValues({
+                ...values,
+                intent_routing_utility_llm_backend: event.currentTarget.value as GeneralSettings['intent_routing_utility_llm_backend'],
+              })
+            }
+          >
+            <option value="transformers">{t('settings:general.utilityLlmBackendTransformers')}</option>
+            <option value="llama_cpp">{t('settings:general.utilityLlmBackendLlamaCpp')}</option>
+          </select>
+        </label>
+        <label className="config-field settings-config-field">
+          <span>{values.intent_routing_utility_llm_backend === 'llama_cpp' ? t('settings:general.ggufModelPath') : t('settings:general.utilityLlmModelPath')}</span>
+          <select value={values.intent_routing_utility_llm_model_path} onChange={(event) => setString('intent_routing_utility_llm_model_path', event.currentTarget.value)}>
+            <option value="">{t('settings:general.none')}</option>
+            {utilityModelOptions(modelScan, values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path, t).map((model) => (
+              <option key={model.model_path} value={model.model_path}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+          <small>{values.intent_routing_utility_llm_backend === 'llama_cpp' ? t('settings:general.ggufPathHelp') : t('settings:general.utilityLlmPathHelp')}</small>
+        </label>
+        <div className="settings-button-row">
+          <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void scanModels()}>
+            <Search size={14} />
+            {busy === 'scan-utility' ? t('common:loading') : t('settings:general.scanUtilityLlmModels')}
+          </button>
+        </div>
+        {values.intent_routing_utility_llm_backend === 'llama_cpp' ? (
+          <div className="settings-detail-grid">
+            <NumberField label={t('settings:general.contextSize')} value={values.intent_routing_utility_llm_context_size} min={512} max={32768} step={1} onChange={(value) => setNumber('intent_routing_utility_llm_context_size', value)} />
+            <NumberField label={t('settings:general.gpuLayers')} value={values.intent_routing_utility_llm_gpu_layers} min={-1} max={200} step={1} onChange={(value) => setNumber('intent_routing_utility_llm_gpu_layers', value)} />
+            <label className="config-field settings-config-field">
+              <span>{t('settings:general.threads')}</span>
+              <input
+                type="number"
+                min={1}
+                max={128}
+                value={values.intent_routing_utility_llm_threads ?? ''}
+                placeholder={t('settings:general.backendDefault')}
+                onChange={(event) =>
+                  setValues({
+                    ...values,
+                    intent_routing_utility_llm_threads: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                  })
+                }
+              />
+            </label>
+          </div>
+        ) : null}
         <label className="config-field settings-config-field">
           <span>{t('settings:general.device')}</span>
           <select value={values.intent_routing_device} onChange={(event) => setString('intent_routing_device', event.currentTarget.value)}>
@@ -796,8 +878,9 @@ function GeneralIntentRoutingSettings({
             <option value="cpu">{t('settings:general.deviceCpu')}</option>
             <option value="cuda">{t('settings:general.deviceCuda')}</option>
           </select>
-          <small>{t('settings:general.utilityLlmPathHelp')}</small>
+          <small>{t('settings:general.utilityLlmDeviceHelp')}</small>
         </label>
+        {modelScan?.warnings.includes('root_gguf_ignored') ? <p className="settings-warning-text">{t('settings:general.rootGgufIgnored')}</p> : null}
         {error ? <SettingsApiError error={error} /> : null}
         <div className="settings-card">
           <div className="settings-card-header">
@@ -812,9 +895,11 @@ function GeneralIntentRoutingSettings({
           </div>
           {status ? (
             <div className="settings-detail-grid">
-              <Metric label={t('settings:general.transformersAvailable')} value={status.backend.transformers_available ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.torchAvailable')} value={status.backend.torch_available ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.cudaAvailable')} value={status.backend.cuda_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.utilityLlmBackend')} value={status.backend} />
+              <Metric label={t('settings:general.transformersAvailable')} value={status.backend_status.transformers_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.torchAvailable')} value={status.backend_status.torch_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.llamaCppAvailable')} value={status.backend_status.llama_cpp_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.cudaAvailable')} value={status.backend_status.cuda_available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.resolvedDevice')} value={status.resolved_device || t('settings:general.notAvailable')} />
             </div>
           ) : null}
@@ -840,11 +925,25 @@ function utilityStatusText(status: UtilityLlmStatus, t: ReturnType<typeof useTra
   if (!status.configured) return t('settings:general.utilityLlmNotConfigured');
   if (!status.available) {
     if (status.reason === 'UTILITY_LLM_BACKEND_UNAVAILABLE') return t('settings:general.utilityLlmDepsUnavailable');
+    if (status.reason === 'llama_cpp_unavailable') return t('settings:general.llamaCppUnavailable');
     if (status.reason === 'model_not_found') return t('settings:general.utilityLlmModelNotFound');
     if (status.reason === 'model_path_invalid') return t('settings:general.utilityLlmInvalidPath');
+    if (status.reason === 'backend_model_path_mismatch') return t('settings:general.utilityLlmBackendPathMismatch');
     return t('settings:general.utilityLlmUnavailable');
   }
   return status.loaded ? t('settings:general.utilityLlmLoaded') : t('settings:general.utilityLlmReady');
+}
+
+function utilityModelOptions(scan: UtilityLlmModelScan | null, backend: GeneralSettings['intent_routing_utility_llm_backend'], currentPath: string, t: ReturnType<typeof useTranslation>['t']): { model_path: string; label: string }[] {
+  const models = backend === 'llama_cpp' ? scan?.gguf_models || [] : scan?.transformers_models || [];
+  const options = models.map((model) => ({
+    model_path: model.model_path,
+    label: backend === 'llama_cpp' && model.folder ? `${model.folder} / ${model.name}` : model.name,
+  }));
+  if (currentPath && !options.some((option) => option.model_path === currentPath)) {
+    options.unshift({ model_path: currentPath, label: `${currentPath} (${scan ? t('settings:general.notFound') : t('settings:general.notScanned')})` });
+  }
+  return options;
 }
 
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
@@ -872,7 +971,11 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_auto_route_safe_intents: values.intent_routing_auto_route_safe_intents,
     intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
     intent_routing_embedding_model_path: values.intent_routing_embedding_model_path,
+    intent_routing_utility_llm_backend: values.intent_routing_utility_llm_backend,
     intent_routing_utility_llm_model_path: values.intent_routing_utility_llm_model_path,
+    intent_routing_utility_llm_context_size: values.intent_routing_utility_llm_context_size,
+    intent_routing_utility_llm_gpu_layers: values.intent_routing_utility_llm_gpu_layers,
+    intent_routing_utility_llm_threads: values.intent_routing_utility_llm_threads,
     intent_routing_device: values.intent_routing_device,
     intent_routing_chat_examples: values.intent_routing_chat_examples,
     intent_routing_image_generation_examples: values.intent_routing_image_generation_examples,

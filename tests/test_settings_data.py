@@ -43,7 +43,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_auto_route_safe_intents"] is False
     assert response.json()["intent_routing_confirm_uncertain"] is True
     assert response.json()["intent_routing_embedding_model_path"] == ""
+    assert response.json()["intent_routing_utility_llm_backend"] == "transformers"
     assert response.json()["intent_routing_utility_llm_model_path"] == ""
+    assert response.json()["intent_routing_utility_llm_context_size"] == 4096
+    assert response.json()["intent_routing_utility_llm_gpu_layers"] == 0
+    assert response.json()["intent_routing_utility_llm_threads"] is None
     assert response.json()["intent_routing_device"] == "auto"
     assert response.json()["intent_routing_chat_examples"] == ""
     assert response.json()["intent_routing_image_generation_examples"] == ""
@@ -80,7 +84,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_auto_route_safe_intents": True,
             "intent_routing_confirm_uncertain": False,
             "intent_routing_embedding_model_path": "embeddings/embeddinggemma-300m",
-            "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B",
+            "intent_routing_utility_llm_backend": "llama_cpp",
+            "intent_routing_utility_llm_context_size": 8192,
+            "intent_routing_utility_llm_gpu_layers": -1,
+            "intent_routing_utility_llm_threads": 4,
+            "intent_routing_utility_llm_model_path": "utility_llms/qwen3-0.6b/Qwen3-0.6B-Q4_K_M.gguf",
             "intent_routing_device": "cpu",
             "intent_routing_chat_examples": "keep chatting",
             "intent_routing_image_generation_examples": "paint a castle",
@@ -114,13 +122,28 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["intent_routing_auto_route_safe_intents"] is True
     assert patched.json()["intent_routing_confirm_uncertain"] is False
     assert patched.json()["intent_routing_embedding_model_path"] == "embeddings/embeddinggemma-300m"
-    assert patched.json()["intent_routing_utility_llm_model_path"] == "utility_llms/Qwen3-0.6B"
+    assert patched.json()["intent_routing_utility_llm_backend"] == "llama_cpp"
+    assert patched.json()["intent_routing_utility_llm_model_path"] == "utility_llms/qwen3-0.6b/Qwen3-0.6B-Q4_K_M.gguf"
+    assert patched.json()["intent_routing_utility_llm_context_size"] == 8192
+    assert patched.json()["intent_routing_utility_llm_gpu_layers"] == -1
+    assert patched.json()["intent_routing_utility_llm_threads"] == 4
     assert patched.json()["intent_routing_device"] == "cpu"
     assert patched.json()["intent_routing_chat_examples"] == "keep chatting"
     assert patched.json()["intent_routing_image_generation_examples"] == "paint a castle"
     assert patched.json()["intent_routing_knowledge_query_examples"] == "ask the docs"
     assert patched.json()["intent_routing_agent_route_examples"] == "send to translator"
     assert patched.json()["intent_routing_command_like_examples"] == "free resources"
+
+    patched_hf = client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_utility_llm_backend": "transformers",
+            "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B",
+        },
+    )
+    assert patched_hf.status_code == 200
+    assert patched_hf.json()["intent_routing_utility_llm_backend"] == "transformers"
+    assert patched_hf.json()["intent_routing_utility_llm_model_path"] == "utility_llms/Qwen3-0.6B"
 
     reset = client.patch(
         "/api/settings/general",
@@ -139,8 +162,14 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_mode": "unsafe"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_device": "metal"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "openai"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_context_size": 128}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_gpu_layers": 201}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_threads": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_model_path": "../qwen"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_model_path": "llms/Qwen3-0.6B"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "llama_cpp", "intent_routing_utility_llm_model_path": "utility_llms/model.gguf"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "transformers", "intent_routing_utility_llm_model_path": "utility_llms/qwen3/model.gguf"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_low_confidence_threshold": 0.95}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
@@ -152,6 +181,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["intent_routing_utility_llm_backend"] == "transformers"
+    assert restarted.get("/api/settings/general").json()["intent_routing_utility_llm_model_path"] == "utility_llms/Qwen3-0.6B"
     assert restarted.get("/api/settings/general").json()["intent_routing_device"] == "cpu"
     assert restarted.get("/api/settings/general").json()["intent_routing_chat_examples"] == "keep chatting"
     assert restarted.get("/api/settings/general").json()["intent_routing_image_generation_examples"] == "paint a castle"

@@ -279,7 +279,7 @@ Likely source:
 - `ai_workbench/core/settings.py`
 - `ai_workbench/core/agent_settings.py`
 - `ai_workbench/core/intent_router.py`
-- `ai_workbench/core/utility_llm.py` when changing Utility LLM status, loading, title generation, or JSON extraction
+- `ai_workbench/core/utility_llm.py` when changing Utility LLM status, loading, backend selection, GGUF path validation, local model scan, title generation, or JSON extraction
 - `ai_workbench/core/session_titles.py` when changing automatic title behavior
 - `ai_workbench/core/runtime.py`
 - `ai_workbench/core/runner.py`
@@ -287,7 +287,7 @@ Likely source:
 - `ai_workbench/core/retrieval.py` only to confirm search inputs; do not change retrieval ranking for Intent Routing
 - `ai_workbench/core/router.py` only if explicit syntax parsing changes
 - `ai_workbench/api/routes/settings.py`
-- `ai_workbench/api/routes/intent.py` when changing Utility LLM APIs
+- `ai_workbench/api/routes/intent.py` when changing Utility LLM APIs, including status, scan, test, or unload contracts
 - `ai_workbench/api/routes/configs.py`
 - `ai_workbench/core/knowledge_store.py`, `ai_workbench/db/models.py`, and `ai_workbench/db/stores.py` when Intent Routing changes Knowledge Base aliases or matching fields
 - `ai_workbench/api/routes/knowledge.py` when Knowledge Base alias request/response contracts change
@@ -305,6 +305,7 @@ Tests:
 - `uv run pytest tests/test_intent_routing.py`
 - `uv run pytest tests/test_intent_auto_routing.py` when safe auto routing changes
 - `uv run pytest tests/test_utility_llm.py`
+- `uv run pytest tests/test_utility_llm_gguf.py` when GGUF-specific tests are split out
 - `uv run pytest tests/test_session_titles.py` when Utility LLM title behavior changes
 - `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
 - `uv run pytest tests/test_frontend_chat_contracts.py` if metadata or frontend contracts change
@@ -320,7 +321,8 @@ Rules:
 - General custom route examples, Agent target aliases/examples, and Knowledge Base aliases are classifier/extractor hints only. They must not expand the safe auto-route boundary.
 - Route test/debug APIs must not create messages or runs, execute ComfyUI, execute commands, run Knowledge retrieval, or mutate sessions.
 - Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
-- Do not automatically download Utility LLM models, install optional dependencies, execute command-like intents, or run slash commands from intent predictions.
+- Utility LLM backend/model path/device/options belong to General Intent Routing settings. Transformers paths use `utility_llms/<folder>`; GGUF llama.cpp paths use `utility_llms/<model-folder>/<file>.gguf`. Root-level GGUF files are invalid and should not be scanned.
+- Do not automatically download Utility LLM models, install optional dependencies such as `llama-cpp-python`, modify main LLM Provider/Profile settings, execute command-like intents, or run slash commands from intent predictions.
 - User-visible frontend text must be added to every supported locale.
 - Settings schema, runtime protocol, routing behavior, metadata shape, and user workflow changes must update docs in the same change.
 - Do not modify Agent or Capability manifests for Intent Routing foundation work.

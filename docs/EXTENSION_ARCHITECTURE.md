@@ -345,9 +345,10 @@ Intent Routing configuration ownership:
 - Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode`.
 - Agent target hint aliases/examples belong in `AgentConfig.runtime.intent_routing_aliases_text` and `AgentConfig.runtime.intent_routing_examples_text`. They are local runtime hints, not manifest fields and not router-entry grants.
 - Knowledge Base aliases belong to Knowledge Base data/configuration and are used only to match Intent Routing `knowledge_query` KB hints.
-- Utility LLM settings belong to General Intent Routing settings: `intent_routing_utility_llm_model_path` and `intent_routing_device`.
+- Utility LLM settings belong to General Intent Routing settings: `intent_routing_utility_llm_backend`, `intent_routing_utility_llm_model_path`, `intent_routing_device`, and optional llama.cpp options. Transformers/HF paths are `utility_llms/<folder>`; GGUF paths are `utility_llms/<model-folder>/<file>.gguf` and remain under `data/models/utility_llms`.
 - The Utility LLM service belongs to the core runtime. It is used for internal short tasks such as session title generation and shadow-mode JSON extraction.
 - Utility LLM is not AgentConfig, CapabilityConfig, Provider Profile, Model Profile, Agent manifest, or Capability manifest configuration.
+- A GGUF Utility LLM is still not a Model Profile or Provider Profile and must not be registered as one. The app does not automatically download Utility LLM files or install `llama-cpp-python`.
 - Intent route definitions, deterministic shadow classification, and utility model backends are core runtime concerns.
 - Safe auto-route decisions are per-run runtime decisions. They may choose `comfyui_agent` for a supported `image_generation` run or pass temporary Knowledge KB/query overrides for a `knowledge_query` Prompt Agent run, but they must not write session config, change the session default Agent, or persist Context Sources bindings. Generic Agent target hints and command-like predictions remain metadata/diagnostic decisions until a separate confirmation design exists.
 - Intent Routing is not owned by Agent manifests, Capability manifests, or slash command declarations. Do not add Intent Routing route registry fields to `agent.yaml` or `capability.yaml`.

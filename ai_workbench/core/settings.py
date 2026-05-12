@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator, model_validator
 
 from ai_workbench.core.time import utc_now
-from ai_workbench.core.utility_llm import normalize_utility_model_path
+from ai_workbench.core.utility_llm import normalize_utility_backend, normalize_utility_model_path
 
 
 DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION = (
@@ -73,7 +73,11 @@ class AppSettings(BaseModel):
     intent_routing_auto_route_safe_intents: StrictBool = False
     intent_routing_confirm_uncertain: StrictBool = True
     intent_routing_embedding_model_path: str = ""
+    intent_routing_utility_llm_backend: str = "transformers"
     intent_routing_utility_llm_model_path: str = ""
+    intent_routing_utility_llm_context_size: int = Field(default=4096, ge=512, le=32768)
+    intent_routing_utility_llm_gpu_layers: int = Field(default=0, ge=-1, le=200)
+    intent_routing_utility_llm_threads: int | None = Field(default=None, ge=1, le=128)
     intent_routing_device: str = "auto"
     intent_routing_chat_examples: str = ""
     intent_routing_image_generation_examples: str = ""
@@ -115,15 +119,31 @@ class AppSettings(BaseModel):
             raise ValueError("Intent routing device must be auto, cpu, or cuda.")
         return value
 
+    @field_validator("intent_routing_utility_llm_backend")
+    @classmethod
+    def _validate_utility_llm_backend(cls, value: str) -> str:
+        return normalize_utility_backend(value)
+
     @field_validator("intent_routing_utility_llm_model_path", mode="before")
     @classmethod
     def _validate_utility_llm_model_path(cls, value: Any) -> str:
-        return normalize_utility_model_path(str(value or ""))
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            return normalize_utility_model_path(raw, "transformers")
+        except ValueError:
+            return normalize_utility_model_path(raw, "llama_cpp")
 
     @model_validator(mode="after")
     def _validate_intent_threshold_order(self) -> "AppSettings":
         if self.intent_routing_low_confidence_threshold > self.intent_routing_high_confidence_threshold:
             raise ValueError("Intent routing low confidence threshold must not be greater than high confidence threshold.")
+        if self.intent_routing_utility_llm_model_path:
+            normalize_utility_model_path(
+                self.intent_routing_utility_llm_model_path,
+                self.intent_routing_utility_llm_backend,
+            )
         return self
 
     @property
@@ -177,7 +197,11 @@ class AppSettingsPatch(BaseModel):
     intent_routing_auto_route_safe_intents: StrictBool | None = None
     intent_routing_confirm_uncertain: StrictBool | None = None
     intent_routing_embedding_model_path: str | None = None
+    intent_routing_utility_llm_backend: str | None = None
     intent_routing_utility_llm_model_path: str | None = None
+    intent_routing_utility_llm_context_size: int | None = Field(default=None, ge=512, le=32768)
+    intent_routing_utility_llm_gpu_layers: int | None = Field(default=None, ge=-1, le=200)
+    intent_routing_utility_llm_threads: int | None = Field(default=None, ge=1, le=128)
     intent_routing_device: str | None = None
     intent_routing_chat_examples: str | None = None
     intent_routing_image_generation_examples: str | None = None
@@ -227,12 +251,25 @@ class AppSettingsPatch(BaseModel):
             raise ValueError("Intent routing device must be auto, cpu, or cuda.")
         return value
 
+    @field_validator("intent_routing_utility_llm_backend")
+    @classmethod
+    def _validate_utility_llm_backend(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_utility_backend(value)
+
     @field_validator("intent_routing_utility_llm_model_path", mode="before")
     @classmethod
     def _validate_utility_llm_model_path(cls, value: Any) -> str | None:
         if value is None:
             return None
-        return normalize_utility_model_path(str(value or ""))
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            return normalize_utility_model_path(raw, "transformers")
+        except ValueError:
+            return normalize_utility_model_path(raw, "llama_cpp")
 
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:

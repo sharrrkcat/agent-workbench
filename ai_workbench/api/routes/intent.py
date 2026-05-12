@@ -7,6 +7,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.intent_router import RuleBasedIntentClassifier, _decision_metadata, _maybe_apply_utility_extractor, build_intent_routing_metadata, compact_utility_context
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
+from ai_workbench.core.utility_llm import scan_utility_models
 
 
 router = APIRouter(prefix="/api/intent", tags=["intent"])
@@ -32,13 +33,18 @@ def utility_llm_status(state: RuntimeState = Depends(get_state)) -> dict:
     return state.utility_llm.status(state.app_settings.get())
 
 
+@router.get("/utility-llm/models/scan")
+def scan_utility_llm_models(state: RuntimeState = Depends(get_state)) -> dict:
+    return scan_utility_models(getattr(state.utility_llm, "root", None))
+
+
 @router.post("/utility-llm/test-title")
 async def test_utility_title(payload: UtilityTestRequest, state: RuntimeState = Depends(get_state)) -> dict:
     try:
         result = await state.utility_llm.generate_title(payload.text, state.app_settings.get())
     except Exception as exc:
         raise_error(400, getattr(exc, "code", "UTILITY_LLM_TEST_FAILED"), str(exc) or "Utility LLM title test failed.")
-    return {"ok": True, "title": result["title"], "backend": "utility_llm", "warnings": []}
+    return {"ok": True, "title": result["title"], "backend": result.get("backend") or "utility_llm", "warnings": []}
 
 
 @router.post("/utility-llm/test-json")

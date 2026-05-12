@@ -54,6 +54,7 @@ import type {
   RuntimeResources,
   RuntimeMemoryTarget,
   UtilityLlmJsonTestResult,
+  UtilityLlmModelScan,
   UtilityLlmStatus,
   UtilityLlmTitleTestResult,
   IntentRouteTestResponse,
@@ -382,6 +383,7 @@ export const api = {
     request<RuntimeMemorySummary>(`/api/runtime/memory${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
   getRuntimeResources: () => request<RuntimeResources>('/api/runtime/resources'),
   getUtilityLlmStatus: () => request<UtilityLlmStatus>('/api/intent/utility-llm/status'),
+  scanUtilityLlmModels: () => request<UtilityLlmModelScan>('/api/intent/utility-llm/models/scan'),
   testUtilityLlmTitle: (text: string) =>
     request<UtilityLlmTitleTestResult>('/api/intent/utility-llm/test-title', {
       method: 'POST',

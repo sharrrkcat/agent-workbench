@@ -1084,15 +1084,44 @@ export type UtilityLlmStatus = {
   available: boolean;
   configured: boolean;
   loaded: boolean;
+  backend: 'transformers' | 'llama_cpp' | string;
   model_path: string;
   device: 'auto' | 'cpu' | 'cuda' | string;
   resolved_device?: string | null;
-  backend: {
+  options?: {
+    context_size: number;
+    gpu_layers: number;
+    threads: number | null;
+  };
+  backend_status: {
     transformers_available: boolean;
     torch_available: boolean;
+    llama_cpp_available: boolean;
     cuda_available: boolean;
   };
   reason?: string | null;
+};
+
+export type UtilityLlmModelScanItem = {
+  model_path: string;
+  name: string;
+  type: 'transformers' | 'llama_cpp';
+  exists: boolean;
+  folder?: string;
+};
+
+export type UtilityLlmModelScan = {
+  models_root: string;
+  utility_root: string;
+  transformers_models: UtilityLlmModelScanItem[];
+  gguf_models: UtilityLlmModelScanItem[];
+  backend: {
+    transformers_available: boolean;
+    torch_available: boolean;
+    llama_cpp_available: boolean;
+    cuda_available: boolean;
+  };
+  warnings: string[];
 };
 
 export type UtilityLlmTitleTestResult = {
@@ -1165,7 +1194,11 @@ export type GeneralSettings = {
   intent_routing_auto_route_safe_intents: boolean;
   intent_routing_confirm_uncertain: boolean;
   intent_routing_embedding_model_path: string;
+  intent_routing_utility_llm_backend: 'transformers' | 'llama_cpp';
   intent_routing_utility_llm_model_path: string;
+  intent_routing_utility_llm_context_size: number;
+  intent_routing_utility_llm_gpu_layers: number;
+  intent_routing_utility_llm_threads: number | null;
   intent_routing_device: 'auto' | 'cpu' | 'cuda';
   intent_routing_chat_examples: string;
   intent_routing_image_generation_examples: string;

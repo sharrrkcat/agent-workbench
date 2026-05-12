@@ -127,7 +127,7 @@ async def maybe_generate_session_title_before_llm_call(
             title = normalize_generated_title(utility_result.get("title", ""))
             if not title or is_default_session_title(title):
                 raise ValueError("Utility LLM returned an empty or default-looking title.")
-            metadata["backend"] = "utility_llm"
+            metadata["backend"] = utility_result.get("backend") or "utility_llm"
             metadata["utility_model_path"] = utility_result.get("model_path") or utility_model_path
         except Exception as exc:
             utility_error = str(exc) or "Utility LLM title generation failed."
