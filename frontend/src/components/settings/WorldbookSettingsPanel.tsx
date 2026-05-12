@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, ChevronRight, GripVertical, LoaderCircle, Play, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { BookOpenText, ChevronDown, ChevronRight, LoaderCircle, Play, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { DragEventHandler, FormEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,7 +7,7 @@ import type { Worldbook, WorldbookEntry, WorldbookEntryInput, WorldbookInput, Wo
 import type { WorldbookSettingsCategory } from './SettingsObjectList';
 import { DetailTabs } from './DetailTabs';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
-import { ToggleSwitch } from './ToggleSwitch';
+import { Chip, DragHandle, InlineStatus, MiniToggle, SettingsDetailHeader, StatusChip, ToggleSwitch } from '../ui';
 
 const emptyWorldbook: Partial<Worldbook> = { name: '', description: '', enabled: true };
 const emptyEntry: Partial<WorldbookEntry> = { name: '', keywords_text: '', content: '', activation_mode: 'keyword', enabled: true };
@@ -484,19 +484,14 @@ function EntryCard({
       onDrop={onDrop}
     >
       <header className="worldbook-entry-card-header" onClick={onToggle}>
-        <button
-          className="worldbook-drag-button"
-          type="button"
+        <DragHandle
           draggable={draggable}
           disabled={!draggable}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onClick={(event) => event.stopPropagation()}
           title={t('worldbook:actions.dragToReorder')}
-          aria-label={t('worldbook:actions.dragToReorder')}
-        >
-          <GripVertical size={15} aria-hidden="true" />
-        </button>
+        />
         <button
           className="settings-secondary-button icon-only"
           type="button"
@@ -516,21 +511,19 @@ function EntryCard({
           onDragStart={(event) => event.preventDefault()}
         >
           {toggleBusy ? <LoaderCircle className="spin worldbook-entry-toggle-spinner" size={14} aria-hidden="true" /> : null}
-          <ToggleSwitch
+          <MiniToggle
             checked={draft.enabled ?? true}
             onChange={(enabled) => onEnabledAutoSave ? onEnabledAutoSave(enabled) : onUpdate({ enabled })}
-            showLabel={false}
-            size="small"
             disabled={Boolean(busy) || toggleBusy}
           />
         </div>
         <div className="worldbook-entry-card-title">
           <strong>{title}</strong>
-          {toggleError ? <small className="settings-error-text">{toggleError}</small> : null}
+          {toggleError ? <InlineStatus tone="failed">{toggleError}</InlineStatus> : null}
         </div>
         <div className="worldbook-entry-card-actions">
-          {dirty ? <span className="settings-badge warning">{t('worldbook:labels.unsavedChanges')}</span> : null}
-          <span className="settings-badge muted worldbook-entry-mode-chip">{activationModeLabel}</span>
+          {dirty ? <StatusChip tone="warning">{t('worldbook:labels.unsavedChanges')}</StatusChip> : null}
+          <Chip className="worldbook-entry-mode-chip">{activationModeLabel}</Chip>
           <button
             className="settings-secondary-button danger icon-only"
             type="button"
@@ -577,17 +570,19 @@ function EntryCard({
 function Header({ title, description, dirty, busy, message, actions }: { title: string; description: string; dirty: boolean; busy: boolean; message: string; actions?: ReactNode }) {
   const { t } = useTranslation('common');
   return (
-    <header className="settings-detail-header">
-      <div className="settings-detail-title"><div className="settings-detail-avatar"><BookOpenText size={18} /></div><div><h2>{title}</h2><p>{description}</p></div></div>
-      <div className="settings-detail-actions">
-        {actions || (
+    <SettingsDetailHeader
+      icon={<BookOpenText size={18} />}
+      title={title}
+      subtitle={description}
+      actions={
+        actions || (
           <>
             {message ? <span className="settings-badge success">{message}</span> : null}
             {dirty ? <button className="settings-primary-button" type="submit" disabled={busy}><Save size={14} />{busy ? t('saving') : t('save')}</button> : null}
           </>
-        )}
-      </div>
-    </header>
+        )
+      }
+    />
   );
 }
 

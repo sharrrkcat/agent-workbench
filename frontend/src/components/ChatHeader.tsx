@@ -1,9 +1,9 @@
-import { BookOpen, BookOpenText, ChevronDown, DatabaseZap, GripVertical, Layers, Minus, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
+import { BookOpen, BookOpenText, ChevronDown, DatabaseZap, GripVertical, Layers, Minus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { AgentSwitcher } from './AgentSwitcher';
+import { AppModal, EmptyStateRow, StatusDot, type StatusDotStatus } from './ui';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import { getModelProfileStatusLabel, getModelProfileStatusTitle } from '../i18n/formatters';
 import { getModelProfileStatus, statusPillClass } from '../utils/modelStatus';
@@ -523,18 +523,17 @@ function ContextSourcesButton({
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <span className="context-sources-dot" aria-hidden="true" />
+        <StatusDot status={contextSourcesDotStatus(summary.status)} size="sm" className="context-sources-dot" />
         <Layers size={14} aria-hidden="true" />
       </button>
       {open && currentSession
-        ? createPortal(
+        ? (
           <ContextSourcesModal
             sessionId={currentSession.session_id}
             onOpenSettings={onOpenSettings}
             onClose={() => onOpenChange(false)}
             onSummaryChange={setSummary}
-          />,
-          document.body,
+          />
         )
         : null}
     </>
@@ -571,6 +570,12 @@ function contextSourcesStatusClass(status: ContextSourcesSummary['status']): str
   return '';
 }
 
+function contextSourcesDotStatus(status: ContextSourcesSummary['status']): StatusDotStatus {
+  if (status === 'ready') return 'good';
+  if (status === 'warning') return 'warning';
+  return 'neutral';
+}
+
 function ContextSourcesModal({
   sessionId,
   onOpenSettings,
@@ -583,8 +588,6 @@ function ContextSourcesModal({
   onSummaryChange: (summary: ContextSourcesSummary) => void;
 }) {
   const { t } = useTranslation();
-  const modalRef = useRef<HTMLDivElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [activeTab, setActiveTab] = useState<'knowledge' | 'worldbooks'>('knowledge');
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [knowledgeBindings, setKnowledgeBindings] = useState<SessionKnowledgeBinding[]>([]);
@@ -593,32 +596,6 @@ function ContextSourcesModal({
   const [knowledgeStatus, setKnowledgeStatus] = useState<SaveStatus>({ state: 'idle', message: '' });
   const [worldbookStatus, setWorldbookStatus] = useState<SaveStatus>({ state: 'idle', message: '' });
   const [dragId, setDragId] = useState('');
-
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    function onKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === 'Escape' && !dragId) onClose();
-      if (event.key !== 'Tab' || !modalRef.current) return;
-      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'));
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [dragId, onClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -676,22 +653,18 @@ function ContextSourcesModal({
   }
 
   return (
-    <div className="context-sources-backdrop" role="presentation" onMouseDown={() => { if (!dragId) onClose(); }}>
-      <section
-        className="context-sources-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="context-sources-title"
-        ref={modalRef}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header className="context-sources-header">
-          <div>
-            <h2 id="context-sources-title">{t('chat:contextSources.title')}</h2>
-            <p>{t('chat:contextSources.summary', { knowledge: selectedKnowledgeIds.length, worldbooks: selectedWorldbookIds.length })}</p>
-          </div>
-          <button ref={closeButtonRef} className="settings-secondary-button icon-only" type="button" onClick={onClose} aria-label={t('common:close')}><X size={16} /></button>
-        </header>
+    <AppModal
+      open
+      width="large"
+      title={t('chat:contextSources.title')}
+      subtitle={t('chat:contextSources.summary', { knowledge: selectedKnowledgeIds.length, worldbooks: selectedWorldbookIds.length })}
+      closeLabel={t('common:close')}
+      closeOnOverlay={!dragId}
+      closeOnEscape={!dragId}
+      className="context-sources-modal"
+      bodyClassName="context-sources-modal-body"
+      onClose={onClose}
+    >
         <div className="context-sources-tabs" role="tablist">
           <button type="button" role="tab" className={activeTab === 'knowledge' ? 'active' : ''} onClick={() => setActiveTab('knowledge')}>
             <BookOpen size={14} />
@@ -745,8 +718,7 @@ function ContextSourcesModal({
             setDragId={setDragId}
           />
         )}
-      </section>
-    </div>
+    </AppModal>
   );
 
   async function saveWorldbookIds(nextIds: string[]) {
@@ -857,7 +829,7 @@ function ContextSourceTab<T>({
                   onClick={() => onRemove(item)}
                   title={t('chat:contextSources.dragToReorder')}
                 >
-                  <GripVertical size={13} className="knowledge-pill-drag" />
+                  <GripVertical size={13} className="knowledge-pill-drag drag-handle-icon" />
                   <span><strong>{getName(item)}</strong>{statusLabel(item) ? <small>{statusLabel(item)}</small> : null}</span>
                   <Minus size={14} className="knowledge-pill-action" />
                 </button>
@@ -888,10 +860,10 @@ function ContextSourceTab<T>({
             })}
           </div>
         ) : (
-          <div className="settings-empty-state compact context-sources-empty-action">
-            <span>{availableEmpty}</span>
-            <button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>
-          </div>
+          <EmptyStateRow
+            message={availableEmpty}
+            action={<button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>}
+          />
         )}
       </section>
     </div>

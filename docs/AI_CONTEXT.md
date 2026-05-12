@@ -268,6 +268,7 @@ Avoid unless needed:
 Read:
 - `README.md#settings`
 - `README.md#sqlite-data`
+- `docs/FRONTEND_UI_COMPONENTS.md` when changing Chat context modals, Settings object headers, or Worldbook entry UI
 - `docs/EXTENSION_API.md#capability-config`
 - `docs/EXTENSION_API.md#agent-overrides`
 - `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
@@ -289,6 +290,7 @@ Likely source:
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
 - `frontend/src/components/settings/WorldbookSettingsPanel.tsx`
+- `frontend/src/components/ui`
 - `frontend/src/components/ChatHeader.tsx` when changing Context Sources or session Knowledge/Worldbook binding UI
 - `frontend/src/App.tsx` and `frontend/src/components/SettingsPage.tsx` when changing Settings deep links or Context Sources "Open settings" routing
 - `frontend/src/api/client.ts`
@@ -308,6 +310,7 @@ Worldbook matching defaults to English-comma keyword splitting, case-insensitive
 
 UI/i18n rule:
 - Any new or changed user-visible Core Memory or Worldbook frontend text must update every supported locale file in `frontend/src/i18n/resources`.
+- Chat modals, Settings detail headers, status dots, toggles, chips, empty action rows, drag handles, and inline statuses should reuse `frontend/src/components/ui` primitives instead of adding local variants.
 
 Avoid unless explicitly in scope:
 - Do not modify Agent or Capability manifests for Worldbook storage/API work.
