@@ -5,19 +5,21 @@
     "actions": "动作",
     "config": "配置",
     "runtime": "运行时",
+    "intentRouting": "意图路由",
     "manifest": "Manifest"
   },
   "sections": {
     "basic": "基础信息",
     "prompt": "Prompt",
     "knowledgeRuntime": "知识库运行时设置",
+    "intentRouting": "意图路由",
+    "intentRoutingEntry": "意图路由入口",
+    "intentRoutingTargetHints": "意图路由目标提示",
     "llmRuntime": "LLM 运行时设置",
     "contextPolicy": "上下文策略",
     "modelLifecycle": "模型生命周期",
     "llmRouting": "LLM 路由",
-    "legacyModel": "Legacy 模型",
-    "intentRouting": "意图路由",
-    "intentRoutingTargetHints": "Intent Routing Target Hints"
+    "legacyModel": "Legacy 模型"
   },
   "labels": {
     "agent": "agent",
@@ -36,6 +38,7 @@
     "context": "上下文",
     "systemPrompt": "系统 prompt",
     "useSessionKnowledgeBases": "使用会话知识库",
+    "intentRouting": "意图路由",
     "modelProfile": "模型配置",
     "allowSessionOverride": "允许会话覆盖",
     "maxHistoryMessages": "最大历史消息数",
@@ -55,9 +58,8 @@
     "maxChars": "最大字符数",
     "originalUserMessage": "原始用户消息",
     "lastAgentMessage": "上一条 Agent 消息",
-    "intentRouting": "意图路由",
-    "routingAliases": "Routing aliases",
-    "routingExamples": "Route examples"
+    "routingAliases": "路由别名",
+    "routingExamples": "路由示例"
   },
   "buttons": {
     "resetOverrides": "重置覆盖项",
@@ -71,10 +73,27 @@
   },
   "help": {
     "knowledgeRuntime": "Prompt Agent 默认使用会话知识库。LLM Script Agent 只有在这里启用后才会使用。",
-    "scriptTrusted": "Script Agent 是受信任的本地 Python 代码，不会被沙箱隔离。",
     "intentRouting": "Prompt Agent 可以选择启用、禁用或跟随通用意图路由默认值。通用模式可以是 Shadow 或安全自动。",
-    "intentRoutingTargetHints": "Aliases and examples help Intent Routing recognize when a user is referring to this Agent. They do not make Script Agents router entries.",
-    "genericRoutesNotAutoExecuted": "Generic Agent routes are not executed automatically in this version."
+    "promptIntentRoutingEntry": "当它是会话默认 Agent 时，此 Prompt Agent 可以作为意图路由入口。",
+    "intentRoutingExplicitBypass": "显式 /commands、@agent 调用和 :actions 会绕过意图路由。",
+    "scriptIntentRoutingEntryUnsupported": "此版本中 Script Agent 不能作为意图路由入口。",
+    "scriptIntentRoutingTargetHints": "它们仍可为路由预测、元数据和未来确认流程提供目标提示。",
+    "nonPromptIntentRoutingEntryUnsupported": "此版本中只有 Prompt Agent 可以作为意图路由入口。",
+    "routingAliases": "使用英文逗号分割的短别名，或用户可能称呼此 Agent 的词。",
+    "routingExamples": "每行一个自然语言用户请求示例。",
+    "scriptTrusted": "Script Agent 是受信任的本地 Python 代码，不会被沙箱隔离。",
+    "intentRoutingTargetHints": "别名和示例可帮助意图路由识别用户何时指向此 Agent。",
+    "genericRoutesNotAutoExecuted": "此版本不会自动执行通用 Agent 路由。"
+  },
+  "intentRouting": {
+    "useDefault": "使用默认值",
+    "effectiveGeneralOff": "当前效果：已禁用，因为通用总开关关闭",
+    "effectiveAgentEnabled": "当前效果：由 Agent 覆盖启用（通用模式：{{mode}}）",
+    "effectiveAgentDisabled": "当前效果：由 Agent 覆盖禁用",
+    "effectiveDefaultEnabled": "当前效果：由通用默认值启用（通用模式：{{mode}}）",
+    "effectiveDefaultDisabled": "当前效果：由通用默认值禁用",
+    "shadowMode": "Shadow",
+    "autoMode": "自动"
   },
   "placeholders": {
     "generatedInitials": "生成首字母",
@@ -108,15 +127,5 @@
     "llmProfile": "LLM 配置：{{profile}}",
     "legacyModel": "Legacy 模型：{{model}}",
     "usesGlobalLlmFallback": "使用全局 LLM fallback"
-  },
-  "intentRouting": {
-    "useDefault": "使用默认值",
-    "effectiveGeneralOff": "当前效果：已禁用，因为通用总开关关闭",
-    "effectiveAgentEnabled": "当前效果：由 Agent 覆盖启用（通用模式：{{mode}}）",
-    "effectiveAgentDisabled": "当前效果：由 Agent 覆盖禁用",
-    "effectiveDefaultEnabled": "当前效果：按默认值启用（通用模式：{{mode}}）",
-    "effectiveDefaultDisabled": "当前效果：按默认值禁用",
-    "shadowMode": "Shadow",
-    "autoMode": "自动"
   }
 }

@@ -342,8 +342,8 @@ Intent Routing configuration ownership:
 
 - General settings own Intent Routing's master switch, Prompt Agent default, global `shadow`/`auto` mode, safe auto-route toggle, confidence thresholds, and the optional semantic router Embedding Model Profile reference.
 - General settings own built-in intent custom route examples. These examples are user data merged with built-in route examples at prediction time.
-- Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode`.
-- Agent target hint aliases/examples belong in `AgentConfig.runtime.intent_routing_aliases_text` and `AgentConfig.runtime.intent_routing_examples_text`. They are local runtime hints, not manifest fields and not router-entry grants.
+- Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode` and is edited under Agent detail -> Intent Routing.
+- Agent target hint aliases/examples belong in `AgentConfig.runtime.intent_routing_aliases_text` and `AgentConfig.runtime.intent_routing_examples_text`, edited under Agent detail -> Intent Routing. They are local runtime hints, not manifest fields and not router-entry grants.
 - Knowledge Base aliases belong to Knowledge Base data/configuration and are used only to match Intent Routing `knowledge_query` KB hints.
 - Intent Routing semantic router configuration references an existing Knowledge Embedding Model Profile through General settings. The Embedding Model Profile itself remains owned by Knowledge/local model configuration.
 - Intent Routing must not own or restore a raw embedding model path UI. Old persisted raw embedding path values are ignored; semantic router selection uses only the Knowledge Embedding Model Profile id.

@@ -293,7 +293,7 @@ Likely source:
 - `ai_workbench/api/routes/knowledge.py` when Knowledge Base alias request/response contracts change
 - `frontend/src/components/settings/SettingsDetailPanel.tsx` for General -> Utility LLM status UI and General -> Intent Routing cards.
 - `frontend/src/components/settings/SettingsObjectList.tsx`
-- `frontend/src/components/settings/AgentDetail.tsx`
+- `frontend/src/components/settings/AgentDetail.tsx` for Agent detail -> Intent Routing. Per-Agent Intent Routing entry and target hints belong in this tab, not in Overrides.
 - `frontend/src/components/settings/KnowledgeSettingsPanel.tsx` when KB aliases are user-visible
 - `frontend/src/types.ts`
 - `frontend/src/i18n/resources`
@@ -319,6 +319,7 @@ Rules:
 - `image_generation` auto routing may target only the supported `comfyui_agent` path. Do not add generic Agent routing without an explicit safety design.
 - `knowledge_query` auto routing may use only per-run temporary Knowledge KB/query overrides. It must not persist session KB bindings or change retrieval ranking/indexing.
 - General custom route examples, Agent target aliases/examples, and Knowledge Base aliases are classifier/extractor hints only. They must not expand the safe auto-route boundary.
+- Per-Agent Intent Routing entry and target hints remain `AgentConfig.runtime` fields even though their UI location is Agent detail -> Intent Routing.
 - Route test/debug APIs must not create messages or runs, execute ComfyUI, execute commands, run Knowledge retrieval, or mutate sessions.
 - Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
 - Utility LLM backend/model path/device/options belong to General settings and are displayed under General -> Utility LLM. Transformers paths use `utility_llms/<folder>`; GGUF llama.cpp paths use `utility_llms/<model-folder>/<file>.gguf`. Root-level GGUF files are invalid and should not be scanned.

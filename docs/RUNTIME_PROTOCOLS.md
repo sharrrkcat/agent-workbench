@@ -108,6 +108,11 @@ Intent Routing is an optional pre-routing layer for ordinary natural-language me
 - `@agent:action`
 - `:action`
 
+UI locations:
+
+- Global settings: Settings -> General -> Intent Routing.
+- Per-Agent Prompt Agent entry override and target hints: Agent detail -> Intent Routing.
+
 Eligibility in the first alpha:
 
 - General `intent_routing_enabled` must be true.
@@ -135,7 +140,7 @@ General settings may store custom route examples for `chat`, `image_generation`,
 
 Knowledge Bases may store comma-separated aliases. Intent Routing uses enabled KB names and aliases to match `knowledge_query` `kb_hint` values in this order: name exact, alias exact, name substring, alias substring, then description weak match. Exact alias matches take priority over description matches. Ambiguous strong matches record a warning and do not randomly choose a KB. Any selected KB ids are temporary for the run only.
 
-AgentConfig runtime may store routing target hints under `intent_routing_aliases_text` and `intent_routing_examples_text`. These hints help classify `agent_route` and produce compact target metadata. They do not make Script Agents router entries and do not allow generic Agent auto execution. Prompt Agent `runtime.intent_routing_mode` remains the only per-Agent router-entry override.
+AgentConfig runtime may store routing target hints under `intent_routing_aliases_text` and `intent_routing_examples_text`. These hints are edited under Agent detail -> Intent Routing, help classify `agent_route`, and produce compact target metadata. They do not make Script Agents router entries and do not allow generic Agent auto execution. Prompt Agent `runtime.intent_routing_mode` remains the only per-Agent router-entry override.
 
 General settings may store `intent_routing_embedding_model_profile_id`, which references an existing Knowledge Embedding Model Profile for future semantic embedding routing. This profile id is the only Intent Routing semantic router configuration field. Old persisted `intent_routing_embedding_model_path` values are ignored if present. This version does not call the selected embedding model, does not run EmbeddingGemma semantic routing, and does not change rule-based or Utility LLM extraction behavior.
 

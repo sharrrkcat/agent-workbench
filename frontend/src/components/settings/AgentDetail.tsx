@@ -12,7 +12,7 @@ import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
 import { getResolvedAgentDisplay, resolvedAgentProfileLabel } from '../../utils/agents';
 
-const baseTabIds = ['overview', 'overrides', 'actions', 'config', 'runtime', 'manifest'] as const;
+const baseTabIds = ['overview', 'overrides', 'actions', 'config', 'runtime', 'intentRouting', 'manifest'] as const;
 
 export function AgentDetail({
   config,
@@ -57,6 +57,7 @@ export function AgentDetail({
           (id === 'actions' && hasActions) ||
           (id === 'config' && hasConfigFields) ||
           (id === 'runtime' && hasRuntime) ||
+          id === 'intentRouting' ||
           id === 'manifest',
       })),
     [hasActions, hasConfigFields, hasRuntime, t],
@@ -198,6 +199,15 @@ export function AgentDetail({
           />
         ) : null}
         {normalizedActiveTab === 'runtime' ? <RuntimeTab agent={agent} /> : null}
+        {normalizedActiveTab === 'intentRouting' ? (
+          <IntentRoutingTab
+            config={config}
+            agent={agent}
+            runtimeDraft={runtimeDraft}
+            onRuntimeChange={setRuntimeDraft}
+            t={t}
+          />
+        ) : null}
         {normalizedActiveTab === 'manifest' ? <ManifestViewer value={manifest} /> : null}
         {normalizedActiveTab === 'overview' ? <OverviewTab config={config} agent={agent} /> : null}
       </div>
@@ -236,7 +246,6 @@ function OverridesTab({
 }) {
   const resolved = config.resolved;
   const sections = resolved?.sections || [];
-  const generalSettings = useWorkbenchStore((state) => state.generalSettings);
   const isPromptAgent = (agent?.type || config.manifest_summary.type) === 'prompt';
   const hasLlmSection = sections.some((section) => section.id === 'llm_runtime') || agent?.capabilities?.includes('llm') || config.manifest_summary.capabilities?.includes('llm');
   const hasKnowledgeSection = sections.some((section) => section.id === 'knowledge_runtime') || isPromptAgent || hasLlmSection;
@@ -326,66 +335,11 @@ function OverridesTab({
         </section>
       ) : null}
 
-      {isPromptAgent ? (
-        <section className="settings-override-section">
-          <div className="detail-section-heading">
-            <h3>{t('agents:sections.intentRouting')}</h3>
-            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: runtimeDraft.intent_routing_mode ? 1 : 0 })}</span>
-          </div>
-          <p className="settings-muted-text">{t('agents:help.intentRouting')}</p>
-          <OverrideSelect
-            label={t('agents:labels.intentRouting')}
-            field="runtime.intent_routing_mode"
-            value={runtimeDraft.intent_routing_mode || ''}
-            config={config}
-            onChange={(intent_routing_mode) =>
-              onRuntimeChange({
-                ...runtimeDraft,
-                intent_routing_mode: intent_routing_mode ? intent_routing_mode as AgentRuntimeOverrides['intent_routing_mode'] : undefined,
-              })
-            }
-          >
-            <option value="">{t('agents:intentRouting.useDefault')}</option>
-            <option value="enabled">{t('common:enabled')}</option>
-            <option value="disabled">{t('common:disabled')}</option>
-          </OverrideSelect>
-          <p className="settings-muted-text">{intentRoutingEffectiveLabel(runtimeDraft.intent_routing_mode || runtime.intent_routing_mode, generalSettings, t)}</p>
-        </section>
-      ) : null}
-
-      <section className="settings-override-section">
-        <div className="detail-section-heading">
-          <h3>{t('agents:sections.intentRoutingTargetHints')}</h3>
-          <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount({ aliases: runtimeDraft.intent_routing_aliases_text, examples: runtimeDraft.intent_routing_examples_text }) })}</span>
-        </div>
-        <p className="settings-muted-text">{t('agents:help.intentRoutingTargetHints')}</p>
-        <OverrideTextField
-          label={t('agents:labels.routingAliases')}
-          field="runtime.intent_routing_aliases_text"
-          value={runtimeDraft.intent_routing_aliases_text || ''}
-          placeholder={t('agents:placeholders.routingAliases')}
-          config={config}
-          savedValue={config.runtime?.intent_routing_aliases_text}
-          onChange={(intent_routing_aliases_text) => onRuntimeChange({ ...runtimeDraft, intent_routing_aliases_text })}
-        />
-        <OverrideTextField
-          label={t('agents:labels.routingExamples')}
-          field="runtime.intent_routing_examples_text"
-          value={runtimeDraft.intent_routing_examples_text || ''}
-          placeholder={t('agents:placeholders.routingExamples')}
-          config={config}
-          savedValue={config.runtime?.intent_routing_examples_text}
-          onChange={(intent_routing_examples_text) => onRuntimeChange({ ...runtimeDraft, intent_routing_examples_text })}
-          textarea
-        />
-        <p className="settings-muted-text">{t('agents:help.genericRoutesNotAutoExecuted')}</p>
-      </section>
-
       {hasLlmSection ? (
         <section className="settings-override-section">
           <div className="detail-section-heading">
             <h3>{t('agents:sections.llmRuntime')}</h3>
-            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount(omitKeys(runtimeDraft, ['prompt'])) })}</span>
+            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount(pickKeys(runtimeDraft, ['llm_profile_id', 'allow_session_override', 'context_policy', 'model_lifecycle', 'timeout_seconds'])) })}</span>
           </div>
           <OverrideSelect
             label={t('agents:labels.modelProfile')}
@@ -505,6 +459,96 @@ function OverridesTab({
           {t('agents:buttons.writeOverridesToManifest')}
         </button>
       </div>
+    </div>
+  );
+}
+
+function IntentRoutingTab({
+  config,
+  agent,
+  runtimeDraft,
+  onRuntimeChange,
+  t,
+}: {
+  config: AgentConfig;
+  agent?: Agent;
+  runtimeDraft: AgentRuntimeOverrides;
+  onRuntimeChange: (value: AgentRuntimeOverrides) => void;
+  t: ReturnType<typeof useTranslation>['t'];
+}) {
+  const generalSettings = useWorkbenchStore((state) => state.generalSettings);
+  const runtime = config.resolved?.runtime || {};
+  const agentType = agent?.type || config.manifest_summary.type;
+  const isPromptAgent = agentType === 'prompt';
+  const isScriptAgent = agentType === 'script';
+  const effectiveMode = runtimeDraft.intent_routing_mode || runtime.intent_routing_mode;
+
+  return (
+    <div className="settings-runtime-stack">
+      {isPromptAgent ? (
+        <section className="settings-override-section">
+          <div className="detail-section-heading">
+            <h3>{t('agents:sections.intentRoutingEntry')}</h3>
+            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: runtimeDraft.intent_routing_mode ? 1 : 0 })}</span>
+          </div>
+          <p className="settings-muted-text">{t('agents:help.promptIntentRoutingEntry')}</p>
+          <p className="settings-muted-text">{t('agents:help.intentRoutingExplicitBypass')}</p>
+          <OverrideSelect
+            label={t('agents:labels.intentRouting')}
+            field="runtime.intent_routing_mode"
+            value={runtimeDraft.intent_routing_mode || ''}
+            config={config}
+            onChange={(intent_routing_mode) =>
+              onRuntimeChange({
+                ...runtimeDraft,
+                intent_routing_mode: intent_routing_mode ? intent_routing_mode as AgentRuntimeOverrides['intent_routing_mode'] : undefined,
+              })
+            }
+          >
+            <option value="">{t('agents:intentRouting.useDefault')}</option>
+            <option value="enabled">{t('common:enabled')}</option>
+            <option value="disabled">{t('common:disabled')}</option>
+          </OverrideSelect>
+          <p className="settings-muted-text">{intentRoutingEffectiveLabel(effectiveMode, generalSettings, t)}</p>
+        </section>
+      ) : null}
+
+      {!isPromptAgent ? (
+        <p className="settings-muted-text">
+          {isScriptAgent ? t('agents:help.scriptIntentRoutingEntryUnsupported') : t('agents:help.nonPromptIntentRoutingEntryUnsupported')}
+        </p>
+      ) : null}
+
+      <section className="settings-override-section">
+        <div className="detail-section-heading">
+          <h3>{t('agents:sections.intentRoutingTargetHints')}</h3>
+          <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount({ aliases: runtimeDraft.intent_routing_aliases_text, examples: runtimeDraft.intent_routing_examples_text }) })}</span>
+        </div>
+        <p className="settings-muted-text">{t('agents:help.intentRoutingTargetHints')}</p>
+        {isScriptAgent ? <p className="settings-muted-text">{t('agents:help.scriptIntentRoutingTargetHints')}</p> : null}
+        <OverrideTextField
+          label={t('agents:labels.routingAliases')}
+          field="runtime.intent_routing_aliases_text"
+          value={runtimeDraft.intent_routing_aliases_text || ''}
+          placeholder={t('agents:placeholders.routingAliases')}
+          config={config}
+          savedValue={config.runtime?.intent_routing_aliases_text}
+          onChange={(intent_routing_aliases_text) => onRuntimeChange({ ...runtimeDraft, intent_routing_aliases_text })}
+        />
+        <p className="settings-muted-text">{t('agents:help.routingAliases')}</p>
+        <OverrideTextField
+          label={t('agents:labels.routingExamples')}
+          field="runtime.intent_routing_examples_text"
+          value={runtimeDraft.intent_routing_examples_text || ''}
+          placeholder={t('agents:placeholders.routingExamples')}
+          config={config}
+          savedValue={config.runtime?.intent_routing_examples_text}
+          onChange={(intent_routing_examples_text) => onRuntimeChange({ ...runtimeDraft, intent_routing_examples_text })}
+          textarea
+        />
+        <p className="settings-muted-text">{t('agents:help.routingExamples')}</p>
+        <p className="settings-muted-text">{t('agents:help.genericRoutesNotAutoExecuted')}</p>
+      </section>
     </div>
   );
 }
@@ -648,8 +692,8 @@ function intentRoutingEffectiveLabel(mode: AgentRuntimeOverrides['intent_routing
   return t('agents:intentRouting.effectiveDefaultDisabled');
 }
 
-function omitKeys<T extends Record<string, unknown>>(value: T, keys: string[]): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+function pickKeys<T extends Record<string, unknown>>(value: T, keys: string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => keys.includes(key)));
 }
 
 function OverviewTab({ config, agent }: { config: AgentConfig; agent?: Agent }) {

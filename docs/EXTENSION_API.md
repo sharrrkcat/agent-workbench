@@ -110,12 +110,13 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Manifest values are package defaults.
 - `AgentConfig` stores local overrides and enablement.
 - Config tab writes `config_schema` values into `user_config`.
-- Overrides tab edits display/runtime overrides.
+- Overrides tab edits display/runtime overrides except Intent Routing fields, which have a dedicated Agent detail Intent Routing tab.
 - Display override fields include name, description, and avatar.
 - Prompt override replaces the manifest prompt at runtime.
 - LLM runtime override can set `llm_profile_id` and `allow_session_override`.
 - Knowledge runtime override can set `knowledge_context_mode` to `use_default`, `enabled`, or `disabled`. Prompt Agents default to effective `enabled`; Script Agents that declare `llm` default to effective `disabled`; Script Agents without `llm` do not show the override. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`.
-- Prompt Agent Intent Routing override can set `intent_routing_mode` to `use_default`, `enabled`, or `disabled`. General settings still own the master switch, Prompt Agent default, and global `shadow`/`auto` mode. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`. Script Agents do not show this override and are not generic router entries.
+- Intent Routing runtime fields are edited under Agent detail -> Intent Routing. They are still stored in `AgentConfig.runtime` and are not written into `agent.yaml` by manifest write.
+- Prompt Agent Intent Routing override can set `intent_routing_mode` to `use_default`, `enabled`, or `disabled`. It controls whether this Prompt Agent can act as an Intent Routing entry when it is the session default Agent. General settings still own the master switch, Prompt Agent default, and global `shadow`/`auto` mode.
 - Agent Intent Routing target hints are runtime-only AgentConfig fields: `intent_routing_aliases_text` is an English-comma-separated alias list, and `intent_routing_examples_text` is newline-separated natural-language examples. They help Intent Routing identify target hints for `agent_route` metadata and Utility LLM candidates. They do not enable Script Agents as router entries, do not permit generic Agent auto execution, and are not written into `agent.yaml`.
 - Reset overrides clears local AgentConfig values back to manifest behavior.
 - Write overrides to manifest only when intentionally changing the package default.
@@ -125,7 +126,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Prompt Agents let the core runtime build context and call the LLM.
 - Model output is treated as assistant content, not tool calls or structured commands.
 - Prompt Agents that call an LLM should declare `capabilities: [llm]`.
-- Prompt Agents may opt into Intent Routing through local AgentConfig runtime overrides. In `shadow` mode, predictions are metadata only and do not alter routing, context, prompt text, or provider payloads. In General `auto` mode, high-confidence safe intents may route image generation to `comfyui_agent` for the current run or provide a temporary Knowledge KB/query override for the current Prompt Agent run. Auto routing does not change the session default Agent or session Knowledge bindings.
+- Prompt Agents may opt into Intent Routing through local AgentConfig runtime overrides edited under Agent detail -> Intent Routing. `intent_routing_mode` controls whether a Prompt Agent can be an Intent Routing entry. In `shadow` mode, predictions are metadata only and do not alter routing, context, prompt text, or provider payloads. In General `auto` mode, high-confidence safe intents may route image generation to `comfyui_agent` for the current run or provide a temporary Knowledge KB/query override for the current Prompt Agent run. Auto routing does not change the session default Agent or session Knowledge bindings.
 - Depending on General Core Memory settings, Worldbook Defaults, and active Session Worldbook bindings, the core may append Core Memory and Worldbook system-context blocks before Retrieved Knowledge and conversation context.
 - Visible streaming is controlled by the resolved Model Profile `supports_streaming`.
 - Prompt Agent run steps, streaming, and LLM resolution follow `docs/RUNTIME_PROTOCOLS.md`.
@@ -136,7 +137,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - `entry` must export `async def run(ctx)`.
 - Older scripts that return a final value or reply once remain valid.
 - Do not run untrusted Script Agent code; there is no sandbox.
-- Script Agents are not Intent Routing router entries in the first alpha. They can still be called explicitly through `@agent`, `@agent:action`, `:action`, forms, or trusted action invocation.
+- Script Agents are not Intent Routing router entries in the first alpha. They can still store target hints under Agent detail -> Intent Routing for route prediction metadata and future confirmation flows, and can be called explicitly through `@agent`, `@agent:action`, `:action`, forms, or trusted action invocation.
 
 ```python
 async def run(ctx):

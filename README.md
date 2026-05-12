@@ -131,7 +131,7 @@ The Utility LLM JSON extractor may add compact slots such as `target_agent_hint`
 
 Explicit `/command`, `@agent`, `@agent:action`, and `:action` inputs always bypass Intent Routing. `command_like` intents are recorded but are not executed automatically, so requests such as freeing memory do not run `/free-memory` in this version. Auto routing does not change the session default Agent, the visible Agent selector, or Context Sources Knowledge bindings. Intent Routing can save a Knowledge Embedding Model Profile selection for a future semantic router, but EmbeddingGemma and semantic embedding routing are still deferred and no embedding model is called by Intent Routing in this version.
 
-Knowledge Bases can store comma-separated aliases such as `星战, Star Wars, SW`; Intent Routing uses them only to match `knowledge_query` `kb_hint` values for temporary per-run Knowledge overrides. Agents can store routing aliases and route examples in local Agent Overrides as target hints. These hints can set compact metadata such as `target_agent_id`, but generic Agent routes still require a future confirmation flow and are not executed automatically.
+Knowledge Bases can store comma-separated aliases such as `星战, Star Wars, SW`; Intent Routing uses them only to match `knowledge_query` `kb_hint` values for temporary per-run Knowledge overrides. Agents can store routing aliases and route examples under Agent detail -> Intent Routing as runtime target hints. Prompt Agents also expose their per-Agent entry override in that tab. These values remain `AgentConfig.runtime` fields and are not written to `agent.yaml`; generic Agent routes still require a future confirmation flow and are not executed automatically.
 
 ## Agent Avatars
 

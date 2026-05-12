@@ -5,6 +5,7 @@
     "actions": "Actions",
     "config": "Config",
     "runtime": "Runtime",
+    "intentRouting": "Intent Routing",
     "manifest": "Manifest"
   },
   "sections": {
@@ -12,6 +13,7 @@
     "prompt": "Prompt",
     "knowledgeRuntime": "Knowledge Runtime Settings",
     "intentRouting": "Intent Routing",
+    "intentRoutingEntry": "Intent Routing Entry",
     "intentRoutingTargetHints": "Intent Routing Target Hints",
     "llmRuntime": "LLM Runtime Settings",
     "contextPolicy": "Context policy",
@@ -72,8 +74,15 @@
   "help": {
     "knowledgeRuntime": "Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.",
     "intentRouting": "Prompt Agents can opt in, opt out, or follow the General Intent Routing default. General mode can be Shadow or safe Auto.",
+    "promptIntentRoutingEntry": "This Prompt Agent can act as an Intent Routing entry when it is the session default Agent.",
+    "intentRoutingExplicitBypass": "Explicit /commands, @agent calls, and :actions bypass Intent Routing.",
+    "scriptIntentRoutingEntryUnsupported": "Script Agents cannot act as Intent Routing entries in this version.",
+    "scriptIntentRoutingTargetHints": "They can still provide target hints for route prediction, metadata, and future confirmation flows.",
+    "nonPromptIntentRoutingEntryUnsupported": "Only Prompt Agents can act as Intent Routing entries in this version.",
+    "routingAliases": "English-comma-separated short aliases or words users may call this Agent.",
+    "routingExamples": "One natural-language user request per line.",
     "scriptTrusted": "Script Agents are trusted local Python code and are not sandboxed.",
-    "intentRoutingTargetHints": "Aliases and examples help Intent Routing recognize when a user is referring to this Agent. They do not make Script Agents router entries.",
+    "intentRoutingTargetHints": "Aliases and examples help Intent Routing recognize when a user is referring to this Agent.",
     "genericRoutesNotAutoExecuted": "Generic Agent routes are not executed automatically in this version."
   },
   "intentRouting": {
@@ -81,8 +90,8 @@
     "effectiveGeneralOff": "Effective: disabled because General master switch is off",
     "effectiveAgentEnabled": "Effective: enabled by agent override (General mode: {{mode}})",
     "effectiveAgentDisabled": "Effective: disabled by agent override",
-    "effectiveDefaultEnabled": "Effective: enabled by default (General mode: {{mode}})",
-    "effectiveDefaultDisabled": "Effective: disabled by default",
+    "effectiveDefaultEnabled": "Effective: enabled by General default (General mode: {{mode}})",
+    "effectiveDefaultDisabled": "Effective: disabled by General default",
     "shadowMode": "Shadow",
     "autoMode": "Auto"
   },

@@ -216,6 +216,24 @@ def test_agent_overrides_has_knowledge_runtime_settings_contract() -> None:
     assert "'use_default' | 'enabled' | 'disabled'" in types
 
 
+def test_agent_intent_routing_has_dedicated_tab_contract() -> None:
+    source = read_frontend("components/settings/AgentDetail.tsx")
+    types = read_frontend("types.ts")
+
+    assert "['overview', 'overrides', 'actions', 'config', 'runtime', 'intentRouting', 'manifest']" in source
+    assert "function IntentRoutingTab" in source
+    assert "sections.intentRoutingEntry" in source
+    assert "sections.intentRoutingTargetHints" in source
+    assert "scriptIntentRoutingEntryUnsupported" in source
+    assert "intent_routing_mode" in source
+    assert "intent_routing_aliases_text" in source
+    assert "intent_routing_examples_text" in source
+    assert "'use_default' | 'enabled' | 'disabled'" in types
+    overrides_body = source[source.index("function OverridesTab") : source.index("function IntentRoutingTab")]
+    assert "sections.intentRoutingEntry" not in overrides_body
+    assert "sections.intentRoutingTargetHints" not in overrides_body
+
+
 def test_chat_renders_run_steps_panel_and_step_statuses() -> None:
     source = read_frontend("components/MessageBubble.tsx")
 
