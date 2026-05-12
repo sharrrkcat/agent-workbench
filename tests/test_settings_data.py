@@ -42,6 +42,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_low_confidence_threshold"] == 0.55
     assert response.json()["intent_routing_auto_route_safe_intents"] is False
     assert response.json()["intent_routing_confirm_uncertain"] is True
+    assert response.json()["intent_routing_embedding_model_profile_id"] is None
     assert response.json()["intent_routing_embedding_model_path"] == ""
     assert response.json()["intent_routing_utility_llm_backend"] == "transformers"
     assert response.json()["intent_routing_utility_llm_model_path"] == ""
@@ -83,6 +84,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_low_confidence_threshold": 0.4,
             "intent_routing_auto_route_safe_intents": True,
             "intent_routing_confirm_uncertain": False,
+            "intent_routing_embedding_model_profile_id": "embedding-profile-1",
             "intent_routing_embedding_model_path": "embeddings/embeddinggemma-300m",
             "intent_routing_utility_llm_backend": "llama_cpp",
             "intent_routing_utility_llm_context_size": 8192,
@@ -121,6 +123,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["intent_routing_low_confidence_threshold"] == 0.4
     assert patched.json()["intent_routing_auto_route_safe_intents"] is True
     assert patched.json()["intent_routing_confirm_uncertain"] is False
+    assert patched.json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
     assert patched.json()["intent_routing_embedding_model_path"] == "embeddings/embeddinggemma-300m"
     assert patched.json()["intent_routing_utility_llm_backend"] == "llama_cpp"
     assert patched.json()["intent_routing_utility_llm_model_path"] == "utility_llms/qwen3-0.6b/Qwen3-0.6B-Q4_K_M.gguf"
@@ -181,6 +184,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
+    assert restarted.patch("/api/settings/general", json={"intent_routing_embedding_model_profile_id": None}).json()["intent_routing_embedding_model_profile_id"] is None
     assert restarted.get("/api/settings/general").json()["intent_routing_utility_llm_backend"] == "transformers"
     assert restarted.get("/api/settings/general").json()["intent_routing_utility_llm_model_path"] == "utility_llms/Qwen3-0.6B"
     assert restarted.get("/api/settings/general").json()["intent_routing_device"] == "cpu"

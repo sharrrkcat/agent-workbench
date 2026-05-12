@@ -315,6 +315,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         onLlmProfilesChanged={refreshLlmProfiles}
         onKnowledgeObjectsChanged={refreshKnowledgeObjects}
         onWorldbookObjectsChanged={refreshWorldbookObjects}
+        onSelectGeneralCategory={setGeneralCategory}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}
         onDirtyChange={setDetailDirty}

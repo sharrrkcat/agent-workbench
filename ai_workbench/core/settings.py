@@ -72,6 +72,7 @@ class AppSettings(BaseModel):
     intent_routing_low_confidence_threshold: float = Field(default=0.55, ge=0, le=1)
     intent_routing_auto_route_safe_intents: StrictBool = False
     intent_routing_confirm_uncertain: StrictBool = True
+    intent_routing_embedding_model_profile_id: str | None = None
     intent_routing_embedding_model_path: str = ""
     intent_routing_utility_llm_backend: str = "transformers"
     intent_routing_utility_llm_model_path: str = ""
@@ -135,6 +136,14 @@ class AppSettings(BaseModel):
         except ValueError:
             return normalize_utility_model_path(raw, "llama_cpp")
 
+    @field_validator("intent_routing_embedding_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_embedding_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
     @model_validator(mode="after")
     def _validate_intent_threshold_order(self) -> "AppSettings":
         if self.intent_routing_low_confidence_threshold > self.intent_routing_high_confidence_threshold:
@@ -196,6 +205,7 @@ class AppSettingsPatch(BaseModel):
     intent_routing_low_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
     intent_routing_auto_route_safe_intents: StrictBool | None = None
     intent_routing_confirm_uncertain: StrictBool | None = None
+    intent_routing_embedding_model_profile_id: str | None = None
     intent_routing_embedding_model_path: str | None = None
     intent_routing_utility_llm_backend: str | None = None
     intent_routing_utility_llm_model_path: str | None = None
@@ -271,6 +281,14 @@ class AppSettingsPatch(BaseModel):
         except ValueError:
             return normalize_utility_model_path(raw, "llama_cpp")
 
+    @field_validator("intent_routing_embedding_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_embedding_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:
     payload = settings.model_dump()
@@ -288,7 +306,7 @@ def app_settings_response(settings: AppSettings) -> dict[str, Any]:
 
 def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
     updates = patch.model_dump(exclude_none=True)
-    for key in ("group_transcript_system_instruction", "command_result_context_instruction"):
+    for key in ("group_transcript_system_instruction", "command_result_context_instruction", "intent_routing_embedding_model_profile_id"):
         if key in patch.model_fields_set and getattr(patch, key) is None:
             updates[key] = None
     return updates

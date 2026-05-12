@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -37,6 +37,7 @@ export function SettingsDetailPanel({
   onLlmProfilesChanged,
   onKnowledgeObjectsChanged,
   onWorldbookObjectsChanged,
+  onSelectGeneralCategory,
   activeTab,
   onTabChange,
   onDirtyChange,
@@ -60,6 +61,7 @@ export function SettingsDetailPanel({
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onWorldbookObjectsChanged?: (selectedItemId?: string) => Promise<void>;
+  onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -128,7 +130,7 @@ export function SettingsDetailPanel({
   if (section === 'general') {
     return (
       <section className="settings-detail-panel">
-        <GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} />
+        <GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />
       </section>
     );
   }
@@ -263,15 +265,23 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
   );
 }
 
-function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsCategory; onDirtyChange: (dirty: boolean) => void }) {
+function GeneralDetail({
+  category,
+  onDirtyChange,
+  onSelectGeneralCategory,
+}: {
+  category: GeneralSettingsCategory;
+  onDirtyChange: (dirty: boolean) => void;
+  onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
+}) {
   const { t } = useTranslation(['settings', 'common']);
   const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
   const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
-  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
-  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
+  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'utility_llm' ? t('settings:general.utilityLlm') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
+  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'utility_llm' ? t('settings:general.utilityLlmDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -361,8 +371,10 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
           <GeneralFilesSettings values={values} setValues={setValues} setNumber={setNumber} />
         ) : category === 'memory' ? (
           <GeneralMemorySettings values={values} setValues={setValues} />
+        ) : category === 'utility_llm' ? (
+          <GeneralUtilityLlmSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : category === 'intent_routing' ? (
-          <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
+          <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} onOpenUtilityLlm={() => onSelectGeneralCategory?.('utility_llm')} />
         ) : (
           <GeneralPromptSettings values={values} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
         )}
@@ -635,20 +647,24 @@ function GeneralIntentRoutingSettings({
   setValues,
   setNumber,
   setString,
+  onOpenUtilityLlm,
 }: {
   values: GeneralSettings;
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
   setString: (key: keyof GeneralSettings, value: string) => void;
+  onOpenUtilityLlm: () => void;
 }) {
   const { t } = useTranslation(['settings', 'common']);
   const [status, setStatus] = useState<UtilityLlmStatus | null>(null);
   const [busy, setBusy] = useState('');
-  const [result, setResult] = useState('');
   const [routeTestText, setRouteTestText] = useState('');
   const [routeTestResult, setRouteTestResult] = useState<Record<string, unknown> | null>(null);
-  const [modelScan, setModelScan] = useState<UtilityLlmModelScan | null>(null);
+  const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const selectedProfile = embeddingProfiles.find((profile) => profile.id === values.intent_routing_embedding_model_profile_id);
+  const missingSelectedProfile = Boolean(values.intent_routing_embedding_model_profile_id && !selectedProfile);
+  const disabledSelectedProfile = Boolean(selectedProfile && !selectedProfile.enabled);
 
   async function refreshStatus() {
     try {
@@ -661,56 +677,13 @@ function GeneralIntentRoutingSettings({
 
   useEffect(() => {
     void refreshStatus();
-  }, [
-    values.intent_routing_utility_llm_backend,
-    values.intent_routing_utility_llm_model_path,
-    values.intent_routing_device,
-    values.intent_routing_utility_llm_context_size,
-    values.intent_routing_utility_llm_gpu_layers,
-    values.intent_routing_utility_llm_threads,
-  ]);
+  }, [values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path]);
 
-  async function scanModels() {
-    setBusy('scan-utility');
-    try {
-      setError(null);
-      const response = await api.scanUtilityLlmModels();
-      setModelScan(response);
-      if (!response.transformers_models.length && !response.gguf_models.length) {
-        setResult(t('settings:general.noUtilityLlmModelsFound'));
-      } else if (response.warnings.includes('root_gguf_ignored')) {
-        setResult(t('settings:general.rootGgufIgnored'));
-      } else {
-        setResult(t('settings:general.utilityLlmScanComplete'));
-      }
-    } catch (err) {
-      setError(toSettingsError(err, t('settings:general.utilityLlmScanFailed')));
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function runUtilityAction(action: 'title' | 'json' | 'unload') {
-    setBusy(action);
-    try {
-      setError(null);
-      if (action === 'title') {
-        const response = await api.testUtilityLlmTitle(t('settings:general.utilityLlmSampleTitleInput'));
-        setResult(t('settings:general.utilityLlmTitleResult', { title: response.title }));
-      } else if (action === 'json') {
-        const response = await api.testUtilityLlmJson(t('settings:general.utilityLlmSampleJsonInput'));
-        setResult(t('settings:general.utilityLlmJsonResult', { intent: response.result.intent, confidence: response.result.confidence }));
-      } else {
-        await api.unloadUtilityLlm();
-        setResult(t('settings:general.utilityLlmUnloaded'));
-      }
-      await refreshStatus();
-    } catch (err) {
-      setError(toSettingsError(err, t('settings:general.utilityLlmActionFailed')));
-    } finally {
-      setBusy('');
-    }
-  }
+  useEffect(() => {
+    void api.listEmbeddingModels()
+      .then(setEmbeddingProfiles)
+      .catch((err) => setError(toSettingsError(err, t('settings:general.embeddingProfilesFailed'))));
+  }, [t]);
 
   async function runRouteTest() {
     if (!routeTestText.trim()) return;
@@ -813,9 +786,156 @@ function GeneralIntentRoutingSettings({
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
+          <h3>{t('settings:general.semanticRouter')}</h3>
+        </div>
+        <p className="settings-muted-text">{t('settings:general.semanticRouterReserved')}</p>
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.embeddingModelProfile')}</span>
+          <select
+            value={values.intent_routing_embedding_model_profile_id || ''}
+            onChange={(event) =>
+              setValues({
+                ...values,
+                intent_routing_embedding_model_profile_id: event.currentTarget.value || null,
+              })
+            }
+          >
+            <option value="">{t('settings:general.noEmbeddingProfileSelected')}</option>
+            {embeddingProfiles.filter((profile) => profile.enabled || profile.id === values.intent_routing_embedding_model_profile_id).map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {embeddingProfileOptionLabel(profile, t)}
+              </option>
+            ))}
+          </select>
+          <small>{t('settings:general.embeddingProfileHelp')}</small>
+        </label>
+        {values.intent_routing_embedding_model_path && !values.intent_routing_embedding_model_profile_id ? (
+          <p className="settings-warning-text">{t('settings:general.legacyEmbeddingPathConfigured')}</p>
+        ) : null}
+        {missingSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileUnavailable')}</p> : null}
+        {disabledSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileDisabled')}</p> : null}
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
           <h3>{t('settings:general.utilityLlm')}</h3>
         </div>
-        <TextField label={t('settings:general.embeddingModelPath')} value={values.intent_routing_embedding_model_path} onChange={(value) => setString('intent_routing_embedding_model_path', value)} />
+        {error ? <SettingsApiError error={error} /> : null}
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <div>
+              <strong>{t('settings:general.utilityLlmStatus')}</strong>
+              <p>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</p>
+            </div>
+            <button type="button" className="settings-secondary-button" onClick={() => void refreshStatus()}>
+              <RefreshCw size={14} />
+              {t('common:refresh')}
+            </button>
+          </div>
+          <div className="settings-detail-grid">
+            <Metric label={t('settings:general.utilityLlmBackend')} value={status?.backend || values.intent_routing_utility_llm_backend} />
+            <Metric label={t('settings:general.utilityLlmModelPath')} value={status?.model_path || values.intent_routing_utility_llm_model_path || t('settings:general.none')} />
+            <Metric label={t('settings:general.statusConfigured')} value={status?.configured ? t('settings:general.yes') : t('settings:general.no')} />
+            <Metric label={t('settings:general.statusLoaded')} value={status?.loaded ? t('settings:general.yes') : t('settings:general.no')} />
+          </div>
+          <div className="settings-detail-actions">
+            <button type="button" className="settings-secondary-button" onClick={onOpenUtilityLlm}>
+              {t('settings:general.openUtilityLlmSettings')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function GeneralUtilityLlmSettings({
+  values,
+  setValues,
+  setNumber,
+  setString,
+}: {
+  values: GeneralSettings;
+  setValues: (values: GeneralSettings) => void;
+  setNumber: (key: keyof GeneralSettings, value: string) => void;
+  setString: (key: keyof GeneralSettings, value: string) => void;
+}) {
+  const { t } = useTranslation(['settings', 'common']);
+  const [status, setStatus] = useState<UtilityLlmStatus | null>(null);
+  const [busy, setBusy] = useState('');
+  const [result, setResult] = useState('');
+  const [modelScan, setModelScan] = useState<UtilityLlmModelScan | null>(null);
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+
+  async function refreshStatus() {
+    try {
+      setError(null);
+      setStatus(await api.getUtilityLlmStatus());
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.utilityLlmStatusFailed')));
+    }
+  }
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [
+    values.intent_routing_utility_llm_backend,
+    values.intent_routing_utility_llm_model_path,
+    values.intent_routing_device,
+    values.intent_routing_utility_llm_context_size,
+    values.intent_routing_utility_llm_gpu_layers,
+    values.intent_routing_utility_llm_threads,
+  ]);
+
+  async function scanModels() {
+    setBusy('scan-utility');
+    try {
+      setError(null);
+      const response = await api.scanUtilityLlmModels();
+      setModelScan(response);
+      if (!response.transformers_models.length && !response.gguf_models.length) {
+        setResult(t('settings:general.noUtilityLlmModelsFound'));
+      } else if (response.warnings.includes('root_gguf_ignored')) {
+        setResult(t('settings:general.rootGgufIgnored'));
+      } else {
+        setResult(t('settings:general.utilityLlmScanComplete'));
+      }
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.utilityLlmScanFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function runUtilityAction(action: 'title' | 'json' | 'unload') {
+    setBusy(action);
+    try {
+      setError(null);
+      if (action === 'title') {
+        const response = await api.testUtilityLlmTitle(t('settings:general.utilityLlmSampleTitleInput'));
+        setResult(t('settings:general.utilityLlmTitleResult', { title: response.title }));
+      } else if (action === 'json') {
+        const response = await api.testUtilityLlmJson(t('settings:general.utilityLlmSampleJsonInput'));
+        setResult(t('settings:general.utilityLlmJsonResult', { intent: response.result.intent, confidence: response.result.confidence }));
+      } else {
+        await api.unloadUtilityLlm();
+        setResult(t('settings:general.utilityLlmUnloaded'));
+      }
+      await refreshStatus();
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.utilityLlmActionFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.utilityLlm')}</h3>
+        </div>
+        <p className="settings-muted-text">{t('settings:general.utilityLlmHelp')}</p>
+        <p className="settings-muted-text">{t('settings:general.utilityLlmNotProfileHelp')}</p>
         <label className="config-field settings-config-field">
           <span>{t('settings:general.utilityLlmBackend')}</span>
           <select
@@ -849,44 +969,52 @@ function GeneralIntentRoutingSettings({
             {busy === 'scan-utility' ? t('common:loading') : t('settings:general.scanUtilityLlmModels')}
           </button>
         </div>
-        {values.intent_routing_utility_llm_backend === 'llama_cpp' ? (
-          <div className="settings-detail-grid">
-            <NumberField label={t('settings:general.contextSize')} value={values.intent_routing_utility_llm_context_size} min={512} max={32768} step={1} onChange={(value) => setNumber('intent_routing_utility_llm_context_size', value)} />
-            <NumberField label={t('settings:general.gpuLayers')} value={values.intent_routing_utility_llm_gpu_layers} min={-1} max={200} step={1} onChange={(value) => setNumber('intent_routing_utility_llm_gpu_layers', value)} />
-            <label className="config-field settings-config-field">
-              <span>{t('settings:general.threads')}</span>
-              <input
-                type="number"
-                min={1}
-                max={128}
-                value={values.intent_routing_utility_llm_threads ?? ''}
-                placeholder={t('settings:general.backendDefault')}
-                onChange={(event) =>
-                  setValues({
-                    ...values,
-                    intent_routing_utility_llm_threads: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                  })
-                }
-              />
-            </label>
-          </div>
-        ) : null}
-        <label className="config-field settings-config-field">
-          <span>{t('settings:general.device')}</span>
-          <select value={values.intent_routing_device} onChange={(event) => setString('intent_routing_device', event.currentTarget.value)}>
-            <option value="auto">{t('settings:general.deviceAuto')}</option>
-            <option value="cpu">{t('settings:general.deviceCpu')}</option>
-            <option value="cuda">{t('settings:general.deviceCuda')}</option>
-          </select>
-          <small>{t('settings:general.utilityLlmDeviceHelp')}</small>
-        </label>
         {modelScan?.warnings.includes('root_gguf_ignored') ? <p className="settings-warning-text">{t('settings:general.rootGgufIgnored')}</p> : null}
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.runtimeOptions')}</h3>
+        </div>
+        <div className="settings-detail-grid">
+          <NumberField label={t('settings:general.contextSize')} value={values.intent_routing_utility_llm_context_size} min={512} max={32768} step={1} onChange={(value) => setNumber('intent_routing_utility_llm_context_size', value)} />
+          <NumberField label={t('settings:general.gpuLayers')} value={values.intent_routing_utility_llm_gpu_layers} min={-1} max={200} step={1} onChange={(value) => setNumber('intent_routing_utility_llm_gpu_layers', value)} />
+          <label className="config-field settings-config-field">
+            <span>{t('settings:general.threads')}</span>
+            <input
+              type="number"
+              min={1}
+              max={128}
+              value={values.intent_routing_utility_llm_threads ?? ''}
+              placeholder={t('settings:general.backendDefault')}
+              onChange={(event) =>
+                setValues({
+                  ...values,
+                  intent_routing_utility_llm_threads: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+                })
+              }
+            />
+          </label>
+          <label className="config-field settings-config-field">
+            <span>{t('settings:general.device')}</span>
+            <select value={values.intent_routing_device} onChange={(event) => setString('intent_routing_device', event.currentTarget.value)}>
+              <option value="auto">{t('settings:general.deviceAuto')}</option>
+              <option value="cpu">{t('settings:general.deviceCpu')}</option>
+              <option value="cuda">{t('settings:general.deviceCuda')}</option>
+            </select>
+            <small>{t('settings:general.utilityLlmDeviceHelp')}</small>
+          </label>
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.utilityLlmStatus')}</h3>
+        </div>
         {error ? <SettingsApiError error={error} /> : null}
         <div className="settings-card">
           <div className="settings-card-header">
             <div>
-              <strong>{t('settings:general.utilityLlmStatus')}</strong>
-              <p>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</p>
+              <strong>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</strong>
+              <p>{values.intent_routing_utility_llm_model_path || t('settings:general.utilityLlmNotConfigured')}</p>
             </div>
             <button type="button" className="settings-secondary-button" onClick={() => void refreshStatus()}>
               <RefreshCw size={14} />
@@ -895,12 +1023,16 @@ function GeneralIntentRoutingSettings({
           </div>
           {status ? (
             <div className="settings-detail-grid">
+              <Metric label={t('settings:general.statusConfigured')} value={status.configured ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.statusAvailable')} value={status.available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.statusLoaded')} value={status.loaded ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.utilityLlmBackend')} value={status.backend} />
               <Metric label={t('settings:general.transformersAvailable')} value={status.backend_status.transformers_available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.torchAvailable')} value={status.backend_status.torch_available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.llamaCppAvailable')} value={status.backend_status.llama_cpp_available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.cudaAvailable')} value={status.backend_status.cuda_available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.resolvedDevice')} value={status.resolved_device || t('settings:general.notAvailable')} />
+              <Metric label={t('settings:general.modelPathStatus')} value={status.reason || t('settings:general.ok')} />
             </div>
           ) : null}
           <div className="settings-detail-actions">
@@ -946,6 +1078,11 @@ function utilityModelOptions(scan: UtilityLlmModelScan | null, backend: GeneralS
   return options;
 }
 
+function embeddingProfileOptionLabel(profile: EmbeddingModelProfile, t: ReturnType<typeof useTranslation>['t']): string {
+  const status = profile.enabled ? '' : ` (${t('common:disabled')})`;
+  return `${profile.name} / ${profile.alias} / ${profile.model_path}${status}`;
+}
+
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
   return {
     max_image_size_mb: values.max_image_size_mb,
@@ -970,6 +1107,7 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_low_confidence_threshold: values.intent_routing_low_confidence_threshold,
     intent_routing_auto_route_safe_intents: values.intent_routing_auto_route_safe_intents,
     intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
+    intent_routing_embedding_model_profile_id: values.intent_routing_embedding_model_profile_id,
     intent_routing_embedding_model_path: values.intent_routing_embedding_model_path,
     intent_routing_utility_llm_backend: values.intent_routing_utility_llm_backend,
     intent_routing_utility_llm_model_path: values.intent_routing_utility_llm_model_path,
@@ -994,6 +1132,7 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
       <Metric label={t('settings:general.confidence')} value={typeof decision.confidence === 'number' ? decision.confidence.toFixed(2) : t('settings:general.none')} />
       <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
       <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
+      <Metric label={t('settings:general.embeddingModelProfile')} value={String(decision.embedding_model_profile_id || t('settings:general.none'))} />
       <Metric label={t('settings:general.kbMatch')} value={String(decision.kb_match_source || t('settings:general.none'))} />
       <Metric label={t('settings:general.agentMatch')} value={String(decision.agent_match_source || t('settings:general.none'))} />
       <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} />

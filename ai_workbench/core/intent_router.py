@@ -393,6 +393,7 @@ def _decision_metadata(
         "session_default_agent_id": getattr(session, "default_agent_id", None),
         "session_default_changed": False,
         "session_bindings_changed": False,
+        "embedding_model_profile_id": getattr(settings, "intent_routing_embedding_model_profile_id", None),
         "kb_match_source": prediction.get("kb_match_source") or "none",
         "agent_match_source": prediction.get("agent_match_source") or "none",
     }

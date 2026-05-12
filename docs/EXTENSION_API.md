@@ -350,15 +350,17 @@ The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `ref
 
 General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
-Utility LLM is a core internal service for short local tasks. It is not a Capability, Command, Provider Profile, Model Profile, AgentConfig field, or manifest field. Its backend, model path, device, and llama.cpp options live in General Intent Routing settings. Model paths are relative to `data/models`, use POSIX-style separators, and reject absolute paths, `..`, empty segments, and backslashes. The backend never downloads models or installs optional dependencies.
+Utility LLM is a core internal service for short local tasks. It is not a Capability, Command, Provider Profile, Model Profile, AgentConfig field, or manifest field. Its backend, model path, device, and llama.cpp options live in General settings and are displayed under Settings -> General -> Utility LLM. Model paths are relative to `data/models`, use POSIX-style separators, and reject absolute paths, `..`, empty segments, and backslashes. The backend never downloads models or installs optional dependencies.
 
-Utility LLM General settings:
+Related General settings:
 - `intent_routing_utility_llm_backend`: `"transformers"` or `"llama_cpp"`, default `"transformers"`.
 - `intent_routing_utility_llm_model_path`: empty or a backend-specific path.
 - `intent_routing_device`: `"auto"`, `"cpu"`, or `"cuda"` for the transformers backend.
 - `intent_routing_utility_llm_context_size`: llama.cpp context size, default `4096`, range `512..32768`.
 - `intent_routing_utility_llm_gpu_layers`: llama.cpp GPU layer count, default `0`, range `-1..200`.
 - `intent_routing_utility_llm_threads`: optional llama.cpp thread count, default `null`, range `1..128`.
+- `intent_routing_embedding_model_profile_id`: optional Knowledge Embedding Model Profile id reserved for future Intent Routing semantic embedding routing. Defaults to `null`.
+- `intent_routing_embedding_model_path`: legacy compatibility path. It remains accepted and returned, but the UI prefers `intent_routing_embedding_model_profile_id`.
 
 Utility LLM path contract:
 - `transformers`: `utility_llms/<folder>`, for example `utility_llms/Qwen3-0.6B`.
@@ -372,6 +374,12 @@ Utility LLM APIs:
 - `POST /api/intent/utility-llm/test-json` accepts `{"text":"..."}` and returns strict extracted intent JSON plus compact slots. It may load the configured local model.
 - `POST /api/intent/utility-llm/unload` releases only the Utility LLM cache. It does not unload the main LLM, embeddings, reranker, or ComfyUI.
 - `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation.
+
+Intent Routing embedding profile selection:
+- The profile id references `GET /api/knowledge/embedding-models` records owned by Knowledge settings.
+- Saving settings does not require loading or testing the embedding model.
+- The selected profile is currently metadata/configuration only. This version does not run EmbeddingGemma semantic routing or call `/api/knowledge/embeddings` from Intent Routing.
+- If a selected profile is missing or disabled, Settings should show an unavailable state without crashing. Runtime classification continues to use existing rule-based and Utility LLM paths.
 
 ## Knowledge Settings, Local Model APIs, Indexing, And Search
 

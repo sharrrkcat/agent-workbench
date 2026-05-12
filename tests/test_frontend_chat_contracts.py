@@ -579,7 +579,7 @@ def test_general_settings_uses_middle_category_list() -> None:
     assert "onSelectGeneralCategory={setGeneralCategory}" in console
 
     assert "generalCategory = 'files'" in panel
-    assert "<GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} />" in panel
+    assert "<GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />" in panel
     assert "function GeneralFilesSettings" in panel
     assert "function GeneralPromptSettings" in panel
     assert "category === 'files' ? (" in panel

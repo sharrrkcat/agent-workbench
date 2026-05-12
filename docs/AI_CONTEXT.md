@@ -321,7 +321,9 @@ Rules:
 - General custom route examples, Agent target aliases/examples, and Knowledge Base aliases are classifier/extractor hints only. They must not expand the safe auto-route boundary.
 - Route test/debug APIs must not create messages or runs, execute ComfyUI, execute commands, run Knowledge retrieval, or mutate sessions.
 - Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
-- Utility LLM backend/model path/device/options belong to General Intent Routing settings. Transformers paths use `utility_llms/<folder>`; GGUF llama.cpp paths use `utility_llms/<model-folder>/<file>.gguf`. Root-level GGUF files are invalid and should not be scanned.
+- Utility LLM backend/model path/device/options belong to General settings and are displayed under General -> Utility LLM. Transformers paths use `utility_llms/<folder>`; GGUF llama.cpp paths use `utility_llms/<model-folder>/<file>.gguf`. Root-level GGUF files are invalid and should not be scanned.
+- Do not lightly change title generation backend behavior when changing Utility LLM settings IA; moving settings categories must preserve current Utility LLM priority and fallback behavior.
+- Intent Routing raw embedding model path is legacy compatibility. Prefer selecting an existing Knowledge Embedding Model Profile through `intent_routing_embedding_model_profile_id`; do not expand raw path UI or connect real semantic routing unless explicitly requested.
 - Do not automatically download Utility LLM models, install optional dependencies such as `llama-cpp-python`, modify main LLM Provider/Profile settings, execute command-like intents, or run slash commands from intent predictions.
 - User-visible frontend text must be added to every supported locale.
 - Settings schema, runtime protocol, routing behavior, metadata shape, and user workflow changes must update docs in the same change.

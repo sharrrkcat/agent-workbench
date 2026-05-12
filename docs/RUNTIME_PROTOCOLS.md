@@ -137,7 +137,11 @@ Knowledge Bases may store comma-separated aliases. Intent Routing uses enabled K
 
 AgentConfig runtime may store routing target hints under `intent_routing_aliases_text` and `intent_routing_examples_text`. These hints help classify `agent_route` and produce compact target metadata. They do not make Script Agents router entries and do not allow generic Agent auto execution. Prompt Agent `runtime.intent_routing_mode` remains the only per-Agent router-entry override.
 
+General settings may store `intent_routing_embedding_model_profile_id`, which references an existing Knowledge Embedding Model Profile for future semantic embedding routing. The legacy `intent_routing_embedding_model_path` remains accepted and returned for compatibility, but the Settings UI prefers the profile selector. This version does not call the selected embedding model, does not run EmbeddingGemma semantic routing, and does not change rule-based or Utility LLM extraction behavior.
+
 When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction after deterministic rule classification. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, while `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, full route examples, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and does not itself call tools; auto mode still applies the safe-route allowlist and confidence thresholds.
+
+Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
 `POST /api/intent/test-route` predicts a route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent hints.
 
@@ -157,6 +161,7 @@ Prediction metadata shape:
   "target_action_id": "default",
   "session_default_agent_id": "chat",
   "session_default_changed": false,
+  "embedding_model_profile_id": "embedding_profile_id",
   "temporary_knowledge_base_ids": ["kb_id"],
   "session_bindings_changed": false,
   "custom_examples_used": true,
@@ -185,7 +190,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, or extracted private content. Alias/example fields such as `matched_alias` and `matched_route_example` are truncated, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, or extracted private content. Alias/example fields such as `matched_alias` and `matched_route_example` are truncated, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented; the selected embedding profile id is configuration metadata only.
 
 WebSocket events:
 - `run_updated`
@@ -261,7 +266,7 @@ Semantics:
 - `supports_reasoning` is an output declaration and does not force provider behavior.
 - Unload is trusted script-only for manual script calls, and best-effort for lifecycle policies.
 - Successful, skipped, unsupported, and failed unload attempts remain cleanup outcomes in run metadata; unsupported unload and status refresh failure do not overwrite an otherwise successful run unless the lifecycle policy explicitly fails on unload failure.
-- Utility LLM does not participate in LLM resolution. It is configured by General Intent Routing settings, can use either the `transformers` or `llama_cpp` backend, is not a Provider Profile or Model Profile, and does not change the user's selected main model.
+- Utility LLM does not participate in LLM resolution. It is configured by General settings and displayed under Settings -> General -> Utility LLM, can use either the `transformers` or `llama_cpp` backend, is not a Provider Profile or Model Profile, and does not change the user's selected main model.
 
 Current implementation note: `resolve_llm_config` applies defaults first and then overrides later sources, so later sources win. Keep user-facing behavior aligned with the order above when changing it.
 
@@ -306,7 +311,7 @@ Input and output rules:
 - Assistant output, Agent output, command result output, group transcript context, and historical messages are not title inputs.
 - Long user input is truncated from the middle using head/tail preservation according to `session_title_max_input_chars`.
 - The title call is non-streaming, creates no visible user or assistant messages, and emits no `message_delta`.
-- If General `intent_routing_utility_llm_model_path` is configured and the selected Utility LLM backend is available, title generation uses that local Utility LLM first. `transformers` expects `utility_llms/<folder>` and `llama_cpp` expects `utility_llms/<model-folder>/<file>.gguf`.
+- If General `intent_routing_utility_llm_model_path` is configured under Settings -> General -> Utility LLM and the selected Utility LLM backend is available, title generation uses that local Utility LLM first. `transformers` expects `utility_llms/<folder>` and `llama_cpp` expects `utility_llms/<model-folder>/<file>.gguf`.
 - If the Utility LLM is not configured, dependencies are missing, the model folder/file is missing, backend and path do not match, or generation/parsing fails, title generation falls back to the same resolved LLM config as the triggering LLM run.
 - Utility LLM title generation is a core internal call. It is not a Provider Profile or Model Profile call, does not change session model selection, does not trigger Intent Routing, and does not apply model lifecycle unload policy.
 
