@@ -101,6 +101,10 @@ def intent_definition(intent_id: str) -> IntentDefinition | None:
     return next((intent for intent in INTENT_DEFINITIONS if intent.id == intent_id), None)
 
 
+SAFE_AUTO_ROUTE_INTENTS = {"chat", "image_generation", "knowledge_query"}
+COMMAND_LIKE_WARNING = "command_like_auto_route_disabled"
+
+
 async def build_intent_routing_metadata(
     *,
     session: Any,
@@ -108,6 +112,7 @@ async def build_intent_routing_metadata(
     agent_registry: Any,
     agent_config_store: Any = None,
     app_settings_store: Any = None,
+    knowledge_store: Any = None,
     classifier: RuleBasedIntentClassifier | None = None,
     utility_llm_service: Any = None,
 ) -> dict[str, Any] | None:
@@ -132,7 +137,7 @@ async def build_intent_routing_metadata(
         return {**base, "bypass_reason": "default_agent_not_prompt"}
     if not bool(effective["enabled"]):
         return {**base, "bypass_reason": str(effective.get("reason") or "disabled")}
-    if mode != "shadow":
+    if mode not in {"shadow", "auto"}:
         return {**base, "bypass_reason": "unsupported_mode"}
     prediction = (classifier or RuleBasedIntentClassifier()).classify(route.args)
     prediction = await _maybe_apply_utility_extractor(
@@ -141,13 +146,186 @@ async def build_intent_routing_metadata(
         settings=settings,
         utility_llm_service=utility_llm_service,
     )
+    metadata = _decision_metadata(
+        session=session,
+        route=route,
+        prediction=prediction,
+        mode=mode,
+        settings=settings,
+        agent=agent,
+        agent_registry=agent_registry,
+        agent_config_store=agent_config_store,
+        knowledge_store=knowledge_store,
+    )
     return {
         "enabled": True,
-        "mode": "shadow",
+        "mode": mode,
         "eligible": True,
         "bypassed": False,
-        **prediction,
+        **metadata,
     }
+
+
+def _decision_metadata(
+    *,
+    session: Any,
+    route: RouteTarget,
+    prediction: dict[str, Any],
+    mode: str,
+    settings: Any,
+    agent: Any,
+    agent_registry: Any,
+    agent_config_store: Any,
+    knowledge_store: Any,
+) -> dict[str, Any]:
+    high_threshold = float(getattr(settings, "intent_routing_high_confidence_threshold", 0.78) or 0.78)
+    low_threshold = float(getattr(settings, "intent_routing_low_confidence_threshold", 0.55) or 0.55)
+    intent_id = str(prediction.get("predicted_intent") or "chat")
+    confidence = float(prediction.get("confidence") or 0.0)
+    slots = _compact_slots(prediction.get("slots") if isinstance(prediction.get("slots"), dict) else {})
+    warnings = list(prediction.get("warnings") or [])
+    metadata = {
+        **prediction,
+        "predicted_intent": intent_id,
+        "confidence": round(confidence, 2),
+        "slots": slots,
+        "warnings": warnings,
+        "route_action": "none",
+        "target_agent_id": prediction.get("target_agent_id") or route.target_id,
+        "target_action_id": route.action_id or "default",
+        "session_default_agent_id": getattr(session, "default_agent_id", None),
+        "session_default_changed": False,
+        "session_bindings_changed": False,
+    }
+    if mode != "auto":
+        return metadata
+    if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
+        metadata["route_action"] = "none"
+        metadata["warnings"] = [*warnings, "safe_auto_route_disabled"]
+        return metadata
+    if intent_id in {"command_like", "agent_route"}:
+        metadata["route_action"] = "confirmation_needed_future"
+        warning = COMMAND_LIKE_WARNING if intent_id == "command_like" else "agent_route_auto_route_disabled"
+        metadata["warnings"] = [*warnings, warning]
+        return metadata
+    if confidence < high_threshold:
+        reason = "confidence_below_high_threshold" if confidence >= low_threshold else "confidence_below_low_threshold"
+        metadata["route_action"] = "fallback_current_agent"
+        metadata["warnings"] = [*warnings, reason]
+        return metadata
+    if intent_id not in SAFE_AUTO_ROUTE_INTENTS:
+        metadata["route_action"] = "confirmation_needed_future" if intent_id in {"command_like", "agent_route"} else "fallback_current_agent"
+        warning = COMMAND_LIKE_WARNING if intent_id == "command_like" else "auto_route_not_supported"
+        metadata["warnings"] = [*warnings, warning]
+        return metadata
+    if intent_id == "chat":
+        metadata["route_action"] = "none"
+        metadata["target_agent_id"] = agent.id
+        metadata["target_action_id"] = "default"
+        return metadata
+    if intent_id == "image_generation":
+        return _image_generation_decision(metadata, agent_registry, agent_config_store)
+    if intent_id == "knowledge_query":
+        return _knowledge_query_decision(metadata, session, agent, knowledge_store)
+    return metadata
+
+
+def _image_generation_decision(metadata: dict[str, Any], agent_registry: Any, agent_config_store: Any) -> dict[str, Any]:
+    warnings = list(metadata.get("warnings") or [])
+    target_agent_id = "comfyui_agent"
+    try:
+        target_agent = agent_registry.get(target_agent_id)
+    except KeyError:
+        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": metadata.get("session_default_agent_id"), "warnings": [*warnings, "comfyui_agent_not_found"]}
+    if getattr(target_agent, "type", "") != "script":
+        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": metadata.get("session_default_agent_id"), "warnings": [*warnings, "comfyui_agent_not_script"]}
+    if agent_config_store is not None and not agent_config_store.is_enabled(target_agent_id):
+        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": metadata.get("session_default_agent_id"), "warnings": [*warnings, "comfyui_agent_disabled"]}
+    return {**metadata, "route_action": "route_agent", "target_agent_id": target_agent_id, "target_action_id": "default", "warnings": warnings}
+
+
+def _knowledge_query_decision(metadata: dict[str, Any], session: Any, agent: Any, knowledge_store: Any) -> dict[str, Any]:
+    warnings = list(metadata.get("warnings") or [])
+    slots = metadata.get("slots") if isinstance(metadata.get("slots"), dict) else {}
+    query_override = str(slots.get("query") or "").strip()
+    if knowledge_store is None:
+        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": [*warnings, "knowledge_store_unavailable"]}
+    kb_hint = str(slots.get("kb_hint") or "").strip()
+    selected_ids: list[str] = []
+    if kb_hint:
+        match_result = _match_knowledge_bases(knowledge_store, kb_hint)
+        selected_ids = match_result["ids"]
+        warnings.extend(match_result["warnings"])
+        if not selected_ids:
+            active_ids = _active_session_kb_ids(knowledge_store, getattr(session, "session_id", ""))
+            selected_ids = active_ids
+            if not active_ids:
+                return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": warnings}
+    else:
+        selected_ids = _active_session_kb_ids(knowledge_store, getattr(session, "session_id", ""))
+        if not selected_ids:
+            return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": [*warnings, "no_kb_hint_no_active_kbs"]}
+    return {
+        **metadata,
+        "route_action": "knowledge_override",
+        "target_agent_id": agent.id,
+        "target_action_id": "default",
+        "temporary_knowledge_base_ids": selected_ids,
+        "knowledge_query_override": query_override or None,
+        "warnings": warnings,
+    }
+
+
+def _match_knowledge_bases(knowledge_store: Any, kb_hint: str) -> dict[str, Any]:
+    hint = kb_hint.strip()
+    normalized = hint.lower()
+    enabled_bases = [kb for kb in knowledge_store.list_knowledge_bases() if getattr(kb, "enabled", False)]
+    exact = [kb for kb in enabled_bases if getattr(kb, "name", "") == hint]
+    if exact:
+        return {"ids": [exact[0].id], "warnings": []}
+    ci_exact = [kb for kb in enabled_bases if getattr(kb, "name", "").lower() == normalized]
+    if ci_exact:
+        return {"ids": [ci_exact[0].id], "warnings": []}
+    substring = [kb for kb in enabled_bases if normalized in getattr(kb, "name", "").lower() or normalized in getattr(kb, "description", "").lower()]
+    if len(substring) == 1:
+        return {"ids": [substring[0].id], "warnings": []}
+    if len(substring) > 1:
+        return {"ids": [], "warnings": ["ambiguous_knowledge_base"]}
+    return {"ids": [], "warnings": ["no_matching_knowledge_base"]}
+
+
+def _active_session_kb_ids(knowledge_store: Any, session_id: str) -> list[str]:
+    ids: list[str] = []
+    if not session_id:
+        return ids
+    for binding in knowledge_store.list_session_bindings(session_id):
+        if not getattr(binding, "enabled", False):
+            continue
+        kb = getattr(binding, "knowledge_base", None)
+        if kb is None:
+            try:
+                kb = knowledge_store.get_knowledge_base(binding.knowledge_base_id)
+            except KeyError:
+                continue
+        if getattr(kb, "enabled", False):
+            ids.append(kb.id)
+    return ids
+
+
+def _compact_slots(slots: dict[str, Any]) -> dict[str, str]:
+    compact: dict[str, str] = {}
+    for key in ("target_agent_hint", "kb_hint", "query", "command_hint"):
+        value = slots.get(key)
+        if isinstance(value, str) and value.strip():
+            compact[key] = _short_text(value.strip())
+    return compact
+
+
+def _short_text(value: str, limit: int = 240) -> str:
+    if len(value) <= limit:
+        return value
+    keep = (limit - 3) // 2
+    return f"{value[:keep]}...{value[-keep:]}"
 
 
 async def _maybe_apply_utility_extractor(

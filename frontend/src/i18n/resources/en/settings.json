@@ -95,7 +95,7 @@
     "coreMemoryHelp": "Core memory is manually maintained and can be inserted before supported LLM calls. It is not auto-summarized.",
     "enableForPromptAgents": "Enable for Prompt Agents",
     "enableForScriptAgents": "Enable for Script Agents",
-    "intentRoutingHelp": "Intent Routing is optional. It only runs for ordinary messages handled by Prompt Agents that enable it. Explicit /commands, @agent calls, and :actions bypass intent routing. Shadow mode records predictions without changing routing.",
+    "intentRoutingHelp": "Intent Routing is optional. It only runs for ordinary messages handled by Prompt Agents that enable it. Explicit /commands, @agent calls, and :actions bypass intent routing. Shadow mode records predictions; Auto mode can route only safe intents.",
     "enableIntentRouting": "Enable intent routing",
     "defaultForPromptAgents": "Default for Prompt Agents",
     "defaultForPromptAgentsHelp": "Prompt Agents using the default override follow this setting. Script Agents are not router entries in this version.",
@@ -143,7 +143,15 @@
     "utilityLlmSampleJsonInput": "What does my Star Wars knowledge base say about stormtrooper ranks?",
     "utilityLlmTitleResult": "Title: {{title}}",
     "utilityLlmJsonResult": "Extracted intent: {{intent}} ({{confidence}})",
-    "utilityLlmUnloaded": "Utility LLM unloaded."
+    "utilityLlmUnloaded": "Utility LLM unloaded.",
+    "autoMode": "Auto",
+    "autoModeHelp": "Auto mode can route safe intents for the current message only. It does not execute commands automatically or change the session default Agent.",
+    "autoModeSafeRoutingOff": "Auto mode is configured, but safe auto-route is off.",
+    "autoRoutesSafeIntentsOnly": "Auto mode only routes safe intents.",
+    "commandsNeverAutoExecute": "Commands are never executed automatically in this version.",
+    "autoDoesNotChangeDefaultAgent": "Auto routing does not change the session default Agent.",
+    "temporaryKnowledgeSelection": "Knowledge Base selection is temporary for the current message.",
+    "autoRouteSafeIntentsHelp": "When Auto mode is active, high-confidence image generation can route to ComfyUI and knowledge queries can use a temporary Knowledge Base/query override."
   },
   "data": {
     "title": "Data",

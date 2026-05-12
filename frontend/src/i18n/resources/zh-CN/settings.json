@@ -95,7 +95,7 @@
     "enableForScriptAgents": "为 Script Agents 启用",
     "intentRouting": "意图路由",
     "intentRoutingDescription": "可选的自然语言路由预测。",
-    "intentRoutingHelp": "意图路由是可选功能。它只会在启用该功能的 Prompt Agent 处理普通消息时运行。显式 /command、@agent 调用和 :action 会绕过意图路由。Shadow 模式只记录预测，不改变路由。",
+    "intentRoutingHelp": "意图路由是可选功能。它只会在启用该功能的 Prompt Agent 处理普通消息时运行。显式 /command、@agent 调用和 :action 会绕过意图路由。Shadow 模式只记录预测；Auto 模式只会路由安全意图。",
     "enableIntentRouting": "启用意图路由",
     "defaultForPromptAgents": "Prompt Agent 默认启用",
     "defaultForPromptAgentsHelp": "使用默认覆盖设置的 Prompt Agent 会跟随此开关。此版本 Script Agent 不能作为路由入口。",
@@ -143,7 +143,15 @@
     "utilityLlmSampleJsonInput": "我的星球大战知识库里关于风暴兵等级是怎么说的？",
     "utilityLlmTitleResult": "标题：{{title}}",
     "utilityLlmJsonResult": "提取意图：{{intent}}（{{confidence}}）",
-    "utilityLlmUnloaded": "Utility LLM 已卸载。"
+    "utilityLlmUnloaded": "Utility LLM 已卸载。",
+    "autoMode": "自动",
+    "autoModeHelp": "自动模式只会为当前消息路由安全意图。它不会自动执行命令，也不会改变会话默认 Agent。",
+    "autoModeSafeRoutingOff": "已配置自动模式，但安全自动路由仍处于关闭状态。",
+    "autoRoutesSafeIntentsOnly": "自动模式只会路由安全意图。",
+    "commandsNeverAutoExecute": "此版本不会自动执行命令。",
+    "autoDoesNotChangeDefaultAgent": "自动路由不会改变会话默认 Agent。",
+    "temporaryKnowledgeSelection": "知识库选择只对当前消息临时生效。",
+    "autoRouteSafeIntentsHelp": "当自动模式生效时，高置信度图片生成可路由到 ComfyUI，知识查询可使用临时知识库/查询覆盖。"
   },
   "data": {
     "title": "数据",

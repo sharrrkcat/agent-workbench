@@ -115,7 +115,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Prompt override replaces the manifest prompt at runtime.
 - LLM runtime override can set `llm_profile_id` and `allow_session_override`.
 - Knowledge runtime override can set `knowledge_context_mode` to `use_default`, `enabled`, or `disabled`. Prompt Agents default to effective `enabled`; Script Agents that declare `llm` default to effective `disabled`; Script Agents without `llm` do not show the override. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`.
-- Prompt Agent Intent Routing override can set `intent_routing_mode` to `use_default`, `enabled`, or `disabled`. General settings still own the master switch and default. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`. Script Agents do not show this override and are not router entries in the first Intent Routing alpha.
+- Prompt Agent Intent Routing override can set `intent_routing_mode` to `use_default`, `enabled`, or `disabled`. General settings still own the master switch, Prompt Agent default, and global `shadow`/`auto` mode. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`. Script Agents do not show this override and are not generic router entries.
 - Reset overrides clears local AgentConfig values back to manifest behavior.
 - Write overrides to manifest only when intentionally changing the package default.
 
@@ -124,7 +124,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Prompt Agents let the core runtime build context and call the LLM.
 - Model output is treated as assistant content, not tool calls or structured commands.
 - Prompt Agents that call an LLM should declare `capabilities: [llm]`.
-- Prompt Agents may opt into Intent Routing shadow prediction through local AgentConfig runtime overrides. Shadow predictions are metadata only and do not alter Prompt Agent routing, context, prompt text, or provider payloads.
+- Prompt Agents may opt into Intent Routing through local AgentConfig runtime overrides. In `shadow` mode, predictions are metadata only and do not alter routing, context, prompt text, or provider payloads. In General `auto` mode, high-confidence safe intents may route image generation to `comfyui_agent` for the current run or provide a temporary Knowledge KB/query override for the current Prompt Agent run. Auto routing does not change the session default Agent or session Knowledge bindings.
 - Depending on General Core Memory settings, Worldbook Defaults, and active Session Worldbook bindings, the core may append Core Memory and Worldbook system-context blocks before Retrieved Knowledge and conversation context.
 - Visible streaming is controlled by the resolved Model Profile `supports_streaming`.
 - Prompt Agent run steps, streaming, and LLM resolution follow `docs/RUNTIME_PROTOCOLS.md`.

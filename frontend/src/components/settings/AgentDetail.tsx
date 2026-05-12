@@ -611,9 +611,10 @@ function normalizedRuntimeDraft(runtime: AgentRuntimeOverrides, config: AgentCon
 
 function intentRoutingEffectiveLabel(mode: AgentRuntimeOverrides['intent_routing_mode'] | undefined, settings: GeneralSettings | undefined, t: ReturnType<typeof useTranslation>['t']): string {
   if (!settings?.intent_routing_enabled) return t('agents:intentRouting.effectiveGeneralOff');
-  if (mode === 'enabled') return t('agents:intentRouting.effectiveAgentEnabled');
+  const routeMode = settings.intent_routing_mode === 'auto' ? t('agents:intentRouting.autoMode') : t('agents:intentRouting.shadowMode');
+  if (mode === 'enabled') return t('agents:intentRouting.effectiveAgentEnabled', { mode: routeMode });
   if (mode === 'disabled') return t('agents:intentRouting.effectiveAgentDisabled');
-  if (settings.intent_routing_default_for_prompt_agents) return t('agents:intentRouting.effectiveDefaultEnabled');
+  if (settings.intent_routing_default_for_prompt_agents) return t('agents:intentRouting.effectiveDefaultEnabled', { mode: routeMode });
   return t('agents:intentRouting.effectiveDefaultDisabled');
 }
 

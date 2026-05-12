@@ -89,7 +89,7 @@ Run steps:
 
 Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
-- Intent Routing shadow predictions may be recorded under `intent_routing`. They are diagnostic metadata only and must not be injected into provider-bound context, title generation, Knowledge retrieval, Core Memory, or Worldbook matching.
+- Intent Routing predictions and safe auto-route decisions may be recorded under `intent_routing`. The metadata is not injected into provider-bound context, title generation, Core Memory, or Worldbook matching. In auto mode only, a high-confidence `knowledge_query` decision may provide a per-run Knowledge KB/query override to the Knowledge context builder.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
 - Prompt Agent and Script Agent LLM runs may record compact `core_memory_context` and `worldbook_context` metadata. These records include enablement, injection status, counts, ids, entry refs, truncation, and warnings, but must not store full Core Memory text, full Worldbook entry content, or rendered context blocks.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
@@ -101,7 +101,7 @@ Run metadata:
 
 ## Intent Routing
 
-Intent Routing is an optional pre-routing diagnostic layer for ordinary natural-language messages. Explicit syntax keeps priority and bypasses intent routing:
+Intent Routing is an optional pre-routing layer for ordinary natural-language messages. Explicit syntax keeps priority and bypasses intent routing:
 
 - `/command`
 - `@agent`
@@ -115,13 +115,23 @@ Eligibility in the first alpha:
 - The current session default Agent must be a Prompt Agent.
 - The Prompt Agent effective Intent Routing override must be enabled.
 - The session `context_mode` must be `single_assistant`.
-- General `intent_routing_mode` must be `shadow`.
+- General `intent_routing_mode` must be `shadow` or `auto`.
 
 Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, silent submissions, waiting-run resumes, slash commands, explicit Agent calls, and explicit action shortcuts do not enter the classifier.
 
-Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message. Intent predictions are not appended to prompts, not passed to providers, not used by automatic title generation, and not used to alter Knowledge/Core Memory/Worldbook context injection.
+Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message.
 
-When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction in shadow mode after deterministic rule classification. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It does not enable Knowledge, does not call ComfyUI, does not execute command-like requests, and does not alter the selected Agent/action.
+Auto mode can change only safe current-message routing when all eligibility checks pass, `intent_routing_auto_route_safe_intents=true`, and the final confidence is at or above the high confidence threshold. Supported safe actions are:
+
+- `image_generation`: route this run to `comfyui_agent.default`. The session default Agent and selector do not change. If `comfyui_agent` is missing, disabled, or not a Script Agent, the run falls back to the current Prompt Agent and records a warning. ComfyUI connection/configuration failures remain ComfyUI Agent runtime behavior.
+- `knowledge_query`: keep the current Prompt Agent, but pass `temporary_knowledge_base_ids` and/or `knowledge_query_override` to the Knowledge context builder for this run only. Session Knowledge bindings and Context Sources UI state do not change.
+- `chat`: keep the current Prompt Agent path. Intent Routing does not force-enable or disable Knowledge; existing session KB injection rules still apply.
+
+`command_like` and generic `agent_route` are not executed automatically in this version. They fall back to the current Prompt Agent and record warnings such as `command_like_auto_route_disabled` or `agent_route_auto_route_disabled`. No slash command, memory release, deletion, settings change, shell command, or arbitrary Agent call is performed.
+
+Intent predictions are not appended to prompts, not passed to providers, not used by automatic title generation, and not used to alter Core Memory or Worldbook context injection.
+
+When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction after deterministic rule classification. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It does not execute command-like requests and does not itself call tools; auto mode still applies the safe-route allowlist and confidence thresholds.
 
 Prediction metadata shape:
 
@@ -134,7 +144,13 @@ Prediction metadata shape:
   "source": "rule_based_shadow+utility_llm",
   "predicted_intent": "knowledge_query",
   "confidence": 0.84,
+  "route_action": "knowledge_override",
   "target_agent_id": null,
+  "target_action_id": "default",
+  "session_default_agent_id": "chat",
+  "session_default_changed": false,
+  "temporary_knowledge_base_ids": ["kb_id"],
+  "session_bindings_changed": false,
   "slots": {
     "kb_hint": "Star Wars",
     "query": "stormtrooper ranks"
@@ -155,7 +171,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, raw model outputs, vector data, or extracted private content. Utility LLM extractor failures fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented in this round.
+Metadata must stay compact and must not store long prompts, full history, raw model outputs, vector data, or extracted private content. Utility LLM extractor failures fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented.
 
 WebSocket events:
 - `run_updated`
@@ -323,7 +339,7 @@ Retrieval quality filtering runs after RRF merge and optional reranking, before 
 
 Query expansion is disabled by default. When enabled, retrieval generates short variants from the original query using the current LLM runtime, searches the original query plus variants through both vector and keyword branches, and dedupes candidates during RRF merge. Expansion failures are warnings and fall back to the original query. Search debug metadata records whether expansion was enabled or used, the expanded query count, and failure state; normal run-step metadata must not expose full expanded query text.
 
-Prompt Agents default to Core Memory and Worldbook enabled. During the existing `Building context` step, after normal `context_policy` rendering and after the Agent prompt/prompt override/action instruction are resolved, the runtime appends system-context blocks in this order: Core Memory, Worldbook, Retrieved Knowledge, conversation context, current user message. Knowledge still searches active session KB bindings with the current user message text. Knowledge results are rendered as a `# Retrieved Knowledge` system-context block using Knowledge Defaults `knowledge_context_instruction` and `knowledge_context_snippet_template`, then appended to the system message. If the Agent has no system message, the runtime creates one. Provider message roles are not otherwise changed.
+Prompt Agents default to Core Memory and Worldbook enabled. During the existing `Building context` step, after normal `context_policy` rendering and after the Agent prompt/prompt override/action instruction are resolved, the runtime appends system-context blocks in this order: Core Memory, Worldbook, Retrieved Knowledge, conversation context, current user message. Knowledge normally searches active session KB bindings with the current user message text. Intent Routing auto mode may provide a per-run temporary KB list and query override for a high-confidence `knowledge_query`; that override affects only automatic Knowledge retrieval for the current run. It does not persist session bindings, change Context Sources state, change retrieval ranking, or rewrite the provider-bound current user message. Knowledge results are rendered as a `# Retrieved Knowledge` system-context block using Knowledge Defaults `knowledge_context_instruction` and `knowledge_context_snippet_template`, then appended to the system message. If the Agent has no system message, the runtime creates one. Provider message roles are not otherwise changed.
 
 Script Agents that declare the `llm` capability default to session Knowledge disabled, Core Memory disabled, and Worldbook disabled. If settings or Agent overrides enable them, every `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.stream`, `ctx.llm.stream_to_output`, and chat-backed `ctx.llm.generate` call appends enabled Core Memory, Worldbook, and Retrieved Knowledge blocks to that call's system context. Direct prompt-backed `ctx.llm.generate` prepends the rendered blocks to the generated prompt because it has no role-bearing message list. The query/match text is `ctx.input.text` first, then the current visible user message content when available. Silent form submissions with no user-facing query skip Knowledge retrieval and keyword Worldbook matches, while Worldbook `always` entries may still inject if Script Worldbook injection is enabled.
 
@@ -373,6 +389,8 @@ Run metadata records `metadata.knowledge_context` without full snippet content:
   "warnings": []
 }
 ```
+
+When Intent Routing provides a temporary Knowledge override, `metadata.knowledge_context.source` is `intent_routing_override`, `temporary_override` is true, `knowledge_base_ids` reflects the temporary KB selection, and `query` is the compact/truncated retrieval query override. Full query text beyond the metadata limit is not stored.
 
 Run metadata records `metadata.core_memory_context` and `metadata.worldbook_context` without full user-maintained content:
 

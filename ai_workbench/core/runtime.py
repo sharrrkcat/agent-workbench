@@ -6,7 +6,7 @@ from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.schema.invocation import ActionInvocationRequest
 from ai_workbench.core.schema.result import RunResult
-from ai_workbench.core.schema.route import RouteKind
+from ai_workbench.core.schema.route import RouteKind, RouteTarget
 from ai_workbench.core.session import Session
 
 
@@ -26,6 +26,7 @@ class WorkbenchRuntime:
         attachments = attachments or []
         route = self.router.route(session, raw_input)
         intent_metadata = await self._intent_routing_metadata(session, route)
+        route = self._apply_intent_route(route, intent_metadata)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
@@ -51,6 +52,8 @@ class WorkbenchRuntime:
                 attachments=attachments,
                 invocation_route_kind=route.invocation_route_kind or "agent",
                 intent_routing_metadata=intent_metadata,
+                temporary_knowledge_base_ids=_intent_temporary_kb_ids(intent_metadata),
+                knowledge_query_override=_intent_query_override(intent_metadata),
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
 
@@ -85,6 +88,7 @@ class WorkbenchRuntime:
         raw_input = str(message.content)
         route = self.router.route(session, raw_input)
         intent_metadata = await self._intent_routing_metadata(session, route)
+        route = self._apply_intent_route(route, intent_metadata)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
@@ -116,6 +120,8 @@ class WorkbenchRuntime:
                 create_user_message=False,
                 invocation_route_kind=route.invocation_route_kind or "agent",
                 intent_routing_metadata=intent_metadata,
+                temporary_knowledge_base_ids=_intent_temporary_kb_ids(intent_metadata),
+                knowledge_query_override=_intent_query_override(intent_metadata),
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
 
@@ -189,6 +195,24 @@ class WorkbenchRuntime:
             agent_config_store=self.agent_runner.agent_config_store,
             app_settings_store=self.agent_runner.app_settings_store,
             utility_llm_service=getattr(self.agent_runner, "utility_llm_service", None),
+            knowledge_store=getattr(self.agent_runner, "knowledge_store", None),
+        )
+
+    def _apply_intent_route(self, route: RouteTarget, intent_metadata: dict[str, Any] | None) -> RouteTarget:
+        if route.kind != RouteKind.AGENT or not isinstance(intent_metadata, dict):
+            return route
+        if intent_metadata.get("route_action") != "route_agent":
+            return route
+        target_agent_id = str(intent_metadata.get("target_agent_id") or "")
+        target_action_id = str(intent_metadata.get("target_action_id") or "default")
+        if not target_agent_id:
+            return route
+        return route.model_copy(
+            update={
+                "target_id": target_agent_id,
+                "action_id": target_action_id,
+                "invocation_route_kind": "intent_auto_route",
+            }
         )
 
     async def invoke_action(
@@ -230,3 +254,19 @@ def _agent_invocation_args(invocation: dict, fallback_content: str) -> str:
     if action_id != "default" or raw_text.startswith("@"):
         return str(invocation.get("args") if invocation.get("args") is not None else fallback_content)
     return fallback_content
+
+
+def _intent_temporary_kb_ids(intent_metadata: dict[str, Any] | None) -> list[str] | None:
+    if not isinstance(intent_metadata, dict) or intent_metadata.get("route_action") != "knowledge_override":
+        return None
+    value = intent_metadata.get("temporary_knowledge_base_ids")
+    if not isinstance(value, list):
+        return None
+    return [str(item) for item in value if str(item or "").strip()]
+
+
+def _intent_query_override(intent_metadata: dict[str, Any] | None) -> str | None:
+    if not isinstance(intent_metadata, dict) or intent_metadata.get("route_action") != "knowledge_override":
+        return None
+    value = intent_metadata.get("knowledge_query_override")
+    return str(value) if isinstance(value, str) and value.strip() else None

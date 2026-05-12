@@ -68,16 +68,18 @@
   },
   "help": {
     "knowledgeRuntime": "Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.",
-    "intentRouting": "Prompt Agents can opt in, opt out, or follow the General Intent Routing default. Shadow mode only records predictions.",
+    "intentRouting": "Prompt Agents can opt in, opt out, or follow the General Intent Routing default. General mode can be Shadow or safe Auto.",
     "scriptTrusted": "Script Agents are trusted local Python code and are not sandboxed."
   },
   "intentRouting": {
     "useDefault": "Use default",
     "effectiveGeneralOff": "Effective: disabled because General master switch is off",
-    "effectiveAgentEnabled": "Effective: enabled by agent override",
+    "effectiveAgentEnabled": "Effective: enabled by agent override (General mode: {{mode}})",
     "effectiveAgentDisabled": "Effective: disabled by agent override",
-    "effectiveDefaultEnabled": "Effective: enabled by default",
-    "effectiveDefaultDisabled": "Effective: disabled by default"
+    "effectiveDefaultEnabled": "Effective: enabled by default (General mode: {{mode}})",
+    "effectiveDefaultDisabled": "Effective: disabled by default",
+    "shadowMode": "Shadow",
+    "autoMode": "Auto"
   },
   "placeholders": {
     "generatedInitials": "Generated initials",

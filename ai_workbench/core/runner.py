@@ -190,6 +190,8 @@ class AgentRunner:
         invocation_route_kind: str = "agent",
         enforce_callable: bool = True,
         intent_routing_metadata: dict[str, Any] | None = None,
+        temporary_knowledge_base_ids: list[str] | None = None,
+        knowledge_query_override: str | None = None,
     ) -> RunResult:
         attachments = attachments or []
         try:
@@ -294,6 +296,10 @@ class AgentRunner:
             "resolved_agent_id": agent_id,
             "resolved_action_id": action_id,
         }
+        if temporary_knowledge_base_ids:
+            run_metadata["temporary_knowledge_base_ids"] = temporary_knowledge_base_ids
+        if knowledge_query_override:
+            run_metadata["knowledge_query_override"] = knowledge_query_override
         if intent_routing_metadata is not None:
             run_metadata["intent_routing"] = intent_routing_metadata
         run = self.run_store.create_run(
@@ -342,6 +348,8 @@ class AgentRunner:
                 prefill=prefill or {},
                 run=run,
                 suppress_output=suppress_output,
+                temporary_knowledge_base_ids=temporary_knowledge_base_ids,
+                knowledge_query_override=knowledge_query_override,
             )
         except asyncio.CancelledError:
             try:
@@ -367,6 +375,8 @@ class AgentRunner:
         prefill: dict,
         run: RunSchema,
         suppress_output: bool = False,
+        temporary_knowledge_base_ids: list[str] | None = None,
+        knowledge_query_override: str | None = None,
     ) -> RunResult:
         resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
@@ -441,6 +451,8 @@ class AgentRunner:
             effective_mode=str(knowledge_mode["effective_mode"]),
             llm_runtime=self.llm_runtime,
             llm_model_config=llm_config.values if llm_config is not None else None,
+            temporary_knowledge_base_ids=temporary_knowledge_base_ids,
+            query_override=knowledge_query_override,
         )
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:

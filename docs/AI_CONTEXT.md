@@ -263,7 +263,7 @@ Tests:
 Avoid unless needed:
 - Do not rewrite tutorial docs for Settings-only changes.
 
-### Change Intent Routing settings / shadow mode / route behavior
+### Change Intent Routing settings / shadow mode / auto route behavior
 
 Read:
 - `docs/RUNTIME_PROTOCOLS.md#intent-routing`
@@ -283,6 +283,8 @@ Likely source:
 - `ai_workbench/core/session_titles.py` when changing automatic title behavior
 - `ai_workbench/core/runtime.py`
 - `ai_workbench/core/runner.py`
+- `ai_workbench/core/knowledge_context.py` when adding or changing temporary Knowledge overrides
+- `ai_workbench/core/retrieval.py` only to confirm search inputs; do not change retrieval ranking for Intent Routing
 - `ai_workbench/core/router.py` only if explicit syntax parsing changes
 - `ai_workbench/api/routes/settings.py`
 - `ai_workbench/api/routes/intent.py` when changing Utility LLM APIs
@@ -297,6 +299,7 @@ Tests:
 - `uv run pytest tests/test_settings_data.py`
 - `uv run pytest tests/test_agent_settings.py`
 - `uv run pytest tests/test_intent_routing.py`
+- `uv run pytest tests/test_intent_auto_routing.py` when safe auto routing changes
 - `uv run pytest tests/test_utility_llm.py`
 - `uv run pytest tests/test_session_titles.py` when Utility LLM title behavior changes
 - `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
@@ -307,8 +310,11 @@ Tests:
 Rules:
 - Explicit `/command`, `@agent`, `@agent:action`, and `:action` routing must bypass Intent Routing.
 - Shadow mode must not alter selected Agent/action, title generation, provider-bound context, Knowledge, Core Memory, or Worldbook behavior.
+- Auto mode may route only allowlisted safe intents for the current message/run. It must not change the session default Agent, visible Agent selector, or persisted Context Sources Knowledge/Worldbook bindings.
+- `image_generation` auto routing may target only the supported `comfyui_agent` path. Do not add generic Agent routing without an explicit safety design.
+- `knowledge_query` auto routing may use only per-run temporary Knowledge KB/query overrides. It must not persist session KB bindings or change retrieval ranking/indexing.
 - Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
-- Do not automatically download Utility LLM models, install optional dependencies, enable Knowledge, route to ComfyUI, execute command-like intents, or change actual routing.
+- Do not automatically download Utility LLM models, install optional dependencies, execute command-like intents, or run slash commands from intent predictions.
 - User-visible frontend text must be added to every supported locale.
 - Settings schema, runtime protocol, routing behavior, metadata shape, and user workflow changes must update docs in the same change.
 - Do not modify Agent or Capability manifests for Intent Routing foundation work.

@@ -546,6 +546,18 @@ def test_general_settings_context_rendering_fields_are_exposed() -> None:
     assert "group_transcript_system_instruction_default" not in panel[panel.index("function generalSettingsPatch") :]
 
 
+def test_general_intent_routing_auto_mode_contract() -> None:
+    types = read_frontend("types.ts")
+    panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+
+    assert "intent_routing_mode: 'shadow' | 'auto';" in types
+    assert '<option value="auto">{t(\'settings:general.autoMode\')}</option>' in panel
+    assert "settings:general.autoModeHelp" in panel
+    assert "settings:general.autoModeSafeRoutingOff" in panel
+    assert "settings:general.commandsNeverAutoExecute" in panel
+    assert "settings:general.temporaryKnowledgeSelection" in panel
+
+
 def test_general_settings_uses_middle_category_list() -> None:
     console = read_frontend("components/settings/SettingsConsole.tsx")
     object_list = read_frontend("components/settings/SettingsObjectList.tsx")

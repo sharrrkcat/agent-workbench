@@ -99,8 +99,8 @@ class AppSettings(BaseModel):
     @field_validator("intent_routing_mode")
     @classmethod
     def _validate_intent_routing_mode(cls, value: str) -> str:
-        if value != "shadow":
-            raise ValueError("Intent routing mode must be shadow.")
+        if value not in {"shadow", "auto"}:
+            raise ValueError("Intent routing mode must be shadow or auto.")
         return value
 
     @field_validator("intent_routing_device")
@@ -204,8 +204,8 @@ class AppSettingsPatch(BaseModel):
     def _validate_intent_routing_mode(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if value != "shadow":
-            raise ValueError("Intent routing mode must be shadow.")
+        if value not in {"shadow", "auto"}:
+            raise ValueError("Intent routing mode must be shadow or auto.")
         return value
 
     @field_validator("intent_routing_device")

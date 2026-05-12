@@ -69,6 +69,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "core_memory_enabled_for_script_agents": True,
             "intent_routing_enabled": True,
             "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
             "intent_routing_high_confidence_threshold": 0.9,
             "intent_routing_low_confidence_threshold": 0.4,
             "intent_routing_auto_route_safe_intents": True,
@@ -97,6 +98,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["core_memory_enabled_for_script_agents"] is True
     assert patched.json()["intent_routing_enabled"] is True
     assert patched.json()["intent_routing_default_for_prompt_agents"] is True
+    assert patched.json()["intent_routing_mode"] == "auto"
     assert patched.json()["intent_routing_high_confidence_threshold"] == 0.9
     assert patched.json()["intent_routing_low_confidence_threshold"] == 0.4
     assert patched.json()["intent_routing_auto_route_safe_intents"] is True
@@ -120,7 +122,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"session_title_max_input_chars": 99}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_prompt": "   "}).status_code == 422
     assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
-    assert client.patch("/api/settings/general", json={"intent_routing_mode": "auto"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_mode": "unsafe"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_device": "metal"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_model_path": "../qwen"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_model_path": "llms/Qwen3-0.6B"}).status_code == 422

@@ -1155,7 +1155,7 @@ export type GeneralSettings = {
   core_memory_enabled_for_script_agents: boolean;
   intent_routing_enabled: boolean;
   intent_routing_default_for_prompt_agents: boolean;
-  intent_routing_mode: 'shadow';
+  intent_routing_mode: 'shadow' | 'auto';
   intent_routing_high_confidence_threshold: number;
   intent_routing_low_confidence_threshold: number;
   intent_routing_auto_route_safe_intents: boolean;

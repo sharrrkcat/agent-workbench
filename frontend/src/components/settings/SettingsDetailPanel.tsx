@@ -700,11 +700,21 @@ function GeneralIntentRoutingSettings({
         </label>
         <label className="config-field settings-config-field">
           <span>{t('settings:general.intentRoutingMode')}</span>
-          <select value={values.intent_routing_mode} disabled onChange={() => undefined}>
+          <select value={values.intent_routing_mode} onChange={(event) => setString('intent_routing_mode', event.currentTarget.value)}>
             <option value="shadow">{t('settings:general.shadowMode')}</option>
+            <option value="auto">{t('settings:general.autoMode')}</option>
           </select>
-          <small>{t('settings:general.shadowModeHelp')}</small>
+          <small>{values.intent_routing_mode === 'auto' ? t('settings:general.autoModeHelp') : t('settings:general.shadowModeHelp')}</small>
         </label>
+        {values.intent_routing_mode === 'auto' && !values.intent_routing_auto_route_safe_intents ? (
+          <p className="settings-warning-text">{t('settings:general.autoModeSafeRoutingOff')}</p>
+        ) : null}
+        <ul className="settings-muted-list">
+          <li>{t('settings:general.autoRoutesSafeIntentsOnly')}</li>
+          <li>{t('settings:general.commandsNeverAutoExecute')}</li>
+          <li>{t('settings:general.autoDoesNotChangeDefaultAgent')}</li>
+          <li>{t('settings:general.temporaryKnowledgeSelection')}</li>
+        </ul>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -717,7 +727,7 @@ function GeneralIntentRoutingSettings({
         <label className="config-field settings-config-field boolean-field">
           <span>{t('settings:general.autoRouteSafeIntents')}</span>
           <ToggleSwitch checked={values.intent_routing_auto_route_safe_intents} onChange={(checked) => setValues({ ...values, intent_routing_auto_route_safe_intents: checked })} />
-          <small>{t('settings:general.plannedForLater')}</small>
+          <small>{t('settings:general.autoRouteSafeIntentsHelp')}</small>
         </label>
         <label className="config-field settings-config-field boolean-field">
           <span>{t('settings:general.confirmUncertainRoutes')}</span>

@@ -28,8 +28,10 @@ def build_session_knowledge_context(
     search_fn: Callable[..., dict[str, Any]] | None = None,
     llm_runtime: Any = None,
     llm_model_config: dict[str, Any] | None = None,
+    temporary_knowledge_base_ids: list[str] | None = None,
+    query_override: str | None = None,
 ) -> KnowledgeContextResult:
-    query_text = str(query or "").strip()
+    query_text = str(query_override if query_override is not None else query or "").strip()
     if effective_mode != "enabled":
         return _skipped("agent_disabled", effective_mode=effective_mode, source=source, query=query_text)
     if not query_text:
@@ -37,7 +39,8 @@ def build_session_knowledge_context(
     if not session_id or knowledge_store is None:
         return _skipped("no_active_kbs", effective_mode=effective_mode, source=source, query=query_text)
 
-    active_kbs = _active_session_kbs(knowledge_store, session_id)
+    override_ids = [str(item) for item in temporary_knowledge_base_ids or [] if str(item or "").strip()]
+    active_kbs = _explicit_kbs(knowledge_store, override_ids) if override_ids else _active_session_kbs(knowledge_store, session_id)
     active_kb_ids = [kb.get("id", "") for kb in active_kbs if kb.get("id")]
     if not active_kb_ids:
         return _skipped("no_active_kbs", effective_mode=effective_mode, source=source, query=query_text)
@@ -45,10 +48,13 @@ def build_session_knowledge_context(
     metadata_base = {
         "enabled": True,
         "effective_mode": effective_mode,
-        "source": source,
+        "source": "intent_routing_override" if override_ids or query_override is not None else source,
+        "base_source": source if override_ids or query_override is not None else None,
+        "temporary_override": bool(override_ids or query_override is not None),
         "knowledge_base_ids": active_kb_ids,
         "knowledge_base_names": [kb["name"] for kb in active_kbs if kb.get("name")],
         "query": _short_query(query_text),
+        "query_override_used": query_override is not None,
     }
     try:
         engine = getattr(knowledge_store, "engine", None)
@@ -58,8 +64,8 @@ def build_session_knowledge_context(
             knowledge_store=knowledge_store,
             model_backend=model_backend,
             query=query_text,
-            knowledge_base_ids=None,
-            session_id=session_id,
+            knowledge_base_ids=active_kb_ids if override_ids else None,
+            session_id=None if override_ids else session_id,
             top_k=None,
             max_context_chars=None,
             include_debug=True,
@@ -144,6 +150,23 @@ def _active_session_kbs(knowledge_store: Any, session_id: str) -> list[dict[str,
                 kb = knowledge_store.get_knowledge_base(binding.knowledge_base_id)
             except KeyError:
                 continue
+        if not getattr(kb, "enabled", False):
+            continue
+        active.append({"id": kb.id, "name": kb.name})
+    return active
+
+
+def _explicit_kbs(knowledge_store: Any, knowledge_base_ids: list[str]) -> list[dict[str, str]]:
+    active: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for knowledge_base_id in knowledge_base_ids:
+        if knowledge_base_id in seen:
+            continue
+        seen.add(knowledge_base_id)
+        try:
+            kb = knowledge_store.get_knowledge_base(knowledge_base_id)
+        except KeyError:
+            continue
         if not getattr(kb, "enabled", False):
             continue
         active.append({"id": kb.id, "name": kb.name})

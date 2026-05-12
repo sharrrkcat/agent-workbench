@@ -115,11 +115,17 @@ When a session still has a default title such as `Session 1`, the core runtime c
 
 Settings -> General -> Intent Routing adds an optional natural-language route prediction layer. It is off by default and does not replace explicit syntax: `/command`, `@agent`, `@agent:action`, and `:action` always bypass intent routing and keep their existing behavior.
 
-The current implementation is shadow mode only. When the General master switch is on and the current session default Agent is a Prompt Agent whose Intent Routing override is effectively enabled, ordinary messages in `single_assistant` mode are classified and the prediction is stored in compact run/message metadata. The actual route still goes to the current default Prompt Agent. Script Agents are not router entries in this version, and `group_transcript` mode does not run intent routing.
+Intent Routing supports `shadow` and safe `auto` modes. Defaults remain conservative: the master switch is off by default, Prompt Agents do not opt in by default, and the separate `Auto route safe intents` switch is off unless the user enables it. When the General master switch is on and the current session default Agent is a Prompt Agent whose Intent Routing override is effectively enabled, ordinary messages in `single_assistant` mode are classified and the prediction is stored in compact run/message metadata. Script Agents are not generic router entries in this version, and `group_transcript` mode does not run intent routing.
 
 Intent Routing Round 2 adds an optional Utility LLM core service for short internal tasks: automatic session title generation and shadow-mode intent JSON extraction/verification. The Utility LLM is a local model folder under `data/models/utility_llms/<folder>`, for example `data/models/utility_llms/Qwen3-0.6B`, selected by the relative settings path `utility_llms/Qwen3-0.6B`. It is not a Model Profile, Provider Profile, Agent, Capability, or slash command. The app never downloads the model or installs `transformers`/`torch`; if those optional dependencies or the configured model folder are missing, normal chat startup still works and title generation falls back to the main LLM.
 
-The Utility LLM JSON extractor may add compact slots such as `kb_hint` or `query` to intent metadata when rule-based confidence is low or the prediction needs structure. It still does not enable Knowledge, route to ComfyUI, execute command-like requests, or change actual routing. EmbeddingGemma and semantic embedding routing are deferred to a later round.
+The Utility LLM JSON extractor may add compact slots such as `kb_hint` or `query` to intent metadata when rule-based confidence is low or the prediction needs structure. In `shadow` mode it still never changes routing. In safe `auto` mode, high-confidence allowlisted intents can affect only the current message/run:
+
+- `image_generation` routes the current run to `comfyui_agent.default`.
+- `knowledge_query` keeps the current Prompt Agent but uses a temporary Knowledge Base selection and retrieval query override.
+- `chat` keeps the current Prompt Agent path.
+
+Explicit `/command`, `@agent`, `@agent:action`, and `:action` inputs always bypass Intent Routing. `command_like` intents are recorded but are not executed automatically, so requests such as freeing memory do not run `/free-memory` in this version. Auto routing does not change the session default Agent, the visible Agent selector, or Context Sources Knowledge bindings. EmbeddingGemma and semantic embedding routing are deferred to a later round.
 
 ## Agent Avatars
 
@@ -385,7 +391,7 @@ Secret fields render as password inputs. API responses return the fixed mask `**
 
 Secret masking is API/UI masking only. Secrets are still stored as plaintext JSON in SQLite and are not encrypted yet.
 
-Settings -> General stores local app settings in SQLite. The General page is split into `Files`, `LLM & Prompts`, and `Memory` categories. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides. `Memory` stores manually maintained Core Memory text and separate Prompt Agent / Script Agent enablement flags. Prompt Agents inject non-empty Core Memory by default as system context. Script Agent `ctx.llm.*` calls inject Core Memory only when the Script Agent switch is enabled.
+Settings -> General stores local app settings in SQLite. The General page is split into `Files`, `LLM & Prompts`, `Memory`, and `Intent Routing` categories. `Files` contains upload and text-file context limits. `LLM & Prompts` contains automatic session title generation, its prompt and input limit, plus context prompt overrides. `Memory` stores manually maintained Core Memory text and separate Prompt Agent / Script Agent enablement flags. Prompt Agents inject non-empty Core Memory by default as system context. Script Agent `ctx.llm.*` calls inject Core Memory only when the Script Agent switch is enabled.
 
 The General settings API exposes:
 

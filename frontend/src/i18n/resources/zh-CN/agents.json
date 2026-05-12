@@ -69,7 +69,7 @@
   "help": {
     "knowledgeRuntime": "Prompt Agent 默认使用会话知识库。LLM Script Agent 只有在这里启用后才会使用。",
     "scriptTrusted": "Script Agent 是受信任的本地 Python 代码，不会被沙箱隔离。",
-    "intentRouting": "Prompt Agent 可以选择启用、禁用或跟随通用意图路由默认值。Shadow 模式只记录预测。"
+    "intentRouting": "Prompt Agent 可以选择启用、禁用或跟随通用意图路由默认值。通用模式可以是 Shadow 或安全自动。"
   },
   "placeholders": {
     "generatedInitials": "生成首字母",
@@ -105,9 +105,11 @@
   "intentRouting": {
     "useDefault": "使用默认值",
     "effectiveGeneralOff": "当前效果：已禁用，因为通用总开关关闭",
-    "effectiveAgentEnabled": "当前效果：由 Agent 覆盖启用",
+    "effectiveAgentEnabled": "当前效果：由 Agent 覆盖启用（通用模式：{{mode}}）",
     "effectiveAgentDisabled": "当前效果：由 Agent 覆盖禁用",
-    "effectiveDefaultEnabled": "当前效果：按默认值启用",
-    "effectiveDefaultDisabled": "当前效果：按默认值禁用"
+    "effectiveDefaultEnabled": "当前效果：按默认值启用（通用模式：{{mode}}）",
+    "effectiveDefaultDisabled": "当前效果：按默认值禁用",
+    "shadowMode": "Shadow",
+    "autoMode": "自动"
   }
 }

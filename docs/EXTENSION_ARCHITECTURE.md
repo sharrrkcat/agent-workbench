@@ -340,12 +340,13 @@ Core Memory and Worldbook configuration ownership:
 
 Intent Routing configuration ownership:
 
-- General settings own Intent Routing's master switch, Prompt Agent default, shadow mode, confidence thresholds, reserved model paths, and device selection.
+- General settings own Intent Routing's master switch, Prompt Agent default, global `shadow`/`auto` mode, safe auto-route toggle, confidence thresholds, reserved model paths, and device selection.
 - Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode`.
 - Utility LLM settings belong to General Intent Routing settings: `intent_routing_utility_llm_model_path` and `intent_routing_device`.
 - The Utility LLM service belongs to the core runtime. It is used for internal short tasks such as session title generation and shadow-mode JSON extraction.
 - Utility LLM is not AgentConfig, CapabilityConfig, Provider Profile, Model Profile, Agent manifest, or Capability manifest configuration.
 - Intent route definitions, deterministic shadow classification, and utility model backends are core runtime concerns.
+- Safe auto-route decisions are per-run runtime decisions. They may choose `comfyui_agent` for a supported `image_generation` run or pass temporary Knowledge KB/query overrides for a `knowledge_query` Prompt Agent run, but they must not write session config, change the session default Agent, or persist Context Sources bindings.
 - Intent Routing is not owned by Agent manifests, Capability manifests, or slash command declarations. Do not add Intent Routing route registry fields to `agent.yaml` or `capability.yaml`.
 
 Obsidian CapabilityConfig:
