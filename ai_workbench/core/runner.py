@@ -35,7 +35,7 @@ from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPay
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
-from ai_workbench.core.session_titles import maybe_generate_session_title_before_llm_call
+from ai_workbench.core.session_titles import apply_deferred_title_model_unload, maybe_generate_session_title_before_llm_call
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc, utc_now
@@ -517,6 +517,17 @@ class AgentRunner:
                 llm_resolution=_public_llm_resolution(llm_config),
                 app_settings_store=self.app_settings_store,
                 utility_llm_service=self.utility_llm_service,
+                agent_registry=self.agent_registry,
+                agent_config_store=self.agent_config_store,
+                llm_profile_store=self.llm_profile_store,
+                provider_profile_store=self.provider_profile_store,
+                capability_registry=self.capability_registry,
+                capability_config_store=self.capability_config_store,
+                llm_defaults_store=self.llm_defaults_store,
+                invoked_agent_id=agent.id,
+                invoked_action_id=action_id,
+                unload_model_callback=self._unload_model_for_title_generation,
+                current_response_llm_resolution=_public_llm_resolution(llm_config),
             )
             llm_use_key = self._begin_llm_use(llm_config)
             llm_started = True
@@ -626,6 +637,7 @@ class AgentRunner:
             if llm_started and not cleanup_done:
                 unload_result = self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
                 unload_message = _llm_unload_message(unload_result) if unload_result else None
+            apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
             self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
             done_run = self.run_lifecycle.complete_run(run.run_id)
             self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
@@ -662,6 +674,7 @@ class AgentRunner:
         if llm_started and not cleanup_done:
             unload_result = self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
             unload_message = _llm_unload_message(unload_result) if unload_result else None
+        apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
         self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
         done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
@@ -851,6 +864,7 @@ class AgentRunner:
         cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
         unload_result = self._finish_llm_use_and_apply_lifecycle(lifecycle, llm_config, llm_use_key, run.run_id, session_id)
         unload_message = _llm_unload_message(unload_result) if unload_result else None
+        apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
         self.run_lifecycle.complete_step(cleanup_step.step_id, message=unload_message, metadata={"llm_unload": unload_result} if unload_message else None)
         done_run = self.run_lifecycle.complete_run(run.run_id)
         self.event_bus.emit("run_done", session_id=session_id, run_id=done_run.run_id)
@@ -1196,6 +1210,43 @@ class AgentRunner:
             "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "Model unload is not supported by this runtime."}],
             "reason": reason,
         }
+
+    def _unload_model_for_title_generation(
+        self,
+        provider_profile_id: str | None = None,
+        model_profile_id: str | None = None,
+        model_id: str | None = None,
+        reason: str = "session_title_generation",
+    ) -> dict:
+        if self.provider_profile_store is None or self.llm_profile_store is None:
+            return {
+                "ok": False,
+                "code": "MODEL_UNLOAD_UNSUPPORTED",
+                "provider_profile_id": provider_profile_id or "",
+                "model_profile_id": model_profile_id,
+                "model_id": model_id or "",
+                "unloaded": [],
+                "skipped": False,
+                "skip_reason": None,
+                "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "Provider stores are not available."}],
+                "reason": reason,
+            }
+        result = unload_model_for_profile(
+            provider_profile_store=self.provider_profile_store,
+            llm_profile_store=self.llm_profile_store,
+            provider_profile_id=provider_profile_id,
+            model_profile_id=model_profile_id,
+            model_id=model_id,
+            reason=reason,
+        )
+        provider_id = str(result.get("provider_profile_id") or provider_profile_id or "")
+        if provider_id:
+            try:
+                status = refresh_provider_status_for_profile(self.provider_profile_store, self.llm_profile_store, provider_id)
+                result["status_refresh"] = {"attempted": True, "ok": True, "provider_profile_id": provider_id, "status": status}
+            except Exception as exc:
+                result["status_refresh"] = {"attempted": True, "ok": False, "provider_profile_id": provider_id, "error": str(exc)}
+        return result
 
     def _refresh_provider_status_after_unload(self, result: dict, session_id: str, run_id: str) -> None:
         provider_profile_id = str(result.get("provider_profile_id") or "")

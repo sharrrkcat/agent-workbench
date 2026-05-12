@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.session_titles import normalize_generated_title, truncate_title_input
 from tests.test_api import make_client
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, run
@@ -32,6 +33,29 @@ class FailFirstTitleRuntime(SequenceLLMRuntime):
 
 def enable_auto_titles(fixture) -> None:
     fixture.agent_runner.app_settings_store.patch({"auto_generate_session_titles": True})
+
+
+def add_title_profile(fixture, profile_id: str = "title-profile", model_id: str = "title-model") -> LLMProfileSchema:
+    provider = fixture.provider_profiles.create(
+        ProviderProfileSchema(id=f"provider-{profile_id}", name=f"Provider {profile_id}", provider="lm_studio", base_url="http://studio/v1")
+    )
+    profile = fixture.llm_profiles.create(
+        LLMProfileSchema(
+            id=profile_id,
+            alias=profile_id.replace("-", "_"),
+            name=f"Title {profile_id}",
+            provider_profile_id=provider.id,
+            model_id=model_id,
+            supports_streaming=False,
+        )
+    )
+    return profile
+
+
+def set_chat_title_profile(fixture, profile_id: str = "title-profile", model_id: str = "title-model") -> LLMProfileSchema:
+    profile = add_title_profile(fixture, profile_id, model_id)
+    fixture.agent_configs.set_config("chat", runtime={"llm_profile_id": profile.id})
+    return profile
 
 
 def test_patch_session_updates_title_and_touches_updated_at() -> None:
@@ -70,6 +94,7 @@ def test_default_title_generates_before_first_prompt_llm_call() -> None:
     llm = SequenceLLMRuntime(['"Generated Title."', "assistant reply"])
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto_titles(fixture)
+    set_chat_title_profile(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
 
     result = run(fixture.runtime.handle_input(session, "hello"))
@@ -89,6 +114,7 @@ def test_title_generation_failure_does_not_fail_main_conversation() -> None:
     llm = FailFirstTitleRuntime(["assistant reply"])
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto_titles(fixture)
+    set_chat_title_profile(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
 
     result = run(fixture.runtime.handle_input(session, "hello"))
@@ -104,12 +130,20 @@ def test_prompt_agent_title_generation_reuses_resolved_model_config() -> None:
     llm = SequenceLLMRuntime(["Short title", "assistant reply"])
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto_titles(fixture)
+    profile = add_title_profile(fixture, model_id="title-model")
+    fixture.agent_runner.app_settings_store.patch(
+        {
+            "session_title_backend": "specified_model_profile",
+            "session_title_model_profile_id": profile.id,
+        }
+    )
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
 
     run(fixture.runtime.handle_input(session, "hello"))
 
-    assert llm.calls[0]["model_config"]["model"] == "qwen2.5-3b-instruct"
+    assert llm.calls[0]["model_config"]["model"] == profile.model_id
     assert llm.calls[1]["model_config"]["model"] == "qwen2.5-3b-instruct"
+    assert fixture.sessions.get_session(session.session_id).llm_profile_id is None
 
 
 def test_script_agent_without_llm_does_not_generate_title() -> None:
@@ -138,7 +172,10 @@ def test_script_agent_title_generation_runs_before_first_ctx_llm_text(tmp_path) 
     )
     fixture = ScriptRuntimeFixture(agents=agents, llm=llm)
     enable_auto_titles(fixture)
+    profile = add_title_profile(fixture)
     session = fixture.sessions.create_session(default_agent_id="title_llm_script", title="Session 1")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
 
     result = run(fixture.runtime.handle_input(session, "hello from script"))
 
@@ -161,7 +198,10 @@ def test_script_agent_title_generation_runs_once_before_ctx_llm_json(tmp_path) -
     )
     fixture = ScriptRuntimeFixture(agents=agents, llm=llm)
     enable_auto_titles(fixture)
+    profile = add_title_profile(fixture)
     session = fixture.sessions.create_session(default_agent_id="title_json_script", title="Session 1")
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+    session = fixture.sessions.get_session(session.session_id)
 
     result = run(fixture.runtime.handle_input(session, "json please"))
 
@@ -192,6 +232,7 @@ def test_title_prompt_uses_only_current_user_message_and_truncates_input() -> No
     llm = SequenceLLMRuntime(["Current turn", "assistant reply"])
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto_titles(fixture)
+    set_chat_title_profile(fixture)
     fixture.agent_runner.app_settings_store.patch({"session_title_max_input_chars": 100})
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
     fixture.messages.add_message(session_id=session.session_id, role="user", content="old secret history")
@@ -215,6 +256,7 @@ def test_non_default_session_title_is_not_overwritten() -> None:
     llm = SequenceLLMRuntime(["assistant reply"])
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto_titles(fixture)
+    set_chat_title_profile(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat", title="Manual title")
 
     result = run(fixture.runtime.handle_input(session, "hello"))
@@ -256,6 +298,14 @@ def test_command_does_not_trigger_title_generation_and_next_llm_uses_next_messag
     llm = SequenceLLMRuntime(["普通问题", "assistant reply"])
     app = create_app(llm_runtime=llm, use_memory=True)
     client = TestClient(app)
+    state = app.state.runtime_state
+    provider = state.provider_profiles.create(
+        ProviderProfileSchema(id="title-provider", name="Title Provider", provider="lm_studio", base_url="http://studio/v1")
+    )
+    profile = state.llm_profiles.create(
+        LLMProfileSchema(id="title-profile", alias="title_profile", name="Title Profile", provider_profile_id=provider.id, model_id="title-model")
+    )
+    state.agent_configs.set_config("chat", runtime={"llm_profile_id": profile.id})
     session = client.post("/api/sessions", json={"title": "Session 1", "default_agent_id": "chat"}).json()
 
     command = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 secret"})

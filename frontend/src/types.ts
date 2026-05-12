@@ -1166,6 +1166,9 @@ export type GeneralSettings = {
   send_text_file_attachments_to_llm: boolean;
   persist_streaming_message_deltas: boolean;
   auto_generate_session_titles: boolean;
+  session_title_backend: 'utility_llm' | 'follow_agent_model_profile' | 'specified_model_profile';
+  session_title_model_profile_id: string | null;
+  session_title_unload_after_generation: boolean;
   session_title_prompt: string;
   session_title_prompt_default: string;
   session_title_max_input_chars: number;

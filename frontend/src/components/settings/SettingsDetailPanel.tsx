@@ -130,7 +130,7 @@ export function SettingsDetailPanel({
   if (section === 'general') {
     return (
       <section className="settings-detail-panel">
-        <GeneralDetail category={generalCategory} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />
+        <GeneralDetail category={generalCategory} llmProfiles={llmProfiles} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />
       </section>
     );
   }
@@ -267,9 +267,11 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
 
 function GeneralDetail({
   category,
+  llmProfiles,
   onDirtyChange,
 }: {
   category: GeneralSettingsCategory;
+  llmProfiles: LlmProfile[];
   onDirtyChange: (dirty: boolean) => void;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
 }) {
@@ -375,7 +377,7 @@ function GeneralDetail({
         ) : category === 'intent_routing' ? (
           <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : (
-          <GeneralPromptSettings values={values} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
+          <GeneralPromptSettings values={values} llmProfiles={llmProfiles} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
         )}
       </div>
     </form>
@@ -557,18 +559,25 @@ function GeneralFilesSettings({
 
 function GeneralPromptSettings({
   values,
+  llmProfiles,
   setValues,
   setNumber,
   setInstruction,
   resetInstruction,
 }: {
   values: GeneralSettings;
+  llmProfiles: LlmProfile[];
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
   setInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction', value: string) => void;
   resetInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction') => void;
 }) {
   const { t } = useTranslation('settings');
+  const selectedTitleProfile = values.session_title_model_profile_id
+    ? llmProfiles.find((profile) => profile.id === values.session_title_model_profile_id)
+    : null;
+  const titleProfileMissing = Boolean(values.session_title_model_profile_id && !selectedTitleProfile);
+  const titleProfileDisabled = Boolean(selectedTitleProfile && !selectedTitleProfile.enabled);
   return (
     <>
       <div className="detail-section">
@@ -579,6 +588,54 @@ function GeneralPromptSettings({
           <span>{t('general.autoGenerateTitles')}</span>
           <ToggleSwitch checked={values.auto_generate_session_titles} onChange={(checked) => setValues({ ...values, auto_generate_session_titles: checked })} />
           <small>{t('general.autoGenerateTitlesHelp')}</small>
+        </label>
+        <label className="config-field settings-config-field">
+          <span>{t('general.titleGenerationBackend')}</span>
+          <select
+            value={values.session_title_backend}
+            onChange={(event) =>
+              setValues({
+                ...values,
+                session_title_backend: event.currentTarget.value as GeneralSettings['session_title_backend'],
+              })
+            }
+          >
+            <option value="utility_llm">{t('general.titleBackendUtilityLlm')}</option>
+            <option value="follow_agent_model_profile">{t('general.titleBackendFollowAgent')}</option>
+            <option value="specified_model_profile">{t('general.titleBackendSpecificProfile')}</option>
+          </select>
+          <small>{t('general.titleBackendHelp')}</small>
+        </label>
+        {values.session_title_backend === 'specified_model_profile' ? (
+          <label className="config-field settings-config-field">
+            <span>{t('general.specificTitleModelProfile')}</span>
+            <select
+              value={values.session_title_model_profile_id || ''}
+              onChange={(event) =>
+                setValues({
+                  ...values,
+                  session_title_model_profile_id: event.currentTarget.value || null,
+                })
+              }
+            >
+              <option value="">{t('general.noModelProfileSelected')}</option>
+              {llmProfiles
+                .filter((profile) => profile.enabled || profile.id === values.session_title_model_profile_id)
+                .map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {titleModelProfileOptionLabel(profile)}
+                  </option>
+                ))}
+            </select>
+            <small>{t('general.specificTitleModelProfileHelp')}</small>
+          </label>
+        ) : null}
+        {titleProfileMissing ? <p className="settings-warning-text">{t('general.selectedModelProfileUnavailable')}</p> : null}
+        {titleProfileDisabled ? <p className="settings-warning-text">{t('general.selectedModelProfileDisabled')}</p> : null}
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('general.freeTitleModelAfterGeneration')}</span>
+          <ToggleSwitch checked={values.session_title_unload_after_generation} onChange={(checked) => setValues({ ...values, session_title_unload_after_generation: checked })} />
+          <small>{t('general.freeTitleModelAfterGenerationHelp')}</small>
         </label>
         <InstructionField
           label={t('general.sessionTitlePrompt')}
@@ -639,6 +696,11 @@ function GeneralMemorySettings({ values, setValues }: { values: GeneralSettings;
       </label>
     </div>
   );
+}
+
+function titleModelProfileOptionLabel(profile: LlmProfile): string {
+  const pieces = [profile.name || profile.alias || profile.id, profile.alias, profile.provider].filter(Boolean);
+  return pieces.join(' / ');
 }
 
 function GeneralIntentRoutingSettings({
@@ -1097,6 +1159,9 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     send_text_file_attachments_to_llm: values.send_text_file_attachments_to_llm,
     persist_streaming_message_deltas: values.persist_streaming_message_deltas,
     auto_generate_session_titles: values.auto_generate_session_titles,
+    session_title_backend: values.session_title_backend,
+    session_title_model_profile_id: values.session_title_model_profile_id,
+    session_title_unload_after_generation: values.session_title_unload_after_generation,
     session_title_prompt: values.session_title_prompt,
     session_title_max_input_chars: values.session_title_max_input_chars,
     group_transcript_system_instruction: values.group_transcript_system_instruction,

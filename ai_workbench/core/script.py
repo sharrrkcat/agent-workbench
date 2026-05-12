@@ -33,7 +33,7 @@ from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.session_titles import maybe_generate_session_title_before_llm_call
+from ai_workbench.core.session_titles import apply_deferred_title_model_unload, maybe_generate_session_title_before_llm_call
 from ai_workbench.core.session import Session
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc
@@ -301,6 +301,10 @@ class LLMProxy:
         memory_context: Optional[Dict[str, Any]] = None,
         worldbook_context: Optional[Dict[str, Any]] = None,
         utility_llm_service: Any = None,
+        agent_registry: Any = None,
+        agent_config_store: Any = None,
+        llm_defaults_store: Any = None,
+        title_unload_callback: Any = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -617,6 +621,17 @@ class LLMProxy:
             llm_resolution=self.default_llm_resolution,
             app_settings_store=context.get("app_settings_store"),
             utility_llm_service=self._utility_llm_service or context.get("utility_llm_service"),
+            agent_registry=context.get("agent_registry"),
+            agent_config_store=context.get("agent_config_store"),
+            llm_profile_store=self.llm_profile_store,
+            provider_profile_store=self.provider_profile_store,
+            capability_registry=context.get("capability_registry"),
+            capability_config_store=context.get("capability_config_store"),
+            llm_defaults_store=context.get("llm_defaults_store"),
+            invoked_agent_id=context.get("invoked_agent_id") or "",
+            invoked_action_id=context.get("invoked_action_id") or "",
+            unload_model_callback=context.get("unload_model_callback"),
+            current_response_llm_resolution=self.default_llm_resolution,
         )
 
     async def unload(self, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
@@ -804,6 +819,10 @@ class AgentContext:
         session_agent_state_store: Any = None,
         is_silent_submission: bool = False,
         suppress_output: bool = False,
+        agent_registry: Any = None,
+        agent_config_store: Any = None,
+        llm_defaults_store: Any = None,
+        title_unload_callback: Any = None,
         knowledge_context: Optional[Dict[str, Any]] = None,
         memory_context: Optional[Dict[str, Any]] = None,
         worldbook_context: Optional[Dict[str, Any]] = None,
@@ -860,6 +879,14 @@ class AgentContext:
                 "message_store": message_store,
                 "app_settings_store": app_settings_store,
                 "utility_llm_service": utility_llm_service,
+                "agent_registry": agent_registry,
+                "agent_config_store": agent_config_store,
+                "capability_registry": capability_registry,
+                "capability_config_store": capability_config_store,
+                "llm_defaults_store": llm_defaults_store,
+                "invoked_agent_id": agent.id,
+                "invoked_action_id": action_id,
+                "unload_model_callback": title_unload_callback,
             },
             knowledge_context=knowledge_context,
             memory_context=memory_context,
@@ -1295,6 +1322,10 @@ class ScriptAgentRunner:
             session_agent_state_store=self.session_agent_state_store,
             is_silent_submission=is_silent_submission,
             suppress_output=suppress_output,
+            agent_registry=self.agent_registry,
+            agent_config_store=self.agent_config_store,
+            llm_defaults_store=self.llm_defaults_store,
+            title_unload_callback=self._unload_model_for_title_generation,
             knowledge_context={
                 "knowledge_store": self.knowledge_store,
                 "knowledge_model_backend": self.knowledge_model_backend,
@@ -1331,6 +1362,7 @@ class ScriptAgentRunner:
             )
             result = self._fail(run.run_id, session_id, str(exc) or "Script agent failed.")
             self._apply_model_lifecycle(ctx, lifecycle)
+            apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
             return result
         self.run_lifecycle.complete_step(running_step.step_id)
 
@@ -1351,6 +1383,7 @@ class ScriptAgentRunner:
         self.run_lifecycle.complete_step(saving_step.step_id)
         cleanup_step = self.run_lifecycle.start_step(run.run_id, "Cleanup")
         unload_result = self._apply_model_lifecycle(ctx, lifecycle)
+        apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
         from ai_workbench.core.runner import _llm_unload_message
 
         unload_message = _llm_unload_message(unload_result) if unload_result else None
@@ -1508,6 +1541,43 @@ class ScriptAgentRunner:
                 payload={"warning": warnings[-1]},
             )
         self.run_store.update_metadata(ctx.run_id, metadata)
+        return result
+
+    def _unload_model_for_title_generation(
+        self,
+        provider_profile_id: str | None = None,
+        model_profile_id: str | None = None,
+        model_id: str | None = None,
+        reason: str = "session_title_generation",
+    ) -> dict:
+        if self.provider_profile_store is None or self.llm_profile_store is None:
+            return {
+                "ok": False,
+                "code": "MODEL_UNLOAD_UNSUPPORTED",
+                "provider_profile_id": provider_profile_id or "",
+                "model_profile_id": model_profile_id,
+                "model_id": model_id or "",
+                "unloaded": [],
+                "skipped": False,
+                "skip_reason": None,
+                "errors": [{"code": "MODEL_UNLOAD_UNSUPPORTED", "message": "Provider stores are not available."}],
+                "reason": reason,
+            }
+        result = unload_model_for_profile(
+            provider_profile_store=self.provider_profile_store,
+            llm_profile_store=self.llm_profile_store,
+            provider_profile_id=provider_profile_id,
+            model_profile_id=model_profile_id,
+            model_id=model_id,
+            reason=reason,
+        )
+        provider_id = str(result.get("provider_profile_id") or provider_profile_id or "")
+        if provider_id:
+            try:
+                status = refresh_provider_status_for_profile(self.provider_profile_store, self.llm_profile_store, provider_id)
+                result["status_refresh"] = {"attempted": True, "ok": True, "provider_profile_id": provider_id, "status": status}
+            except Exception as exc:
+                result["status_refresh"] = {"attempted": True, "ok": False, "provider_profile_id": provider_id, "error": str(exc)}
         return result
 
 

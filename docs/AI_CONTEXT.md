@@ -248,6 +248,7 @@ Read:
 - `docs/EXTENSION_API.md#agent-overrides`
 - `docs/EXTENSION_API.md#capability-config`
 - `docs/RUNTIME_PROTOCOLS.md#session-title-generation` if changing automatic title settings or title behavior
+- `docs/RUNTIME_PROTOCOLS.md#llm-resolution` if a setting references Model Profiles
 
 Likely source:
 - agent/capability config routes/stores
@@ -258,10 +259,54 @@ Likely source:
 Tests:
 - `uv run pytest tests/test_agent_settings.py tests/test_config_schema.py tests/test_settings_data.py`
 - `uv run pytest tests/test_session_titles.py` if automatic title settings or behavior changes
+- `uv run pytest tests/test_session_title_backends.py` if title backend selection, fallback, profile resolution, or title unload behavior changes
 - `cd frontend && npm run build` if frontend changed
 
 Avoid unless needed:
 - Do not rewrite tutorial docs for Settings-only changes.
+
+### Change session title generation
+
+Read:
+- `docs/RUNTIME_PROTOCOLS.md#session-title-generation`
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+- `docs/RUNTIME_PROTOCOLS.md#llm-resolution`
+- `docs/EXTENSION_API.md` General settings and metadata contracts
+- `docs/EXTENSION_ARCHITECTURE.md#configuration-ownership`
+- `README.md` title generation and Utility LLM notes
+
+Likely source:
+- `ai_workbench/core/session_titles.py`
+- `ai_workbench/core/runner.py`
+- `ai_workbench/core/script.py`
+- `ai_workbench/core/llm_config.py` and Model/Profile stores only when resolution behavior changes
+- `ai_workbench/core/settings.py`
+- `ai_workbench/api/routes/settings.py`
+- `frontend/src/components/settings/SettingsDetailPanel.tsx`
+- `frontend/src/api/client.ts`
+- `frontend/src/types.ts`
+- `frontend/src/i18n/resources`
+
+Tests:
+- `uv run pytest tests/test_session_titles.py`
+- `uv run pytest tests/test_session_title_backends.py`
+- `uv run pytest tests/test_utility_llm.py`
+- `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
+- `uv run pytest tests/test_intent_routing.py tests/test_intent_auto_routing.py`
+- `uv run pytest tests/test_settings_data.py`
+- `uv run pytest tests/test_frontend_chat_contracts.py` if frontend/runtime metadata contracts change
+- `cd frontend && npm run build`
+- `cd frontend && node scripts/check-i18n.mjs`
+
+Rules:
+- Title generation is triggered only by the first user message that resolves to an LLM-capable Agent/action while the session still has a default title.
+- Do not use assistant output, Knowledge snippets, Worldbook content, Core Memory, command output, or route metadata as title input.
+- Do not change Intent Routing safe auto-route behavior while changing title triggers; use the final resolved Agent/action to decide whether a title hook is eligible.
+- Do not change Utility LLM backend loading, GGUF path handling, transformers loading, or Utility LLM test APIs unless the task is explicitly about those contracts.
+- Title backend settings belong under General -> LLM & Prompts. Utility LLM backend/model/device settings stay under General -> Utility LLM.
+- Model Profile title calls must not mutate the session selected Model Profile, AgentConfig, CapabilityConfig, or main response LLM resolution.
+- Best-effort title model release must not unload a model currently generating the main response; defer release to run cleanup when targets match.
+- User-visible frontend text must be added to every supported locale, and runtime/settings/metadata changes must update docs.
 
 ### Change Intent Routing settings / shadow mode / auto route behavior
 

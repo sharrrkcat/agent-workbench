@@ -28,6 +28,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["max_file_size_mb"] == 10
     assert response.json()["persist_streaming_message_deltas"] is False
     assert response.json()["auto_generate_session_titles"] is True
+    assert response.json()["session_title_backend"] == "utility_llm"
+    assert response.json()["session_title_model_profile_id"] is None
+    assert response.json()["session_title_unload_after_generation"] is False
     assert response.json()["session_title_prompt"] == DEFAULT_SESSION_TITLE_PROMPT
     assert response.json()["session_title_prompt_default"] == DEFAULT_SESSION_TITLE_PROMPT
     assert response.json()["session_title_max_input_chars"] == 1200
@@ -70,6 +73,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "send_text_file_attachments_to_llm": False,
             "persist_streaming_message_deltas": True,
             "auto_generate_session_titles": False,
+            "session_title_backend": "specified_model_profile",
+            "session_title_model_profile_id": "title-profile",
+            "session_title_unload_after_generation": True,
             "session_title_prompt": "Title from {user_input}",
             "session_title_max_input_chars": 500,
             "group_transcript_system_instruction": "Group override for {agent_name}",
@@ -107,6 +113,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["send_text_file_attachments_to_llm"] is False
     assert patched.json()["persist_streaming_message_deltas"] is True
     assert patched.json()["auto_generate_session_titles"] is False
+    assert patched.json()["session_title_backend"] == "specified_model_profile"
+    assert patched.json()["session_title_model_profile_id"] == "title-profile"
+    assert patched.json()["session_title_unload_after_generation"] is True
     assert patched.json()["session_title_prompt"] == "Title from {user_input}"
     assert patched.json()["session_title_max_input_chars"] == 500
     assert patched.json()["group_transcript_system_instruction"] == "Group override for {agent_name}"
@@ -164,6 +173,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"unknown": 1}).status_code == 422
     assert client.patch("/api/settings/general", json={"max_file_size_mb": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_max_input_chars": 99}).status_code == 422
+    assert client.patch("/api/settings/general", json={"session_title_backend": "main_llm"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"session_title_unload_after_generation": "yes"}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_prompt": "   "}).status_code == 422
     assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_mode": "unsafe"}).status_code == 422
@@ -182,6 +193,10 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
     assert restarted.get("/api/settings/general").json()["persist_streaming_message_deltas"] is True
     assert restarted.get("/api/settings/general").json()["auto_generate_session_titles"] is False
+    assert restarted.get("/api/settings/general").json()["session_title_backend"] == "specified_model_profile"
+    assert restarted.get("/api/settings/general").json()["session_title_model_profile_id"] == "title-profile"
+    assert restarted.patch("/api/settings/general", json={"session_title_model_profile_id": None}).json()["session_title_model_profile_id"] is None
+    assert restarted.get("/api/settings/general").json()["session_title_unload_after_generation"] is True
     assert restarted.get("/api/settings/general").json()["session_title_prompt"] == "Title from {user_input}"
     assert restarted.get("/api/settings/general").json()["group_transcript_system_instruction"] is None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True

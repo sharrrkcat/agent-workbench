@@ -81,6 +81,7 @@ Run steps:
 - `RunStep.parent_step_id` creates nesting.
 - Prompt Agent default top-level steps include `Resolving agent`, `Building context`, `Resolving model`, `Calling LLM`, `Saving response`, and `Cleanup`.
 - Script Agent default top-level steps include `Resolving agent`, optional `Resolving model`, `Starting script`, `Running script`, `Saving response`, and `Cleanup`.
+- Automatic session title generation is considered only after routing has resolved the actual Agent/action. Prompt Agents try it after model resolution and before the main provider call. Script Agents try it lazily before the first real `ctx.llm.*` call.
 - Script custom steps created with `ctx.step` default under `Running script`.
 - Script Agents may update long-running step messages while polling external jobs, for example queued, running, completed, failed, not_found, or timeout.
 - Model lifecycle unload outcomes are shown on the `Cleanup` step when cleanup attempts unload.
@@ -272,6 +273,7 @@ Semantics:
 - Unload is trusted script-only for manual script calls, and best-effort for lifecycle policies.
 - Successful, skipped, unsupported, and failed unload attempts remain cleanup outcomes in run metadata; unsupported unload and status refresh failure do not overwrite an otherwise successful run unless the lifecycle policy explicitly fails on unload failure.
 - Utility LLM does not participate in LLM resolution. It is configured by General settings and displayed under Settings -> General -> Utility LLM, can use either the `transformers` or `llama_cpp` backend, is not a Provider Profile or Model Profile, and does not change the user's selected main model.
+- Session title generation has its own backend resolver. `utility_llm` uses the Utility LLM first and falls back to the title follow-Agent resolver. `follow_agent_model_profile` resolves Model Profiles in this order: composer/session input override, session default Agent profile, then the invoked Agent profile. `specified_model_profile` uses only the configured title Model Profile id. These title decisions never mutate the session selected Model Profile or the main response LLM resolution.
 
 Current implementation note: `resolve_llm_config` applies defaults first and then overrides later sources, so later sources win. Keep user-facing behavior aligned with the order above when changing it.
 
@@ -304,21 +306,39 @@ Script Agent LLM calls:
 
 ## Session Title Generation
 
-Automatic session title generation is an internal best-effort LLM call controlled by Settings -> General. It runs before the first real provider-bound LLM call in a default-titled session.
+Automatic session title generation is an internal best-effort LLM call controlled by Settings -> General -> LLM & Prompts -> Session Titles. It runs after the first user message that resolves to an LLM-capable Agent/action while the session still has a default title.
 
 Trigger points:
 - Prompt Agents try title generation after model resolution succeeds and before their main LLM call.
 - Script Agents try title generation immediately before the first actual `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.generate`, `ctx.llm.stream`, or `ctx.llm.stream_to_output` call.
-- Slash commands, command result messages, form/status/scan actions that do not call `ctx.llm`, and non-LLM Script Agent actions do not trigger title generation.
+- Explicit `@agent`, `@agent:action`, `:action`, and Intent Routing safe auto-route results can trigger title generation only when the final invoked Agent/action is LLM-capable.
+- Slash commands, command result messages, pure command output, file uploads that do not invoke an LLM, form/status/scan actions that do not call `ctx.llm`, and non-LLM Script Agent actions do not trigger title generation.
 
 Input and output rules:
 - The title prompt uses only the user message that triggered the LLM call.
 - Assistant output, Agent output, command result output, group transcript context, and historical messages are not title inputs.
 - Long user input is truncated from the middle using head/tail preservation according to `session_title_max_input_chars`.
 - The title call is non-streaming, creates no visible user or assistant messages, and emits no `message_delta`.
-- If General `intent_routing_utility_llm_model_path` is configured under Settings -> General -> Utility LLM and the selected Utility LLM backend is available, title generation uses that local Utility LLM first. `transformers` expects `utility_llms/<folder>` and `llama_cpp` expects `utility_llms/<model-folder>/<file>.gguf`.
-- If the Utility LLM is not configured, dependencies are missing, the model folder/file is missing, backend and path do not match, or generation/parsing fails, title generation falls back to the same resolved LLM config as the triggering LLM run.
-- Utility LLM title generation is a core internal call. It is not a Provider Profile or Model Profile call, does not change session model selection, does not trigger Intent Routing, and does not apply model lifecycle unload policy.
+- Title generation does not trigger Intent Routing and does not use retrieved Knowledge snippets, Worldbook entries, Core Memory, assistant output, or command output. For an Intent Routing `knowledge_query` auto route, the title input remains the original user message, not the retrieval query override.
+
+Settings:
+- `auto_generate_session_titles`: enables the one-shot title pre-hook.
+- `session_title_backend`: `utility_llm`, `follow_agent_model_profile`, or `specified_model_profile`. Default is `utility_llm`.
+- `session_title_model_profile_id`: optional Model Profile id used only by `specified_model_profile`. Missing, disabled, invalid, or unavailable profiles skip title generation with a compact warning and do not fail the main run.
+- `session_title_unload_after_generation`: best-effort title model release after title generation. Default is `false`.
+- `session_title_prompt` and `session_title_max_input_chars`: prompt template and source input cap.
+
+Backend resolution:
+- `utility_llm`: uses the configured Utility LLM first. If it is unconfigured, unavailable, missing dependencies/model files, fails generation, or returns an invalid title, resolution falls back to `follow_agent_model_profile`.
+- `follow_agent_model_profile`: resolves the composer/session Model Profile override first, then the session default Agent Model Profile, then the actual invoked Agent Model Profile. It does not fall back to Utility LLM.
+- `specified_model_profile`: uses only `session_title_model_profile_id`. It does not fall back to Utility LLM or follow-Agent resolution.
+- Model Profile title calls use the normal provider/profile resolution path, but with title-specific resolution inputs. They do not change selected Agent, selected Model Profile, main prompt construction, or main response model resolution.
+
+Unload behavior:
+- When `session_title_unload_after_generation=false`, metadata records `unload_state="not_requested"`.
+- Utility LLM title generation calls the Utility LLM unload helper when release is requested and records `released`, `no_supported_release`, or `failed`.
+- Model Profile title generation calls the existing provider unload helper when release is requested. If the title target matches the current response provider/model, release is deferred until run cleanup so the current response model is not unloaded mid-run.
+- Providers that do not support unload record `unload_state="no_supported_release"` without failing the main run. Release failures record `failed` and a compact warning.
 
 Session state:
 - New default-titled sessions start with `title_generation_state="pending"`.
@@ -328,10 +348,11 @@ Session state:
 - Manual rename or an existing non-default title sets or behaves as `manual`.
 
 Lifecycle and metadata:
-- Title generation records compact `title_generation` metadata when tied to a run, including state, backend, fallback use, source message id, truncation counts, generated timestamp or error, and public model/profile identifiers when the main LLM fallback is used. It must not store full long user input, full prompts, raw model output, or secrets.
-- Utility LLM success records `backend="utility_llm:transformers"` or `backend="utility_llm:llama_cpp"`, `fallback_used=false`, and `utility_model_path`. Main LLM fallback records `backend="main_llm"`, `fallback_used=true`, and a compact `utility_error` when applicable.
+- Title generation records compact `title_generation` metadata when tied to a run, including state, backend, fallback use, source message id, truncation counts, generated timestamp or error, and public model/profile identifiers when a Model Profile backend is used. It must not store full long user input, full prompts, raw model output, or secrets.
+- Metadata includes `requested_backend`, `backend`, `fallback_used`, optional `fallback_reason`, `model_profile_resolution`, `model_profile_id`, `trigger`, `trigger_agent_id`, `invoked_agent_id`, `invoked_action_id`, `input_override_model_profile_id`, `unload_after_generation`, `unload_state`, and compact `warnings`.
+- Utility LLM success records a Utility LLM backend id and `utility_model_path`. Model Profile title calls record `backend="model_profile"` plus public provider/model identifiers. Utility fallback records `fallback_used=true`, `fallback_reason`, and compact `utility_error` when applicable.
+- Allowed unload states are `not_requested`, `released`, `deferred_until_run_end`, `no_supported_release`, `failed`, and `skipped_no_model`.
 - Title generation failure records a warning when tied to a run, but it does not fail the main task.
-- Title generation does not independently trigger model lifecycle unload. Prompt Agent and Script Agent cleanup/unload behavior remains tied to the main run.
 
 ## Conversation Context Modes
 

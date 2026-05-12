@@ -40,6 +40,7 @@ def normalize_optional_instruction(value: Any) -> str | None:
 
 
 LEGACY_IGNORED_APP_SETTINGS_KEYS = {"intent_routing_embedding_model_path"}
+SESSION_TITLE_BACKENDS = {"utility_llm", "follow_agent_model_profile", "specified_model_profile"}
 
 
 def sanitize_app_settings_payload(values: dict[str, Any]) -> dict[str, Any]:
@@ -57,6 +58,9 @@ class AppSettings(BaseModel):
     send_text_file_attachments_to_llm: StrictBool = True
     persist_streaming_message_deltas: StrictBool = False
     auto_generate_session_titles: StrictBool = True
+    session_title_backend: str = "utility_llm"
+    session_title_model_profile_id: str | None = None
+    session_title_unload_after_generation: StrictBool = False
     session_title_prompt: str = DEFAULT_SESSION_TITLE_PROMPT
     session_title_max_input_chars: int = Field(default=1200, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
@@ -99,6 +103,22 @@ class AppSettings(BaseModel):
         if not text:
             raise ValueError("Session title prompt must not be empty.")
         return text
+
+    @field_validator("session_title_backend")
+    @classmethod
+    def _validate_session_title_backend(cls, value: str) -> str:
+        backend = str(value or "utility_llm").strip() or "utility_llm"
+        if backend not in SESSION_TITLE_BACKENDS:
+            raise ValueError("Session title backend must be utility_llm, follow_agent_model_profile, or specified_model_profile.")
+        return backend
+
+    @field_validator("session_title_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_session_title_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     @field_validator("group_transcript_system_instruction", "command_result_context_instruction", mode="before")
     @classmethod
@@ -189,6 +209,9 @@ class AppSettingsPatch(BaseModel):
     send_text_file_attachments_to_llm: StrictBool | None = None
     persist_streaming_message_deltas: StrictBool | None = None
     auto_generate_session_titles: StrictBool | None = None
+    session_title_backend: str | None = None
+    session_title_model_profile_id: str | None = None
+    session_title_unload_after_generation: StrictBool | None = None
     session_title_prompt: str | None = None
     session_title_max_input_chars: int | None = Field(default=None, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
@@ -233,6 +256,24 @@ class AppSettingsPatch(BaseModel):
         if not text:
             raise ValueError("Session title prompt must not be empty.")
         return text
+
+    @field_validator("session_title_backend")
+    @classmethod
+    def _validate_session_title_backend(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        backend = str(value or "").strip()
+        if backend not in SESSION_TITLE_BACKENDS:
+            raise ValueError("Session title backend must be utility_llm, follow_agent_model_profile, or specified_model_profile.")
+        return backend
+
+    @field_validator("session_title_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_session_title_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     @field_validator("group_transcript_system_instruction", "command_result_context_instruction", mode="before")
     @classmethod
@@ -311,7 +352,12 @@ def app_settings_response(settings: AppSettings) -> dict[str, Any]:
 
 def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
     updates = patch.model_dump(exclude_none=True)
-    for key in ("group_transcript_system_instruction", "command_result_context_instruction", "intent_routing_embedding_model_profile_id"):
+    for key in (
+        "group_transcript_system_instruction",
+        "command_result_context_instruction",
+        "intent_routing_embedding_model_profile_id",
+        "session_title_model_profile_id",
+    ):
         if key in patch.model_fields_set and getattr(patch, key) is None:
             updates[key] = None
     return updates

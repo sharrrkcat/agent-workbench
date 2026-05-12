@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from ai_workbench.api.main import create_app
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.utility_llm import UtilityLLMService, extract_json_object, normalize_utility_model_path, scan_utility_models, validate_intent_prediction
+from tests.test_session_titles import set_chat_title_profile
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, run
 
 
@@ -226,9 +227,10 @@ def test_title_generation_prefers_utility_llm_when_available() -> None:
     assert metadata["utility_model_path"] == "utility_llms/Qwen3-0.6B"
 
 
-def test_title_generation_falls_back_to_main_llm_when_utility_fails() -> None:
+def test_title_generation_falls_back_to_model_profile_when_utility_fails() -> None:
     llm = FakeLLMRuntime(response="Main Title")
     fixture = PromptRuntimeFixture(llm=llm)
+    set_chat_title_profile(fixture)
     fixture.agent_runner.utility_llm_service = FakeUtilityLLM(fail_title=True)
     fixture.app_settings.patch({"auto_generate_session_titles": True, "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B"})
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
@@ -238,8 +240,9 @@ def test_title_generation_falls_back_to_main_llm_when_utility_fails() -> None:
     assert result.success is True
     assert fixture.sessions.get_session(session.session_id).title == "Main Title"
     metadata = fixture.runs.get_run(result.run_id).metadata["title_generation"]
-    assert metadata["backend"] == "main_llm"
+    assert metadata["backend"] == "model_profile"
     assert metadata["fallback_used"] is True
+    assert metadata["fallback_reason"] == "utility_llm_generation_failed"
     assert "utility_error" in metadata
 
 
