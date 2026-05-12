@@ -76,12 +76,20 @@ def test_message_knowledge_snippets_modal_contract() -> None:
 
     assert "BookOpen" in source
     assert "knowledgeSnippetRefs" in source
-    assert "KnowledgeSnippetsModal" in source
+    assert "InjectedContextModal" in source
+    assert "KnowledgeSnippetsTab" in source
+    assert "WorldbookEntriesTab" in source
+    assert "MemoryContextTab" in source
     assert "api.getKnowledgeChunk" in source
+    assert "api.getWorldbookEntry" in source
     assert "snippet_refs" in source
+    assert "entry_refs" in source
     assert "getKnowledgeChunk" in client
+    assert "getWorldbookEntry" in client
     assert "/api/knowledge/chunks/" in client
+    assert "/api/worldbook-entries/" in client
     assert ".knowledge-snippets-modal" in styles
+    assert ".context-modal-body" in styles
     assert "white-space: pre-wrap" in styles
 
 

@@ -225,6 +225,7 @@ export const api = {
   deleteWorldbook: (worldbookId: string) =>
     request<{ deleted: boolean; worldbook_id: string }>(`/api/worldbooks/${worldbookId}`, { method: 'DELETE' }),
   listWorldbookEntries: (worldbookId: string) => request<WorldbookEntry[]>(`/api/worldbooks/${worldbookId}/entries`),
+  getWorldbookEntry: (entryId: string) => request<WorldbookEntry>(`/api/worldbook-entries/${entryId}`),
   createWorldbookEntry: (worldbookId: string, entry: WorldbookEntryInput) =>
     request<WorldbookEntry>(`/api/worldbooks/${worldbookId}/entries`, {
       method: 'POST',

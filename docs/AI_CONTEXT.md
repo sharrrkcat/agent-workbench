@@ -292,9 +292,11 @@ Likely source:
 - `frontend/src/components/settings/WorldbookSettingsPanel.tsx`
 - `frontend/src/components/ui`
 - `frontend/src/components/ChatHeader.tsx` when changing Context Sources or session Knowledge/Worldbook binding UI
+- `frontend/src/components/MessageBubble.tsx` when changing message-level injected context visibility, Knowledge snippets modal behavior, or run-step compact context summaries
 - `frontend/src/App.tsx` and `frontend/src/components/SettingsPage.tsx` when changing Settings deep links or Context Sources "Open settings" routing
 - `frontend/src/api/client.ts`
 - `frontend/src/types.ts`
+- `frontend/src/styles.css` for chat context modal or run-step summary layout
 - `frontend/src/i18n/resources`
 
 Tests:
@@ -303,6 +305,7 @@ Tests:
 - `uv run pytest tests/test_core_memory_context.py tests/test_worldbook_context.py` when runtime builders change
 - `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py` when Prompt Agent or Script Agent runtime injection changes
 - `uv run pytest tests/test_frontend_chat_contracts.py` if frontend settings contract changes
+- `uv run pytest tests/test_frontend_chat_contracts.py` if message context modal, run-step context summary, or metadata contract assumptions change
 - `cd frontend && npm run build`
 - `cd frontend && node scripts/check-i18n.mjs`
 
@@ -315,6 +318,7 @@ UI/i18n rule:
 Avoid unless explicitly in scope:
 - Do not modify Agent or Capability manifests for Worldbook storage/API work.
 - Runtime context injection is implemented for Core Memory and Worldbook. Keep injection limited to Prompt Agent main LLM calls and Script Agent `ctx.llm.*`; do not route it through title generation, query expansion, embeddings, reranking, commands, `/kb-search`, or non-LLM capability calls.
+- Message-level injected context visibility must use compact metadata refs/counts/warnings only. Do not store full Core Memory text, full Worldbook entry content, rendered context blocks, full Knowledge snippet content, or vector blobs in run, run-step, or message metadata for UI convenience; fetch current user-owned content from the appropriate APIs when opening the modal.
 - Do not use Knowledge indexes, vector storage, RAG retrieval, or FTS for Worldbook matching.
 
 ### Change Knowledge / RAG settings, injection, or local model APIs

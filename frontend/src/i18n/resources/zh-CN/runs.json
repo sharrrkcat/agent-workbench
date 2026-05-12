@@ -28,5 +28,29 @@
     "outputTokens": "输出 {{count}} tokens",
     "estimatedOutputTokens": "输出 ~{{count}} tokens",
     "tokensPerSecond": "{{rate}} tok/s"
+  },
+  "contextSummary": {
+    "title": "已注入上下文",
+    "memory": "记忆",
+    "worldbook": "世界书",
+    "knowledge": "知识",
+    "kb": "知识库",
+    "embedding": "Embedding",
+    "vector": "向量",
+    "keyword": "关键词",
+    "merged": "合并",
+    "reranker": "Reranker",
+    "warnings": "警告",
+    "injected": "已注入",
+    "skipped": "已跳过",
+    "notUsed": "未使用",
+    "unknown": "未知",
+    "used": "已使用",
+    "failed": "失败",
+    "memoryInjected": "已注入 · {{count}} 字符",
+    "worldbookCounts": "{{injected}} 已注入 / {{matched}} 已匹配 · 递归 {{recursion}}",
+    "snippetCount": "{{count}} 个片段",
+    "rerankerValue": "reranker {{value}}",
+    "skippedWithReason": "已跳过 · {{reason}}"
   }
 }

@@ -2657,6 +2657,76 @@ input:disabled {
   overflow: hidden;
 }
 
+.app-modal-panel.context-modal {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.context-modal-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.context-modal-body > .knowledge-snippets-body:first-child {
+  grid-row: 1 / -1;
+}
+
+.context-modal-tabs {
+  padding: 10px 12px;
+}
+
+.context-modal-scroll {
+  align-content: start;
+}
+
+.context-modal-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.context-modal-section-heading {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #202020;
+}
+
+.context-modal-section-heading > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.context-modal-section-heading strong,
+.context-modal-section-heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-modal-section-heading strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.context-modal-section-heading small {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+}
+
+.context-content-block {
+  max-height: min(360px, 42vh);
+  overflow: auto;
+}
+
+.context-entry-card {
+  min-width: 0;
+}
+
 .knowledge-snippets-modal .image-preview-close {
   position: static;
   width: 32px;

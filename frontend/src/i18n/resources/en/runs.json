@@ -28,5 +28,29 @@
     "outputTokens": "output {{count}} tokens",
     "estimatedOutputTokens": "output ~{{count}} tokens",
     "tokensPerSecond": "{{rate}} tok/s"
+  },
+  "contextSummary": {
+    "title": "Context injected",
+    "memory": "Memory",
+    "worldbook": "Worldbook",
+    "knowledge": "Knowledge",
+    "kb": "KB",
+    "embedding": "Embedding",
+    "vector": "Vector",
+    "keyword": "Keyword",
+    "merged": "Merged",
+    "reranker": "Reranker",
+    "warnings": "Warnings",
+    "injected": "injected",
+    "skipped": "skipped",
+    "notUsed": "not used",
+    "unknown": "unknown",
+    "used": "used",
+    "failed": "failed",
+    "memoryInjected": "injected · {{count}} chars",
+    "worldbookCounts": "{{injected}} injected / {{matched}} matched · recursion {{recursion}}",
+    "snippetCount": "{{count}} snippets",
+    "rerankerValue": "reranker {{value}}",
+    "skippedWithReason": "skipped · {{reason}}"
   }
 }

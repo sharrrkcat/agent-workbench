@@ -85,6 +85,7 @@ Run steps:
 - Script Agents may update long-running step messages while polling external jobs, for example queued, running, completed, failed, not_found, or timeout.
 - Model lifecycle unload outcomes are shown on the `Cleanup` step when cleanup attempts unload.
 - Session load returns runs and steps attached to messages.
+- The frontend may render the `Building context` step with a compact `Context injected` summary for Core Memory, Worldbook, Knowledge, and warnings. This summary is diagnostic only and must not include full Core Memory text, full Worldbook entry content, Knowledge query text, or full Knowledge snippet content.
 
 Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
@@ -348,6 +349,8 @@ Run metadata records `metadata.core_memory_context` and `metadata.worldbook_cont
 ```
 
 Run step metadata may also carry compact context summaries for step-level display. Prompt Agents attach compact Core Memory, Worldbook, and Knowledge summaries to `Building context`. Script Agents append compact summaries to `Running script.metadata.core_memory_contexts`, `worldbook_contexts`, and `knowledge_contexts` for LLM calls. Step-level metadata must not include full Core Memory text, full Worldbook content, Knowledge query text, full snippet content, `snippet_refs`, or vector blobs; those remain in run/message metadata only where explicitly allowed for snippets button wiring.
+
+Chat context inspection is a frontend workflow over compact refs. The message action opens a modal that shows only tabs for context types used in that run. Core Memory is read from current General settings, Worldbook entries are fetched by `metadata.worldbook_context.entry_refs[*].entry_id`, and Knowledge chunks are fetched by `metadata.knowledge_context.snippet_refs[*].chunk_id`. If user-owned content changed or was deleted after the run, the modal shows the current content or an unavailable state rather than a stored snapshot.
 
 Skipped or failed retrieval records `enabled=false` or `injected=false` with a `reason` such as `agent_disabled`, `no_active_kbs`, `empty_query`, `no_results`, or `retrieval_failed`. Query metadata is truncated and full retrieved content is not stored in run or message metadata. Assistant/agent messages that used automatic Knowledge context copy this compact `knowledge_context` metadata so the UI can show a snippets button. Full chunk content is fetched on demand with `GET /api/knowledge/chunks/{chunk_id}`, which returns chunk content and minimal KB/source metadata without vectors or full source originals.
 

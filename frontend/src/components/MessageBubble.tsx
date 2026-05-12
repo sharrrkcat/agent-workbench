@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpen, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, X, XCircle } from 'lucide-react';
+import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, ImageAttachment, ImagePayload, KnowledgeChunk, Message, Run, RunStep } from '../types';
+import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, Run, RunStep, WorldbookEntry } from '../types';
 import { api } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
@@ -12,6 +12,7 @@ import { formatMessageTime, parseServerTime } from '../utils/time';
 import { resolveAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
 import { getResolvedAgentDisplay } from '../utils/agents';
 import { formatApiError, getRunStatusLabel, getRunStepLabel } from '../i18n/formatters';
+import { AppModal, Chip } from './ui';
 
 export type FilePreview = {
   url: string;
@@ -36,7 +37,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(contentToText(message.content));
-  const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false);
+  const [contextModalOpen, setContextModalOpen] = useState(false);
 
   if (message.output_type === 'event') {
     return <SystemEventSeparator message={message} />;
@@ -55,10 +56,11 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted), t) : '';
   const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
-  const snippetRefs = isAgentMessage ? knowledgeSnippetRefs(message.metadata) : [];
   const runSteps = storeRunSteps || messageRunSteps(message);
   const messageRun = storeRun || message.run;
-  const runKnowledge = knowledgeRetrievalFromMetadata(message.metadata, messageRun?.metadata);
+  const contextMetadata = isAgentMessage ? normalizeContextMetadata({ message_metadata: message.metadata, run_metadata: messageRun?.metadata, steps: runSteps }) : {};
+  const runKnowledge = contextMetadata.knowledge ? knowledgeRetrievalSummaryFromNormalized(contextMetadata.knowledge) : null;
+  const canViewContext = Boolean(contextMetadata.memory?.injected || contextMetadata.knowledge?.canViewSnippets || (contextMetadata.worldbook?.injected && contextMetadata.worldbook.entryRefs.length));
   if (!editing && !message.client_status && !hasVisibleRun(messageRun) && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
@@ -154,8 +156,8 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
                 <Trash2 size={13} />
               </button>
             ) : null}
-            {snippetRefs.length ? (
-              <button type="button" onClick={() => setKnowledgeModalOpen(true)} disabled={operationPending} title={t('chat:actions.viewKnowledgeSnippets', { defaultValue: 'View knowledge snippets' })}>
+            {canViewContext ? (
+              <button type="button" onClick={() => setContextModalOpen(true)} disabled={operationPending} title={t('chat:actions.viewInjectedContext')}>
                 <BookOpen size={13} />
               </button>
             ) : null}
@@ -163,7 +165,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
           </div>
         ) : null}
       </div>
-      {knowledgeModalOpen ? <KnowledgeSnippetsModal refs={snippetRefs} onClose={() => setKnowledgeModalOpen(false)} /> : null}
+      {contextModalOpen ? <InjectedContextModal context={contextMetadata} onClose={() => setContextModalOpen(false)} /> : null}
     </article>
   );
 }
@@ -185,6 +187,7 @@ type KnowledgeSnippetRef = {
 
 type KnowledgeSnippet = KnowledgeSnippetRef & {
   chunk?: KnowledgeChunk;
+  error?: string;
 };
 
 type KnowledgeRetrievalSummary = {
@@ -234,8 +237,111 @@ type KbSearchResponse = {
   error?: { code?: string; message?: string };
 };
 
-function KnowledgeSnippetsModal({ refs, onClose }: { refs: KnowledgeSnippetRef[]; onClose: () => void }) {
-  const [snippets, setSnippets] = useState<KnowledgeSnippet[]>(() => refs.map((ref) => ({ ...ref })));
+type CoreMemoryContextSummary = {
+  enabled?: boolean;
+  injected?: boolean;
+  contentChars?: number;
+  skippedReason?: string;
+  warnings: string[];
+};
+
+type KnowledgeContextSummary = {
+  injected?: boolean;
+  snippetCount?: number;
+  snippetRefs: KnowledgeSnippetRef[];
+  kbNames: string[];
+  rerankerSummary?: string;
+  warnings: string[];
+  canViewSnippets: boolean;
+  retrieval?: KnowledgeRetrievalSummary;
+};
+
+type WorldbookEntryRef = {
+  index: string;
+  worldbook_id?: string;
+  worldbook_name?: string;
+  entry_id: string;
+  entry_name?: string;
+  activation_mode?: 'always' | 'keyword' | string;
+  matched_keywords: string[];
+  matched_by_recursion?: boolean;
+  recursion_depth?: number;
+  injected_index?: number;
+  warnings: string[];
+};
+
+type WorldbookContextSummary = {
+  enabled?: boolean;
+  injected?: boolean;
+  matchedEntryCount?: number;
+  injectedEntryCount?: number;
+  recursionDepth?: number;
+  recursionRoundsUsed?: number;
+  entryRefs: WorldbookEntryRef[];
+  warnings: string[];
+};
+
+type NormalizedContextMetadata = {
+  memory?: CoreMemoryContextSummary;
+  knowledge?: KnowledgeContextSummary;
+  worldbook?: WorldbookContextSummary;
+};
+
+type ContextTab = 'knowledge' | 'worldbook' | 'memory';
+
+type WorldbookEntryState = {
+  ref: WorldbookEntryRef;
+  entry?: WorldbookEntry;
+  loading?: boolean;
+  error?: string;
+  missing?: boolean;
+};
+
+function InjectedContextModal({ context, onClose }: { context: NormalizedContextMetadata; onClose: () => void }) {
+  const { t } = useTranslation(['chat', 'common']);
+  const tabs = contextModalTabs(context);
+  const [activeTab, setActiveTab] = useState<ContextTab>(() => tabs[0] || 'knowledge');
+  const title = tabs.length > 1 ? t('chat:contextModal.title') : tabLabel(tabs[0] || 'knowledge', t);
+  const subtitle = contextModalSubtitle(context, t);
+
+  useEffect(() => {
+    if (!tabs.includes(activeTab) && tabs.length) setActiveTab(tabs[0]);
+  }, [activeTab, tabs]);
+
+  return (
+    <AppModal
+      open
+      width="large"
+      title={title}
+      subtitle={subtitle}
+      closeLabel={t('common:close')}
+      className="knowledge-snippets-modal context-modal"
+      bodyClassName="context-modal-body"
+      onClose={onClose}
+    >
+      {tabs.length > 1 ? (
+        <div className="context-sources-tabs context-modal-tabs" role="tablist">
+          {tabs.map((tab) => (
+            <button key={tab} type="button" role="tab" className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
+              {tab === 'worldbook' ? <BookOpenText size={14} /> : <BookOpen size={14} />}
+              {tabLabel(tab, t)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="knowledge-snippets-body context-modal-scroll">
+        {!tabs.length ? <p className="knowledge-snippets-state">{t('chat:contextModal.noContext')}</p> : null}
+        {activeTab === 'memory' && context.memory ? <MemoryContextTab summary={context.memory} /> : null}
+        {activeTab === 'knowledge' && context.knowledge ? <KnowledgeSnippetsTab refs={context.knowledge.snippetRefs} /> : null}
+        {activeTab === 'worldbook' && context.worldbook ? <WorldbookEntriesTab refs={context.worldbook.entryRefs} /> : null}
+      </div>
+    </AppModal>
+  );
+}
+
+function MemoryContextTab({ summary }: { summary: CoreMemoryContextSummary }) {
+  const { t } = useTranslation(['chat']);
+  const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -243,14 +349,12 @@ function KnowledgeSnippetsModal({ refs, onClose }: { refs: KnowledgeSnippetRef[]
     let cancelled = false;
     setLoading(true);
     setError('');
-    Promise.all(refs.map((ref) => api.getKnowledgeChunk(ref.chunk_id)))
-      .then((chunks) => {
-        if (cancelled) return;
-        setSnippets(refs.map((ref, index) => ({ ...ref, chunk: chunks[index] })));
+    api.getGeneralSettings()
+      .then((nextSettings) => {
+        if (!cancelled) setSettings(nextSettings);
       })
       .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load knowledge snippets.');
+        if (!cancelled) setError(err instanceof Error ? err.message : t('chat:contextModal.failedToLoadCoreMemory'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -258,55 +362,283 @@ function KnowledgeSnippetsModal({ refs, onClose }: { refs: KnowledgeSnippetRef[]
     return () => {
       cancelled = true;
     };
-  }, [refs]);
+  }, [t]);
+
+  const content = settings?.core_memory_content || '';
+  return (
+    <section className="context-modal-section">
+      <div className="context-modal-section-heading">
+        <div>
+          <strong>{t('chat:contextModal.coreMemory')}</strong>
+          <small>{t('chat:contextModal.showingCurrentCoreMemory')}</small>
+        </div>
+        <div className="knowledge-snippet-scores">
+          <span>{summary.injected ? t('chat:contextModal.injected') : t('chat:contextModal.skipped')}</span>
+          <span>{t('chat:contextModal.chars', { count: content.length || summary.contentChars || 0 })}</span>
+          {summary.skippedReason ? <span>{summary.skippedReason}</span> : null}
+          {summary.warnings.length ? <span>{t('chat:contextModal.warningsCount', { count: summary.warnings.length })}</span> : null}
+        </div>
+      </div>
+      {loading ? <p className="knowledge-snippets-state">{t('chat:contextModal.loadingCoreMemory')}</p> : null}
+      {error ? <p className="knowledge-snippets-state error">{error}</p> : null}
+      {!loading && !error ? <pre className="knowledge-snippet-content context-content-block">{content || t('chat:contextModal.emptyCoreMemory')}</pre> : null}
+      {summary.warnings.length ? <WarningList warnings={summary.warnings} /> : null}
+    </section>
+  );
+}
+
+function KnowledgeSnippetsTab({ refs }: { refs: KnowledgeSnippetRef[] }) {
+  const { t } = useTranslation(['chat']);
+  const [snippets, setSnippets] = useState<KnowledgeSnippet[]>(() => refs.map((ref) => ({ ...ref })));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.allSettled(refs.map((ref) => api.getKnowledgeChunk(ref.chunk_id)))
+      .then((results) => {
+        if (cancelled) return;
+        setSnippets(refs.map((ref, index) => {
+          const result = results[index];
+          if (result?.status === 'fulfilled') return { ...ref, chunk: result.value };
+          const reason = result?.status === 'rejected' && result.reason instanceof Error ? result.reason.message : t('chat:contextModal.failedToLoadKnowledgeSnippets');
+          return { ...ref, error: reason };
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refs, t]);
 
   return (
-    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="Knowledge snippets" onClick={onClose}>
-      <section className="knowledge-snippets-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="file-preview-header">
-          <div className="file-preview-title">
-            <strong>Knowledge snippets</strong>
-            <span>{refs.length} snippets used</span>
-          </div>
-          <button type="button" className="image-preview-close" onClick={onClose} title="Close">
-            <X size={16} />
-          </button>
-        </header>
-        <div className="knowledge-snippets-body">
-          {loading ? <p className="knowledge-snippets-state">Loading snippets...</p> : null}
-          {error ? <p className="knowledge-snippets-state error">{error}</p> : null}
-          {!loading && !error && !snippets.length ? <p className="knowledge-snippets-state">No knowledge snippets were recorded.</p> : null}
-          {!loading && !error
-            ? snippets.map((snippet) => (
-                <article className="knowledge-snippet-card" key={`${snippet.index}:${snippet.chunk_id}`}>
-                  <div className="knowledge-snippet-heading">
-                    <span>{snippet.index}</span>
-                    <div>
-                      <strong>{snippet.chunk?.knowledge_base_name || snippet.knowledge_base_name || snippet.knowledge_base_id || 'Knowledge base'}</strong>
-                      <small>{snippet.chunk?.source_title || snippet.source_title || snippet.source_id || 'Source'}</small>
-                      {snippet.chunk?.heading_path || snippet.heading_path ? <small>{snippet.chunk?.heading_path || snippet.heading_path}</small> : null}
-                    </div>
-                  </div>
-                  <pre className="knowledge-snippet-content">{snippet.chunk?.content || ''}</pre>
-                  <div className="knowledge-snippet-scores">
-                    {scoreLabel('rank', snippet.rank)}
-                    {scoreLabel('vector', snippet.vector_score)}
-                    {scoreLabel('keyword', snippet.keyword_score)}
-                    {scoreLabel('rrf', snippet.rrf_score)}
-                    {scoreLabel('rerank', snippet.rerank_score)}
-                    {scoreLabel('chunk', snippet.chunk?.chunk_index)}
-                  </div>
-                </article>
-              ))
-            : null}
-        </div>
-      </section>
+    <>
+      {loading ? <p className="knowledge-snippets-state">{t('chat:contextModal.loadingKnowledgeSnippets')}</p> : null}
+      {!loading && !snippets.length ? <p className="knowledge-snippets-state">{t('chat:contextModal.noKnowledgeSnippets')}</p> : null}
+      {!loading
+        ? snippets.map((snippet) => (
+            <article className="knowledge-snippet-card" key={`${snippet.index}:${snippet.chunk_id}`}>
+              <div className="knowledge-snippet-heading">
+                <span>{snippet.index}</span>
+                <div>
+                  <strong>{snippet.chunk?.knowledge_base_name || snippet.knowledge_base_name || snippet.knowledge_base_id || t('chat:contextModal.knowledgeBase')}</strong>
+                  <small>{snippet.chunk?.source_title || snippet.source_title || snippet.source_id || t('chat:contextModal.source')}</small>
+                  {snippet.chunk?.heading_path || snippet.heading_path ? <small>{snippet.chunk?.heading_path || snippet.heading_path}</small> : null}
+                </div>
+              </div>
+              {snippet.error ? <p className="knowledge-snippets-state error">{t('chat:contextModal.knowledgeSnippetUnavailable')}: {snippet.error}</p> : <pre className="knowledge-snippet-content">{snippet.chunk?.content || ''}</pre>}
+              <div className="knowledge-snippet-scores">
+                {scoreLabel(t('chat:contextModal.rank'), snippet.rank)}
+                {scoreLabel(t('chat:contextModal.vector'), snippet.vector_score)}
+                {scoreLabel(t('chat:contextModal.keyword'), snippet.keyword_score)}
+                {scoreLabel(t('chat:contextModal.rrf'), snippet.rrf_score)}
+                {scoreLabel(t('chat:contextModal.rerank'), snippet.rerank_score)}
+                {scoreLabel(t('chat:contextModal.chunk'), snippet.chunk?.chunk_index)}
+              </div>
+            </article>
+          ))
+        : null}
+    </>
+  );
+}
+
+function WorldbookEntriesTab({ refs }: { refs: WorldbookEntryRef[] }) {
+  const { t } = useTranslation(['chat']);
+  const [items, setItems] = useState<WorldbookEntryState[]>(() => refs.map((ref) => ({ ref, loading: true })));
+
+  useEffect(() => {
+    let cancelled = false;
+    setItems(refs.map((ref) => ({ ref, loading: true })));
+    Promise.allSettled(refs.map((ref) => api.getWorldbookEntry(ref.entry_id)))
+      .then((results) => {
+        if (cancelled) return;
+        setItems(refs.map((ref, index) => {
+          const result = results[index];
+          if (result?.status === 'fulfilled') return { ref, entry: result.value, loading: false };
+          const message = result?.status === 'rejected' && result.reason instanceof Error ? result.reason.message : t('chat:contextModal.failedToLoadWorldbookEntry');
+          return { ref, loading: false, missing: message.includes('not found') || message.includes('NOT_FOUND'), error: message };
+        }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refs, t]);
+
+  if (!refs.length) return <p className="knowledge-snippets-state">{t('chat:contextModal.noWorldbookEntries')}</p>;
+
+  return (
+    <>
+      {items.map((item) => {
+        const entry = item.entry;
+        const ref = item.ref;
+        return (
+          <article className="knowledge-snippet-card context-entry-card" key={`${ref.index}:${ref.entry_id}`}>
+            <div className="knowledge-snippet-heading">
+              <span>{ref.index}</span>
+              <div>
+                <strong>{entry?.name || ref.entry_name || ref.entry_id}</strong>
+                <small>{ref.worldbook_name || ref.worldbook_id || t('chat:contextModal.worldbook')}</small>
+                <small>{t('chat:contextModal.showingCurrentEntryContent')}</small>
+              </div>
+            </div>
+            <div className="knowledge-snippet-scores">
+              <Chip tone={activationModeTone(entry?.activation_mode || ref.activation_mode)}>{activationModeLabel(entry?.activation_mode || ref.activation_mode, t)}</Chip>
+              {ref.matched_keywords.length ? <span>{t('chat:contextModal.matchedKeywords')}: {ref.matched_keywords.join(', ')}</span> : null}
+              {ref.recursion_depth !== undefined ? <span>{t('chat:contextModal.recursion')}: {ref.recursion_depth}</span> : null}
+              {ref.matched_by_recursion ? <span>{t('chat:contextModal.matchedByRecursion')}</span> : null}
+            </div>
+            {item.loading ? <p className="knowledge-snippets-state">{t('chat:contextModal.loadingWorldbookEntry')}</p> : null}
+            {!item.loading && item.missing ? <p className="knowledge-snippets-state error">{t('chat:contextModal.worldbookEntryMissing')}</p> : null}
+            {!item.loading && !item.missing && item.error ? <p className="knowledge-snippets-state error">{t('chat:contextModal.failedToLoadWorldbookEntry')}: {item.error}</p> : null}
+            {!item.loading && entry ? <pre className="knowledge-snippet-content context-content-block">{entry.content || ''}</pre> : null}
+            {ref.warnings.length ? <WarningList warnings={ref.warnings} /> : null}
+          </article>
+        );
+      })}
+    </>
+  );
+}
+
+function WarningList({ warnings }: { warnings: string[] }) {
+  return (
+    <div className="run-step-knowledge-warnings">
+      {warnings.map((warning, index) => (
+        <span key={`${warning}-${index}`}>{warning}</span>
+      ))}
     </div>
   );
 }
 
-function knowledgeSnippetRefs(metadata: Record<string, unknown> | undefined): KnowledgeSnippetRef[] {
-  const context = metadata?.knowledge_context;
+function contextModalTabs(context: NormalizedContextMetadata): ContextTab[] {
+  const tabs: ContextTab[] = [];
+  if (context.knowledge?.canViewSnippets) tabs.push('knowledge');
+  if (context.worldbook?.injected && context.worldbook.entryRefs.length) tabs.push('worldbook');
+  if (context.memory?.injected) tabs.push('memory');
+  return tabs;
+}
+
+function tabLabel(tab: ContextTab, t: ReturnType<typeof useTranslation>['t']): string {
+  if (tab === 'memory') return t('chat:contextModal.memory');
+  if (tab === 'worldbook') return t('chat:contextModal.worldbookEntries');
+  return t('chat:contextModal.knowledgeSnippets');
+}
+
+function contextModalSubtitle(context: NormalizedContextMetadata, t: ReturnType<typeof useTranslation>['t']): string {
+  const parts = [];
+  if (context.memory?.injected) parts.push(t('chat:contextModal.memory'));
+  if (context.knowledge?.canViewSnippets) parts.push(t('chat:contextModal.snippetsUsed', { count: context.knowledge.snippetRefs.length }));
+  if (context.worldbook?.injected && context.worldbook.entryRefs.length) parts.push(t('chat:contextModal.entriesUsed', { count: context.worldbook.entryRefs.length }));
+  return parts.join(' / ');
+}
+
+function activationModeLabel(mode: string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (mode === 'always') return t('chat:contextModal.alwaysActive');
+  if (mode === 'keyword') return t('chat:contextModal.keywordTriggered');
+  return mode || t('chat:contextModal.keywordTriggered');
+}
+
+function activationModeTone(mode: string | undefined): 'neutral' | 'active' | 'warning' | 'danger' {
+  return mode === 'always' ? 'active' : 'neutral';
+}
+
+function normalizeContextMetadata(input: unknown): NormalizedContextMetadata {
+  const records = collectContextRecords(input);
+  const memoryContexts = records.flatMap((record) => [
+    ...plainRecordArray(record.core_memory_contexts),
+    ...(isPlainRecord(record.core_memory_context) ? [record.core_memory_context] : []),
+  ]);
+  const knowledgeContexts = records.flatMap((record) => [
+    ...plainRecordArray(record.knowledge_contexts),
+    ...(isPlainRecord(record.knowledge_context) ? [record.knowledge_context] : []),
+  ]);
+  const worldbookContexts = records.flatMap((record) => [
+    ...plainRecordArray(record.worldbook_contexts),
+    ...(isPlainRecord(record.worldbook_context) ? [record.worldbook_context] : []),
+  ]);
+
+  const result: NormalizedContextMetadata = {};
+  const memory = mergeMemoryContexts(memoryContexts);
+  const knowledge = mergeKnowledgeContexts(knowledgeContexts);
+  const worldbook = mergeWorldbookContexts(worldbookContexts);
+  if (memory) result.memory = memory;
+  if (knowledge) result.knowledge = knowledge;
+  if (worldbook) result.worldbook = worldbook;
+  return result;
+}
+
+function collectContextRecords(input: unknown): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [];
+  function visit(value: unknown) {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!isPlainRecord(value)) return;
+    records.push(value);
+    if (isPlainRecord(value.message_metadata)) visit(value.message_metadata);
+    if (isPlainRecord(value.run_metadata)) visit(value.run_metadata);
+    if (Array.isArray(value.steps)) {
+      value.steps.forEach((step) => {
+        if (isPlainRecord(step)) visit(isPlainRecord(step.metadata) ? step.metadata : step);
+      });
+    }
+    if (isPlainRecord(value.metadata)) visit(value.metadata);
+  }
+  visit(input);
+  return records;
+}
+
+function mergeMemoryContexts(contexts: Record<string, unknown>[]): CoreMemoryContextSummary | undefined {
+  if (!contexts.length) return undefined;
+  const last = contexts[contexts.length - 1];
+  return {
+    enabled: booleanValue(last.enabled),
+    injected: contexts.some((context) => context.injected === true),
+    contentChars: maxNumber(contexts.map((context) => numberValue(context.content_chars))),
+    skippedReason: textValue(last.skipped_reason),
+    warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
+  };
+}
+
+function mergeKnowledgeContexts(contexts: Record<string, unknown>[]): KnowledgeContextSummary | undefined {
+  if (!contexts.length) return undefined;
+  const snippetRefs = dedupeSnippetRefs(contexts.flatMap((context) => knowledgeSnippetRefs(context)));
+  const retrievals = contexts.map(knowledgeRetrievalSummary).filter((item): item is KnowledgeRetrievalSummary => Boolean(item));
+  const aggregateContext = contexts[contexts.length - 1];
+  const retrieval = mergeKnowledgeRetrievalSummaries(retrievals);
+  return {
+    injected: contexts.some((context) => context.injected === true),
+    snippetCount: snippetRefs.length || maxNumber(contexts.map((context) => numberValue(context.result_count))),
+    snippetRefs,
+    kbNames: uniqueStrings(contexts.flatMap((context) => [
+      ...stringArray(context.knowledge_base_names),
+      ...stringArray(context.knowledge_base_ids),
+    ])),
+    rerankerSummary: retrieval ? rerankerLabel(retrieval) : undefined,
+    warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
+    canViewSnippets: snippetRefs.length > 0,
+    retrieval: retrieval || (aggregateContext ? knowledgeRetrievalSummary(aggregateContext) || undefined : undefined),
+  };
+}
+
+function mergeWorldbookContexts(contexts: Record<string, unknown>[]): WorldbookContextSummary | undefined {
+  if (!contexts.length) return undefined;
+  const entryRefs = dedupeWorldbookRefs(contexts.flatMap((context) => worldbookEntryRefs(context)));
+  return {
+    enabled: contexts.some((context) => context.enabled === true),
+    injected: contexts.some((context) => context.injected === true),
+    matchedEntryCount: sumNumbers(contexts.map((context) => numberValue(context.matched_entry_count))),
+    injectedEntryCount: entryRefs.length || sumNumbers(contexts.map((context) => numberValue(context.injected_entry_count))),
+    recursionDepth: maxNumber(contexts.map((context) => numberValue(context.recursion_depth))),
+    recursionRoundsUsed: maxNumber(contexts.map((context) => numberValue(context.recursion_rounds_used))),
+    entryRefs,
+    warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
+  };
+}
+
+function knowledgeSnippetRefs(context: Record<string, unknown> | undefined): KnowledgeSnippetRef[] {
   if (!isPlainRecord(context) || !Array.isArray(context.snippet_refs)) return [];
   const refs: KnowledgeSnippetRef[] = [];
   context.snippet_refs.forEach((item, index) => {
@@ -327,6 +659,48 @@ function knowledgeSnippetRefs(metadata: Record<string, unknown> | undefined): Kn
     });
   });
   return refs;
+}
+
+function worldbookEntryRefs(context: Record<string, unknown> | undefined): WorldbookEntryRef[] {
+  if (!isPlainRecord(context) || !Array.isArray(context.entry_refs)) return [];
+  const refs: WorldbookEntryRef[] = [];
+  context.entry_refs.forEach((item, index) => {
+    if (!isPlainRecord(item) || typeof item.entry_id !== 'string' || !item.entry_id) return;
+    refs.push({
+      index: textValue(item.index) || `W${index + 1}`,
+      worldbook_id: textValue(item.worldbook_id),
+      worldbook_name: textValue(item.worldbook_name),
+      entry_id: item.entry_id,
+      entry_name: textValue(item.entry_name),
+      activation_mode: textValue(item.activation_mode),
+      matched_keywords: stringArray(item.matched_keywords),
+      matched_by_recursion: booleanValue(item.matched_by_recursion),
+      recursion_depth: numberValue(item.recursion_depth),
+      injected_index: numberValue(item.injected_index),
+      warnings: stringArray(item.warnings),
+    });
+  });
+  return refs;
+}
+
+function dedupeSnippetRefs(refs: KnowledgeSnippetRef[]): KnowledgeSnippetRef[] {
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = ref.chunk_id || `${ref.index}:${ref.source_id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((ref, index) => ({ ...ref, index: ref.index || `K${index + 1}` }));
+}
+
+function dedupeWorldbookRefs(refs: WorldbookEntryRef[]): WorldbookEntryRef[] {
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = ref.entry_id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((ref, index) => ({ ...ref, index: ref.index || `W${index + 1}` }));
 }
 
 function scoreLabel(label: string, value: number | undefined): ReactNode {
@@ -449,7 +823,7 @@ function DebugRow({ label, value, wide = false }: { label: string; value: ReactN
 function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; depth: number; runKnowledge?: KnowledgeRetrievalSummary | null }) {
   const { t } = useTranslation(['runs']);
   const duration = stepDurationLabel(step);
-  const knowledgeSummaries = knowledgeRetrievalsForStep(step, runKnowledge);
+  const contextSummary = contextSummaryForStep(step, runKnowledge);
   return (
     <li className={`run-step-item ${step.status} depth-${Math.min(depth, 4)}`}>
       <div className="run-step-row">
@@ -459,9 +833,9 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
           {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
         </span>
       </div>
-      {knowledgeSummaries.length ? (
+      {contextSummary ? (
         <div className="run-step-knowledge-list">
-          {knowledgeSummaries.map((summary, index) => <KnowledgeRetrievalBlock summary={summary} key={`${step.step_id}-knowledge-${index}`} />)}
+          <ContextInjectedBlock summary={contextSummary} />
         </div>
       ) : null}
       {step.children.length ? (
@@ -473,22 +847,28 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
   );
 }
 
-function KnowledgeRetrievalBlock({ summary }: { summary: KnowledgeRetrievalSummary }) {
+function ContextInjectedBlock({ summary }: { summary: NormalizedContextMetadata }) {
+  const { t } = useTranslation(['runs']);
+  const knowledge = summary.knowledge?.retrieval;
+  const warningCount = (summary.memory?.warnings.length || 0) + (summary.worldbook?.warnings.length || 0) + (summary.knowledge?.warnings.length || 0);
   return (
-    <div className="run-step-knowledge" aria-label="Knowledge retrieval">
-      <strong>Knowledge retrieval</strong>
+    <div className="run-step-knowledge" aria-label={t('runs:contextSummary.title')}>
+      <strong>{t('runs:contextSummary.title')}</strong>
       <div className="run-step-knowledge-grid">
-        {summary.kbLabels.length ? <DebugRow label="KB" value={summary.kbLabels.join(', ')} wide /> : null}
-        <DebugRow label="Embedding" value={embeddingSummaryLabel(summary)} />
-        <DebugRow label="Vector" value={summary.vectorCandidateCount} />
-        <DebugRow label="Keyword" value={summary.keywordCandidateCount} />
-        <DebugRow label="Merged" value={summary.mergedCandidateCount} />
-        <DebugRow label="Reranker" value={rerankerLabel(summary)} />
-        <DebugRow label="Injected" value={injectedLabel(summary)} />
+        {summary.memory ? <DebugRow label={t('runs:contextSummary.memory')} value={memorySummaryLabel(summary.memory, t)} wide /> : null}
+        {summary.worldbook ? <DebugRow label={t('runs:contextSummary.worldbook')} value={worldbookSummaryLabel(summary.worldbook, t)} wide /> : null}
+        {knowledge || summary.knowledge ? <DebugRow label={t('runs:contextSummary.knowledge')} value={knowledgeSummaryLabel(summary.knowledge, t)} wide /> : null}
+        {knowledge?.kbLabels.length ? <DebugRow label={t('runs:contextSummary.kb')} value={knowledge.kbLabels.join(', ')} wide /> : null}
+        {knowledge ? <DebugRow label={t('runs:contextSummary.embedding')} value={embeddingSummaryLabel(knowledge)} /> : null}
+        {knowledge ? <DebugRow label={t('runs:contextSummary.vector')} value={knowledge.vectorCandidateCount} /> : null}
+        {knowledge ? <DebugRow label={t('runs:contextSummary.keyword')} value={knowledge.keywordCandidateCount} /> : null}
+        {knowledge ? <DebugRow label={t('runs:contextSummary.merged')} value={knowledge.mergedCandidateCount} /> : null}
+        {knowledge ? <DebugRow label={t('runs:contextSummary.reranker')} value={rerankerLabel(knowledge, t)} /> : null}
+        {warningCount ? <DebugRow label={t('runs:contextSummary.warnings')} value={warningCount} /> : null}
       </div>
-      {summary.warnings.length ? (
+      {warningCount ? (
         <div className="run-step-knowledge-warnings">
-          {summary.warnings.map((warning, index) => (
+          {[...(summary.memory?.warnings || []), ...(summary.worldbook?.warnings || []), ...(summary.knowledge?.warnings || [])].map((warning, index) => (
             <span key={`${warning}-${index}`}>{warning}</span>
           ))}
         </div>
@@ -1519,28 +1899,21 @@ function normalizeKbSearchResponse(value: unknown): KbSearchResponse | null {
   };
 }
 
-function knowledgeRetrievalFromMetadata(messageMetadata: Record<string, unknown> | undefined, runMetadata: Record<string, unknown> | undefined): KnowledgeRetrievalSummary | null {
-  const context = firstPlainRecord([messageMetadata?.knowledge_context, runMetadata?.knowledge_context]);
-  return knowledgeRetrievalSummary(context);
-}
-
-function knowledgeRetrievalsForStep(step: RunStep, runKnowledge?: KnowledgeRetrievalSummary | null): KnowledgeRetrievalSummary[] {
-  const summaries: KnowledgeRetrievalSummary[] = [];
-  const stepMetadata = step.metadata;
-  if (isPlainRecord(stepMetadata?.knowledge_context)) {
-    const summary = knowledgeRetrievalSummary(stepMetadata.knowledge_context);
-    if (summary) summaries.push(summary);
+function contextSummaryForStep(step: RunStep, runKnowledge?: KnowledgeRetrievalSummary | null): NormalizedContextMetadata | null {
+  const summary = normalizeContextMetadata(step.metadata);
+  if (!summary.knowledge && runKnowledge && fallbackKnowledgeStepLabel(step.label, runKnowledge)) {
+    summary.knowledge = knowledgeContextFromRetrieval(runKnowledge);
   }
-  if (Array.isArray(stepMetadata?.knowledge_contexts)) {
-    stepMetadata.knowledge_contexts.forEach((item) => {
-      const summary = knowledgeRetrievalSummary(item);
-      if (summary) summaries.push(summary);
-    });
-  }
-  if (!summaries.length && runKnowledge && fallbackKnowledgeStepLabel(step.label, runKnowledge)) {
-    summaries.push(runKnowledge);
-  }
-  return summaries;
+  if (!summary.memory && !summary.knowledge && !summary.worldbook) return null;
+  const hasUsedContext = Boolean(
+    summary.memory?.injected ||
+    summary.worldbook?.injected ||
+    summary.knowledge?.injected ||
+    summary.memory?.warnings.length ||
+    summary.worldbook?.warnings.length ||
+    summary.knowledge?.warnings.length,
+  );
+  return hasUsedContext ? summary : null;
 }
 
 function fallbackKnowledgeStepLabel(label: string, summary: KnowledgeRetrievalSummary): boolean {
@@ -1549,6 +1922,28 @@ function fallbackKnowledgeStepLabel(label: string, summary: KnowledgeRetrievalSu
   if (source === 'prompt_agent') return normalized === 'building context';
   if (source === 'script_agent') return normalized === 'running script' || normalized === 'calling llm' || normalized.includes('llm');
   return normalized === 'building context' || normalized === 'running script';
+}
+
+function knowledgeRetrievalSummaryFromNormalized(summary: KnowledgeContextSummary): KnowledgeRetrievalSummary | null {
+  return summary.retrieval || knowledgeContextFromRetrieval({
+    kbLabels: summary.kbNames,
+    injected: summary.injected,
+    resultCount: summary.snippetCount,
+    warnings: summary.warnings,
+  }).retrieval || null;
+}
+
+function knowledgeContextFromRetrieval(retrieval: KnowledgeRetrievalSummary): KnowledgeContextSummary {
+  return {
+    injected: retrieval.injected,
+    snippetCount: retrieval.resultCount,
+    snippetRefs: [],
+    kbNames: retrieval.kbLabels,
+    rerankerSummary: rerankerLabel(retrieval),
+    warnings: retrieval.warnings,
+    canViewSnippets: false,
+    retrieval,
+  };
 }
 
 function knowledgeRetrievalSummary(value: unknown): KnowledgeRetrievalSummary | null {
@@ -1598,16 +1993,63 @@ function firstPlainRecord(values: unknown[]): Record<string, unknown> | undefine
   return values.find(isPlainRecord);
 }
 
-function rerankerLabel(summary: KnowledgeRetrievalSummary): string {
-  if (summary.rerankerFailed) return 'failed';
+function mergeKnowledgeRetrievalSummaries(items: KnowledgeRetrievalSummary[]): KnowledgeRetrievalSummary | null {
+  if (!items.length) return null;
+  return {
+    source: items.map((item) => item.source).filter(Boolean).join(', ') || undefined,
+    kbLabels: uniqueStrings(items.flatMap((item) => item.kbLabels)),
+    injected: items.some((item) => item.injected === true),
+    resultCount: sumNumbers(items.map((item) => item.resultCount)),
+    embeddingLabel: uniqueStrings(items.map((item) => item.embeddingLabel).filter((item): item is string => Boolean(item))).join(', ') || undefined,
+    embeddingDimension: uniqueStrings(items.map((item) => item.embeddingDimension).filter((item): item is string | number => item !== undefined).map(String)).join('/') || undefined,
+    vectorCandidateCount: sumNumbers(items.map((item) => item.vectorCandidateCount)),
+    keywordCandidateCount: sumNumbers(items.map((item) => item.keywordCandidateCount)),
+    mergedCandidateCount: sumNumbers(items.map((item) => item.mergedCandidateCount)),
+    rerankerUsed: items.some((item) => item.rerankerUsed === true) ? true : items.some((item) => item.rerankerUsed === false) ? false : undefined,
+    rerankerFailed: items.some((item) => item.rerankerFailed === true),
+    rerankerInputCount: sumNumbers(items.map((item) => item.rerankerInputCount)),
+    rerankerOutputCount: sumNumbers(items.map((item) => item.rerankerOutputCount)),
+    warnings: uniqueStrings(items.flatMap((item) => item.warnings)),
+  };
+}
+
+function memorySummaryLabel(summary: CoreMemoryContextSummary, t: ReturnType<typeof useTranslation>['t']): string {
+  if (summary.injected) return t('runs:contextSummary.memoryInjected', { count: summary.contentChars ?? 0 });
+  if (summary.skippedReason) return t('runs:contextSummary.skippedWithReason', { reason: summary.skippedReason });
+  return summary.enabled === false ? t('runs:contextSummary.skipped') : t('runs:contextSummary.notUsed');
+}
+
+function worldbookSummaryLabel(summary: WorldbookContextSummary, t: ReturnType<typeof useTranslation>['t']): string {
+  if (summary.injectedEntryCount !== undefined || summary.matchedEntryCount !== undefined) {
+    return t('runs:contextSummary.worldbookCounts', {
+      injected: summary.injectedEntryCount ?? 0,
+      matched: summary.matchedEntryCount ?? 0,
+      recursion: summary.recursionRoundsUsed ?? summary.recursionDepth ?? 0,
+    });
+  }
+  return summary.injected ? t('runs:contextSummary.injected') : t('runs:contextSummary.skipped');
+}
+
+function knowledgeSummaryLabel(summary: KnowledgeContextSummary | undefined, t: ReturnType<typeof useTranslation>['t']): string | undefined {
+  if (!summary) return undefined;
+  const parts = [];
+  const count = summary.snippetCount ?? summary.retrieval?.resultCount;
+  if (count !== undefined) parts.push(t('runs:contextSummary.snippetCount', { count }));
+  if (summary.kbNames.length) parts.push(summary.kbNames.join(', '));
+  if (summary.retrieval) parts.push(t('runs:contextSummary.rerankerValue', { value: rerankerLabel(summary.retrieval, t) }));
+  return parts.join(' / ') || (summary.injected ? t('runs:contextSummary.injected') : t('runs:contextSummary.skipped'));
+}
+
+function rerankerLabel(summary: KnowledgeRetrievalSummary, t?: ReturnType<typeof useTranslation>['t']): string {
+  if (summary.rerankerFailed) return t ? t('runs:contextSummary.failed') : 'failed';
   if (summary.rerankerUsed) {
     if (summary.rerankerInputCount !== undefined || summary.rerankerOutputCount !== undefined) {
       return `${summary.rerankerOutputCount ?? 0} / ${summary.rerankerInputCount ?? 0}`;
     }
-    return 'used';
+    return t ? t('runs:contextSummary.used') : 'used';
   }
-  if (summary.rerankerUsed === false) return 'not used';
-  return 'unknown';
+  if (summary.rerankerUsed === false) return t ? t('runs:contextSummary.notUsed') : 'not used';
+  return t ? t('runs:contextSummary.unknown') : 'unknown';
 }
 
 function embeddingSummaryLabel(summary: KnowledgeRetrievalSummary): string | undefined {
@@ -1770,12 +2212,34 @@ function nullableNumber(value: unknown): number | undefined {
   return numberValue(value);
 }
 
+function maxNumber(values: (number | undefined)[]): number | undefined {
+  const filtered = values.filter((value): value is number => value !== undefined);
+  return filtered.length ? Math.max(...filtered) : undefined;
+}
+
+function sumNumbers(values: (number | undefined)[]): number | undefined {
+  const filtered = values.filter((value): value is number => value !== undefined);
+  return filtered.length ? filtered.reduce((total, value) => total + value, 0) : undefined;
+}
+
 function booleanValue(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
 function textValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function uniqueStrings(values: (string | undefined)[]): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
+}
+
+function plainRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isPlainRecord) : [];
 }
 
 function firstText(values: unknown[]): string | undefined {
