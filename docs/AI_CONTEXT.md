@@ -279,10 +279,13 @@ Likely source:
 - `ai_workbench/core/settings.py`
 - `ai_workbench/core/agent_settings.py`
 - `ai_workbench/core/intent_router.py`
+- `ai_workbench/core/utility_llm.py` when changing Utility LLM status, loading, title generation, or JSON extraction
+- `ai_workbench/core/session_titles.py` when changing automatic title behavior
 - `ai_workbench/core/runtime.py`
 - `ai_workbench/core/runner.py`
 - `ai_workbench/core/router.py` only if explicit syntax parsing changes
 - `ai_workbench/api/routes/settings.py`
+- `ai_workbench/api/routes/intent.py` when changing Utility LLM APIs
 - `ai_workbench/api/routes/configs.py`
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
 - `frontend/src/components/settings/SettingsObjectList.tsx`
@@ -294,6 +297,8 @@ Tests:
 - `uv run pytest tests/test_settings_data.py`
 - `uv run pytest tests/test_agent_settings.py`
 - `uv run pytest tests/test_intent_routing.py`
+- `uv run pytest tests/test_utility_llm.py`
+- `uv run pytest tests/test_session_titles.py` when Utility LLM title behavior changes
 - `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
 - `uv run pytest tests/test_frontend_chat_contracts.py` if metadata or frontend contracts change
 - `cd frontend && npm run build`
@@ -302,6 +307,8 @@ Tests:
 Rules:
 - Explicit `/command`, `@agent`, `@agent:action`, and `:action` routing must bypass Intent Routing.
 - Shadow mode must not alter selected Agent/action, title generation, provider-bound context, Knowledge, Core Memory, or Worldbook behavior.
+- Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
+- Do not automatically download Utility LLM models, install optional dependencies, enable Knowledge, route to ComfyUI, execute command-like intents, or change actual routing.
 - User-visible frontend text must be added to every supported locale.
 - Settings schema, runtime protocol, routing behavior, metadata shape, and user workflow changes must update docs in the same change.
 - Do not modify Agent or Capability manifests for Intent Routing foundation work.

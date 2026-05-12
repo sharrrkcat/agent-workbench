@@ -121,6 +121,8 @@ Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, sil
 
 Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message. Intent predictions are not appended to prompts, not passed to providers, not used by automatic title generation, and not used to alter Knowledge/Core Memory/Worldbook context injection.
 
+When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction in shadow mode after deterministic rule classification. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It does not enable Knowledge, does not call ComfyUI, does not execute command-like requests, and does not alter the selected Agent/action.
+
 Prediction metadata shape:
 
 ```json
@@ -129,11 +131,14 @@ Prediction metadata shape:
   "mode": "shadow",
   "eligible": true,
   "bypassed": false,
-  "source": "rule_based_shadow",
-  "predicted_intent": "image_generation",
-  "confidence": 0.86,
-  "target_agent_id": "comfyui_agent",
-  "slots": {},
+  "source": "rule_based_shadow+utility_llm",
+  "predicted_intent": "knowledge_query",
+  "confidence": 0.84,
+  "target_agent_id": null,
+  "slots": {
+    "kb_hint": "Star Wars",
+    "query": "stormtrooper ranks"
+  },
   "warnings": []
 }
 ```
@@ -150,7 +155,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, model outputs, vector data, or extracted private content. The built-in classifier is deterministic and rule-based; later embedding or utility LLM backends may replace it without changing the metadata contract.
+Metadata must stay compact and must not store long prompts, full history, raw model outputs, vector data, or extracted private content. Utility LLM extractor failures fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented in this round.
 
 WebSocket events:
 - `run_updated`
@@ -226,6 +231,7 @@ Semantics:
 - `supports_reasoning` is an output declaration and does not force provider behavior.
 - Unload is trusted script-only for manual script calls, and best-effort for lifecycle policies.
 - Successful, skipped, unsupported, and failed unload attempts remain cleanup outcomes in run metadata; unsupported unload and status refresh failure do not overwrite an otherwise successful run unless the lifecycle policy explicitly fails on unload failure.
+- Utility LLM does not participate in LLM resolution. It is configured by General Intent Routing settings, is not a Provider Profile or Model Profile, and does not change the user's selected main model.
 
 Current implementation note: `resolve_llm_config` applies defaults first and then overrides later sources, so later sources win. Keep user-facing behavior aligned with the order above when changing it.
 
@@ -270,7 +276,9 @@ Input and output rules:
 - Assistant output, Agent output, command result output, group transcript context, and historical messages are not title inputs.
 - Long user input is truncated from the middle using head/tail preservation according to `session_title_max_input_chars`.
 - The title call is non-streaming, creates no visible user or assistant messages, and emits no `message_delta`.
-- The title call uses the same resolved LLM config as the triggering LLM run. If the main LLM cannot resolve, title generation does not use a separate fallback model.
+- If General `intent_routing_utility_llm_model_path` is configured and the Utility LLM is available, title generation uses that local Utility LLM first.
+- If the Utility LLM is not configured, dependencies are missing, the model folder is missing, or generation/parsing fails, title generation falls back to the same resolved LLM config as the triggering LLM run.
+- Utility LLM title generation is a core internal call. It is not a Provider Profile or Model Profile call, does not change session model selection, does not trigger Intent Routing, and does not apply model lifecycle unload policy.
 
 Session state:
 - New default-titled sessions start with `title_generation_state="pending"`.
@@ -280,7 +288,8 @@ Session state:
 - Manual rename or an existing non-default title sets or behaves as `manual`.
 
 Lifecycle and metadata:
-- Title generation records compact `title_generation` metadata when tied to a run, including state, source message id, truncation counts, generated timestamp or error, and public model/profile identifiers. It must not store full long user input or secrets.
+- Title generation records compact `title_generation` metadata when tied to a run, including state, backend, fallback use, source message id, truncation counts, generated timestamp or error, and public model/profile identifiers when the main LLM fallback is used. It must not store full long user input, full prompts, raw model output, or secrets.
+- Utility LLM success records `backend="utility_llm"`, `fallback_used=false`, and `utility_model_path`. Main LLM fallback records `backend="main_llm"`, `fallback_used=true`, and a compact `utility_error` when applicable.
 - Title generation failure records a warning when tied to a run, but it does not fail the main task.
 - Title generation does not independently trigger model lifecycle unload. Prompt Agent and Script Agent cleanup/unload behavior remains tied to the main run.
 

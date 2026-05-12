@@ -300,6 +300,7 @@ class LLMProxy:
         knowledge_context: Optional[Dict[str, Any]] = None,
         memory_context: Optional[Dict[str, Any]] = None,
         worldbook_context: Optional[Dict[str, Any]] = None,
+        utility_llm_service: Any = None,
     ) -> None:
         self.llm_runtime = llm_runtime
         self.default_model_config = default_model_config or {}
@@ -320,6 +321,7 @@ class LLMProxy:
         self._knowledge_context = knowledge_context or {}
         self._memory_context = memory_context or {}
         self._worldbook_context = worldbook_context or {}
+        self._utility_llm_service = utility_llm_service
 
     async def text(self, system: str, user: str, **options) -> str:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -614,6 +616,7 @@ class LLMProxy:
             llm_model_config=self.default_model_config,
             llm_resolution=self.default_llm_resolution,
             app_settings_store=context.get("app_settings_store"),
+            utility_llm_service=self._utility_llm_service or context.get("utility_llm_service"),
         )
 
     async def unload(self, model_config: Optional[Dict[str, Any]] = None) -> CapabilityCallResult:
@@ -804,6 +807,7 @@ class AgentContext:
         knowledge_context: Optional[Dict[str, Any]] = None,
         memory_context: Optional[Dict[str, Any]] = None,
         worldbook_context: Optional[Dict[str, Any]] = None,
+        utility_llm_service: Any = None,
     ) -> None:
         self.agent = agent
         self.action_id = action_id
@@ -855,10 +859,12 @@ class AgentContext:
                 "session_store": session_store,
                 "message_store": message_store,
                 "app_settings_store": app_settings_store,
+                "utility_llm_service": utility_llm_service,
             },
             knowledge_context=knowledge_context,
             memory_context=memory_context,
             worldbook_context=worldbook_context,
+            utility_llm_service=utility_llm_service,
         )
         self.llm_resolution = llm_resolution or {}
         self.parent_message_id = parent_message_id
@@ -1066,6 +1072,7 @@ class ScriptAgentRunner:
         knowledge_store=None,
         knowledge_model_backend=None,
         worldbook_store=None,
+        utility_llm_service=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -1086,6 +1093,7 @@ class ScriptAgentRunner:
         self.knowledge_store = knowledge_store
         self.knowledge_model_backend = knowledge_model_backend
         self.worldbook_store = worldbook_store
+        self.utility_llm_service = utility_llm_service
 
     async def run(
         self,
@@ -1300,6 +1308,7 @@ class ScriptAgentRunner:
                 "session_id": session_id,
                 "user_text": runtime_context_text,
             },
+            utility_llm_service=self.utility_llm_service,
         )
 
         try:

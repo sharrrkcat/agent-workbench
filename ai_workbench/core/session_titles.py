@@ -67,6 +67,7 @@ async def maybe_generate_session_title_before_llm_call(
     llm_model_config: dict[str, Any],
     llm_resolution: dict[str, Any] | None = None,
     app_settings_store: Any = None,
+    utility_llm_service: Any = None,
 ) -> dict[str, Any] | None:
     if session_store is None or llm_runtime is None:
         return None
@@ -83,7 +84,9 @@ async def maybe_generate_session_title_before_llm_call(
         "state": state,
         "source_message_id": source_message_id or None,
         "attempted_at": utc_now().isoformat(),
-        "model": _public_model_metadata(llm_model_config, llm_resolution or {}),
+        "backend": None,
+        "fallback_used": False,
+        "warnings": [],
     }
 
     if not is_default_session_title(session.title):
@@ -105,6 +108,7 @@ async def maybe_generate_session_title_before_llm_call(
         **base_metadata,
         "state": "pending",
         "input_truncated": truncated,
+        "truncated": truncated,
         "input_chars_original": original_len,
         "input_chars_used": len(used_text),
     }
@@ -114,17 +118,60 @@ async def maybe_generate_session_title_before_llm_call(
         _record_run_title_metadata(run_store, run_id, failed)
         return failed
 
+    title = ""
+    utility_error = None
+    utility_model_path = getattr(settings, "intent_routing_utility_llm_model_path", "") or ""
+    if utility_llm_service is not None and utility_model_path:
+        try:
+            utility_result = await utility_llm_service.generate_title(used_text, settings)
+            title = normalize_generated_title(utility_result.get("title", ""))
+            if not title or is_default_session_title(title):
+                raise ValueError("Utility LLM returned an empty or default-looking title.")
+            metadata["backend"] = "utility_llm"
+            metadata["utility_model_path"] = utility_result.get("model_path") or utility_model_path
+        except Exception as exc:
+            utility_error = str(exc) or "Utility LLM title generation failed."
+            metadata["warnings"] = [*metadata.get("warnings", []), "utility_title_generation_failed"]
+
+    if not title:
+        try:
+            prompt = render_title_prompt(settings.session_title_prompt, used_text)
+            chat = getattr(llm_runtime, "chat", None)
+            if callable(chat):
+                raw = chat(messages=[{"role": "user", "content": prompt}], model_config=llm_model_config, stream=False)
+            else:
+                generate = getattr(llm_runtime, "generate")
+                raw = generate(prompt=prompt, model_config=llm_model_config, stream=False)
+            if inspect.isawaitable(raw):
+                raw = await raw
+            title = normalize_generated_title(_extract_title_text(raw))
+            if not title or is_default_session_title(title):
+                raise ValueError("Title generation returned an empty or default-looking title.")
+            metadata["backend"] = "main_llm"
+            metadata["fallback_used"] = bool(utility_error)
+            metadata["model"] = _public_model_metadata(llm_model_config, llm_resolution or {})
+            if utility_error:
+                metadata["utility_error"] = utility_error
+        except Exception as exc:
+            if utility_error:
+                message = f"{utility_error}; fallback failed: {exc}"
+            else:
+                message = str(exc) or "Session title generation failed."
+            failed = {
+                **metadata,
+                "state": "failed",
+                "backend": metadata.get("backend") or "main_llm",
+                "fallback_used": bool(utility_error),
+                "error": {"code": "SESSION_TITLE_GENERATION_FAILED", "message": message},
+            }
+            if utility_error:
+                failed["utility_error"] = utility_error
+            _set_title_state(session_store, session_id, "failed", failed)
+            _record_run_title_metadata(run_store, run_id, failed)
+            _record_title_warning(event_bus, run_store, session_id, run_id, failed["error"]["message"])
+            return failed
+
     try:
-        prompt = render_title_prompt(settings.session_title_prompt, used_text)
-        chat = getattr(llm_runtime, "chat", None)
-        if callable(chat):
-            raw = chat(messages=[{"role": "user", "content": prompt}], model_config=llm_model_config, stream=False)
-        else:
-            generate = getattr(llm_runtime, "generate")
-            raw = generate(prompt=prompt, model_config=llm_model_config, stream=False)
-        if inspect.isawaitable(raw):
-            raw = await raw
-        title = normalize_generated_title(_extract_title_text(raw))
         if not title or is_default_session_title(title):
             raise ValueError("Title generation returned an empty or default-looking title.")
     except Exception as exc:
@@ -138,7 +185,7 @@ async def maybe_generate_session_title_before_llm_call(
         _record_title_warning(event_bus, run_store, session_id, run_id, failed["error"]["message"])
         return failed
 
-    done = {**metadata, "state": "done", "generated_at": utc_now().isoformat()}
+    done = {**metadata, "state": "done", "generated_at": utc_now().isoformat(), "error": None}
     session = _set_generated_title(session_store, session_id, title, done)
     _record_run_title_metadata(run_store, run_id, done)
     _emit_session_updated(event_bus, session)

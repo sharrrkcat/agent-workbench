@@ -1076,6 +1076,38 @@ export type RuntimeResources = {
   error?: string | null;
 };
 
+export type UtilityLlmStatus = {
+  available: boolean;
+  configured: boolean;
+  loaded: boolean;
+  model_path: string;
+  device: 'auto' | 'cpu' | 'cuda' | string;
+  resolved_device?: string | null;
+  backend: {
+    transformers_available: boolean;
+    torch_available: boolean;
+    cuda_available: boolean;
+  };
+  reason?: string | null;
+};
+
+export type UtilityLlmTitleTestResult = {
+  ok: boolean;
+  title: string;
+  backend: string;
+  warnings: string[];
+};
+
+export type UtilityLlmJsonTestResult = {
+  ok: boolean;
+  result: {
+    intent: string;
+    confidence: number;
+    slots: Record<string, string>;
+  };
+  warnings: string[];
+};
+
 export type DeleteSessionResponse = {
   deleted: boolean;
   session_id: string;

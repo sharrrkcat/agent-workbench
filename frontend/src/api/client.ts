@@ -53,6 +53,9 @@ import type {
   RuntimeMemorySummary,
   RuntimeResources,
   RuntimeMemoryTarget,
+  UtilityLlmJsonTestResult,
+  UtilityLlmStatus,
+  UtilityLlmTitleTestResult,
   Session,
   SendMessageAttachment,
   StorageStats,
@@ -377,6 +380,18 @@ export const api = {
   getRuntimeMemory: (sessionId?: string | null) =>
     request<RuntimeMemorySummary>(`/api/runtime/memory${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
   getRuntimeResources: () => request<RuntimeResources>('/api/runtime/resources'),
+  getUtilityLlmStatus: () => request<UtilityLlmStatus>('/api/intent/utility-llm/status'),
+  testUtilityLlmTitle: (text: string) =>
+    request<UtilityLlmTitleTestResult>('/api/intent/utility-llm/test-title', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  testUtilityLlmJson: (text: string) =>
+    request<UtilityLlmJsonTestResult>('/api/intent/utility-llm/test-json', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  unloadUtilityLlm: () => request<{ ok: boolean; status: string }>('/api/intent/utility-llm/unload', { method: 'POST' }),
   freeRuntimeMemory: (targets: RuntimeMemoryTarget[], sessionId?: string | null) =>
     request<RuntimeMemoryFreeResult>('/api/runtime/free-memory', {
       method: 'POST',

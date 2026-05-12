@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator, model_validator
 
 from ai_workbench.core.time import utc_now
+from ai_workbench.core.utility_llm import normalize_utility_model_path
 
 
 DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION = (
@@ -109,6 +110,11 @@ class AppSettings(BaseModel):
             raise ValueError("Intent routing device must be auto, cpu, or cuda.")
         return value
 
+    @field_validator("intent_routing_utility_llm_model_path", mode="before")
+    @classmethod
+    def _validate_utility_llm_model_path(cls, value: Any) -> str:
+        return normalize_utility_model_path(str(value or ""))
+
     @model_validator(mode="after")
     def _validate_intent_threshold_order(self) -> "AppSettings":
         if self.intent_routing_low_confidence_threshold > self.intent_routing_high_confidence_threshold:
@@ -210,6 +216,13 @@ class AppSettingsPatch(BaseModel):
         if value not in {"auto", "cpu", "cuda"}:
             raise ValueError("Intent routing device must be auto, cpu, or cuda.")
         return value
+
+    @field_validator("intent_routing_utility_llm_model_path", mode="before")
+    @classmethod
+    def _validate_utility_llm_model_path(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        return normalize_utility_model_path(str(value or ""))
 
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:

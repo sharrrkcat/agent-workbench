@@ -121,6 +121,7 @@ class AgentRunner:
         knowledge_store=None,
         knowledge_model_backend=None,
         worldbook_store=None,
+        utility_llm_service=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -141,6 +142,7 @@ class AgentRunner:
         self.knowledge_store = knowledge_store
         self.knowledge_model_backend = knowledge_model_backend
         self.worldbook_store = worldbook_store
+        self.utility_llm_service = utility_llm_service
         self.active_runs = active_runs or ActiveRunRegistry()
         self.run_lifecycle = RunLifecycle(run_store, event_bus)
         self.active_llm_uses = ActiveLLMUseRegistry()
@@ -166,6 +168,7 @@ class AgentRunner:
                 knowledge_store=knowledge_store,
                 knowledge_model_backend=knowledge_model_backend,
                 worldbook_store=worldbook_store,
+                utility_llm_service=utility_llm_service,
             )
 
     async def run(
@@ -501,6 +504,7 @@ class AgentRunner:
                 llm_model_config=llm_config.values,
                 llm_resolution=_public_llm_resolution(llm_config),
                 app_settings_store=self.app_settings_store,
+                utility_llm_service=self.utility_llm_service,
             )
             llm_use_key = self._begin_llm_use(llm_config)
             llm_started = True

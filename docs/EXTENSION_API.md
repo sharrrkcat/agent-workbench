@@ -349,6 +349,14 @@ The built-in `comfyui_agent` Script Agent exposes user-callable `fresh` and `ref
 
 General settings include `auto_generate_session_titles`, `session_title_prompt`, and `session_title_max_input_chars`. These control the core automatic title pre-hook before first real LLM use and are read through `GET /api/settings/general` / `PATCH /api/settings/general`.
 
+Utility LLM is a core internal service for short local tasks. It is not a Capability, Command, Provider Profile, Model Profile, AgentConfig field, or manifest field. Its model path and device live in General Intent Routing settings. Model paths are relative to `data/models` and must be shaped as `utility_llms/<folder>`; absolute paths and `..` are rejected. The backend never downloads models or installs optional dependencies.
+
+Utility LLM APIs:
+- `GET /api/intent/utility-llm/status` returns availability, configuration, loaded state, model path, requested/resolved device, dependency flags, and a compact reason. It does not load the model.
+- `POST /api/intent/utility-llm/test-title` accepts `{"text":"..."}` and returns `{"ok":true,"title":"...","backend":"utility_llm","warnings":[]}` when generation succeeds. It may load the configured local model.
+- `POST /api/intent/utility-llm/test-json` accepts `{"text":"..."}` and returns strict extracted intent JSON plus compact slots. It may load the configured local model.
+- `POST /api/intent/utility-llm/unload` releases only the Utility LLM cache. It does not unload the main LLM, embeddings, reranker, or ComfyUI.
+
 ## Knowledge Settings, Local Model APIs, Indexing, And Search
 
 Knowledge RAG v1 adds Workbench-owned settings, local model APIs, and source indexing APIs. These are internal Workbench JSON APIs, not provider function calling, tool calling, or OpenAI-compatible embedding endpoints.

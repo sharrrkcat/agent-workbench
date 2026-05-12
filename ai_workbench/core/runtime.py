@@ -25,7 +25,7 @@ class WorkbenchRuntime:
     ) -> RunResult:
         attachments = attachments or []
         route = self.router.route(session, raw_input)
-        intent_metadata = self._intent_routing_metadata(session, route)
+        intent_metadata = await self._intent_routing_metadata(session, route)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
@@ -84,7 +84,7 @@ class WorkbenchRuntime:
 
         raw_input = str(message.content)
         route = self.router.route(session, raw_input)
-        intent_metadata = self._intent_routing_metadata(session, route)
+        intent_metadata = await self._intent_routing_metadata(session, route)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
@@ -179,15 +179,16 @@ class WorkbenchRuntime:
         )
         self.agent_runner.session_store.set_last_announced_llm_profile(session_id, session.llm_profile_id)
 
-    def _intent_routing_metadata(self, session: Session, route) -> dict[str, Any] | None:
+    async def _intent_routing_metadata(self, session: Session, route) -> dict[str, Any] | None:
         if self.agent_runner is None:
             return None
-        return build_intent_routing_metadata(
+        return await build_intent_routing_metadata(
             session=session,
             route=route,
             agent_registry=self.agent_runner.agent_registry,
             agent_config_store=self.agent_runner.agent_config_store,
             app_settings_store=self.agent_runner.app_settings_store,
+            utility_llm_service=getattr(self.agent_runner, "utility_llm_service", None),
         )
 
     async def invoke_action(

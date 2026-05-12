@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -642,6 +642,46 @@ function GeneralIntentRoutingSettings({
   setString: (key: keyof GeneralSettings, value: string) => void;
 }) {
   const { t } = useTranslation(['settings', 'common']);
+  const [status, setStatus] = useState<UtilityLlmStatus | null>(null);
+  const [busy, setBusy] = useState('');
+  const [result, setResult] = useState('');
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+
+  async function refreshStatus() {
+    try {
+      setError(null);
+      setStatus(await api.getUtilityLlmStatus());
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.utilityLlmStatusFailed')));
+    }
+  }
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [values.intent_routing_utility_llm_model_path, values.intent_routing_device]);
+
+  async function runUtilityAction(action: 'title' | 'json' | 'unload') {
+    setBusy(action);
+    try {
+      setError(null);
+      if (action === 'title') {
+        const response = await api.testUtilityLlmTitle(t('settings:general.utilityLlmSampleTitleInput'));
+        setResult(t('settings:general.utilityLlmTitleResult', { title: response.title }));
+      } else if (action === 'json') {
+        const response = await api.testUtilityLlmJson(t('settings:general.utilityLlmSampleJsonInput'));
+        setResult(t('settings:general.utilityLlmJsonResult', { intent: response.result.intent, confidence: response.result.confidence }));
+      } else {
+        await api.unloadUtilityLlm();
+        setResult(t('settings:general.utilityLlmUnloaded'));
+      }
+      await refreshStatus();
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.utilityLlmActionFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
   return (
     <>
       <div className="detail-section">
@@ -687,7 +727,7 @@ function GeneralIntentRoutingSettings({
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
-          <h3>{t('settings:general.reservedModels')}</h3>
+          <h3>{t('settings:general.utilityLlm')}</h3>
         </div>
         <TextField label={t('settings:general.embeddingModelPath')} value={values.intent_routing_embedding_model_path} onChange={(value) => setString('intent_routing_embedding_model_path', value)} />
         <TextField label={t('settings:general.utilityLlmModelPath')} value={values.intent_routing_utility_llm_model_path} onChange={(value) => setString('intent_routing_utility_llm_model_path', value)} />
@@ -698,11 +738,55 @@ function GeneralIntentRoutingSettings({
             <option value="cpu">{t('settings:general.deviceCpu')}</option>
             <option value="cuda">{t('settings:general.deviceCuda')}</option>
           </select>
-          <small>{t('settings:general.modelPathsReservedHelp')}</small>
+          <small>{t('settings:general.utilityLlmPathHelp')}</small>
         </label>
+        {error ? <SettingsApiError error={error} /> : null}
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <div>
+              <strong>{t('settings:general.utilityLlmStatus')}</strong>
+              <p>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</p>
+            </div>
+            <button type="button" className="settings-secondary-button" onClick={() => void refreshStatus()}>
+              <RefreshCw size={14} />
+              {t('common:refresh')}
+            </button>
+          </div>
+          {status ? (
+            <div className="settings-detail-grid">
+              <Metric label={t('settings:general.transformersAvailable')} value={status.backend.transformers_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.torchAvailable')} value={status.backend.torch_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.cudaAvailable')} value={status.backend.cuda_available ? t('settings:general.yes') : t('settings:general.no')} />
+              <Metric label={t('settings:general.resolvedDevice')} value={status.resolved_device || t('settings:general.notAvailable')} />
+            </div>
+          ) : null}
+          <div className="settings-detail-actions">
+            <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('title')}>
+              {busy === 'title' ? t('common:loading') : t('settings:general.testTitleGeneration')}
+            </button>
+            <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('json')}>
+              {busy === 'json' ? t('common:loading') : t('settings:general.testJsonExtraction')}
+            </button>
+            <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('unload')}>
+              {busy === 'unload' ? t('common:loading') : t('settings:general.unloadUtilityLlm')}
+            </button>
+          </div>
+          {result ? <p className="settings-muted-text">{result}</p> : null}
+        </div>
       </div>
     </>
   );
+}
+
+function utilityStatusText(status: UtilityLlmStatus, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!status.configured) return t('settings:general.utilityLlmNotConfigured');
+  if (!status.available) {
+    if (status.reason === 'UTILITY_LLM_BACKEND_UNAVAILABLE') return t('settings:general.utilityLlmDepsUnavailable');
+    if (status.reason === 'model_not_found') return t('settings:general.utilityLlmModelNotFound');
+    if (status.reason === 'model_path_invalid') return t('settings:general.utilityLlmInvalidPath');
+    return t('settings:general.utilityLlmUnavailable');
+  }
+  return status.loaded ? t('settings:general.utilityLlmLoaded') : t('settings:general.utilityLlmReady');
 }
 
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {

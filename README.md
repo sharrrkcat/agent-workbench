@@ -109,15 +109,17 @@ Sessions can be deleted from the sidebar. Deleting a session is a hard delete in
 
 Session titles can be renamed inline from the sidebar. Empty titles are not saved, and titles are limited to 120 characters.
 
-When a session still has a default title such as `Session 1`, the core runtime can make one best-effort attempt to generate a short title before the first real LLM call in that session. This is controlled by Settings -> General. The title prompt uses only the user message that triggered that LLM call, not assistant replies, slash command results, or prior history. Long user input is truncated from the middle with head/tail preservation according to the General title input limit. If automatic title generation is disabled when the first LLM call occurs, that session is marked skipped and will not be backfilled later if the setting is turned on. Title generation is internal, non-streaming, creates no chat messages, and does not trigger a separate model unload; the main run lifecycle still controls cleanup. If title generation fails, the original title is kept and the main conversation continues. There is no title history, regenerate button, or separate title model setting in this alpha.
+When a session still has a default title such as `Session 1`, the core runtime can make one best-effort attempt to generate a short title before the first real LLM call in that session. This is controlled by Settings -> General. The title prompt uses only the user message that triggered that LLM call, not assistant replies, slash command results, or prior history. Long user input is truncated from the middle with head/tail preservation according to the General title input limit. If a Utility LLM is configured under Settings -> General -> Intent Routing and available, title generation uses that local small model first. If the Utility LLM is not configured, unavailable, missing dependencies, missing its model folder, or fails to produce valid JSON, title generation falls back to the existing resolved main LLM path. Title generation is internal, non-streaming, creates no chat messages, does not trigger Intent Routing, does not inject Core Memory, Worldbooks, or Knowledge, and does not trigger a separate model unload; the main run lifecycle still controls cleanup. If title generation fails, the original title is kept and the main conversation continues. There is no title history or regenerate button in this alpha.
 
 ## Intent Routing Alpha
 
 Settings -> General -> Intent Routing adds an optional natural-language route prediction layer. It is off by default and does not replace explicit syntax: `/command`, `@agent`, `@agent:action`, and `:action` always bypass intent routing and keep their existing behavior.
 
-The first implementation is shadow mode only. When the General master switch is on and the current session default Agent is a Prompt Agent whose Intent Routing override is effectively enabled, ordinary messages in `single_assistant` mode are classified and the prediction is stored in compact run/message metadata. The actual route still goes to the current default Prompt Agent. Script Agents are not router entries in this version, and `group_transcript` mode does not run intent routing.
+The current implementation is shadow mode only. When the General master switch is on and the current session default Agent is a Prompt Agent whose Intent Routing override is effectively enabled, ordinary messages in `single_assistant` mode are classified and the prediction is stored in compact run/message metadata. The actual route still goes to the current default Prompt Agent. Script Agents are not router entries in this version, and `group_transcript` mode does not run intent routing.
 
-The General model path fields are reserved for later EmbeddingGemma/Qwen utility model work. This alpha stores those paths and the device setting only; it does not load, scan, download, or call those models.
+Intent Routing Round 2 adds an optional Utility LLM core service for short internal tasks: automatic session title generation and shadow-mode intent JSON extraction/verification. The Utility LLM is a local model folder under `data/models/utility_llms/<folder>`, for example `data/models/utility_llms/Qwen3-0.6B`, selected by the relative settings path `utility_llms/Qwen3-0.6B`. It is not a Model Profile, Provider Profile, Agent, Capability, or slash command. The app never downloads the model or installs `transformers`/`torch`; if those optional dependencies or the configured model folder are missing, normal chat startup still works and title generation falls back to the main LLM.
+
+The Utility LLM JSON extractor may add compact slots such as `kb_hint` or `query` to intent metadata when rule-based confidence is low or the prediction needs structure. It still does not enable Knowledge, route to ComfyUI, execute command-like requests, or change actual routing. EmbeddingGemma and semantic embedding routing are deferred to a later round.
 
 ## Agent Avatars
 
@@ -399,6 +401,7 @@ The General settings API exposes:
 - whether streaming `message_delta` events are persisted for debugging
 - Context Rendering overrides for Group transcript and Command result context instructions
 - Core Memory content and Prompt Agent / Script Agent enablement flags
+- Intent Routing settings, including optional Utility LLM model path and device
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, empty title prompts are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
 

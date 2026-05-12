@@ -101,7 +101,7 @@ def intent_definition(intent_id: str) -> IntentDefinition | None:
     return next((intent for intent in INTENT_DEFINITIONS if intent.id == intent_id), None)
 
 
-def build_intent_routing_metadata(
+async def build_intent_routing_metadata(
     *,
     session: Any,
     route: RouteTarget,
@@ -109,6 +109,7 @@ def build_intent_routing_metadata(
     agent_config_store: Any = None,
     app_settings_store: Any = None,
     classifier: RuleBasedIntentClassifier | None = None,
+    utility_llm_service: Any = None,
 ) -> dict[str, Any] | None:
     settings = app_settings_store.get() if app_settings_store is not None else None
     mode = getattr(settings, "intent_routing_mode", "shadow")
@@ -134,12 +135,62 @@ def build_intent_routing_metadata(
     if mode != "shadow":
         return {**base, "bypass_reason": "unsupported_mode"}
     prediction = (classifier or RuleBasedIntentClassifier()).classify(route.args)
+    prediction = await _maybe_apply_utility_extractor(
+        text=route.args,
+        prediction=prediction,
+        settings=settings,
+        utility_llm_service=utility_llm_service,
+    )
     return {
         "enabled": True,
         "mode": "shadow",
         "eligible": True,
         "bypassed": False,
         **prediction,
+    }
+
+
+async def _maybe_apply_utility_extractor(
+    *,
+    text: str,
+    prediction: dict[str, Any],
+    settings: Any,
+    utility_llm_service: Any = None,
+) -> dict[str, Any]:
+    if utility_llm_service is None or settings is None:
+        return prediction
+    if not getattr(settings, "intent_routing_utility_llm_model_path", ""):
+        return prediction
+    predicted_intent = str(prediction.get("predicted_intent") or "chat")
+    confidence = float(prediction.get("confidence") or 0.0)
+    high_threshold = float(getattr(settings, "intent_routing_high_confidence_threshold", 0.78) or 0.78)
+    should_extract = confidence < high_threshold or predicted_intent in {"knowledge_query", "agent_route"}
+    if not should_extract:
+        return prediction
+    try:
+        extracted = await utility_llm_service.extract_intent_json(text, settings)
+    except Exception:
+        return {**prediction, "warnings": [*list(prediction.get("warnings") or []), "utility_extractor_failed"]}
+    intent_id = extracted.get("intent") or "unknown"
+    definition = intent_definition(intent_id)
+    slots = {
+        key: value
+        for key, value in {
+            "target_agent_hint": extracted.get("target_agent_hint"),
+            "kb_hint": extracted.get("kb_hint"),
+            "query": extracted.get("query"),
+            "command_hint": extracted.get("command_hint"),
+        }.items()
+        if value
+    }
+    return {
+        **prediction,
+        "source": "rule_based_shadow+utility_llm",
+        "predicted_intent": intent_id,
+        "confidence": extracted.get("confidence", prediction.get("confidence", 0.0)),
+        "target_agent_id": definition.target_agent_id if definition is not None else prediction.get("target_agent_id"),
+        "slots": slots,
+        "warnings": list(prediction.get("warnings") or []),
     }
 
 
