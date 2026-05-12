@@ -270,8 +270,8 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
-  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : t('settings:general.llmPrompts');
-  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : t('settings:general.llmPromptsDescription');
+  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
+  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -300,6 +300,10 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
 
   function setNumber(key: keyof GeneralSettings, value: string) {
     setValues((current) => (current ? { ...current, [key]: Number(value) } : current));
+  }
+
+  function setString(key: keyof GeneralSettings, value: string) {
+    setValues((current) => (current ? { ...current, [key]: value } : current));
   }
 
   function setInstruction(key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction', value: string) {
@@ -357,6 +361,8 @@ function GeneralDetail({ category, onDirtyChange }: { category: GeneralSettingsC
           <GeneralFilesSettings values={values} setValues={setValues} setNumber={setNumber} />
         ) : category === 'memory' ? (
           <GeneralMemorySettings values={values} setValues={setValues} />
+        ) : category === 'intent_routing' ? (
+          <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : (
           <GeneralPromptSettings values={values} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
         )}
@@ -624,6 +630,81 @@ function GeneralMemorySettings({ values, setValues }: { values: GeneralSettings;
   );
 }
 
+function GeneralIntentRoutingSettings({
+  values,
+  setValues,
+  setNumber,
+  setString,
+}: {
+  values: GeneralSettings;
+  setValues: (values: GeneralSettings) => void;
+  setNumber: (key: keyof GeneralSettings, value: string) => void;
+  setString: (key: keyof GeneralSettings, value: string) => void;
+}) {
+  const { t } = useTranslation(['settings', 'common']);
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.intentRouting')}</h3>
+        </div>
+        <p className="settings-muted-text">{t('settings:general.intentRoutingHelp')}</p>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.enableIntentRouting')}</span>
+          <ToggleSwitch checked={values.intent_routing_enabled} onChange={(checked) => setValues({ ...values, intent_routing_enabled: checked })} />
+        </label>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.defaultForPromptAgents')}</span>
+          <ToggleSwitch checked={values.intent_routing_default_for_prompt_agents} onChange={(checked) => setValues({ ...values, intent_routing_default_for_prompt_agents: checked })} />
+          <small>{t('settings:general.defaultForPromptAgentsHelp')}</small>
+        </label>
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.intentRoutingMode')}</span>
+          <select value={values.intent_routing_mode} disabled onChange={() => undefined}>
+            <option value="shadow">{t('settings:general.shadowMode')}</option>
+          </select>
+          <small>{t('settings:general.shadowModeHelp')}</small>
+        </label>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.confidenceThresholds')}</h3>
+        </div>
+        <div className="settings-detail-grid">
+          <NumberField label={t('settings:general.highConfidenceThreshold')} value={values.intent_routing_high_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_high_confidence_threshold', value)} />
+          <NumberField label={t('settings:general.lowConfidenceThreshold')} value={values.intent_routing_low_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_low_confidence_threshold', value)} />
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.autoRouteSafeIntents')}</span>
+          <ToggleSwitch checked={values.intent_routing_auto_route_safe_intents} onChange={(checked) => setValues({ ...values, intent_routing_auto_route_safe_intents: checked })} />
+          <small>{t('settings:general.plannedForLater')}</small>
+        </label>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.confirmUncertainRoutes')}</span>
+          <ToggleSwitch checked={values.intent_routing_confirm_uncertain} onChange={(checked) => setValues({ ...values, intent_routing_confirm_uncertain: checked })} />
+          <small>{t('settings:general.plannedForLater')}</small>
+        </label>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.reservedModels')}</h3>
+        </div>
+        <TextField label={t('settings:general.embeddingModelPath')} value={values.intent_routing_embedding_model_path} onChange={(value) => setString('intent_routing_embedding_model_path', value)} />
+        <TextField label={t('settings:general.utilityLlmModelPath')} value={values.intent_routing_utility_llm_model_path} onChange={(value) => setString('intent_routing_utility_llm_model_path', value)} />
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.device')}</span>
+          <select value={values.intent_routing_device} onChange={(event) => setString('intent_routing_device', event.currentTarget.value)}>
+            <option value="auto">{t('settings:general.deviceAuto')}</option>
+            <option value="cpu">{t('settings:general.deviceCpu')}</option>
+            <option value="cuda">{t('settings:general.deviceCuda')}</option>
+          </select>
+          <small>{t('settings:general.modelPathsReservedHelp')}</small>
+        </label>
+      </div>
+    </>
+  );
+}
+
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
   return {
     max_image_size_mb: values.max_image_size_mb,
@@ -641,6 +722,16 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     core_memory_content: values.core_memory_content,
     core_memory_enabled_for_prompt_agents: values.core_memory_enabled_for_prompt_agents,
     core_memory_enabled_for_script_agents: values.core_memory_enabled_for_script_agents,
+    intent_routing_enabled: values.intent_routing_enabled,
+    intent_routing_default_for_prompt_agents: values.intent_routing_default_for_prompt_agents,
+    intent_routing_mode: values.intent_routing_mode,
+    intent_routing_high_confidence_threshold: values.intent_routing_high_confidence_threshold,
+    intent_routing_low_confidence_threshold: values.intent_routing_low_confidence_threshold,
+    intent_routing_auto_route_safe_intents: values.intent_routing_auto_route_safe_intents,
+    intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
+    intent_routing_embedding_model_path: values.intent_routing_embedding_model_path,
+    intent_routing_utility_llm_model_path: values.intent_routing_utility_llm_model_path,
+    intent_routing_device: values.intent_routing_device,
   };
 }
 
@@ -676,11 +767,20 @@ function InstructionField({
   );
 }
 
-function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: string) => void }) {
+function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="config-field settings-config-field">
       <span>{label}</span>
-      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+      <input value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+    </label>
+  );
+}
+
+function NumberField({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: string) => void }) {
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
     </label>
   );
 }

@@ -338,6 +338,13 @@ Core Memory and Worldbook configuration ownership:
 - Worldbook matching is regex/text storage in SQLite only; it does not own Knowledge indexes, vectors, rerankers, or FTS rows.
 - Runtime injection for Core Memory and Worldbook is owned by the core runtime, not Agent or Capability manifests. Prompt Agents use the Prompt Agent enablement defaults; Script Agent `ctx.llm.*` calls use the Script Agent enablement defaults, which are off unless the user enables them. Do not store per-Agent Worldbook overrides in AgentConfig until that runtime behavior is explicitly designed.
 
+Intent Routing configuration ownership:
+
+- General settings own Intent Routing's master switch, Prompt Agent default, shadow mode, confidence thresholds, reserved model paths, and device selection.
+- Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode`.
+- Intent route definitions, deterministic shadow classification, and later utility model backends are core runtime concerns.
+- Intent Routing is not owned by Agent manifests, Capability manifests, or slash command declarations. Do not add Intent Routing route registry fields to `agent.yaml` or `capability.yaml`.
+
 Obsidian CapabilityConfig:
 
 - `vault_path`.

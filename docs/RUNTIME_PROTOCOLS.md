@@ -89,6 +89,7 @@ Run steps:
 
 Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
+- Intent Routing shadow predictions may be recorded under `intent_routing`. They are diagnostic metadata only and must not be injected into provider-bound context, title generation, Knowledge retrieval, Core Memory, or Worldbook matching.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
 - Prompt Agent and Script Agent LLM runs may record compact `core_memory_context` and `worldbook_context` metadata. These records include enablement, injection status, counts, ids, entry refs, truncation, and warnings, but must not store full Core Memory text, full Worldbook entry content, or rendered context blocks.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
@@ -97,6 +98,59 @@ Run metadata:
 - ComfyUI LLM prompt generation metadata may record `input_mode`, `llm_operation`, `llm_operation_requested`, `llm_operation_used`, `user_prompt`, and `positive_prompt` for the current request. Raw and run-only ComfyUI generation should not be labeled as `refine` or `fresh`.
 - Failures should set both run status and user-visible error metadata where applicable.
 - Cancellation sets `cancel_requested` before terminal cancellation when possible.
+
+## Intent Routing
+
+Intent Routing is an optional pre-routing diagnostic layer for ordinary natural-language messages. Explicit syntax keeps priority and bypasses intent routing:
+
+- `/command`
+- `@agent`
+- `@agent:action`
+- `:action`
+
+Eligibility in the first alpha:
+
+- General `intent_routing_enabled` must be true.
+- The route must be ordinary text to the current session default Agent's `default` action.
+- The current session default Agent must be a Prompt Agent.
+- The Prompt Agent effective Intent Routing override must be enabled.
+- The session `context_mode` must be `single_assistant`.
+- General `intent_routing_mode` must be `shadow`.
+
+Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, silent submissions, waiting-run resumes, slash commands, explicit Agent calls, and explicit action shortcuts do not enter the classifier.
+
+Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message. Intent predictions are not appended to prompts, not passed to providers, not used by automatic title generation, and not used to alter Knowledge/Core Memory/Worldbook context injection.
+
+Prediction metadata shape:
+
+```json
+{
+  "enabled": true,
+  "mode": "shadow",
+  "eligible": true,
+  "bypassed": false,
+  "source": "rule_based_shadow",
+  "predicted_intent": "image_generation",
+  "confidence": 0.86,
+  "target_agent_id": "comfyui_agent",
+  "slots": {},
+  "warnings": []
+}
+```
+
+Bypass metadata shape:
+
+```json
+{
+  "enabled": true,
+  "mode": "shadow",
+  "eligible": false,
+  "bypassed": true,
+  "bypass_reason": "explicit_command"
+}
+```
+
+Metadata must stay compact and must not store long prompts, full history, model outputs, vector data, or extracted private content. The built-in classifier is deterministic and rule-based; later embedding or utility LLM backends may replace it without changing the metadata contract.
 
 WebSocket events:
 - `run_updated`

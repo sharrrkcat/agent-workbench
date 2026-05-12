@@ -186,6 +186,7 @@ class AgentRunner:
         is_silent_submission: bool = False,
         invocation_route_kind: str = "agent",
         enforce_callable: bool = True,
+        intent_routing_metadata: dict[str, Any] | None = None,
     ) -> RunResult:
         attachments = attachments or []
         try:
@@ -236,6 +237,7 @@ class AgentRunner:
                 suppress_output=suppress_output,
                 is_silent_submission=is_silent_submission,
                 invocation_route_kind=invocation_route_kind,
+                intent_routing_metadata=intent_routing_metadata,
             )
 
         if agent.type != "prompt":
@@ -278,22 +280,25 @@ class AgentRunner:
             parent_id = user_message.message_id
 
         kind = "agent" if action_id == "default" else "action"
+        run_metadata = {
+            "args": args,
+            "input_message_id": current_user_message_id or None,
+            "parent_message_id": parent_id or None,
+            "source_message_id": source_message_id or None,
+            "prefill": prefill or {},
+            "silent": bool(suppress_output),
+            "route_kind": invocation_route_kind,
+            "resolved_agent_id": agent_id,
+            "resolved_action_id": action_id,
+        }
+        if intent_routing_metadata is not None:
+            run_metadata["intent_routing"] = intent_routing_metadata
         run = self.run_store.create_run(
             kind=kind,
             target_id=agent_id,
             action_id=action_id,
             session_id=session_id,
-            metadata={
-                "args": args,
-                "input_message_id": current_user_message_id or None,
-                "parent_message_id": parent_id or None,
-                "source_message_id": source_message_id or None,
-                "prefill": prefill or {},
-                "silent": bool(suppress_output),
-                "route_kind": invocation_route_kind,
-                "resolved_agent_id": agent_id,
-                "resolved_action_id": action_id,
-            },
+            metadata=run_metadata,
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         if not suppress_output:
@@ -364,7 +369,7 @@ class AgentRunner:
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
         lifecycle = resolved_model_lifecycle(agent, agent_config)
         run_metadata = dict(self.run_store.get_run(run.run_id).metadata)
-        run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config)["runtime"]
+        run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config, settings=self._app_settings())["runtime"]
         self.run_store.update_metadata(run.run_id, run_metadata)
         self.run_lifecycle.complete_step(resolving_agent_step.step_id)
         context_policy = resolved_context_policy(agent, action, agent_config)
@@ -594,6 +599,9 @@ class AgentRunner:
         knowledge_context = self.run_store.get_run(run.run_id).metadata.get("knowledge_context")
         if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
             metadata["knowledge_context"] = knowledge_context
+        intent_routing = self.run_store.get_run(run.run_id).metadata.get("intent_routing")
+        if isinstance(intent_routing, dict):
+            metadata["intent_routing"] = intent_routing
         saving_step = self.run_lifecycle.start_step(run.run_id, "Saving response")
         if suppress_output:
             self.run_lifecycle.complete_step(saving_step.step_id)
@@ -890,6 +898,9 @@ class AgentRunner:
         knowledge_context = self.run_store.get_run(run_id).metadata.get("knowledge_context")
         if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
             metadata["knowledge_context"] = knowledge_context
+        intent_routing = self.run_store.get_run(run_id).metadata.get("intent_routing")
+        if isinstance(intent_routing, dict):
+            metadata["intent_routing"] = intent_routing
         if reasoning_content:
             metadata["reasoning_content"] = reasoning_content
         if interrupted:
@@ -1840,7 +1851,14 @@ class CommandRunner:
         self.capability_registry = capability_registry
         self.run_lifecycle = RunLifecycle(run_store, event_bus)
 
-    async def run(self, command_name: str, args: str, session_id: str, input_message_id: str = "") -> CommandResult:
+    async def run(
+        self,
+        command_name: str,
+        args: str,
+        session_id: str,
+        input_message_id: str = "",
+        intent_routing_metadata: dict[str, Any] | None = None,
+    ) -> CommandResult:
         try:
             command = self.command_registry.get(command_name)
         except KeyError:
@@ -1859,11 +1877,14 @@ class CommandRunner:
                 error_code="CAPABILITY_DISABLED",
             )
 
+        run_metadata = {"args": args, "input_message_id": input_message_id or None, "parent_message_id": input_message_id or None}
+        if intent_routing_metadata is not None:
+            run_metadata["intent_routing"] = intent_routing_metadata
         run = self.run_store.create_run(
             kind="command",
             target_id=command_name,
             session_id=session_id,
-            metadata={"args": args, "input_message_id": input_message_id or None, "parent_message_id": input_message_id or None},
+            metadata=run_metadata,
         )
         self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         self.run_lifecycle.start_run(run.run_id, stage="running")

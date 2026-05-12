@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator, model_validator
 
 from ai_workbench.core.time import utc_now
 
@@ -64,6 +64,16 @@ class AppSettings(BaseModel):
     core_memory_content: str = ""
     core_memory_enabled_for_prompt_agents: StrictBool = True
     core_memory_enabled_for_script_agents: StrictBool = False
+    intent_routing_enabled: StrictBool = False
+    intent_routing_default_for_prompt_agents: StrictBool = False
+    intent_routing_mode: str = "shadow"
+    intent_routing_high_confidence_threshold: float = Field(default=0.78, ge=0, le=1)
+    intent_routing_low_confidence_threshold: float = Field(default=0.55, ge=0, le=1)
+    intent_routing_auto_route_safe_intents: StrictBool = False
+    intent_routing_confirm_uncertain: StrictBool = True
+    intent_routing_embedding_model_path: str = ""
+    intent_routing_utility_llm_model_path: str = ""
+    intent_routing_device: str = "auto"
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -84,6 +94,26 @@ class AppSettings(BaseModel):
         if value not in {"percent", "value"}:
             raise ValueError("Display mode must be percent or value.")
         return value
+
+    @field_validator("intent_routing_mode")
+    @classmethod
+    def _validate_intent_routing_mode(cls, value: str) -> str:
+        if value != "shadow":
+            raise ValueError("Intent routing mode must be shadow.")
+        return value
+
+    @field_validator("intent_routing_device")
+    @classmethod
+    def _validate_intent_routing_device(cls, value: str) -> str:
+        if value not in {"auto", "cpu", "cuda"}:
+            raise ValueError("Intent routing device must be auto, cpu, or cuda.")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_intent_threshold_order(self) -> "AppSettings":
+        if self.intent_routing_low_confidence_threshold > self.intent_routing_high_confidence_threshold:
+            raise ValueError("Intent routing low confidence threshold must not be greater than high confidence threshold.")
+        return self
 
     @property
     def max_image_size_bytes(self) -> int:
@@ -128,6 +158,16 @@ class AppSettingsPatch(BaseModel):
     core_memory_content: str | None = None
     core_memory_enabled_for_prompt_agents: StrictBool | None = None
     core_memory_enabled_for_script_agents: StrictBool | None = None
+    intent_routing_enabled: StrictBool | None = None
+    intent_routing_default_for_prompt_agents: StrictBool | None = None
+    intent_routing_mode: str | None = None
+    intent_routing_high_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_low_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_auto_route_safe_intents: StrictBool | None = None
+    intent_routing_confirm_uncertain: StrictBool | None = None
+    intent_routing_embedding_model_path: str | None = None
+    intent_routing_utility_llm_model_path: str | None = None
+    intent_routing_device: str | None = None
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -151,6 +191,24 @@ class AppSettingsPatch(BaseModel):
             return None
         if value not in {"percent", "value"}:
             raise ValueError("Display mode must be percent or value.")
+        return value
+
+    @field_validator("intent_routing_mode")
+    @classmethod
+    def _validate_intent_routing_mode(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value != "shadow":
+            raise ValueError("Intent routing mode must be shadow.")
+        return value
+
+    @field_validator("intent_routing_device")
+    @classmethod
+    def _validate_intent_routing_device(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in {"auto", "cpu", "cuda"}:
+            raise ValueError("Intent routing device must be auto, cpu, or cuda.")
         return value
 
 

@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentAction, AgentConfig, AgentDisplayOverrides, AgentRuntimeOverrides, ContextPolicy, ModelLifecyclePolicy } from '../../types';
+import type { Agent, AgentAction, AgentConfig, AgentDisplayOverrides, AgentRuntimeOverrides, ContextPolicy, GeneralSettings, ModelLifecyclePolicy } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { ConfigForm } from './ConfigForm';
 import { DetailTabs } from './DetailTabs';
@@ -236,6 +236,7 @@ function OverridesTab({
 }) {
   const resolved = config.resolved;
   const sections = resolved?.sections || [];
+  const generalSettings = useWorkbenchStore((state) => state.generalSettings);
   const isPromptAgent = (agent?.type || config.manifest_summary.type) === 'prompt';
   const hasLlmSection = sections.some((section) => section.id === 'llm_runtime') || agent?.capabilities?.includes('llm') || config.manifest_summary.capabilities?.includes('llm');
   const hasKnowledgeSection = sections.some((section) => section.id === 'knowledge_runtime') || isPromptAgent || hasLlmSection;
@@ -322,6 +323,33 @@ function OverridesTab({
             <option value="enabled">{t('common:enabled')}</option>
             <option value="disabled">{t('common:disabled')}</option>
           </OverrideSelect>
+        </section>
+      ) : null}
+
+      {isPromptAgent ? (
+        <section className="settings-override-section">
+          <div className="detail-section-heading">
+            <h3>{t('agents:sections.intentRouting')}</h3>
+            <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: runtimeDraft.intent_routing_mode ? 1 : 0 })}</span>
+          </div>
+          <p className="settings-muted-text">{t('agents:help.intentRouting')}</p>
+          <OverrideSelect
+            label={t('agents:labels.intentRouting')}
+            field="runtime.intent_routing_mode"
+            value={runtimeDraft.intent_routing_mode || ''}
+            config={config}
+            onChange={(intent_routing_mode) =>
+              onRuntimeChange({
+                ...runtimeDraft,
+                intent_routing_mode: intent_routing_mode ? intent_routing_mode as AgentRuntimeOverrides['intent_routing_mode'] : undefined,
+              })
+            }
+          >
+            <option value="">{t('agents:intentRouting.useDefault')}</option>
+            <option value="enabled">{t('common:enabled')}</option>
+            <option value="disabled">{t('common:disabled')}</option>
+          </OverrideSelect>
+          <p className="settings-muted-text">{intentRoutingEffectiveLabel(runtimeDraft.intent_routing_mode || runtime.intent_routing_mode, generalSettings, t)}</p>
         </section>
       ) : null}
 
@@ -574,10 +602,19 @@ function normalizedRuntimeDraft(runtime: AgentRuntimeOverrides, config: AgentCon
   }
   if (runtime.allow_session_override !== undefined) result.allow_session_override = runtime.allow_session_override;
   if (runtime.knowledge_context_mode) result.knowledge_context_mode = runtime.knowledge_context_mode;
+  if (runtime.intent_routing_mode) result.intent_routing_mode = runtime.intent_routing_mode;
   if (runtime.context_policy) result.context_policy = runtime.context_policy;
   if (runtime.model_lifecycle) result.model_lifecycle = runtime.model_lifecycle;
   if (runtime.timeout_seconds !== undefined) result.timeout_seconds = runtime.timeout_seconds;
   return result;
+}
+
+function intentRoutingEffectiveLabel(mode: AgentRuntimeOverrides['intent_routing_mode'] | undefined, settings: GeneralSettings | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!settings?.intent_routing_enabled) return t('agents:intentRouting.effectiveGeneralOff');
+  if (mode === 'enabled') return t('agents:intentRouting.effectiveAgentEnabled');
+  if (mode === 'disabled') return t('agents:intentRouting.effectiveAgentDisabled');
+  if (settings.intent_routing_default_for_prompt_agents) return t('agents:intentRouting.effectiveDefaultEnabled');
+  return t('agents:intentRouting.effectiveDefaultDisabled');
 }
 
 function omitKeys<T extends Record<string, unknown>>(value: T, keys: string[]): Record<string, unknown> {

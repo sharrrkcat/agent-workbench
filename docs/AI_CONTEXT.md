@@ -263,6 +263,49 @@ Tests:
 Avoid unless needed:
 - Do not rewrite tutorial docs for Settings-only changes.
 
+### Change Intent Routing settings / shadow mode / route behavior
+
+Read:
+- `docs/RUNTIME_PROTOCOLS.md#intent-routing`
+- `docs/RUNTIME_PROTOCOLS.md#run-lifecycle`
+- `docs/RUNTIME_PROTOCOLS.md#conversation-context-modes`
+- `docs/EXTENSION_API.md#agent-overrides`
+- `docs/EXTENSION_API.md#prompt-agents`
+- `docs/EXTENSION_API.md#script-agents`
+- `docs/EXTENSION_ARCHITECTURE.md#configuration-ownership`
+- `README.md#intent-routing-alpha`
+
+Likely source:
+- `ai_workbench/core/settings.py`
+- `ai_workbench/core/agent_settings.py`
+- `ai_workbench/core/intent_router.py`
+- `ai_workbench/core/runtime.py`
+- `ai_workbench/core/runner.py`
+- `ai_workbench/core/router.py` only if explicit syntax parsing changes
+- `ai_workbench/api/routes/settings.py`
+- `ai_workbench/api/routes/configs.py`
+- `frontend/src/components/settings/SettingsDetailPanel.tsx`
+- `frontend/src/components/settings/SettingsObjectList.tsx`
+- `frontend/src/components/settings/AgentDetail.tsx`
+- `frontend/src/types.ts`
+- `frontend/src/i18n/resources`
+
+Tests:
+- `uv run pytest tests/test_settings_data.py`
+- `uv run pytest tests/test_agent_settings.py`
+- `uv run pytest tests/test_intent_routing.py`
+- `uv run pytest tests/test_prompt_agent_execution.py tests/test_script_agent.py`
+- `uv run pytest tests/test_frontend_chat_contracts.py` if metadata or frontend contracts change
+- `cd frontend && npm run build`
+- `cd frontend && node scripts/check-i18n.mjs`
+
+Rules:
+- Explicit `/command`, `@agent`, `@agent:action`, and `:action` routing must bypass Intent Routing.
+- Shadow mode must not alter selected Agent/action, title generation, provider-bound context, Knowledge, Core Memory, or Worldbook behavior.
+- User-visible frontend text must be added to every supported locale.
+- Settings schema, runtime protocol, routing behavior, metadata shape, and user workflow changes must update docs in the same change.
+- Do not modify Agent or Capability manifests for Intent Routing foundation work.
+
 ### Change Core Memory / Worldbook settings and APIs
 
 Read:

@@ -212,7 +212,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
         agent_dir = state.agents.get_agent_dir(agent.id)
     except KeyError:
         pass
-    resolved = resolved_agent_settings(agent, config, agent_dir=agent_dir)
+    resolved = resolved_agent_settings(agent, config, agent_dir=agent_dir, settings=state.app_settings.get())
     _enrich_resolved_runtime(state, resolved)
     avatar = resolve_avatar_for_response(state, agent).public_dict()
     return {

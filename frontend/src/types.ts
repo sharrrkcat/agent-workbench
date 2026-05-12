@@ -92,6 +92,9 @@ export type AgentRuntimeOverrides = {
   knowledge_context_mode?: 'use_default' | 'enabled' | 'disabled';
   knowledge_context_effective_mode?: 'enabled' | 'disabled';
   knowledge_context_default_effective_mode?: 'enabled' | 'disabled';
+  intent_routing_mode?: 'use_default' | 'enabled' | 'disabled';
+  intent_routing_effective_mode?: 'enabled' | 'disabled';
+  intent_routing_effective_reason?: string;
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
   timeout_seconds?: number;
@@ -1118,6 +1121,16 @@ export type GeneralSettings = {
   core_memory_content: string;
   core_memory_enabled_for_prompt_agents: boolean;
   core_memory_enabled_for_script_agents: boolean;
+  intent_routing_enabled: boolean;
+  intent_routing_default_for_prompt_agents: boolean;
+  intent_routing_mode: 'shadow';
+  intent_routing_high_confidence_threshold: number;
+  intent_routing_low_confidence_threshold: number;
+  intent_routing_auto_route_safe_intents: boolean;
+  intent_routing_confirm_uncertain: boolean;
+  intent_routing_embedding_model_path: string;
+  intent_routing_utility_llm_model_path: string;
+  intent_routing_device: 'auto' | 'cpu' | 'cuda';
 };
 
 export type StorageStats = {

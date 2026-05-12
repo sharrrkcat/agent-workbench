@@ -15,7 +15,8 @@
     "contextPolicy": "上下文策略",
     "modelLifecycle": "模型生命周期",
     "llmRouting": "LLM 路由",
-    "legacyModel": "Legacy 模型"
+    "legacyModel": "Legacy 模型",
+    "intentRouting": "意图路由"
   },
   "labels": {
     "agent": "agent",
@@ -52,7 +53,8 @@
     "maxMessages": "最大消息数",
     "maxChars": "最大字符数",
     "originalUserMessage": "原始用户消息",
-    "lastAgentMessage": "上一条 Agent 消息"
+    "lastAgentMessage": "上一条 Agent 消息",
+    "intentRouting": "意图路由"
   },
   "buttons": {
     "resetOverrides": "重置覆盖项",
@@ -66,7 +68,8 @@
   },
   "help": {
     "knowledgeRuntime": "Prompt Agent 默认使用会话知识库。LLM Script Agent 只有在这里启用后才会使用。",
-    "scriptTrusted": "Script Agent 是受信任的本地 Python 代码，不会被沙箱隔离。"
+    "scriptTrusted": "Script Agent 是受信任的本地 Python 代码，不会被沙箱隔离。",
+    "intentRouting": "Prompt Agent 可以选择启用、禁用或跟随通用意图路由默认值。Shadow 模式只记录预测。"
   },
   "placeholders": {
     "generatedInitials": "生成首字母",
@@ -98,5 +101,13 @@
     "llmProfile": "LLM 配置：{{profile}}",
     "legacyModel": "Legacy 模型：{{model}}",
     "usesGlobalLlmFallback": "使用全局 LLM fallback"
+  },
+  "intentRouting": {
+    "useDefault": "使用默认值",
+    "effectiveGeneralOff": "当前效果：已禁用，因为通用总开关关闭",
+    "effectiveAgentEnabled": "当前效果：由 Agent 覆盖启用",
+    "effectiveAgentDisabled": "当前效果：由 Agent 覆盖禁用",
+    "effectiveDefaultEnabled": "当前效果：按默认值启用",
+    "effectiveDefaultDisabled": "当前效果：按默认值禁用"
   }
 }

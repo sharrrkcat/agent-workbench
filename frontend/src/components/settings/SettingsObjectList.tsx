@@ -7,7 +7,7 @@ import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSectio
 import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
 
-export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory';
+export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory' | 'intent_routing';
 export type AppearanceSettingsCategory = 'pet' | 'chat_status_panel';
 export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
 export type WorldbookSettingsCategory = WorldbookSettingsSubsection;
@@ -70,6 +70,7 @@ export function SettingsObjectList({
     { id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') },
     { id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') },
     { id: 'memory', name: t('settings:general.memory'), description: t('settings:general.memoryDescription') },
+    { id: 'intent_routing', name: t('settings:general.intentRouting'), description: t('settings:general.intentRoutingDescription') },
   ];
   const appearanceCategories: { id: AppearanceSettingsCategory; name: string; description: string; icon: typeof PawPrint }[] = [
     { id: 'pet', name: t('settings:appearance.pet'), description: t('settings:appearance.petDescription'), icon: PawPrint },

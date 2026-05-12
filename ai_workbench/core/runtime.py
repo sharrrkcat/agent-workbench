@@ -1,6 +1,7 @@
 from typing import Any
 
 from ai_workbench.core.llm_config import LLMConfigError
+from ai_workbench.core.intent_router import build_intent_routing_metadata
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.schema.invocation import ActionInvocationRequest
@@ -24,10 +25,11 @@ class WorkbenchRuntime:
     ) -> RunResult:
         attachments = attachments or []
         route = self.router.route(session, raw_input)
+        intent_metadata = self._intent_routing_metadata(session, route)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
-            return await self.command_runner.run(route.target_id or "", route.args, route.session_id, input_message_id=input_message_id)
+            return await self.command_runner.run(route.target_id or "", route.args, route.session_id, input_message_id=input_message_id, intent_routing_metadata=intent_metadata)
         if route.kind == RouteKind.AGENT:
             if self.agent_runner is None:
                 return RunResult(success=False, run_id="", error="Agent runner is not configured.")
@@ -48,6 +50,7 @@ class WorkbenchRuntime:
                 display_input=route.raw_input,
                 attachments=attachments,
                 invocation_route_kind=route.invocation_route_kind or "agent",
+                intent_routing_metadata=intent_metadata,
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
 
@@ -81,6 +84,7 @@ class WorkbenchRuntime:
 
         raw_input = str(message.content)
         route = self.router.route(session, raw_input)
+        intent_metadata = self._intent_routing_metadata(session, route)
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
@@ -89,6 +93,7 @@ class WorkbenchRuntime:
                 route.args,
                 route.session_id,
                 input_message_id=message.message_id,
+                intent_routing_metadata=intent_metadata,
             )
         if route.kind == RouteKind.AGENT:
             if self.agent_runner is None:
@@ -110,6 +115,7 @@ class WorkbenchRuntime:
                 input_message_id=message.message_id,
                 create_user_message=False,
                 invocation_route_kind=route.invocation_route_kind or "agent",
+                intent_routing_metadata=intent_metadata,
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
 
@@ -172,6 +178,17 @@ class WorkbenchRuntime:
             },
         )
         self.agent_runner.session_store.set_last_announced_llm_profile(session_id, session.llm_profile_id)
+
+    def _intent_routing_metadata(self, session: Session, route) -> dict[str, Any] | None:
+        if self.agent_runner is None:
+            return None
+        return build_intent_routing_metadata(
+            session=session,
+            route=route,
+            agent_registry=self.agent_runner.agent_registry,
+            agent_config_store=self.agent_runner.agent_config_store,
+            app_settings_store=self.agent_runner.app_settings_store,
+        )
 
     async def invoke_action(
         self,

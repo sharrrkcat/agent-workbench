@@ -11,6 +11,7 @@
     "basic": "Basic information",
     "prompt": "Prompt",
     "knowledgeRuntime": "Knowledge Runtime Settings",
+    "intentRouting": "Intent Routing",
     "llmRuntime": "LLM Runtime Settings",
     "contextPolicy": "Context policy",
     "modelLifecycle": "Model lifecycle",
@@ -34,6 +35,7 @@
     "context": "Context",
     "systemPrompt": "System prompt",
     "useSessionKnowledgeBases": "Use session knowledge bases",
+    "intentRouting": "Intent Routing",
     "modelProfile": "Model profile",
     "allowSessionOverride": "Allow session override",
     "maxHistoryMessages": "Max history messages",
@@ -66,7 +68,16 @@
   },
   "help": {
     "knowledgeRuntime": "Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.",
+    "intentRouting": "Prompt Agents can opt in, opt out, or follow the General Intent Routing default. Shadow mode only records predictions.",
     "scriptTrusted": "Script Agents are trusted local Python code and are not sandboxed."
+  },
+  "intentRouting": {
+    "useDefault": "Use default",
+    "effectiveGeneralOff": "Effective: disabled because General master switch is off",
+    "effectiveAgentEnabled": "Effective: enabled by agent override",
+    "effectiveAgentDisabled": "Effective: disabled by agent override",
+    "effectiveDefaultEnabled": "Effective: enabled by default",
+    "effectiveDefaultDisabled": "Effective: disabled by default"
   },
   "placeholders": {
     "generatedInitials": "Generated initials",

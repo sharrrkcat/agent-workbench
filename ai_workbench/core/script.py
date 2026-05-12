@@ -1104,6 +1104,7 @@ class ScriptAgentRunner:
         suppress_output: bool = False,
         is_silent_submission: bool = False,
         invocation_route_kind: str = "agent",
+        intent_routing_metadata: dict[str, Any] | None = None,
     ) -> RunResult:
         attachments = attachments or []
         session = self.session_store.get_session(session_id)
@@ -1139,23 +1140,26 @@ class ScriptAgentRunner:
                 origin="user_message",
             )
         parent_id = parent_message_id or source_message_id or (user_message.message_id if user_message is not None else "")
+        run_metadata = {
+            "args": args,
+            "input_message_id": user_message.message_id if user_message is not None else None,
+            "parent_message_id": parent_id or None,
+            "source_message_id": source_message_id or None,
+            "prefill": prefill or {},
+            "form_id": form_id or None,
+            "silent": bool(suppress_output),
+            "route_kind": invocation_route_kind,
+            "resolved_agent_id": agent.id,
+            "resolved_action_id": action_id,
+        }
+        if intent_routing_metadata is not None:
+            run_metadata["intent_routing"] = intent_routing_metadata
         run = self.run_store.create_run(
             kind="agent" if action_id == "default" else "action",
             target_id=agent.id,
             action_id=action_id,
             session_id=session_id,
-            metadata={
-                "args": args,
-                "input_message_id": user_message.message_id if user_message is not None else None,
-                "parent_message_id": parent_id or None,
-                "source_message_id": source_message_id or None,
-                "prefill": prefill or {},
-                "form_id": form_id or None,
-                "silent": bool(suppress_output),
-                "route_kind": invocation_route_kind,
-                "resolved_agent_id": agent.id,
-                "resolved_action_id": action_id,
-            },
+            metadata=run_metadata,
         )
         output_message = None
         if not suppress_output:

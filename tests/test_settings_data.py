@@ -35,6 +35,16 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["core_memory_content"] == ""
     assert response.json()["core_memory_enabled_for_prompt_agents"] is True
     assert response.json()["core_memory_enabled_for_script_agents"] is False
+    assert response.json()["intent_routing_enabled"] is False
+    assert response.json()["intent_routing_default_for_prompt_agents"] is False
+    assert response.json()["intent_routing_mode"] == "shadow"
+    assert response.json()["intent_routing_high_confidence_threshold"] == 0.78
+    assert response.json()["intent_routing_low_confidence_threshold"] == 0.55
+    assert response.json()["intent_routing_auto_route_safe_intents"] is False
+    assert response.json()["intent_routing_confirm_uncertain"] is True
+    assert response.json()["intent_routing_embedding_model_path"] == ""
+    assert response.json()["intent_routing_utility_llm_model_path"] == ""
+    assert response.json()["intent_routing_device"] == "auto"
     assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["command_result_context_instruction_default"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
@@ -57,6 +67,15 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "core_memory_content": "Remember local preferences.",
             "core_memory_enabled_for_prompt_agents": False,
             "core_memory_enabled_for_script_agents": True,
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_high_confidence_threshold": 0.9,
+            "intent_routing_low_confidence_threshold": 0.4,
+            "intent_routing_auto_route_safe_intents": True,
+            "intent_routing_confirm_uncertain": False,
+            "intent_routing_embedding_model_path": "embeddings/embeddinggemma-300m",
+            "intent_routing_utility_llm_model_path": "llms/Qwen3-0.6B",
+            "intent_routing_device": "cpu",
         },
     )
     assert patched.status_code == 200
@@ -76,6 +95,15 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["core_memory_content"] == "Remember local preferences."
     assert patched.json()["core_memory_enabled_for_prompt_agents"] is False
     assert patched.json()["core_memory_enabled_for_script_agents"] is True
+    assert patched.json()["intent_routing_enabled"] is True
+    assert patched.json()["intent_routing_default_for_prompt_agents"] is True
+    assert patched.json()["intent_routing_high_confidence_threshold"] == 0.9
+    assert patched.json()["intent_routing_low_confidence_threshold"] == 0.4
+    assert patched.json()["intent_routing_auto_route_safe_intents"] is True
+    assert patched.json()["intent_routing_confirm_uncertain"] is False
+    assert patched.json()["intent_routing_embedding_model_path"] == "embeddings/embeddinggemma-300m"
+    assert patched.json()["intent_routing_utility_llm_model_path"] == "llms/Qwen3-0.6B"
+    assert patched.json()["intent_routing_device"] == "cpu"
 
     reset = client.patch(
         "/api/settings/general",
@@ -92,6 +120,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"session_title_max_input_chars": 99}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_prompt": "   "}).status_code == 422
     assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_mode": "auto"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_device": "metal"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"intent_routing_low_confidence_threshold": 0.95}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
@@ -101,6 +132,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["group_transcript_system_instruction"] is None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
+    assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["intent_routing_device"] == "cpu"
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

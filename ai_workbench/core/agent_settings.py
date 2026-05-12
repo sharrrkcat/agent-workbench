@@ -17,6 +17,7 @@ from ai_workbench.core.schema.model_lifecycle import ModelLifecyclePolicy
 
 DISPLAY_KEYS = {"name", "description", "avatar"}
 KNOWLEDGE_CONTEXT_MODES = {"use_default", "enabled", "disabled"}
+INTENT_ROUTING_MODES = {"use_default", "enabled", "disabled"}
 RUNTIME_KEYS = {
     "llm_profile_id",
     "allow_session_override",
@@ -25,6 +26,7 @@ RUNTIME_KEYS = {
     "timeout_seconds",
     "prompt",
     "knowledge_context_mode",
+    "intent_routing_mode",
 }
 
 
@@ -95,15 +97,21 @@ def normalize_runtime_override(value: Any) -> dict[str, Any]:
             if not isinstance(raw, str) or raw not in KNOWLEDGE_CONTEXT_MODES:
                 raise ValueError("runtime.knowledge_context_mode must be use_default, enabled, or disabled")
             result[key] = raw
+        elif key == "intent_routing_mode":
+            if raw in (None, ""):
+                continue
+            if not isinstance(raw, str) or raw not in INTENT_ROUTING_MODES:
+                raise ValueError("runtime.intent_routing_mode must be use_default, enabled, or disabled")
+            result[key] = raw
     return result
 
 
-def resolved_agent_settings(agent: AgentSchema, config: dict[str, Any] | None = None, agent_dir: Path | None = None) -> dict[str, Any]:
+def resolved_agent_settings(agent: AgentSchema, config: dict[str, Any] | None = None, agent_dir: Path | None = None, settings: Any = None) -> dict[str, Any]:
     config = config or {}
     display_override = normalize_display_override(config.get("display", {}))
     runtime_override = normalize_runtime_override(config.get("runtime", {}))
     display, display_sources = _resolve_display(agent, display_override, agent_dir)
-    runtime, runtime_sources = _resolve_runtime(agent, runtime_override)
+    runtime, runtime_sources = _resolve_runtime(agent, runtime_override, settings=settings)
     sections = [{"id": "basic", "label": "Basic information"}]
     if agent.type == "prompt":
         sections.append({"id": "prompt", "label": "Prompt"})
@@ -111,6 +119,8 @@ def resolved_agent_settings(agent: AgentSchema, config: dict[str, Any] | None = 
         sections.append({"id": "llm_runtime", "label": "LLM Runtime Settings", "capability_id": "llm"})
     if agent.type == "prompt" or _agent_has_llm_capability(agent):
         sections.append({"id": "knowledge_runtime", "label": "Knowledge Runtime Settings"})
+    if agent.type == "prompt":
+        sections.append({"id": "intent_routing", "label": "Intent Routing"})
     return {
         "display": display,
         "runtime": runtime,
@@ -157,6 +167,41 @@ def resolved_knowledge_context_mode(agent: AgentSchema, config: dict[str, Any] |
         "enabled": effective == "enabled",
         "default_effective_mode": default_effective,
         "available": agent.type == "prompt" or _agent_has_llm_capability(agent),
+    }
+
+
+def resolved_intent_routing_mode(agent: AgentSchema, config: dict[str, Any] | None = None, settings: Any = None) -> dict[str, str | bool]:
+    runtime = normalize_runtime_override((config or {}).get("runtime", {}))
+    configured = runtime.get("intent_routing_mode", "use_default")
+    available = agent.type == "prompt"
+    master_enabled = bool(getattr(settings, "intent_routing_enabled", False))
+    default_enabled = bool(getattr(settings, "intent_routing_default_for_prompt_agents", False))
+    if not available:
+        effective = "disabled"
+        reason = "agent_type"
+    elif not master_enabled:
+        effective = "disabled"
+        reason = "general_disabled"
+    elif configured == "enabled":
+        effective = "enabled"
+        reason = "agent_override"
+    elif configured == "disabled":
+        effective = "disabled"
+        reason = "agent_override"
+    elif default_enabled:
+        effective = "enabled"
+        reason = "general_default"
+    else:
+        effective = "disabled"
+        reason = "default_disabled"
+    return {
+        "mode": configured,
+        "effective_mode": effective,
+        "enabled": available and master_enabled and effective == "enabled",
+        "available": available,
+        "master_enabled": master_enabled,
+        "default_for_prompt_agents": default_enabled,
+        "reason": reason,
     }
 
 
@@ -216,7 +261,7 @@ def _resolve_display(agent: AgentSchema, override: dict[str, str], agent_dir: Pa
     return display, sources
 
 
-def _resolve_runtime(agent: AgentSchema, override: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+def _resolve_runtime(agent: AgentSchema, override: dict[str, Any], settings: Any = None) -> tuple[dict[str, Any], dict[str, str]]:
     manifest_llm = agent.llm if isinstance(agent.llm, dict) else {}
     runtime: dict[str, Any] = {}
     sources: dict[str, str] = {}
@@ -271,6 +316,11 @@ def _resolve_runtime(agent: AgentSchema, override: dict[str, Any]) -> tuple[dict
     runtime["knowledge_context_effective_mode"] = knowledge["effective_mode"]
     runtime["knowledge_context_default_effective_mode"] = knowledge["default_effective_mode"]
     sources["runtime.knowledge_context_mode"] = "override" if "knowledge_context_mode" in override else "default"
+    intent = resolved_intent_routing_mode(agent, {"runtime": override}, settings=settings)
+    runtime["intent_routing_mode"] = intent["mode"]
+    runtime["intent_routing_effective_mode"] = intent["effective_mode"]
+    runtime["intent_routing_effective_reason"] = intent["reason"]
+    sources["runtime.intent_routing_mode"] = "override" if "intent_routing_mode" in override else "default"
     return runtime, sources
 
 
