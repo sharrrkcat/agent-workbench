@@ -28,6 +28,8 @@ def test_agent_missing_runtime_fields_resolves_system_defaults() -> None:
     assert resolved["runtime"]["knowledge_context_effective_mode"] == "enabled"
     assert resolved["runtime"]["intent_routing_mode"] == "use_default"
     assert resolved["runtime"]["intent_routing_effective_mode"] == "disabled"
+    assert resolved["runtime"]["intent_routing_aliases_text"] == ""
+    assert resolved["runtime"]["intent_routing_examples_text"] == ""
 
 
 def test_write_overrides_to_manifest_writes_only_display_runtime_not_user_config(tmp_path: Path) -> None:
@@ -56,7 +58,16 @@ def test_write_overrides_to_manifest_writes_only_display_runtime_not_user_config
         agent_dir,
         {
             "display": {"name": "Custom Chat"},
-            "runtime": {"timeout_seconds": 88, "llm_profile_id": "local", "allow_session_override": False, "prompt": "Custom prompt", "knowledge_context_mode": "disabled", "intent_routing_mode": "enabled"},
+            "runtime": {
+                "timeout_seconds": 88,
+                "llm_profile_id": "local",
+                "allow_session_override": False,
+                "prompt": "Custom prompt",
+                "knowledge_context_mode": "disabled",
+                "intent_routing_mode": "enabled",
+                "intent_routing_aliases_text": "chatty",
+                "intent_routing_examples_text": "ask chatty",
+            },
             "user_config": {"temperature": 0.1},
         },
     )
@@ -68,6 +79,8 @@ def test_write_overrides_to_manifest_writes_only_display_runtime_not_user_config
     assert raw["llm"] == {"profile": "local", "allow_session_override": False}
     assert "knowledge_context_mode" not in raw
     assert "intent_routing_mode" not in raw
+    assert "intent_routing_aliases_text" not in raw
+    assert "intent_routing_examples_text" not in raw
     assert "user_config" not in raw
     assert "config" not in raw
 

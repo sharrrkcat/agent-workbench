@@ -131,7 +131,15 @@ Auto mode can change only safe current-message routing when all eligibility chec
 
 Intent predictions are not appended to prompts, not passed to providers, not used by automatic title generation, and not used to alter Core Memory or Worldbook context injection.
 
-When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction after deterministic rule classification. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It does not execute command-like requests and does not itself call tools; auto mode still applies the safe-route allowlist and confidence thresholds.
+General settings may store custom route examples for `chat`, `image_generation`, `knowledge_query`, `agent_route`, and `command_like`. Each field is newline-separated user data. Empty lines are ignored, individual examples are capped, and the classifier merges custom examples with built-in examples instead of replacing them. Custom examples can raise or clarify a prediction, but they do not expand the safe auto-route allowlist.
+
+Knowledge Bases may store comma-separated aliases. Intent Routing uses enabled KB names and aliases to match `knowledge_query` `kb_hint` values in this order: name exact, alias exact, name substring, alias substring, then description weak match. Exact alias matches take priority over description matches. Ambiguous strong matches record a warning and do not randomly choose a KB. Any selected KB ids are temporary for the run only.
+
+AgentConfig runtime may store routing target hints under `intent_routing_aliases_text` and `intent_routing_examples_text`. These hints help classify `agent_route` and produce compact target metadata. They do not make Script Agents router entries and do not allow generic Agent auto execution. Prompt Agent `runtime.intent_routing_mode` remains the only per-Agent router-entry override.
+
+When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction after deterministic rule classification. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, full route examples, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and does not itself call tools; auto mode still applies the safe-route allowlist and confidence thresholds.
+
+`POST /api/intent/test-route` predicts a route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent hints.
 
 Prediction metadata shape:
 
@@ -151,6 +159,12 @@ Prediction metadata shape:
   "session_default_changed": false,
   "temporary_knowledge_base_ids": ["kb_id"],
   "session_bindings_changed": false,
+  "custom_examples_used": true,
+  "kb_match_source": "alias",
+  "agent_match_source": "none",
+  "matched_alias": "Star Wars",
+  "matched_route_example": "ask the lore binder",
+  "ambiguous_matches": [],
   "slots": {
     "kb_hint": "Star Wars",
     "query": "stormtrooper ranks"
@@ -171,7 +185,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, raw model outputs, vector data, or extracted private content. Utility LLM extractor failures fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, or extracted private content. Alias/example fields such as `matched_alias` and `matched_route_example` are truncated, and `ambiguous_matches` is capped. Utility LLM extractor failures fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented.
 
 WebSocket events:
 - `run_updated`

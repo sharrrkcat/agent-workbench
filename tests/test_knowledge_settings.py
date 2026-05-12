@@ -164,12 +164,14 @@ def test_knowledge_base_crud_and_session_bindings(tmp_path: Path) -> None:
     profile = create_embedding_profile(client)
     missing = client.post("/api/knowledge/bases", json={"name": "Bad", "embedding_model_profile_id": "missing"})
     assert missing.status_code == 400
-    kb = client.post("/api/knowledge/bases", json={"name": "Docs", "embedding_model_profile_id": profile["id"]}).json()
+    kb = client.post("/api/knowledge/bases", json={"name": "Docs", "embedding_model_profile_id": profile["id"], "aliases_text": "docs, project docs"}).json()
     assert kb["index_status"] == "empty"
+    assert kb["aliases_text"] == "docs, project docs"
     assert client.get("/api/knowledge/bases").json()[0]["name"] == "Docs"
-    patched = client.patch(f"/api/knowledge/bases/{kb['id']}", json={"enabled": False, "final_top_k_override": 5})
+    patched = client.patch(f"/api/knowledge/bases/{kb['id']}", json={"enabled": False, "final_top_k_override": 5, "aliases_text": "docs, Docs, 星战"})
     assert patched.status_code == 200
     assert patched.json()["final_top_k_override"] == 5
+    assert patched.json()["aliases_text"] == "docs, 星战"
     assert client.patch(f"/api/knowledge/bases/{kb['id']}", json={"final_top_k_override": 0}).status_code == 422
 
     session = client.post("/api/sessions", json={"title": "", "default_agent_id": "chat"}).json()

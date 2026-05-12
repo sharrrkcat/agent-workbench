@@ -1810,6 +1810,7 @@ def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
         id=record.id,
         name=record.name,
         description=record.description,
+        aliases_text=getattr(record, "aliases_text", "") or "",
         embedding_model_profile_id=record.embedding_model_profile_id,
         enabled=record.enabled,
         index_status=record.index_status,

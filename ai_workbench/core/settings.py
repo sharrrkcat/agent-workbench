@@ -75,6 +75,11 @@ class AppSettings(BaseModel):
     intent_routing_embedding_model_path: str = ""
     intent_routing_utility_llm_model_path: str = ""
     intent_routing_device: str = "auto"
+    intent_routing_chat_examples: str = ""
+    intent_routing_image_generation_examples: str = ""
+    intent_routing_knowledge_query_examples: str = ""
+    intent_routing_agent_route_examples: str = ""
+    intent_routing_command_like_examples: str = ""
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -174,6 +179,11 @@ class AppSettingsPatch(BaseModel):
     intent_routing_embedding_model_path: str | None = None
     intent_routing_utility_llm_model_path: str | None = None
     intent_routing_device: str | None = None
+    intent_routing_chat_examples: str | None = None
+    intent_routing_image_generation_examples: str | None = None
+    intent_routing_knowledge_query_examples: str | None = None
+    intent_routing_agent_route_examples: str | None = None
+    intent_routing_command_like_examples: str | None = None
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod

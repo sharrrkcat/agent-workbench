@@ -40,6 +40,7 @@ def init_db(engine) -> None:
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
     ensure_knowledge_settings_columns(engine)
+    ensure_knowledge_base_columns(engine)
     ensure_worldbook_settings_columns(engine)
     ensure_session_knowledge_binding_columns(engine)
     ensure_run_lifecycle_columns(engine)
@@ -163,6 +164,18 @@ def ensure_knowledge_settings_columns(engine) -> None:
         for column, ddl in additions.items():
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE knowledge_settings ADD COLUMN {column} {ddl}"))
+
+
+def ensure_knowledge_base_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "knowledge_bases" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(knowledge_bases)").fetchall()}
+        if "aliases_text" not in columns:
+            connection.execute(text("ALTER TABLE knowledge_bases ADD COLUMN aliases_text VARCHAR DEFAULT ''"))
 
 
 def ensure_worldbook_settings_columns(engine) -> None:

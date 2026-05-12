@@ -27,6 +27,8 @@ RUNTIME_KEYS = {
     "prompt",
     "knowledge_context_mode",
     "intent_routing_mode",
+    "intent_routing_aliases_text",
+    "intent_routing_examples_text",
 }
 
 
@@ -103,6 +105,12 @@ def normalize_runtime_override(value: Any) -> dict[str, Any]:
             if not isinstance(raw, str) or raw not in INTENT_ROUTING_MODES:
                 raise ValueError("runtime.intent_routing_mode must be use_default, enabled, or disabled")
             result[key] = raw
+        elif key in {"intent_routing_aliases_text", "intent_routing_examples_text"}:
+            if raw in (None, ""):
+                continue
+            if not isinstance(raw, str):
+                raise ValueError(f"runtime.{key} must be a string")
+            result[key] = raw.strip()
     return result
 
 
@@ -119,6 +127,7 @@ def resolved_agent_settings(agent: AgentSchema, config: dict[str, Any] | None = 
         sections.append({"id": "llm_runtime", "label": "LLM Runtime Settings", "capability_id": "llm"})
     if agent.type == "prompt" or _agent_has_llm_capability(agent):
         sections.append({"id": "knowledge_runtime", "label": "Knowledge Runtime Settings"})
+    sections.append({"id": "intent_routing_target_hints", "label": "Intent Routing Target Hints"})
     if agent.type == "prompt":
         sections.append({"id": "intent_routing", "label": "Intent Routing"})
     return {
@@ -321,6 +330,10 @@ def _resolve_runtime(agent: AgentSchema, override: dict[str, Any], settings: Any
     runtime["intent_routing_effective_mode"] = intent["effective_mode"]
     runtime["intent_routing_effective_reason"] = intent["reason"]
     sources["runtime.intent_routing_mode"] = "override" if "intent_routing_mode" in override else "default"
+    runtime["intent_routing_aliases_text"] = override.get("intent_routing_aliases_text", "")
+    runtime["intent_routing_examples_text"] = override.get("intent_routing_examples_text", "")
+    sources["runtime.intent_routing_aliases_text"] = "override" if "intent_routing_aliases_text" in override else "default"
+    sources["runtime.intent_routing_examples_text"] = "override" if "intent_routing_examples_text" in override else "default"
     return runtime, sources
 
 

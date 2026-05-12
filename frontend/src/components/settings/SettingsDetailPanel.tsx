@@ -1,4 +1,4 @@
-import { Activity, Database, RefreshCw, Save, Search, Settings, Trash2 } from 'lucide-react';
+import { Activity, Database, Play, RefreshCw, Save, Search, Settings, Trash2 } from 'lucide-react';
 import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
@@ -645,6 +645,8 @@ function GeneralIntentRoutingSettings({
   const [status, setStatus] = useState<UtilityLlmStatus | null>(null);
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
+  const [routeTestText, setRouteTestText] = useState('');
+  const [routeTestResult, setRouteTestResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
 
   async function refreshStatus() {
@@ -677,6 +679,20 @@ function GeneralIntentRoutingSettings({
       await refreshStatus();
     } catch (err) {
       setError(toSettingsError(err, t('settings:general.utilityLlmActionFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function runRouteTest() {
+    if (!routeTestText.trim()) return;
+    setBusy('route-test');
+    try {
+      setError(null);
+      const response = await api.testIntentRoute({ text: routeTestText, include_utility: Boolean(values.intent_routing_utility_llm_model_path) });
+      setRouteTestResult(response.decision);
+    } catch (err) {
+      setError(toSettingsError(err, t('settings:general.routeTestFailed')));
     } finally {
       setBusy('');
     }
@@ -734,6 +750,38 @@ function GeneralIntentRoutingSettings({
           <ToggleSwitch checked={values.intent_routing_confirm_uncertain} onChange={(checked) => setValues({ ...values, intent_routing_confirm_uncertain: checked })} />
           <small>{t('settings:general.plannedForLater')}</small>
         </label>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.routeExamples')}</h3>
+        </div>
+        <p className="settings-muted-text">{t('settings:general.routeExamplesHelp')}</p>
+        <p className="settings-muted-text">{t('settings:general.routeExamplesSafetyHelp')}</p>
+        <div className="settings-detail-grid">
+          <TextAreaField label={t('settings:general.chatExamples')} value={values.intent_routing_chat_examples} onChange={(value) => setString('intent_routing_chat_examples', value)} />
+          <TextAreaField label={t('settings:general.imageGenerationExamples')} value={values.intent_routing_image_generation_examples} onChange={(value) => setString('intent_routing_image_generation_examples', value)} />
+          <TextAreaField label={t('settings:general.knowledgeQueryExamples')} value={values.intent_routing_knowledge_query_examples} onChange={(value) => setString('intent_routing_knowledge_query_examples', value)} />
+          <TextAreaField label={t('settings:general.agentRouteExamples')} value={values.intent_routing_agent_route_examples} onChange={(value) => setString('intent_routing_agent_route_examples', value)} />
+          <TextAreaField label={t('settings:general.commandLikeExamples')} value={values.intent_routing_command_like_examples} onChange={(value) => setString('intent_routing_command_like_examples', value)} />
+        </div>
+        <small className="settings-muted-text">{t('settings:general.oneExamplePerLine')}</small>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.routeTest')}</h3>
+        </div>
+        <p className="settings-muted-text">{t('settings:general.routeTestHelp')}</p>
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.routeTestInput')}</span>
+          <textarea rows={3} value={routeTestText} onChange={(event) => setRouteTestText(event.currentTarget.value)} />
+        </label>
+        <div className="settings-button-row">
+          <button type="button" className="settings-secondary-button" disabled={Boolean(busy) || !routeTestText.trim()} onClick={() => void runRouteTest()}>
+            <Play size={14} />
+            {busy === 'route-test' ? t('common:loading') : t('settings:general.testRoute')}
+          </button>
+        </div>
+        {routeTestResult ? <RouteTestResult decision={routeTestResult} /> : null}
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -826,7 +874,29 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_embedding_model_path: values.intent_routing_embedding_model_path,
     intent_routing_utility_llm_model_path: values.intent_routing_utility_llm_model_path,
     intent_routing_device: values.intent_routing_device,
+    intent_routing_chat_examples: values.intent_routing_chat_examples,
+    intent_routing_image_generation_examples: values.intent_routing_image_generation_examples,
+    intent_routing_knowledge_query_examples: values.intent_routing_knowledge_query_examples,
+    intent_routing_agent_route_examples: values.intent_routing_agent_route_examples,
+    intent_routing_command_like_examples: values.intent_routing_command_like_examples,
   };
+}
+
+function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
+  const { t } = useTranslation(['settings', 'common']);
+  const slots = typeof decision.slots === 'object' && decision.slots ? decision.slots : {};
+  return (
+    <dl className="settings-definition-grid">
+      <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
+      <Metric label={t('settings:general.confidence')} value={typeof decision.confidence === 'number' ? decision.confidence.toFixed(2) : t('settings:general.none')} />
+      <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
+      <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
+      <Metric label={t('settings:general.kbMatch')} value={String(decision.kb_match_source || t('settings:general.none'))} />
+      <Metric label={t('settings:general.agentMatch')} value={String(decision.agent_match_source || t('settings:general.none'))} />
+      <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} />
+      <Metric label={t('settings:general.warnings')} value={Array.isArray(decision.warnings) ? decision.warnings.join(', ') || t('settings:general.none') : t('settings:general.none')} />
+    </dl>
+  );
 }
 
 function InstructionField({
@@ -866,6 +936,15 @@ function TextField({ label, value, onChange }: { label: string; value: string; o
     <label className="config-field settings-config-field">
       <span>{label}</span>
       <input value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+    </label>
+  );
+}
+
+function TextAreaField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      <textarea rows={5} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
     </label>
   );
 }

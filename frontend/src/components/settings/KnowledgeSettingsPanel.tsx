@@ -165,6 +165,7 @@ const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
 const defaultKnowledgeBase: Partial<KnowledgeBase> = {
   name: '',
   description: '',
+  aliases_text: '',
   embedding_model_profile_id: '',
   enabled: true,
   chunk_size_override: null,
@@ -1257,6 +1258,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                 <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
                 <SelectField label={t('knowledge:labels.embeddingModelProfile')} value={values.embedding_model_profile_id || ''} options={profiles.map((profile) => profile.id)} labels={Object.fromEntries(profiles.map((profile) => [profile.id, profile.alias]))} onChange={(value) => setValues({ ...values, embedding_model_profile_id: value })} />
               </div>
+              <TextAreaField label={t('knowledge:labels.aliases')} value={values.aliases_text || ''} onChange={(value) => setValues({ ...values, aliases_text: value })} />
+              <p className="settings-muted-text">{t('knowledge:help.aliases')}</p>
               <TextAreaField label={t('knowledge:labels.description')} value={values.description || ''} onChange={(value) => setValues({ ...values, description: value })} />
               {'index_status' in values ? <dl className="settings-definition-grid"><Metric label={t('knowledge:labels.indexStatus')} value={getKnowledgeIndexStatusLabel(values.index_status || 'empty', t)} /></dl> : null}
             </section>
@@ -1685,6 +1688,7 @@ function buildKnowledgeBasePayload(values: Partial<KnowledgeBase>): KnowledgeBas
   return {
     name: values.name ?? '',
     description: values.description ?? '',
+    aliases_text: values.aliases_text ?? '',
     embedding_model_profile_id: values.embedding_model_profile_id ?? '',
     enabled: values.enabled ?? true,
     chunk_size_override: parseOptionalInteger(values.chunk_size_override, 'Chunk size override'),

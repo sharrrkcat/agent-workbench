@@ -95,6 +95,8 @@ export type AgentRuntimeOverrides = {
   intent_routing_mode?: 'use_default' | 'enabled' | 'disabled';
   intent_routing_effective_mode?: 'enabled' | 'disabled';
   intent_routing_effective_reason?: string;
+  intent_routing_aliases_text?: string;
+  intent_routing_examples_text?: string;
   context_policy?: ContextPolicy;
   model_lifecycle?: ModelLifecyclePolicy;
   timeout_seconds?: number;
@@ -405,6 +407,7 @@ export type KnowledgeBase = {
   id: string;
   name: string;
   description: string;
+  aliases_text: string;
   embedding_model_profile_id: string;
   enabled: boolean;
   index_status: 'empty' | 'ready' | 'indexing' | 'failed' | 'needs_reindex' | string;
@@ -424,6 +427,7 @@ export type KnowledgeBaseInput = Partial<
     KnowledgeBase,
     | 'name'
     | 'description'
+    | 'aliases_text'
     | 'embedding_model_profile_id'
     | 'enabled'
     | 'chunk_size_override'
@@ -1163,6 +1167,16 @@ export type GeneralSettings = {
   intent_routing_embedding_model_path: string;
   intent_routing_utility_llm_model_path: string;
   intent_routing_device: 'auto' | 'cpu' | 'cuda';
+  intent_routing_chat_examples: string;
+  intent_routing_image_generation_examples: string;
+  intent_routing_knowledge_query_examples: string;
+  intent_routing_agent_route_examples: string;
+  intent_routing_command_like_examples: string;
+};
+
+export type IntentRouteTestResponse = {
+  ok: boolean;
+  decision: Record<string, unknown>;
 };
 
 export type StorageStats = {

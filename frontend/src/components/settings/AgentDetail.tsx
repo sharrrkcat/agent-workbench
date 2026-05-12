@@ -353,6 +353,34 @@ function OverridesTab({
         </section>
       ) : null}
 
+      <section className="settings-override-section">
+        <div className="detail-section-heading">
+          <h3>{t('agents:sections.intentRoutingTargetHints')}</h3>
+          <span className="settings-badge muted">{t('agents:summary.overrideCount', { count: overrideCount({ aliases: runtimeDraft.intent_routing_aliases_text, examples: runtimeDraft.intent_routing_examples_text }) })}</span>
+        </div>
+        <p className="settings-muted-text">{t('agents:help.intentRoutingTargetHints')}</p>
+        <OverrideTextField
+          label={t('agents:labels.routingAliases')}
+          field="runtime.intent_routing_aliases_text"
+          value={runtimeDraft.intent_routing_aliases_text || ''}
+          placeholder={t('agents:placeholders.routingAliases')}
+          config={config}
+          savedValue={config.runtime?.intent_routing_aliases_text}
+          onChange={(intent_routing_aliases_text) => onRuntimeChange({ ...runtimeDraft, intent_routing_aliases_text })}
+        />
+        <OverrideTextField
+          label={t('agents:labels.routingExamples')}
+          field="runtime.intent_routing_examples_text"
+          value={runtimeDraft.intent_routing_examples_text || ''}
+          placeholder={t('agents:placeholders.routingExamples')}
+          config={config}
+          savedValue={config.runtime?.intent_routing_examples_text}
+          onChange={(intent_routing_examples_text) => onRuntimeChange({ ...runtimeDraft, intent_routing_examples_text })}
+          textarea
+        />
+        <p className="settings-muted-text">{t('agents:help.genericRoutesNotAutoExecuted')}</p>
+      </section>
+
       {hasLlmSection ? (
         <section className="settings-override-section">
           <div className="detail-section-heading">
@@ -603,6 +631,8 @@ function normalizedRuntimeDraft(runtime: AgentRuntimeOverrides, config: AgentCon
   if (runtime.allow_session_override !== undefined) result.allow_session_override = runtime.allow_session_override;
   if (runtime.knowledge_context_mode) result.knowledge_context_mode = runtime.knowledge_context_mode;
   if (runtime.intent_routing_mode) result.intent_routing_mode = runtime.intent_routing_mode;
+  if (runtime.intent_routing_aliases_text?.trim()) result.intent_routing_aliases_text = runtime.intent_routing_aliases_text.trim();
+  if (runtime.intent_routing_examples_text?.trim()) result.intent_routing_examples_text = runtime.intent_routing_examples_text.trim();
   if (runtime.context_policy) result.context_policy = runtime.context_policy;
   if (runtime.model_lifecycle) result.model_lifecycle = runtime.model_lifecycle;
   if (runtime.timeout_seconds !== undefined) result.timeout_seconds = runtime.timeout_seconds;

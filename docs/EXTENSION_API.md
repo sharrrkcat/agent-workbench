@@ -116,6 +116,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - LLM runtime override can set `llm_profile_id` and `allow_session_override`.
 - Knowledge runtime override can set `knowledge_context_mode` to `use_default`, `enabled`, or `disabled`. Prompt Agents default to effective `enabled`; Script Agents that declare `llm` default to effective `disabled`; Script Agents without `llm` do not show the override. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`.
 - Prompt Agent Intent Routing override can set `intent_routing_mode` to `use_default`, `enabled`, or `disabled`. General settings still own the master switch, Prompt Agent default, and global `shadow`/`auto` mode. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`. Script Agents do not show this override and are not generic router entries.
+- Agent Intent Routing target hints are runtime-only AgentConfig fields: `intent_routing_aliases_text` is an English-comma-separated alias list, and `intent_routing_examples_text` is newline-separated natural-language examples. They help Intent Routing identify target hints for `agent_route` metadata and Utility LLM candidates. They do not enable Script Agents as router entries, do not permit generic Agent auto execution, and are not written into `agent.yaml`.
 - Reset overrides clears local AgentConfig values back to manifest behavior.
 - Write overrides to manifest only when intentionally changing the package default.
 
@@ -356,6 +357,7 @@ Utility LLM APIs:
 - `POST /api/intent/utility-llm/test-title` accepts `{"text":"..."}` and returns `{"ok":true,"title":"...","backend":"utility_llm","warnings":[]}` when generation succeeds. It may load the configured local model.
 - `POST /api/intent/utility-llm/test-json` accepts `{"text":"..."}` and returns strict extracted intent JSON plus compact slots. It may load the configured local model.
 - `POST /api/intent/utility-llm/unload` releases only the Utility LLM cache. It does not unload the main LLM, embeddings, reranker, or ComfyUI.
+- `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation.
 
 ## Knowledge Settings, Local Model APIs, Indexing, And Search
 
@@ -480,6 +482,8 @@ Knowledge base APIs:
 - `GET /api/knowledge/bases/{id}`
 - `PATCH /api/knowledge/bases/{id}`
 - `DELETE /api/knowledge/bases/{id}`
+
+Knowledge Base create, read, and patch payloads include `aliases_text`, a comma-separated string used only by Intent Routing KB hint matching. Aliases are trimmed, empty pieces are ignored, duplicate aliases are removed case-insensitively, each alias is capped, and the stored list is capped. Patching only `aliases_text` does not change embedding profiles, index status, sources, chunks, retrieval ranking, RRF, or reranker behavior.
 
 Knowledge source indexing APIs:
 

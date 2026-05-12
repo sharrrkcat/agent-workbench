@@ -92,6 +92,7 @@
     "queryInstruction": "Query instruction",
     "notes": "Notes",
     "embeddingModelProfile": "Embedding model profile",
+    "aliases": "Aliases",
     "description": "Description",
     "indexStatus": "Index status",
     "chunkSizeOverride": "Chunk size override",
@@ -226,6 +227,9 @@
     "currentSavedPathNotScanned": "Current saved path is not in scanned folders.",
     "unloadEmbeddingModelAfterUse": "Release the local embedding model after indexing or search. This can reduce VRAM usage but makes the next search slower.",
     "unloadRerankerModelAfterUse": "Release the local reranker after reranking. This can reduce VRAM usage but makes the next rerank slower."
+  },
+  "help": {
+    "aliases": "Use English commas to separate aliases used by Intent Routing."
   },
   "errors": {
     "copyCommandFailed": "Failed to copy command. Select and copy it manually."

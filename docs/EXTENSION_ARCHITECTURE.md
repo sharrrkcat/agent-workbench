@@ -326,7 +326,7 @@ Knowledge configuration ownership:
 
 - Knowledge Defaults store app-level RAG defaults such as local model device, reranker path, retrieval limits, chunking limits, and future context prompt templates.
 - Embedding Model Profiles store local embedding model paths and instructions.
-- Knowledge Bases store per-KB configuration and overrides.
+- Knowledge Bases store per-KB configuration, overrides, and Intent Routing aliases used only for natural-language KB hint matching.
 - Knowledge Sources, Chunks, Embeddings, and FTS rows are Workbench-owned data derived from source inputs. Deleting a source deletes its chunks, embeddings, and FTS rows without deleting the original attachment.
 - Session Knowledge Bindings store which KBs are active for a session and Phase 4 uses them for Prompt Agent and opted-in Script Agent context injection.
 - AgentConfig may store only the tri-state `knowledge_context_mode` runtime override. Do not store Knowledge model paths in AgentConfig or CapabilityConfig.
@@ -341,12 +341,15 @@ Core Memory and Worldbook configuration ownership:
 Intent Routing configuration ownership:
 
 - General settings own Intent Routing's master switch, Prompt Agent default, global `shadow`/`auto` mode, safe auto-route toggle, confidence thresholds, reserved model paths, and device selection.
+- General settings own built-in intent custom route examples. These examples are user data merged with built-in route examples at prediction time.
 - Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode`.
+- Agent target hint aliases/examples belong in `AgentConfig.runtime.intent_routing_aliases_text` and `AgentConfig.runtime.intent_routing_examples_text`. They are local runtime hints, not manifest fields and not router-entry grants.
+- Knowledge Base aliases belong to Knowledge Base data/configuration and are used only to match Intent Routing `knowledge_query` KB hints.
 - Utility LLM settings belong to General Intent Routing settings: `intent_routing_utility_llm_model_path` and `intent_routing_device`.
 - The Utility LLM service belongs to the core runtime. It is used for internal short tasks such as session title generation and shadow-mode JSON extraction.
 - Utility LLM is not AgentConfig, CapabilityConfig, Provider Profile, Model Profile, Agent manifest, or Capability manifest configuration.
 - Intent route definitions, deterministic shadow classification, and utility model backends are core runtime concerns.
-- Safe auto-route decisions are per-run runtime decisions. They may choose `comfyui_agent` for a supported `image_generation` run or pass temporary Knowledge KB/query overrides for a `knowledge_query` Prompt Agent run, but they must not write session config, change the session default Agent, or persist Context Sources bindings.
+- Safe auto-route decisions are per-run runtime decisions. They may choose `comfyui_agent` for a supported `image_generation` run or pass temporary Knowledge KB/query overrides for a `knowledge_query` Prompt Agent run, but they must not write session config, change the session default Agent, or persist Context Sources bindings. Generic Agent target hints and command-like predictions remain metadata/diagnostic decisions until a separate confirmation design exists.
 - Intent Routing is not owned by Agent manifests, Capability manifests, or slash command declarations. Do not add Intent Routing route registry fields to `agent.yaml` or `capability.yaml`.
 
 Obsidian CapabilityConfig:

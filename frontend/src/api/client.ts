@@ -56,6 +56,7 @@ import type {
   UtilityLlmJsonTestResult,
   UtilityLlmStatus,
   UtilityLlmTitleTestResult,
+  IntentRouteTestResponse,
   Session,
   SendMessageAttachment,
   StorageStats,
@@ -392,6 +393,11 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
   unloadUtilityLlm: () => request<{ ok: boolean; status: string }>('/api/intent/utility-llm/unload', { method: 'POST' }),
+  testIntentRoute: (payload: { text: string; session_id?: string | null; default_agent_id?: string | null; include_utility?: boolean }) =>
+    request<IntentRouteTestResponse>('/api/intent/test-route', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   freeRuntimeMemory: (targets: RuntimeMemoryTarget[], sessionId?: string | null) =>
     request<RuntimeMemoryFreeResult>('/api/runtime/free-memory', {
       method: 'POST',

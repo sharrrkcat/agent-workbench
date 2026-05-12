@@ -289,15 +289,19 @@ Likely source:
 - `ai_workbench/api/routes/settings.py`
 - `ai_workbench/api/routes/intent.py` when changing Utility LLM APIs
 - `ai_workbench/api/routes/configs.py`
+- `ai_workbench/core/knowledge_store.py`, `ai_workbench/db/models.py`, and `ai_workbench/db/stores.py` when Intent Routing changes Knowledge Base aliases or matching fields
+- `ai_workbench/api/routes/knowledge.py` when Knowledge Base alias request/response contracts change
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/AgentDetail.tsx`
+- `frontend/src/components/settings/KnowledgeSettingsPanel.tsx` when KB aliases are user-visible
 - `frontend/src/types.ts`
 - `frontend/src/i18n/resources`
 
 Tests:
 - `uv run pytest tests/test_settings_data.py`
 - `uv run pytest tests/test_agent_settings.py`
+- `uv run pytest tests/test_knowledge_settings.py` when KB alias storage/API changes
 - `uv run pytest tests/test_intent_routing.py`
 - `uv run pytest tests/test_intent_auto_routing.py` when safe auto routing changes
 - `uv run pytest tests/test_utility_llm.py`
@@ -313,6 +317,8 @@ Rules:
 - Auto mode may route only allowlisted safe intents for the current message/run. It must not change the session default Agent, visible Agent selector, or persisted Context Sources Knowledge/Worldbook bindings.
 - `image_generation` auto routing may target only the supported `comfyui_agent` path. Do not add generic Agent routing without an explicit safety design.
 - `knowledge_query` auto routing may use only per-run temporary Knowledge KB/query overrides. It must not persist session KB bindings or change retrieval ranking/indexing.
+- General custom route examples, Agent target aliases/examples, and Knowledge Base aliases are classifier/extractor hints only. They must not expand the safe auto-route boundary.
+- Route test/debug APIs must not create messages or runs, execute ComfyUI, execute commands, run Knowledge retrieval, or mutate sessions.
 - Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
 - Do not automatically download Utility LLM models, install optional dependencies, execute command-like intents, or run slash commands from intent predictions.
 - User-visible frontend text must be added to every supported locale.

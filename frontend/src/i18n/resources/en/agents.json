@@ -12,6 +12,7 @@
     "prompt": "Prompt",
     "knowledgeRuntime": "Knowledge Runtime Settings",
     "intentRouting": "Intent Routing",
+    "intentRoutingTargetHints": "Intent Routing Target Hints",
     "llmRuntime": "LLM Runtime Settings",
     "contextPolicy": "Context policy",
     "modelLifecycle": "Model lifecycle",
@@ -55,6 +56,8 @@
     "maxChars": "Max chars",
     "originalUserMessage": "Original user message",
     "lastAgentMessage": "Last agent message"
+    ,"routingAliases": "Routing aliases",
+    "routingExamples": "Route examples"
   },
   "buttons": {
     "resetOverrides": "Reset overrides",
@@ -69,7 +72,9 @@
   "help": {
     "knowledgeRuntime": "Prompt Agents use Session KBs by default. LLM Script Agents do not use them unless enabled here.",
     "intentRouting": "Prompt Agents can opt in, opt out, or follow the General Intent Routing default. General mode can be Shadow or safe Auto.",
-    "scriptTrusted": "Script Agents are trusted local Python code and are not sandboxed."
+    "scriptTrusted": "Script Agents are trusted local Python code and are not sandboxed.",
+    "intentRoutingTargetHints": "Aliases and examples help Intent Routing recognize when a user is referring to this Agent. They do not make Script Agents router entries.",
+    "genericRoutesNotAutoExecuted": "Generic Agent routes are not executed automatically in this version."
   },
   "intentRouting": {
     "useDefault": "Use default",
@@ -84,7 +89,9 @@
   "placeholders": {
     "generatedInitials": "Generated initials",
     "noDescription": "No description",
-    "noManifestPrompt": "No manifest prompt"
+    "noManifestPrompt": "No manifest prompt",
+    "routingAliases": "image, draw, comfyui, 画图",
+    "routingExamples": "Please send this to the image helper."
   },
   "confirm": {
     "resetOverrides": "Reset display and runtime overrides for this agent? Config tab values will be kept.",

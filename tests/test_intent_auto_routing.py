@@ -1,4 +1,5 @@
 from ai_workbench.core.schema.result import RunResult
+from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, bind_test_kb, run
 
 
@@ -143,6 +144,70 @@ def test_auto_knowledge_query_uses_temporary_kb_and_query_override(monkeypatch) 
     assert knowledge["query"] == "stormtrooper ranks"
     assert llm.calls[0]["messages"][-1] == {"role": "user", "content": "What does my Project KB say about stormtrooper ranks?"}
     assert fixture.knowledge.list_session_bindings(session.session_id)[0].knowledge_base_id == kb.id
+
+
+def test_auto_knowledge_query_matches_kb_alias_without_persisting_binding(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    enable_auto(fixture)
+    fixture.app_settings.patch({"intent_routing_utility_llm_model_path": "utility_llms/test-router"})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    profile = fixture.knowledge.create_embedding_profile(
+        EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test")
+    )
+    kb = fixture.knowledge.create_knowledge_base(
+        KnowledgeBase(
+            name="Star Wars KB",
+            aliases_text="星战, Star Wars, SW",
+            embedding_model_profile_id=profile.id,
+        )
+    )
+    fixture.agent_runner.utility_llm_service = FakeUtilityIntentService(
+        {
+            "intent": "knowledge_query",
+            "confidence": 0.91,
+            "kb_hint": "SW",
+            "query": "stormtrooper ranks",
+        }
+    )
+    search_calls = []
+
+    def fake_search(**kwargs):
+        search_calls.append(kwargs)
+        return {"query": kwargs["query"], "results": [], "debug": {"warnings": []}}
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fake_search)
+
+    result = run(fixture.runtime.handle_input(session, "What does SW say about stormtrooper ranks?"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert intent["route_action"] == "knowledge_override"
+    assert intent["temporary_knowledge_base_ids"] == [kb.id]
+    assert intent["kb_match_source"] == "alias"
+    assert intent["matched_alias"] == "SW"
+    assert search_calls[0]["knowledge_base_ids"] == [kb.id]
+    assert fixture.knowledge.list_session_bindings(session.session_id) == []
+
+
+def test_auto_agent_route_hint_records_target_without_executing_agent() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_auto(fixture)
+    fixture.agent_configs.set_config("translate", runtime={"intent_routing_aliases_text": "translator"})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "send this to translator please"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert prompt_run.target_id == "chat"
+    assert intent["predicted_intent"] == "agent_route"
+    assert intent["target_agent_id"] == "translate"
+    assert intent["agent_match_source"] == "alias"
+    assert intent["matched_alias"] == "translator"
+    assert intent["route_action"] == "confirmation_needed_future"
+    assert "agent_route_auto_route_disabled" in intent["warnings"]
 
 
 def test_auto_command_like_intent_is_not_executed() -> None:

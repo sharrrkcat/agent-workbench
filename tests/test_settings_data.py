@@ -45,6 +45,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_embedding_model_path"] == ""
     assert response.json()["intent_routing_utility_llm_model_path"] == ""
     assert response.json()["intent_routing_device"] == "auto"
+    assert response.json()["intent_routing_chat_examples"] == ""
+    assert response.json()["intent_routing_image_generation_examples"] == ""
+    assert response.json()["intent_routing_knowledge_query_examples"] == ""
+    assert response.json()["intent_routing_agent_route_examples"] == ""
+    assert response.json()["intent_routing_command_like_examples"] == ""
     assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["command_result_context_instruction_default"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
@@ -77,6 +82,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_embedding_model_path": "embeddings/embeddinggemma-300m",
             "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B",
             "intent_routing_device": "cpu",
+            "intent_routing_chat_examples": "keep chatting",
+            "intent_routing_image_generation_examples": "paint a castle",
+            "intent_routing_knowledge_query_examples": "ask the docs",
+            "intent_routing_agent_route_examples": "send to translator",
+            "intent_routing_command_like_examples": "free resources",
         },
     )
     assert patched.status_code == 200
@@ -106,6 +116,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["intent_routing_embedding_model_path"] == "embeddings/embeddinggemma-300m"
     assert patched.json()["intent_routing_utility_llm_model_path"] == "utility_llms/Qwen3-0.6B"
     assert patched.json()["intent_routing_device"] == "cpu"
+    assert patched.json()["intent_routing_chat_examples"] == "keep chatting"
+    assert patched.json()["intent_routing_image_generation_examples"] == "paint a castle"
+    assert patched.json()["intent_routing_knowledge_query_examples"] == "ask the docs"
+    assert patched.json()["intent_routing_agent_route_examples"] == "send to translator"
+    assert patched.json()["intent_routing_command_like_examples"] == "free resources"
 
     reset = client.patch(
         "/api/settings/general",
@@ -138,6 +153,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_device"] == "cpu"
+    assert restarted.get("/api/settings/general").json()["intent_routing_chat_examples"] == "keep chatting"
+    assert restarted.get("/api/settings/general").json()["intent_routing_image_generation_examples"] == "paint a castle"
+    assert restarted.get("/api/settings/general").json()["intent_routing_knowledge_query_examples"] == "ask the docs"
+    assert restarted.get("/api/settings/general").json()["intent_routing_agent_route_examples"] == "send to translator"
+    assert restarted.get("/api/settings/general").json()["intent_routing_command_like_examples"] == "free resources"
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

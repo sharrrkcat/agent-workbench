@@ -9,6 +9,8 @@ from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSet
 
 
 ALIAS_PATTERN_DESCRIPTION = "lowercase letters, numbers, underscores, and hyphens only"
+MAX_KB_ALIASES = 50
+MAX_KB_ALIAS_CHARS = 120
 
 
 def validate_alias(value: str) -> str:
@@ -20,6 +22,23 @@ def validate_alias(value: str) -> str:
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", alias):
         raise ValueError(f"Alias must use {ALIAS_PATTERN_DESCRIPTION}.")
     return alias
+
+
+def normalize_aliases_text(value: Any) -> str:
+    parts: list[str] = []
+    seen: set[str] = set()
+    for raw in str(value or "").split(","):
+        alias = raw.strip()[:MAX_KB_ALIAS_CHARS]
+        if not alias:
+            continue
+        key = alias.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(alias)
+        if len(parts) >= MAX_KB_ALIASES:
+            break
+    return ", ".join(parts)
 
 
 class EmbeddingModelProfile(BaseModel):
@@ -119,6 +138,7 @@ class KnowledgeBase(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     description: str = ""
+    aliases_text: str = ""
     embedding_model_profile_id: str
     enabled: StrictBool = True
     index_status: KnowledgeIndexStatus = "empty"
@@ -140,12 +160,18 @@ class KnowledgeBase(BaseModel):
             raise ValueError("Name must not be empty.")
         return text
 
+    @field_validator("aliases_text", mode="before")
+    @classmethod
+    def _aliases_text(cls, value: Any) -> str:
+        return normalize_aliases_text(value)
+
 
 class KnowledgeBaseCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
     description: str = ""
+    aliases_text: str = ""
     embedding_model_profile_id: str
     enabled: StrictBool = True
     chunk_size_override: int | None = Field(default=None, ge=100, le=10000)
@@ -155,12 +181,18 @@ class KnowledgeBaseCreate(BaseModel):
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
 
+    @field_validator("aliases_text", mode="before")
+    @classmethod
+    def _aliases_text(cls, value: Any) -> str:
+        return normalize_aliases_text(value)
+
 
 class KnowledgeBasePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = None
     description: str | None = None
+    aliases_text: str | None = None
     embedding_model_profile_id: str | None = None
     enabled: StrictBool | None = None
     chunk_size_override: int | None = Field(default=None, ge=100, le=10000)
@@ -169,6 +201,11 @@ class KnowledgeBasePatch(BaseModel):
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
+
+    @field_validator("aliases_text", mode="before")
+    @classmethod
+    def _aliases_text(cls, value: Any) -> str | None:
+        return normalize_aliases_text(value) if value is not None else None
 
 
 class SessionKnowledgeBinding(BaseModel):

@@ -168,12 +168,16 @@ class UtilityLLMService:
             raise UtilityLLMError(UTILITY_GENERATION_FAILED, "Utility LLM returned an empty title.")
         return {"title": title, "backend": "utility_llm", "model_path": raw.model_path}
 
-    async def extract_intent_json(self, text: str, settings: Any) -> dict[str, Any]:
+    async def extract_intent_json(self, text: str, settings: Any, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        compact_context = json.dumps(context or {}, ensure_ascii=False)[:6000]
         prompt = (
             "Classify the user's message for internal shadow diagnostics only.\n"
-            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, command_hint.\n"
+            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, command_hint, target_agent_id, kb_id, match_source.\n"
             "Allowed intent values: chat, image_generation, knowledge_query, agent_route, command_like, unknown.\n"
+            "Use compact candidates only; do not invent agent ids or knowledge base ids outside the candidates.\n"
+            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query may provide kb_hint and query only.\n"
             "Use null for unknown slots. Do not explain.\n\n"
+            f"Compact candidates:\n{compact_context}\n\n"
             f"User message:\n{text}"
         )
         raw = await self.generate(prompt, settings, max_new_tokens=192)
@@ -242,7 +246,10 @@ def validate_intent_prediction(data: dict[str, Any]) -> dict[str, Any]:
         "intent": intent,
         "confidence": round(confidence, 2),
         "target_agent_hint": _slot(data.get("target_agent_hint")),
+        "target_agent_id": _slot(data.get("target_agent_id")),
         "kb_hint": _slot(data.get("kb_hint")),
+        "kb_id": _slot(data.get("kb_id")),
+        "match_source": _slot(data.get("match_source")),
         "query": _slot(data.get("query")),
         "command_hint": _slot(data.get("command_hint")),
     }

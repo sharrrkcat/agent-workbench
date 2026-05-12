@@ -117,15 +117,19 @@ Settings -> General -> Intent Routing adds an optional natural-language route pr
 
 Intent Routing supports `shadow` and safe `auto` modes. Defaults remain conservative: the master switch is off by default, Prompt Agents do not opt in by default, and the separate `Auto route safe intents` switch is off unless the user enables it. When the General master switch is on and the current session default Agent is a Prompt Agent whose Intent Routing override is effectively enabled, ordinary messages in `single_assistant` mode are classified and the prediction is stored in compact run/message metadata. Script Agents are not generic router entries in this version, and `group_transcript` mode does not run intent routing.
 
+Settings -> General -> Intent Routing also supports custom route examples for the built-in intents `chat`, `image_generation`, `knowledge_query`, `agent_route`, and `command_like`. Examples are one per line and are merged with built-in examples; they help rule-based and Utility LLM extraction recognize similar user messages but do not execute commands or expand the safe auto-route allowlist. The same panel includes a Route Test tool that predicts a message without creating a chat message or run, without calling ComfyUI, and without running Knowledge retrieval.
+
 Intent Routing Round 2 adds an optional Utility LLM core service for short internal tasks: automatic session title generation and shadow-mode intent JSON extraction/verification. The Utility LLM is a local model folder under `data/models/utility_llms/<folder>`, for example `data/models/utility_llms/Qwen3-0.6B`, selected by the relative settings path `utility_llms/Qwen3-0.6B`. It is not a Model Profile, Provider Profile, Agent, Capability, or slash command. The app never downloads the model or installs `transformers`/`torch`; if those optional dependencies or the configured model folder are missing, normal chat startup still works and title generation falls back to the main LLM.
 
-The Utility LLM JSON extractor may add compact slots such as `kb_hint` or `query` to intent metadata when rule-based confidence is low or the prediction needs structure. In `shadow` mode it still never changes routing. In safe `auto` mode, high-confidence allowlisted intents can affect only the current message/run:
+The Utility LLM JSON extractor may add compact slots such as `target_agent_hint`, `kb_hint`, or `query` to intent metadata when rule-based confidence is low or the prediction needs structure. Its prompt receives only compact intent examples, Knowledge Base names/aliases, and Agent names/aliases/examples, not Agent prompts, KB content, Worldbook content, or raw run history. In `shadow` mode it still never changes routing. In safe `auto` mode, high-confidence allowlisted intents can affect only the current message/run:
 
 - `image_generation` routes the current run to `comfyui_agent.default`.
 - `knowledge_query` keeps the current Prompt Agent but uses a temporary Knowledge Base selection and retrieval query override.
 - `chat` keeps the current Prompt Agent path.
 
 Explicit `/command`, `@agent`, `@agent:action`, and `:action` inputs always bypass Intent Routing. `command_like` intents are recorded but are not executed automatically, so requests such as freeing memory do not run `/free-memory` in this version. Auto routing does not change the session default Agent, the visible Agent selector, or Context Sources Knowledge bindings. EmbeddingGemma and semantic embedding routing are deferred to a later round.
+
+Knowledge Bases can store comma-separated aliases such as `星战, Star Wars, SW`; Intent Routing uses them only to match `knowledge_query` `kb_hint` values for temporary per-run Knowledge overrides. Agents can store routing aliases and route examples in local Agent Overrides as target hints. These hints can set compact metadata such as `target_agent_id`, but generic Agent routes still require a future confirmation flow and are not executed automatically.
 
 ## Agent Avatars
 
@@ -209,6 +213,7 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - model scanning without loading models or downloading files.
 - optional local embedding and reranker backend APIs using `sentence-transformers`, `torch`, and `transformers` when installed.
 - embedding model profiles, knowledge bases, and session knowledge bindings.
+- Knowledge Base aliases for Intent Routing natural-language KB hint matching.
 - test embedding/reranker endpoints and Workbench-native JSON embedding/reranker APIs.
 - pasted text and uploaded text attachment source indexing.
 - `kb_sources`, `kb_chunks`, `kb_embeddings`, and `kb_chunk_fts` storage.
@@ -407,7 +412,7 @@ The General settings API exposes:
 - whether streaming `message_delta` events are persisted for debugging
 - Context Rendering overrides for Group transcript and Command result context instructions
 - Core Memory content and Prompt Agent / Script Agent enablement flags
-- Intent Routing settings, including optional Utility LLM model path and device
+- Intent Routing settings, including optional Utility LLM model path, device, and per-intent custom route examples
 
 Use `GET /api/settings/general` and `PATCH /api/settings/general` to read and update these values. Unknown fields are rejected, empty title prompts are rejected, and upload limits are enforced by the backend. File context settings only affect ordinary text/code/config files; image Vision input is still controlled by the selected model profile capability flags.
 

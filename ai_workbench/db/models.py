@@ -282,6 +282,7 @@ class KnowledgeBaseRecord(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     description: str = ""
+    aliases_text: str = ""
     embedding_model_profile_id: str = Field(index=True)
     enabled: bool = True
     index_status: str = "empty"
