@@ -14,7 +14,7 @@ from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identi
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
-from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
+from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates, sanitize_app_settings_payload
 from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
 from ai_workbench.core.knowledge_store import (
     EmbeddingModelProfile,
@@ -943,16 +943,16 @@ class SqlAppSettingsStore:
             record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
             if record is None:
                 return AppSettings()
-            return AppSettings.model_validate(_loads(record.value, {}))
+            return AppSettings.model_validate(sanitize_app_settings_payload(_loads(record.value, {})))
 
     def patch(self, values: Dict[str, Any]) -> AppSettings:
-        patch = AppSettingsPatch.model_validate(values)
+        patch = AppSettingsPatch.model_validate(sanitize_app_settings_payload(values))
         updates = app_settings_patch_updates(patch)
         with DbSession(self.engine) as session:
             record = session.get(AppMetadataRecord, self.SETTINGS_KEY)
             current = AppSettings()
             if record is not None:
-                current = AppSettings.model_validate(_loads(record.value, {}))
+                current = AppSettings.model_validate(sanitize_app_settings_payload(_loads(record.value, {})))
             next_settings = AppSettings.model_validate({**current.model_dump(), **updates})
             if record is None:
                 record = AppMetadataRecord(key=self.SETTINGS_KEY, value=_dumps(next_settings.model_dump()))

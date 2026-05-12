@@ -554,8 +554,11 @@ def test_general_intent_routing_auto_mode_contract() -> None:
     assert '<option value="auto">{t(\'settings:general.autoMode\')}</option>' in panel
     assert "settings:general.autoModeHelp" in panel
     assert "settings:general.autoModeSafeRoutingOff" in panel
-    assert "settings:general.commandsNeverAutoExecute" in panel
-    assert "settings:general.temporaryKnowledgeSelection" in panel
+    assert "settings:general.intentRoutingExplicitBypass" in panel
+    assert "settings:general.intentRoutingShadowRecords" in panel
+    assert "settings:general.intentRoutingAutoSafeOnly" in panel
+    assert "settings:general.openUtilityLlmSettings" not in panel
+    assert "legacyEmbeddingPathConfigured" not in panel
 
 
 def test_general_settings_uses_middle_category_list() -> None:

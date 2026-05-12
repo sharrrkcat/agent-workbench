@@ -359,8 +359,7 @@ Related General settings:
 - `intent_routing_utility_llm_context_size`: llama.cpp context size, default `4096`, range `512..32768`.
 - `intent_routing_utility_llm_gpu_layers`: llama.cpp GPU layer count, default `0`, range `-1..200`.
 - `intent_routing_utility_llm_threads`: optional llama.cpp thread count, default `null`, range `1..128`.
-- `intent_routing_embedding_model_profile_id`: optional Knowledge Embedding Model Profile id reserved for future Intent Routing semantic embedding routing. Defaults to `null`.
-- `intent_routing_embedding_model_path`: legacy compatibility path. It remains accepted and returned, but the UI prefers `intent_routing_embedding_model_profile_id`.
+- `intent_routing_embedding_model_profile_id`: optional Knowledge Embedding Model Profile id reserved for future Intent Routing semantic embedding routing. Defaults to `null`. This is the only semantic router profile selection field returned by current General settings clients. Old persisted `intent_routing_embedding_model_path` values are ignored if present.
 
 Utility LLM path contract:
 - `transformers`: `utility_llms/<folder>`, for example `utility_llms/Qwen3-0.6B`.

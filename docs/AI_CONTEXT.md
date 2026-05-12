@@ -291,7 +291,7 @@ Likely source:
 - `ai_workbench/api/routes/configs.py`
 - `ai_workbench/core/knowledge_store.py`, `ai_workbench/db/models.py`, and `ai_workbench/db/stores.py` when Intent Routing changes Knowledge Base aliases or matching fields
 - `ai_workbench/api/routes/knowledge.py` when Knowledge Base alias request/response contracts change
-- `frontend/src/components/settings/SettingsDetailPanel.tsx`
+- `frontend/src/components/settings/SettingsDetailPanel.tsx` for General -> Utility LLM status UI and General -> Intent Routing cards.
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/AgentDetail.tsx`
 - `frontend/src/components/settings/KnowledgeSettingsPanel.tsx` when KB aliases are user-visible
@@ -323,7 +323,8 @@ Rules:
 - Utility LLM may support title generation and shadow JSON extraction, but it must not be a Model Profile, Provider Profile, Capability, Agent, or slash command.
 - Utility LLM backend/model path/device/options belong to General settings and are displayed under General -> Utility LLM. Transformers paths use `utility_llms/<folder>`; GGUF llama.cpp paths use `utility_llms/<model-folder>/<file>.gguf`. Root-level GGUF files are invalid and should not be scanned.
 - Do not lightly change title generation backend behavior when changing Utility LLM settings IA; moving settings categories must preserve current Utility LLM priority and fallback behavior.
-- Intent Routing raw embedding model path is legacy compatibility. Prefer selecting an existing Knowledge Embedding Model Profile through `intent_routing_embedding_model_profile_id`; do not expand raw path UI or connect real semantic routing unless explicitly requested.
+- Intent Routing raw embedding model path is removed from the current UI/API contract. Ignore old persisted `intent_routing_embedding_model_path` values, do not restore a legacy path warning or display, and use only `intent_routing_embedding_model_profile_id` for the semantic router profile selector unless explicitly redesigning the contract.
+- Utility LLM detailed settings, scan, status tests, and unload controls belong under General -> Utility LLM. General -> Intent Routing may show only a compact Utility LLM status summary.
 - Do not automatically download Utility LLM models, install optional dependencies such as `llama-cpp-python`, modify main LLM Provider/Profile settings, execute command-like intents, or run slash commands from intent predictions.
 - User-visible frontend text must be added to every supported locale.
 - Settings schema, runtime protocol, routing behavior, metadata shape, and user workflow changes must update docs in the same change.

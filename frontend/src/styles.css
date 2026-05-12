@@ -4901,6 +4901,104 @@ input:disabled {
   background: #2a2a2a;
 }
 
+.settings-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-card-title-row strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.settings-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-hint-callout {
+  padding: 11px 12px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.settings-hint-callout ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 17px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-compact-subheading {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.settings-inline-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-inline-summary span {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.settings-inline-summary strong {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.settings-inline-summary small {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-info-row {
   display: grid;
   gap: 7px;
@@ -4944,6 +5042,18 @@ input:disabled {
   font-size: 12px;
   font-weight: 680;
   text-transform: none;
+}
+
+.settings-chip-row span.available {
+  border-color: rgba(34, 160, 107, 0.18);
+  background: rgba(34, 160, 107, 0.12);
+  color: #bbf7d0;
+}
+
+.settings-chip-row span.unavailable {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.54);
 }
 
 .settings-chip-row small {
@@ -5450,6 +5560,14 @@ input:disabled {
   border-color: rgba(248, 113, 113, 0.24);
   background: rgba(127, 29, 29, 0.2);
   color: #fecaca;
+}
+
+.status-chip.muted {
+  color: rgba(255, 255, 255, 0.54);
+}
+
+.status-chip.utility-status-chip {
+  text-transform: none;
 }
 
 .inline-status {
@@ -6198,6 +6316,10 @@ input:disabled {
   grid-template-columns: 1fr;
 }
 
+.settings-definition-grid.utility-status-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .settings-definition-grid div {
   display: grid;
   gap: 4px;
@@ -6224,6 +6346,12 @@ input:disabled {
   white-space: nowrap;
 }
 
+.settings-definition-grid dd.settings-mono-value {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .settings-definition-grid dd.settings-definition-capabilities {
   display: flex;
   align-items: center;
@@ -6231,6 +6359,10 @@ input:disabled {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
+}
+
+.utility-dependency-chips {
+  width: 100%;
 }
 
 .settings-warning-list {

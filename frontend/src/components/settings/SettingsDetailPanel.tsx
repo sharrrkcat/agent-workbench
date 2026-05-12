@@ -268,7 +268,6 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
 function GeneralDetail({
   category,
   onDirtyChange,
-  onSelectGeneralCategory,
 }: {
   category: GeneralSettingsCategory;
   onDirtyChange: (dirty: boolean) => void;
@@ -374,7 +373,7 @@ function GeneralDetail({
         ) : category === 'utility_llm' ? (
           <GeneralUtilityLlmSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : category === 'intent_routing' ? (
-          <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} onOpenUtilityLlm={() => onSelectGeneralCategory?.('utility_llm')} />
+          <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : (
           <GeneralPromptSettings values={values} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
         )}
@@ -647,13 +646,11 @@ function GeneralIntentRoutingSettings({
   setValues,
   setNumber,
   setString,
-  onOpenUtilityLlm,
 }: {
   values: GeneralSettings;
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
   setString: (key: keyof GeneralSettings, value: string) => void;
-  onOpenUtilityLlm: () => void;
 }) {
   const { t } = useTranslation(['settings', 'common']);
   const [status, setStatus] = useState<UtilityLlmStatus | null>(null);
@@ -705,7 +702,13 @@ function GeneralIntentRoutingSettings({
         <div className="detail-section-heading">
           <h3>{t('settings:general.intentRouting')}</h3>
         </div>
-        <p className="settings-muted-text">{t('settings:general.intentRoutingHelp')}</p>
+        <div className="settings-hint-callout">
+          <ul>
+            <li>{t('settings:general.intentRoutingExplicitBypass')}</li>
+            <li>{t('settings:general.intentRoutingShadowRecords')}</li>
+            <li>{t('settings:general.intentRoutingAutoSafeOnly')}</li>
+          </ul>
+        </div>
         <label className="config-field settings-config-field boolean-field">
           <span>{t('settings:general.enableIntentRouting')}</span>
           <ToggleSwitch checked={values.intent_routing_enabled} onChange={(checked) => setValues({ ...values, intent_routing_enabled: checked })} />
@@ -726,17 +729,7 @@ function GeneralIntentRoutingSettings({
         {values.intent_routing_mode === 'auto' && !values.intent_routing_auto_route_safe_intents ? (
           <p className="settings-warning-text">{t('settings:general.autoModeSafeRoutingOff')}</p>
         ) : null}
-        <ul className="settings-muted-list">
-          <li>{t('settings:general.autoRoutesSafeIntentsOnly')}</li>
-          <li>{t('settings:general.commandsNeverAutoExecute')}</li>
-          <li>{t('settings:general.autoDoesNotChangeDefaultAgent')}</li>
-          <li>{t('settings:general.temporaryKnowledgeSelection')}</li>
-        </ul>
-      </div>
-      <div className="detail-section">
-        <div className="detail-section-heading">
-          <h3>{t('settings:general.confidenceThresholds')}</h3>
-        </div>
+        <h4 className="settings-compact-subheading">{t('settings:general.confidenceThresholds')}</h4>
         <div className="settings-detail-grid">
           <NumberField label={t('settings:general.highConfidenceThreshold')} value={values.intent_routing_high_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_high_confidence_threshold', value)} />
           <NumberField label={t('settings:general.lowConfidenceThreshold')} value={values.intent_routing_low_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_low_confidence_threshold', value)} />
@@ -751,6 +744,40 @@ function GeneralIntentRoutingSettings({
           <ToggleSwitch checked={values.intent_routing_confirm_uncertain} onChange={(checked) => setValues({ ...values, intent_routing_confirm_uncertain: checked })} />
           <small>{t('settings:general.plannedForLater')}</small>
         </label>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.semanticRouter')}</h3>
+        </div>
+        {error ? <SettingsApiError error={error} /> : null}
+        <p className="settings-muted-copy">{t('settings:general.semanticRouterReserved')}</p>
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.embeddingModelProfile')}</span>
+          <select
+            value={values.intent_routing_embedding_model_profile_id || ''}
+            onChange={(event) =>
+              setValues({
+                ...values,
+                intent_routing_embedding_model_profile_id: event.currentTarget.value || null,
+              })
+            }
+          >
+            <option value="">{t('settings:general.noEmbeddingProfileSelected')}</option>
+            {embeddingProfiles.filter((profile) => profile.enabled || profile.id === values.intent_routing_embedding_model_profile_id).map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {embeddingProfileOptionLabel(profile, t)}
+              </option>
+            ))}
+          </select>
+          <small>{t('settings:general.embeddingProfileHelp')}</small>
+        </label>
+        {missingSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileUnavailable')}</p> : null}
+        {disabledSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileDisabled')}</p> : null}
+        <div className="settings-inline-summary">
+          <span>{t('settings:general.utilityLlm')}</span>
+          <strong>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</strong>
+          <small>{t('settings:general.utilityLlmSummaryLine', { backend: status?.backend || values.intent_routing_utility_llm_backend, model: status?.model_path || values.intent_routing_utility_llm_model_path || t('settings:general.utilityLlmNotConfigured') })}</small>
+        </div>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -783,66 +810,6 @@ function GeneralIntentRoutingSettings({
           </button>
         </div>
         {routeTestResult ? <RouteTestResult decision={routeTestResult} /> : null}
-      </div>
-      <div className="detail-section">
-        <div className="detail-section-heading">
-          <h3>{t('settings:general.semanticRouter')}</h3>
-        </div>
-        <p className="settings-muted-text">{t('settings:general.semanticRouterReserved')}</p>
-        <label className="config-field settings-config-field">
-          <span>{t('settings:general.embeddingModelProfile')}</span>
-          <select
-            value={values.intent_routing_embedding_model_profile_id || ''}
-            onChange={(event) =>
-              setValues({
-                ...values,
-                intent_routing_embedding_model_profile_id: event.currentTarget.value || null,
-              })
-            }
-          >
-            <option value="">{t('settings:general.noEmbeddingProfileSelected')}</option>
-            {embeddingProfiles.filter((profile) => profile.enabled || profile.id === values.intent_routing_embedding_model_profile_id).map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {embeddingProfileOptionLabel(profile, t)}
-              </option>
-            ))}
-          </select>
-          <small>{t('settings:general.embeddingProfileHelp')}</small>
-        </label>
-        {values.intent_routing_embedding_model_path && !values.intent_routing_embedding_model_profile_id ? (
-          <p className="settings-warning-text">{t('settings:general.legacyEmbeddingPathConfigured')}</p>
-        ) : null}
-        {missingSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileUnavailable')}</p> : null}
-        {disabledSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileDisabled')}</p> : null}
-      </div>
-      <div className="detail-section">
-        <div className="detail-section-heading">
-          <h3>{t('settings:general.utilityLlm')}</h3>
-        </div>
-        {error ? <SettingsApiError error={error} /> : null}
-        <div className="settings-card">
-          <div className="settings-card-header">
-            <div>
-              <strong>{t('settings:general.utilityLlmStatus')}</strong>
-              <p>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</p>
-            </div>
-            <button type="button" className="settings-secondary-button" onClick={() => void refreshStatus()}>
-              <RefreshCw size={14} />
-              {t('common:refresh')}
-            </button>
-          </div>
-          <div className="settings-detail-grid">
-            <Metric label={t('settings:general.utilityLlmBackend')} value={status?.backend || values.intent_routing_utility_llm_backend} />
-            <Metric label={t('settings:general.utilityLlmModelPath')} value={status?.model_path || values.intent_routing_utility_llm_model_path || t('settings:general.none')} />
-            <Metric label={t('settings:general.statusConfigured')} value={status?.configured ? t('settings:general.yes') : t('settings:general.no')} />
-            <Metric label={t('settings:general.statusLoaded')} value={status?.loaded ? t('settings:general.yes') : t('settings:general.no')} />
-          </div>
-          <div className="settings-detail-actions">
-            <button type="button" className="settings-secondary-button" onClick={onOpenUtilityLlm}>
-              {t('settings:general.openUtilityLlmSettings')}
-            </button>
-          </div>
-        </div>
       </div>
     </>
   );
@@ -1012,40 +979,38 @@ function GeneralUtilityLlmSettings({
         {error ? <SettingsApiError error={error} /> : null}
         <div className="settings-card">
           <div className="settings-card-header">
-            <div>
-              <strong>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</strong>
-              <p>{values.intent_routing_utility_llm_model_path || t('settings:general.utilityLlmNotConfigured')}</p>
+            <div className="settings-card-title-row">
+              <strong>{t('settings:general.utilityLlmStatus')}</strong>
+              {status ? <span className={`status-chip utility-status-chip ${utilityStatusTone(status)}`}>{utilityStatusChipText(status, t)}</span> : <span className="status-chip utility-status-chip muted">{t('common:loading')}</span>}
             </div>
-            <button type="button" className="settings-secondary-button" onClick={() => void refreshStatus()}>
-              <RefreshCw size={14} />
-              {t('common:refresh')}
-            </button>
+            <div className="settings-card-actions">
+              <button type="button" className="settings-secondary-button" onClick={() => void refreshStatus()} disabled={Boolean(busy)}>
+                <RefreshCw size={14} />
+                {t('common:refresh')}
+              </button>
+              <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('title')}>
+                {busy === 'title' ? t('common:loading') : t('settings:general.testTitleGeneration')}
+              </button>
+              <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('json')}>
+                {busy === 'json' ? t('common:loading') : t('settings:general.testJsonExtraction')}
+              </button>
+              <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('unload')}>
+                {busy === 'unload' ? t('common:loading') : t('settings:general.unloadUtilityLlm')}
+              </button>
+            </div>
           </div>
           {status ? (
-            <div className="settings-detail-grid">
+            <dl className="settings-definition-grid utility-status-grid">
+              <Metric label={t('settings:general.utilityLlmBackend')} value={status.backend} />
+              <Metric label={t('settings:general.utilityLlmModelPath')} value={status.model_path || t('settings:general.utilityLlmNotConfigured')} wide valueClassName="settings-mono-value" />
               <Metric label={t('settings:general.statusConfigured')} value={status.configured ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.statusAvailable')} value={status.available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.statusLoaded')} value={status.loaded ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.utilityLlmBackend')} value={status.backend} />
-              <Metric label={t('settings:general.transformersAvailable')} value={status.backend_status.transformers_available ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.torchAvailable')} value={status.backend_status.torch_available ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.llamaCppAvailable')} value={status.backend_status.llama_cpp_available ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.cudaAvailable')} value={status.backend_status.cuda_available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.resolvedDevice')} value={status.resolved_device || t('settings:general.notAvailable')} />
-              <Metric label={t('settings:general.modelPathStatus')} value={status.reason || t('settings:general.ok')} />
-            </div>
+              <Metric label={t('settings:general.modelPathStatus')} value={utilityModelPathStatus(status, t)} />
+              <Metric label={t('settings:general.dependencies')} value={<UtilityDependencyChips status={status} />} wide valueClassName="settings-definition-capabilities" />
+            </dl>
           ) : null}
-          <div className="settings-detail-actions">
-            <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('title')}>
-              {busy === 'title' ? t('common:loading') : t('settings:general.testTitleGeneration')}
-            </button>
-            <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('json')}>
-              {busy === 'json' ? t('common:loading') : t('settings:general.testJsonExtraction')}
-            </button>
-            <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void runUtilityAction('unload')}>
-              {busy === 'unload' ? t('common:loading') : t('settings:general.unloadUtilityLlm')}
-            </button>
-          </div>
           {result ? <p className="settings-muted-text">{result}</p> : null}
         </div>
       </div>
@@ -1064,6 +1029,45 @@ function utilityStatusText(status: UtilityLlmStatus, t: ReturnType<typeof useTra
     return t('settings:general.utilityLlmUnavailable');
   }
   return status.loaded ? t('settings:general.utilityLlmLoaded') : t('settings:general.utilityLlmReady');
+}
+
+function utilityStatusChipText(status: UtilityLlmStatus, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!status.configured) return t('settings:general.notConfigured');
+  if (status.loaded) return t('settings:general.statusLoaded');
+  if (status.available) return t('settings:general.statusAvailable');
+  return t('settings:general.unavailable');
+}
+
+function utilityStatusTone(status: UtilityLlmStatus): 'active' | 'warning' | 'danger' {
+  if (status.loaded || status.available) return 'active';
+  if (!status.configured) return 'warning';
+  return 'danger';
+}
+
+function utilityModelPathStatus(status: UtilityLlmStatus, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!status.configured) return t('settings:general.utilityLlmNotConfigured');
+  if (status.reason === 'model_not_found') return t('settings:general.missing');
+  if (status.reason === 'model_path_invalid' || status.reason === 'backend_model_path_mismatch') return t('settings:general.invalid');
+  return status.available ? t('settings:general.ok') : status.reason || t('settings:general.notAvailable');
+}
+
+function UtilityDependencyChips({ status }: { status: UtilityLlmStatus }) {
+  const { t } = useTranslation('settings');
+  const dependencies = [
+    { label: t('general.transformersAvailable'), available: status.backend_status.transformers_available },
+    { label: t('general.torchAvailable'), available: status.backend_status.torch_available },
+    { label: t('general.llamaCppAvailable'), available: status.backend_status.llama_cpp_available },
+    { label: t('general.cudaAvailable'), available: status.backend_status.cuda_available },
+  ];
+  return (
+    <span className="settings-chip-row compact utility-dependency-chips">
+      {dependencies.map((dependency) => (
+        <span key={dependency.label} className={dependency.available ? 'available' : 'unavailable'}>
+          {dependency.label}: {dependency.available ? t('general.yes') : t('general.no')}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function utilityModelOptions(scan: UtilityLlmModelScan | null, backend: GeneralSettings['intent_routing_utility_llm_backend'], currentPath: string, t: ReturnType<typeof useTranslation>['t']): { model_path: string; label: string }[] {
@@ -1108,7 +1112,6 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_auto_route_safe_intents: values.intent_routing_auto_route_safe_intents,
     intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
     intent_routing_embedding_model_profile_id: values.intent_routing_embedding_model_profile_id,
-    intent_routing_embedding_model_path: values.intent_routing_embedding_model_path,
     intent_routing_utility_llm_backend: values.intent_routing_utility_llm_backend,
     intent_routing_utility_llm_model_path: values.intent_routing_utility_llm_model_path,
     intent_routing_utility_llm_context_size: values.intent_routing_utility_llm_context_size,
@@ -1515,11 +1518,11 @@ function DiagnosticsCard({ title, children }: { title: string; children: ReactNo
   );
 }
 
-function Metric({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+function Metric({ label, value, wide, valueClassName }: { label: string; value: ReactNode; wide?: boolean; valueClassName?: string }) {
   return (
     <div className={wide ? 'wide' : ''}>
       <dt>{label}</dt>
-      <dd title={value}>{value}</dd>
+      <dd className={valueClassName} title={typeof value === 'string' ? value : undefined}>{value}</dd>
     </div>
   );
 }

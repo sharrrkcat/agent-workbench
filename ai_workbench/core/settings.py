@@ -39,6 +39,13 @@ def normalize_optional_instruction(value: Any) -> str | None:
     return value
 
 
+LEGACY_IGNORED_APP_SETTINGS_KEYS = {"intent_routing_embedding_model_path"}
+
+
+def sanitize_app_settings_payload(values: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if key not in LEGACY_IGNORED_APP_SETTINGS_KEYS}
+
+
 class AppSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -73,7 +80,6 @@ class AppSettings(BaseModel):
     intent_routing_auto_route_safe_intents: StrictBool = False
     intent_routing_confirm_uncertain: StrictBool = True
     intent_routing_embedding_model_profile_id: str | None = None
-    intent_routing_embedding_model_path: str = ""
     intent_routing_utility_llm_backend: str = "transformers"
     intent_routing_utility_llm_model_path: str = ""
     intent_routing_utility_llm_context_size: int = Field(default=4096, ge=512, le=32768)
@@ -206,7 +212,6 @@ class AppSettingsPatch(BaseModel):
     intent_routing_auto_route_safe_intents: StrictBool | None = None
     intent_routing_confirm_uncertain: StrictBool | None = None
     intent_routing_embedding_model_profile_id: str | None = None
-    intent_routing_embedding_model_path: str | None = None
     intent_routing_utility_llm_backend: str | None = None
     intent_routing_utility_llm_model_path: str | None = None
     intent_routing_utility_llm_context_size: int | None = Field(default=None, ge=512, le=32768)
@@ -321,7 +326,7 @@ class AppSettingsStore:
         return self._settings
 
     def patch(self, values: dict[str, Any]) -> AppSettings:
-        patch = AppSettingsPatch.model_validate(values)
+        patch = AppSettingsPatch.model_validate(sanitize_app_settings_payload(values))
         updates = app_settings_patch_updates(patch)
         if not updates:
             return self._settings

@@ -346,6 +346,7 @@ Intent Routing configuration ownership:
 - Agent target hint aliases/examples belong in `AgentConfig.runtime.intent_routing_aliases_text` and `AgentConfig.runtime.intent_routing_examples_text`. They are local runtime hints, not manifest fields and not router-entry grants.
 - Knowledge Base aliases belong to Knowledge Base data/configuration and are used only to match Intent Routing `knowledge_query` KB hints.
 - Intent Routing semantic router configuration references an existing Knowledge Embedding Model Profile through General settings. The Embedding Model Profile itself remains owned by Knowledge/local model configuration.
+- Intent Routing must not own or restore a raw embedding model path UI. Old persisted raw embedding path values are ignored; semantic router selection uses only the Knowledge Embedding Model Profile id.
 - Utility LLM settings belong to General settings and are displayed under General -> Utility LLM: `intent_routing_utility_llm_backend`, `intent_routing_utility_llm_model_path`, `intent_routing_device`, and optional llama.cpp options. Transformers/HF paths are `utility_llms/<folder>`; GGUF paths are `utility_llms/<model-folder>/<file>.gguf` and remain under `data/models/utility_llms`.
 - The Utility LLM service belongs to the core runtime. It is used for internal short tasks such as session title generation and shadow-mode JSON extraction.
 - Utility LLM is not AgentConfig, CapabilityConfig, Provider Profile, Model Profile, Agent manifest, or Capability manifest configuration.

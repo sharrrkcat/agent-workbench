@@ -1,12 +1,15 @@
 from pathlib import Path
 import base64
+import json
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session as DbSession, create_engine
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION, DEFAULT_SESSION_TITLE_PROMPT
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.db.models import AppMetadataRecord
 from ai_workbench.core.schema.run import RunStatus
 from scripts.cleanup_attachments import main as cleanup_main
 from tests.test_api import create_session
@@ -43,7 +46,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_auto_route_safe_intents"] is False
     assert response.json()["intent_routing_confirm_uncertain"] is True
     assert response.json()["intent_routing_embedding_model_profile_id"] is None
-    assert response.json()["intent_routing_embedding_model_path"] == ""
+    assert "intent_routing_embedding_model_path" not in response.json()
     assert response.json()["intent_routing_utility_llm_backend"] == "transformers"
     assert response.json()["intent_routing_utility_llm_model_path"] == ""
     assert response.json()["intent_routing_utility_llm_context_size"] == 4096
@@ -85,7 +88,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_auto_route_safe_intents": True,
             "intent_routing_confirm_uncertain": False,
             "intent_routing_embedding_model_profile_id": "embedding-profile-1",
-            "intent_routing_embedding_model_path": "embeddings/embeddinggemma-300m",
+            "intent_routing_embedding_model_path": "embeddings/legacy-ignored",
             "intent_routing_utility_llm_backend": "llama_cpp",
             "intent_routing_utility_llm_context_size": 8192,
             "intent_routing_utility_llm_gpu_layers": -1,
@@ -124,7 +127,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["intent_routing_auto_route_safe_intents"] is True
     assert patched.json()["intent_routing_confirm_uncertain"] is False
     assert patched.json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
-    assert patched.json()["intent_routing_embedding_model_path"] == "embeddings/embeddinggemma-300m"
+    assert "intent_routing_embedding_model_path" not in patched.json()
     assert patched.json()["intent_routing_utility_llm_backend"] == "llama_cpp"
     assert patched.json()["intent_routing_utility_llm_model_path"] == "utility_llms/qwen3-0.6b/Qwen3-0.6B-Q4_K_M.gguf"
     assert patched.json()["intent_routing_utility_llm_context_size"] == 8192
@@ -194,6 +197,37 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["intent_routing_knowledge_query_examples"] == "ask the docs"
     assert restarted.get("/api/settings/general").json()["intent_routing_agent_route_examples"] == "send to translator"
     assert restarted.get("/api/settings/general").json()["intent_routing_command_like_examples"] == "free resources"
+
+
+def test_general_settings_ignores_legacy_embedding_path_in_stored_json(tmp_path: Path) -> None:
+    db_url = f"sqlite:///{tmp_path / 'legacy-settings.db'}"
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
+    engine = create_engine(db_url)
+    with DbSession(engine) as session:
+        session.add(
+            AppMetadataRecord(
+                key="app_settings",
+                value=json.dumps(
+                    {
+                        "intent_routing_enabled": True,
+                        "intent_routing_embedding_model_profile_id": "profile-id",
+                        "intent_routing_embedding_model_path": "embeddings/legacy-path",
+                    }
+                ),
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/settings/general")
+    patched = client.patch("/api/settings/general", json={"intent_routing_embedding_model_path": "embeddings/new-ignored"})
+
+    assert response.status_code == 200
+    assert response.json()["intent_routing_enabled"] is True
+    assert response.json()["intent_routing_embedding_model_profile_id"] == "profile-id"
+    assert "intent_routing_embedding_model_path" not in response.json()
+    assert patched.status_code == 200
+    assert patched.json()["intent_routing_embedding_model_profile_id"] == "profile-id"
+    assert "intent_routing_embedding_model_path" not in patched.json()
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

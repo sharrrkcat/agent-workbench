@@ -1194,7 +1194,6 @@ export type GeneralSettings = {
   intent_routing_auto_route_safe_intents: boolean;
   intent_routing_confirm_uncertain: boolean;
   intent_routing_embedding_model_profile_id: string | null;
-  intent_routing_embedding_model_path: string;
   intent_routing_utility_llm_backend: 'transformers' | 'llama_cpp';
   intent_routing_utility_llm_model_path: string;
   intent_routing_utility_llm_context_size: number;
