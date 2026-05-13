@@ -174,14 +174,14 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         )
         return {
             "ok": True,
-            "decision": {
+            "decision": _route_test_decision({
                 "enabled": bool(getattr(settings, "intent_routing_enabled", False)),
                 "mode": getattr(settings, "intent_routing_mode", "shadow"),
                 "eligible": True,
                 "eligibility_scope": "no_session",
                 "bypassed": False,
                 **decision,
-            },
+            }),
         }
     decision = await build_intent_routing_metadata(
         session=session,
@@ -197,4 +197,12 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         classifier=RuleBasedIntentClassifier(),
         utility_llm_service=state.utility_llm if payload.include_utility else None,
     )
-    return {"ok": True, "decision": decision or {"eligible": False, "bypassed": True, "bypass_reason": "unavailable"}}
+    return {"ok": True, "decision": _route_test_decision(decision or {"eligible": False, "bypassed": True, "bypass_reason": "unavailable"})}
+
+
+def _route_test_decision(decision: dict) -> dict:
+    payload = dict(decision)
+    if payload.get("auto_executable"):
+        payload["would_execute"] = True
+    payload["executed"] = False
+    return payload

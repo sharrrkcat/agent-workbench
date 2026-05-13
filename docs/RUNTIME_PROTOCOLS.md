@@ -80,6 +80,7 @@ RunStep status values:
 Run steps:
 - `RunStep.parent_step_id` creates nesting.
 - Prompt Agent default top-level steps include `Resolving agent`, `Building context`, `Resolving model`, `Calling LLM`, `Saving response`, and `Cleanup`.
+- Intent Routing semantic decision happens before `Building context`. If auto mode authorizes a `knowledge_query` override, the temporary KB/query values are passed into that run's Knowledge context builder.
 - Script Agent default top-level steps include `Resolving agent`, optional `Resolving model`, `Starting script`, `Running script`, `Saving response`, and `Cleanup`.
 - Automatic session title generation is considered only after routing has resolved the actual Agent/action. Prompt Agents try it after model resolution and before the main provider call. Script Agents try it lazily before the first real `ctx.llm.*` call.
 - Script custom steps created with `ctx.step` default under `Running script`.
@@ -127,13 +128,14 @@ Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, sil
 
 Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message.
 
-Round 6A uses the embedding semantic router as the primary prediction source for Route Test and shadow metadata. Auto execution integration is staged: semantic predictions are recorded as compact metadata, while real execution changes remain conservative and do not execute command-like, generic Agent, action, image-generation, or compound routes.
+The embedding semantic router is the primary prediction source for Route Test, shadow metadata, and auto-mode route decisions. Auto execution is intentionally narrow:
 
-Earlier safe auto-route behavior remains documented for staged integration, but Round 6A semantic decisions only mark `auto_executable=false` except for ordinary `chat`. Supported future safe actions are:
-
-- `image_generation`: metadata-only in Round 6A. It no longer auto-routes to ComfyUI until action routing is reconnected.
-- `knowledge_query`: metadata-only for semantic predictions in Round 6A. Round 6B will reconnect temporary Knowledge KB/query overrides for high-confidence semantic decisions.
 - `chat`: keep the current Prompt Agent path. Intent Routing does not force-enable or disable Knowledge; existing session KB injection rules still apply.
+- `knowledge_query`: for high-confidence semantic decisions, keep the current Prompt Agent path and pass a per-run temporary Knowledge KB/query override into `Building context`.
+- `image_generation`: diagnostic-only in semantic v1. It does not auto-route to ComfyUI until action routing is designed.
+- `command_like`, generic `agent_route`, `action_route`, and `compound`: diagnostic-only. They may record compact target metadata but do not execute commands, Agents, actions, or multiple tasks.
+
+If the semantic router is unavailable, the runtime falls back to the current Prompt Agent and records warnings such as `semantic_router_profile_missing`, `semantic_router_embedding_unavailable`, or `semantic_router_unavailable`. The old rule-based classifier may be recorded only as `debug_fallback` metadata and must not trigger real auto execution, including the old image-generation to `comfyui_agent` route.
 
 `command_like` and generic `agent_route` are not executed automatically in this version. They fall back to the current Prompt Agent and record warnings such as `command_like_auto_route_disabled` or `agent_route_auto_route_disabled`. No slash command, memory release, deletion, settings change, shell command, or arbitrary Agent call is performed.
 
@@ -157,20 +159,20 @@ Candidate sources:
 - Weak diagnostic Agent action id, label, and description.
 - Weak diagnostic Capability command name, description, capability name, and safe flag.
 
-Command, action, generic Agent, and compound candidates are diagnostic-only in Round 6A. They may appear as `target_command`, `target_agent_id`, `target_action_id`, `sub_intents`, and top candidates in metadata, but they are not executed and do not change the selected route.
+Command, action, generic Agent, image-generation, and compound candidates are diagnostic-only in semantic v1. They may appear as `target_command`, `target_agent_id`, `target_action_id`, `sub_intents`, and top candidates in metadata, but they are not executed and do not change the selected route.
 
 When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON slot extraction after semantic prediction. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, while `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for slots such as `kb_hint` and `query`, or optional low-confidence verification. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and must not override semantic predictions into execution.
 
 Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
-`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints.
+`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `auto_executable`, `would_execute`, `route_action`, optional `diagnostic_reason`, temporary KB ids, query override preview, and warnings.
 
 Prediction metadata shape:
 
 ```json
 {
   "enabled": true,
-  "mode": "shadow",
+  "mode": "auto",
   "eligible": true,
   "bypassed": false,
   "source": "embedding_semantic_router+utility_llm",
@@ -178,9 +180,11 @@ Prediction metadata shape:
   "confidence": 0.84,
   "semantic_score": 0.84,
   "semantic_margin": 0.09,
-  "route_action": "metadata_only",
-  "auto_executable": false,
-  "target_agent_id": null,
+  "route_action": "knowledge_override",
+  "auto_executable": true,
+  "executed": true,
+  "would_execute": true,
+  "target_agent_id": "chat",
   "target_action_id": "default",
   "session_default_agent_id": "chat",
   "session_default_changed": false,
@@ -189,6 +193,8 @@ Prediction metadata shape:
   "top_candidates": [{"kind": "intent_example", "intent": "knowledge_query", "score": 0.84, "text_preview": "what does the documentation say"}],
   "kb_candidate": {"kind": "knowledge_base", "kb_id": "kb_id", "kb_name": "Star Wars", "field": "alias", "score": 0.71, "text_preview": "SW"},
   "session_bindings_changed": false,
+  "temporary_knowledge_base_ids": ["kb_id"],
+  "knowledge_query_override": "stormtrooper ranks",
   "kb_match_source": "alias",
   "agent_match_source": "none",
   "action_match_source": "none",

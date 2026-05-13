@@ -126,7 +126,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Prompt Agents let the core runtime build context and call the LLM.
 - Model output is treated as assistant content, not tool calls or structured commands.
 - Prompt Agents that call an LLM should declare `capabilities: [llm]`.
-- Prompt Agents may opt into Intent Routing through local AgentConfig runtime overrides edited under Agent detail -> Intent Routing. `intent_routing_mode` controls whether a Prompt Agent can be an Intent Routing entry. In `shadow` mode, predictions are metadata only and do not alter routing, context, prompt text, or provider payloads. In General `auto` mode, high-confidence safe intents may route image generation to `comfyui_agent` for the current run or provide a temporary Knowledge KB/query override for the current Prompt Agent run. Auto routing does not change the session default Agent or session Knowledge bindings.
+- Prompt Agents may opt into Intent Routing through local AgentConfig runtime overrides edited under Agent detail -> Intent Routing. `intent_routing_mode` controls whether a Prompt Agent can be an Intent Routing entry. In `shadow` mode, predictions are metadata only and do not alter routing, context, prompt text, or provider payloads. In General `auto` mode, only high-confidence semantic `chat` and `knowledge_query` decisions can execute. `chat` keeps the current Prompt Agent path; `knowledge_query` may provide a temporary Knowledge KB/query override for the current Prompt Agent run. Auto routing does not change the session default Agent or session Knowledge bindings. Image generation, command-like, generic Agent, action, and compound semantic matches are diagnostic-only in this version.
 - Depending on General Core Memory settings, Worldbook Defaults, and active Session Worldbook bindings, the core may append Core Memory and Worldbook system-context blocks before Retrieved Knowledge and conversation context.
 - Visible streaming is controlled by the resolved Model Profile `supports_streaming`.
 - Prompt Agent run steps, streaming, and LLM resolution follow `docs/RUNTIME_PROTOCOLS.md`.
@@ -369,7 +369,7 @@ Related General settings:
 - `intent_routing_utility_llm_context_size`: llama.cpp context size, default `4096`, range `512..32768`.
 - `intent_routing_utility_llm_gpu_layers`: llama.cpp GPU layer count, default `0`, range `-1..200`.
 - `intent_routing_utility_llm_threads`: optional llama.cpp thread count, default `null`, range `1..128`.
-- `intent_routing_embedding_model_profile_id`: optional Knowledge Embedding Model Profile id reserved for future Intent Routing semantic embedding routing. Defaults to `null`. This is the only semantic router profile selection field returned by current General settings clients. Old persisted `intent_routing_embedding_model_path` values are ignored if present.
+- `intent_routing_embedding_model_profile_id`: optional Knowledge Embedding Model Profile id used by Intent Routing semantic embedding routing. Defaults to `null`. This is the only semantic router profile selection field returned by current General settings clients. Old persisted `intent_routing_embedding_model_path` values are ignored if present.
 
 Utility LLM path contract:
 - `transformers`: `utility_llms/<folder>`, for example `utility_llms/Qwen3-0.6B`.
@@ -382,13 +382,13 @@ Utility LLM APIs:
 - `POST /api/intent/utility-llm/test-title` accepts `{"text":"..."}` and returns `{"ok":true,"title":"...","backend":"utility_llm:transformers","warnings":[]}` or `utility_llm:llama_cpp` when generation succeeds. It may load the configured local model.
 - `POST /api/intent/utility-llm/test-json` accepts `{"text":"..."}` and returns strict extracted intent JSON plus compact slots. It may load the configured local model.
 - `POST /api/intent/utility-llm/unload` releases only the Utility LLM cache. It does not unload the main LLM, embeddings, reranker, or ComfyUI.
-- `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation.
+- `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation. The response mirrors auto-mode execution semantics with compact fields such as `auto_executable`, `would_execute`, `route_action`, `diagnostic_reason`, `temporary_knowledge_base_ids`, `knowledge_query_override`, semantic score/margin, target ids, candidate previews, slots, and warnings.
 
 Intent Routing embedding profile selection:
 - The profile id references `GET /api/knowledge/embedding-models` records owned by Knowledge settings.
 - Saving settings does not require loading or testing the embedding model.
-- The selected profile is currently metadata/configuration only. This version does not run EmbeddingGemma semantic routing or call `/api/knowledge/embeddings` from Intent Routing.
-- If a selected profile is missing or disabled, Settings should show an unavailable state without crashing. Runtime classification continues to use existing rule-based and Utility LLM paths.
+- The selected profile is used by the semantic router for route candidates and current-message query embeddings. Candidate vectors are kept in a lazy in-memory cache and are not persisted.
+- If a selected profile is missing or disabled, Settings should show an unavailable state without crashing. Runtime falls back to the current Prompt Agent path and records compact warnings; the old rule-based classifier may be included only as debug fallback metadata and must not trigger real auto execution.
 
 ## Knowledge Settings, Local Model APIs, Indexing, And Search
 
@@ -502,7 +502,7 @@ Request shape is `{model_profile_id, purpose, inputs}` where `purpose` is `query
 
 Intent Routing semantic router uses the General setting `intent_routing_embedding_model_profile_id` to reference one existing enabled Embedding Model Profile. Route candidate texts are embedded as `purpose=document`; the current user message is embedded as `purpose=query`. The router uses the existing profile path validation, instructions, normalization, Knowledge Defaults device, and local model backend. It does not add a raw embedding path, create profiles, download models, or persist route-candidate vectors.
 
-`POST /api/intent/test-route` returns semantic diagnostic fields including `source`, `predicted_intent`, `confidence`, `semantic_score`, `semantic_margin`, `route_action`, `auto_executable`, `embedding_model_profile_id`, `semantic_index_version`, `top_candidates`, `kb_candidate`, `agent_candidate`, `action_candidate`, `command_candidate`, and `warnings`. Top candidates contain only compact previews, not embeddings or full route examples. Agent actions and Capability commands are weak diagnostic candidates only; no Agent action, slash command, ComfyUI run, or Knowledge retrieval is executed by Route Test.
+`POST /api/intent/test-route` returns semantic diagnostic fields including `source`, `predicted_intent`, `confidence`, `semantic_score`, `semantic_margin`, `route_action`, `auto_executable`, `would_execute`, `diagnostic_reason`, `temporary_knowledge_base_ids`, `knowledge_query_override`, `embedding_model_profile_id`, `semantic_index_version`, `top_candidates`, `kb_candidate`, `agent_candidate`, `action_candidate`, `command_candidate`, and `warnings`. Top candidates contain only compact previews, not embeddings or full route examples. Agent actions and Capability commands are weak diagnostic candidates only; no Agent action, slash command, ComfyUI run, or Knowledge retrieval is executed by Route Test.
 
 Reranking:
 

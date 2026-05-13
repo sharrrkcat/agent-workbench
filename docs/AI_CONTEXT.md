@@ -362,8 +362,10 @@ Rules:
 - Explicit `/command`, `@agent`, `@agent:action`, and `:action` routing must bypass Intent Routing.
 - Shadow mode must not alter selected Agent/action, title generation, provider-bound context, Knowledge, Core Memory, or Worldbook behavior.
 - Auto mode may route only allowlisted safe intents for the current message/run. It must not change the session default Agent, visible Agent selector, or persisted Context Sources Knowledge/Worldbook bindings.
-- `image_generation` auto routing may target only the supported `comfyui_agent` path. Do not add generic Agent routing without an explicit safety design.
+- Round 6B semantic auto execution is limited to `chat` and high-confidence `knowledge_query`. `chat` keeps the current Prompt Agent path and adds no temporary Knowledge override.
 - `knowledge_query` auto routing may use only per-run temporary Knowledge KB/query overrides. It must not persist session KB bindings or change retrieval ranking/indexing.
+- `image_generation` is paused as diagnostic-only in semantic auto routing until action routing is designed. Do not route image-generation predictions to `comfyui_agent` from semantic or rule-based fallback decisions in this round.
+- `command_like`, generic `agent_route`, `action_route`, and `compound` predictions remain diagnostic-only and must not execute commands, Agents, actions, or multiple tasks.
 - General custom route examples, Agent target aliases/examples, and Knowledge Base aliases are classifier/extractor hints only. They must not expand the safe auto-route boundary.
 - Per-Agent Intent Routing entry and target hints remain `AgentConfig.runtime` fields even though their UI location is Agent detail -> Intent Routing.
 - Route test/debug APIs must not create messages or runs, execute ComfyUI, execute commands, run Knowledge retrieval, or mutate sessions.
@@ -372,7 +374,7 @@ Rules:
 - Do not lightly change title generation backend behavior when changing Utility LLM settings IA; moving settings categories must preserve current Utility LLM priority and fallback behavior.
 - Intent Routing raw embedding model path is removed from the current UI/API contract. Ignore old persisted `intent_routing_embedding_model_path` values, do not restore a legacy path warning or display, and use only `intent_routing_embedding_model_profile_id` for the semantic router profile selector unless explicitly redesigning the contract.
 - Semantic routing uses existing Knowledge Embedding Model Profiles only. Do not add a raw embedding path, auto-create profiles, auto-download models, or persist route-candidate embeddings to a DB/vector store.
-- Semantic route candidates may include Agent action and Capability command metadata for diagnostics only. Do not execute slash commands, generic Agent routes, Agent actions, image generation, or compound sub-tasks from semantic predictions in Round 6A.
+- Semantic route candidates may include Agent action and Capability command metadata for diagnostics only. Do not execute slash commands, generic Agent routes, Agent actions, image generation, or compound sub-tasks from semantic predictions in Round 6B.
 - Do not modify Agent or Capability manifests for semantic routing candidate work; actions and commands are read from existing manifests.
 - Utility LLM detailed settings, scan, status tests, and unload controls belong under General -> Utility LLM. General -> Intent Routing may show only a compact Utility LLM status summary.
 - Do not automatically download Utility LLM models, install optional dependencies such as `llama-cpp-python`, modify main LLM Provider/Profile settings, execute command-like intents, or run slash commands from intent predictions.

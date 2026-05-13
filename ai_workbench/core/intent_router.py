@@ -168,8 +168,25 @@ def intent_definition(intent_id: str) -> IntentDefinition | None:
     return next((intent for intent in INTENT_DEFINITIONS if intent.id == intent_id), None)
 
 
-SAFE_AUTO_ROUTE_INTENTS = {"chat", "image_generation", "knowledge_query"}
+SAFE_AUTO_ROUTE_INTENTS = {"chat", "knowledge_query"}
 COMMAND_LIKE_WARNING = "command_like_auto_route_disabled"
+SEMANTIC_AUTO_MIN_MARGIN = 0.03
+DIAGNOSTIC_ONLY_WARNINGS = {
+    "command_like": COMMAND_LIKE_WARNING,
+    "agent_route": "agent_route_auto_route_disabled",
+    "action_route": "action_route_auto_route_disabled",
+    "compound": "compound_intent_not_auto_routed",
+    "image_generation": "image_generation_auto_route_deferred_until_action_routing",
+}
+BLOCKING_AUTO_WARNINGS = {
+    "ambiguous_intent",
+    "compound_intent_not_auto_routed",
+    "semantic_router_profile_missing",
+    "semantic_router_profile_disabled",
+    "semantic_router_embedding_unavailable",
+    "semantic_router_index_build_failed",
+    "semantic_router_unavailable",
+}
 CUSTOM_EXAMPLE_FIELDS = {
     "chat": "intent_routing_chat_examples",
     "image_generation": "intent_routing_image_generation_examples",
@@ -400,6 +417,8 @@ def _decision_metadata(
         "warnings": warnings,
         "route_action": prediction.get("route_action") or "metadata_only",
         "auto_executable": bool(prediction.get("auto_executable", False)),
+        "executed": False,
+        "would_execute": False,
         "target_agent_id": prediction.get("target_agent_id") or _candidate_value(prediction.get("agent_candidate"), "agent_id") or route.target_id,
         "target_action_id": prediction.get("target_action_id") or _candidate_value(prediction.get("action_candidate"), "action_id") or route.action_id or "default",
         "target_command": prediction.get("target_command") or _candidate_value(prediction.get("command_candidate"), "command_name"),
@@ -426,39 +445,60 @@ def _decision_metadata(
         return metadata
     if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
         metadata["route_action"] = "metadata_only"
+        metadata["auto_executable"] = False
         metadata["warnings"] = [*warnings, "safe_auto_route_disabled"]
         return metadata
-    if intent_id in {"command_like", "agent_route", "action_route", "compound", "image_generation", "knowledge_query"}:
+    if intent_id in DIAGNOSTIC_ONLY_WARNINGS:
         metadata["route_action"] = "metadata_only"
-        warning = {
-            "command_like": COMMAND_LIKE_WARNING,
-            "agent_route": "agent_route_auto_route_disabled",
-            "action_route": "action_route_auto_route_disabled",
-            "compound": "compound_intent_not_auto_routed",
-            "image_generation": "image_generation_auto_route_staged",
-            "knowledge_query": "knowledge_query_auto_route_staged",
-        }.get(intent_id, "auto_route_not_supported")
+        metadata["auto_executable"] = False
+        warning = DIAGNOSTIC_ONLY_WARNINGS.get(intent_id, "auto_route_not_supported")
+        metadata["diagnostic_reason"] = warning
         metadata["warnings"] = [*warnings, warning]
         return metadata
-    if confidence < high_threshold:
-        reason = "confidence_below_high_threshold" if confidence >= low_threshold else "confidence_below_low_threshold"
+    score = prediction.get("semantic_score")
+    semantic_score = float(score) if isinstance(score, (int, float)) else confidence
+    margin_value = prediction.get("semantic_margin")
+    semantic_margin = float(margin_value) if isinstance(margin_value, (int, float)) else None
+    if confidence < high_threshold or semantic_score < high_threshold:
+        reason = "semantic_confidence_too_low" if confidence >= low_threshold else "semantic_confidence_too_low"
         metadata["route_action"] = "fallback_current_agent"
+        metadata["auto_executable"] = False
         metadata["warnings"] = [*warnings, reason]
+        return metadata
+    if semantic_margin is not None and semantic_margin < SEMANTIC_AUTO_MIN_MARGIN:
+        metadata["route_action"] = "fallback_current_agent"
+        metadata["auto_executable"] = False
+        metadata["warnings"] = [*warnings, "semantic_margin_too_low"]
+        return metadata
+    if any(warning in BLOCKING_AUTO_WARNINGS for warning in warnings):
+        metadata["route_action"] = "fallback_current_agent"
+        metadata["auto_executable"] = False
         return metadata
     if intent_id not in SAFE_AUTO_ROUTE_INTENTS:
         metadata["route_action"] = "confirmation_needed_future" if intent_id in {"command_like", "agent_route"} else "fallback_current_agent"
         warning = COMMAND_LIKE_WARNING if intent_id == "command_like" else "auto_route_not_supported"
+        metadata["auto_executable"] = False
         metadata["warnings"] = [*warnings, warning]
         return metadata
     if intent_id == "chat":
-        metadata["route_action"] = "none"
+        metadata["route_action"] = "current_prompt_agent"
+        metadata["auto_executable"] = True
+        metadata["executed"] = True
+        metadata["would_execute"] = True
         metadata["target_agent_id"] = agent.id
         metadata["target_action_id"] = "default"
         return metadata
-    if intent_id in {"image_generation", "knowledge_query"}:
-        metadata["route_action"] = "metadata_only"
-        metadata["warnings"] = [*warnings, f"{intent_id}_auto_route_staged"]
-        return metadata
+    if intent_id == "knowledge_query":
+        decision = _knowledge_query_decision(metadata, session, agent, knowledge_store, fallback_query=route.args)
+        if decision.get("route_action") == "knowledge_override":
+            decision["auto_executable"] = True
+            decision["executed"] = True
+            decision["would_execute"] = True
+        else:
+            decision["auto_executable"] = False
+            decision["executed"] = False
+            decision["would_execute"] = False
+        return decision
     return metadata
 
 
@@ -492,7 +532,7 @@ def _semantic_prediction(
     except Exception:
         prediction = {"predicted_intent": "chat", "confidence": 0.0, "source": "embedding_semantic_router", "warnings": ["semantic_router_unavailable"]}
     if prediction.get("warnings") and any(str(item).startswith("semantic_router_") for item in prediction.get("warnings") or []):
-        prediction = {**prediction, "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent"}
+        prediction = {**prediction, "source": "semantic_router_unavailable", "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent", "auto_executable": False}
         if classifier is not None:
             try:
                 debug = classifier.classify(
@@ -536,25 +576,34 @@ def _image_generation_decision(metadata: dict[str, Any], agent_registry: Any, ag
     return {**metadata, "route_action": "route_agent", "target_agent_id": target_agent_id, "target_action_id": "default", "warnings": warnings}
 
 
-def _knowledge_query_decision(metadata: dict[str, Any], session: Any, agent: Any, knowledge_store: Any) -> dict[str, Any]:
+def _knowledge_query_decision(metadata: dict[str, Any], session: Any, agent: Any, knowledge_store: Any, *, fallback_query: str = "") -> dict[str, Any]:
     warnings = list(metadata.get("warnings") or [])
     slots = metadata.get("slots") if isinstance(metadata.get("slots"), dict) else {}
-    query_override = str(slots.get("query") or "").strip()
+    query_override = str(slots.get("query") or fallback_query or "").strip()
     if knowledge_store is None:
         return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": [*warnings, "knowledge_store_unavailable"]}
     kb_hint = str(slots.get("kb_hint") or "").strip()
     selected_ids: list[str] = []
     explicit_kb_id = str(metadata.get("kb_id") or "").strip()
-    if explicit_kb_id:
+    ambiguous_semantic_kb = _semantic_kb_candidate_ambiguous(metadata)
+    if ambiguous_semantic_kb:
+        warnings.append("ambiguous_kb_candidate")
+    if explicit_kb_id and not ambiguous_semantic_kb:
         try:
             kb = knowledge_store.get_knowledge_base(explicit_kb_id)
             if getattr(kb, "enabled", False):
                 selected_ids = [kb.id]
                 metadata["kb_match_source"] = metadata.get("kb_match_source") or "name"
+                if kb_hint and not _kb_hint_matches(kb, kb_hint):
+                    selected_ids = []
+                    warnings.append("kb_hint_semantic_conflict")
+                    metadata["kb_match_source"] = "none"
+            else:
+                warnings.append("selected_kb_disabled")
         except KeyError:
             warnings.append("no_matching_knowledge_base")
     if not selected_ids:
-        if kb_hint:
+        if kb_hint and "kb_hint_semantic_conflict" not in warnings:
             match_result = _match_knowledge_bases(knowledge_store, kb_hint)
             selected_ids = match_result["ids"]
             warnings.extend(match_result["warnings"])
@@ -569,11 +618,11 @@ def _knowledge_query_decision(metadata: dict[str, Any], session: Any, agent: Any
                 if active_ids:
                     metadata["kb_match_source"] = "active_session"
                 if not active_ids:
-                    return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": warnings}
+                    return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": _ensure_warning(warnings, "no_kb_candidate_or_active_kbs")}
         else:
             selected_ids = _active_session_kb_ids(knowledge_store, getattr(session, "session_id", ""))
             if not selected_ids:
-                return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": [*warnings, "no_kb_hint_no_active_kbs"]}
+                return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": _ensure_warning(warnings, "no_kb_candidate_or_active_kbs")}
             metadata["kb_match_source"] = "active_session"
     return {
         **metadata,
@@ -581,9 +630,49 @@ def _knowledge_query_decision(metadata: dict[str, Any], session: Any, agent: Any
         "target_agent_id": agent.id,
         "target_action_id": "default",
         "temporary_knowledge_base_ids": selected_ids,
-        "knowledge_query_override": query_override or None,
+        "knowledge_query_override": _short_text(query_override) if query_override else None,
         "warnings": warnings,
     }
+
+
+def _semantic_kb_candidate_ambiguous(metadata: dict[str, Any]) -> bool:
+    top = metadata.get("top_candidates")
+    if not isinstance(top, list):
+        return False
+    kb_candidates: list[dict[str, Any]] = []
+    for item in top:
+        if not isinstance(item, dict) or item.get("kind") != "knowledge_base":
+            continue
+        score = item.get("score")
+        kb_id = str(item.get("kb_id") or item.get("knowledge_base_id") or "")
+        if isinstance(score, (int, float)) and kb_id:
+            kb_candidates.append({"kb_id": kb_id, "score": float(score)})
+    if len(kb_candidates) < 2:
+        return False
+    kb_candidates.sort(key=lambda item: item["score"], reverse=True)
+    first = kb_candidates[0]
+    for candidate in kb_candidates[1:]:
+        if candidate["kb_id"] != first["kb_id"] and first["score"] - candidate["score"] < SEMANTIC_AUTO_MIN_MARGIN:
+            return True
+    return False
+
+
+def _kb_hint_matches(kb: Any, kb_hint: str) -> bool:
+    hint = _normalize_text(kb_hint)
+    if not hint:
+        return True
+    name = _normalize_text(getattr(kb, "name", ""))
+    if hint == name or (hint and hint in name) or (name and name in hint):
+        return True
+    for alias in _comma_values(getattr(kb, "aliases_text", ""), 50, 120):
+        alias_norm = _normalize_text(alias)
+        if hint == alias_norm or (hint and hint in alias_norm) or (alias_norm and alias_norm in hint):
+            return True
+    return False
+
+
+def _ensure_warning(warnings: list[str], warning: str) -> list[str]:
+    return warnings if warning in warnings else [*warnings, warning]
 
 
 def _match_knowledge_bases(knowledge_store: Any, kb_hint: str) -> dict[str, Any]:

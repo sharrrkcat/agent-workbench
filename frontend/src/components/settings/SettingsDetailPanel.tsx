@@ -1223,9 +1223,13 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
         <Metric label={t('settings:general.semanticMargin')} value={typeof decision.semantic_margin === 'number' ? decision.semantic_margin.toFixed(2) : t('settings:general.none')} />
         <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
         <Metric label={t('settings:general.autoExecutable')} value={decision.auto_executable ? t('settings:general.yes') : t('settings:general.no')} />
+        <Metric label={t('settings:general.wouldExecute')} value={decision.would_execute ? t('settings:general.yes') : t('settings:general.no')} />
         <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.targetAction')} value={String(decision.target_action_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.targetCommand')} value={String(decision.target_command || t('settings:general.none'))} />
+        <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
+        <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
+        <Metric label={t('settings:general.diagnosticOnlyReason')} value={String(decision.diagnostic_reason || t('settings:general.none'))} />
         <Metric label={t('settings:general.embeddingModelProfile')} value={String(decision.embedding_model_profile_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.kbCandidate')} value={candidateSummary(decision.kb_candidate, t)} />
         <Metric label={t('settings:general.agentCandidate')} value={candidateSummary(decision.agent_candidate, t)} />

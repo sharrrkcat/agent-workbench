@@ -139,7 +139,16 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
     state.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
     state.knowledge_model_backend = FakeEmbeddingBackend()
-    client.patch("/api/settings/general", json={"intent_routing_image_generation_examples": "make concept art"})
+    client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
+            "intent_routing_auto_route_safe_intents": True,
+            "intent_routing_image_generation_examples": "make concept art",
+        },
+    )
 
     response = client.post("/api/intent/test-route", json={"text": "make concept art of a station", "include_utility": False})
 
@@ -149,6 +158,9 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     assert decision["predicted_intent"] == "image_generation"
     assert decision["source"] == "embedding_semantic_router"
     assert decision["semantic_score"] > 0
+    assert decision["auto_executable"] is False
+    assert decision["would_execute"] is False
+    assert decision["diagnostic_reason"] == "image_generation_auto_route_deferred_until_action_routing"
     assert decision["top_candidates"]
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
