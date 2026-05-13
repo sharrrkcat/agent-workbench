@@ -373,7 +373,7 @@ function GeneralDetail({
         ) : category === 'memory' ? (
           <GeneralMemorySettings values={values} setValues={setValues} />
         ) : category === 'utility_llm' ? (
-          <GeneralUtilityLlmSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
+          <GeneralUtilityLlmSettings values={values} llmProfiles={llmProfiles} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : category === 'intent_routing' ? (
           <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : (
@@ -739,7 +739,7 @@ function GeneralIntentRoutingSettings({
 
   useEffect(() => {
     void refreshStatus();
-  }, [values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path, values.intent_routing_embedding_model_profile_id]);
+  }, [values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path, values.intent_routing_utility_llm_model_profile_id, values.intent_routing_embedding_model_profile_id]);
 
   useEffect(() => {
     void api.listEmbeddingModels()
@@ -752,7 +752,10 @@ function GeneralIntentRoutingSettings({
     setBusy('route-test');
     try {
       setError(null);
-      const response = await api.testIntentRoute({ text: routeTestText, include_utility: Boolean(values.intent_routing_utility_llm_model_path) });
+      const utilityConfigured = values.intent_routing_utility_llm_backend === 'model_profile'
+        ? Boolean(values.intent_routing_utility_llm_model_profile_id)
+        : Boolean(values.intent_routing_utility_llm_model_path);
+      const response = await api.testIntentRoute({ text: routeTestText, include_utility: utilityConfigured });
       setRouteTestResult(response.decision);
     } catch (err) {
       setError(toSettingsError(err, t('settings:general.routeTestFailed')));
@@ -849,7 +852,7 @@ function GeneralIntentRoutingSettings({
         <div className="settings-inline-summary">
           <span>{t('settings:general.utilityLlm')}</span>
           <strong>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</strong>
-          <small>{t('settings:general.utilityLlmSummaryLine', { backend: status?.backend || values.intent_routing_utility_llm_backend, model: status?.model_path || values.intent_routing_utility_llm_model_path || t('settings:general.utilityLlmNotConfigured') })}</small>
+          <small>{t('settings:general.utilityLlmSummaryLine', { backend: status?.backend || values.intent_routing_utility_llm_backend, model: status?.model_profile_name || status?.model_path || values.intent_routing_utility_llm_model_profile_id || values.intent_routing_utility_llm_model_path || t('settings:general.utilityLlmNotConfigured') })}</small>
         </div>
         <details className="settings-disclosure">
           <summary>{t('settings:general.semanticThresholds')}</summary>
@@ -900,11 +903,13 @@ function GeneralIntentRoutingSettings({
 
 function GeneralUtilityLlmSettings({
   values,
+  llmProfiles,
   setValues,
   setNumber,
   setString,
 }: {
   values: GeneralSettings;
+  llmProfiles: LlmProfile[];
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
   setString: (key: keyof GeneralSettings, value: string) => void;
@@ -915,6 +920,11 @@ function GeneralUtilityLlmSettings({
   const [result, setResult] = useState('');
   const [modelScan, setModelScan] = useState<UtilityLlmModelScan | null>(null);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const utilityProfile = values.intent_routing_utility_llm_model_profile_id
+    ? llmProfiles.find((profile) => profile.id === values.intent_routing_utility_llm_model_profile_id)
+    : undefined;
+  const utilityProfileMissing = Boolean(values.intent_routing_utility_llm_model_profile_id && !utilityProfile);
+  const utilityProfileDisabled = Boolean(utilityProfile && !utilityProfile.enabled);
 
   async function refreshStatus() {
     try {
@@ -930,6 +940,7 @@ function GeneralUtilityLlmSettings({
   }, [
     values.intent_routing_utility_llm_backend,
     values.intent_routing_utility_llm_model_path,
+    values.intent_routing_utility_llm_model_profile_id,
     values.intent_routing_device,
     values.intent_routing_utility_llm_context_size,
     values.intent_routing_utility_llm_gpu_layers,
@@ -962,13 +973,13 @@ function GeneralUtilityLlmSettings({
       setError(null);
       if (action === 'title') {
         const response = await api.testUtilityLlmTitle(t('settings:general.utilityLlmSampleTitleInput'));
-        setResult(t('settings:general.utilityLlmTitleResult', { title: response.title }));
+        setResult(response.ok ? t('settings:general.utilityLlmTitleResult', { title: response.title || '' }) : t('settings:general.utilityLlmTestFailedReason', { reason: response.reason || response.error?.code || 'failed' }));
       } else if (action === 'json') {
         const response = await api.testUtilityLlmJson(t('settings:general.utilityLlmSampleJsonInput'));
-        setResult(t('settings:general.utilityLlmJsonResult', { intent: response.result.intent, confidence: response.result.confidence }));
+        setResult(response.ok && response.result ? t('settings:general.utilityLlmJsonResult', { intent: response.result.intent, confidence: response.result.confidence }) : t('settings:general.utilityLlmTestFailedReason', { reason: response.reason || response.error?.code || 'failed' }));
       } else {
-        await api.unloadUtilityLlm();
-        setResult(t('settings:general.utilityLlmUnloaded'));
+        const response = await api.unloadUtilityLlm();
+        setResult(response.status === 'no_local_utility_cache' ? t('settings:general.utilityLlmNoLocalCache') : t('settings:general.utilityLlmUnloaded'));
       }
       await refreshStatus();
     } catch (err) {
@@ -999,29 +1010,57 @@ function GeneralUtilityLlmSettings({
           >
             <option value="transformers">{t('settings:general.utilityLlmBackendTransformers')}</option>
             <option value="llama_cpp">{t('settings:general.utilityLlmBackendLlamaCpp')}</option>
+            <option value="model_profile">{t('settings:general.utilityLlmBackendModelProfile')}</option>
           </select>
         </label>
-        <label className="config-field settings-config-field">
-          <span>{values.intent_routing_utility_llm_backend === 'llama_cpp' ? t('settings:general.ggufModelPath') : t('settings:general.utilityLlmModelPath')}</span>
-          <select value={values.intent_routing_utility_llm_model_path} onChange={(event) => setString('intent_routing_utility_llm_model_path', event.currentTarget.value)}>
-            <option value="">{t('settings:general.none')}</option>
-            {utilityModelOptions(modelScan, values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path, t).map((model) => (
-              <option key={model.model_path} value={model.model_path}>
-                {model.label}
-              </option>
-            ))}
-          </select>
-          <small>{values.intent_routing_utility_llm_backend === 'llama_cpp' ? t('settings:general.ggufPathHelp') : t('settings:general.utilityLlmPathHelp')}</small>
-        </label>
-        <div className="settings-button-row">
-          <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void scanModels()}>
-            <Search size={14} />
-            {busy === 'scan-utility' ? t('common:loading') : t('settings:general.scanUtilityLlmModels')}
-          </button>
-        </div>
-        {modelScan?.warnings.includes('root_gguf_ignored') ? <p className="settings-warning-text">{t('settings:general.rootGgufIgnored')}</p> : null}
+        {values.intent_routing_utility_llm_backend === 'model_profile' ? (
+          <>
+            <label className="config-field settings-config-field">
+              <span>{t('settings:general.utilityLlmModelProfile')}</span>
+              <select
+                value={values.intent_routing_utility_llm_model_profile_id || ''}
+                onChange={(event) => setValues({ ...values, intent_routing_utility_llm_model_profile_id: event.currentTarget.value || null })}
+              >
+                <option value="">{t('settings:general.noModelProfileSelected')}</option>
+                {llmProfiles.filter((profile) => profile.enabled || profile.id === values.intent_routing_utility_llm_model_profile_id).map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {utilityModelProfileOptionLabel(profile, t)}
+                  </option>
+                ))}
+              </select>
+              <small>{t('settings:general.utilityLlmModelProfileHelp')}</small>
+            </label>
+            {utilityProfileMissing ? <p className="settings-warning-text">{t('settings:general.selectedModelProfileUnavailable')}</p> : null}
+            {utilityProfileDisabled ? <p className="settings-warning-text">{t('settings:general.selectedModelProfileDisabled')}</p> : null}
+            <div className="settings-hint-callout">
+              <p>{t('settings:general.utilityLlmModelProfilePrivacy')}</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="config-field settings-config-field">
+              <span>{values.intent_routing_utility_llm_backend === 'llama_cpp' ? t('settings:general.ggufModelPath') : t('settings:general.utilityLlmModelPath')}</span>
+              <select value={values.intent_routing_utility_llm_model_path} onChange={(event) => setString('intent_routing_utility_llm_model_path', event.currentTarget.value)}>
+                <option value="">{t('settings:general.none')}</option>
+                {utilityModelOptions(modelScan, values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path, t).map((model) => (
+                  <option key={model.model_path} value={model.model_path}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+              <small>{values.intent_routing_utility_llm_backend === 'llama_cpp' ? t('settings:general.ggufPathHelp') : t('settings:general.utilityLlmPathHelp')}</small>
+            </label>
+            <div className="settings-button-row">
+              <button type="button" className="settings-secondary-button" disabled={Boolean(busy)} onClick={() => void scanModels()}>
+                <Search size={14} />
+                {busy === 'scan-utility' ? t('common:loading') : t('settings:general.scanUtilityLlmModels')}
+              </button>
+            </div>
+            {modelScan?.warnings.includes('root_gguf_ignored') ? <p className="settings-warning-text">{t('settings:general.rootGgufIgnored')}</p> : null}
+          </>
+        )}
       </div>
-      <div className="detail-section">
+      {values.intent_routing_utility_llm_backend !== 'model_profile' ? <div className="detail-section">
         <div className="detail-section-heading">
           <h3>{t('settings:general.runtimeOptions')}</h3>
         </div>
@@ -1054,7 +1093,7 @@ function GeneralUtilityLlmSettings({
             <small>{t('settings:general.utilityLlmDeviceHelp')}</small>
           </label>
         </div>
-      </div>
+      </div> : null}
       <div className="detail-section">
         <div className="detail-section-heading">
           <h3>{t('settings:general.utilityLlmStatus')}</h3>
@@ -1085,12 +1124,20 @@ function GeneralUtilityLlmSettings({
           {status ? (
             <dl className="settings-definition-grid utility-status-grid">
               <Metric label={t('settings:general.utilityLlmBackend')} value={status.backend} />
-              <Metric label={t('settings:general.utilityLlmModelPath')} value={status.model_path || t('settings:general.utilityLlmNotConfigured')} wide valueClassName="settings-mono-value" />
+              {status.backend === 'model_profile' ? (
+                <>
+                  <Metric label={t('settings:general.utilityLlmModelProfile')} value={status.model_profile_name || status.model_profile_id || t('settings:general.utilityLlmNotConfigured')} wide valueClassName="settings-mono-value" />
+                  <Metric label={t('settings:general.provider')} value={status.provider_label || t('settings:general.notAvailable')} />
+                  <Metric label={t('settings:general.modelId')} value={status.requested_model_id || t('settings:general.notAvailable')} />
+                </>
+              ) : (
+                <Metric label={t('settings:general.utilityLlmModelPath')} value={status.model_path || t('settings:general.utilityLlmNotConfigured')} wide valueClassName="settings-mono-value" />
+              )}
               <Metric label={t('settings:general.statusConfigured')} value={status.configured ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.statusAvailable')} value={status.available ? t('settings:general.yes') : t('settings:general.no')} />
               <Metric label={t('settings:general.statusLoaded')} value={status.loaded ? t('settings:general.yes') : t('settings:general.no')} />
-              <Metric label={t('settings:general.resolvedDevice')} value={status.resolved_device || t('settings:general.notAvailable')} />
-              <Metric label={t('settings:general.modelPathStatus')} value={utilityModelPathStatus(status, t)} />
+              {status.backend === 'model_profile' ? <Metric label={t('settings:general.localCache')} value={t('settings:general.no')} /> : <Metric label={t('settings:general.resolvedDevice')} value={status.resolved_device || t('settings:general.notAvailable')} />}
+              <Metric label={status.backend === 'model_profile' ? t('settings:general.profileStatus') : t('settings:general.modelPathStatus')} value={utilityModelPathStatus(status, t)} />
               <Metric label={t('settings:general.dependencies')} value={<UtilityDependencyChips status={status} />} wide valueClassName="settings-definition-capabilities" />
             </dl>
           ) : null}
@@ -1104,6 +1151,10 @@ function GeneralUtilityLlmSettings({
 function utilityStatusText(status: UtilityLlmStatus, t: ReturnType<typeof useTranslation>['t']): string {
   if (!status.configured) return t('settings:general.utilityLlmNotConfigured');
   if (!status.available) {
+    if (status.reason === 'model_profile_not_configured') return t('settings:general.utilityLlmModelProfileNotConfigured');
+    if (status.reason === 'model_profile_not_found') return t('settings:general.selectedModelProfileUnavailable');
+    if (status.reason === 'model_profile_disabled') return t('settings:general.selectedModelProfileDisabled');
+    if (status.reason === 'provider_profile_unavailable') return t('settings:general.providerProfileUnavailable');
     if (status.reason === 'UTILITY_LLM_BACKEND_UNAVAILABLE') return t('settings:general.utilityLlmDepsUnavailable');
     if (status.reason === 'llama_cpp_unavailable') return t('settings:general.llamaCppUnavailable');
     if (status.reason === 'model_not_found') return t('settings:general.utilityLlmModelNotFound');
@@ -1129,6 +1180,8 @@ function utilityStatusTone(status: UtilityLlmStatus): 'active' | 'warning' | 'da
 
 function utilityModelPathStatus(status: UtilityLlmStatus, t: ReturnType<typeof useTranslation>['t']): string {
   if (!status.configured) return t('settings:general.utilityLlmNotConfigured');
+  if (status.reason === 'model_profile_not_found') return t('settings:general.missing');
+  if (status.reason === 'model_profile_disabled' || status.reason === 'provider_profile_unavailable') return t('settings:general.unavailable');
   if (status.reason === 'model_not_found') return t('settings:general.missing');
   if (status.reason === 'model_path_invalid' || status.reason === 'backend_model_path_mismatch') return t('settings:general.invalid');
   return status.available ? t('settings:general.ok') : status.reason || t('settings:general.notAvailable');
@@ -1136,6 +1189,22 @@ function utilityModelPathStatus(status: UtilityLlmStatus, t: ReturnType<typeof u
 
 function UtilityDependencyChips({ status }: { status: UtilityLlmStatus }) {
   const { t } = useTranslation('settings');
+  if (status.backend === 'model_profile') {
+    const dependencies = [
+      { label: t('general.profileEnabled'), available: status.backend_status.profile_enabled },
+      { label: t('general.providerEnabled'), available: status.backend_status.provider_enabled },
+      { label: t('general.apiKeySet'), available: status.backend_status.api_key_set },
+    ];
+    return (
+      <span className="settings-chip-row compact utility-dependency-chips">
+        {dependencies.map((dependency) => (
+          <span key={dependency.label} className={dependency.available ? 'available' : 'unavailable'}>
+            {dependency.label}: {dependency.available ? t('general.yes') : t('general.no')}
+          </span>
+        ))}
+      </span>
+    );
+  }
   const dependencies = [
     { label: t('general.transformersAvailable'), available: status.backend_status.transformers_available },
     { label: t('general.torchAvailable'), available: status.backend_status.torch_available },
@@ -1151,6 +1220,11 @@ function UtilityDependencyChips({ status }: { status: UtilityLlmStatus }) {
       ))}
     </span>
   );
+}
+
+function utilityModelProfileOptionLabel(profile: LlmProfile, t: ReturnType<typeof useTranslation>['t']): string {
+  const status = profile.enabled ? '' : ` (${t('common:disabled')})`;
+  return `${profile.name || profile.alias || profile.id} / ${profile.alias} / ${profile.provider} / ${profile.model_id}${status}`;
 }
 
 function utilityModelOptions(scan: UtilityLlmModelScan | null, backend: GeneralSettings['intent_routing_utility_llm_backend'], currentPath: string, t: ReturnType<typeof useTranslation>['t']): { model_path: string; label: string }[] {
@@ -1202,6 +1276,7 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
     intent_routing_embedding_model_profile_id: values.intent_routing_embedding_model_profile_id,
     intent_routing_utility_llm_backend: values.intent_routing_utility_llm_backend,
+    intent_routing_utility_llm_model_profile_id: values.intent_routing_utility_llm_model_profile_id,
     intent_routing_utility_llm_model_path: values.intent_routing_utility_llm_model_path,
     intent_routing_utility_llm_context_size: values.intent_routing_utility_llm_context_size,
     intent_routing_utility_llm_gpu_layers: values.intent_routing_utility_llm_gpu_layers,

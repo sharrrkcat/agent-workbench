@@ -5,6 +5,7 @@ from types import ModuleType, SimpleNamespace
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.utility_llm import UtilityLLMService, extract_json_object, normalize_utility_model_path, scan_utility_models, validate_intent_prediction
 from tests.test_session_titles import set_chat_title_profile
@@ -95,6 +96,13 @@ def test_utility_model_path_validation() -> None:
 def test_settings_accepts_backend_specific_paths_and_rejects_mismatches() -> None:
     assert AppSettings(intent_routing_utility_llm_backend="transformers", intent_routing_utility_llm_model_path="utility_llms/Qwen3").intent_routing_utility_llm_model_path == "utility_llms/Qwen3"
     assert AppSettings(intent_routing_utility_llm_backend="llama_cpp", intent_routing_utility_llm_model_path="utility_llms/qwen3/model.gguf").intent_routing_utility_llm_model_path == "utility_llms/qwen3/model.gguf"
+    model_profile_settings = AppSettings(
+        intent_routing_utility_llm_backend="model_profile",
+        intent_routing_utility_llm_model_profile_id="utility-profile",
+        intent_routing_utility_llm_model_path="utility_llms/Qwen3",
+    )
+    assert model_profile_settings.intent_routing_utility_llm_model_profile_id == "utility-profile"
+    assert model_profile_settings.intent_routing_utility_llm_model_path == "utility_llms/Qwen3"
     for kwargs in [
         {"intent_routing_utility_llm_backend": "llama_cpp", "intent_routing_utility_llm_model_path": "utility_llms/Qwen3"},
         {"intent_routing_utility_llm_backend": "transformers", "intent_routing_utility_llm_model_path": "utility_llms/qwen3/model.gguf"},
@@ -106,6 +114,152 @@ def test_settings_accepts_backend_specific_paths_and_rejects_mismatches() -> Non
             pass
         else:
             raise AssertionError(f"expected invalid settings: {kwargs}")
+
+
+def test_api_settings_saves_utility_llm_model_profile_id() -> None:
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    client = TestClient(app)
+
+    response = client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_utility_llm_backend": "model_profile",
+            "intent_routing_utility_llm_model_profile_id": "missing-profile",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intent_routing_utility_llm_backend"] == "model_profile"
+    assert payload["intent_routing_utility_llm_model_profile_id"] == "missing-profile"
+
+
+def test_model_profile_status_not_configured_missing_disabled_and_valid() -> None:
+    llm = FakeLLMRuntime(response="unused")
+    fixture = PromptRuntimeFixture(llm=llm)
+    service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    settings = AppSettings(intent_routing_utility_llm_backend="model_profile")
+
+    assert service.status(settings)["reason"] == "model_profile_not_configured"
+    missing = AppSettings(intent_routing_utility_llm_backend="model_profile", intent_routing_utility_llm_model_profile_id="missing")
+    assert service.status(missing)["reason"] == "model_profile_not_found"
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    fixture.llm_profiles.update(profile.id, {"enabled": False})
+    disabled = AppSettings(intent_routing_utility_llm_backend="model_profile", intent_routing_utility_llm_model_profile_id=profile.id)
+    assert service.status(disabled)["reason"] == "model_profile_disabled"
+    fixture.llm_profiles.update(profile.id, {"enabled": True})
+    valid = service.status(disabled)
+    assert valid["available"] is True
+    assert valid["model_profile_id"] == profile.id
+    assert valid["requested_model_id"] == "utility-model"
+
+
+def test_model_profile_backend_generates_title_and_json_without_local_cache() -> None:
+    llm = FakeLLMRuntime(response='{"title":"Profile Title"}')
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    settings = AppSettings(intent_routing_utility_llm_backend="model_profile", intent_routing_utility_llm_model_profile_id=profile.id)
+
+    title = run(service.generate_title("hello", settings))
+    llm.response = '{"intent":"knowledge_query","confidence":0.88,"kb_hint":"KB","query":"Q"}'
+    extracted = run(service.extract_intent_json("ask kb", settings))
+    unloaded = service.unload(settings)
+
+    assert title["backend"] == "utility_llm:model_profile"
+    assert title["title"] == "Profile Title"
+    assert title["model_profile_id"] == profile.id
+    assert extracted["intent"] == "knowledge_query"
+    assert extracted["_utility_backend"] == "utility_llm:model_profile"
+    assert llm.calls[0]["model_config"]["model"] == "utility-model"
+    assert llm.calls[0]["model_config"]["temperature"] == 0
+    assert llm.calls[0]["model_config"]["top_p"] == 1
+    assert llm.calls[0]["stream"] is False
+    assert unloaded["status"] == "no_local_utility_cache"
+    assert llm.unload_calls == []
+
+
+def test_model_profile_backend_invalid_json_returns_structured_error() -> None:
+    llm = FakeLLMRuntime(response="not json")
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    settings = AppSettings(intent_routing_utility_llm_backend="model_profile", intent_routing_utility_llm_model_profile_id=profile.id)
+
+    try:
+        run(service.extract_intent_json("ask kb", settings))
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "utility_llm_invalid_json"
+    else:
+        raise AssertionError("expected invalid JSON error")
+
+
+def test_api_model_profile_status_tests_and_unload_use_runtime_path() -> None:
+    llm = FakeLLMRuntime(response='{"title":"API Profile Title"}')
+    app = create_app(llm_runtime=llm, use_memory=True)
+    client = TestClient(app)
+    state = app.state.runtime_state
+    provider = state.provider_profiles.create(
+        ProviderProfileSchema(
+            id="provider-utility",
+            name="Utility Provider",
+            provider="lm_studio",
+            base_url="http://studio/v1",
+        )
+    )
+    profile = state.llm_profiles.create(
+        LLMProfileSchema(
+            id="utility-profile",
+            alias="utility_profile",
+            name="Utility Profile",
+            provider_profile_id=provider.id,
+            model_id="utility-model",
+            supports_streaming=False,
+        )
+    )
+    state.app_settings.patch({
+        "intent_routing_utility_llm_backend": "model_profile",
+        "intent_routing_utility_llm_model_profile_id": profile.id,
+    })
+
+    status = client.get("/api/intent/utility-llm/status")
+    title = client.post("/api/intent/utility-llm/test-title", json={"text": "hello"})
+    llm.response = '{"intent":"knowledge_query","confidence":0.8,"kb_hint":"KB","query":"Q"}'
+    extracted = client.post("/api/intent/utility-llm/test-json", json={"text": "ask kb"})
+    llm.response = "not json"
+    invalid = client.post("/api/intent/utility-llm/test-json", json={"text": "ask kb"})
+    unloaded = client.post("/api/intent/utility-llm/unload")
+
+    assert status.status_code == 200
+    assert status.json()["available"] is True
+    assert status.json()["model_profile_id"] == profile.id
+    assert title.json()["ok"] is True
+    assert title.json()["backend"] == "utility_llm:model_profile"
+    assert title.json()["model_profile_id"] == profile.id
+    assert extracted.json()["ok"] is True
+    assert extracted.json()["backend"] == "utility_llm:model_profile"
+    assert extracted.json()["result"]["slots"]["query"] == "Q"
+    assert invalid.json()["ok"] is False
+    assert invalid.json()["reason"] == "utility_llm_invalid_json"
+    assert unloaded.json()["status"] == "no_local_utility_cache"
 
 
 def test_scan_utility_models_returns_hf_and_nested_gguf(tmp_path: Path) -> None:
@@ -245,6 +399,37 @@ def test_title_generation_falls_back_to_model_profile_when_utility_fails() -> No
     assert metadata["fallback_used"] is True
     assert metadata["fallback_reason"] == "utility_llm_generation_failed"
     assert "utility_error" in metadata
+
+
+def test_title_generation_uses_utility_llm_model_profile_backend() -> None:
+    llm = FakeLLMRuntime(response='{"title":"Utility Profile Session"}')
+    fixture = PromptRuntimeFixture(llm=llm)
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    fixture.agent_runner.utility_llm_service = service
+    fixture.app_settings.patch({
+        "auto_generate_session_titles": True,
+        "intent_routing_utility_llm_backend": "model_profile",
+        "intent_routing_utility_llm_model_profile_id": profile.id,
+    })
+    session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
+
+    result = run(fixture.runtime.handle_input(session, "hello"))
+
+    assert result.success is True
+    assert fixture.sessions.get_session(session.session_id).title == "Utility Profile Session"
+    metadata = fixture.runs.get_run(result.run_id).metadata["title_generation"]
+    assert metadata["backend"] == "utility_llm:model_profile"
+    assert metadata["model_profile_id"] == profile.id
+    assert fixture.sessions.get_session(session.session_id).llm_profile_id is None
+    assert len(llm.calls) == 2
+    assert llm.calls[0]["model_config"]["model"] == "utility-model"
 
 
 def test_intent_shadow_uses_utility_extractor_for_slots_without_reroute() -> None:

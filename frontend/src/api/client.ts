@@ -396,7 +396,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
-  unloadUtilityLlm: () => request<{ ok: boolean; status: string }>('/api/intent/utility-llm/unload', { method: 'POST' }),
+  unloadUtilityLlm: () => request<{ ok: boolean; status: string; reason?: string; removed?: number }>('/api/intent/utility-llm/unload', { method: 'POST' }),
   testIntentRoute: (payload: { text: string; session_id?: string | null; default_agent_id?: string | null; include_utility?: boolean }) =>
     request<IntentRouteTestResponse>('/api/intent/test-route', {
       method: 'POST',

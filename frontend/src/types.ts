@@ -1064,7 +1064,7 @@ export type RuntimeResourceGpu = {
   memory_used_bytes: number | null;
   memory_total_bytes: number | null;
   memory_percent: number | null;
-  backend: string;
+  backend?: string;
   reason?: string | null;
 };
 
@@ -1084,9 +1084,14 @@ export type UtilityLlmStatus = {
   available: boolean;
   configured: boolean;
   loaded: boolean;
-  backend: 'transformers' | 'llama_cpp' | string;
-  model_path: string;
-  device: 'auto' | 'cpu' | 'cuda' | string;
+  backend: 'transformers' | 'llama_cpp' | 'model_profile' | string;
+  model_path: string | null;
+  model_profile_id?: string | null;
+  model_profile_name?: string | null;
+  provider_profile_id?: string | null;
+  provider_label?: string | null;
+  requested_model_id?: string | null;
+  device: 'auto' | 'cpu' | 'cuda' | string | null;
   resolved_device?: string | null;
   options?: {
     context_size: number;
@@ -1094,10 +1099,15 @@ export type UtilityLlmStatus = {
     threads: number | null;
   };
   backend_status: {
-    transformers_available: boolean;
-    torch_available: boolean;
-    llama_cpp_available: boolean;
-    cuda_available: boolean;
+    transformers_available?: boolean;
+    torch_available?: boolean;
+    llama_cpp_available?: boolean;
+    cuda_available?: boolean;
+    type?: string;
+    profile_enabled?: boolean;
+    provider_enabled?: boolean | null;
+    provider?: string | null;
+    api_key_set?: boolean;
   };
   reason?: string | null;
 };
@@ -1144,19 +1154,33 @@ export type SemanticRouterStatus = {
 
 export type UtilityLlmTitleTestResult = {
   ok: boolean;
-  title: string;
+  title?: string;
   backend: string;
+  model_profile_id?: string | null;
+  model_profile_name?: string | null;
+  provider_profile_id?: string | null;
+  provider_label?: string | null;
+  requested_model_id?: string | null;
   warnings: string[];
+  reason?: string;
+  error?: { code: string; message: string };
 };
 
 export type UtilityLlmJsonTestResult = {
   ok: boolean;
-  result: {
+  backend?: string;
+  model_profile_id?: string | null;
+  model_profile_name?: string | null;
+  provider_label?: string | null;
+  requested_model_id?: string | null;
+  result?: {
     intent: string;
     confidence: number;
     slots: Record<string, string>;
   };
   warnings: string[];
+  reason?: string;
+  error?: { code: string; message: string };
 };
 
 export type DeleteSessionResponse = {
@@ -1218,7 +1242,8 @@ export type GeneralSettings = {
   intent_routing_auto_route_safe_intents: boolean;
   intent_routing_confirm_uncertain: boolean;
   intent_routing_embedding_model_profile_id: string | null;
-  intent_routing_utility_llm_backend: 'transformers' | 'llama_cpp';
+  intent_routing_utility_llm_backend: 'transformers' | 'llama_cpp' | 'model_profile';
+  intent_routing_utility_llm_model_profile_id: string | null;
   intent_routing_utility_llm_model_path: string;
   intent_routing_utility_llm_context_size: number;
   intent_routing_utility_llm_gpu_layers: number;

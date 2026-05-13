@@ -159,7 +159,15 @@ def build_runtime_state(
         capability_registry=capabilities,
     )
     knowledge_model_backend = LocalKnowledgeModelBackend(repo_root)
-    utility_llm = UtilityLLMService(repo_root)
+    utility_llm = UtilityLLMService(
+        repo_root,
+        llm_runtime=llm,
+        llm_profile_store=llm_profiles,
+        provider_profile_store=provider_profiles,
+        capability_registry=capabilities,
+        capability_config_store=capability_configs,
+        llm_defaults_store=llm_defaults,
+    )
     semantic_router = SemanticRouter()
     try:
         knowledge_runtime = runtimes.get_runtime("knowledge")

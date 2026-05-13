@@ -188,15 +188,28 @@ async def maybe_generate_session_title_before_llm_call(
 
     title = ""
     utility_error = None
+    utility_backend = str(getattr(settings, "intent_routing_utility_llm_backend", "transformers") or "transformers")
     utility_model_path = getattr(settings, "intent_routing_utility_llm_model_path", "") or ""
-    if decision.backend == "utility_llm" and utility_llm_service is not None and utility_model_path:
+    utility_model_profile_id = getattr(settings, "intent_routing_utility_llm_model_profile_id", None)
+    utility_configured = bool(utility_model_profile_id) if utility_backend == "model_profile" else bool(utility_model_path)
+    if decision.backend == "utility_llm" and utility_llm_service is not None and utility_configured:
         try:
             utility_result = await utility_llm_service.generate_title(used_text, settings)
             title = normalize_generated_title(utility_result.get("title", ""))
             if not title or is_default_session_title(title):
                 raise ValueError("Utility LLM returned an empty or default-looking title.")
             metadata["backend"] = utility_result.get("backend") or "utility_llm"
-            metadata["utility_model_path"] = utility_result.get("model_path") or utility_model_path
+            if utility_result.get("model_path") or utility_model_path:
+                metadata["utility_model_path"] = utility_result.get("model_path") or utility_model_path
+            if utility_result.get("model_profile_id"):
+                metadata["model_profile_id"] = utility_result.get("model_profile_id")
+                metadata["model"] = {
+                    "profile_id": utility_result.get("model_profile_id"),
+                    "profile_name": utility_result.get("model_profile_name"),
+                    "provider_profile_id": utility_result.get("provider_profile_id"),
+                    "provider": utility_result.get("provider_label"),
+                    "model_id": utility_result.get("requested_model_id"),
+                }
         except Exception as exc:
             utility_error = str(exc) or "Utility LLM title generation failed."
             metadata["warnings"] = [*metadata.get("warnings", []), "utility_title_generation_failed"]
@@ -315,8 +328,12 @@ def resolve_title_generation_backend(
     requested = str(getattr(settings, "session_title_backend", "utility_llm") or "utility_llm")
     backend = force_backend or requested
     if backend == "utility_llm":
+        utility_backend = str(getattr(settings, "intent_routing_utility_llm_backend", "transformers") or "transformers")
         model_path = str(getattr(settings, "intent_routing_utility_llm_model_path", "") or "").strip()
-        if model_path:
+        model_profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
+        if utility_backend == "model_profile" and model_profile_id:
+            return TitleBackendDecision(requested_backend=requested, backend="utility_llm", warnings=[])
+        if utility_backend != "model_profile" and model_path:
             return TitleBackendDecision(requested_backend=requested, backend="utility_llm", warnings=[])
         backend = "follow_agent_model_profile"
         fallback_used = True
@@ -520,6 +537,8 @@ def _apply_title_unload_policy(
     if not bool(getattr(settings, "session_title_unload_after_generation", False)):
         return {**metadata, "unload_state": "not_requested"}
     backend = str(metadata.get("backend") or "")
+    if backend == "utility_llm:model_profile":
+        return {**metadata, "unload_state": "no_supported_release"}
     if backend.startswith("utility_llm"):
         if utility_llm_service is None or not callable(getattr(utility_llm_service, "unload", None)):
             return {**metadata, "unload_state": "no_supported_release"}

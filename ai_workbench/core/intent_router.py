@@ -1134,7 +1134,9 @@ async def _maybe_apply_utility_slots(
 def _utility_available(utility_llm_service: Any, settings: Any) -> tuple[bool, str | None]:
     if utility_llm_service is None or settings is None:
         return False, "utility_llm_unavailable"
-    if not getattr(settings, "intent_routing_utility_llm_model_path", ""):
+    backend = str(getattr(settings, "intent_routing_utility_llm_backend", "transformers") or "transformers")
+    configured = bool(getattr(settings, "intent_routing_utility_llm_model_profile_id", None)) if backend == "model_profile" else bool(getattr(settings, "intent_routing_utility_llm_model_path", ""))
+    if not configured:
         return False, "utility_llm_required"
     status = getattr(utility_llm_service, "status", None)
     if callable(status):
@@ -1144,7 +1146,7 @@ def _utility_available(utility_llm_service: Any, settings: Any) -> tuple[bool, s
             return False, "utility_llm_unavailable"
         if not bool(result.get("available")):
             reason = str(result.get("reason") or "utility_llm_unavailable")
-            if reason == "model_path_not_configured":
+            if reason in {"model_path_not_configured", "model_profile_not_configured"}:
                 return False, "utility_llm_required"
             return False, "utility_llm_unavailable"
     return True, None

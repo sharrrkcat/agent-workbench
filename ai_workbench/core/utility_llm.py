@@ -7,12 +7,20 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 from typing import Any
 
 from ai_workbench.core.knowledge_models import models_root_path
+from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 
 
 UTILITY_BACKEND_UNAVAILABLE = "UTILITY_LLM_BACKEND_UNAVAILABLE"
+UTILITY_MODEL_PROFILE_NOT_CONFIGURED = "model_profile_not_configured"
+UTILITY_MODEL_PROFILE_NOT_FOUND = "model_profile_not_found"
+UTILITY_MODEL_PROFILE_DISABLED = "model_profile_disabled"
+UTILITY_PROVIDER_PROFILE_UNAVAILABLE = "provider_profile_unavailable"
+UTILITY_MODEL_PROFILE_GENERATION_FAILED = "model_profile_generation_failed"
+UTILITY_INVALID_JSON = "utility_llm_invalid_json"
 UTILITY_MODEL_NOT_CONFIGURED = "model_path_not_configured"
 UTILITY_MODEL_NOT_FOUND = "model_not_found"
 UTILITY_MODEL_PATH_INVALID = "model_path_invalid"
@@ -22,16 +30,21 @@ UTILITY_GENERATION_FAILED = "utility_generation_failed"
 UTILITY_INTENTS = {"chat", "image_generation", "knowledge_query", "pet_command", "agent_route", "command_like", "unknown"}
 PET_DOMAINS = {"workbench_pet", "real_pet", "fictional_character", "unclear"}
 PET_ACTIONS = {"status", "wake", "tuck", "select", "reload", "unknown"}
-UTILITY_BACKENDS = {"transformers", "llama_cpp"}
+UTILITY_BACKENDS = {"transformers", "llama_cpp", "model_profile"}
 GGUF_PLACEMENT_HELP = "GGUF files must be placed under data/models/utility_llms/<model-folder>/<file>.gguf"
 
 
 @dataclass
 class UtilityGeneration:
     text: str
-    model_path: str
-    device: str
+    model_path: str | None
+    device: str | None
     backend: str
+    model_profile_id: str | None = None
+    model_profile_name: str | None = None
+    provider_profile_id: str | None = None
+    provider_label: str | None = None
+    requested_model_id: str | None = None
 
 
 class UtilityLLMError(Exception):
@@ -65,7 +78,7 @@ def utility_backend_status() -> dict[str, Any]:
 def normalize_utility_backend(value: Any) -> str:
     backend = str(value or "transformers").strip() or "transformers"
     if backend not in UTILITY_BACKENDS:
-        raise ValueError("Utility LLM backend must be transformers or llama_cpp.")
+        raise ValueError("Utility LLM backend must be transformers, llama_cpp, or model_profile.")
     return backend
 
 
@@ -79,6 +92,8 @@ def normalize_utility_model_path(value: str, backend: str = "transformers") -> s
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise ValueError("Utility LLM model path must be a safe relative path inside data/models.")
     backend = normalize_utility_backend(backend)
+    if backend == "model_profile":
+        return path.as_posix()
     if path.parts[0] != "utility_llms":
         raise ValueError("Utility LLM model path must be under utility_llms.")
     if backend == "transformers":
@@ -308,9 +323,48 @@ def resolve_utility_device(requested: str) -> str:
 
 
 class UtilityLLMService:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(
+        self,
+        root: Path | None = None,
+        *,
+        llm_runtime: Any = None,
+        llm_profile_store: Any = None,
+        provider_profile_store: Any = None,
+        capability_registry: Any = None,
+        capability_config_store: Any = None,
+        llm_defaults_store: Any = None,
+    ) -> None:
         self.root = root
+        self.llm_runtime = llm_runtime
+        self.llm_profile_store = llm_profile_store
+        self.provider_profile_store = provider_profile_store
+        self.capability_registry = capability_registry
+        self.capability_config_store = capability_config_store
+        self.llm_defaults_store = llm_defaults_store
         self._cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+    def configure(
+        self,
+        *,
+        llm_runtime: Any = None,
+        llm_profile_store: Any = None,
+        provider_profile_store: Any = None,
+        capability_registry: Any = None,
+        capability_config_store: Any = None,
+        llm_defaults_store: Any = None,
+    ) -> None:
+        if llm_runtime is not None:
+            self.llm_runtime = llm_runtime
+        if llm_profile_store is not None:
+            self.llm_profile_store = llm_profile_store
+        if provider_profile_store is not None:
+            self.provider_profile_store = provider_profile_store
+        if capability_registry is not None:
+            self.capability_registry = capability_registry
+        if capability_config_store is not None:
+            self.capability_config_store = capability_config_store
+        if llm_defaults_store is not None:
+            self.llm_defaults_store = llm_defaults_store
 
     def status(self, settings: Any) -> dict[str, Any]:
         backend_status = utility_backend_status()
@@ -331,6 +385,8 @@ class UtilityLLMService:
         else:
             path_invalid = False
         device = getattr(settings, "intent_routing_device", "auto") or "auto"
+        if backend == "model_profile" and not backend_invalid:
+            return self._model_profile_status(settings)
         loaded = any(len(key) >= 2 and key[0] == backend and key[1] == model_path for key in self._cache) if model_path else False
         base = {
             "available": False,
@@ -362,8 +418,57 @@ class UtilityLLMService:
             return {**base, "resolved_device": resolved_device, "reason": UTILITY_MODEL_NOT_FOUND}
         return {**base, "available": True, "resolved_device": resolved_device, "reason": None}
 
+    def _model_profile_status(self, settings: Any) -> dict[str, Any]:
+        profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
+        base = {
+            "available": False,
+            "configured": bool(profile_id),
+            "loaded": False,
+            "backend": "model_profile",
+            "model_path": None,
+            "model_profile_id": profile_id or None,
+            "model_profile_name": None,
+            "provider_profile_id": None,
+            "provider_label": None,
+            "requested_model_id": None,
+            "device": None,
+            "resolved_device": None,
+            "options": normalize_utility_options(settings),
+            "backend_status": {"type": "model_profile"},
+            "reason": None,
+            "warnings": [],
+        }
+        if not profile_id:
+            return {**base, "reason": UTILITY_MODEL_PROFILE_NOT_CONFIGURED}
+        profile, provider, reason = self._lookup_model_profile(profile_id)
+        if profile is None:
+            return {**base, "reason": reason}
+        provider_label = getattr(provider, "name", None) or getattr(profile, "provider", None)
+        compact_status = {
+            "type": "model_profile",
+            "profile_enabled": bool(getattr(profile, "enabled", False)),
+            "provider_enabled": bool(getattr(provider, "enabled", True)) if provider is not None else None,
+            "provider": getattr(provider, "provider", None) or getattr(profile, "provider", None),
+            "api_key_set": bool(getattr(provider, "api_key", "") or getattr(profile, "api_key", "")),
+        }
+        payload = {
+            **base,
+            "configured": True,
+            "model_profile_id": getattr(profile, "id", profile_id),
+            "model_profile_name": getattr(profile, "name", None) or getattr(profile, "alias", None),
+            "provider_profile_id": getattr(provider, "id", None) or getattr(profile, "provider_profile_id", None),
+            "provider_label": provider_label,
+            "requested_model_id": getattr(profile, "model_id", None),
+            "backend_status": compact_status,
+        }
+        if reason:
+            return {**payload, "reason": reason}
+        return {**payload, "available": True, "reason": None}
+
     async def generate(self, prompt: str, settings: Any, *, max_new_tokens: int = 128) -> UtilityGeneration:
         backend = _backend_for(settings)
+        if backend == "model_profile":
+            return await self._generate_model_profile(prompt, settings, max_new_tokens=max_new_tokens)
         model_path = validate_utility_model_path_for_backend(getattr(settings, "intent_routing_utility_llm_model_path", ""), backend)
         if not model_path:
             raise UtilityLLMError(UTILITY_MODEL_NOT_CONFIGURED, "Utility LLM model path is not configured.")
@@ -377,6 +482,91 @@ class UtilityLLMService:
             raise UtilityLLMError(UTILITY_MODEL_NOT_FOUND, f"Utility LLM model not found: {model_path}")
         text = await asyncio.to_thread(backend_impl.generate, self._cache, absolute_path, model_path, device, options, prompt, max_new_tokens)
         return UtilityGeneration(text=text, model_path=model_path, device=device, backend=backend)
+
+    async def _generate_model_profile(self, prompt: str, settings: Any, *, max_new_tokens: int) -> UtilityGeneration:
+        profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
+        profile, provider, reason = self._lookup_model_profile(profile_id)
+        if reason:
+            raise UtilityLLMError(reason, f"Utility LLM Model Profile is unavailable: {reason}")
+        if profile is None:
+            raise UtilityLLMError(UTILITY_MODEL_PROFILE_NOT_FOUND, "Utility LLM Model Profile was not found.")
+        if self.llm_runtime is None:
+            raise UtilityLLMError(UTILITY_MODEL_PROFILE_GENERATION_FAILED, "LLM runtime is not configured for Utility LLM Model Profile backend.")
+        try:
+            model_config = self._resolve_model_profile_config(profile.id, max_new_tokens=max_new_tokens)
+        except LLMConfigError as exc:
+            code = UTILITY_PROVIDER_PROFILE_UNAVAILABLE if "PROVIDER" in exc.code or "PROFILE" in exc.code else UTILITY_MODEL_PROFILE_GENERATION_FAILED
+            raise UtilityLLMError(code, exc.message) from exc
+        try:
+            chat = getattr(self.llm_runtime, "chat", None)
+            if callable(chat):
+                raw = chat(messages=[{"role": "user", "content": prompt}], model_config=model_config, stream=False)
+            else:
+                generate = getattr(self.llm_runtime, "generate")
+                raw = generate(prompt=prompt, model_config=model_config, stream=False)
+            if asyncio.iscoroutine(raw) or hasattr(raw, "__await__"):
+                raw = await raw
+            text = _extract_llm_text(raw)
+        except Exception as exc:
+            raise UtilityLLMError(UTILITY_MODEL_PROFILE_GENERATION_FAILED, str(exc) or "Utility LLM Model Profile generation failed.") from exc
+        return UtilityGeneration(
+            text=text,
+            model_path=None,
+            device=None,
+            backend="model_profile",
+            model_profile_id=getattr(profile, "id", profile.id),
+            model_profile_name=getattr(profile, "name", None) or getattr(profile, "alias", None),
+            provider_profile_id=getattr(provider, "id", None) or getattr(profile, "provider_profile_id", None),
+            provider_label=getattr(provider, "name", None) or getattr(profile, "provider", None),
+            requested_model_id=getattr(profile, "model_id", None),
+        )
+
+    def _resolve_model_profile_config(self, profile_id: str, *, max_new_tokens: int) -> dict[str, Any]:
+        try:
+            capability = self.capability_registry.get("llm") if self.capability_registry is not None else None
+        except KeyError:
+            capability = None
+        capability_config = self.capability_config_store.get_config("llm") if self.capability_config_store is not None else {}
+        config = resolve_llm_config(
+            agent_schema=SimpleNamespace(llm={"profile": profile_id}, model=None),
+            capability_schema=capability,
+            capability_config=capability_config,
+            llm_profile_store=self.llm_profile_store,
+            provider_profile_store=self.provider_profile_store,
+            llm_defaults_store=self.llm_defaults_store,
+            explicit_override={"temperature": 0, "top_p": 1, "max_tokens": max_new_tokens},
+        )
+        values = dict(config.values)
+        values["stream"] = False
+        return values
+
+    def _lookup_model_profile(self, profile_id: str) -> tuple[Any | None, Any | None, str | None]:
+        if not profile_id:
+            return None, None, UTILITY_MODEL_PROFILE_NOT_CONFIGURED
+        if self.llm_profile_store is None:
+            return None, None, UTILITY_MODEL_PROFILE_NOT_FOUND
+        try:
+            profile = self.llm_profile_store.get_by_id_or_alias(profile_id)
+        except KeyError:
+            return None, None, UTILITY_MODEL_PROFILE_NOT_FOUND
+        if not getattr(profile, "enabled", False):
+            return profile, None, UTILITY_MODEL_PROFILE_DISABLED
+        provider = None
+        provider_id = getattr(profile, "provider_profile_id", None)
+        if provider_id:
+            if self.provider_profile_store is None:
+                return profile, None, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
+            try:
+                provider = self.provider_profile_store.get(provider_id)
+            except KeyError:
+                return profile, None, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
+            if not getattr(provider, "enabled", False) or not getattr(provider, "base_url", ""):
+                return profile, provider, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
+        elif not getattr(profile, "base_url", ""):
+            return profile, None, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
+        if not getattr(profile, "model_id", ""):
+            return profile, provider, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
+        return profile, provider, None
 
     async def generate_title(self, user_input: str, settings: Any) -> dict[str, Any]:
         from ai_workbench.core.session_titles import TITLE_MAX_LENGTH, normalize_generated_title, render_title_prompt
@@ -397,7 +587,16 @@ class UtilityLLMService:
             title = normalize_generated_title(data.get("title", "") if isinstance(data, dict) else "")
         if not title:
             raise UtilityLLMError(UTILITY_GENERATION_FAILED, "Utility LLM returned an empty title.")
-        return {"title": title, "backend": f"utility_llm:{raw.backend}", "model_path": raw.model_path}
+        return {
+            "title": title,
+            "backend": f"utility_llm:{raw.backend}",
+            "model_path": raw.model_path,
+            "model_profile_id": raw.model_profile_id,
+            "model_profile_name": raw.model_profile_name,
+            "provider_profile_id": raw.provider_profile_id,
+            "provider_label": raw.provider_label,
+            "requested_model_id": raw.requested_model_id,
+        }
 
     async def extract_intent_json(self, text: str, settings: Any, context: dict[str, Any] | None = None) -> dict[str, Any]:
         compact_context = json.dumps(context or {}, ensure_ascii=False)[:6000]
@@ -411,10 +610,27 @@ class UtilityLLMService:
             f"Compact candidates:\n{compact_context}\n\n"
             f"User message:\n{text}"
         )
-        raw = await self.generate(prompt, settings, max_new_tokens=192)
-        return validate_intent_prediction(extract_json_object(raw.text))
+        raw = await self.generate(prompt, settings, max_new_tokens=512 if _backend_for(settings) == "model_profile" else 192)
+        try:
+            data = extract_json_object(raw.text)
+        except Exception as exc:
+            raise UtilityLLMError(UTILITY_INVALID_JSON, "Utility LLM returned invalid JSON.") from exc
+        result = validate_intent_prediction(data)
+        if raw.backend == "model_profile":
+            result["_utility_backend"] = "utility_llm:model_profile"
+            result["_model_profile_id"] = raw.model_profile_id
+            result["_model_profile_name"] = raw.model_profile_name
+            result["_provider_label"] = raw.provider_label
+            result["_requested_model_id"] = raw.requested_model_id
+        return result
 
-    def unload(self) -> dict[str, Any]:
+    def unload(self, settings: Any | None = None) -> dict[str, Any]:
+        if settings is not None:
+            try:
+                if _backend_for(settings) == "model_profile":
+                    return {"ok": True, "status": "no_local_utility_cache", "reason": "no_local_utility_cache", "removed": 0}
+            except ValueError:
+                pass
         removed = len(self._cache)
         self._cache.clear()
         if removed:
@@ -503,3 +719,18 @@ def _collect_model_memory() -> None:
             torch.cuda.empty_cache()
     except Exception:
         return
+
+
+def _extract_llm_text(raw: Any) -> str:
+    if isinstance(raw, dict):
+        choices = raw.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0] if isinstance(choices[0], dict) else {}
+            message = first.get("message") if isinstance(first.get("message"), dict) else {}
+            if "content" in message:
+                return str(message.get("content") or "").strip()
+            if "text" in first:
+                return str(first.get("text") or "").strip()
+        if "content" in raw:
+            return str(raw.get("content") or "").strip()
+    return str(raw or "").strip()

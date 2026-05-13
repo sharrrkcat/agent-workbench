@@ -1,6 +1,8 @@
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
+from ai_workbench.core.utility_llm import UtilityLLMService
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, bind_test_kb, run
 from tests.test_intent_routing import enable_semantic_router
+from tests.test_session_titles import set_chat_title_profile
 
 
 class LowSemanticKnowledgeBackend:
@@ -106,6 +108,33 @@ def test_auto_chat_keeps_current_prompt_agent_without_knowledge_override() -> No
     assert "knowledge_query_override" not in intent
 
 
+def test_auto_chat_does_not_call_utility_llm_model_profile() -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    enable_auto(fixture)
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    fixture.app_settings.patch({
+        "intent_routing_utility_llm_backend": "model_profile",
+        "intent_routing_utility_llm_model_profile_id": profile.id,
+    })
+    fixture.agent_runner.utility_llm_service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "please help me write a concise update"))
+
+    intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
+    assert result.success is True
+    assert intent["predicted_intent"] == "chat"
+    assert intent["utility_used"] is False
+    assert len(llm.calls) == 1
+
+
 def test_auto_image_generation_is_metadata_only_without_changing_session_default() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)
@@ -197,6 +226,36 @@ def test_auto_knowledge_query_uses_temporary_retrieval_override(monkeypatch) -> 
     assert prompt_run.metadata["knowledge_context"]["temporary_override"] is True
     assert llm.calls[0]["messages"][-1] == {"role": "user", "content": "What does my Project KB say about stormtrooper ranks?"}
     assert fixture.knowledge.list_session_bindings(session.session_id)[0].knowledge_base_id == kb.id
+
+
+def test_auto_knowledge_query_uses_utility_llm_model_profile_slots(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response='{"intent":"knowledge_query","confidence":0.91,"kb_hint":"Project KB","query":"stormtrooper ranks"}')
+    fixture = PromptRuntimeFixture(llm=llm)
+    enable_auto(fixture)
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    fixture.app_settings.patch({
+        "intent_routing_utility_llm_backend": "model_profile",
+        "intent_routing_utility_llm_model_profile_id": profile.id,
+    })
+    fixture.agent_runner.utility_llm_service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    kb = bind_test_kb(fixture, session.session_id)
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", lambda **kwargs: {"query": kwargs["query"], "results": [], "debug": {"warnings": []}})
+
+    result = run(fixture.runtime.handle_input(session, "What does my Project KB say about stormtrooper ranks?"))
+
+    intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
+    assert intent["route_action"] == "knowledge_override"
+    assert intent["executed"] is True
+    assert intent["temporary_knowledge_base_ids"] == [kb.id]
+    assert intent["slots"]["query"] == "stormtrooper ranks"
+    assert llm.calls[0]["model_config"]["model"] == "utility-model"
 
 
 def test_auto_knowledge_query_uses_semantic_threshold_not_legacy_high_threshold(monkeypatch) -> None:
@@ -416,6 +475,37 @@ def test_auto_pet_command_routes_only_to_pet_command() -> None:
     assert intent["auto_executable"] is True
     assert intent["executed"] is True
     assert pet_runtime.command_calls == ["wake"]
+
+
+def test_auto_pet_command_uses_utility_llm_model_profile_slots() -> None:
+    llm = FakeLLMRuntime(response='{"intent":"pet_command","domain":"workbench_pet","action":"wake","target_pet_hint":"Jedi Cal"}')
+    fixture = PromptRuntimeFixture(llm=llm)
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    profile = set_chat_title_profile(fixture, "utility-profile", "utility-model")
+    fixture.app_settings.patch({
+        "intent_routing_utility_llm_backend": "model_profile",
+        "intent_routing_utility_llm_model_profile_id": profile.id,
+    })
+    fixture.agent_runner.utility_llm_service = UtilityLLMService(
+        llm_runtime=llm,
+        llm_profile_store=fixture.llm_profiles,
+        provider_profile_store=fixture.provider_profiles,
+        capability_registry=fixture.agent_runner.capability_registry,
+        capability_config_store=fixture.agent_runner.capability_config_store,
+    )
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "wake up Jedi Cal"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert intent["route_action"] == "pet_command"
+    assert intent["generated_command"] == "/pet wake"
+    assert pet_runtime.command_calls == ["wake"]
+    assert llm.calls[0]["model_config"]["model"] == "utility-model"
 
 
 def test_auto_pet_command_persists_original_user_message_before_result() -> None:

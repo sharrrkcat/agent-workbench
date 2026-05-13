@@ -92,6 +92,7 @@ class AppSettings(BaseModel):
     intent_routing_confirm_uncertain: StrictBool = True
     intent_routing_embedding_model_profile_id: str | None = None
     intent_routing_utility_llm_backend: str = "transformers"
+    intent_routing_utility_llm_model_profile_id: str | None = None
     intent_routing_utility_llm_model_path: str = ""
     intent_routing_utility_llm_context_size: int = Field(default=4096, ge=512, le=32768)
     intent_routing_utility_llm_gpu_layers: int = Field(default=0, ge=-1, le=200)
@@ -169,6 +170,14 @@ class AppSettings(BaseModel):
         except ValueError:
             return normalize_utility_model_path(raw, "llama_cpp")
 
+    @field_validator("intent_routing_utility_llm_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_utility_llm_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
     @field_validator("intent_routing_embedding_model_profile_id", mode="before")
     @classmethod
     def _normalize_embedding_model_profile_id(cls, value: Any) -> str | None:
@@ -179,7 +188,7 @@ class AppSettings(BaseModel):
 
     @model_validator(mode="after")
     def _validate_utility_model_path(self) -> "AppSettings":
-        if self.intent_routing_utility_llm_model_path:
+        if self.intent_routing_utility_llm_backend != "model_profile" and self.intent_routing_utility_llm_model_path:
             normalize_utility_model_path(
                 self.intent_routing_utility_llm_model_path,
                 self.intent_routing_utility_llm_backend,
@@ -244,6 +253,7 @@ class AppSettingsPatch(BaseModel):
     intent_routing_confirm_uncertain: StrictBool | None = None
     intent_routing_embedding_model_profile_id: str | None = None
     intent_routing_utility_llm_backend: str | None = None
+    intent_routing_utility_llm_model_profile_id: str | None = None
     intent_routing_utility_llm_model_path: str | None = None
     intent_routing_utility_llm_context_size: int | None = Field(default=None, ge=512, le=32768)
     intent_routing_utility_llm_gpu_layers: int | None = Field(default=None, ge=-1, le=200)
@@ -335,6 +345,14 @@ class AppSettingsPatch(BaseModel):
         except ValueError:
             return normalize_utility_model_path(raw, "llama_cpp")
 
+    @field_validator("intent_routing_utility_llm_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_utility_llm_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
     @field_validator("intent_routing_embedding_model_profile_id", mode="before")
     @classmethod
     def _normalize_embedding_model_profile_id(cls, value: Any) -> str | None:
@@ -364,6 +382,7 @@ def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
         "group_transcript_system_instruction",
         "command_result_context_instruction",
         "intent_routing_embedding_model_profile_id",
+        "intent_routing_utility_llm_model_profile_id",
         "session_title_model_profile_id",
     ):
         if key in patch.model_fields_set and getattr(patch, key) is None:
