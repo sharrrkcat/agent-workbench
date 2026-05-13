@@ -15,8 +15,56 @@ class ContextAwareUtilityIntentService:
         return self.payload
 
 
+class FakeEmbeddingBackend:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
+        self.calls.append({"model_path": model_path, "texts": texts, "normalize": normalize, "device": device})
+        return [_fake_vector(text) for text in texts]
+
+
+def _fake_vector(text: str) -> list[float]:
+    value = text.casefold()
+    if "image_generation:" in value:
+        return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if "knowledge_query:" in value:
+        return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    if "agent_route:" in value:
+        return [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    if "command_like:" in value:
+        return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    if "action_route:" in value:
+        return [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    if "compound:" in value:
+        return [0.1, 0.1, 0.1, 0.1, 0.0, 0.0]
+    if "chat:" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    if "knowledge_base:" in value:
+        value = value.split("knowledge_base:", 1)[1]
+    if any(token in value for token in ["image", "picture", "draw", "concept art", "生成", "鐢熸垚"]):
+        return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if any(token in value for token in ["knowledge", "documentation", "docs", "lore", "kb", "project", "stormtrooper", "say about", "star wars", "sw"]):
+        return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    if any(token in value for token in ["translator", "translate agent"]):
+        return [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    if any(token in value for token in ["command", "free memory", "/free-memory"]):
+        return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    if any(token in value for token in ["action", "formal"]):
+        return [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+
+def enable_semantic_router(fixture: PromptRuntimeFixture) -> EmbeddingModelProfile:
+    profile = fixture.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Semantic Embeddings", alias="semantic", model_path="embeddings/test"))
+    fixture.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
+    fixture.agent_runner.knowledge_model_backend = FakeEmbeddingBackend()
+    return profile
+
+
 def test_intent_routing_shadow_records_prediction_without_changing_route() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    profile = enable_semantic_router(fixture)
     fixture.app_settings.patch({"intent_routing_enabled": True})
     fixture.agent_configs.set_config("chat", runtime={"intent_routing_mode": "enabled"})
     session = fixture.sessions.create_session(default_agent_id="chat")
@@ -30,7 +78,8 @@ def test_intent_routing_shadow_records_prediction_without_changing_route() -> No
     assert intent["bypassed"] is False
     assert intent["mode"] == "shadow"
     assert intent["predicted_intent"] == "image_generation"
-    assert intent["target_agent_id"] == "comfyui_agent"
+    assert intent["source"] == "embedding_semantic_router"
+    assert intent["route_action"] == "metadata_only"
     assert fixture.runs.get_run(result.run_id).target_id == "chat"
     assistant = fixture.messages.list_messages(session.session_id)[-1]
     assert assistant.agent_id == "chat"
@@ -40,6 +89,7 @@ def test_intent_routing_shadow_records_prediction_without_changing_route() -> No
 
 def test_custom_route_examples_affect_prediction() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    profile = enable_semantic_router(fixture)
     fixture.app_settings.patch(
         {
             "intent_routing_enabled": True,
@@ -53,12 +103,12 @@ def test_custom_route_examples_affect_prediction() -> None:
 
     intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
     assert intent["predicted_intent"] == "image_generation"
-    assert intent["custom_examples_used"] is True
-    assert intent["matched_route_example"] == "please make concept art"
+    assert any(candidate.get("source") == "custom" for candidate in intent["top_candidates"])
 
 
 def test_utility_extractor_receives_compact_candidates() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    profile = enable_semantic_router(fixture)
     fixture.app_settings.patch(
         {
             "intent_routing_enabled": True,
@@ -67,7 +117,6 @@ def test_utility_extractor_receives_compact_candidates() -> None:
             "intent_routing_knowledge_query_examples": "ask the lore binder",
         }
     )
-    profile = fixture.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
     fixture.knowledge.create_knowledge_base(KnowledgeBase(name="Lore KB", aliases_text="lore, codex", embedding_model_profile_id=profile.id))
     fixture.agent_configs.set_config("translate", runtime={"intent_routing_aliases_text": "translator", "intent_routing_examples_text": "send this to translator"})
     utility = ContextAwareUtilityIntentService({"intent": "knowledge_query", "confidence": 0.84, "kb_hint": "lore", "query": "rank notes"})
@@ -87,6 +136,9 @@ def test_utility_extractor_receives_compact_candidates() -> None:
 def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> None:
     client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test.db'}"))
     state = client.app.state.runtime_state
+    profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
+    state.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
+    state.knowledge_model_backend = FakeEmbeddingBackend()
     client.patch("/api/settings/general", json={"intent_routing_image_generation_examples": "make concept art"})
 
     response = client.post("/api/intent/test-route", json={"text": "make concept art of a station", "include_utility": False})
@@ -95,7 +147,23 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     decision = response.json()["decision"]
     assert decision["eligibility_scope"] == "no_session"
     assert decision["predicted_intent"] == "image_generation"
-    assert decision["custom_examples_used"] is True
+    assert decision["source"] == "embedding_semantic_router"
+    assert decision["semantic_score"] > 0
+    assert decision["top_candidates"]
+    assert state.runs.list_all_runs() == []
+    assert state.messages.list_all_messages() == []
+
+
+def test_route_test_without_embedding_profile_warns_without_creating_messages_or_runs(tmp_path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test-missing-profile.db'}"))
+    state = client.app.state.runtime_state
+
+    response = client.post("/api/intent/test-route", json={"text": "make concept art of a station", "include_utility": False})
+
+    assert response.status_code == 200
+    decision = response.json()["decision"]
+    assert decision["predicted_intent"] == "chat"
+    assert "semantic_router_profile_missing" in decision["warnings"]
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
 

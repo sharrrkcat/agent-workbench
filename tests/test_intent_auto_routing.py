@@ -1,6 +1,6 @@
-from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, bind_test_kb, run
+from tests.test_intent_routing import enable_semantic_router
 
 
 class FakeUtilityIntentService:
@@ -14,6 +14,7 @@ class FakeUtilityIntentService:
 
 
 def enable_auto(fixture: PromptRuntimeFixture) -> None:
+    enable_semantic_router(fixture)
     fixture.app_settings.patch(
         {
             "intent_routing_enabled": True,
@@ -42,39 +43,30 @@ def test_auto_mode_without_safe_auto_route_keeps_shadow_style_route() -> None:
     intent = prompt_run.metadata["intent_routing"]
     assert prompt_run.target_id == "chat"
     assert intent["mode"] == "auto"
-    assert intent["route_action"] == "none"
+    assert intent["route_action"] == "metadata_only"
     assert "safe_auto_route_disabled" in intent["warnings"]
 
 
-def test_auto_image_generation_routes_current_run_to_comfyui_without_changing_session_default() -> None:
+def test_auto_image_generation_is_metadata_only_without_changing_session_default() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat")
-    captured = {}
-
-    async def fake_run(**kwargs):
-        captured.update(kwargs)
-        return RunResult(success=True, run_id="run_fake")
-
-    fixture.agent_runner.run = fake_run
 
     result = run(fixture.runtime.handle_input(session, "generate an image of a castle"))
 
     assert result.success is True
-    assert captured["agent_id"] == "comfyui_agent"
-    assert captured["action_id"] == "default"
-    assert captured["args"] == "generate an image of a castle"
-    assert captured["display_input"] == "generate an image of a castle"
-    assert captured["invocation_route_kind"] == "intent_auto_route"
-    intent = captured["intent_routing_metadata"]
-    assert intent["route_action"] == "route_agent"
-    assert intent["target_agent_id"] == "comfyui_agent"
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.target_id == "chat"
+    assert intent["route_action"] == "metadata_only"
+    assert intent["auto_executable"] is False
+    assert "image_generation_auto_route_staged" in intent["warnings"]
     assert intent["session_default_agent_id"] == "chat"
     assert intent["session_default_changed"] is False
     assert fixture.sessions.get_session(session.session_id).default_agent_id == "chat"
 
 
-def test_auto_image_generation_falls_back_when_comfyui_agent_disabled() -> None:
+def test_auto_image_generation_does_not_check_comfyui_agent_for_execution() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)
     fixture.agent_configs.set_config("comfyui_agent", enabled=False)
@@ -85,11 +77,11 @@ def test_auto_image_generation_falls_back_when_comfyui_agent_disabled() -> None:
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
     assert prompt_run.target_id == "chat"
-    assert intent["route_action"] == "fallback_current_agent"
-    assert "comfyui_agent_disabled" in intent["warnings"]
+    assert intent["route_action"] == "metadata_only"
+    assert "image_generation_auto_route_staged" in intent["warnings"]
 
 
-def test_auto_knowledge_query_uses_temporary_kb_and_query_override(monkeypatch) -> None:
+def test_auto_knowledge_query_records_metadata_without_retrieval_override(monkeypatch) -> None:
     llm = FakeLLMRuntime(response="chat reply")
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto(fixture)
@@ -132,21 +124,18 @@ def test_auto_knowledge_query_uses_temporary_kb_and_query_override(monkeypatch) 
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
-    knowledge = prompt_run.metadata["knowledge_context"]
     assert prompt_run.target_id == "chat"
-    assert intent["route_action"] == "knowledge_override"
-    assert intent["temporary_knowledge_base_ids"] == [kb.id]
+    assert intent["route_action"] == "metadata_only"
+    assert "knowledge_query_auto_route_staged" in intent["warnings"]
     assert intent["slots"]["query"] == "stormtrooper ranks"
-    assert search_calls[0]["query"] == "stormtrooper ranks"
-    assert search_calls[0]["knowledge_base_ids"] == [kb.id]
-    assert search_calls[0]["session_id"] is None
-    assert knowledge["source"] == "intent_routing_override"
-    assert knowledge["query"] == "stormtrooper ranks"
+    assert search_calls[0]["query"] == "What does my Project KB say about stormtrooper ranks?"
+    assert search_calls[0]["knowledge_base_ids"] is None
+    assert search_calls[0]["session_id"] == session.session_id
     assert llm.calls[0]["messages"][-1] == {"role": "user", "content": "What does my Project KB say about stormtrooper ranks?"}
     assert fixture.knowledge.list_session_bindings(session.session_id)[0].knowledge_base_id == kb.id
 
 
-def test_auto_knowledge_query_matches_kb_alias_without_persisting_binding(monkeypatch) -> None:
+def test_auto_knowledge_query_matches_kb_alias_as_metadata_without_persisting_binding(monkeypatch) -> None:
     llm = FakeLLMRuntime(response="chat reply")
     fixture = PromptRuntimeFixture(llm=llm)
     enable_auto(fixture)
@@ -182,11 +171,11 @@ def test_auto_knowledge_query_matches_kb_alias_without_persisting_binding(monkey
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
-    assert intent["route_action"] == "knowledge_override"
-    assert intent["temporary_knowledge_base_ids"] == [kb.id]
+    assert intent["route_action"] == "metadata_only"
+    assert intent["kb_id"] == kb.id
     assert intent["kb_match_source"] == "alias"
     assert intent["matched_alias"] == "SW"
-    assert search_calls[0]["knowledge_base_ids"] == [kb.id]
+    assert search_calls == []
     assert fixture.knowledge.list_session_bindings(session.session_id) == []
 
 
@@ -206,7 +195,7 @@ def test_auto_agent_route_hint_records_target_without_executing_agent() -> None:
     assert intent["target_agent_id"] == "translate"
     assert intent["agent_match_source"] == "alias"
     assert intent["matched_alias"] == "translator"
-    assert intent["route_action"] == "confirmation_needed_future"
+    assert intent["route_action"] == "metadata_only"
     assert "agent_route_auto_route_disabled" in intent["warnings"]
 
 
@@ -222,5 +211,5 @@ def test_auto_command_like_intent_is_not_executed() -> None:
     assert prompt_run.kind == "agent"
     assert prompt_run.target_id == "chat"
     assert intent["predicted_intent"] == "command_like"
-    assert intent["route_action"] == "confirmation_needed_future"
+    assert intent["route_action"] == "metadata_only"
     assert "command_like_auto_route_disabled" in intent["warnings"]

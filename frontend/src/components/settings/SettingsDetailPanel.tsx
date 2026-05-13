@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -716,6 +716,7 @@ function GeneralIntentRoutingSettings({
 }) {
   const { t } = useTranslation(['settings', 'common']);
   const [status, setStatus] = useState<UtilityLlmStatus | null>(null);
+  const [semanticStatus, setSemanticStatus] = useState<SemanticRouterStatus | null>(null);
   const [busy, setBusy] = useState('');
   const [routeTestText, setRouteTestText] = useState('');
   const [routeTestResult, setRouteTestResult] = useState<Record<string, unknown> | null>(null);
@@ -728,7 +729,9 @@ function GeneralIntentRoutingSettings({
   async function refreshStatus() {
     try {
       setError(null);
-      setStatus(await api.getUtilityLlmStatus());
+      const [utility, semantic] = await Promise.all([api.getUtilityLlmStatus(), api.getSemanticRouterStatus()]);
+      setStatus(utility);
+      setSemanticStatus(semantic);
     } catch (err) {
       setError(toSettingsError(err, t('settings:general.utilityLlmStatusFailed')));
     }
@@ -736,7 +739,7 @@ function GeneralIntentRoutingSettings({
 
   useEffect(() => {
     void refreshStatus();
-  }, [values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path]);
+  }, [values.intent_routing_utility_llm_backend, values.intent_routing_utility_llm_model_path, values.intent_routing_embedding_model_profile_id]);
 
   useEffect(() => {
     void api.listEmbeddingModels()
@@ -812,7 +815,8 @@ function GeneralIntentRoutingSettings({
           <h3>{t('settings:general.semanticRouter')}</h3>
         </div>
         {error ? <SettingsApiError error={error} /> : null}
-        <p className="settings-muted-copy">{t('settings:general.semanticRouterReserved')}</p>
+        <p className="settings-muted-copy">{t('settings:general.semanticRouterHelp')}</p>
+        <p className="settings-muted-text">{t('settings:general.semanticRouterDiagnosticHelp')}</p>
         <label className="config-field settings-config-field">
           <span>{t('settings:general.embeddingModelProfile')}</span>
           <select
@@ -835,6 +839,20 @@ function GeneralIntentRoutingSettings({
         </label>
         {missingSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileUnavailable')}</p> : null}
         {disabledSelectedProfile ? <p className="settings-warning-text">{t('settings:general.selectedEmbeddingProfileDisabled')}</p> : null}
+        <div className="settings-inline-summary">
+          <span>{t('settings:general.semanticRouterStatus')}</span>
+          <strong>{semanticStatus ? semanticRouterStatusText(semanticStatus.status, t) : t('settings:general.semanticRouterStatusLoading')}</strong>
+          <small>{semanticStatus?.index?.will_rebuild_lazily ? t('settings:general.semanticIndexWillRebuild') : t('settings:general.semanticIndexReady')}</small>
+        </div>
+        {semanticStatus ? (
+          <dl className="settings-definition-grid compact">
+            <Metric label={t('settings:general.intentExamplesCount')} value={String(semanticStatus.candidate_summary.intent_examples)} />
+            <Metric label={t('settings:general.kbCandidatesCount')} value={String(semanticStatus.candidate_summary.knowledge_bases)} />
+            <Metric label={t('settings:general.agentCandidatesCount')} value={String(semanticStatus.candidate_summary.agents)} />
+            <Metric label={t('settings:general.actionCandidatesCount')} value={String(semanticStatus.candidate_summary.actions)} />
+            <Metric label={t('settings:general.commandCandidatesCount')} value={String(semanticStatus.candidate_summary.commands)} />
+          </dl>
+        ) : null}
         <div className="settings-inline-summary">
           <span>{t('settings:general.utilityLlm')}</span>
           <strong>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</strong>
@@ -1194,19 +1212,53 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
 function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
   const { t } = useTranslation(['settings', 'common']);
   const slots = typeof decision.slots === 'object' && decision.slots ? decision.slots : {};
+  const topCandidates = Array.isArray(decision.top_candidates) ? decision.top_candidates.slice(0, 6) : [];
   return (
-    <dl className="settings-definition-grid">
-      <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
-      <Metric label={t('settings:general.confidence')} value={typeof decision.confidence === 'number' ? decision.confidence.toFixed(2) : t('settings:general.none')} />
-      <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
-      <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
-      <Metric label={t('settings:general.embeddingModelProfile')} value={String(decision.embedding_model_profile_id || t('settings:general.none'))} />
-      <Metric label={t('settings:general.kbMatch')} value={String(decision.kb_match_source || t('settings:general.none'))} />
-      <Metric label={t('settings:general.agentMatch')} value={String(decision.agent_match_source || t('settings:general.none'))} />
-      <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} />
-      <Metric label={t('settings:general.warnings')} value={Array.isArray(decision.warnings) ? decision.warnings.join(', ') || t('settings:general.none') : t('settings:general.none')} />
-    </dl>
+    <>
+      <dl className="settings-definition-grid">
+        <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
+        <Metric label={t('settings:general.source')} value={String(decision.source || t('settings:general.none'))} />
+        <Metric label={t('settings:general.confidence')} value={typeof decision.confidence === 'number' ? decision.confidence.toFixed(2) : t('settings:general.none')} />
+        <Metric label={t('settings:general.semanticScore')} value={typeof decision.semantic_score === 'number' ? decision.semantic_score.toFixed(2) : t('settings:general.none')} />
+        <Metric label={t('settings:general.semanticMargin')} value={typeof decision.semantic_margin === 'number' ? decision.semantic_margin.toFixed(2) : t('settings:general.none')} />
+        <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
+        <Metric label={t('settings:general.autoExecutable')} value={decision.auto_executable ? t('settings:general.yes') : t('settings:general.no')} />
+        <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
+        <Metric label={t('settings:general.targetAction')} value={String(decision.target_action_id || t('settings:general.none'))} />
+        <Metric label={t('settings:general.targetCommand')} value={String(decision.target_command || t('settings:general.none'))} />
+        <Metric label={t('settings:general.embeddingModelProfile')} value={String(decision.embedding_model_profile_id || t('settings:general.none'))} />
+        <Metric label={t('settings:general.kbCandidate')} value={candidateSummary(decision.kb_candidate, t)} />
+        <Metric label={t('settings:general.agentCandidate')} value={candidateSummary(decision.agent_candidate, t)} />
+        <Metric label={t('settings:general.actionCandidate')} value={candidateSummary(decision.action_candidate, t)} />
+        <Metric label={t('settings:general.commandCandidate')} value={candidateSummary(decision.command_candidate, t)} />
+        <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} />
+        <Metric label={t('settings:general.warnings')} value={Array.isArray(decision.warnings) ? decision.warnings.join(', ') || t('settings:general.none') : t('settings:general.none')} />
+      </dl>
+      {topCandidates.length ? (
+        <div className="settings-inline-summary">
+          <span>{t('settings:general.topCandidates')}</span>
+          <small>{topCandidates.map((candidate) => candidateSummary(candidate, t)).join(' | ')}</small>
+        </div>
+      ) : null}
+    </>
   );
+}
+
+function semanticRouterStatusText(status: string, t: (key: string) => string): string {
+  if (status === 'ready') return t('settings:general.semanticStatusReady');
+  if (status === 'no_profile_selected') return t('settings:general.semanticStatusNoProfile');
+  if (status === 'profile_unavailable') return t('settings:general.semanticStatusProfileUnavailable');
+  if (status === 'embedding_backend_unavailable') return t('settings:general.semanticStatusBackendUnavailable');
+  return status || t('settings:general.unavailable');
+}
+
+function candidateSummary(value: unknown, t: (key: string) => string): string {
+  if (!value || typeof value !== 'object') return t('settings:general.none');
+  const candidate = value as Record<string, unknown>;
+  const label = candidate.intent || candidate.kb_name || candidate.agent_id || candidate.action_id || candidate.command_name || candidate.kind || t('settings:general.none');
+  const score = typeof candidate.score === 'number' ? ` ${candidate.score.toFixed(2)}` : '';
+  const field = candidate.field ? ` ${String(candidate.field)}` : '';
+  return `${String(label)}${field}${score}`;
 }
 
 function InstructionField({

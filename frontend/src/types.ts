@@ -1124,6 +1124,24 @@ export type UtilityLlmModelScan = {
   warnings: string[];
 };
 
+export type SemanticRouterStatus = {
+  status: 'ready' | 'no_profile_selected' | 'profile_unavailable' | 'embedding_backend_unavailable' | string;
+  embedding_model_profile_id?: string | null;
+  candidate_summary: {
+    intent_examples: number;
+    knowledge_bases: number;
+    agents: number;
+    actions: number;
+    commands: number;
+    total: number;
+  };
+  index?: {
+    version?: string | null;
+    stale?: boolean;
+    will_rebuild_lazily?: boolean;
+  };
+};
+
 export type UtilityLlmTitleTestResult = {
   ok: boolean;
   title: string;

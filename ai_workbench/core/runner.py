@@ -122,6 +122,7 @@ class AgentRunner:
         knowledge_model_backend=None,
         worldbook_store=None,
         utility_llm_service=None,
+        semantic_router=None,
     ) -> None:
         self.agent_registry = agent_registry
         self.run_store = run_store
@@ -143,6 +144,7 @@ class AgentRunner:
         self.knowledge_model_backend = knowledge_model_backend
         self.worldbook_store = worldbook_store
         self.utility_llm_service = utility_llm_service
+        self.semantic_router = semantic_router
         self.active_runs = active_runs or ActiveRunRegistry()
         self.run_lifecycle = RunLifecycle(run_store, event_bus)
         self.active_llm_uses = ActiveLLMUseRegistry()

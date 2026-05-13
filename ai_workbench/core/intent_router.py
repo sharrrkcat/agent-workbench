@@ -301,6 +301,10 @@ async def build_intent_routing_metadata(
     agent_config_store: Any = None,
     app_settings_store: Any = None,
     knowledge_store: Any = None,
+    knowledge_model_backend: Any = None,
+    capability_registry: Any = None,
+    command_registry: Any = None,
+    semantic_router: Any = None,
     classifier: RuleBasedIntentClassifier | None = None,
     utility_llm_service: Any = None,
 ) -> dict[str, Any] | None:
@@ -327,14 +331,19 @@ async def build_intent_routing_metadata(
         return {**base, "bypass_reason": str(effective.get("reason") or "disabled")}
     if mode not in {"shadow", "auto"}:
         return {**base, "bypass_reason": "unsupported_mode"}
-    prediction = (classifier or RuleBasedIntentClassifier()).classify(
-        route.args,
+    prediction = _semantic_prediction(
+        text=route.args,
         settings=settings,
         agent_registry=agent_registry,
         agent_config_store=agent_config_store,
         knowledge_store=knowledge_store,
+        knowledge_model_backend=knowledge_model_backend,
+        capability_registry=capability_registry,
+        command_registry=command_registry,
+        semantic_router=semantic_router,
+        classifier=classifier,
     )
-    prediction = await _maybe_apply_utility_extractor(
+    prediction = await _maybe_apply_utility_slots(
         text=route.args,
         prediction=prediction,
         settings=settings,
@@ -385,27 +394,50 @@ def _decision_metadata(
         **prediction,
         "predicted_intent": intent_id,
         "confidence": round(confidence, 2),
+        "semantic_score": _rounded_optional(prediction.get("semantic_score")),
+        "semantic_margin": _rounded_optional(prediction.get("semantic_margin")),
         "slots": slots,
         "warnings": warnings,
-        "route_action": "none",
-        "target_agent_id": prediction.get("target_agent_id") or route.target_id,
-        "target_action_id": route.action_id or "default",
+        "route_action": prediction.get("route_action") or "metadata_only",
+        "auto_executable": bool(prediction.get("auto_executable", False)),
+        "target_agent_id": prediction.get("target_agent_id") or _candidate_value(prediction.get("agent_candidate"), "agent_id") or route.target_id,
+        "target_action_id": prediction.get("target_action_id") or _candidate_value(prediction.get("action_candidate"), "action_id") or route.action_id or "default",
+        "target_command": prediction.get("target_command") or _candidate_value(prediction.get("command_candidate"), "command_name"),
         "session_default_agent_id": getattr(session, "default_agent_id", None),
         "session_default_changed": False,
         "session_bindings_changed": False,
         "embedding_model_profile_id": getattr(settings, "intent_routing_embedding_model_profile_id", None),
-        "kb_match_source": prediction.get("kb_match_source") or "none",
-        "agent_match_source": prediction.get("agent_match_source") or "none",
+        "semantic_index_version": prediction.get("semantic_index_version"),
+        "kb_match_source": prediction.get("kb_match_source") or _candidate_value(prediction.get("kb_candidate"), "field") or "none",
+        "agent_match_source": prediction.get("agent_match_source") or _candidate_value(prediction.get("agent_candidate"), "field") or "none",
+        "action_match_source": prediction.get("action_match_source") or _candidate_value(prediction.get("action_candidate"), "field") or "none",
+        "command_match_source": prediction.get("command_match_source") or _candidate_value(prediction.get("command_candidate"), "field") or "none",
     }
+    kb_candidate = prediction.get("kb_candidate")
+    if isinstance(kb_candidate, dict):
+        metadata["kb_id"] = kb_candidate.get("kb_id")
+        metadata["kb_name"] = kb_candidate.get("kb_name")
+        if kb_candidate.get("field") == "alias" and not metadata.get("matched_alias"):
+            metadata["matched_alias"] = _short_text(str(kb_candidate.get("text_preview") or ""), 80)
+    agent_candidate = prediction.get("agent_candidate")
+    if isinstance(agent_candidate, dict) and agent_candidate.get("field") == "alias":
+        metadata["matched_alias"] = _short_text(str(agent_candidate.get("text_preview") or ""), 80)
     if mode != "auto":
         return metadata
     if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
-        metadata["route_action"] = "none"
+        metadata["route_action"] = "metadata_only"
         metadata["warnings"] = [*warnings, "safe_auto_route_disabled"]
         return metadata
-    if intent_id in {"command_like", "agent_route"}:
-        metadata["route_action"] = "confirmation_needed_future"
-        warning = COMMAND_LIKE_WARNING if intent_id == "command_like" else "agent_route_auto_route_disabled"
+    if intent_id in {"command_like", "agent_route", "action_route", "compound", "image_generation", "knowledge_query"}:
+        metadata["route_action"] = "metadata_only"
+        warning = {
+            "command_like": COMMAND_LIKE_WARNING,
+            "agent_route": "agent_route_auto_route_disabled",
+            "action_route": "action_route_auto_route_disabled",
+            "compound": "compound_intent_not_auto_routed",
+            "image_generation": "image_generation_auto_route_staged",
+            "knowledge_query": "knowledge_query_auto_route_staged",
+        }.get(intent_id, "auto_route_not_supported")
         metadata["warnings"] = [*warnings, warning]
         return metadata
     if confidence < high_threshold:
@@ -423,11 +455,71 @@ def _decision_metadata(
         metadata["target_agent_id"] = agent.id
         metadata["target_action_id"] = "default"
         return metadata
-    if intent_id == "image_generation":
-        return _image_generation_decision(metadata, agent_registry, agent_config_store)
-    if intent_id == "knowledge_query":
-        return _knowledge_query_decision(metadata, session, agent, knowledge_store)
+    if intent_id in {"image_generation", "knowledge_query"}:
+        metadata["route_action"] = "metadata_only"
+        metadata["warnings"] = [*warnings, f"{intent_id}_auto_route_staged"]
+        return metadata
     return metadata
+
+
+def _semantic_prediction(
+    *,
+    text: str,
+    settings: Any,
+    agent_registry: Any = None,
+    agent_config_store: Any = None,
+    knowledge_store: Any = None,
+    knowledge_model_backend: Any = None,
+    capability_registry: Any = None,
+    command_registry: Any = None,
+    semantic_router: Any = None,
+    classifier: RuleBasedIntentClassifier | None = None,
+) -> dict[str, Any]:
+    try:
+        from ai_workbench.core.intent_semantic_router import SemanticRouter
+
+        router = semantic_router or SemanticRouter()
+        prediction = router.decide(
+            text,
+            settings=settings,
+            knowledge_store=knowledge_store,
+            model_backend=knowledge_model_backend,
+            agent_registry=agent_registry,
+            agent_config_store=agent_config_store,
+            capability_registry=capability_registry,
+            command_registry=command_registry,
+        )
+    except Exception:
+        prediction = {"predicted_intent": "chat", "confidence": 0.0, "source": "embedding_semantic_router", "warnings": ["semantic_router_unavailable"]}
+    if prediction.get("warnings") and any(str(item).startswith("semantic_router_") for item in prediction.get("warnings") or []):
+        prediction = {**prediction, "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent"}
+        if classifier is not None:
+            try:
+                debug = classifier.classify(
+                    text,
+                    settings=settings,
+                    agent_registry=agent_registry,
+                    agent_config_store=agent_config_store,
+                    knowledge_store=knowledge_store,
+                )
+                prediction["debug_fallback"] = {
+                    "source": "rule_based_fallback",
+                    "predicted_intent": debug.get("predicted_intent"),
+                    "confidence": debug.get("confidence"),
+                }
+            except Exception:
+                pass
+    return prediction
+
+
+def _candidate_value(candidate: Any, key: str) -> Any:
+    return candidate.get(key) if isinstance(candidate, dict) else None
+
+
+def _rounded_optional(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return round(float(value), 4)
+    return None
 
 
 def _image_generation_decision(metadata: dict[str, Any], agent_registry: Any, agent_config_store: Any) -> dict[str, Any]:
@@ -705,6 +797,57 @@ async def _maybe_apply_utility_extractor(
     if matched_alias:
         merged["matched_alias"] = matched_alias
     return merged
+
+
+async def _maybe_apply_utility_slots(
+    *,
+    text: str,
+    prediction: dict[str, Any],
+    settings: Any,
+    utility_llm_service: Any = None,
+    agent_registry: Any = None,
+    agent_config_store: Any = None,
+    knowledge_store: Any = None,
+) -> dict[str, Any]:
+    if utility_llm_service is None or settings is None:
+        return prediction
+    if not getattr(settings, "intent_routing_utility_llm_model_path", ""):
+        return prediction
+    predicted_intent = str(prediction.get("predicted_intent") or "chat")
+    confidence = float(prediction.get("confidence") or 0.0)
+    high_threshold = float(getattr(settings, "intent_routing_high_confidence_threshold", 0.78) or 0.78)
+    if predicted_intent != "knowledge_query" and confidence >= high_threshold:
+        return prediction
+    try:
+        context = compact_utility_context(
+            settings=settings,
+            agent_registry=agent_registry,
+            agent_config_store=agent_config_store,
+            knowledge_store=knowledge_store,
+        )
+        try:
+            extracted = await utility_llm_service.extract_intent_json(text, settings, context=context)
+        except TypeError:
+            extracted = await utility_llm_service.extract_intent_json(text, settings)
+    except Exception:
+        return {**prediction, "warnings": [*list(prediction.get("warnings") or []), "utility_extractor_failed"]}
+    slots = dict(prediction.get("slots") or {}) if isinstance(prediction.get("slots"), dict) else {}
+    if predicted_intent == "knowledge_query":
+        if extracted.get("kb_hint"):
+            slots["kb_hint"] = extracted.get("kb_hint")
+            prediction = {**prediction, "matched_alias": extracted.get("kb_hint")}
+        if extracted.get("query"):
+            slots["query"] = extracted.get("query")
+        if extracted.get("kb_id"):
+            prediction = {**prediction, "kb_id": extracted.get("kb_id")}
+    elif extracted.get("query") and confidence < high_threshold:
+        slots.setdefault("query", extracted.get("query"))
+    return {
+        **prediction,
+        "source": "embedding_semantic_router+utility_llm",
+        "slots": slots,
+        "warnings": list(prediction.get("warnings") or []),
+    }
 
 
 def _bypass_reason(session: Any, route: RouteTarget) -> str | None:

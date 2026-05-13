@@ -9,6 +9,7 @@ from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.utility_llm import UtilityLLMService, extract_json_object, normalize_utility_model_path, scan_utility_models, validate_intent_prediction
 from tests.test_session_titles import set_chat_title_profile
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, run
+from tests.test_intent_routing import enable_semantic_router
 
 
 class FakeUtilityLLM:
@@ -248,6 +249,7 @@ def test_title_generation_falls_back_to_model_profile_when_utility_fails() -> No
 
 def test_intent_shadow_uses_utility_extractor_for_slots_without_reroute() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_semantic_router(fixture)
     utility = FakeUtilityLLM()
     fixture.agent_runner.utility_llm_service = utility
     fixture.app_settings.patch({
@@ -261,7 +263,7 @@ def test_intent_shadow_uses_utility_extractor_for_slots_without_reroute() -> Non
 
     intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
     assert result.success is True
-    assert intent["source"] == "rule_based_shadow+utility_llm"
+    assert intent["source"] == "embedding_semantic_router+utility_llm"
     assert intent["predicted_intent"] == "knowledge_query"
     assert intent["slots"]["kb_hint"] == "Star Wars"
     assert fixture.runs.get_run(result.run_id).target_id == "chat"
@@ -269,6 +271,7 @@ def test_intent_shadow_uses_utility_extractor_for_slots_without_reroute() -> Non
 
 def test_intent_shadow_utility_failure_falls_back_to_rule_based() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_semantic_router(fixture)
     fixture.agent_runner.utility_llm_service = FakeUtilityLLM(fail_json=True)
     fixture.app_settings.patch({
         "intent_routing_enabled": True,
@@ -281,5 +284,5 @@ def test_intent_shadow_utility_failure_falls_back_to_rule_based() -> None:
 
     intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
     assert result.success is True
-    assert intent["source"] == "rule_based_shadow"
+    assert intent["source"] == "embedding_semantic_router"
     assert "utility_extractor_failed" in intent["warnings"]

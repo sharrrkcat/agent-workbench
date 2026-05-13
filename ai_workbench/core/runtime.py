@@ -196,6 +196,10 @@ class WorkbenchRuntime:
             app_settings_store=self.agent_runner.app_settings_store,
             utility_llm_service=getattr(self.agent_runner, "utility_llm_service", None),
             knowledge_store=getattr(self.agent_runner, "knowledge_store", None),
+            knowledge_model_backend=getattr(self.agent_runner, "knowledge_model_backend", None),
+            capability_registry=getattr(self.agent_runner, "capability_registry", None),
+            command_registry=getattr(self.command_runner, "command_registry", None),
+            semantic_router=getattr(self.agent_runner, "semantic_router", None),
         )
 
     def _apply_intent_route(self, route: RouteTarget, intent_metadata: dict[str, Any] | None) -> RouteTarget:

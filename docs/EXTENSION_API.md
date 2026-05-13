@@ -117,7 +117,7 @@ Enum config fields with manifest defaults should render concrete enum values in 
 - Knowledge runtime override can set `knowledge_context_mode` to `use_default`, `enabled`, or `disabled`. Prompt Agents default to effective `enabled`; Script Agents that declare `llm` default to effective `disabled`; Script Agents without `llm` do not show the override. This override is stored only in `AgentConfig.runtime` and is not written into `agent.yaml`.
 - Intent Routing runtime fields are edited under Agent detail -> Intent Routing. They are still stored in `AgentConfig.runtime` and are not written into `agent.yaml` by manifest write.
 - Prompt Agent Intent Routing override can set `intent_routing_mode` to `use_default`, `enabled`, or `disabled`. It controls whether this Prompt Agent can act as an Intent Routing entry when it is the session default Agent. General settings still own the master switch, Prompt Agent default, and global `shadow`/`auto` mode.
-- Agent Intent Routing target hints are runtime-only AgentConfig fields: `intent_routing_aliases_text` is an English-comma-separated alias list, and `intent_routing_examples_text` is newline-separated natural-language examples. They help Intent Routing identify target hints for `agent_route` metadata and Utility LLM candidates. They do not enable Script Agents as router entries, do not permit generic Agent auto execution, and are not written into `agent.yaml`.
+- Agent Intent Routing target hints are runtime-only AgentConfig fields: `intent_routing_aliases_text` is an English-comma-separated alias list, and `intent_routing_examples_text` is newline-separated natural-language examples. They are semantic route index candidates for `agent_route` metadata and Utility LLM candidate context. They do not enable Script Agents as router entries, do not permit generic Agent auto execution, and are not written into `agent.yaml`.
 - Reset overrides clears local AgentConfig values back to manifest behavior.
 - Write overrides to manifest only when intentionally changing the package default.
 
@@ -326,6 +326,8 @@ Built-in `knowledge` Capability:
 - `stats(knowledge_base_id=None)` returns compact source/chunk/embedding counts globally or for one KB. It does not read full source originals or return vectors.
 - `/kb-search <query>` passes the remaining text as `query`, searches current session active KBs, returns JSON, and does not call an LLM or create an Agent run. Empty input fails clearly; no active KBs returns an empty result with a `No active knowledge bases for this session.` warning.
 
+Capability command manifest metadata may be used by the Intent Routing semantic router as weak diagnostic candidates. The router can record a possible `target_command`, command match source, and top-candidate preview in metadata or Route Test output, but it does not execute commands automatically and does not require any Capability schema change.
+
 Built-in `runtime` Capability:
 - `/free-memory <target>` calls the core runtime memory control service. Targets are `llm`, `comfyui`, `embedding`, `reranker`, and `all`.
 - The command returns a compact readable markdown result list. Empty input returns `/free-memory [llm|comfyui|embedding|reranker|all]`.
@@ -497,6 +499,10 @@ Embedding generation:
 - `POST /api/knowledge/embeddings`
 
 Request shape is `{model_profile_id, purpose, inputs}` where `purpose` is `query` or `document`. The API applies the profile instruction for that purpose, validates batch size against Knowledge Defaults, and returns `{model_profile_id, model_path, purpose, dimension, vectors}`. If `unload_embedding_model_after_use` is enabled, the local embedding model used by the request is released after the response is prepared.
+
+Intent Routing semantic router uses the General setting `intent_routing_embedding_model_profile_id` to reference one existing enabled Embedding Model Profile. Route candidate texts are embedded as `purpose=document`; the current user message is embedded as `purpose=query`. The router uses the existing profile path validation, instructions, normalization, Knowledge Defaults device, and local model backend. It does not add a raw embedding path, create profiles, download models, or persist route-candidate vectors.
+
+`POST /api/intent/test-route` returns semantic diagnostic fields including `source`, `predicted_intent`, `confidence`, `semantic_score`, `semantic_margin`, `route_action`, `auto_executable`, `embedding_model_profile_id`, `semantic_index_version`, `top_candidates`, `kb_candidate`, `agent_candidate`, `action_candidate`, `command_candidate`, and `warnings`. Top candidates contain only compact previews, not embeddings or full route examples. Agent actions and Capability commands are weak diagnostic candidates only; no Agent action, slash command, ComfyUI run, or Knowledge retrieval is executed by Route Test.
 
 Reranking:
 

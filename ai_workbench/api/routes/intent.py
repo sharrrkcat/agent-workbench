@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.intent_router import RuleBasedIntentClassifier, _decision_metadata, _maybe_apply_utility_extractor, build_intent_routing_metadata, compact_utility_context
+from ai_workbench.core.intent_router import RuleBasedIntentClassifier, _decision_metadata, _maybe_apply_utility_slots, _semantic_prediction, build_intent_routing_metadata, compact_utility_context
+from ai_workbench.core.intent_semantic_router import semantic_router_status
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
 from ai_workbench.core.utility_llm import scan_utility_models
 
@@ -31,6 +32,20 @@ class RouteTestRequest(BaseModel):
 @router.get("/utility-llm/status")
 def utility_llm_status(state: RuntimeState = Depends(get_state)) -> dict:
     return state.utility_llm.status(state.app_settings.get())
+
+
+@router.get("/semantic-router/status")
+def get_semantic_router_status(state: RuntimeState = Depends(get_state)) -> dict:
+    return semantic_router_status(
+        settings=state.app_settings.get(),
+        knowledge_store=state.knowledge,
+        semantic_router=state.semantic_router,
+        model_backend=state.knowledge_model_backend,
+        agent_registry=state.agents,
+        agent_config_store=state.agent_configs,
+        capability_registry=state.capabilities,
+        command_registry=state.commands,
+    )
 
 
 @router.get("/utility-llm/models/scan")
@@ -120,16 +135,20 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         session_id=getattr(session, "session_id", ""),
     )
     if not getattr(session, "session_id", ""):
-        classifier = RuleBasedIntentClassifier()
         settings = state.app_settings.get()
-        prediction = classifier.classify(
-            text,
+        prediction = _semantic_prediction(
+            text=text,
             settings=settings,
             agent_registry=state.agents,
             agent_config_store=state.agent_configs,
             knowledge_store=state.knowledge,
+            knowledge_model_backend=state.knowledge_model_backend,
+            capability_registry=state.capabilities,
+            command_registry=state.commands,
+            semantic_router=state.semantic_router,
+            classifier=RuleBasedIntentClassifier(),
         )
-        prediction = await _maybe_apply_utility_extractor(
+        prediction = await _maybe_apply_utility_slots(
             text=text,
             prediction=prediction,
             settings=settings,
@@ -171,6 +190,10 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         agent_config_store=state.agent_configs,
         app_settings_store=state.app_settings,
         knowledge_store=state.knowledge,
+        knowledge_model_backend=state.knowledge_model_backend,
+        capability_registry=state.capabilities,
+        command_registry=state.commands,
+        semantic_router=state.semantic_router,
         classifier=RuleBasedIntentClassifier(),
         utility_llm_service=state.utility_llm if payload.include_utility else None,
     )

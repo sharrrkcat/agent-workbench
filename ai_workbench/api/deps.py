@@ -17,6 +17,7 @@ from ai_workbench.core.runtime_memory import RuntimeMemoryService
 from ai_workbench.core.runtime_resources import RuntimeResourcesService
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.utility_llm import UtilityLLMService
+from ai_workbench.core.intent_semantic_router import SemanticRouter
 from ai_workbench.core.knowledge_models import LocalKnowledgeModelBackend, ensure_knowledge_directories
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
 from ai_workbench.core.worldbook import MemoryWorldbookStore
@@ -77,6 +78,7 @@ class RuntimeState:
     worldbooks: Any = None
     knowledge_model_backend: Any = None
     utility_llm: Any = None
+    semantic_router: Any = None
     repo_root: Path | None = None
     database_url: str | None = None
     started_at: datetime = field(default_factory=utc_now)
@@ -158,6 +160,7 @@ def build_runtime_state(
     )
     knowledge_model_backend = LocalKnowledgeModelBackend(repo_root)
     utility_llm = UtilityLLMService(repo_root)
+    semantic_router = SemanticRouter()
     try:
         knowledge_runtime = runtimes.get_runtime("knowledge")
         configure = getattr(knowledge_runtime, "configure", None)
@@ -186,6 +189,7 @@ def build_runtime_state(
         knowledge_model_backend=knowledge_model_backend,
         worldbook_store=worldbooks,
         utility_llm_service=utility_llm,
+        semantic_router=semantic_router,
     )
     runtime_memory = RuntimeMemoryService(
         agents=agents,
@@ -238,6 +242,7 @@ def build_runtime_state(
         worldbooks=worldbooks,
         knowledge_model_backend=knowledge_model_backend,
         utility_llm=utility_llm,
+        semantic_router=semantic_router,
         repo_root=repo_root,
         database_url=resolved_database_url,
     )

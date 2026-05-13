@@ -127,10 +127,12 @@ Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, sil
 
 Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message.
 
-Auto mode can change only safe current-message routing when all eligibility checks pass, `intent_routing_auto_route_safe_intents=true`, and the final confidence is at or above the high confidence threshold. Supported safe actions are:
+Round 6A uses the embedding semantic router as the primary prediction source for Route Test and shadow metadata. Auto execution integration is staged: semantic predictions are recorded as compact metadata, while real execution changes remain conservative and do not execute command-like, generic Agent, action, image-generation, or compound routes.
 
-- `image_generation`: route this run to `comfyui_agent.default`. The session default Agent and selector do not change. If `comfyui_agent` is missing, disabled, or not a Script Agent, the run falls back to the current Prompt Agent and records a warning. ComfyUI connection/configuration failures remain ComfyUI Agent runtime behavior.
-- `knowledge_query`: keep the current Prompt Agent, but pass `temporary_knowledge_base_ids` and/or `knowledge_query_override` to the Knowledge context builder for this run only. Session Knowledge bindings and Context Sources UI state do not change.
+Earlier safe auto-route behavior remains documented for staged integration, but Round 6A semantic decisions only mark `auto_executable=false` except for ordinary `chat`. Supported future safe actions are:
+
+- `image_generation`: metadata-only in Round 6A. It no longer auto-routes to ComfyUI until action routing is reconnected.
+- `knowledge_query`: metadata-only for semantic predictions in Round 6A. Round 6B will reconnect temporary Knowledge KB/query overrides for high-confidence semantic decisions.
 - `chat`: keep the current Prompt Agent path. Intent Routing does not force-enable or disable Knowledge; existing session KB injection rules still apply.
 
 `command_like` and generic `agent_route` are not executed automatically in this version. They fall back to the current Prompt Agent and record warnings such as `command_like_auto_route_disabled` or `agent_route_auto_route_disabled`. No slash command, memory release, deletion, settings change, shell command, or arbitrary Agent call is performed.
@@ -143,13 +145,25 @@ Knowledge Bases may store comma-separated aliases. Intent Routing uses enabled K
 
 AgentConfig runtime may store routing target hints under `intent_routing_aliases_text` and `intent_routing_examples_text`. These hints are edited under Agent detail -> Intent Routing, help classify `agent_route`, and produce compact target metadata. They do not make Script Agents router entries and do not allow generic Agent auto execution. Prompt Agent `runtime.intent_routing_mode` remains the only per-Agent router-entry override.
 
-General settings may store `intent_routing_embedding_model_profile_id`, which references an existing Knowledge Embedding Model Profile for future semantic embedding routing. This profile id is the only Intent Routing semantic router configuration field. Old persisted `intent_routing_embedding_model_path` values are ignored if present. This version does not call the selected embedding model, does not run EmbeddingGemma semantic routing, and does not change rule-based or Utility LLM extraction behavior.
+General settings may store `intent_routing_embedding_model_profile_id`, which references an existing Knowledge Embedding Model Profile. This profile id is the only Intent Routing semantic router configuration field. Old persisted `intent_routing_embedding_model_path` values are ignored if present. The semantic router uses the selected profile's model path, instructions, normalization setting, and Knowledge Defaults device setting. Candidate documents are embedded with `purpose=document`; the current user input is embedded with `purpose=query`. Missing, disabled, unavailable, or failing profiles fall back to the current Prompt Agent path and add warnings such as `semantic_router_profile_missing` or `semantic_router_embedding_unavailable`.
 
-When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON extraction after deterministic rule classification. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, while `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for lower-confidence predictions or intents that benefit from compact slots, such as `knowledge_query` and `agent_route`. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, full route examples, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and does not itself call tools; auto mode still applies the safe-route allowlist and confidence thresholds.
+The semantic route index is a lazy in-memory cache. Its key includes the embedding profile fingerprint, built-in examples version, General custom examples, enabled Knowledge Base names/aliases/descriptions, Agent ids/names/descriptions/routing aliases/examples/actions, and Capability command metadata. It is not persisted to SQLite and does not use a vector database. Route Test and the first eligible shadow prediction can build it; settings or hint changes are picked up by key changes or the short cache TTL.
+
+Candidate sources:
+
+- Built-in and General custom intent examples for `chat`, `knowledge_query`, `image_generation`, `command_like`, and `agent_route`, plus diagnostic `action_route` and `compound`.
+- Enabled Knowledge Base name, aliases, and description.
+- Agent id, name, description, runtime routing aliases, and runtime route examples.
+- Weak diagnostic Agent action id, label, and description.
+- Weak diagnostic Capability command name, description, capability name, and safe flag.
+
+Command, action, generic Agent, and compound candidates are diagnostic-only in Round 6A. They may appear as `target_command`, `target_agent_id`, `target_action_id`, `sub_intents`, and top candidates in metadata, but they are not executed and do not change the selected route.
+
+When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON slot extraction after semantic prediction. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, while `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for slots such as `kb_hint` and `query`, or optional low-confidence verification. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and must not override semantic predictions into execution.
 
 Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
-`POST /api/intent/test-route` predicts a route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent hints.
+`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints.
 
 Prediction metadata shape:
 
@@ -159,22 +173,28 @@ Prediction metadata shape:
   "mode": "shadow",
   "eligible": true,
   "bypassed": false,
-  "source": "rule_based_shadow+utility_llm",
+  "source": "embedding_semantic_router+utility_llm",
   "predicted_intent": "knowledge_query",
   "confidence": 0.84,
-  "route_action": "knowledge_override",
+  "semantic_score": 0.84,
+  "semantic_margin": 0.09,
+  "route_action": "metadata_only",
+  "auto_executable": false,
   "target_agent_id": null,
   "target_action_id": "default",
   "session_default_agent_id": "chat",
   "session_default_changed": false,
   "embedding_model_profile_id": "embedding_profile_id",
-  "temporary_knowledge_base_ids": ["kb_id"],
+  "semantic_index_version": "abc123def456",
+  "top_candidates": [{"kind": "intent_example", "intent": "knowledge_query", "score": 0.84, "text_preview": "what does the documentation say"}],
+  "kb_candidate": {"kind": "knowledge_base", "kb_id": "kb_id", "kb_name": "Star Wars", "field": "alias", "score": 0.71, "text_preview": "SW"},
   "session_bindings_changed": false,
-  "custom_examples_used": true,
   "kb_match_source": "alias",
   "agent_match_source": "none",
+  "action_match_source": "none",
+  "command_match_source": "none",
+  "target_command": null,
   "matched_alias": "Star Wars",
-  "matched_route_example": "ask the lore binder",
   "ambiguous_matches": [],
   "slots": {
     "kb_hint": "Star Wars",
@@ -196,7 +216,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, or extracted private content. Alias/example fields such as `matched_alias` and `matched_route_example` are truncated, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, fall back to the deterministic rule-based prediction and add `utility_extractor_failed` to warnings. The embedding semantic router is not implemented; the selected embedding profile id is configuration metadata only.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, top candidates are capped to previews, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, keep the semantic prediction and add `utility_extractor_failed` to warnings. Rule-based classification remains only a fallback/debug helper when the semantic router is unavailable.
 
 WebSocket events:
 - `run_updated`
