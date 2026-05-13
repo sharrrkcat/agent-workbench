@@ -4999,6 +4999,19 @@ input:disabled {
   white-space: nowrap;
 }
 
+.settings-disclosure {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-disclosure summary {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 720;
+}
+
 .settings-info-row {
   display: grid;
   gap: 7px;

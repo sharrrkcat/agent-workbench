@@ -14,7 +14,8 @@
     "runningScript": "运行脚本",
     "runningCommand": "运行命令",
     "knowledgeRetrieval": "知识库检索",
-    "preparingResponse": "准备响应"
+    "preparingResponse": "准备响应",
+    "intentSemanticRouting": "??????"
   },
   "panel": {
     "title": "运行步骤",

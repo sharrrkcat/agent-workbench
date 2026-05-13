@@ -330,24 +330,26 @@ async def build_intent_routing_metadata(
     base = {
         "enabled": bool(getattr(settings, "intent_routing_enabled", False)),
         "mode": mode,
+        "evaluated": False,
         "eligible": False,
         "bypassed": True,
     }
     bypass_reason = _bypass_reason(session, route)
     if bypass_reason:
-        return {**base, "bypass_reason": bypass_reason}
+        return {**base, "skip_reason": bypass_reason, "bypass_reason": bypass_reason}
     try:
         agent = agent_registry.get(route.target_id or "")
     except KeyError:
-        return {**base, "bypass_reason": "agent_not_found"}
+        return {**base, "skip_reason": "agent_not_found", "bypass_reason": "agent_not_found"}
     config = agent_config_store.get_config(agent.id) if agent_config_store is not None else {}
     effective = resolved_intent_routing_mode(agent, config, settings=settings)
     if agent.type != "prompt":
-        return {**base, "bypass_reason": "default_agent_not_prompt"}
+        return {**base, "skip_reason": "default_agent_not_prompt", "bypass_reason": "default_agent_not_prompt"}
     if not bool(effective["enabled"]):
-        return {**base, "bypass_reason": str(effective.get("reason") or "disabled")}
+        reason = str(effective.get("reason") or "disabled")
+        return {**base, "skip_reason": reason, "bypass_reason": reason}
     if mode not in {"shadow", "auto"}:
-        return {**base, "bypass_reason": "unsupported_mode"}
+        return {**base, "skip_reason": "unsupported_mode", "bypass_reason": "unsupported_mode"}
     prediction = _semantic_prediction(
         text=route.args,
         settings=settings,
@@ -383,6 +385,7 @@ async def build_intent_routing_metadata(
     return {
         "enabled": True,
         "mode": mode,
+        "evaluated": True,
         "eligible": True,
         "bypassed": False,
         **metadata,
@@ -401,16 +404,17 @@ def _decision_metadata(
     agent_config_store: Any,
     knowledge_store: Any,
 ) -> dict[str, Any]:
-    high_threshold = float(getattr(settings, "intent_routing_high_confidence_threshold", 0.78) or 0.78)
-    low_threshold = float(getattr(settings, "intent_routing_low_confidence_threshold", 0.55) or 0.55)
     intent_id = str(prediction.get("predicted_intent") or "chat")
     confidence = float(prediction.get("confidence") or 0.0)
+    thresholds = _semantic_thresholds_used(settings, prediction)
     slots = _compact_slots(prediction.get("slots") if isinstance(prediction.get("slots"), dict) else {})
     warnings = list(prediction.get("warnings") or [])
     metadata = {
         **prediction,
         "predicted_intent": intent_id,
         "confidence": round(confidence, 2),
+        "intent_score": _rounded_optional(prediction.get("semantic_score")) if prediction.get("source") != "rule_based_shadow" else round(confidence, 4),
+        "intent_margin": _rounded_optional(prediction.get("semantic_margin")),
         "semantic_score": _rounded_optional(prediction.get("semantic_score")),
         "semantic_margin": _rounded_optional(prediction.get("semantic_margin")),
         "slots": slots,
@@ -419,6 +423,7 @@ def _decision_metadata(
         "auto_executable": bool(prediction.get("auto_executable", False)),
         "executed": False,
         "would_execute": False,
+        "not_executed_reason": None,
         "target_agent_id": prediction.get("target_agent_id") or _candidate_value(prediction.get("agent_candidate"), "agent_id") or route.target_id,
         "target_action_id": prediction.get("target_action_id") or _candidate_value(prediction.get("action_candidate"), "action_id") or route.action_id or "default",
         "target_command": prediction.get("target_command") or _candidate_value(prediction.get("command_candidate"), "command_name"),
@@ -431,6 +436,8 @@ def _decision_metadata(
         "agent_match_source": prediction.get("agent_match_source") or _candidate_value(prediction.get("agent_candidate"), "field") or "none",
         "action_match_source": prediction.get("action_match_source") or _candidate_value(prediction.get("action_candidate"), "field") or "none",
         "command_match_source": prediction.get("command_match_source") or _candidate_value(prediction.get("command_candidate"), "field") or "none",
+        "semantic_thresholds_used": thresholds,
+        "thresholds_used": {"semantic": thresholds},
     }
     kb_candidate = prediction.get("kb_candidate")
     if isinstance(kb_candidate, dict):
@@ -446,6 +453,7 @@ def _decision_metadata(
     if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
         metadata["route_action"] = "metadata_only"
         metadata["auto_executable"] = False
+        metadata["not_executed_reason"] = "safe_auto_route_disabled"
         metadata["warnings"] = [*warnings, "safe_auto_route_disabled"]
         return metadata
     if intent_id in DIAGNOSTIC_ONLY_WARNINGS:
@@ -453,31 +461,36 @@ def _decision_metadata(
         metadata["auto_executable"] = False
         warning = DIAGNOSTIC_ONLY_WARNINGS.get(intent_id, "auto_route_not_supported")
         metadata["diagnostic_reason"] = warning
+        metadata["not_executed_reason"] = warning
         metadata["warnings"] = [*warnings, warning]
         return metadata
     score = prediction.get("semantic_score")
     semantic_score = float(score) if isinstance(score, (int, float)) else confidence
     margin_value = prediction.get("semantic_margin")
     semantic_margin = float(margin_value) if isinstance(margin_value, (int, float)) else None
-    if confidence < high_threshold or semantic_score < high_threshold:
-        reason = "semantic_confidence_too_low" if confidence >= low_threshold else "semantic_confidence_too_low"
+    if semantic_score < thresholds["intent_min_score"]:
+        reason = "semantic_intent_score_below_threshold"
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
-        metadata["warnings"] = [*warnings, reason]
+        metadata["not_executed_reason"] = reason
+        metadata["warnings"] = _ensure_warning(warnings, reason)
         return metadata
-    if semantic_margin is not None and semantic_margin < SEMANTIC_AUTO_MIN_MARGIN:
+    if semantic_margin is not None and semantic_margin < thresholds["intent_min_margin"]:
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
-        metadata["warnings"] = [*warnings, "semantic_margin_too_low"]
+        metadata["not_executed_reason"] = "semantic_margin_below_threshold"
+        metadata["warnings"] = _ensure_warning(warnings, "semantic_margin_too_low")
         return metadata
     if any(warning in BLOCKING_AUTO_WARNINGS for warning in warnings):
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
+        metadata["not_executed_reason"] = _first_blocking_warning(warnings)
         return metadata
     if intent_id not in SAFE_AUTO_ROUTE_INTENTS:
         metadata["route_action"] = "confirmation_needed_future" if intent_id in {"command_like", "agent_route"} else "fallback_current_agent"
         warning = COMMAND_LIKE_WARNING if intent_id == "command_like" else "auto_route_not_supported"
         metadata["auto_executable"] = False
+        metadata["not_executed_reason"] = warning
         metadata["warnings"] = [*warnings, warning]
         return metadata
     if intent_id == "chat":
@@ -485,6 +498,7 @@ def _decision_metadata(
         metadata["auto_executable"] = True
         metadata["executed"] = True
         metadata["would_execute"] = True
+        metadata["not_executed_reason"] = None
         metadata["target_agent_id"] = agent.id
         metadata["target_action_id"] = "default"
         return metadata
@@ -494,10 +508,12 @@ def _decision_metadata(
             decision["auto_executable"] = True
             decision["executed"] = True
             decision["would_execute"] = True
+            decision["not_executed_reason"] = None
         else:
             decision["auto_executable"] = False
             decision["executed"] = False
             decision["would_execute"] = False
+            decision["not_executed_reason"] = _knowledge_not_executed_reason(decision)
         return decision
     return metadata
 
@@ -560,6 +576,52 @@ def _rounded_optional(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return round(float(value), 4)
     return None
+
+
+def _semantic_thresholds_used(settings: Any, prediction: dict[str, Any] | None = None) -> dict[str, float]:
+    existing = (prediction or {}).get("semantic_thresholds_used")
+    if isinstance(existing, dict):
+        return {
+            "intent_min_score": round(float(existing.get("intent_min_score", 0.50)), 4),
+            "intent_min_margin": round(float(existing.get("intent_min_margin", 0.03)), 4),
+            "kb_min_score": round(float(existing.get("kb_min_score", 0.45)), 4),
+            "agent_min_score": round(float(existing.get("agent_min_score", 0.45)), 4),
+            "command_min_score": round(float(existing.get("command_min_score", 0.45)), 4),
+        }
+
+    def value(name: str, default: float) -> float:
+        raw = getattr(settings, name, default)
+        return default if raw is None else float(raw)
+
+    return {
+        "intent_min_score": round(value("intent_routing_semantic_intent_min_score", 0.50), 4),
+        "intent_min_margin": round(value("intent_routing_semantic_intent_min_margin", 0.03), 4),
+        "kb_min_score": round(value("intent_routing_semantic_kb_min_score", 0.45), 4),
+        "agent_min_score": round(value("intent_routing_semantic_agent_min_score", 0.45), 4),
+        "command_min_score": round(value("intent_routing_semantic_command_min_score", 0.45), 4),
+    }
+
+
+def _first_blocking_warning(warnings: list[str]) -> str:
+    for warning in warnings:
+        if warning in BLOCKING_AUTO_WARNINGS:
+            if warning == "ambiguous_intent":
+                return "semantic_margin_below_threshold"
+            return warning
+    return "auto_route_blocked"
+
+
+def _knowledge_not_executed_reason(decision: dict[str, Any]) -> str:
+    warnings = list(decision.get("warnings") or [])
+    if "ambiguous_kb_candidate" in warnings or "ambiguous_knowledge_base" in warnings:
+        return "kb_candidate_ambiguous"
+    if "no_kb_candidate_or_active_kbs" in warnings or "no_semantic_kb_candidate" in warnings or "no_matching_knowledge_base" in warnings:
+        return "no_kb_candidate"
+    if "selected_kb_disabled" in warnings:
+        return "selected_kb_disabled"
+    if "knowledge_store_unavailable" in warnings:
+        return "knowledge_store_unavailable"
+    return _first_blocking_warning(warnings) if warnings else "knowledge_override_not_available"
 
 
 def _image_generation_decision(metadata: dict[str, Any], agent_registry: Any, agent_config_store: Any) -> dict[str, Any]:

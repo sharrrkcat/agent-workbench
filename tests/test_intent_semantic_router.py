@@ -41,6 +41,11 @@ def test_semantic_router_uses_profile_and_query_document_purposes() -> None:
     assert decision["predicted_intent"] == "knowledge_query"
     assert decision["embedding_model_profile_id"] == profile.id
     assert decision["semantic_index_version"]
+    assert decision["intent_group_scores"][0]["intent"] == "knowledge_query"
+    assert decision["second_intent"] != "knowledge_query"
+    assert decision["semantic_margin"] >= 0.5
+    assert "ambiguous_intent" not in decision["warnings"]
+    assert decision["semantic_thresholds_used"]["intent_min_score"] == 0.5
     assert decision["kb_candidate"]["kb_id"]
     assert decision["candidate_summary"]["intent_examples"] > 0
     assert decision["candidate_summary"]["knowledge_bases"] > 0

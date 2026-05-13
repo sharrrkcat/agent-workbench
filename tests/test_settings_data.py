@@ -46,6 +46,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_mode"] == "shadow"
     assert response.json()["intent_routing_high_confidence_threshold"] == 0.78
     assert response.json()["intent_routing_low_confidence_threshold"] == 0.55
+    assert response.json()["intent_routing_semantic_intent_min_score"] == 0.5
+    assert response.json()["intent_routing_semantic_intent_min_margin"] == 0.03
+    assert response.json()["intent_routing_semantic_kb_min_score"] == 0.45
+    assert response.json()["intent_routing_semantic_agent_min_score"] == 0.45
+    assert response.json()["intent_routing_semantic_command_min_score"] == 0.45
     assert response.json()["intent_routing_auto_route_safe_intents"] is False
     assert response.json()["intent_routing_confirm_uncertain"] is True
     assert response.json()["intent_routing_embedding_model_profile_id"] is None
@@ -91,6 +96,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_mode": "auto",
             "intent_routing_high_confidence_threshold": 0.9,
             "intent_routing_low_confidence_threshold": 0.4,
+            "intent_routing_semantic_intent_min_score": 0.6,
+            "intent_routing_semantic_intent_min_margin": 0.04,
+            "intent_routing_semantic_kb_min_score": 0.5,
+            "intent_routing_semantic_agent_min_score": 0.51,
+            "intent_routing_semantic_command_min_score": 0.52,
             "intent_routing_auto_route_safe_intents": True,
             "intent_routing_confirm_uncertain": False,
             "intent_routing_embedding_model_profile_id": "embedding-profile-1",
@@ -133,6 +143,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["intent_routing_mode"] == "auto"
     assert patched.json()["intent_routing_high_confidence_threshold"] == 0.9
     assert patched.json()["intent_routing_low_confidence_threshold"] == 0.4
+    assert patched.json()["intent_routing_semantic_intent_min_score"] == 0.6
+    assert patched.json()["intent_routing_semantic_intent_min_margin"] == 0.04
+    assert patched.json()["intent_routing_semantic_kb_min_score"] == 0.5
+    assert patched.json()["intent_routing_semantic_agent_min_score"] == 0.51
+    assert patched.json()["intent_routing_semantic_command_min_score"] == 0.52
     assert patched.json()["intent_routing_auto_route_safe_intents"] is True
     assert patched.json()["intent_routing_confirm_uncertain"] is False
     assert patched.json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
@@ -203,6 +218,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
+    assert restarted.get("/api/settings/general").json()["intent_routing_semantic_intent_min_score"] == 0.6
+    assert restarted.get("/api/settings/general").json()["intent_routing_semantic_kb_min_score"] == 0.5
     assert restarted.patch("/api/settings/general", json={"intent_routing_embedding_model_profile_id": None}).json()["intent_routing_embedding_model_profile_id"] is None
     assert restarted.get("/api/settings/general").json()["intent_routing_utility_llm_backend"] == "transformers"
     assert restarted.get("/api/settings/general").json()["intent_routing_utility_llm_model_path"] == "utility_llms/Qwen3-0.6B"

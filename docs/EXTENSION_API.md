@@ -370,6 +370,11 @@ Related General settings:
 - `intent_routing_utility_llm_gpu_layers`: llama.cpp GPU layer count, default `0`, range `-1..200`.
 - `intent_routing_utility_llm_threads`: optional llama.cpp thread count, default `null`, range `1..128`.
 - `intent_routing_embedding_model_profile_id`: optional Knowledge Embedding Model Profile id used by Intent Routing semantic embedding routing. Defaults to `null`. This is the only semantic router profile selection field returned by current General settings clients. Old persisted `intent_routing_embedding_model_path` values are ignored if present.
+- `intent_routing_semantic_intent_min_score`: semantic auto-route intent score threshold, default `0.50`.
+- `intent_routing_semantic_intent_min_margin`: semantic auto-route grouped intent margin threshold, default `0.03`.
+- `intent_routing_semantic_kb_min_score`: semantic Knowledge Base candidate threshold, default `0.45`.
+- `intent_routing_semantic_agent_min_score`: semantic Agent diagnostic candidate threshold, default `0.45`.
+- `intent_routing_semantic_command_min_score`: semantic command diagnostic candidate threshold, default `0.45`.
 
 Utility LLM path contract:
 - `transformers`: `utility_llms/<folder>`, for example `utility_llms/Qwen3-0.6B`.
@@ -382,7 +387,7 @@ Utility LLM APIs:
 - `POST /api/intent/utility-llm/test-title` accepts `{"text":"..."}` and returns `{"ok":true,"title":"...","backend":"utility_llm:transformers","warnings":[]}` or `utility_llm:llama_cpp` when generation succeeds. It may load the configured local model.
 - `POST /api/intent/utility-llm/test-json` accepts `{"text":"..."}` and returns strict extracted intent JSON plus compact slots. It may load the configured local model.
 - `POST /api/intent/utility-llm/unload` releases only the Utility LLM cache. It does not unload the main LLM, embeddings, reranker, or ComfyUI.
-- `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation. The response mirrors auto-mode execution semantics with compact fields such as `auto_executable`, `would_execute`, `route_action`, `diagnostic_reason`, `temporary_knowledge_base_ids`, `knowledge_query_override`, semantic score/margin, target ids, candidate previews, slots, and warnings.
+- `POST /api/intent/test-route` accepts `{"text":"...","session_id":null,"default_agent_id":null,"include_utility":true}` and returns `{"ok":true,"decision":{...}}`. It is a diagnostic route decision only: it creates no message, creates no run, executes no command, sends no ComfyUI request, performs no Knowledge retrieval, and does not change session defaults or Context Sources bindings. Without `session_id`, the decision is marked as a no-session simulation. The response mirrors auto-mode execution semantics with compact fields such as `auto_executable`, `would_execute`, `route_action`, `not_executed_reason`, `thresholds_used`/`semantic_thresholds_used`, `temporary_knowledge_base_ids`, `knowledge_query_override`, semantic score/margin, `intent_group_scores`, target ids, candidate previews, slots, and warnings.
 
 Intent Routing embedding profile selection:
 - The profile id references `GET /api/knowledge/embedding-models` records owned by Knowledge settings.
@@ -502,7 +507,9 @@ Request shape is `{model_profile_id, purpose, inputs}` where `purpose` is `query
 
 Intent Routing semantic router uses the General setting `intent_routing_embedding_model_profile_id` to reference one existing enabled Embedding Model Profile. Route candidate texts are embedded as `purpose=document`; the current user message is embedded as `purpose=query`. The router uses the existing profile path validation, instructions, normalization, Knowledge Defaults device, and local model backend. It does not add a raw embedding path, create profiles, download models, or persist route-candidate vectors.
 
-`POST /api/intent/test-route` returns semantic diagnostic fields including `source`, `predicted_intent`, `confidence`, `semantic_score`, `semantic_margin`, `route_action`, `auto_executable`, `would_execute`, `diagnostic_reason`, `temporary_knowledge_base_ids`, `knowledge_query_override`, `embedding_model_profile_id`, `semantic_index_version`, `top_candidates`, `kb_candidate`, `agent_candidate`, `action_candidate`, `command_candidate`, and `warnings`. Top candidates contain only compact previews, not embeddings or full route examples. Agent actions and Capability commands are weak diagnostic candidates only; no Agent action, slash command, ComfyUI run, or Knowledge retrieval is executed by Route Test.
+`POST /api/intent/test-route` returns semantic diagnostic fields including `source`, `predicted_intent`, `confidence`, `intent_score`, `intent_margin`, `semantic_score`, `semantic_margin`, `semantic_thresholds_used`, `route_action`, `auto_executable`, `would_execute`, `not_executed_reason`, `temporary_knowledge_base_ids`, `knowledge_query_override`, `embedding_model_profile_id`, `semantic_index_version`, `intent_group_scores`, `second_intent`, `top_candidates`, `kb_candidate`, `agent_candidate`, `action_candidate`, `command_candidate`, and `warnings`. Top candidates contain only compact previews, not embeddings or full route examples. Agent actions and Capability commands are weak diagnostic candidates only; no Agent action, slash command, ComfyUI run, or Knowledge retrieval is executed by Route Test.
+
+Runtime `metadata.intent_routing` records the same execution contract compactly: `evaluated`, `skip_reason`, `source`, `predicted_intent`, `intent_score`, `intent_margin`, `semantic_thresholds_used`, `auto_executable`, `executed`, `route_action`, `not_executed_reason`, `temporary_knowledge_base_ids`, `knowledge_query_override`, `kb_candidate`, compact grouped intent scores, and warnings. It must not store embeddings, full candidates, raw Utility LLM output, prompts, KB content, Worldbook content, or Core Memory content.
 
 Reranking:
 

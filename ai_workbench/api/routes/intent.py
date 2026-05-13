@@ -177,6 +177,7 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
             "decision": _route_test_decision({
                 "enabled": bool(getattr(settings, "intent_routing_enabled", False)),
                 "mode": getattr(settings, "intent_routing_mode", "shadow"),
+                "evaluated": True,
                 "eligible": True,
                 "eligibility_scope": "no_session",
                 "bypassed": False,

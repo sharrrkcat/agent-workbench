@@ -24,11 +24,11 @@ SEMANTIC_PROFILE_MISSING = "semantic_router_profile_missing"
 SEMANTIC_PROFILE_DISABLED = "semantic_router_profile_disabled"
 SEMANTIC_EMBEDDING_UNAVAILABLE = "semantic_router_embedding_unavailable"
 SEMANTIC_INDEX_BUILD_FAILED = "semantic_router_index_build_failed"
-SEMANTIC_INTENT_MIN_SCORE = 0.2
+SEMANTIC_INTENT_MIN_SCORE = 0.50
 SEMANTIC_INTENT_MIN_MARGIN = 0.03
-SEMANTIC_KB_MIN_SCORE = 0.2
-SEMANTIC_AGENT_MIN_SCORE = 0.2
-SEMANTIC_COMMAND_MIN_SCORE = 0.2
+SEMANTIC_KB_MIN_SCORE = 0.45
+SEMANTIC_AGENT_MIN_SCORE = 0.45
+SEMANTIC_COMMAND_MIN_SCORE = 0.45
 SEMANTIC_INDEX_TTL_SECONDS = 60.0
 MAX_TOP_CANDIDATES = 8
 
@@ -107,6 +107,9 @@ class SemanticRouteDecision:
     action_candidate: dict[str, Any] | None = None
     command_candidate: dict[str, Any] | None = None
     candidate_summary: dict[str, int] = field(default_factory=dict)
+    intent_group_scores: list[dict[str, Any]] = field(default_factory=list)
+    second_intent: str | None = None
+    semantic_thresholds_used: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     sub_intents: list[str] = field(default_factory=list)
 
@@ -127,6 +130,9 @@ class SemanticRouteDecision:
             "action_candidate": self.action_candidate,
             "command_candidate": self.command_candidate,
             "candidate_summary": self.candidate_summary,
+            "intent_group_scores": self.intent_group_scores,
+            "second_intent": self.second_intent,
+            "semantic_thresholds_used": self.semantic_thresholds_used,
             "warnings": self.warnings,
             "sub_intents": self.sub_intents,
         }
@@ -209,6 +215,7 @@ class SemanticRouter:
         if not profile_id:
             return SemanticRouteDecision(
                 embedding_model_profile_id=None,
+                semantic_thresholds_used=_semantic_thresholds(settings),
                 warnings=[SEMANTIC_PROFILE_MISSING],
                 candidate_summary=self.candidate_summary(
                     settings=settings,
@@ -222,9 +229,9 @@ class SemanticRouter:
         try:
             profile = knowledge_store.get_embedding_profile(profile_id)
         except Exception:
-            return SemanticRouteDecision(embedding_model_profile_id=profile_id, warnings=[SEMANTIC_PROFILE_MISSING]).model_dump()
+            return SemanticRouteDecision(embedding_model_profile_id=profile_id, semantic_thresholds_used=_semantic_thresholds(settings), warnings=[SEMANTIC_PROFILE_MISSING]).model_dump()
         if not getattr(profile, "enabled", False):
-            return SemanticRouteDecision(embedding_model_profile_id=profile.id, warnings=[SEMANTIC_PROFILE_DISABLED]).model_dump()
+            return SemanticRouteDecision(embedding_model_profile_id=profile.id, semantic_thresholds_used=_semantic_thresholds(settings), warnings=[SEMANTIC_PROFILE_DISABLED]).model_dump()
         try:
             index = self._get_or_build_index(
                 settings=settings,
@@ -247,9 +254,10 @@ class SemanticRouter:
         except Exception:
             return SemanticRouteDecision(
                 embedding_model_profile_id=profile.id,
+                semantic_thresholds_used=_semantic_thresholds(settings),
                 warnings=[SEMANTIC_EMBEDDING_UNAVAILABLE],
             ).model_dump()
-        return _rank_decision(query, index).model_dump()
+        return _rank_decision(query, index, thresholds=_semantic_thresholds(settings)).model_dump()
 
     def _get_or_build_index(
         self,
@@ -353,7 +361,21 @@ def semantic_router_status(
     }
 
 
-def _rank_decision(query: list[float], index: SemanticRouteIndex) -> SemanticRouteDecision:
+def _semantic_thresholds(settings: Any) -> dict[str, float]:
+    def value(name: str, default: float) -> float:
+        raw = getattr(settings, name, default)
+        return default if raw is None else float(raw)
+
+    return {
+        "intent_min_score": value("intent_routing_semantic_intent_min_score", SEMANTIC_INTENT_MIN_SCORE),
+        "intent_min_margin": value("intent_routing_semantic_intent_min_margin", SEMANTIC_INTENT_MIN_MARGIN),
+        "kb_min_score": value("intent_routing_semantic_kb_min_score", SEMANTIC_KB_MIN_SCORE),
+        "agent_min_score": value("intent_routing_semantic_agent_min_score", SEMANTIC_AGENT_MIN_SCORE),
+        "command_min_score": value("intent_routing_semantic_command_min_score", SEMANTIC_COMMAND_MIN_SCORE),
+    }
+
+
+def _rank_decision(query: list[float], index: SemanticRouteIndex, *, thresholds: dict[str, float]) -> SemanticRouteDecision:
     scored = [
         (candidate, _cosine(query, vector))
         for candidate, vector in zip(index.candidates, index.vectors, strict=False)
@@ -366,21 +388,21 @@ def _rank_decision(query: list[float], index: SemanticRouteIndex) -> SemanticRou
         intent_scores[candidate.intent] = max(intent_scores.get(candidate.intent, -1.0), score)
     ordered_intents = sorted(intent_scores.items(), key=lambda item: item[1], reverse=True)
     top_intent, top_score = ordered_intents[0] if ordered_intents else ("chat", 0.0)
+    second_intent = ordered_intents[1][0] if len(ordered_intents) > 1 else None
     second_score = ordered_intents[1][1] if len(ordered_intents) > 1 else 0.0
     margin = top_score - second_score
     warnings: list[str] = []
-    if top_score < SEMANTIC_INTENT_MIN_SCORE:
-        warnings.append("low_confidence")
-        top_intent = "chat"
-    elif margin < SEMANTIC_INTENT_MIN_MARGIN:
+    if top_score < thresholds["intent_min_score"]:
+        warnings.append("semantic_intent_score_below_threshold")
+    elif margin < thresholds["intent_min_margin"]:
         warnings.append("ambiguous_intent")
-    sub_intents = [intent for intent, score in ordered_intents[:3] if intent != top_intent and score >= SEMANTIC_INTENT_MIN_SCORE and top_score - score <= SEMANTIC_INTENT_MIN_MARGIN]
+    sub_intents = [intent for intent, score in ordered_intents[:3] if intent != top_intent and score >= thresholds["intent_min_score"] and top_score - score <= thresholds["intent_min_margin"]]
     if len(sub_intents) >= 1 and top_intent != "chat":
         warnings.append("compound_intent_not_auto_routed")
-    kb_candidate = _best_candidate(scored, "knowledge_base", SEMANTIC_KB_MIN_SCORE)
-    agent_candidate = _best_candidate(scored, "agent_target", SEMANTIC_AGENT_MIN_SCORE)
-    action_candidate = _best_candidate(scored, "agent_action", SEMANTIC_AGENT_MIN_SCORE)
-    command_candidate = _best_candidate(scored, "command", SEMANTIC_COMMAND_MIN_SCORE)
+    kb_candidate = _best_candidate(scored, "knowledge_base", thresholds["kb_min_score"])
+    agent_candidate = _best_candidate(scored, "agent_target", thresholds["agent_min_score"])
+    action_candidate = _best_candidate(scored, "agent_action", thresholds["agent_min_score"])
+    command_candidate = _best_candidate(scored, "command", thresholds["command_min_score"])
     if top_intent == "knowledge_query" and kb_candidate is None:
         warnings.append("no_semantic_kb_candidate")
     return SemanticRouteDecision(
@@ -396,6 +418,9 @@ def _rank_decision(query: list[float], index: SemanticRouteIndex) -> SemanticRou
         action_candidate=action_candidate,
         command_candidate=command_candidate,
         candidate_summary=index.summary,
+        intent_group_scores=[{"intent": intent, "score": round(float(score), 4)} for intent, score in ordered_intents[:5]],
+        second_intent=second_intent,
+        semantic_thresholds_used={key: round(float(value), 4) for key, value in thresholds.items()},
         warnings=warnings,
         sub_intents=sub_intents,
     )

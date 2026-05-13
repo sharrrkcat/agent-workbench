@@ -81,6 +81,11 @@ class AppSettings(BaseModel):
     intent_routing_mode: str = "shadow"
     intent_routing_high_confidence_threshold: float = Field(default=0.78, ge=0, le=1)
     intent_routing_low_confidence_threshold: float = Field(default=0.55, ge=0, le=1)
+    intent_routing_semantic_intent_min_score: float = Field(default=0.50, ge=0, le=1)
+    intent_routing_semantic_intent_min_margin: float = Field(default=0.03, ge=0, le=1)
+    intent_routing_semantic_kb_min_score: float = Field(default=0.45, ge=0, le=1)
+    intent_routing_semantic_agent_min_score: float = Field(default=0.45, ge=0, le=1)
+    intent_routing_semantic_command_min_score: float = Field(default=0.45, ge=0, le=1)
     intent_routing_auto_route_safe_intents: StrictBool = False
     intent_routing_confirm_uncertain: StrictBool = True
     intent_routing_embedding_model_profile_id: str | None = None
@@ -232,6 +237,11 @@ class AppSettingsPatch(BaseModel):
     intent_routing_mode: str | None = None
     intent_routing_high_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
     intent_routing_low_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_semantic_intent_min_score: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_semantic_intent_min_margin: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_semantic_kb_min_score: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_semantic_agent_min_score: float | None = Field(default=None, ge=0, le=1)
+    intent_routing_semantic_command_min_score: float | None = Field(default=None, ge=0, le=1)
     intent_routing_auto_route_safe_intents: StrictBool | None = None
     intent_routing_confirm_uncertain: StrictBool | None = None
     intent_routing_embedding_model_profile_id: str | None = None

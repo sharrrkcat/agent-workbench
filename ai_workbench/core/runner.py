@@ -42,6 +42,53 @@ from ai_workbench.core.time import isoformat_utc, utc_now
 from ai_workbench.core.worldbook_context import build_session_worldbook_context, worldbook_step_metadata
 
 
+def _intent_routing_step_message(intent: dict[str, Any]) -> str:
+    if not intent.get("evaluated"):
+        reason = str(intent.get("skip_reason") or intent.get("bypass_reason") or "skipped")
+        return f"skipped: {reason}"
+    predicted = str(intent.get("predicted_intent") or "chat")
+    score = intent.get("intent_score", intent.get("semantic_score"))
+    score_part = f" · score {_format_score(score)}" if isinstance(score, (int, float)) else ""
+    if intent.get("executed") or intent.get("would_execute"):
+        return f"{predicted}{score_part} · executed"
+    reason = _intent_reason_label(str(intent.get("not_executed_reason") or intent.get("diagnostic_reason") or "not executed"))
+    return f"{predicted}{score_part} · not executed: {reason}"
+
+
+def _intent_routing_step_metadata(intent: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "evaluated": bool(intent.get("evaluated")),
+        "skip_reason": intent.get("skip_reason") or intent.get("bypass_reason"),
+        "predicted_intent": intent.get("predicted_intent"),
+        "intent_score": intent.get("intent_score", intent.get("semantic_score")),
+        "intent_margin": intent.get("intent_margin", intent.get("semantic_margin")),
+        "executed": bool(intent.get("executed") or intent.get("would_execute")),
+        "route_action": intent.get("route_action"),
+        "not_executed_reason": intent.get("not_executed_reason") or intent.get("diagnostic_reason"),
+        "temporary_knowledge_base_ids": intent.get("temporary_knowledge_base_ids"),
+    }
+
+
+def _format_score(value: Any) -> str:
+    return f"{float(value):.2f}" if isinstance(value, (int, float)) else ""
+
+
+def _intent_reason_label(reason: str) -> str:
+    return {
+        "semantic_intent_score_below_threshold": "score below threshold",
+        "semantic_margin_below_threshold": "margin below threshold",
+        "semantic_margin_too_low": "margin below threshold",
+        "no_kb_candidate": "no KB candidate",
+        "kb_candidate_ambiguous": "KB candidate ambiguous",
+        "safe_auto_route_disabled": "safe auto routing disabled",
+        "image_generation_auto_route_deferred_until_action_routing": "diagnostic-only",
+        "command_like_auto_route_disabled": "diagnostic-only",
+        "agent_route_auto_route_disabled": "diagnostic-only",
+        "action_route_auto_route_disabled": "diagnostic-only",
+        "compound_intent_not_auto_routed": "diagnostic-only",
+    }.get(reason, reason)
+
+
 class ActiveRunRegistry:
     def __init__(self) -> None:
         self._tasks: dict[str, asyncio.Task] = {}
@@ -387,6 +434,14 @@ class AgentRunner:
         run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config, settings=self._app_settings())["runtime"]
         self.run_store.update_metadata(run.run_id, run_metadata)
         self.run_lifecycle.complete_step(resolving_agent_step.step_id)
+        intent_routing = run_metadata.get("intent_routing")
+        if isinstance(intent_routing, dict):
+            intent_step = self.run_lifecycle.start_step(run.run_id, "Intent semantic routing")
+            self.run_lifecycle.complete_step(
+                intent_step.step_id,
+                message=_intent_routing_step_message(intent_routing),
+                metadata={"intent_routing": _intent_routing_step_metadata(intent_routing)},
+            )
         context_policy = resolved_context_policy(agent, action, agent_config)
         context_step = self.run_lifecycle.start_step(run.run_id, "Building context")
         session = self.session_store.get_session(session_id) if self.session_store is not None else None

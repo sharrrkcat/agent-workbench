@@ -575,6 +575,8 @@ def test_general_intent_routing_auto_mode_contract() -> None:
     assert "settings:general.intentRoutingExplicitBypass" in panel
     assert "settings:general.intentRoutingShadowRecords" in panel
     assert "settings:general.intentRoutingAutoSafeOnly" in panel
+    assert "intent_routing_semantic_intent_min_score: number;" in types
+    assert "settings:general.semanticThresholds" in panel
     assert "settings:general.openUtilityLlmSettings" not in panel
     assert "legacyEmbeddingPathConfigured" not in panel
 

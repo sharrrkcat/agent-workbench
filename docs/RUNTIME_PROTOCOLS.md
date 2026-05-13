@@ -79,8 +79,8 @@ RunStep status values:
 
 Run steps:
 - `RunStep.parent_step_id` creates nesting.
-- Prompt Agent default top-level steps include `Resolving agent`, `Building context`, `Resolving model`, `Calling LLM`, `Saving response`, and `Cleanup`.
-- Intent Routing semantic decision happens before `Building context`. If auto mode authorizes a `knowledge_query` override, the temporary KB/query values are passed into that run's Knowledge context builder.
+- Prompt Agent default top-level steps include `Resolving agent`, optional `Intent semantic routing`, `Building context`, `Resolving model`, `Calling LLM`, `Saving response`, and `Cleanup`.
+- Intent Routing semantic decision happens before `Building context`. The `Intent semantic routing` step shows a compact outcome such as `knowledge_query · score 0.57 · executed`, `knowledge_query · score 0.57 · not executed: score below threshold`, or `skipped: explicit command`. If auto mode authorizes a `knowledge_query` override, the temporary KB/query values are passed into that run's Knowledge context builder.
 - Script Agent default top-level steps include `Resolving agent`, optional `Resolving model`, `Starting script`, `Running script`, `Saving response`, and `Cleanup`.
 - Automatic session title generation is considered only after routing has resolved the actual Agent/action. Prompt Agents try it after model resolution and before the main provider call. Script Agents try it lazily before the first real `ctx.llm.*` call.
 - Script custom steps created with `ctx.step` default under `Running script`.
@@ -128,12 +128,26 @@ Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, sil
 
 Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message.
 
-The embedding semantic router is the primary prediction source for Route Test, shadow metadata, and auto-mode route decisions. Auto execution is intentionally narrow:
+The embedding semantic router is the primary prediction source for Route Test, shadow metadata, and auto-mode route decisions. It aggregates semantic scores by intent group before making an execution decision: the intent score is the best score for that intent group, and the intent margin compares the top intent group with the second intent group. Multiple top candidates from the same intent do not reduce the margin by themselves. Metadata caps `intent_group_scores` to the top few intent groups and does not store embeddings.
+
+Semantic auto execution uses semantic-specific thresholds:
+
+- `intent_routing_semantic_intent_min_score`, default `0.50`.
+- `intent_routing_semantic_intent_min_margin`, default `0.03`.
+- `intent_routing_semantic_kb_min_score`, default `0.45`.
+- `intent_routing_semantic_agent_min_score`, default `0.45`, diagnostic candidates only.
+- `intent_routing_semantic_command_min_score`, default `0.45`, diagnostic candidates only.
+
+The older `intent_routing_high_confidence_threshold` and `intent_routing_low_confidence_threshold` remain compatibility/legacy debug settings and are not the primary semantic auto-route gate.
+
+Auto execution is intentionally narrow:
 
 - `chat`: keep the current Prompt Agent path. Intent Routing does not force-enable or disable Knowledge; existing session KB injection rules still apply.
 - `knowledge_query`: for high-confidence semantic decisions, keep the current Prompt Agent path and pass a per-run temporary Knowledge KB/query override into `Building context`.
 - `image_generation`: diagnostic-only in semantic v1. It does not auto-route to ComfyUI until action routing is designed.
 - `command_like`, generic `agent_route`, `action_route`, and `compound`: diagnostic-only. They may record compact target metadata but do not execute commands, Agents, actions, or multiple tasks.
+
+`knowledge_query` auto execution requires all of the following: General mode `auto`, `intent_routing_auto_route_safe_intents=true`, eligible ordinary text in `single_assistant` mode, current default Agent is an effective Intent Routing enabled Prompt Agent, semantic predicted intent is `knowledge_query`, grouped intent score and margin meet the semantic intent thresholds, and either a selected KB candidate meets the semantic KB threshold or no explicit KB candidate is available but the session has active KB bindings. The execution keeps the current Prompt Agent, sets only per-run `temporary_knowledge_base_ids` and `knowledge_query_override`, and never persists Context Sources bindings or changes the session default Agent.
 
 If the semantic router is unavailable, the runtime falls back to the current Prompt Agent and records warnings such as `semantic_router_profile_missing`, `semantic_router_embedding_unavailable`, or `semantic_router_unavailable`. The old rule-based classifier may be recorded only as `debug_fallback` metadata and must not trigger real auto execution, including the old image-generation to `comfyui_agent` route.
 
@@ -165,7 +179,7 @@ When General `intent_routing_utility_llm_model_path` is configured and available
 
 Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
-`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `auto_executable`, `would_execute`, `route_action`, optional `diagnostic_reason`, temporary KB ids, query override preview, and warnings.
+`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `auto_executable`, `would_execute`, `route_action`, `not_executed_reason`, temporary KB ids, query override preview, `semantic_thresholds_used`, grouped intent scores, and warnings.
 
 Prediction metadata shape:
 
@@ -173,24 +187,36 @@ Prediction metadata shape:
 {
   "enabled": true,
   "mode": "auto",
+  "evaluated": true,
   "eligible": true,
   "bypassed": false,
   "source": "embedding_semantic_router+utility_llm",
   "predicted_intent": "knowledge_query",
   "confidence": 0.84,
+  "intent_score": 0.84,
+  "intent_margin": 0.09,
   "semantic_score": 0.84,
   "semantic_margin": 0.09,
+  "semantic_thresholds_used": {
+    "intent_min_score": 0.5,
+    "intent_min_margin": 0.03,
+    "kb_min_score": 0.45,
+    "agent_min_score": 0.45,
+    "command_min_score": 0.45
+  },
   "route_action": "knowledge_override",
   "auto_executable": true,
   "executed": true,
   "would_execute": true,
+  "not_executed_reason": null,
   "target_agent_id": "chat",
   "target_action_id": "default",
   "session_default_agent_id": "chat",
   "session_default_changed": false,
   "embedding_model_profile_id": "embedding_profile_id",
   "semantic_index_version": "abc123def456",
-  "top_candidates": [{"kind": "intent_example", "intent": "knowledge_query", "score": 0.84, "text_preview": "what does the documentation say"}],
+  "intent_group_scores": [{"intent": "knowledge_query", "score": 0.84}, {"intent": "chat", "score": 0.31}],
+  "second_intent": "chat",
   "kb_candidate": {"kind": "knowledge_base", "kb_id": "kb_id", "kb_name": "Star Wars", "field": "alias", "score": 0.71, "text_preview": "SW"},
   "session_bindings_changed": false,
   "temporary_knowledge_base_ids": ["kb_id"],
@@ -216,13 +242,15 @@ Bypass metadata shape:
 {
   "enabled": true,
   "mode": "shadow",
+  "evaluated": false,
   "eligible": false,
   "bypassed": true,
+  "skip_reason": "explicit_command",
   "bypass_reason": "explicit_command"
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, top candidates are capped to previews, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, keep the semantic prediction and add `utility_extractor_failed` to warnings. Rule-based classification remains only a fallback/debug helper when the semantic router is unavailable.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, keep the semantic prediction and add `utility_extractor_failed` to warnings. Rule-based classification remains only a fallback/debug helper when the semantic router is unavailable.
 
 WebSocket events:
 - `run_updated`

@@ -10,6 +10,7 @@
   },
   "steps": {
     "buildingContext": "Building context",
+    "intentSemanticRouting": "Intent semantic routing",
     "callingLlm": "Calling LLM",
     "runningScript": "Running script",
     "runningCommand": "Running command",

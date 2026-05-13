@@ -158,6 +158,9 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     assert decision["predicted_intent"] == "image_generation"
     assert decision["source"] == "embedding_semantic_router"
     assert decision["semantic_score"] > 0
+    assert decision["semantic_thresholds_used"]["intent_min_score"] == 0.5
+    assert decision["intent_group_scores"]
+    assert decision["not_executed_reason"] == "image_generation_auto_route_deferred_until_action_routing"
     assert decision["auto_executable"] is False
     assert decision["would_execute"] is False
     assert decision["diagnostic_reason"] == "image_generation_auto_route_deferred_until_action_routing"

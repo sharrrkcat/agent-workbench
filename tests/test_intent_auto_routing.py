@@ -3,6 +3,19 @@ from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixtu
 from tests.test_intent_routing import enable_semantic_router
 
 
+class LowSemanticKnowledgeBackend:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
+        self.calls.append({"model_path": model_path, "texts": texts, "normalize": normalize, "device": device})
+        if len(texts) == 1 and "Project KB" in texts[0]:
+            return [[0.0, 0.57, 0.0, 0.0, 0.0, 0.2, 0.797]]
+        from tests.test_intent_routing import _fake_vector
+
+        return [_fake_vector(text) for text in texts]
+
+
 class FakeUtilityIntentService:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
@@ -157,6 +170,33 @@ def test_auto_knowledge_query_uses_temporary_retrieval_override(monkeypatch) -> 
     assert prompt_run.metadata["knowledge_context"]["temporary_override"] is True
     assert llm.calls[0]["messages"][-1] == {"role": "user", "content": "What does my Project KB say about stormtrooper ranks?"}
     assert fixture.knowledge.list_session_bindings(session.session_id)[0].knowledge_base_id == kb.id
+
+
+def test_auto_knowledge_query_uses_semantic_threshold_not_legacy_high_threshold(monkeypatch) -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_auto(fixture)
+    fixture.app_settings.patch({"intent_routing_high_confidence_threshold": 0.99})
+    fixture.agent_runner.knowledge_model_backend = LowSemanticKnowledgeBackend()
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    kb = bind_test_kb(fixture, session.session_id)
+    search_calls = []
+
+    def fake_search(**kwargs):
+        search_calls.append(kwargs)
+        return {"query": kwargs["query"], "results": [], "debug": {"warnings": []}}
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fake_search)
+
+    result = run(fixture.runtime.handle_input(session, "What does Project KB say about stormtrooper ranks?"))
+
+    intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
+    intent_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Intent semantic routing")
+    assert intent["semantic_score"] == 0.57
+    assert intent["semantic_thresholds_used"]["intent_min_score"] == 0.5
+    assert intent["route_action"] == "knowledge_override"
+    assert intent["temporary_knowledge_base_ids"] == [kb.id]
+    assert intent_step.message == "knowledge_query · score 0.57 · executed"
+    assert search_calls[0]["knowledge_base_ids"] == [kb.id]
 
 
 def test_auto_knowledge_query_matches_kb_alias_without_persisting_binding(monkeypatch) -> None:

@@ -849,13 +849,14 @@ def test_prompt_agent_success_creates_default_run_steps() -> None:
 
     assert [step.label for step in steps] == [
         "Resolving agent",
+        "Intent semantic routing",
         "Building context",
         "Resolving model",
         "Calling LLM",
         "Saving response",
         "Cleanup",
     ]
-    assert [step.status.value for step in steps] == ["completed"] * 6
+    assert [step.status.value for step in steps] == ["completed"] * 7
 
 
 def test_run_lifecycle_steps_write_timestamps_and_emit_updates() -> None:

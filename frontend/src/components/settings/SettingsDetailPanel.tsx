@@ -794,11 +794,6 @@ function GeneralIntentRoutingSettings({
         {values.intent_routing_mode === 'auto' && !values.intent_routing_auto_route_safe_intents ? (
           <p className="settings-warning-text">{t('settings:general.autoModeSafeRoutingOff')}</p>
         ) : null}
-        <h4 className="settings-compact-subheading">{t('settings:general.confidenceThresholds')}</h4>
-        <div className="settings-detail-grid">
-          <NumberField label={t('settings:general.highConfidenceThreshold')} value={values.intent_routing_high_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_high_confidence_threshold', value)} />
-          <NumberField label={t('settings:general.lowConfidenceThreshold')} value={values.intent_routing_low_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_low_confidence_threshold', value)} />
-        </div>
         <label className="config-field settings-config-field boolean-field">
           <span>{t('settings:general.autoRouteSafeIntents')}</span>
           <ToggleSwitch checked={values.intent_routing_auto_route_safe_intents} onChange={(checked) => setValues({ ...values, intent_routing_auto_route_safe_intents: checked })} />
@@ -815,8 +810,6 @@ function GeneralIntentRoutingSettings({
           <h3>{t('settings:general.semanticRouter')}</h3>
         </div>
         {error ? <SettingsApiError error={error} /> : null}
-        <p className="settings-muted-copy">{t('settings:general.semanticRouterHelp')}</p>
-        <p className="settings-muted-text">{t('settings:general.semanticRouterDiagnosticHelp')}</p>
         <label className="config-field settings-config-field">
           <span>{t('settings:general.embeddingModelProfile')}</span>
           <select
@@ -858,6 +851,23 @@ function GeneralIntentRoutingSettings({
           <strong>{status ? utilityStatusText(status, t) : t('settings:general.utilityLlmStatusLoading')}</strong>
           <small>{t('settings:general.utilityLlmSummaryLine', { backend: status?.backend || values.intent_routing_utility_llm_backend, model: status?.model_path || values.intent_routing_utility_llm_model_path || t('settings:general.utilityLlmNotConfigured') })}</small>
         </div>
+        <details className="settings-disclosure">
+          <summary>{t('settings:general.semanticThresholds')}</summary>
+          <div className="settings-detail-grid">
+            <NumberField label={t('settings:general.intentMinScore')} value={values.intent_routing_semantic_intent_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_intent_min_score', value)} />
+            <NumberField label={t('settings:general.intentMinMargin')} value={values.intent_routing_semantic_intent_min_margin} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_intent_min_margin', value)} />
+            <NumberField label={t('settings:general.kbMinScore')} value={values.intent_routing_semantic_kb_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_kb_min_score', value)} />
+            <NumberField label={t('settings:general.agentMinScore')} value={values.intent_routing_semantic_agent_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_agent_min_score', value)} />
+            <NumberField label={t('settings:general.commandMinScore')} value={values.intent_routing_semantic_command_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_command_min_score', value)} />
+          </div>
+        </details>
+        <details className="settings-disclosure">
+          <summary>{t('settings:general.legacyRouteThresholds')}</summary>
+          <div className="settings-detail-grid">
+            <NumberField label={t('settings:general.highConfidenceThreshold')} value={values.intent_routing_high_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_high_confidence_threshold', value)} />
+            <NumberField label={t('settings:general.lowConfidenceThreshold')} value={values.intent_routing_low_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_low_confidence_threshold', value)} />
+          </div>
+        </details>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -1192,6 +1202,11 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_mode: values.intent_routing_mode,
     intent_routing_high_confidence_threshold: values.intent_routing_high_confidence_threshold,
     intent_routing_low_confidence_threshold: values.intent_routing_low_confidence_threshold,
+    intent_routing_semantic_intent_min_score: values.intent_routing_semantic_intent_min_score,
+    intent_routing_semantic_intent_min_margin: values.intent_routing_semantic_intent_min_margin,
+    intent_routing_semantic_kb_min_score: values.intent_routing_semantic_kb_min_score,
+    intent_routing_semantic_agent_min_score: values.intent_routing_semantic_agent_min_score,
+    intent_routing_semantic_command_min_score: values.intent_routing_semantic_command_min_score,
     intent_routing_auto_route_safe_intents: values.intent_routing_auto_route_safe_intents,
     intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
     intent_routing_embedding_model_profile_id: values.intent_routing_embedding_model_profile_id,
@@ -1213,39 +1228,72 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
   const { t } = useTranslation(['settings', 'common']);
   const slots = typeof decision.slots === 'object' && decision.slots ? decision.slots : {};
   const topCandidates = Array.isArray(decision.top_candidates) ? decision.top_candidates.slice(0, 6) : [];
+  const thresholds = typeof decision.semantic_thresholds_used === 'object' && decision.semantic_thresholds_used ? decision.semantic_thresholds_used as Record<string, unknown> : {};
+  const groupScores = Array.isArray(decision.intent_group_scores) ? decision.intent_group_scores.slice(0, 5) : [];
+  const score = typeof decision.intent_score === 'number' ? decision.intent_score : decision.semantic_score;
+  const margin = typeof decision.intent_margin === 'number' ? decision.intent_margin : decision.semantic_margin;
+  const reason = readableRouteReason(String(decision.not_executed_reason || decision.diagnostic_reason || decision.bypass_reason || ''), t, score, margin, thresholds);
   return (
     <>
+      <h4 className="settings-compact-subheading">{t('settings:general.executionSummary')}</h4>
       <dl className="settings-definition-grid">
         <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
-        <Metric label={t('settings:general.source')} value={String(decision.source || t('settings:general.none'))} />
-        <Metric label={t('settings:general.confidence')} value={typeof decision.confidence === 'number' ? decision.confidence.toFixed(2) : t('settings:general.none')} />
-        <Metric label={t('settings:general.semanticScore')} value={typeof decision.semantic_score === 'number' ? decision.semantic_score.toFixed(2) : t('settings:general.none')} />
-        <Metric label={t('settings:general.semanticMargin')} value={typeof decision.semantic_margin === 'number' ? decision.semantic_margin.toFixed(2) : t('settings:general.none')} />
-        <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
-        <Metric label={t('settings:general.autoExecutable')} value={decision.auto_executable ? t('settings:general.yes') : t('settings:general.no')} />
         <Metric label={t('settings:general.wouldExecute')} value={decision.would_execute ? t('settings:general.yes') : t('settings:general.no')} />
-        <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
-        <Metric label={t('settings:general.targetAction')} value={String(decision.target_action_id || t('settings:general.none'))} />
-        <Metric label={t('settings:general.targetCommand')} value={String(decision.target_command || t('settings:general.none'))} />
+        <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
+        <Metric label={t('settings:general.reason')} value={reason || (decision.would_execute ? t('settings:general.wouldExecuteYesReason') : t('settings:general.none'))} />
+        <Metric label={t('settings:general.scoreMargin')} value={`${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')} / ${typeof margin === 'number' ? margin.toFixed(2) : t('settings:general.none')}`} />
         <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
         <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
-        <Metric label={t('settings:general.diagnosticOnlyReason')} value={String(decision.diagnostic_reason || t('settings:general.none'))} />
-        <Metric label={t('settings:general.embeddingModelProfile')} value={String(decision.embedding_model_profile_id || t('settings:general.none'))} />
-        <Metric label={t('settings:general.kbCandidate')} value={candidateSummary(decision.kb_candidate, t)} />
-        <Metric label={t('settings:general.agentCandidate')} value={candidateSummary(decision.agent_candidate, t)} />
-        <Metric label={t('settings:general.actionCandidate')} value={candidateSummary(decision.action_candidate, t)} />
-        <Metric label={t('settings:general.commandCandidate')} value={candidateSummary(decision.command_candidate, t)} />
-        <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} />
-        <Metric label={t('settings:general.warnings')} value={Array.isArray(decision.warnings) ? decision.warnings.join(', ') || t('settings:general.none') : t('settings:general.none')} />
       </dl>
-      {topCandidates.length ? (
-        <div className="settings-inline-summary">
-          <span>{t('settings:general.topCandidates')}</span>
-          <small>{topCandidates.map((candidate) => candidateSummary(candidate, t)).join(' | ')}</small>
-        </div>
-      ) : null}
+      <details className="settings-disclosure route-test-diagnostics">
+        <summary>{t('settings:general.diagnostics')}</summary>
+        <dl className="settings-definition-grid">
+          <Metric label={t('settings:general.source')} value={String(decision.source || t('settings:general.none'))} />
+          <Metric label={t('settings:general.confidence')} value={typeof decision.confidence === 'number' ? decision.confidence.toFixed(2) : t('settings:general.none')} />
+          <Metric label={t('settings:general.semanticScore')} value={typeof decision.semantic_score === 'number' ? decision.semantic_score.toFixed(2) : t('settings:general.none')} />
+          <Metric label={t('settings:general.semanticMargin')} value={typeof decision.semantic_margin === 'number' ? decision.semantic_margin.toFixed(2) : t('settings:general.none')} />
+          <Metric label={t('settings:general.secondIntent')} value={String(decision.second_intent || t('settings:general.none'))} />
+          <Metric label={t('settings:general.semanticThresholds')} value={formatThresholds(thresholds, t)} />
+          <Metric label={t('settings:general.intentGroupScores')} value={groupScores.map((item) => candidateSummary(item, t)).join(' | ') || t('settings:general.none')} wide />
+          <Metric label={t('settings:general.autoExecutable')} value={decision.auto_executable ? t('settings:general.yes') : t('settings:general.no')} />
+          <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
+          <Metric label={t('settings:general.targetAction')} value={String(decision.target_action_id || t('settings:general.none'))} />
+          <Metric label={t('settings:general.targetCommand')} value={String(decision.target_command || t('settings:general.none'))} />
+          <Metric label={t('settings:general.kbCandidate')} value={candidateSummary(decision.kb_candidate, t)} />
+          <Metric label={t('settings:general.agentCandidate')} value={candidateSummary(decision.agent_candidate, t)} />
+          <Metric label={t('settings:general.actionCandidate')} value={candidateSummary(decision.action_candidate, t)} />
+          <Metric label={t('settings:general.commandCandidate')} value={candidateSummary(decision.command_candidate, t)} />
+          <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} wide />
+          <Metric label={t('settings:general.warnings')} value={Array.isArray(decision.warnings) ? decision.warnings.join(', ') || t('settings:general.none') : t('settings:general.none')} wide />
+        </dl>
+        {topCandidates.length ? (
+          <div className="settings-inline-summary">
+            <span>{t('settings:general.topCandidates')}</span>
+            <small>{topCandidates.map((candidate) => candidateSummary(candidate, t)).join(' | ')}</small>
+          </div>
+        ) : null}
+      </details>
     </>
   );
+}
+
+function readableRouteReason(code: string, t: ReturnType<typeof useTranslation>['t'], score: unknown, margin: unknown, thresholds: Record<string, unknown>): string {
+  if (!code) return '';
+  if (code === 'semantic_intent_score_below_threshold' && typeof score === 'number' && typeof thresholds.intent_min_score === 'number') {
+    return t('settings:general.scoreBelowThresholdDetail', { score: score.toFixed(2), threshold: thresholds.intent_min_score.toFixed(2) });
+  }
+  if (code === 'semantic_margin_below_threshold' && typeof margin === 'number' && typeof thresholds.intent_min_margin === 'number') {
+    return t('settings:general.marginBelowThresholdDetail', { margin: margin.toFixed(2), threshold: thresholds.intent_min_margin.toFixed(2) });
+  }
+  return t(`settings:general.routeReason.${code}`, { defaultValue: code });
+}
+
+function formatThresholds(thresholds: Record<string, unknown>, t: ReturnType<typeof useTranslation>['t']): string {
+  const pieces = ['intent_min_score', 'intent_min_margin', 'kb_min_score'].map((key) => {
+    const value = thresholds[key];
+    return typeof value === 'number' ? `${key} ${value.toFixed(2)}` : '';
+  }).filter(Boolean);
+  return pieces.join(' / ') || t('settings:general.none');
 }
 
 function semanticRouterStatusText(status: string, t: (key: string) => string): string {

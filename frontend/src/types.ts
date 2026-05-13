@@ -1212,6 +1212,11 @@ export type GeneralSettings = {
   intent_routing_mode: 'shadow' | 'auto';
   intent_routing_high_confidence_threshold: number;
   intent_routing_low_confidence_threshold: number;
+  intent_routing_semantic_intent_min_score: number;
+  intent_routing_semantic_intent_min_margin: number;
+  intent_routing_semantic_kb_min_score: number;
+  intent_routing_semantic_agent_min_score: number;
+  intent_routing_semantic_command_min_score: number;
   intent_routing_auto_route_safe_intents: boolean;
   intent_routing_confirm_uncertain: boolean;
   intent_routing_embedding_model_profile_id: string | null;
