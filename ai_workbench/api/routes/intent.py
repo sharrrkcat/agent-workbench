@@ -170,6 +170,8 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
             agent_registry=state.agents,
             agent_config_store=state.agent_configs,
             knowledge_store=state.knowledge,
+            capability_config_store=state.capability_configs,
+            runtime_registry=state.runtimes,
         )
         return {
             "ok": True,
@@ -192,6 +194,8 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         knowledge_store=state.knowledge,
         knowledge_model_backend=state.knowledge_model_backend,
         capability_registry=state.capabilities,
+        capability_config_store=state.capability_configs,
+        runtime_registry=state.runtimes,
         command_registry=state.commands,
         semantic_router=state.semantic_router,
         utility_llm_service=state.utility_llm if payload.include_utility else None,

@@ -198,12 +198,23 @@ class WorkbenchRuntime:
             knowledge_store=getattr(self.agent_runner, "knowledge_store", None),
             knowledge_model_backend=getattr(self.agent_runner, "knowledge_model_backend", None),
             capability_registry=getattr(self.agent_runner, "capability_registry", None),
+            capability_config_store=getattr(self.agent_runner, "capability_config_store", None),
+            runtime_registry=getattr(self.agent_runner, "runtime_registry", None),
             command_registry=getattr(self.command_runner, "command_registry", None),
             semantic_router=getattr(self.agent_runner, "semantic_router", None),
         )
 
     def _apply_intent_route(self, route: RouteTarget, intent_metadata: dict[str, Any] | None) -> RouteTarget:
         if route.kind != RouteKind.AGENT or not isinstance(intent_metadata, dict):
+            return route
+        if intent_metadata.get("route_action") == "pet_command" and intent_metadata.get("executed"):
+            generated = str(intent_metadata.get("generated_command") or "/pet status")
+            parsed = self.router.route(
+                type("SessionLike", (), {"session_id": route.session_id, "waiting_run_id": None, "default_agent_id": route.target_id})(),
+                generated,
+            )
+            if parsed.kind == RouteKind.COMMAND and parsed.target_id == "/pet":
+                return parsed.model_copy(update={"raw_input": route.raw_input})
             return route
         if intent_metadata.get("route_action") != "route_agent":
             return route

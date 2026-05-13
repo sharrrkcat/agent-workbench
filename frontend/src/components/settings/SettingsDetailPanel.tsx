@@ -1233,6 +1233,14 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
         <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
         <Metric label={t('settings:general.reason')} value={reason || (decision.would_execute ? t('settings:general.wouldExecuteYesReason') : t('settings:general.none'))} />
         <Metric label={t('settings:general.scoreMargin')} value={`${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')} / ${typeof margin === 'number' ? margin.toFixed(2) : t('settings:general.none')}`} />
+        {decision.predicted_intent === 'pet_command' ? (
+          <>
+            <Metric label={t('settings:general.petAction')} value={String(decision.pet_action || t('settings:general.none'))} />
+            <Metric label={t('settings:general.targetPet')} value={petSummary(decision, 'target', t)} />
+            <Metric label={t('settings:general.sourcePet')} value={petSummary(decision, 'source', t)} />
+            <Metric label={t('settings:general.generatedCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
+          </>
+        ) : null}
         <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
         <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
       </dl>
@@ -1302,6 +1310,14 @@ function candidateSummary(value: unknown, t: (key: string) => string): string {
   const score = typeof candidate.score === 'number' ? ` ${candidate.score.toFixed(2)}` : '';
   const field = candidate.field ? ` ${String(candidate.field)}` : '';
   return `${String(label)}${field}${score}`;
+}
+
+function petSummary(decision: Record<string, unknown>, kind: 'target' | 'source', t: (key: string) => string): string {
+  const id = decision[`${kind}_pet_id`];
+  const hint = decision[`${kind}_pet_hint`];
+  const name = decision[`${kind}_pet_name`];
+  const pieces = [name, id, hint].filter((item) => typeof item === 'string' && item.trim());
+  return pieces.length ? pieces.map(String).join(' / ') : t('settings:general.none');
 }
 
 function InstructionField({

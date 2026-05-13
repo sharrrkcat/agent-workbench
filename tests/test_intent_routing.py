@@ -15,6 +15,22 @@ class ContextAwareUtilityIntentService:
         return self.payload
 
 
+class RouteTestPetRuntime:
+    def get_settings(self, context=None) -> dict:
+        return {"settings": {"default_pet_id": "jedi_cal"}}
+
+    def list_pets(self, context=None) -> dict:
+        return {
+            "pets": [
+                {"id": "jedi_cal", "display_name": "Jedi Cal", "valid": True},
+                {"id": "bd_1", "display_name": "BD-1", "valid": True},
+            ]
+        }
+
+    def command(self, args: str = "", context=None) -> str:
+        raise AssertionError("Route Test must not execute /pet")
+
+
 class FakeEmbeddingBackend:
     def __init__(self) -> None:
         self.calls: list[dict] = []
@@ -32,6 +48,8 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
     if "agent_route:" in value:
         return [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    if "pet_command:" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if "command_like:" in value:
         return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     if "action_route:" in value:
@@ -39,7 +57,7 @@ def _fake_vector(text: str) -> list[float]:
     if "compound:" in value:
         return [0.1, 0.1, 0.1, 0.1, 0.0, 0.0]
     if "chat:" in value:
-        return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     if "knowledge_base:" in value:
         value = value.split("knowledge_base:", 1)[1]
     if any(token in value for token in ["image", "picture", "draw", "concept art", "生成", "鐢熸垚"]):
@@ -52,7 +70,9 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     if any(token in value for token in ["action", "formal"]):
         return [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-    return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    if any(token in value for token in ["宠物", "pet", "jedi cal", "bd-1", "bd1", "唤醒", "隐藏", "重新加载", "刷新", "叫出来", "换成"]):
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
 
 
 def enable_semantic_router(fixture: PromptRuntimeFixture) -> EmbeddingModelProfile:
@@ -165,6 +185,37 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     assert decision["would_execute"] is False
     assert decision["diagnostic_reason"] == "image_generation_auto_route_deferred_until_action_routing"
     assert decision["top_candidates"]
+    assert state.runs.list_all_runs() == []
+    assert state.messages.list_all_messages() == []
+
+
+def test_route_test_api_reports_pet_command_without_executing(tmp_path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test-pet.db'}"))
+    state = client.app.state.runtime_state
+    profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
+    state.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
+    state.knowledge_model_backend = FakeEmbeddingBackend()
+    state.runtimes.replace("pet", RouteTestPetRuntime())
+    client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
+            "intent_routing_auto_route_safe_intents": True,
+        },
+    )
+
+    response = client.post("/api/intent/test-route", json={"text": "把宠物换成 BD-1", "include_utility": False})
+
+    assert response.status_code == 200
+    decision = response.json()["decision"]
+    assert decision["predicted_intent"] == "pet_command"
+    assert decision["pet_action"] == "select"
+    assert decision["target_pet_id"] == "bd_1"
+    assert decision["generated_command"] == "/pet select bd_1"
+    assert decision["would_execute"] is True
+    assert decision["executed"] is False
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
 

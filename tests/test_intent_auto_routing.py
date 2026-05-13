@@ -10,7 +10,7 @@ class LowSemanticKnowledgeBackend:
     def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
         self.calls.append({"model_path": model_path, "texts": texts, "normalize": normalize, "device": device})
         if len(texts) == 1 and "Project KB" in texts[0]:
-            return [[0.0, 0.57, 0.0, 0.0, 0.0, 0.2, 0.797]]
+            return [[0.0, 0.57, 0.0, 0.0, 0.0, 0.2, 0.0, 0.797]]
         from tests.test_intent_routing import _fake_vector
 
         return [_fake_vector(text) for text in texts]
@@ -24,6 +24,26 @@ class FakeUtilityIntentService:
     async def extract_intent_json(self, text: str, settings) -> dict:
         self.calls.append(text)
         return self.payload
+
+
+class FakePetRuntime:
+    def __init__(self, default_pet_id: str = "jedi_cal") -> None:
+        self.default_pet_id = default_pet_id
+        self.command_calls: list[str] = []
+        self.pets = [
+            {"id": "jedi_cal", "display_name": "Jedi Cal", "valid": True},
+            {"id": "bd_1", "display_name": "BD-1", "valid": True},
+        ]
+
+    def get_settings(self, context=None) -> dict:
+        return {"settings": {"default_pet_id": self.default_pet_id}}
+
+    def list_pets(self, context=None) -> dict:
+        return {"pets": list(self.pets)}
+
+    def command(self, args: str = "", context=None) -> str:
+        self.command_calls.append(args)
+        return f"pet command: {args or 'status'}"
 
 
 def enable_auto(fixture: PromptRuntimeFixture) -> None:
@@ -303,3 +323,81 @@ def test_auto_command_like_intent_is_not_executed() -> None:
     assert intent["predicted_intent"] == "command_like"
     assert intent["route_action"] == "metadata_only"
     assert "command_like_auto_route_disabled" in intent["warnings"]
+
+
+def test_auto_pet_command_routes_only_to_pet_command() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "把 Jedi Cal 叫出来"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert command_run.target_id == "/pet"
+    assert intent["predicted_intent"] == "pet_command"
+    assert intent["pet_action"] == "wake"
+    assert intent["target_pet_id"] == "jedi_cal"
+    assert intent["generated_command"] == "/pet wake"
+    assert intent["route_action"] == "pet_command"
+    assert intent["auto_executable"] is True
+    assert intent["executed"] is True
+    assert pet_runtime.command_calls == ["wake"]
+
+
+def test_shadow_pet_command_records_metadata_without_executing() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_semantic_router(fixture)
+    fixture.app_settings.patch({"intent_routing_enabled": True, "intent_routing_default_for_prompt_agents": True, "intent_routing_mode": "shadow"})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "隐藏 Jedi Cal"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert prompt_run.target_id == "chat"
+    assert intent["predicted_intent"] == "pet_command"
+    assert intent["pet_action"] == "tuck"
+    assert intent["target_pet_id"] == "jedi_cal"
+    assert intent["executed"] is False
+    assert pet_runtime.command_calls == []
+
+
+def test_pet_command_ambiguous_pet_does_not_execute() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    pet_runtime.pets.append({"id": "jedi_cal_alt", "display_name": "Jedi Cal", "valid": True})
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "唤醒 Jedi Cal"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert intent["predicted_intent"] == "pet_command"
+    assert intent["not_executed_reason"] == "ambiguous_pet_candidate"
+    assert intent["auto_executable"] is False
+    assert pet_runtime.command_calls == []
+
+
+def test_reality_pet_question_stays_chat() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    fixture.agent_runner.runtime_registry.replace("pet", FakePetRuntime())
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "我家的猫今天不吃饭怎么办"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert prompt_run.target_id == "chat"
+    assert intent["predicted_intent"] == "chat"

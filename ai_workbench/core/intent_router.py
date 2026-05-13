@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
+import inspect
 import re
 
 from ai_workbench.core.agent_settings import resolved_intent_routing_mode
@@ -44,6 +45,26 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
         examples=["找翻译 agent", "交给图片助手", "route this to the image agent"],
     ),
     IntentDefinition(
+        id="pet_command",
+        label="Pet command",
+        description="Narrow Workbench Pet status, wake, tuck, select, and reload commands.",
+        examples=[
+            "我想看看宠物状态",
+            "看看 Jedi Cal 状态",
+            "Jedi Cal 目前怎么样",
+            "唤醒宠物",
+            "把宠物叫出来",
+            "隐藏 Jedi Cal",
+            "把宠物换成 BD-1",
+            "切换到 Jedi Cal",
+            "重新加载宠物",
+            "刷新宠物",
+            "show pet status",
+            "wake the pet",
+            "switch pet to BD-1",
+        ],
+    ),
+    IntentDefinition(
         id="command_like",
         label="Command-like",
         description="Requests that resemble operational commands or cleanup actions.",
@@ -52,7 +73,7 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
 )
 
 
-SAFE_AUTO_ROUTE_INTENTS = {"chat", "knowledge_query"}
+SAFE_AUTO_ROUTE_INTENTS = {"chat", "knowledge_query", "pet_command"}
 COMMAND_LIKE_WARNING = "command_like_auto_route_disabled"
 SEMANTIC_AUTO_MIN_MARGIN = 0.03
 DIAGNOSTIC_ONLY_WARNINGS = {
@@ -70,6 +91,12 @@ BLOCKING_AUTO_WARNINGS = {
     "semantic_router_embedding_unavailable",
     "semantic_router_index_build_failed",
     "semantic_router_unavailable",
+    "pet_candidate_not_found",
+    "ambiguous_pet_candidate",
+    "source_pet_mismatch",
+    "pet_command_context_missing",
+    "pet_action_unrecognized",
+    "pet_command_runtime_unavailable",
 }
 CUSTOM_EXAMPLE_FIELDS = {
     "chat": "intent_routing_chat_examples",
@@ -186,6 +213,8 @@ async def build_intent_routing_metadata(
     knowledge_store: Any = None,
     knowledge_model_backend: Any = None,
     capability_registry: Any = None,
+    capability_config_store: Any = None,
+    runtime_registry: Any = None,
     command_registry: Any = None,
     semantic_router: Any = None,
     utility_llm_service: Any = None,
@@ -245,6 +274,8 @@ async def build_intent_routing_metadata(
         agent_registry=agent_registry,
         agent_config_store=agent_config_store,
         knowledge_store=knowledge_store,
+        capability_config_store=capability_config_store,
+        runtime_registry=runtime_registry,
     )
     return {
         "enabled": True,
@@ -267,6 +298,8 @@ def _decision_metadata(
     agent_registry: Any,
     agent_config_store: Any,
     knowledge_store: Any,
+    capability_config_store: Any = None,
+    runtime_registry: Any = None,
 ) -> dict[str, Any]:
     intent_id = str(prediction.get("predicted_intent") or "chat")
     confidence = float(prediction.get("confidence") or 0.0)
@@ -313,6 +346,15 @@ def _decision_metadata(
     if isinstance(agent_candidate, dict) and agent_candidate.get("field") == "alias":
         metadata["matched_alias"] = _short_text(str(agent_candidate.get("text_preview") or ""), 80)
     if mode != "auto":
+        if intent_id == "pet_command":
+            return _pet_command_decision(
+                metadata,
+                text=route.args,
+                mode=mode,
+                runtime_registry=runtime_registry,
+                capability_config_store=capability_config_store,
+                auto_mode=False,
+            )
         return metadata
     if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
         metadata["route_action"] = "metadata_only"
@@ -379,6 +421,15 @@ def _decision_metadata(
             decision["would_execute"] = False
             decision["not_executed_reason"] = _knowledge_not_executed_reason(decision)
         return decision
+    if intent_id == "pet_command":
+        return _pet_command_decision(
+            metadata,
+            text=route.args,
+            mode=mode,
+            runtime_registry=runtime_registry,
+            capability_config_store=capability_config_store,
+            auto_mode=True,
+        )
     return metadata
 
 
@@ -410,9 +461,234 @@ def _semantic_prediction(
         )
     except Exception:
         prediction = {"predicted_intent": "chat", "confidence": 0.0, "source": "embedding_semantic_router", "warnings": ["semantic_router_unavailable"]}
-    if prediction.get("warnings") and any(str(item).startswith("semantic_router_") for item in prediction.get("warnings") or []):
+    semantic_unavailable = bool(prediction.get("warnings") and any(str(item).startswith("semantic_router_") for item in prediction.get("warnings") or []))
+    if semantic_unavailable:
         prediction = {**prediction, "source": "semantic_router_unavailable", "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent", "auto_executable": False}
+    pet_prediction = _pet_command_prediction(text)
+    if pet_prediction is not None and not semantic_unavailable:
+        prediction = {
+            **prediction,
+            **pet_prediction,
+            "source": prediction.get("source") or "embedding_semantic_router",
+            "confidence": max(float(prediction.get("confidence") or 0.0), 0.95),
+            "semantic_score": max(float(prediction.get("semantic_score") or 0.0), 0.95),
+            "semantic_margin": max(float(prediction.get("semantic_margin") or 0.0), 0.50),
+            "warnings": [warning for warning in list(prediction.get("warnings") or []) if not str(warning).startswith("semantic_router_")],
+        }
     return prediction
+
+
+PET_CONTEXT_TERMS = ("宠物", "电子宠物", "虚拟宠物", "桌宠", "pet", "小助手", "小人")
+PET_OPERATION_TERMS = ("状态", "目前怎么样", "唤醒", "叫出来", "隐藏", "藏起来", "换成", "切换", "重新加载", "刷新", "重载", "status", "wake", "hide", "tuck", "switch", "reload", "refresh")
+
+
+def _pet_command_prediction(text: str) -> dict[str, Any] | None:
+    parsed = _parse_pet_command_text(text)
+    if parsed is None:
+        return None
+    return {
+        "predicted_intent": "pet_command",
+        "pet_action": parsed["pet_action"],
+        "target_pet_hint": parsed.get("target_pet_hint"),
+        "source_pet_hint": parsed.get("source_pet_hint"),
+        "generated_command": _generated_pet_command(parsed["pet_action"], None),
+        "route_action": "pet_command",
+        "auto_executable": True,
+    }
+
+
+def _parse_pet_command_text(text: str) -> dict[str, Any] | None:
+    raw = str(text or "").strip()
+    if not raw or raw.startswith(("/", "@", ":")):
+        return None
+    compact = _normalize_text(raw)
+    has_context = any(term.casefold() in compact for term in PET_CONTEXT_TERMS)
+    has_operation = any(term.casefold() in compact for term in PET_OPERATION_TERMS)
+    if not has_context and not has_operation:
+        return None
+
+    patterns: list[tuple[str, str, tuple[str, ...]]] = [
+        ("select_swap", "select", (r"^把\s*(?P<source>.+?)\s*换成\s*(?P<target>.+?)\s*$",)),
+        ("select", "select", (r"^把宠物换成\s*(?P<target>.+?)\s*$", r"^切换到\s*(?P<target>.+?)\s*$", r"^switch\s+(?:pet\s+)?to\s+(?P<target>.+?)\s*$")),
+        ("wake", "wake", (r"^唤醒\s*(?P<target>.+?)?\s*$", r"^把\s*(?P<target>.+?)\s*叫出来\s*$", r"^wake\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
+        ("tuck", "tuck", (r"^隐藏\s*(?P<target>.+?)?\s*$", r"^把\s*(?P<target>.+?)\s*藏起来\s*$", r"^把\s*(?P<target>.+?)\s*隐藏\s*$", r"^(?:hide|tuck)\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
+        ("reload", "reload", (r"^重新加载\s*(?P<target>.+?)?\s*$", r"^刷新\s*(?P<target>.+?)?\s*$", r"^重载\s*(?P<target>.+?)?\s*$", r"^(?:reload|refresh)\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
+        ("status", "status", (r"^我想看看宠物状态\s*$", r"^看看\s*(?P<target>.+?)?\s*状态\s*$", r"^(?P<target>.+?)\s*目前怎么样\s*$", r"^(?:show\s+)?(?:the\s+)?(?P<target>.+?)?\s*status\s*$")),
+    ]
+    for _, action, regexes in patterns:
+        for regex in regexes:
+            match = re.match(regex, raw, flags=re.IGNORECASE)
+            if not match:
+                continue
+            target = _clean_pet_hint(match.groupdict().get("target"))
+            source = _clean_pet_hint(match.groupdict().get("source"))
+            if target in {"宠物", "pet", "the pet"}:
+                target = None
+            if source in {"宠物", "pet", "the pet"}:
+                source = None
+            if not has_context and not target and action != "status":
+                return None
+            return {"pet_action": action, "target_pet_hint": target, "source_pet_hint": source, "has_pet_context": has_context}
+    return None
+
+
+def _clean_pet_hint(value: Any) -> str | None:
+    text = str(value or "").strip()
+    text = re.sub(r"^(?:the\s+)?pet\s+", "", text, flags=re.IGNORECASE).strip()
+    return _short_text(text, 120) if text else None
+
+
+def _pet_command_decision(
+    metadata: dict[str, Any],
+    *,
+    text: str,
+    mode: str,
+    runtime_registry: Any = None,
+    capability_config_store: Any = None,
+    auto_mode: bool,
+) -> dict[str, Any]:
+    warnings = list(metadata.get("warnings") or [])
+    parsed = _parse_pet_command_text(text)
+    if parsed is None:
+        reason = "pet_command_context_missing"
+        return {**metadata, "route_action": "fallback_current_agent", "auto_executable": False, "executed": False, "would_execute": False, "not_executed_reason": reason, "warnings": _ensure_warning(warnings, reason)}
+    pets_state = _load_pet_candidates(runtime_registry, capability_config_store)
+    if pets_state.get("warning"):
+        reason = str(pets_state["warning"])
+        return {**metadata, **parsed, "route_action": "fallback_current_agent", "auto_executable": False, "executed": False, "would_execute": False, "not_executed_reason": reason, "warnings": _ensure_warning(warnings, reason)}
+
+    action = str(parsed["pet_action"])
+    target_hint = parsed.get("target_pet_hint")
+    source_hint = parsed.get("source_pet_hint")
+    target = _resolve_pet_hint(target_hint, pets_state) if target_hint else pets_state.get("default_pet")
+    source = _resolve_pet_hint(source_hint, pets_state) if source_hint else None
+    reason = None
+    if target_hint and target.get("reason"):
+        reason = str(target["reason"])
+    elif action == "select" and not target_hint:
+        reason = "pet_candidate_not_found"
+    elif source_hint and source.get("reason"):
+        reason = str(source["reason"])
+    elif source and source.get("pet") and pets_state.get("default_pet", {}).get("pet") and source["pet"]["id"] != pets_state["default_pet"]["pet"]["id"]:
+        reason = "source_pet_mismatch"
+    if reason is None and not target.get("pet") and action != "status":
+        reason = "pet_candidate_not_found"
+
+    target_pet = target.get("pet") if isinstance(target, dict) else None
+    source_pet = source.get("pet") if isinstance(source, dict) else None
+    if reason == "pet_candidate_not_found" and not parsed.get("has_pet_context"):
+        return {
+            **metadata,
+            "predicted_intent": "chat",
+            "route_action": "fallback_current_agent",
+            "auto_executable": False,
+            "executed": False,
+            "would_execute": False,
+            "not_executed_reason": None,
+            "warnings": warnings,
+        }
+    generated_command = _generated_pet_command(action, target_pet.get("id") if action == "select" and isinstance(target_pet, dict) else None)
+    decision = {
+        **metadata,
+        "predicted_intent": "pet_command",
+        "pet_action": action,
+        "target_pet_hint": target_hint,
+        "target_pet_id": target_pet.get("id") if isinstance(target_pet, dict) else None,
+        "target_pet_name": target_pet.get("display_name") if isinstance(target_pet, dict) else None,
+        "source_pet_hint": source_hint,
+        "source_pet_id": source_pet.get("id") if isinstance(source_pet, dict) else None,
+        "source_pet_name": source_pet.get("display_name") if isinstance(source_pet, dict) else None,
+        "generated_command": generated_command,
+        "target_command": "/pet",
+        "route_action": "pet_command" if reason is None else "fallback_current_agent",
+        "auto_executable": reason is None and auto_mode,
+        "executed": reason is None and auto_mode,
+        "would_execute": reason is None and auto_mode,
+        "not_executed_reason": reason,
+        "warnings": warnings if reason is None else _ensure_warning(warnings, reason),
+    }
+    if not auto_mode and reason is None:
+        decision["auto_executable"] = True
+        decision["would_execute"] = mode == "auto"
+        decision["executed"] = False
+    return decision
+
+
+def _generated_pet_command(action: str, target_pet_id: str | None) -> str:
+    if action == "select" and target_pet_id:
+        return f"/pet select {target_pet_id}"
+    if action == "status":
+        return "/pet status"
+    return f"/pet {action}"
+
+
+def _load_pet_candidates(runtime_registry: Any, capability_config_store: Any) -> dict[str, Any]:
+    if runtime_registry is None:
+        return {"pets": [], "default_pet": {}, "warning": "pet_command_runtime_unavailable"}
+    context = {"capability_config_store": capability_config_store, "capability_id": "pet"}
+    try:
+        settings_method = runtime_registry.get_method("pet", "get_settings")
+        list_method = runtime_registry.get_method("pet", "list_pets")
+        settings = _call_pet_runtime_method(settings_method, context).get("settings", {})
+        pets = [pet for pet in _call_pet_runtime_method(list_method, context).get("pets", []) if pet.get("valid")]
+    except Exception:
+        return {"pets": [], "default_pet": {}, "warning": "pet_command_runtime_unavailable"}
+    default_id = str(settings.get("default_pet_id") or "").strip()
+    default_pet = next((pet for pet in pets if pet.get("id") == default_id), None) or (pets[0] if pets else None)
+    return {"pets": pets, "default_pet": {"pet": default_pet} if default_pet else {}, "settings": settings}
+
+
+def _call_pet_runtime_method(method: Any, context: dict[str, Any]) -> dict[str, Any]:
+    parameters = inspect.signature(method).parameters
+    if len(parameters) == 0:
+        result = method()
+    elif "context" in parameters:
+        result = method(context=context)
+    else:
+        result = method(context)
+    return result if isinstance(result, dict) else {}
+
+
+def _resolve_pet_hint(hint: Any, pets_state: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_pet_name(hint)
+    if not normalized:
+        return pets_state.get("default_pet") or {}
+    matches = []
+    for pet in pets_state.get("pets") or []:
+        fields = [
+            str(pet.get("id") or ""),
+            str(pet.get("display_name") or ""),
+            str(pet.get("name") or ""),
+        ]
+        folder = str(pet.get("folder") or pet.get("source") or "")
+        if folder and folder != "data":
+            fields.append(folder)
+        normalized_fields = {_normalize_pet_name(field) for field in fields if field}
+        if normalized in normalized_fields:
+            matches.append(pet)
+    if not matches:
+        for pet in pets_state.get("pets") or []:
+            fields = [str(pet.get("id") or ""), str(pet.get("display_name") or ""), str(pet.get("name") or "")]
+            if any(normalized and (normalized in _normalize_pet_name(field) or _normalize_pet_name(field) in normalized) for field in fields if field):
+                matches.append(pet)
+    unique = []
+    seen: set[str] = set()
+    for pet in matches:
+        pet_id = str(pet.get("id") or "")
+        if pet_id and pet_id not in seen:
+            seen.add(pet_id)
+            unique.append(pet)
+    if len(unique) == 1:
+        return {"pet": unique[0]}
+    if len(unique) > 1:
+        return {"reason": "ambiguous_pet_candidate", "matches": [{"id": pet.get("id"), "display_name": pet.get("display_name")} for pet in unique[:5]]}
+    return {"reason": "pet_candidate_not_found"}
+
+
+def _normalize_pet_name(value: Any) -> str:
+    text = _normalize_text(value)
+    text = re.sub(r"[\s_-]+", "", text)
+    return text
 
 
 def _candidate_value(candidate: Any, key: str) -> Any:
@@ -657,7 +933,7 @@ def _active_session_kb_ids(knowledge_store: Any, session_id: str) -> list[str]:
 
 def _compact_slots(slots: dict[str, Any]) -> dict[str, str]:
     compact: dict[str, str] = {}
-    for key in ("target_agent_hint", "kb_hint", "query", "command_hint"):
+    for key in ("target_agent_hint", "kb_hint", "query", "command_hint", "target_pet_hint", "source_pet_hint"):
         value = slots.get(key)
         if isinstance(value, str) and value.strip():
             compact[key] = _short_text(value.strip())

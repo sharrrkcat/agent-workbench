@@ -91,7 +91,7 @@ Run steps:
 
 Run metadata:
 - Prompt Agent runs record `llm_resolution` when model resolution succeeds.
-- Intent Routing predictions and safe auto-route decisions may be recorded under `intent_routing`. The metadata is not injected into provider-bound context, title generation, Core Memory, or Worldbook matching. In auto mode only, a high-confidence `knowledge_query` decision may provide a per-run Knowledge KB/query override to the Knowledge context builder.
+- Intent Routing predictions and safe auto-route decisions may be recorded under `intent_routing`. The metadata is not injected into provider-bound context, title generation, Core Memory, or Worldbook matching. In auto mode only, a high-confidence `knowledge_query` decision may provide a per-run Knowledge KB/query override to the Knowledge context builder, and a safe `pet_command` decision may execute only the existing `/pet` command path.
 - Prompt Agent runs can record `llm_metrics`, `vision_input`, `file_context`, and reasoning metadata.
 - Prompt Agent and Script Agent LLM runs may record compact `core_memory_context` and `worldbook_context` metadata. These records include enablement, injection status, counts, ids, entry refs, truncation, and warnings, but must not store full Core Memory text, full Worldbook entry content, or rendered context blocks.
 - Model lifecycle unload attempts are recorded under `llm_unload`, including success, skipped, unsupported, failure, and provider status refresh outcome.
@@ -144,14 +144,17 @@ Auto execution is intentionally narrow:
 
 - `chat`: keep the current Prompt Agent path. Intent Routing does not force-enable or disable Knowledge; existing session KB injection rules still apply.
 - `knowledge_query`: for high-confidence semantic decisions, keep the current Prompt Agent path and pass a per-run temporary Knowledge KB/query override into `Building context`.
+- `pet_command`: a narrow `/pet`-only allowlist for Workbench Pet status, wake, tuck, select, and reload. It reuses the normal Capability command runner and Pet runtime, records `target_command="/pet"` and `generated_command`, and does not execute any other slash command. `/pet random` is not part of this allowlist.
 - `image_generation`: diagnostic-only in semantic v1. It does not auto-route to ComfyUI until action routing is designed.
 - `command_like`, generic `agent_route`, `action_route`, and `compound`: diagnostic-only. They may record compact target metadata but do not execute commands, Agents, actions, or multiple tasks.
 
 `knowledge_query` auto execution requires all of the following: General mode `auto`, `intent_routing_auto_route_safe_intents=true`, eligible ordinary text in `single_assistant` mode, current default Agent is an effective Intent Routing enabled Prompt Agent, semantic predicted intent is `knowledge_query`, grouped intent score and margin meet the semantic intent thresholds, and either a selected KB candidate meets the semantic KB threshold or no explicit KB candidate is available but the session has active KB bindings. The execution keeps the current Prompt Agent, sets only per-run `temporary_knowledge_base_ids` and `knowledge_query_override`, and never persists Context Sources bindings or changes the session default Agent.
 
+`pet_command` auto execution requires the same General/session/Prompt-Agent eligibility gates as other safe auto routes plus a conservative Pet command recognizer. It may match only Workbench Pet phrasing or an installed Pet id/display name with an explicit Pet operation verb. It resolves candidates from the existing Pet Capability runtime/settings/list data. Missing targets use the current default pet, except `select` must resolve a unique target. Ambiguous targets record `ambiguous_pet_candidate`; missing targets record `pet_candidate_not_found`; `把 <pet1> 换成 <pet2>` treats `<pet2>` as the target and records `source_pet_mismatch` without executing when `<pet1>` does not match the current default pet. Reality-pet questions such as sick cats/dogs, training real pets, or fictional character questions without Workbench Pet context remain normal chat/diagnostic predictions.
+
 If the semantic router is unavailable, the runtime falls back to the current Prompt Agent and records a semantic-unavailable source/reason such as `semantic_router_unavailable`, `semantic_router_profile_missing`, or `semantic_router_embedding_unavailable`. No fallback classifier runs, and unavailable semantic routing never triggers command, Agent, action, or image-generation execution.
 
-`command_like` and generic `agent_route` are not executed automatically in this version. They fall back to the current Prompt Agent and record warnings such as `command_like_auto_route_disabled` or `agent_route_auto_route_disabled`. No slash command, memory release, deletion, settings change, shell command, or arbitrary Agent call is performed.
+`command_like` and generic `agent_route` are not executed automatically in this version. They fall back to the current Prompt Agent and record warnings such as `command_like_auto_route_disabled` or `agent_route_auto_route_disabled`. No slash command other than the narrow `pet_command` `/pet` allowlist, memory release, deletion, settings change, shell command, or arbitrary Agent call is performed.
 
 Intent predictions are not appended to prompts, not passed to providers, not used by automatic title generation, and not used to alter Core Memory or Worldbook context injection.
 
@@ -175,11 +178,15 @@ Candidate sources:
 
 Command, action, generic Agent, image-generation, and compound candidates are diagnostic-only in semantic v1. They may appear as `target_command`, `target_agent_id`, `target_action_id`, `sub_intents`, and top candidates in metadata, but they are not executed and do not change the selected route.
 
+`pet_command` metadata may include compact Pet slots: `pet_action`, `target_pet_id`, `target_pet_hint`, `source_pet_id`, `source_pet_hint`, `generated_command`, `route_action="pet_command"`, `auto_executable`, `executed`, `not_executed_reason`, and `warnings`. It must not store full Pet manifests, spritesheet content, image bytes, or large Pet objects.
+
 When General `intent_routing_utility_llm_model_path` is configured and available, the core may call the Utility LLM for strict JSON slot extraction after semantic prediction. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, while `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for slots such as `kb_hint` and `query`, or optional low-confidence verification. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and must not override semantic predictions into execution.
 
 Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
 `POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `auto_executable`, `would_execute`, `route_action`, `not_executed_reason`, temporary KB ids, query override preview, `semantic_thresholds_used`, grouped intent scores, and warnings.
+
+For `pet_command`, Route Test also reports Pet action, target Pet, optional source Pet, generated command, would-execute status, not-executed reason, and warnings. Route Test never executes `/pet`, never creates a command run, and never updates Pet settings.
 
 Prediction metadata shape:
 
