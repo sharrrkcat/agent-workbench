@@ -188,10 +188,10 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     assert decision["semantic_score"] > 0
     assert decision["semantic_thresholds_used"]["intent_min_score"] == 0.5
     assert decision["intent_group_scores"]
-    assert decision["not_executed_reason"] == "image_generation_auto_route_deferred_until_action_routing"
+    assert decision["not_executed_reason"] == "image_generation_action_routing_not_ready"
     assert decision["auto_executable"] is False
     assert decision["would_execute"] is False
-    assert decision["diagnostic_reason"] == "image_generation_auto_route_deferred_until_action_routing"
+    assert decision["diagnostic_reason"] == "image_generation_action_routing_not_ready"
     assert decision["top_candidates"]
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
@@ -300,4 +300,4 @@ def test_intent_routing_script_default_and_group_transcript_bypass() -> None:
     group_result = run(fixture.runtime.handle_input(group_session, "make an image"))
 
     assert fixture.runs.get_run(script_result.run_id).metadata["intent_routing"]["bypass_reason"] == "default_agent_not_prompt"
-    assert fixture.runs.get_run(group_result.run_id).metadata["intent_routing"]["bypass_reason"] == "group_transcript"
+    assert fixture.runs.get_run(group_result.run_id).metadata["intent_routing"]["bypass_reason"] == "group_transcript_not_supported"

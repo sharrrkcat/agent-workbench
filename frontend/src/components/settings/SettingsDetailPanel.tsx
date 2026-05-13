@@ -1294,42 +1294,30 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
   const { t } = useTranslation(['settings', 'common']);
   const slots = typeof decision.slots === 'object' && decision.slots ? decision.slots : {};
   const topCandidates = Array.isArray(decision.top_candidates) ? decision.top_candidates.slice(0, 6) : [];
+  const warnings = Array.isArray(decision.warnings) ? decision.warnings.map((item) => String(item)) : [];
+  const executorPlan = typeof decision.executor_plan === 'object' && decision.executor_plan ? decision.executor_plan : {};
   const thresholds = typeof decision.semantic_thresholds_used === 'object' && decision.semantic_thresholds_used ? decision.semantic_thresholds_used as Record<string, unknown> : {};
   const groupScores = Array.isArray(decision.intent_group_scores) ? decision.intent_group_scores.slice(0, 5) : [];
   const score = typeof decision.intent_score === 'number' ? decision.intent_score : decision.semantic_score;
   const margin = typeof decision.intent_margin === 'number' ? decision.intent_margin : decision.semantic_margin;
   const reason = readableRouteReason(String(decision.not_executed_reason || decision.diagnostic_reason || decision.bypass_reason || ''), t, score, margin, thresholds);
+  const mainTarget = routeMainTarget(decision, t);
+  const utilityStatus = `${decision.utility_required ? t('settings:general.required') : t('settings:general.notRequired')} / ${decision.utility_available ? t('settings:general.available') : t('settings:general.unavailable')} / ${utilitySlotsStatus(decision, t)}`;
   return (
     <>
-      <h4 className="settings-compact-subheading">{t('settings:general.executionSummary')}</h4>
+      <h4 className="settings-compact-subheading">{t('settings:general.summary')}</h4>
       <dl className="settings-definition-grid">
         <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
-        <Metric label={t('settings:general.wouldExecute')} value={decision.would_execute ? t('settings:general.yes') : t('settings:general.no')} />
-        <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
-        <Metric label={t('settings:general.notExecutedReason')} value={reason || (decision.would_execute ? t('settings:general.wouldExecuteYesReason') : t('settings:general.none'))} />
-        <Metric label={t('settings:general.scoreMargin')} value={`${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')} / ${typeof margin === 'number' ? margin.toFixed(2) : t('settings:general.none')}`} />
-        {decision.predicted_intent === 'pet_command' ? (
-          <>
-            <Metric label={t('settings:general.petAction')} value={String(decision.pet_action || t('settings:general.none'))} />
-            <Metric label={t('settings:general.targetPet')} value={petSummary(decision, 'target', t)} />
-            <Metric label={t('settings:general.sourcePet')} value={petSummary(decision, 'source', t)} />
-            <Metric label={t('settings:general.generatedPetCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
-          </>
-        ) : null}
-        <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
-        <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
-      </dl>
-      <h4 className="settings-compact-subheading">{t('settings:general.semanticUtilityPipeline')}</h4>
-      <dl className="settings-definition-grid">
-        <Metric label={t('settings:general.semanticDecision')} value={`${String(decision.predicted_intent || t('settings:general.none'))} / ${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')}`} />
         <Metric label={t('settings:general.routeSpec')} value={String(decision.route_spec_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.actionSpec')} value={String(decision.action_spec_id || t('settings:general.none'))} />
-        <Metric label={t('settings:general.slotSchema')} value={String(decision.slot_schema_id || t('settings:general.none'))} />
-        <Metric label={t('settings:general.utilityExtraction')} value={`${t('settings:general.required')}: ${decision.utility_required ? t('settings:general.yes') : t('settings:general.no')} / ${t('settings:general.used')}: ${decision.utility_used ? t('settings:general.yes') : t('settings:general.no')} / ${t('settings:general.ok')}: ${decision.utility_ok ? t('settings:general.yes') : t('settings:general.no')}`} />
-        <Metric label={t('settings:general.utilityAvailable')} value={decision.utility_available ? t('settings:general.yes') : t('settings:general.no')} />
-        <Metric label={t('settings:general.utilityFailureReason')} value={readableRouteReason(String(decision.utility_error_code || ''), t, score, margin, thresholds) || t('settings:general.none')} />
-        <Metric label={t('settings:general.validatorResult')} value={`${String(decision.validator_id || t('settings:general.none'))}: ${decision.validation_ok ? t('settings:general.valid') : t('settings:general.invalid')}`} />
-        <Metric label={t('settings:general.executionPlan')} value={`${String(decision.executor_id || t('settings:general.none'))}: ${String(decision.route_action || t('settings:general.none'))}`} />
+        <Metric label={t('settings:general.wouldExecute')} value={decision.would_execute ? t('settings:general.yes') : t('settings:general.no')} />
+        <Metric label={t('settings:general.executedInRealRun')} value={t('settings:general.routeTestOnly')} />
+        <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
+        <Metric label={t('settings:general.notExecutedReason')} value={reason || (decision.would_execute ? t('settings:general.wouldExecuteYesReason') : t('settings:general.none'))} />
+        <Metric label={t('settings:general.mainTarget')} value={mainTarget} />
+        <Metric label={t('settings:general.scoreMargin')} value={`${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')} / ${typeof margin === 'number' ? margin.toFixed(2) : t('settings:general.none')}`} />
+        <Metric label={t('settings:general.utilityLlm')} value={utilityStatus} />
+        <Metric label={t('settings:general.validation')} value={decision.validation_ok ? t('settings:general.passed') : t('settings:general.failed')} />
       </dl>
       <details className="settings-disclosure route-test-diagnostics">
         <summary>{t('settings:general.diagnostics')}</summary>
@@ -1341,18 +1329,28 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
           <Metric label={t('settings:general.secondIntent')} value={String(decision.second_intent || t('settings:general.none'))} />
           <Metric label={t('settings:general.semanticThresholds')} value={formatThresholds(thresholds, t)} />
           <Metric label={t('settings:general.intentGroupScores')} value={groupScores.map((item) => candidateSummary(item, t)).join(' | ') || t('settings:general.none')} wide />
+          <Metric label={t('settings:general.slotSchema')} value={String(decision.slot_schema_id || t('settings:general.none'))} />
+          <Metric label={t('settings:general.utilityFailureReason')} value={readableRouteReason(String(decision.utility_error_code || ''), t, score, margin, thresholds) || t('settings:general.none')} />
+          <Metric label={t('settings:general.validatorResult')} value={`${String(decision.validator_id || t('settings:general.none'))}: ${decision.validation_ok ? t('settings:general.valid') : t('settings:general.invalid')}`} />
+          <Metric label={t('settings:general.executionPlan')} value={compactJson(executorPlan)} wide />
           <Metric label={t('settings:general.autoExecutable')} value={decision.auto_executable ? t('settings:general.yes') : t('settings:general.no')} />
           <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.targetAction')} value={String(decision.target_action_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.targetCommand')} value={String(decision.target_command || t('settings:general.none'))} />
+          <Metric label={t('settings:general.petAction')} value={String(decision.pet_action || t('settings:general.none'))} />
+          <Metric label={t('settings:general.targetPet')} value={petSummary(decision, 'target', t)} />
+          <Metric label={t('settings:general.sourcePet')} value={petSummary(decision, 'source', t)} />
+          <Metric label={t('settings:general.generatedPetCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
+          <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
+          <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
           <Metric label={t('settings:general.validatorId')} value={String(decision.validator_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.executorId')} value={String(decision.executor_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.kbCandidate')} value={candidateSummary(decision.kb_candidate, t)} />
           <Metric label={t('settings:general.agentCandidate')} value={candidateSummary(decision.agent_candidate, t)} />
           <Metric label={t('settings:general.actionCandidate')} value={candidateSummary(decision.action_candidate, t)} />
           <Metric label={t('settings:general.commandCandidate')} value={candidateSummary(decision.command_candidate, t)} />
-          <Metric label={t('settings:general.slots')} value={JSON.stringify(slots)} wide />
-          <Metric label={t('settings:general.warnings')} value={Array.isArray(decision.warnings) ? decision.warnings.join(', ') || t('settings:general.none') : t('settings:general.none')} wide />
+          <Metric label={t('settings:general.slots')} value={compactJson(slots)} wide />
+          <Metric label={t('settings:general.warnings')} value={warnings.map((code) => readableRouteReason(code, t, score, margin, thresholds)).join(', ') || t('settings:general.none')} wide />
         </dl>
         {topCandidates.length ? (
           <div className="settings-inline-summary">
@@ -1367,13 +1365,40 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
 
 function readableRouteReason(code: string, t: ReturnType<typeof useTranslation>['t'], score: unknown, margin: unknown, thresholds: Record<string, unknown>): string {
   if (!code) return '';
-  if (code === 'semantic_intent_score_below_threshold' && typeof score === 'number' && typeof thresholds.intent_min_score === 'number') {
+  if (code === 'semantic_confidence_too_low' && typeof score === 'number' && typeof thresholds.intent_min_score === 'number') {
     return t('settings:general.scoreBelowThresholdDetail', { score: score.toFixed(2), threshold: thresholds.intent_min_score.toFixed(2) });
   }
-  if (code === 'semantic_margin_below_threshold' && typeof margin === 'number' && typeof thresholds.intent_min_margin === 'number') {
+  if (code === 'semantic_margin_too_low' && typeof margin === 'number' && typeof thresholds.intent_min_margin === 'number') {
     return t('settings:general.marginBelowThresholdDetail', { margin: margin.toFixed(2), threshold: thresholds.intent_min_margin.toFixed(2) });
   }
   return t(`settings:general.routeReason.${code}`, { defaultValue: code });
+}
+
+function utilitySlotsStatus(decision: Record<string, unknown>, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!decision.utility_required) return t('settings:general.skipped');
+  if (decision.utility_ok) return t('settings:general.slotsOk');
+  if (decision.utility_used) return t('settings:general.failed');
+  return t('settings:general.skipped');
+}
+
+function routeMainTarget(decision: Record<string, unknown>, t: ReturnType<typeof useTranslation>['t']): string {
+  if (decision.predicted_intent === 'knowledge_query') {
+    const ids = Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') : '';
+    return ids ? t('settings:general.kbOverrideTarget', { ids }) : t('settings:general.none');
+  }
+  if (decision.predicted_intent === 'pet_command') {
+    return String(decision.generated_command || t('settings:general.none'));
+  }
+  if (decision.predicted_intent === 'chat') {
+    return String(decision.target_agent_id || t('settings:general.currentPromptAgent'));
+  }
+  return String(decision.target_agent_id || decision.target_command || decision.target_action_id || t('settings:general.none'));
+}
+
+function compactJson(value: unknown): string {
+  if (!value || typeof value !== 'object') return '{}';
+  const text = JSON.stringify(value);
+  return text.length > 320 ? `${text.slice(0, 317)}...` : text;
 }
 
 function formatThresholds(thresholds: Record<string, unknown>, t: ReturnType<typeof useTranslation>['t']): string {

@@ -149,7 +149,7 @@ def test_auto_image_generation_is_metadata_only_without_changing_session_default
     assert intent["route_action"] == "metadata_only"
     assert intent["auto_executable"] is False
     assert intent["executed"] is False
-    assert "image_generation_auto_route_deferred_until_action_routing" in intent["warnings"]
+    assert "image_generation_action_routing_not_ready" in intent["warnings"]
     assert intent["session_default_agent_id"] == "chat"
     assert intent["session_default_changed"] is False
     assert fixture.sessions.get_session(session.session_id).default_agent_id == "chat"
@@ -167,7 +167,7 @@ def test_auto_image_generation_does_not_check_comfyui_agent_for_execution() -> N
     intent = prompt_run.metadata["intent_routing"]
     assert prompt_run.target_id == "chat"
     assert intent["route_action"] == "metadata_only"
-    assert "image_generation_auto_route_deferred_until_action_routing" in intent["warnings"]
+    assert "image_generation_action_routing_not_ready" in intent["warnings"]
 
 
 def test_auto_knowledge_query_uses_temporary_retrieval_override(monkeypatch) -> None:
@@ -282,7 +282,7 @@ def test_auto_knowledge_query_uses_semantic_threshold_not_legacy_high_threshold(
     assert intent["semantic_thresholds_used"]["intent_min_score"] == 0.5
     assert intent["route_action"] == "knowledge_override"
     assert intent["temporary_knowledge_base_ids"] == [kb.id]
-    assert intent_step.message == "knowledge_query · score 0.57 · executed"
+    assert intent_step.message == "knowledge_query - executed"
     assert search_calls[0]["knowledge_base_ids"] == [kb.id]
 
 

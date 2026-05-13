@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Any
 import inspect
 import re
@@ -9,77 +8,9 @@ from ai_workbench.core.intent_specs import compact_specs_for_utility, get_action
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
 
 
-@dataclass(frozen=True)
-class IntentDefinition:
-    id: str
-    label: str
-    description: str
-    examples: list[str]
-    safe_auto_route: bool = False
-    target_agent_id: str | None = None
-
-
-INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
-    IntentDefinition(
-        id="chat",
-        label="Chat",
-        description="General conversation, writing, translation, and follow-up help.",
-        examples=["继续", "解释一下", "还有什么方法", "translate this", "help me write"],
-        safe_auto_route=True,
-    ),
-    IntentDefinition(
-        id="image_generation",
-        label="Image generation",
-        description="Requests to create or draw an image.",
-        examples=["帮我生成一张图片", "画一张图", "make an image", "generate a picture", "生成角色立绘"],
-        target_agent_id="comfyui_agent",
-    ),
-    IntentDefinition(
-        id="knowledge_query",
-        label="Knowledge query",
-        description="Questions that ask for project, document, or knowledge base grounded answers.",
-        examples=["知识库里说了什么", "根据项目文档回答", "星球大战知识库里的内容", "what does the documentation say"],
-    ),
-    IntentDefinition(
-        id="agent_route",
-        label="Agent route",
-        description="Requests that appear to ask for another agent or specialized route.",
-        examples=["找翻译 agent", "交给图片助手", "route this to the image agent"],
-    ),
-    IntentDefinition(
-        id="pet_command",
-        label="Pet command",
-        description="Narrow Workbench Pet status, wake, tuck, select, and reload commands.",
-        examples=[
-            "我想看看宠物状态",
-            "看看 Jedi Cal 状态",
-            "Jedi Cal 目前怎么样",
-            "唤醒宠物",
-            "召唤宠物 Cal",
-            "把宠物叫出来",
-            "隐藏 Jedi Cal",
-            "把宠物换成 BD-1",
-            "切换到 Jedi Cal",
-            "重新加载宠物",
-            "刷新宠物",
-            "show pet status",
-            "wake the pet",
-            "switch pet to BD-1",
-        ],
-    ),
-    IntentDefinition(
-        id="command_like",
-        label="Command-like",
-        description="Requests that resemble operational commands or cleanup actions.",
-        examples=["释放显存", "清理内存", "删除这个", "运行命令"],
-    ),
-)
-
-
 SAFE_AUTO_ROUTE_INTENTS = {"chat", "knowledge_query", "pet_command"}
 PIPELINE_VERSION = "semantic_utility_validator_v1"
 UTILITY_REQUIRED_INTENTS = {"knowledge_query", "pet_command"}
-PET_ACTIONS = {"status", "wake", "tuck", "select", "reload"}
 COMMAND_LIKE_WARNING = "command_like_auto_route_disabled"
 SEMANTIC_AUTO_MIN_MARGIN = 0.03
 DIAGNOSTIC_ONLY_WARNINGS = {
@@ -87,7 +18,7 @@ DIAGNOSTIC_ONLY_WARNINGS = {
     "agent_route": "agent_route_auto_route_disabled",
     "action_route": "action_route_auto_route_disabled",
     "compound": "compound_intent_not_auto_routed",
-    "image_generation": "image_generation_auto_route_deferred_until_action_routing",
+    "image_generation": "image_generation_action_routing_not_ready",
 }
 BLOCKING_AUTO_WARNINGS = {
     "ambiguous_intent",
@@ -109,10 +40,10 @@ BLOCKING_AUTO_WARNINGS = {
     "pet_command_runtime_unavailable",
     "utility_llm_required",
     "utility_llm_unavailable",
-    "utility_llm_slots_failed",
+    "utility_slots_failed",
+    "utility_invalid_json",
     "utility_semantic_action_conflict",
     "validation_failed",
-    "pet_domain_not_workbench_pet",
     "not_workbench_pet_context",
     "knowledge_query_missing_query",
     "kb_hint_semantic_conflict",
@@ -126,16 +57,12 @@ CUSTOM_EXAMPLE_FIELDS = {
     "agent_route": "intent_routing_agent_route_examples",
     "command_like": "intent_routing_command_like_examples",
 }
-MAX_ROUTE_EXAMPLES = 100
 MAX_ROUTE_EXAMPLE_CHARS = 300
 MAX_AGENT_ALIASES = 50
 MAX_AGENT_ALIAS_CHARS = 120
 MAX_AGENT_EXAMPLES = 100
 MAX_AGENT_EXAMPLE_CHARS = 300
 
-# RouteSpec is the source of built-in route examples for Intent Routing v2.
-# The legacy IntentDefinition block above remains temporarily for import
-# compatibility and will be removed when Round 4 migrates the old adapters.
 INTENT_DEFINITIONS = get_builtin_route_specs()
 
 
@@ -433,7 +360,7 @@ def _decision_metadata(
             )
         if intent_id in UTILITY_REQUIRED_INTENTS and not metadata.get("utility_ok"):
             reason = str(metadata.get("utility_error_code") or "utility_llm_required")
-            metadata["not_executed_reason"] = reason if reason in {"utility_llm_required", "utility_llm_unavailable", "utility_llm_slots_failed", "utility_semantic_action_conflict"} else "utility_llm_unavailable"
+            metadata["not_executed_reason"] = reason if reason in {"utility_llm_required", "utility_llm_unavailable", "utility_slots_failed", "utility_invalid_json", "utility_semantic_action_conflict"} else "utility_llm_unavailable"
             metadata["warnings"] = _ensure_warning(warnings, metadata["not_executed_reason"])
             metadata["executor_plan"] = {"route_action": "metadata_only", "auto_executable": False}
         return metadata
@@ -458,7 +385,7 @@ def _decision_metadata(
     margin_value = prediction.get("semantic_margin")
     semantic_margin = float(margin_value) if isinstance(margin_value, (int, float)) else None
     if semantic_score < thresholds["intent_min_score"]:
-        reason = "semantic_intent_score_below_threshold"
+        reason = "semantic_confidence_too_low"
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
         metadata["not_executed_reason"] = reason
@@ -467,7 +394,7 @@ def _decision_metadata(
     if semantic_margin is not None and semantic_margin < thresholds["intent_min_margin"]:
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
-        metadata["not_executed_reason"] = "semantic_margin_below_threshold"
+        metadata["not_executed_reason"] = "semantic_margin_too_low"
         metadata["warnings"] = _ensure_warning(warnings, "semantic_margin_too_low")
         return metadata
     if any(warning in BLOCKING_AUTO_WARNINGS for warning in warnings):
@@ -484,7 +411,7 @@ def _decision_metadata(
         return metadata
     if intent_id in UTILITY_REQUIRED_INTENTS and not metadata.get("utility_ok"):
         reason = str(metadata.get("utility_error_code") or "utility_llm_required")
-        if reason not in {"utility_llm_required", "utility_llm_unavailable", "utility_llm_slots_failed", "utility_semantic_action_conflict"}:
+        if reason not in {"utility_llm_required", "utility_llm_unavailable", "utility_slots_failed", "utility_invalid_json", "utility_semantic_action_conflict"}:
             reason = "utility_llm_unavailable"
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
@@ -633,184 +560,6 @@ def _with_pipeline_result(
     return result
 
 
-PET_CONTEXT_TERMS = ("宠物", "电子宠物", "虚拟宠物", "桌宠", "pet", "小助手", "小人")
-PET_OPERATION_TERMS = (
-    "状态",
-    "目前怎么样",
-    "唤醒",
-    "召唤",
-    "唤出",
-    "叫出来",
-    "叫醒",
-    "出来",
-    "出来一下",
-    "隐藏",
-    "藏起来",
-    "换成",
-    "切换",
-    "重新加载",
-    "刷新",
-    "重载",
-    "status",
-    "wake",
-    "summon",
-    "bring out",
-    "show pet",
-    "hide",
-    "tuck",
-    "switch",
-    "reload",
-    "refresh",
-)
-
-
-def _parse_pet_command_text(text: str) -> dict[str, Any] | None:
-    raw = str(text or "").strip()
-    if not raw or raw.startswith(("/", "@", ":")):
-        return None
-    compact = _normalize_text(raw)
-    has_context = any(term.casefold() in compact for term in PET_CONTEXT_TERMS)
-    has_operation = any(term.casefold() in compact for term in PET_OPERATION_TERMS)
-    if not has_context and not has_operation:
-        return None
-
-    patterns: list[tuple[str, str, tuple[str, ...]]] = [
-        ("select_swap", "select", (r"^把\s*(?P<source>.+?)\s*换成\s*(?P<target>.+?)\s*$",)),
-        ("select", "select", (r"^把宠物换成\s*(?P<target>.+?)\s*$", r"^切换到\s*(?P<target>.+?)\s*$", r"^switch\s+(?:pet\s+)?to\s+(?P<target>.+?)\s*$")),
-        (
-            "wake",
-            "wake",
-            (
-                r"^唤醒\s*(?P<target>.+?)?\s*$",
-                r"^召唤\s*(?P<target>.+?)?\s*$",
-                r"^唤出\s*(?P<target>.+?)?\s*$",
-                r"^叫醒\s*(?P<target>.+?)?\s*$",
-                r"^把\s*(?P<target>.+?)\s*(?:叫出来|唤出|叫醒)\s*$",
-                r"^(?P<target>.+?)\s*(?:出来|出来一下)\s*$",
-                r"^(?:wake|summon|bring\s+out)\s+(?:the\s+)?(?P<target>.+?)?\s*$",
-                r"^show\s+(?:the\s+)?pet(?:\s+(?!(?:status)\s*$)(?P<target>.+?))?\s*$",
-            ),
-        ),
-        ("tuck", "tuck", (r"^隐藏\s*(?P<target>.+?)?\s*$", r"^把\s*(?P<target>.+?)\s*藏起来\s*$", r"^把\s*(?P<target>.+?)\s*隐藏\s*$", r"^(?:hide|tuck)\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
-        ("reload", "reload", (r"^重新加载\s*(?P<target>.+?)?\s*$", r"^刷新\s*(?P<target>.+?)?\s*$", r"^重载\s*(?P<target>.+?)?\s*$", r"^(?:reload|refresh)\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
-        ("status", "status", (r"^我想看看宠物状态\s*$", r"^看看\s*(?P<target>.+?)?\s*状态\s*$", r"^(?P<target>.+?)\s*目前怎么样\s*$", r"^(?:show\s+)?(?:the\s+)?(?P<target>.+?)?\s*status\s*$")),
-    ]
-    for _, action, regexes in patterns:
-        for regex in regexes:
-            match = re.match(regex, raw, flags=re.IGNORECASE)
-            if not match:
-                continue
-            target = _clean_pet_hint(match.groupdict().get("target"))
-            source = _clean_pet_hint(match.groupdict().get("source"))
-            if target in {"宠物", "桌宠", "电子宠物", "虚拟宠物", "pet", "the pet"}:
-                target = None
-            if source in {"宠物", "桌宠", "电子宠物", "虚拟宠物", "pet", "the pet"}:
-                source = None
-            if not has_context and not target and action != "status":
-                return None
-            return {"pet_action": action, "target_pet_hint": target, "source_pet_hint": source, "has_pet_context": has_context}
-    return None
-
-
-def _clean_pet_hint(value: Any) -> str | None:
-    text = str(value or "").strip()
-    text = re.sub(r"^(?:宠物|桌宠|电子宠物|虚拟宠物)\s*", "", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r"^(?:the\s+)?pet\s+", "", text, flags=re.IGNORECASE).strip()
-    return _short_text(text, 120) if text else None
-
-
-def _pet_command_decision(
-    metadata: dict[str, Any],
-    *,
-    text: str,
-    mode: str,
-    runtime_registry: Any = None,
-    capability_config_store: Any = None,
-    auto_mode: bool,
-) -> dict[str, Any]:
-    warnings = list(metadata.get("warnings") or [])
-    slots = metadata.get("slots") if isinstance(metadata.get("slots"), dict) else {}
-    action = str(slots.get("action") or "").strip()
-    domain = str(slots.get("domain") or "").strip()
-    target_hint = slots.get("target_pet_hint")
-    source_hint = slots.get("source_pet_hint")
-    if not action or action not in PET_ACTIONS:
-        reason = "pet_action_unrecognized"
-        return {**metadata, "route_action": "fallback_current_agent", "auto_executable": False, "executed": False, "would_execute": False, "not_executed_reason": reason, "validation_ok": False, "warnings": _ensure_warning(warnings, reason)}
-    if domain != "workbench_pet":
-        reason = "pet_domain_not_workbench_pet"
-        return {**metadata, "pet_action": action, "route_action": "fallback_current_agent", "auto_executable": False, "executed": False, "would_execute": False, "not_executed_reason": reason, "validation_ok": False, "warnings": _ensure_warning(warnings, reason)}
-    pets_state = _load_pet_candidates(runtime_registry, capability_config_store)
-    if pets_state.get("warning"):
-        reason = str(pets_state["warning"])
-        return {**metadata, "pet_action": action, "route_action": "fallback_current_agent", "auto_executable": False, "executed": False, "would_execute": False, "not_executed_reason": reason, "validation_ok": False, "warnings": _ensure_warning(warnings, reason)}
-
-    target = _resolve_pet_hint(target_hint, pets_state) if target_hint else pets_state.get("default_pet")
-    source = _resolve_pet_hint(source_hint, pets_state) if source_hint else None
-    reason = None
-    if target_hint and target.get("reason"):
-        reason = str(target["reason"])
-    elif action == "select" and not target_hint:
-        reason = "pet_candidate_not_found"
-    elif source_hint and source.get("reason"):
-        reason = str(source["reason"])
-    elif source and source.get("pet") and pets_state.get("default_pet", {}).get("pet") and source["pet"]["id"] != pets_state["default_pet"]["pet"]["id"]:
-        reason = "source_pet_mismatch"
-    elif (
-        action in {"wake", "tuck", "reload"}
-        and target_hint
-        and target.get("pet")
-        and pets_state.get("default_pet", {}).get("pet")
-        and target["pet"]["id"] != pets_state["default_pet"]["pet"]["id"]
-    ):
-        reason = "target_pet_not_current"
-    if reason is None and not target.get("pet") and action != "status":
-        reason = "pet_candidate_not_found"
-
-    target_pet = target.get("pet") if isinstance(target, dict) else None
-    source_pet = source.get("pet") if isinstance(source, dict) else None
-    generated_command = _generated_pet_command(action, target_pet.get("id") if action == "select" and isinstance(target_pet, dict) else None)
-    decision = {
-        **metadata,
-        "predicted_intent": "pet_command",
-        "pet_action": action,
-        "target_pet_hint": target_hint,
-        "target_pet_id": target_pet.get("id") if isinstance(target_pet, dict) else None,
-        "target_pet_name": target_pet.get("display_name") if isinstance(target_pet, dict) else None,
-        "source_pet_hint": source_hint,
-        "source_pet_id": source_pet.get("id") if isinstance(source_pet, dict) else None,
-        "source_pet_name": source_pet.get("display_name") if isinstance(source_pet, dict) else None,
-        "generated_command": generated_command,
-        "target_command": "/pet",
-        "route_action": "pet_command" if reason is None else "fallback_current_agent",
-        "auto_executable": reason is None and auto_mode,
-        "executed": reason is None and auto_mode,
-        "would_execute": reason is None and auto_mode,
-        "not_executed_reason": reason,
-        "validation_ok": reason is None,
-        "executor_plan": {
-            "route_action": "pet_command" if reason is None else "fallback_current_agent",
-            "auto_executable": reason is None and auto_mode,
-            "generated_command": generated_command if reason is None else None,
-            "target_pet_id": target_pet.get("id") if isinstance(target_pet, dict) else None,
-        },
-        "warnings": warnings if reason is None else _ensure_warning(warnings, reason),
-    }
-    if not auto_mode and reason is None:
-        decision["auto_executable"] = True
-        decision["would_execute"] = mode == "auto"
-        decision["executed"] = False
-    return decision
-
-
-def _generated_pet_command(action: str, target_pet_id: str | None) -> str:
-    if action == "select" and target_pet_id:
-        return f"/pet select {target_pet_id}"
-    if action == "status":
-        return "/pet status"
-    return f"/pet {action}"
-
-
 def _load_pet_candidates(runtime_registry: Any, capability_config_store: Any) -> dict[str, Any]:
     if runtime_registry is None:
         return {"pets": [], "default_pet": {}, "warning": "pet_command_runtime_unavailable"}
@@ -889,7 +638,6 @@ def _rounded_optional(value: Any) -> float | None:
         return round(float(value), 4)
     return None
 
-
 def _semantic_thresholds_used(settings: Any, prediction: dict[str, Any] | None = None) -> dict[str, float]:
     existing = (prediction or {}).get("semantic_thresholds_used")
     if isinstance(existing, dict):
@@ -918,101 +666,9 @@ def _first_blocking_warning(warnings: list[str]) -> str:
     for warning in warnings:
         if warning in BLOCKING_AUTO_WARNINGS:
             if warning == "ambiguous_intent":
-                return "semantic_margin_below_threshold"
+                return "semantic_margin_too_low"
             return warning
     return "auto_route_blocked"
-
-
-def _knowledge_not_executed_reason(decision: dict[str, Any]) -> str:
-    warnings = list(decision.get("warnings") or [])
-    if "ambiguous_kb_candidate" in warnings or "ambiguous_knowledge_base" in warnings:
-        return "kb_candidate_ambiguous"
-    if "no_kb_candidate_or_active_kbs" in warnings or "no_semantic_kb_candidate" in warnings or "no_matching_knowledge_base" in warnings:
-        return "no_kb_candidate"
-    if "selected_kb_disabled" in warnings:
-        return "selected_kb_disabled"
-    if "knowledge_store_unavailable" in warnings:
-        return "knowledge_store_unavailable"
-    if "utility_llm_slots_failed" in warnings:
-        return "utility_llm_slots_failed"
-    if "kb_hint_semantic_conflict" in warnings:
-        return "utility_semantic_action_conflict"
-    return _first_blocking_warning(warnings) if warnings else "knowledge_override_not_available"
-
-
-def _image_generation_decision(metadata: dict[str, Any], agent_registry: Any, agent_config_store: Any) -> dict[str, Any]:
-    warnings = list(metadata.get("warnings") or [])
-    target_agent_id = "comfyui_agent"
-    try:
-        target_agent = agent_registry.get(target_agent_id)
-    except KeyError:
-        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": metadata.get("session_default_agent_id"), "warnings": [*warnings, "comfyui_agent_not_found"]}
-    if getattr(target_agent, "type", "") != "script":
-        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": metadata.get("session_default_agent_id"), "warnings": [*warnings, "comfyui_agent_not_script"]}
-    if agent_config_store is not None and not agent_config_store.is_enabled(target_agent_id):
-        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": metadata.get("session_default_agent_id"), "warnings": [*warnings, "comfyui_agent_disabled"]}
-    return {**metadata, "route_action": "route_agent", "target_agent_id": target_agent_id, "target_action_id": "default", "warnings": warnings}
-
-
-def _knowledge_query_decision(metadata: dict[str, Any], session: Any, agent: Any, knowledge_store: Any) -> dict[str, Any]:
-    warnings = list(metadata.get("warnings") or [])
-    slots = metadata.get("slots") if isinstance(metadata.get("slots"), dict) else {}
-    query_override = str(slots.get("query") or "").strip()
-    if not query_override:
-        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": _ensure_warning(warnings, "utility_llm_slots_failed")}
-    if knowledge_store is None:
-        return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": [*warnings, "knowledge_store_unavailable"]}
-    kb_hint = str(slots.get("kb_hint") or "").strip()
-    selected_ids: list[str] = []
-    explicit_kb_id = str(metadata.get("kb_id") or "").strip()
-    ambiguous_semantic_kb = _semantic_kb_candidate_ambiguous(metadata)
-    if ambiguous_semantic_kb:
-        warnings.append("ambiguous_kb_candidate")
-    if explicit_kb_id and not ambiguous_semantic_kb:
-        try:
-            kb = knowledge_store.get_knowledge_base(explicit_kb_id)
-            if getattr(kb, "enabled", False):
-                selected_ids = [kb.id]
-                metadata["kb_match_source"] = metadata.get("kb_match_source") or "name"
-                if kb_hint and not _kb_hint_matches(kb, kb_hint):
-                    selected_ids = []
-                    warnings.append("kb_hint_semantic_conflict")
-                    metadata["kb_match_source"] = "none"
-            else:
-                warnings.append("selected_kb_disabled")
-        except KeyError:
-            warnings.append("no_matching_knowledge_base")
-    if not selected_ids:
-        if kb_hint and "kb_hint_semantic_conflict" not in warnings:
-            match_result = _match_knowledge_bases(knowledge_store, kb_hint)
-            selected_ids = match_result["ids"]
-            warnings.extend(match_result["warnings"])
-            metadata["kb_match_source"] = match_result.get("source", "none")
-            if match_result.get("matched_alias"):
-                metadata["matched_alias"] = _short_text(str(match_result["matched_alias"]), 80)
-            if match_result.get("ambiguous_matches"):
-                metadata["ambiguous_matches"] = match_result["ambiguous_matches"]
-            if not selected_ids:
-                active_ids = _active_session_kb_ids(knowledge_store, getattr(session, "session_id", ""))
-                selected_ids = active_ids
-                if active_ids:
-                    metadata["kb_match_source"] = "active_session"
-                if not active_ids:
-                    return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": _ensure_warning(warnings, "no_kb_candidate_or_active_kbs")}
-        else:
-            selected_ids = _active_session_kb_ids(knowledge_store, getattr(session, "session_id", ""))
-            if not selected_ids:
-                return {**metadata, "route_action": "fallback_current_agent", "target_agent_id": agent.id, "warnings": _ensure_warning(warnings, "no_kb_candidate_or_active_kbs")}
-            metadata["kb_match_source"] = "active_session"
-    return {
-        **metadata,
-        "route_action": "knowledge_override",
-        "target_agent_id": agent.id,
-        "target_action_id": "default",
-        "temporary_knowledge_base_ids": selected_ids,
-        "knowledge_query_override": _short_text(query_override) if query_override else None,
-        "warnings": warnings,
-    }
 
 
 def _semantic_kb_candidate_ambiguous(metadata: dict[str, Any]) -> bool:
@@ -1197,8 +853,9 @@ async def _maybe_apply_utility_slots(
             extracted = await utility_llm_service.extract_intent_json(text, settings, context=context)
         except TypeError:
             extracted = await utility_llm_service.extract_intent_json(text, settings)
-    except Exception:
-        return {**base, "utility_used": True, "utility_error_code": "utility_llm_slots_failed", "warnings": _ensure_warning(list(prediction.get("warnings") or []), "utility_llm_slots_failed")}
+    except Exception as exc:
+        code = "utility_invalid_json" if getattr(exc, "code", "") == "utility_llm_invalid_json" else "utility_slots_failed"
+        return {**base, "utility_used": True, "utility_error_code": code, "warnings": _ensure_warning(list(prediction.get("warnings") or []), code)}
     extracted_intent = str(extracted.get("intent") or "unknown")
     if extracted_intent not in {"unknown", predicted_intent}:
         return {
@@ -1291,5 +948,5 @@ def _bypass_reason(session: Any, route: RouteTarget) -> str | None:
     if route.target_id != getattr(session, "default_agent_id", None):
         return "not_default_agent"
     if (getattr(session, "context_mode", "single_assistant") or "single_assistant") != "single_assistant":
-        return "group_transcript"
+        return "group_transcript_not_supported"
     return None

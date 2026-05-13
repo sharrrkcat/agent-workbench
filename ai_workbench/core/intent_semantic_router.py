@@ -401,7 +401,7 @@ def _rank_decision(query: list[float], index: SemanticRouteIndex, *, thresholds:
     margin = top_score - second_score
     warnings: list[str] = []
     if top_score < thresholds["intent_min_score"]:
-        warnings.append("semantic_intent_score_below_threshold")
+        warnings.append("semantic_confidence_too_low")
     elif margin < thresholds["intent_min_margin"]:
         warnings.append("ambiguous_intent")
     sub_intents = [intent for intent, score in ordered_intents[:3] if intent != top_intent and score >= thresholds["intent_min_score"] and top_score - score <= thresholds["intent_min_margin"]]

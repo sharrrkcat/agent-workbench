@@ -41,20 +41,15 @@ from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 from ai_workbench.core.time import isoformat_utc, utc_now
 from ai_workbench.core.worldbook_context import build_session_worldbook_context, worldbook_step_metadata
 
-
 def _intent_routing_step_message(intent: dict[str, Any]) -> str:
     if not intent.get("evaluated"):
         reason = str(intent.get("skip_reason") or intent.get("bypass_reason") or "skipped")
-        return f"skipped: {reason}"
+        return f"skipped: {_intent_reason_label(reason)}"
     predicted = str(intent.get("predicted_intent") or "chat")
-    score = intent.get("intent_score", intent.get("semantic_score"))
-    score_part = f" · score {_format_score(score)}" if isinstance(score, (int, float)) else ""
     if intent.get("executed") or intent.get("would_execute"):
-        return f"{predicted}{score_part} · executed"
+        return f"{predicted} - executed"
     reason = _intent_reason_label(str(intent.get("not_executed_reason") or intent.get("diagnostic_reason") or "not executed"))
-    return f"{predicted}{score_part} · not executed: {reason}"
-
-
+    return f"{predicted} - not executed: {reason}"
 def _intent_routing_step_metadata(intent: dict[str, Any]) -> dict[str, Any]:
     return {
         "evaluated": bool(intent.get("evaluated")),
@@ -76,14 +71,9 @@ def _intent_routing_step_metadata(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _format_score(value: Any) -> str:
-    return f"{float(value):.2f}" if isinstance(value, (int, float)) else ""
-
-
 def _intent_reason_label(reason: str) -> str:
     return {
-        "semantic_intent_score_below_threshold": "score below threshold",
-        "semantic_margin_below_threshold": "margin below threshold",
+        "semantic_confidence_too_low": "score below threshold",
         "semantic_margin_too_low": "margin below threshold",
         "no_kb_candidate": "no KB candidate",
         "no_kb_candidate_or_active_kbs": "no KB candidate or active KBs",
@@ -92,17 +82,17 @@ def _intent_reason_label(reason: str) -> str:
         "kb_hint_semantic_conflict": "KB hint conflict",
         "knowledge_query_missing_query": "Knowledge query missing query",
         "safe_auto_route_disabled": "safe auto routing disabled",
-        "image_generation_auto_route_deferred_until_action_routing": "diagnostic-only",
+        "image_generation_action_routing_not_ready": "diagnostic-only",
         "command_like_auto_route_disabled": "diagnostic-only",
         "agent_route_auto_route_disabled": "diagnostic-only",
         "action_route_auto_route_disabled": "diagnostic-only",
         "compound_intent_not_auto_routed": "diagnostic-only",
         "utility_llm_required": "Utility LLM required",
         "utility_llm_unavailable": "Utility LLM unavailable",
-        "utility_llm_slots_failed": "Utility LLM slots failed",
+        "utility_slots_failed": "Utility LLM slots failed",
+        "utility_invalid_json": "Utility LLM returned invalid JSON",
         "utility_semantic_action_conflict": "Utility and semantic decision conflict",
         "validation_failed": "validation failed",
-        "pet_domain_not_workbench_pet": "Pet domain is not Workbench Pet",
         "not_workbench_pet_context": "not Workbench pet",
         "pet_candidate_not_found": "Pet candidate not found",
         "ambiguous_pet_candidate": "Pet candidate ambiguous",
@@ -111,6 +101,10 @@ def _intent_reason_label(reason: str) -> str:
         "source_pet_not_found": "Source pet not found",
         "ambiguous_source_pet_candidate": "Source pet candidate ambiguous",
         "source_pet_mismatch": "Source pet does not match the current default pet",
+        "group_transcript_not_supported": "group transcript not supported",
+        "explicit_command": "explicit command",
+        "explicit_agent": "explicit Agent call",
+        "explicit_action": "explicit action",
     }.get(reason, reason)
 
 

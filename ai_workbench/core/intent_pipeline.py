@@ -95,7 +95,7 @@ class KnowledgeQueryValidator:
         if decision.get("predicted_intent") != "knowledge_query" or route_spec_id != "knowledge_query":
             return _failed("utility_semantic_intent_conflict", slots, warnings)
         if not _semantic_thresholds_pass(decision):
-            return _failed(str(decision.get("not_executed_reason") or "semantic_threshold_not_met"), slots, warnings)
+            return _failed(str(decision.get("not_executed_reason") or "semantic_confidence_too_low"), slots, warnings)
         if slots.get("intent") != "knowledge_query":
             return _failed("utility_semantic_intent_conflict", slots, warnings)
 
@@ -170,7 +170,7 @@ class PetCommandValidator:
         if decision.get("predicted_intent") != "pet_command" or route_spec_id != "pet_command":
             return _failed("utility_semantic_intent_conflict", slots, warnings)
         if not _semantic_thresholds_pass(decision):
-            return _failed(str(decision.get("not_executed_reason") or "semantic_threshold_not_met"), slots, warnings)
+            return _failed(str(decision.get("not_executed_reason") or "semantic_confidence_too_low"), slots, warnings)
         if slots.get("intent") != "pet_command":
             return _failed("utility_semantic_intent_conflict", slots, warnings)
         domain = str(slots.get("domain") or "").strip()

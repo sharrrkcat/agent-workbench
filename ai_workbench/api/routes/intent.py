@@ -227,9 +227,8 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
 
 def _route_test_decision(decision: dict) -> dict:
     payload = dict(decision)
-    if payload.get("auto_executable"):
-        payload["would_execute"] = True
     payload["executed"] = False
+    payload["executed_in_real_run"] = "route_test_only"
     payload["semantic_candidate"] = {
         "spec_id": payload.get("route_spec_id"),
         "intent": payload.get("predicted_intent"),

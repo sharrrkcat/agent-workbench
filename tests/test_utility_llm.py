@@ -473,5 +473,5 @@ def test_intent_shadow_utility_failure_records_slots_failed_without_rule_based_f
     assert intent["utility_required"] is True
     assert intent["utility_used"] is True
     assert intent["utility_ok"] is False
-    assert intent["not_executed_reason"] == "utility_llm_slots_failed"
-    assert "utility_llm_slots_failed" in intent["warnings"]
+    assert intent["not_executed_reason"] == "utility_slots_failed"
+    assert "utility_slots_failed" in intent["warnings"]
