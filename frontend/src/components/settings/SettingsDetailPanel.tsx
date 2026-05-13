@@ -1244,6 +1244,15 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
         <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
         <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
       </dl>
+      <h4 className="settings-compact-subheading">{t('settings:general.semanticUtilityPipeline')}</h4>
+      <dl className="settings-definition-grid">
+        <Metric label={t('settings:general.semanticDecision')} value={`${String(decision.predicted_intent || t('settings:general.none'))} / ${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')}`} />
+        <Metric label={t('settings:general.utilityExtraction')} value={`${t('settings:general.required')}: ${decision.utility_required ? t('settings:general.yes') : t('settings:general.no')} / ${t('settings:general.used')}: ${decision.utility_used ? t('settings:general.yes') : t('settings:general.no')} / ${t('settings:general.ok')}: ${decision.utility_ok ? t('settings:general.yes') : t('settings:general.no')}`} />
+        <Metric label={t('settings:general.utilityAvailable')} value={decision.utility_available ? t('settings:general.yes') : t('settings:general.no')} />
+        <Metric label={t('settings:general.utilityFailureReason')} value={readableRouteReason(String(decision.utility_error_code || ''), t, score, margin, thresholds) || t('settings:general.none')} />
+        <Metric label={t('settings:general.validatorResult')} value={decision.validation_ok ? t('settings:general.valid') : t('settings:general.invalid')} />
+        <Metric label={t('settings:general.executionPlan')} value={String(decision.route_action || t('settings:general.none'))} />
+      </dl>
       <details className="settings-disclosure route-test-diagnostics">
         <summary>{t('settings:general.diagnostics')}</summary>
         <dl className="settings-definition-grid">

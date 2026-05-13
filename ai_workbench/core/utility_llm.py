@@ -19,7 +19,9 @@ UTILITY_MODEL_PATH_INVALID = "model_path_invalid"
 UTILITY_MODEL_PATH_MISMATCH = "backend_model_path_mismatch"
 UTILITY_LLAMA_CPP_UNAVAILABLE = "llama_cpp_unavailable"
 UTILITY_GENERATION_FAILED = "utility_generation_failed"
-UTILITY_INTENTS = {"chat", "image_generation", "knowledge_query", "agent_route", "command_like", "unknown"}
+UTILITY_INTENTS = {"chat", "image_generation", "knowledge_query", "pet_command", "agent_route", "command_like", "unknown"}
+PET_DOMAINS = {"workbench_pet", "real_pet", "fictional_character", "unclear"}
+PET_ACTIONS = {"status", "wake", "tuck", "select", "reload", "unknown"}
 UTILITY_BACKENDS = {"transformers", "llama_cpp"}
 GGUF_PLACEMENT_HELP = "GGUF files must be placed under data/models/utility_llms/<model-folder>/<file>.gguf"
 
@@ -401,10 +403,10 @@ class UtilityLLMService:
         compact_context = json.dumps(context or {}, ensure_ascii=False)[:6000]
         prompt = (
             "Classify the user's message for internal shadow diagnostics only.\n"
-            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, command_hint, target_agent_id, kb_id, match_source.\n"
-            "Allowed intent values: chat, image_generation, knowledge_query, agent_route, command_like, unknown.\n"
+            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint.\n"
+            "Allowed intent values: chat, image_generation, knowledge_query, pet_command, agent_route, command_like, unknown.\n"
             "Use compact candidates only; do not invent agent ids or knowledge base ids outside the candidates.\n"
-            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query may provide kb_hint and query only.\n"
+            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query may provide kb_hint and query only. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
             "Use null for unknown slots. Do not explain.\n\n"
             f"Compact candidates:\n{compact_context}\n\n"
             f"User message:\n{text}"
@@ -455,6 +457,10 @@ def validate_intent_prediction(data: dict[str, Any]) -> dict[str, Any]:
         "match_source": _slot(data.get("match_source")),
         "query": _slot(data.get("query")),
         "command_hint": _slot(data.get("command_hint")),
+        "domain": _pet_domain(data.get("domain")),
+        "action": _pet_action(data.get("action")),
+        "target_pet_hint": _slot(data.get("target_pet_hint")),
+        "source_pet_hint": _slot(data.get("source_pet_hint")),
     }
 
 
@@ -463,6 +469,16 @@ def _slot(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text[:200] if text else None
+
+
+def _pet_domain(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text if text in PET_DOMAINS else None
+
+
+def _pet_action(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text if text in PET_ACTIONS else None
 
 
 def _render_chat_prompt(tokenizer: Any, prompt: str) -> str:

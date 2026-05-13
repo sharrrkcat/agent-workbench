@@ -269,7 +269,7 @@ def test_intent_shadow_uses_utility_extractor_for_slots_without_reroute() -> Non
     assert fixture.runs.get_run(result.run_id).target_id == "chat"
 
 
-def test_intent_shadow_utility_failure_falls_back_to_rule_based() -> None:
+def test_intent_shadow_utility_failure_records_slots_failed_without_rule_based_fallback() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_semantic_router(fixture)
     fixture.agent_runner.utility_llm_service = FakeUtilityLLM(fail_json=True)
@@ -285,4 +285,8 @@ def test_intent_shadow_utility_failure_falls_back_to_rule_based() -> None:
     intent = fixture.runs.get_run(result.run_id).metadata["intent_routing"]
     assert result.success is True
     assert intent["source"] == "embedding_semantic_router"
-    assert "utility_extractor_failed" in intent["warnings"]
+    assert intent["utility_required"] is True
+    assert intent["utility_used"] is True
+    assert intent["utility_ok"] is False
+    assert intent["not_executed_reason"] == "utility_llm_slots_failed"
+    assert "utility_llm_slots_failed" in intent["warnings"]

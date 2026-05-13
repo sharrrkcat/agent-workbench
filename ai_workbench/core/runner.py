@@ -66,6 +66,13 @@ def _intent_routing_step_metadata(intent: dict[str, Any]) -> dict[str, Any]:
         "route_action": intent.get("route_action"),
         "not_executed_reason": intent.get("not_executed_reason") or intent.get("diagnostic_reason"),
         "temporary_knowledge_base_ids": intent.get("temporary_knowledge_base_ids"),
+        "pipeline_version": intent.get("pipeline_version"),
+        "utility_required": intent.get("utility_required"),
+        "utility_available": intent.get("utility_available"),
+        "utility_used": intent.get("utility_used"),
+        "utility_ok": intent.get("utility_ok"),
+        "utility_error_code": intent.get("utility_error_code"),
+        "validation_ok": intent.get("validation_ok"),
     }
 
 
@@ -86,6 +93,12 @@ def _intent_reason_label(reason: str) -> str:
         "agent_route_auto_route_disabled": "diagnostic-only",
         "action_route_auto_route_disabled": "diagnostic-only",
         "compound_intent_not_auto_routed": "diagnostic-only",
+        "utility_llm_required": "Utility LLM required",
+        "utility_llm_unavailable": "Utility LLM unavailable",
+        "utility_llm_slots_failed": "Utility LLM slots failed",
+        "utility_semantic_action_conflict": "Utility and semantic decision conflict",
+        "validation_failed": "validation failed",
+        "pet_domain_not_workbench_pet": "Pet domain is not Workbench Pet",
     }.get(reason, reason)
 
 

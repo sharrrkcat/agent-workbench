@@ -143,14 +143,14 @@ Old persisted `intent_routing_high_confidence_threshold` and `intent_routing_low
 Auto execution is intentionally narrow:
 
 - `chat`: keep the current Prompt Agent path. Intent Routing does not force-enable or disable Knowledge; existing session KB injection rules still apply.
-- `knowledge_query`: for high-confidence semantic decisions, keep the current Prompt Agent path and pass a per-run temporary Knowledge KB/query override into `Building context`.
-- `pet_command`: a narrow `/pet`-only allowlist for Workbench Pet status, wake, tuck, select, and reload. It reuses the normal Capability command runner and Pet runtime, records `target_command="/pet"` and `generated_command`, and does not execute any other slash command. `/pet random` is not part of this allowlist.
+- `knowledge_query`: for high-confidence semantic decisions, keep the current Prompt Agent path and pass a per-run temporary Knowledge KB/query override into `Building context` only after Utility LLM slots and the Knowledge validator pass.
+- `pet_command`: a narrow `/pet`-only allowlist for Workbench Pet status, wake, tuck, select, and reload. It reuses the normal Capability command runner and Pet runtime, records `target_command="/pet"` and `generated_command`, and does not execute any other slash command. Utility LLM slots must set `domain=workbench_pet` and an allowlisted action, then the Pet validator must pass. `/pet random` is not part of this allowlist.
 - `image_generation`: diagnostic-only in semantic v1. It does not auto-route to ComfyUI until action routing is designed.
 - `command_like`, generic `agent_route`, `action_route`, and `compound`: diagnostic-only. They may record compact target metadata but do not execute commands, Agents, actions, or multiple tasks.
 
-`knowledge_query` auto execution requires all of the following: General mode `auto`, `intent_routing_auto_route_safe_intents=true`, eligible ordinary text in `single_assistant` mode, current default Agent is an effective Intent Routing enabled Prompt Agent, semantic predicted intent is `knowledge_query`, grouped intent score and margin meet the semantic intent thresholds, and either a selected KB candidate meets the semantic KB threshold or no explicit KB candidate is available but the session has active KB bindings. The execution keeps the current Prompt Agent, sets only per-run `temporary_knowledge_base_ids` and `knowledge_query_override`, and never persists Context Sources bindings or changes the session default Agent.
+`knowledge_query` auto execution requires all of the following: General mode `auto`, `intent_routing_auto_route_safe_intents=true`, eligible ordinary text in `single_assistant` mode, current default Agent is an effective Intent Routing enabled Prompt Agent, semantic predicted intent is `knowledge_query`, grouped intent score and margin meet the semantic intent thresholds, Utility LLM is available, Utility LLM slots extraction succeeds, `slots.query` is non-empty, and either a selected KB candidate meets the semantic KB threshold or no explicit KB candidate is available but the session has active KB bindings. Utility LLM unavailable records `not_executed_reason=utility_llm_required` or `utility_llm_unavailable`; slots failure records `utility_llm_slots_failed`. No local query regex/heuristic extractor may replace Utility slots. The execution keeps the current Prompt Agent, sets only per-run `temporary_knowledge_base_ids` and `knowledge_query_override`, and never persists Context Sources bindings or changes the session default Agent.
 
-`pet_command` auto execution requires the same General/session/Prompt-Agent eligibility gates as other safe auto routes plus a conservative Pet command recognizer. It may match only Workbench Pet phrasing or an installed Pet id/display name with an explicit Pet operation verb. Wake accepts focused Workbench Pet wording such as "唤醒", "召唤", "唤出", "叫出来", "叫醒", "出来一下", "wake", "summon", "bring out", and "show pet". It resolves candidates from the existing Pet Capability runtime/settings/list data. Missing targets use the current default pet, except `select` must resolve a unique target. Ambiguous targets record `ambiguous_pet_candidate`; missing targets record `pet_candidate_not_found`; `wake`, `tuck`, and `reload` with a target that is not the current pet record `target_pet_not_current` instead of selecting and acting; `把 <pet1> 换成 <pet2>` treats `<pet2>` as the target and records `source_pet_mismatch` without executing when `<pet1>` does not match the current default pet. Reality-pet questions such as sick cats/dogs, training real pets, or fictional character questions without Workbench Pet context remain normal chat/diagnostic predictions.
+`pet_command` auto execution requires the same General/session/Prompt-Agent eligibility gates as other safe auto routes, semantic predicted intent `pet_command`, passing semantic thresholds, Utility LLM availability, Utility LLM slots extraction success, `slots.domain=workbench_pet`, and `slots.action` in `status | wake | tuck | select | reload`. Regex or keyword helpers may only provide hints or validator input; they must not override semantic score/margin or independently determine action/target execution. The validator resolves candidates from the existing Pet Capability runtime/settings/list data. Missing targets use the current default pet, except `select` must resolve a unique target. Ambiguous targets record `ambiguous_pet_candidate`; missing targets record `pet_candidate_not_found`; `wake`, `tuck`, and `reload` with a target that is not the current pet record `target_pet_not_current` instead of selecting and acting; a source pet hint that does not match the current default pet records `source_pet_mismatch`. Reality-pet questions such as sick cats/dogs, training real pets, or fictional character questions without Workbench Pet context must not execute and should record `pet_domain_not_workbench_pet` when Utility identifies a non-Workbench domain.
 
 If the semantic router is unavailable, the runtime falls back to the current Prompt Agent and records a semantic-unavailable source/reason such as `semantic_router_unavailable`, `semantic_router_profile_missing`, or `semantic_router_embedding_unavailable`. No fallback classifier runs, and unavailable semantic routing never triggers command, Agent, action, or image-generation execution.
 
@@ -186,6 +186,16 @@ When General `intent_routing_utility_llm_model_path` is configured and available
 
 Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
+Intent Routing v2 pipeline contract:
+
+- The execution pipeline is Semantic router -> Utility LLM slots/extraction -> Validator -> Executor.
+- `chat` is a semantic-only special case. It keeps the current Prompt Agent path, does not call Utility LLM, does not add temporary Knowledge overrides, and does not change Context Sources.
+- `knowledge_query` and `pet_command` require Utility LLM availability and strict JSON slot success before auto execution. Utility unavailable records `utility_llm_required` or `utility_llm_unavailable`; extraction failure records `utility_llm_slots_failed`.
+- `knowledge_query` slots include at least `intent`, `query`, and `kb_hint`. The validator checks enabled KB candidates, semantic/slot conflicts, ambiguity, non-empty query, and active KB availability without mutating session bindings.
+- `pet_command` slots include at least `intent`, `domain`, `action`, `target_pet_hint`, and `source_pet_hint`. The validator requires `domain=workbench_pet`, an allowlisted action, unique target resolution, `select` target presence, current-pet checks for wake/tuck/reload, and source-pet consistency.
+- Regex and deterministic helpers may only support explicit syntax parsing, slot hints, exact id/name/alias matching, false-positive guards, and validators. They must not replace Utility LLM as the primary natural-language slots parser, and they must not override semantic score or margin.
+- Route Test and real run gating use the same pipeline. Route Test reports Semantic, Utility LLM, Validation, and Execution plan fields without creating messages/runs, executing `/pet`, running Knowledge retrieval, changing sessions, changing Pet settings, or calling ComfyUI.
+
 `POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `auto_executable`, `would_execute`, `route_action`, `not_executed_reason`, temporary KB ids, query override preview, `semantic_thresholds_used`, grouped intent scores, and warnings.
 
 For `pet_command`, Route Test also reports Pet action, target Pet, optional source Pet, generated command, would-execute status, not-executed reason, and warnings. Route Test never executes `/pet`, never creates a command run, and never updates Pet settings.
@@ -195,8 +205,10 @@ Prediction metadata shape:
 ```json
 {
   "enabled": true,
+  "pipeline_version": "semantic_utility_validator_v1",
   "mode": "auto",
   "evaluated": true,
+  "semantic_evaluated": true,
   "eligible": true,
   "bypassed": false,
   "source": "embedding_semantic_router+utility_llm",
@@ -218,6 +230,16 @@ Prediction metadata shape:
   "executed": true,
   "would_execute": true,
   "not_executed_reason": null,
+  "utility_required": true,
+  "utility_available": true,
+  "utility_used": true,
+  "utility_ok": true,
+  "utility_error_code": null,
+  "validation_ok": true,
+  "executor_plan": {
+    "route_action": "knowledge_override",
+    "auto_executable": true
+  },
   "target_agent_id": "chat",
   "target_action_id": "default",
   "session_default_agent_id": "chat",
@@ -259,7 +281,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, keep the semantic prediction and add `utility_extractor_failed` to warnings. Route metadata must not include a fallback classifier prediction.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM unavailability or extraction failures keep the semantic prediction and record `utility_llm_required`, `utility_llm_unavailable`, or `utility_llm_slots_failed`; they do not trigger fallback classifiers or non-chat auto execution. Route metadata must not include a fallback classifier prediction.
 
 WebSocket events:
 - `run_updated`

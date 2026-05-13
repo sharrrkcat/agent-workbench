@@ -155,6 +155,8 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
             agent_registry=state.agents,
             agent_config_store=state.agent_configs,
             knowledge_store=state.knowledge,
+            runtime_registry=state.runtimes,
+            capability_config_store=state.capability_configs,
         )
         try:
             agent = state.agents.get(route.target_id or "")

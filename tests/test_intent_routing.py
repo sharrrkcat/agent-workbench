@@ -211,10 +211,10 @@ def test_route_test_api_reports_pet_command_without_executing(tmp_path) -> None:
     assert response.status_code == 200
     decision = response.json()["decision"]
     assert decision["predicted_intent"] == "pet_command"
-    assert decision["pet_action"] == "select"
-    assert decision["target_pet_id"] == "bd_1"
-    assert decision["generated_command"] == "/pet select bd_1"
-    assert decision["would_execute"] is True
+    assert decision["utility_required"] is True
+    assert decision["utility_used"] is False
+    assert decision["not_executed_reason"] in {"utility_llm_required", "utility_llm_unavailable"}
+    assert decision["would_execute"] is False
     assert decision["executed"] is False
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
