@@ -48,6 +48,8 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
     if "agent_route:" in value:
         return [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    if "pet_command:tuck:" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
     if "pet_command:" in value:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if "command_like:" in value:
@@ -70,6 +72,8 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     if any(token in value for token in ["action", "formal"]):
         return [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    if "tuck" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
     if any(token in value for token in ["宠物", "pet", "jedi cal", "bd-1", "bd1", "唤醒", "隐藏", "重新加载", "刷新", "叫出来", "换成"]):
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
@@ -146,6 +150,10 @@ def test_utility_extractor_receives_compact_candidates() -> None:
     run(fixture.runtime.handle_input(session, "ask the lore binder about rank notes"))
 
     context = utility.contexts[0]
+    assert context["top_route_specs"][0]["id"] == "knowledge_query"
+    assert context["top_route_specs"][0]["slot_schema_id"] == "knowledge_query_slots"
+    assert "slot_schema" in context["top_route_specs"][0]
+    assert "examples" not in context["top_route_specs"][0]
     assert any(intent["id"] == "knowledge_query" and "ask the lore binder" in intent["examples"] for intent in context["intents"])
     assert any(agent["id"] == "translate" and "translator" in agent["aliases"] for agent in context["agents"])
     assert any(kb["name"] == "Lore KB" and "lore" in kb["aliases"] for kb in context["knowledge_bases"])
@@ -211,6 +219,10 @@ def test_route_test_api_reports_pet_command_without_executing(tmp_path) -> None:
     assert response.status_code == 200
     decision = response.json()["decision"]
     assert decision["predicted_intent"] == "pet_command"
+    assert decision["route_spec_id"] == "pet_command"
+    assert decision["slot_schema_id"] == "pet_command_slots"
+    assert decision["validator_id"] == "pet_command"
+    assert decision["executor_id"] == "pet_command"
     assert decision["utility_required"] is True
     assert decision["utility_used"] is False
     assert decision["not_executed_reason"] in {"utility_llm_required", "utility_llm_unavailable"}

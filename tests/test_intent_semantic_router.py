@@ -69,3 +69,20 @@ def test_semantic_router_missing_profile_returns_warning_without_embedding() -> 
     assert decision["predicted_intent"] == "chat"
     assert "semantic_router_profile_missing" in decision["warnings"]
     assert backend.calls == []
+
+
+def test_semantic_router_uses_pet_action_specs_as_candidates() -> None:
+    knowledge = MemoryKnowledgeStore()
+    profile = knowledge.create_embedding_profile(EmbeddingModelProfile(name="Semantic", alias="semantic", model_path="embeddings/test"))
+    settings = AppSettings(intent_routing_embedding_model_profile_id=profile.id)
+    backend = FakeEmbeddingBackend()
+
+    decision = SemanticRouter().decide(
+        "tuck the pet away",
+        settings=settings,
+        knowledge_store=knowledge,
+        model_backend=backend,
+    )
+
+    assert decision["predicted_intent"] == "pet_command"
+    assert any(candidate.get("action_spec_id") == "pet.tuck" for candidate in decision["top_candidates"])

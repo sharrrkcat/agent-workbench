@@ -10,15 +10,15 @@ from typing import Any
 from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.intent_router import (
     CUSTOM_EXAMPLE_FIELDS,
-    INTENT_DEFINITIONS,
     _comma_values,
     _line_values,
     _normalize_text,
     _short_text,
 )
+from ai_workbench.core.intent_specs import build_semantic_candidate_specs
 
 
-BUILT_IN_EXAMPLES_VERSION = "round6a-v1"
+BUILT_IN_EXAMPLES_VERSION = "routespec-v1"
 SEMANTIC_SOURCE = "embedding_semantic_router"
 SEMANTIC_PROFILE_MISSING = "semantic_router_profile_missing"
 SEMANTIC_PROFILE_DISABLED = "semantic_router_profile_disabled"
@@ -38,12 +38,14 @@ class SemanticRouteCandidate:
     id: str
     kind: str
     text: str
+    spec_id: str | None = None
     intent: str | None = None
     source: str | None = None
     kb_id: str | None = None
     kb_name: str | None = None
     agent_id: str | None = None
     action_id: str | None = None
+    action: str | None = None
     command_name: str | None = None
     capability_id: str | None = None
     field: str | None = None
@@ -51,6 +53,8 @@ class SemanticRouteCandidate:
     weak: bool = False
 
     def document_text(self) -> str:
+        if self.kind == "action_spec" and self.action:
+            return f"{self.intent or self.kind}:{self.action}: {self.text}"
         prefix = self.intent or self.kind
         return f"{prefix}: {self.text}"
 
@@ -59,10 +63,14 @@ class SemanticRouteCandidate:
             "kind": self.kind,
             "text_preview": _short_text(self.text, 120),
         }
-        for key in ("intent", "source", "kb_id", "kb_name", "agent_id", "action_id", "command_name", "capability_id", "field"):
+        for key in ("spec_id", "intent", "source", "kb_id", "kb_name", "agent_id", "action_id", "action", "command_name", "capability_id", "field"):
             value = getattr(self, key)
             if value not in (None, ""):
                 payload[key] = value
+        if self.kind == "action_spec" and self.action_id:
+            payload["action_spec_id"] = self.action_id
+            if self.action:
+                payload["pet_action"] = self.action
         if self.kb_id:
             payload["knowledge_base_id"] = self.kb_id
         if self.kb_name:
@@ -309,7 +317,7 @@ def candidate_summary(candidates: list[SemanticRouteCandidate]) -> dict[str, int
         "intent_examples": sum(1 for item in candidates if item.kind == "intent_example"),
         "knowledge_bases": sum(1 for item in candidates if item.kind == "knowledge_base"),
         "agents": sum(1 for item in candidates if item.kind == "agent_target"),
-        "actions": sum(1 for item in candidates if item.kind == "agent_action"),
+        "actions": sum(1 for item in candidates if item.kind in {"agent_action", "action_spec"}),
         "commands": sum(1 for item in candidates if item.kind == "command"),
         "total": len(candidates),
     }
@@ -401,7 +409,7 @@ def _rank_decision(query: list[float], index: SemanticRouteIndex, *, thresholds:
         warnings.append("compound_intent_not_auto_routed")
     kb_candidate = _best_candidate(scored, "knowledge_base", thresholds["kb_min_score"])
     agent_candidate = _best_candidate(scored, "agent_target", thresholds["agent_min_score"])
-    action_candidate = _best_candidate(scored, "agent_action", thresholds["agent_min_score"])
+    action_candidate = _best_candidate(scored, "action_spec", thresholds["agent_min_score"]) or _best_candidate(scored, "agent_action", thresholds["agent_min_score"])
     command_candidate = _best_candidate(scored, "command", thresholds["command_min_score"])
     if top_intent == "knowledge_query" and kb_candidate is None:
         warnings.append("no_semantic_kb_candidate")
@@ -442,34 +450,21 @@ def _field_priority(field: str | None) -> int:
 
 def _intent_candidates(settings: Any) -> list[SemanticRouteCandidate]:
     candidates: list[SemanticRouteCandidate] = []
-    for intent in INTENT_DEFINITIONS:
-        for index, text in enumerate(intent.examples):
-            candidates.append(
-                SemanticRouteCandidate(
-                    id=f"intent:{intent.id}:built_in:{index}",
-                    kind="intent_example",
-                    intent=intent.id,
-                    source="built_in",
-                    text=text,
-                )
+    for payload in build_semantic_candidate_specs(settings=settings):
+        candidates.append(
+            SemanticRouteCandidate(
+                id=str(payload["candidate_id"]),
+                kind=str(payload["kind"]),
+                spec_id=str(payload.get("spec_id") or ""),
+                intent=payload.get("intent"),
+                action_id=payload.get("action_id"),
+                action=payload.get("action"),
+                source=payload.get("source"),
+                field=payload.get("field"),
+                text=str(payload.get("text") or ""),
+                weak=bool(payload.get("weak", False)),
             )
-        for index, text in enumerate(_line_values(getattr(settings, CUSTOM_EXAMPLE_FIELDS.get(intent.id, ""), ""), 100, 300)):
-            candidates.append(
-                SemanticRouteCandidate(
-                    id=f"intent:{intent.id}:custom:{index}",
-                    kind="intent_example",
-                    intent=intent.id,
-                    source="custom",
-                    text=text,
-                )
-            )
-    diagnostics = {
-        "action_route": ["use this agent action", "run the summarize action", "call the formal action"],
-        "compound": ["search the knowledge base and then make an image", "translate this and run a command"],
-    }
-    for intent_id, examples in diagnostics.items():
-        for index, text in enumerate(examples):
-            candidates.append(SemanticRouteCandidate(id=f"intent:{intent_id}:diagnostic:{index}", kind="intent_example", intent=intent_id, source="built_in", text=text))
+        )
     return candidates
 
 

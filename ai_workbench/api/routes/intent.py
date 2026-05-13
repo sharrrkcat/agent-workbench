@@ -230,4 +230,23 @@ def _route_test_decision(decision: dict) -> dict:
     if payload.get("auto_executable"):
         payload["would_execute"] = True
     payload["executed"] = False
+    payload["semantic_candidate"] = {
+        "spec_id": payload.get("route_spec_id"),
+        "intent": payload.get("predicted_intent"),
+        "action": payload.get("pet_action"),
+        "score": payload.get("semantic_score"),
+    }
+    payload["utility"] = {
+        "required": bool(payload.get("utility_required")),
+        "available": bool(payload.get("utility_available")),
+        "used": bool(payload.get("utility_used")),
+        "ok": bool(payload.get("utility_ok")),
+        "error_code": payload.get("utility_error_code"),
+    }
+    payload["validation"] = {
+        "ok": bool(payload.get("validation_ok")),
+        "validator_id": payload.get("validator_id"),
+        "not_executed_reason": payload.get("not_executed_reason"),
+        "warnings": payload.get("warnings") if isinstance(payload.get("warnings"), list) else [],
+    }
     return payload

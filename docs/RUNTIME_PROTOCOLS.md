@@ -168,11 +168,12 @@ AgentConfig runtime may store routing target hints under `intent_routing_aliases
 
 General settings may store `intent_routing_embedding_model_profile_id`, which references an existing Knowledge Embedding Model Profile. This profile id is the only Intent Routing semantic router configuration field. Old persisted `intent_routing_embedding_model_path` values are ignored if present. The semantic router uses the selected profile's model path, instructions, normalization setting, and Knowledge Defaults device setting. Candidate documents are embedded with `purpose=document`; the current user input is embedded with `purpose=query`. Missing, disabled, unavailable, or failing profiles fall back to the current Prompt Agent path and add warnings such as `semantic_router_profile_missing` or `semantic_router_embedding_unavailable`.
 
-The semantic route index is a lazy in-memory cache. Its key includes the embedding profile fingerprint, built-in examples version, General custom examples, enabled Knowledge Base names/aliases/descriptions, Agent ids/names/descriptions/routing aliases/examples/actions, and Capability command metadata. It is not persisted to SQLite and does not use a vector database. Route Test and the first eligible shadow prediction can build it; settings or hint changes are picked up by key changes or the short cache TTL.
+The semantic route index is a lazy in-memory cache. Its key includes the embedding profile fingerprint, built-in RouteSpec/ActionSpec examples version, General custom examples, enabled Knowledge Base names/aliases/descriptions, Agent ids/names/descriptions/routing aliases/examples/actions, and Capability command metadata. It is not persisted to SQLite and does not use a vector database. Route Test and the first eligible shadow prediction can build it; settings or hint changes are picked up by key changes or the short cache TTL.
 
 Candidate sources:
 
-- Built-in and General custom intent examples for `chat`, `knowledge_query`, `image_generation`, `command_like`, and `agent_route`, plus diagnostic `action_route` and `compound`.
+- Built-in RouteSpec examples and General custom intent examples for `chat`, `knowledge_query`, `image_generation`, `command_like`, and `agent_route`, plus diagnostic `action_route` and `compound`.
+- Built-in ActionSpec examples for the narrow `pet_command` actions `status`, `wake`, `tuck`, `select`, and `reload`.
 - Enabled Knowledge Base name, aliases, and description.
 - Agent id, name, description, runtime routing aliases, and runtime route examples.
 - Weak diagnostic Agent action id, label, and description.
@@ -182,7 +183,7 @@ Command, action, generic Agent, image-generation, and compound candidates are di
 
 `pet_command` metadata may include compact Pet slots: `pet_action`, `target_pet_id`, `target_pet_hint`, `source_pet_id`, `source_pet_hint`, `generated_command`, `route_action="pet_command"`, `auto_executable`, `executed`, `not_executed_reason`, and `warnings`. It must not store full Pet manifests, spritesheet content, image bytes, or large Pet objects.
 
-When General Utility LLM configuration is available, the core may call the Utility LLM for strict JSON slot extraction after semantic prediction. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`, and `model_profile` uses `intent_routing_utility_llm_model_profile_id` for an internal non-streaming deterministic Model Profile call. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for slots such as `kb_hint` and `query`, or optional low-confidence verification. It receives a compact candidate context: intent ids with capped built-in/custom examples, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and must not override semantic predictions into execution.
+When General Utility LLM configuration is available, the core may call the Utility LLM for strict JSON slot extraction after semantic prediction. The Utility LLM backend is selected by `intent_routing_utility_llm_backend`: `transformers` loads a Hugging Face / safetensors model folder at `utility_llms/<folder>`, `llama_cpp` loads a GGUF file at `utility_llms/<model-folder>/<file>.gguf` through optional `llama-cpp-python`, and `model_profile` uses `intent_routing_utility_llm_model_profile_id` for an internal non-streaming deterministic Model Profile call. Root-level GGUF files under `utility_llms` are invalid and ignored by model scan. The extractor is used for slots such as `kb_hint` and `query`, or optional low-confidence verification. It receives a compact candidate context: top RouteSpec/ActionSpec ids, labels, descriptions, safety notes, capped example previews, compact slot schemas, enabled Knowledge Base names and aliases, Agent ids/names and routing aliases/examples, and safety-boundary reminders. It must not receive full candidate lists, full RouteSpec examples, Agent prompts, KB content, Worldbook content, Core Memory content, raw run history, raw Utility LLM output, or provider-bound prompt text. It does not execute command-like requests and must not override semantic predictions into execution.
 
 Utility LLM configuration is displayed under Settings -> General -> Utility LLM. Intent Routing only shows a compact Utility LLM status summary and uses the same status API without loading the model.
 
@@ -191,6 +192,8 @@ The Utility LLM `model_profile` backend does not create an Agent run or visible 
 Intent Routing v2 pipeline contract:
 
 - The execution pipeline is Semantic router -> Utility LLM slots/extraction -> Validator -> Executor.
+- RouteSpec and ActionSpec are core runtime internal specs used to produce semantic candidates, Utility LLM candidate context, slot schemas, validator ids, and executor ids. They are not Agent or Capability manifest schema.
+- Validators build `ValidatorResult`; executors build `ExecutorPlan`. Route Test and real runs share this validation/planning path, while execution is invoked only by real auto-mode runs.
 - `chat` is a semantic-only special case. It keeps the current Prompt Agent path, does not call Utility LLM, does not add temporary Knowledge overrides, and does not change Context Sources.
 - `knowledge_query` and `pet_command` require Utility LLM availability and strict JSON slot success before auto execution. Utility unavailable records `utility_llm_required` or `utility_llm_unavailable`; extraction failure records `utility_llm_slots_failed`.
 - `knowledge_query` slots include at least `intent`, `query`, and `kb_hint`. The validator checks enabled KB candidates, semantic/slot conflicts, ambiguity, non-empty query, and active KB availability without mutating session bindings.
@@ -198,7 +201,7 @@ Intent Routing v2 pipeline contract:
 - Regex and deterministic helpers may only support explicit syntax parsing, slot hints, exact id/name/alias matching, false-positive guards, and validators. They must not replace Utility LLM as the primary natural-language slots parser, and they must not override semantic score or margin.
 - Route Test and real run gating use the same pipeline. Route Test reports Semantic, Utility LLM, Validation, and Execution plan fields without creating messages/runs, executing `/pet`, running Knowledge retrieval, changing sessions, changing Pet settings, or calling ComfyUI.
 
-`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `auto_executable`, `would_execute`, `route_action`, `not_executed_reason`, temporary KB ids, query override preview, `semantic_thresholds_used`, grouped intent scores, and warnings.
+`POST /api/intent/test-route` predicts a semantic route decision for Settings diagnostics. It accepts `text`, optional `session_id`, optional `default_agent_id`, and `include_utility`. It creates no chat message, no run, no ComfyUI request, no Knowledge retrieval, and no session or Context Sources mutation. Without a session, the response is marked with `eligibility_scope="no_session"` and is a partial simulation using General examples and configured KB/Agent/action/command/Knowledge hints. It reports what auto mode would do through `route_spec_id`, `action_spec_id`, `slot_schema_id`, `validator_id`, `executor_id`, `validation_ok`, `executor_plan`, `auto_executable`, `would_execute`, `route_action`, `not_executed_reason`, temporary KB ids, query override preview, `semantic_thresholds_used`, grouped intent scores, and warnings.
 
 For `pet_command`, Route Test also reports Pet action, target Pet, optional source Pet, generated command, would-execute status, not-executed reason, and warnings. Route Test never executes `/pet`, never creates a command run, and never updates Pet settings.
 
@@ -214,6 +217,11 @@ Prediction metadata shape:
   "eligible": true,
   "bypassed": false,
   "source": "embedding_semantic_router+utility_llm",
+  "route_spec_id": "knowledge_query",
+  "action_spec_id": null,
+  "slot_schema_id": "knowledge_query_slots",
+  "validator_id": "knowledge_query",
+  "executor_id": "knowledge_override",
   "predicted_intent": "knowledge_query",
   "confidence": 0.84,
   "intent_score": 0.84,
@@ -283,7 +291,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM unavailability or extraction failures keep the semantic prediction and record `utility_llm_required`, `utility_llm_unavailable`, or `utility_llm_slots_failed`; they do not trigger fallback classifiers or non-chat auto execution. Route metadata must not include a fallback classifier prediction.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, full RouteSpec/ActionSpec objects, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Compact metadata may include `route_spec_id`, `action_spec_id`, `slot_schema_id`, `validator_id`, `executor_id`, `validation_ok`, and a compact `executor_plan`. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM unavailability or extraction failures keep the semantic prediction and record `utility_llm_required`, `utility_llm_unavailable`, or `utility_llm_slots_failed`; they do not trigger fallback classifiers or non-chat auto execution. Route metadata must not include a fallback classifier prediction.
 
 WebSocket events:
 - `run_updated`

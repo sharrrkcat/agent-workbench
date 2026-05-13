@@ -4,6 +4,8 @@ import inspect
 import re
 
 from ai_workbench.core.agent_settings import resolved_intent_routing_mode
+from ai_workbench.core.intent_pipeline import IntentPipelineContext, build_executor_plan, validate_intent
+from ai_workbench.core.intent_specs import compact_specs_for_utility, get_action_spec, get_action_spec_for_intent_action, get_builtin_route_specs, get_route_spec
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
 
 
@@ -123,6 +125,11 @@ MAX_AGENT_ALIAS_CHARS = 120
 MAX_AGENT_EXAMPLES = 100
 MAX_AGENT_EXAMPLE_CHARS = 300
 
+# RouteSpec is the source of built-in route examples for Intent Routing v2.
+# The legacy IntentDefinition block above remains temporarily for import
+# compatibility and will be removed when Round 4 migrates the old adapters.
+INTENT_DEFINITIONS = get_builtin_route_specs()
+
 
 def compact_utility_context(
     *,
@@ -131,12 +138,19 @@ def compact_utility_context(
     agent_config_store: Any = None,
     knowledge_store: Any = None,
     pet_candidates: list[dict[str, Any]] | None = None,
+    prediction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    spec_context = compact_specs_for_utility(prediction)
     payload = {
+        **spec_context,
         "intents": [
             {
                 "id": intent.id,
-                "examples": [*intent.examples, *_line_values(getattr(settings, CUSTOM_EXAMPLE_FIELDS.get(intent.id, ""), ""), 12, MAX_ROUTE_EXAMPLE_CHARS)][:12],
+                "execution_mode": getattr(intent, "execution_mode", "diagnostic_only"),
+                "utility_required": bool(getattr(intent, "utility_required", False)),
+                "slot_schema_id": getattr(getattr(intent, "slot_schema", None), "schema_id", None),
+                "examples": [*list(intent.examples)[:3], *_line_values(getattr(settings, CUSTOM_EXAMPLE_FIELDS.get(intent.id, ""), ""), 3, MAX_ROUTE_EXAMPLE_CHARS)][:4],
+                "examples_preview": [*list(intent.examples)[:3], *_line_values(getattr(settings, CUSTOM_EXAMPLE_FIELDS.get(intent.id, ""), ""), 3, MAX_ROUTE_EXAMPLE_CHARS)][:4],
             }
             for intent in INTENT_DEFINITIONS
         ],
@@ -369,6 +383,24 @@ def _decision_metadata(
         "semantic_thresholds_used": thresholds,
         "thresholds_used": {"semantic": thresholds},
     }
+    route_spec = get_route_spec(intent_id)
+    action_spec = None
+    action_candidate = prediction.get("action_candidate")
+    if isinstance(action_candidate, dict):
+        action_spec = get_action_spec(action_candidate.get("action_spec_id"))
+    slot_action = slots.get("action") if isinstance(slots, dict) else None
+    if action_spec is None and slot_action:
+        action_spec = get_action_spec_for_intent_action(intent_id, slot_action)
+    metadata.update(
+        {
+            "route_spec_id": route_spec.id if route_spec else intent_id,
+            "action_spec_id": action_spec.id if action_spec else None,
+            "slot_schema_id": route_spec.slot_schema.schema_id if route_spec and route_spec.slot_schema else None,
+            "validator_id": route_spec.validator_id if route_spec else None,
+            "executor_id": route_spec.executor_id if route_spec else None,
+            "executor_plan_type": route_spec.executor_id if route_spec and route_spec.executor_id else "none",
+        }
+    )
     kb_candidate = prediction.get("kb_candidate")
     if isinstance(kb_candidate, dict):
         metadata["kb_id"] = kb_candidate.get("kb_id")
@@ -399,6 +431,7 @@ def _decision_metadata(
         metadata["auto_executable"] = False
         metadata["not_executed_reason"] = "safe_auto_route_disabled"
         metadata["warnings"] = [*warnings, "safe_auto_route_disabled"]
+        metadata["executor_plan"] = {"route_action": "metadata_only", "auto_executable": False, "would_execute": False}
         return metadata
     if intent_id in DIAGNOSTIC_ONLY_WARNINGS:
         metadata["route_action"] = "metadata_only"
@@ -407,6 +440,7 @@ def _decision_metadata(
         metadata["diagnostic_reason"] = warning
         metadata["not_executed_reason"] = warning
         metadata["warnings"] = [*warnings, warning]
+        metadata["executor_plan"] = {"route_action": "metadata_only", "auto_executable": False, "would_execute": False}
         return metadata
     score = prediction.get("semantic_score")
     semantic_score = float(score) if isinstance(score, (int, float)) else confidence
@@ -1089,6 +1123,7 @@ async def _maybe_apply_utility_slots(
             agent_config_store=agent_config_store,
             knowledge_store=knowledge_store,
             pet_candidates=pet_candidates,
+            prediction=prediction,
         )
         try:
             extracted = await utility_llm_service.extract_intent_json(text, settings, context=context)

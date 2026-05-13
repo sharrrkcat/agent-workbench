@@ -604,7 +604,7 @@ class UtilityLLMService:
             "Classify the user's message for internal shadow diagnostics only.\n"
             "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint.\n"
             "Allowed intent values: chat, image_generation, knowledge_query, pet_command, agent_route, command_like, unknown.\n"
-            "Use compact candidates only; do not invent agent ids or knowledge base ids outside the candidates.\n"
+            "Use compact top RouteSpec/ActionSpec candidates and slot schemas only; do not invent agent ids or knowledge base ids outside the candidates.\n"
             "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query may provide kb_hint and query only. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
             "Use null for unknown slots. Do not explain.\n\n"
             f"Compact candidates:\n{compact_context}\n\n"

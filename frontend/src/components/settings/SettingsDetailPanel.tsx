@@ -1322,11 +1322,14 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
       <h4 className="settings-compact-subheading">{t('settings:general.semanticUtilityPipeline')}</h4>
       <dl className="settings-definition-grid">
         <Metric label={t('settings:general.semanticDecision')} value={`${String(decision.predicted_intent || t('settings:general.none'))} / ${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')}`} />
+        <Metric label={t('settings:general.routeSpec')} value={String(decision.route_spec_id || t('settings:general.none'))} />
+        <Metric label={t('settings:general.actionSpec')} value={String(decision.action_spec_id || t('settings:general.none'))} />
+        <Metric label={t('settings:general.slotSchema')} value={String(decision.slot_schema_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.utilityExtraction')} value={`${t('settings:general.required')}: ${decision.utility_required ? t('settings:general.yes') : t('settings:general.no')} / ${t('settings:general.used')}: ${decision.utility_used ? t('settings:general.yes') : t('settings:general.no')} / ${t('settings:general.ok')}: ${decision.utility_ok ? t('settings:general.yes') : t('settings:general.no')}`} />
         <Metric label={t('settings:general.utilityAvailable')} value={decision.utility_available ? t('settings:general.yes') : t('settings:general.no')} />
         <Metric label={t('settings:general.utilityFailureReason')} value={readableRouteReason(String(decision.utility_error_code || ''), t, score, margin, thresholds) || t('settings:general.none')} />
-        <Metric label={t('settings:general.validatorResult')} value={decision.validation_ok ? t('settings:general.valid') : t('settings:general.invalid')} />
-        <Metric label={t('settings:general.executionPlan')} value={String(decision.route_action || t('settings:general.none'))} />
+        <Metric label={t('settings:general.validatorResult')} value={`${String(decision.validator_id || t('settings:general.none'))}: ${decision.validation_ok ? t('settings:general.valid') : t('settings:general.invalid')}`} />
+        <Metric label={t('settings:general.executionPlan')} value={`${String(decision.executor_id || t('settings:general.none'))}: ${String(decision.route_action || t('settings:general.none'))}`} />
       </dl>
       <details className="settings-disclosure route-test-diagnostics">
         <summary>{t('settings:general.diagnostics')}</summary>
@@ -1342,6 +1345,8 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
           <Metric label={t('settings:general.targetAgent')} value={String(decision.target_agent_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.targetAction')} value={String(decision.target_action_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.targetCommand')} value={String(decision.target_command || t('settings:general.none'))} />
+          <Metric label={t('settings:general.validatorId')} value={String(decision.validator_id || t('settings:general.none'))} />
+          <Metric label={t('settings:general.executorId')} value={String(decision.executor_id || t('settings:general.none'))} />
           <Metric label={t('settings:general.kbCandidate')} value={candidateSummary(decision.kb_candidate, t)} />
           <Metric label={t('settings:general.agentCandidate')} value={candidateSummary(decision.agent_candidate, t)} />
           <Metric label={t('settings:general.actionCandidate')} value={candidateSummary(decision.action_candidate, t)} />
