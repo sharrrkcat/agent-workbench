@@ -6333,6 +6333,10 @@ input:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.settings-definition-grid.semantic-candidate-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .settings-definition-grid div {
   display: grid;
   gap: 4px;
@@ -7022,6 +7026,10 @@ input:disabled {
     grid-template-columns: 1fr;
   }
 
+  .settings-definition-grid.semantic-candidate-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .pet-list-item {
     grid-template-columns: 52px minmax(0, 1fr);
   }
@@ -7047,6 +7055,10 @@ input:disabled {
 }
 
 @media (max-width: 620px) {
+  .settings-definition-grid.semantic-candidate-summary {
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;

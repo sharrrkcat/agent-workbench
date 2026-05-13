@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 import re
 
@@ -14,7 +14,6 @@ class IntentDefinition:
     examples: list[str]
     safe_auto_route: bool = False
     target_agent_id: str | None = None
-    keywords: list[str] = field(default_factory=list)
 
 
 INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
@@ -24,7 +23,6 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
         description="General conversation, writing, translation, and follow-up help.",
         examples=["继续", "解释一下", "还有什么方法", "translate this", "help me write"],
         safe_auto_route=True,
-        keywords=["continue", "explain", "translate", "write", "help me", "继续", "解释", "翻译", "写"],
     ),
     IntentDefinition(
         id="image_generation",
@@ -32,140 +30,26 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
         description="Requests to create or draw an image.",
         examples=["帮我生成一张图片", "画一张图", "make an image", "generate a picture", "生成角色立绘"],
         target_agent_id="comfyui_agent",
-        keywords=["generate an image", "make an image", "draw", "picture", "image", "生成图片", "生成一张", "画一张", "画图", "立绘"],
     ),
     IntentDefinition(
         id="knowledge_query",
         label="Knowledge query",
         description="Questions that ask for project, document, or knowledge base grounded answers.",
         examples=["知识库里说了什么", "根据项目文档回答", "星球大战知识库里的内容", "what does the documentation say"],
-        keywords=["knowledge base", "documentation", "docs say", "project docs", "知识库", "文档", "根据项目", "资料里"],
     ),
     IntentDefinition(
         id="agent_route",
         label="Agent route",
         description="Requests that appear to ask for another agent or specialized route.",
         examples=["找翻译 agent", "交给图片助手", "route this to the image agent"],
-        keywords=["agent", "route to", "send to", "交给", "助手", "智能体"],
     ),
     IntentDefinition(
         id="command_like",
         label="Command-like",
         description="Requests that resemble operational commands or cleanup actions.",
         examples=["释放显存", "清理内存", "删除这个", "运行命令"],
-        keywords=["free memory", "clear memory", "delete", "run command", "释放显存", "清理内存", "删除", "运行命令"],
     ),
 )
-
-
-class RuleBasedIntentClassifier:
-    source = "rule_based_shadow"
-
-    def classify(
-        self,
-        text: str,
-        *,
-        settings: Any = None,
-        agent_registry: Any = None,
-        agent_config_store: Any = None,
-        knowledge_store: Any = None,
-    ) -> dict[str, Any]:
-        normalized = _normalize_text(text)
-        if not normalized:
-            return self._prediction("chat", 0.0, warnings=["empty_input"])
-        if len(normalized) < 3:
-            return self._prediction("chat", 0.2, warnings=["short_input"])
-        best_intent = "chat"
-        best_score = 0.35
-        best_meta: dict[str, Any] = {}
-        scores: list[tuple[str, float]] = []
-        for intent in INTENT_DEFINITIONS:
-            score, meta = self._score_intent(normalized, intent, settings=settings)
-            scores.append((intent.id, score))
-            if score > best_score:
-                best_intent = intent.id
-                best_score = score
-                best_meta = meta
-        agent_match = _match_agent_hints(agent_registry, agent_config_store, normalized)
-        if agent_match and best_intent not in {"image_generation", "command_like", "knowledge_query"}:
-            best_intent = "agent_route"
-            best_score = max(best_score, 0.76)
-        prediction = self._prediction(best_intent, min(best_score, 0.95))
-        warnings = list(prediction.get("warnings") or [])
-        close = [item for item in scores if item[0] != best_intent and item[1] >= max(0.55, best_score - 0.08)]
-        if close:
-            warnings.append("ambiguous_intent")
-            prediction["ambiguous_matches"] = [{"intent": intent, "confidence": round(score, 2)} for intent, score in close[:5]]
-        if best_meta:
-            prediction.update(best_meta)
-        if best_intent == "agent_route" and agent_match:
-            prediction["target_agent_id"] = agent_match.get("id")
-            prediction["agent_match_source"] = agent_match.get("source", "none")
-            if agent_match.get("alias"):
-                prediction["matched_alias"] = _short_text(str(agent_match["alias"]), 80)
-            if agent_match.get("example"):
-                prediction["matched_route_example"] = _short_text(str(agent_match["example"]), 120)
-            slots = dict(prediction.get("slots") or {})
-            slots["target_agent_hint"] = agent_match.get("hint") or agent_match.get("id") or ""
-            prediction["slots"] = slots
-        kb_hint = _detect_kb_hint(knowledge_store, normalized)
-        if kb_hint and best_intent in {"knowledge_query", "chat"}:
-            prediction["predicted_intent"] = "knowledge_query"
-            prediction["confidence"] = max(float(prediction.get("confidence") or 0.0), 0.72)
-            slots = dict(prediction.get("slots") or {})
-            slots.setdefault("kb_hint", kb_hint["hint"])
-            slots.setdefault("query", str(text or "").strip())
-            prediction["slots"] = slots
-            prediction["kb_match_source"] = kb_hint["source"]
-            if kb_hint.get("alias"):
-                prediction["matched_alias"] = _short_text(str(kb_hint["alias"]), 80)
-        prediction["warnings"] = warnings
-        return prediction
-
-    def _score_intent(self, text: str, intent: IntentDefinition, *, settings: Any = None) -> tuple[float, dict[str, Any]]:
-        score = 0.0
-        meta: dict[str, Any] = {}
-        for keyword in intent.keywords:
-            lowered = _normalize_text(keyword)
-            if lowered and lowered in text:
-                score = max(score, 0.62 + min(len(lowered), 18) / 100)
-        builtin_examples = [_normalize_text(item) for item in intent.examples]
-        custom_examples = custom_route_examples(settings, intent.id)
-        for example in [*builtin_examples, *custom_examples]:
-            if not example:
-                continue
-            if example in text or text in example:
-                boost = 0.82 if example in builtin_examples else 0.76
-                if boost > score:
-                    score = boost
-                    if example in custom_examples:
-                        meta["custom_examples_used"] = True
-                        meta["matched_route_example"] = _short_text(example, 120)
-            else:
-                overlap = _jaccard_score(text, example)
-                if overlap >= 0.45:
-                    boost = min(0.74 if example in custom_examples else 0.78, 0.42 + overlap)
-                    if boost > score:
-                        score = boost
-                        if example in custom_examples:
-                            meta["custom_examples_used"] = True
-                            meta["matched_route_example"] = _short_text(example, 120)
-        return score, meta
-
-    def _prediction(self, intent_id: str, confidence: float, warnings: list[str] | None = None) -> dict[str, Any]:
-        definition = intent_definition(intent_id) or intent_definition("chat")
-        return {
-            "predicted_intent": definition.id if definition is not None else "chat",
-            "confidence": round(float(confidence), 2),
-            "source": self.source,
-            "target_agent_id": definition.target_agent_id if definition is not None else None,
-            "slots": {},
-            "warnings": warnings or [],
-        }
-
-
-def intent_definition(intent_id: str) -> IntentDefinition | None:
-    return next((intent for intent in INTENT_DEFINITIONS if intent.id == intent_id), None)
 
 
 SAFE_AUTO_ROUTE_INTENTS = {"chat", "knowledge_query"}
@@ -200,12 +84,6 @@ MAX_AGENT_ALIASES = 50
 MAX_AGENT_ALIAS_CHARS = 120
 MAX_AGENT_EXAMPLES = 100
 MAX_AGENT_EXAMPLE_CHARS = 300
-
-
-def custom_route_examples(settings: Any, intent_id: str) -> list[str]:
-    field_name = CUSTOM_EXAMPLE_FIELDS.get(intent_id)
-    raw = getattr(settings, field_name, "") if settings is not None and field_name else ""
-    return [_normalize_text(item) for item in _line_values(raw, MAX_ROUTE_EXAMPLES, MAX_ROUTE_EXAMPLE_CHARS)]
 
 
 def compact_utility_context(*, settings: Any = None, agent_registry: Any = None, agent_config_store: Any = None, knowledge_store: Any = None) -> dict[str, Any]:
@@ -254,18 +132,6 @@ def _comma_values(value: Any, max_items: int, max_chars: int) -> list[str]:
 
 def _normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().casefold())
-
-
-def _tokenize(value: str) -> set[str]:
-    return {item for item in re.split(r"[\s,.;:!?/\\()\[\]{}\"']+", value) if item}
-
-
-def _jaccard_score(left: str, right: str) -> float:
-    left_tokens = _tokenize(left)
-    right_tokens = _tokenize(right)
-    if not left_tokens or not right_tokens:
-        return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
 def _agent_candidates(agent_registry: Any, agent_config_store: Any = None) -> list[dict[str, Any]]:
@@ -322,7 +188,6 @@ async def build_intent_routing_metadata(
     capability_registry: Any = None,
     command_registry: Any = None,
     semantic_router: Any = None,
-    classifier: RuleBasedIntentClassifier | None = None,
     utility_llm_service: Any = None,
 ) -> dict[str, Any] | None:
     settings = app_settings_store.get() if app_settings_store is not None else None
@@ -360,7 +225,6 @@ async def build_intent_routing_metadata(
         capability_registry=capability_registry,
         command_registry=command_registry,
         semantic_router=semantic_router,
-        classifier=classifier,
     )
     prediction = await _maybe_apply_utility_slots(
         text=route.args,
@@ -413,7 +277,7 @@ def _decision_metadata(
         **prediction,
         "predicted_intent": intent_id,
         "confidence": round(confidence, 2),
-        "intent_score": _rounded_optional(prediction.get("semantic_score")) if prediction.get("source") != "rule_based_shadow" else round(confidence, 4),
+        "intent_score": _rounded_optional(prediction.get("semantic_score")),
         "intent_margin": _rounded_optional(prediction.get("semantic_margin")),
         "semantic_score": _rounded_optional(prediction.get("semantic_score")),
         "semantic_margin": _rounded_optional(prediction.get("semantic_margin")),
@@ -529,7 +393,6 @@ def _semantic_prediction(
     capability_registry: Any = None,
     command_registry: Any = None,
     semantic_router: Any = None,
-    classifier: RuleBasedIntentClassifier | None = None,
 ) -> dict[str, Any]:
     try:
         from ai_workbench.core.intent_semantic_router import SemanticRouter
@@ -549,22 +412,6 @@ def _semantic_prediction(
         prediction = {"predicted_intent": "chat", "confidence": 0.0, "source": "embedding_semantic_router", "warnings": ["semantic_router_unavailable"]}
     if prediction.get("warnings") and any(str(item).startswith("semantic_router_") for item in prediction.get("warnings") or []):
         prediction = {**prediction, "source": "semantic_router_unavailable", "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent", "auto_executable": False}
-        if classifier is not None:
-            try:
-                debug = classifier.classify(
-                    text,
-                    settings=settings,
-                    agent_registry=agent_registry,
-                    agent_config_store=agent_config_store,
-                    knowledge_store=knowledge_store,
-                )
-                prediction["debug_fallback"] = {
-                    "source": "rule_based_fallback",
-                    "predicted_intent": debug.get("predicted_intent"),
-                    "confidence": debug.get("confidence"),
-                }
-            except Exception:
-                pass
     return prediction
 
 
@@ -808,50 +655,6 @@ def _active_session_kb_ids(knowledge_store: Any, session_id: str) -> list[str]:
     return ids
 
 
-def _detect_kb_hint(knowledge_store: Any, normalized_text: str) -> dict[str, str] | None:
-    for candidate in _kb_candidates(knowledge_store):
-        name = str(candidate.get("name") or "")
-        name_norm = _normalize_text(name)
-        if name_norm and name_norm in normalized_text:
-            return {"hint": name, "source": "name"}
-        for alias in candidate.get("aliases") or []:
-            alias_norm = _normalize_text(alias)
-            if alias_norm and alias_norm in normalized_text:
-                return {"hint": str(alias), "source": "alias", "alias": str(alias)}
-    return None
-
-
-def _match_agent_hints(agent_registry: Any, agent_config_store: Any, normalized_text: str) -> dict[str, str] | None:
-    best: dict[str, str] | None = None
-    best_score = 0.0
-    for candidate in _agent_candidates(agent_registry, agent_config_store):
-        name = str(candidate.get("name") or "")
-        agent_id = str(candidate.get("id") or "")
-        for source, value in [("name", name), ("name", agent_id)]:
-            norm = _normalize_text(value)
-            if norm and norm in normalized_text and len(norm) >= 3:
-                score = 0.7 + min(len(norm), 20) / 100
-                if score > best_score:
-                    best_score = score
-                    best = {"id": agent_id, "source": source, "hint": value}
-        for alias in candidate.get("aliases") or []:
-            norm = _normalize_text(alias)
-            if norm and norm in normalized_text:
-                score = 0.82 + min(len(norm), 12) / 100
-                if score > best_score:
-                    best_score = score
-                    best = {"id": agent_id, "source": "alias", "hint": str(alias), "alias": str(alias)}
-        for example in candidate.get("examples") or []:
-            norm = _normalize_text(example)
-            overlap = _jaccard_score(normalized_text, norm)
-            if norm and (norm in normalized_text or overlap >= 0.45):
-                score = 0.76 if norm in normalized_text else 0.45 + overlap
-                if score > best_score:
-                    best_score = score
-                    best = {"id": agent_id, "source": "examples", "hint": agent_id, "example": str(example)}
-    return best
-
-
 def _compact_slots(slots: dict[str, Any]) -> dict[str, str]:
     compact: dict[str, str] = {}
     for key in ("target_agent_hint", "kb_hint", "query", "command_hint"):
@@ -866,88 +669,6 @@ def _short_text(value: str, limit: int = 240) -> str:
         return value
     keep = (limit - 3) // 2
     return f"{value[:keep]}...{value[-keep:]}"
-
-
-async def _maybe_apply_utility_extractor(
-    *,
-    text: str,
-    prediction: dict[str, Any],
-    settings: Any,
-    utility_llm_service: Any = None,
-    agent_registry: Any = None,
-    agent_config_store: Any = None,
-    knowledge_store: Any = None,
-) -> dict[str, Any]:
-    if utility_llm_service is None or settings is None:
-        return prediction
-    if not getattr(settings, "intent_routing_utility_llm_model_path", ""):
-        return prediction
-    predicted_intent = str(prediction.get("predicted_intent") or "chat")
-    confidence = float(prediction.get("confidence") or 0.0)
-    high_threshold = float(getattr(settings, "intent_routing_high_confidence_threshold", 0.78) or 0.78)
-    should_extract = confidence < high_threshold or predicted_intent in {"knowledge_query", "agent_route"}
-    if not should_extract:
-        return prediction
-    try:
-        context = compact_utility_context(
-            settings=settings,
-            agent_registry=agent_registry,
-            agent_config_store=agent_config_store,
-            knowledge_store=knowledge_store,
-        )
-        try:
-            extracted = await utility_llm_service.extract_intent_json(text, settings, context=context)
-        except TypeError:
-            extracted = await utility_llm_service.extract_intent_json(text, settings)
-    except Exception:
-        return {**prediction, "warnings": [*list(prediction.get("warnings") or []), "utility_extractor_failed"]}
-    intent_id = extracted.get("intent") or "unknown"
-    definition = intent_definition(intent_id)
-    slots = {
-        key: value
-        for key, value in {
-            "target_agent_hint": extracted.get("target_agent_hint"),
-            "kb_hint": extracted.get("kb_hint"),
-            "query": extracted.get("query"),
-            "command_hint": extracted.get("command_hint"),
-        }.items()
-        if value
-    }
-    target_agent_id = extracted.get("target_agent_id") or prediction.get("target_agent_id")
-    agent_match_source = prediction.get("agent_match_source")
-    matched_alias = prediction.get("matched_alias")
-    if not target_agent_id and slots.get("target_agent_hint"):
-        agent_match = _match_agent_hints(agent_registry, agent_config_store, _normalize_text(slots["target_agent_hint"]))
-        if agent_match:
-            target_agent_id = agent_match.get("id")
-            agent_match_source = agent_match.get("source") or agent_match_source
-            if agent_match.get("alias"):
-                matched_alias = _short_text(str(agent_match["alias"]), 80)
-    kb_id = extracted.get("kb_id")
-    match_source = extracted.get("match_source")
-    kb_match_source = prediction.get("kb_match_source")
-    if intent_id == "knowledge_query" and match_source:
-        kb_match_source = match_source
-    elif intent_id == "agent_route" and match_source:
-        agent_match_source = match_source
-    final_target_agent_id = target_agent_id
-    if definition is not None and definition.target_agent_id:
-        final_target_agent_id = definition.target_agent_id
-    merged = {
-        **prediction,
-        "source": "rule_based_shadow+utility_llm",
-        "predicted_intent": intent_id,
-        "confidence": extracted.get("confidence", prediction.get("confidence", 0.0)),
-        "target_agent_id": final_target_agent_id,
-        "kb_id": kb_id,
-        "kb_match_source": kb_match_source,
-        "agent_match_source": agent_match_source,
-        "slots": slots,
-        "warnings": list(prediction.get("warnings") or []),
-    }
-    if matched_alias:
-        merged["matched_alias"] = matched_alias
-    return merged
 
 
 async def _maybe_apply_utility_slots(
@@ -966,8 +687,8 @@ async def _maybe_apply_utility_slots(
         return prediction
     predicted_intent = str(prediction.get("predicted_intent") or "chat")
     confidence = float(prediction.get("confidence") or 0.0)
-    high_threshold = float(getattr(settings, "intent_routing_high_confidence_threshold", 0.78) or 0.78)
-    if predicted_intent != "knowledge_query" and confidence >= high_threshold:
+    intent_min_score = float(getattr(settings, "intent_routing_semantic_intent_min_score", 0.50) or 0.50)
+    if predicted_intent != "knowledge_query" and confidence >= intent_min_score:
         return prediction
     try:
         context = compact_utility_context(
@@ -991,7 +712,7 @@ async def _maybe_apply_utility_slots(
             slots["query"] = extracted.get("query")
         if extracted.get("kb_id"):
             prediction = {**prediction, "kb_id": extracted.get("kb_id")}
-    elif extracted.get("query") and confidence < high_threshold:
+    elif extracted.get("query") and confidence < intent_min_score:
         slots.setdefault("query", extracted.get("query"))
     return {
         **prediction,

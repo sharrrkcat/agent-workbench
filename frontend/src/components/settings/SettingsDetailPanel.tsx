@@ -838,8 +838,8 @@ function GeneralIntentRoutingSettings({
           <small>{semanticStatus?.index?.will_rebuild_lazily ? t('settings:general.semanticIndexWillRebuild') : t('settings:general.semanticIndexReady')}</small>
         </div>
         {semanticStatus ? (
-          <dl className="settings-definition-grid compact">
-            <Metric label={t('settings:general.intentExamplesCount')} value={String(semanticStatus.candidate_summary.intent_examples)} />
+          <dl className="settings-definition-grid semantic-candidate-summary">
+            <Metric label={t('settings:general.intentExamplesCount')} value={String(semanticStatus.candidate_summary.intent_examples)} wide />
             <Metric label={t('settings:general.kbCandidatesCount')} value={String(semanticStatus.candidate_summary.knowledge_bases)} />
             <Metric label={t('settings:general.agentCandidatesCount')} value={String(semanticStatus.candidate_summary.agents)} />
             <Metric label={t('settings:general.actionCandidatesCount')} value={String(semanticStatus.candidate_summary.actions)} />
@@ -859,13 +859,6 @@ function GeneralIntentRoutingSettings({
             <NumberField label={t('settings:general.kbMinScore')} value={values.intent_routing_semantic_kb_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_kb_min_score', value)} />
             <NumberField label={t('settings:general.agentMinScore')} value={values.intent_routing_semantic_agent_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_agent_min_score', value)} />
             <NumberField label={t('settings:general.commandMinScore')} value={values.intent_routing_semantic_command_min_score} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_semantic_command_min_score', value)} />
-          </div>
-        </details>
-        <details className="settings-disclosure">
-          <summary>{t('settings:general.legacyRouteThresholds')}</summary>
-          <div className="settings-detail-grid">
-            <NumberField label={t('settings:general.highConfidenceThreshold')} value={values.intent_routing_high_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_high_confidence_threshold', value)} />
-            <NumberField label={t('settings:general.lowConfidenceThreshold')} value={values.intent_routing_low_confidence_threshold} min={0} max={1} step={0.01} onChange={(value) => setNumber('intent_routing_low_confidence_threshold', value)} />
           </div>
         </details>
       </div>
@@ -1200,8 +1193,6 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_enabled: values.intent_routing_enabled,
     intent_routing_default_for_prompt_agents: values.intent_routing_default_for_prompt_agents,
     intent_routing_mode: values.intent_routing_mode,
-    intent_routing_high_confidence_threshold: values.intent_routing_high_confidence_threshold,
-    intent_routing_low_confidence_threshold: values.intent_routing_low_confidence_threshold,
     intent_routing_semantic_intent_min_score: values.intent_routing_semantic_intent_min_score,
     intent_routing_semantic_intent_min_margin: values.intent_routing_semantic_intent_min_margin,
     intent_routing_semantic_kb_min_score: values.intent_routing_semantic_kb_min_score,

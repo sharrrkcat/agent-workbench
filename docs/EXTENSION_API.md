@@ -393,7 +393,7 @@ Intent Routing embedding profile selection:
 - The profile id references `GET /api/knowledge/embedding-models` records owned by Knowledge settings.
 - Saving settings does not require loading or testing the embedding model.
 - The selected profile is used by the semantic router for route candidates and current-message query embeddings. Candidate vectors are kept in a lazy in-memory cache and are not persisted.
-- If a selected profile is missing or disabled, Settings should show an unavailable state without crashing. Runtime falls back to the current Prompt Agent path and records compact warnings; the old rule-based classifier may be included only as debug fallback metadata and must not trigger real auto execution.
+- If a selected profile is missing or disabled, Settings should show an unavailable state without crashing. Runtime falls back to the current Prompt Agent path and records compact semantic-unavailable warnings. No fallback classifier runs, and Route Test/metadata must not include fallback classifier fields.
 
 ## Knowledge Settings, Local Model APIs, Indexing, And Search
 

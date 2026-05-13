@@ -1210,8 +1210,6 @@ export type GeneralSettings = {
   intent_routing_enabled: boolean;
   intent_routing_default_for_prompt_agents: boolean;
   intent_routing_mode: 'shadow' | 'auto';
-  intent_routing_high_confidence_threshold: number;
-  intent_routing_low_confidence_threshold: number;
   intent_routing_semantic_intent_min_score: number;
   intent_routing_semantic_intent_min_margin: number;
   intent_routing_semantic_kb_min_score: number;

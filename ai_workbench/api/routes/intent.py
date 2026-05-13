@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.intent_router import RuleBasedIntentClassifier, _decision_metadata, _maybe_apply_utility_slots, _semantic_prediction, build_intent_routing_metadata, compact_utility_context
+from ai_workbench.core.intent_router import _decision_metadata, _maybe_apply_utility_slots, _semantic_prediction, build_intent_routing_metadata, compact_utility_context
 from ai_workbench.core.intent_semantic_router import semantic_router_status
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
 from ai_workbench.core.utility_llm import scan_utility_models
@@ -146,7 +146,6 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
             capability_registry=state.capabilities,
             command_registry=state.commands,
             semantic_router=state.semantic_router,
-            classifier=RuleBasedIntentClassifier(),
         )
         prediction = await _maybe_apply_utility_slots(
             text=text,
@@ -195,7 +194,6 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         capability_registry=state.capabilities,
         command_registry=state.commands,
         semantic_router=state.semantic_router,
-        classifier=RuleBasedIntentClassifier(),
         utility_llm_service=state.utility_llm if payload.include_utility else None,
     )
     return {"ok": True, "decision": _route_test_decision(decision or {"eligible": False, "bypassed": True, "bypass_reason": "unavailable"})}

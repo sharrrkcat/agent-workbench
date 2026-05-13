@@ -128,7 +128,7 @@ Script Agents, non-prompt Agents, `group_transcript` mode, form submissions, sil
 
 Shadow mode never changes the selected route. A prediction such as `image_generation` or `knowledge_query` is recorded only as metadata; the original current/default Prompt Agent still receives the message.
 
-The embedding semantic router is the primary prediction source for Route Test, shadow metadata, and auto-mode route decisions. It aggregates semantic scores by intent group before making an execution decision: the intent score is the best score for that intent group, and the intent margin compares the top intent group with the second intent group. Multiple top candidates from the same intent do not reduce the margin by themselves. Metadata caps `intent_group_scores` to the top few intent groups and does not store embeddings.
+The embedding semantic router is the only classifier for Route Test, shadow metadata, and auto-mode route decisions. It aggregates semantic scores by intent group before making an execution decision: the intent score is the best score for that intent group, and the intent margin compares the top intent group with the second intent group. Multiple top candidates from the same intent do not reduce the margin by themselves. Metadata caps `intent_group_scores` to the top few intent groups and does not store embeddings.
 
 Semantic auto execution uses semantic-specific thresholds:
 
@@ -138,7 +138,7 @@ Semantic auto execution uses semantic-specific thresholds:
 - `intent_routing_semantic_agent_min_score`, default `0.45`, diagnostic candidates only.
 - `intent_routing_semantic_command_min_score`, default `0.45`, diagnostic candidates only.
 
-The older `intent_routing_high_confidence_threshold` and `intent_routing_low_confidence_threshold` remain compatibility/legacy debug settings and are not the primary semantic auto-route gate.
+Old persisted `intent_routing_high_confidence_threshold` and `intent_routing_low_confidence_threshold` keys are ignored on load and patch. They are not returned by the General settings API and never affect route decisions.
 
 Auto execution is intentionally narrow:
 
@@ -149,7 +149,7 @@ Auto execution is intentionally narrow:
 
 `knowledge_query` auto execution requires all of the following: General mode `auto`, `intent_routing_auto_route_safe_intents=true`, eligible ordinary text in `single_assistant` mode, current default Agent is an effective Intent Routing enabled Prompt Agent, semantic predicted intent is `knowledge_query`, grouped intent score and margin meet the semantic intent thresholds, and either a selected KB candidate meets the semantic KB threshold or no explicit KB candidate is available but the session has active KB bindings. The execution keeps the current Prompt Agent, sets only per-run `temporary_knowledge_base_ids` and `knowledge_query_override`, and never persists Context Sources bindings or changes the session default Agent.
 
-If the semantic router is unavailable, the runtime falls back to the current Prompt Agent and records warnings such as `semantic_router_profile_missing`, `semantic_router_embedding_unavailable`, or `semantic_router_unavailable`. The old rule-based classifier may be recorded only as `debug_fallback` metadata and must not trigger real auto execution, including the old image-generation to `comfyui_agent` route.
+If the semantic router is unavailable, the runtime falls back to the current Prompt Agent and records a semantic-unavailable source/reason such as `semantic_router_unavailable`, `semantic_router_profile_missing`, or `semantic_router_embedding_unavailable`. No fallback classifier runs, and unavailable semantic routing never triggers command, Agent, action, or image-generation execution.
 
 `command_like` and generic `agent_route` are not executed automatically in this version. They fall back to the current Prompt Agent and record warnings such as `command_like_auto_route_disabled` or `agent_route_auto_route_disabled`. No slash command, memory release, deletion, settings change, shell command, or arbitrary Agent call is performed.
 
@@ -250,7 +250,7 @@ Bypass metadata shape:
 }
 ```
 
-Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, keep the semantic prediction and add `utility_extractor_failed` to warnings. Rule-based classification remains only a fallback/debug helper when the semantic router is unavailable.
+Metadata must stay compact and must not store long prompts, full history, full route example lists, raw Utility LLM prompts or outputs, vector data, full candidate lists, Agent prompts, KB content, Worldbook content, Core Memory content, or extracted private content. Alias fields such as `matched_alias` are truncated, grouped intent scores are capped, Route Test top candidates are capped to compact previews, and `ambiguous_matches` is capped. Utility LLM extractor failures, including missing `llama-cpp-python`, missing GGUF files, backend/path mismatches, generation failures, or invalid JSON, keep the semantic prediction and add `utility_extractor_failed` to warnings. Route metadata must not include a fallback classifier prediction.
 
 WebSocket events:
 - `run_updated`

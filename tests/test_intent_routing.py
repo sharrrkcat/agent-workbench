@@ -178,6 +178,9 @@ def test_route_test_without_embedding_profile_warns_without_creating_messages_or
     assert response.status_code == 200
     decision = response.json()["decision"]
     assert decision["predicted_intent"] == "chat"
+    assert decision["source"] == "semantic_router_unavailable"
+    assert decision["would_execute"] is False
+    assert "debug_fallback" not in decision
     assert "semantic_router_profile_missing" in decision["warnings"]
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []

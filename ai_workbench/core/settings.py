@@ -39,7 +39,11 @@ def normalize_optional_instruction(value: Any) -> str | None:
     return value
 
 
-LEGACY_IGNORED_APP_SETTINGS_KEYS = {"intent_routing_embedding_model_path"}
+LEGACY_IGNORED_APP_SETTINGS_KEYS = {
+    "intent_routing_embedding_model_path",
+    "intent_routing_high_confidence_threshold",
+    "intent_routing_low_confidence_threshold",
+}
 SESSION_TITLE_BACKENDS = {"utility_llm", "follow_agent_model_profile", "specified_model_profile"}
 
 
@@ -79,8 +83,6 @@ class AppSettings(BaseModel):
     intent_routing_enabled: StrictBool = False
     intent_routing_default_for_prompt_agents: StrictBool = False
     intent_routing_mode: str = "shadow"
-    intent_routing_high_confidence_threshold: float = Field(default=0.78, ge=0, le=1)
-    intent_routing_low_confidence_threshold: float = Field(default=0.55, ge=0, le=1)
     intent_routing_semantic_intent_min_score: float = Field(default=0.50, ge=0, le=1)
     intent_routing_semantic_intent_min_margin: float = Field(default=0.03, ge=0, le=1)
     intent_routing_semantic_kb_min_score: float = Field(default=0.45, ge=0, le=1)
@@ -176,9 +178,7 @@ class AppSettings(BaseModel):
         return text or None
 
     @model_validator(mode="after")
-    def _validate_intent_threshold_order(self) -> "AppSettings":
-        if self.intent_routing_low_confidence_threshold > self.intent_routing_high_confidence_threshold:
-            raise ValueError("Intent routing low confidence threshold must not be greater than high confidence threshold.")
+    def _validate_utility_model_path(self) -> "AppSettings":
         if self.intent_routing_utility_llm_model_path:
             normalize_utility_model_path(
                 self.intent_routing_utility_llm_model_path,
@@ -235,8 +235,6 @@ class AppSettingsPatch(BaseModel):
     intent_routing_enabled: StrictBool | None = None
     intent_routing_default_for_prompt_agents: StrictBool | None = None
     intent_routing_mode: str | None = None
-    intent_routing_high_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
-    intent_routing_low_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
     intent_routing_semantic_intent_min_score: float | None = Field(default=None, ge=0, le=1)
     intent_routing_semantic_intent_min_margin: float | None = Field(default=None, ge=0, le=1)
     intent_routing_semantic_kb_min_score: float | None = Field(default=None, ge=0, le=1)

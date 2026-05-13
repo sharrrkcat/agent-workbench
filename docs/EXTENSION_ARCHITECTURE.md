@@ -340,7 +340,7 @@ Core Memory and Worldbook configuration ownership:
 
 Intent Routing configuration ownership:
 
-- General settings own Intent Routing's master switch, Prompt Agent default, global `shadow`/`auto` mode, safe auto-route toggle, confidence thresholds, and the optional semantic router Embedding Model Profile reference.
+- General settings own Intent Routing's master switch, Prompt Agent default, global `shadow`/`auto` mode, safe auto-route toggle, semantic thresholds, and the optional semantic router Embedding Model Profile reference.
 - General settings own built-in intent custom route examples. These examples are user data merged with built-in route examples at prediction time.
 - Prompt Agent local override state belongs in `AgentConfig.runtime.intent_routing_mode` and is edited under Agent detail -> Intent Routing.
 - Agent target hint aliases/examples belong in `AgentConfig.runtime.intent_routing_aliases_text` and `AgentConfig.runtime.intent_routing_examples_text`, edited under Agent detail -> Intent Routing. They are local runtime hints, not manifest fields and not router-entry grants.
@@ -348,6 +348,7 @@ Intent Routing configuration ownership:
 - Intent Routing semantic router configuration references an existing Knowledge Embedding Model Profile through General settings. The Embedding Model Profile itself remains owned by Knowledge/local model configuration.
 - Intent Routing must not own or restore a raw embedding model path UI. Old persisted raw embedding path values are ignored; semantic router selection uses only the Knowledge Embedding Model Profile id.
 - The semantic router is core runtime behavior. Its route index is a lazy in-memory cache derived from existing owners: General route examples, Knowledge Base names/aliases/descriptions, AgentConfig target hints, Agent action manifest metadata, and Capability command manifest metadata.
+- Explicit syntax parsing for `/command`, `@agent`, `@agent:action`, and `:action` remains owned by the core router and bypasses Intent Routing before the semantic classifier runs. There is no separate fallback route classifier after semantic routing.
 - Agent action and Capability command candidates are read-only diagnostic candidates. They do not change Agent or Capability manifest schemas and do not grant automatic execution.
 - Route candidate embeddings are not persisted to SQLite or a vector database. The Knowledge Embedding Model Profile remains the only model configuration owner, and route candidates do not modify Knowledge retrieval indexes or ranking.
 - Utility LLM settings belong to General settings and are displayed under General -> Utility LLM: `intent_routing_utility_llm_backend`, `intent_routing_utility_llm_model_path`, `intent_routing_device`, and optional llama.cpp options. Transformers/HF paths are `utility_llms/<folder>`; GGUF paths are `utility_llms/<model-folder>/<file>.gguf` and remain under `data/models/utility_llms`.
