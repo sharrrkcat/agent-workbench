@@ -53,6 +53,7 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             "看看 Jedi Cal 状态",
             "Jedi Cal 目前怎么样",
             "唤醒宠物",
+            "召唤宠物 Cal",
             "把宠物叫出来",
             "隐藏 Jedi Cal",
             "把宠物换成 BD-1",
@@ -93,6 +94,7 @@ BLOCKING_AUTO_WARNINGS = {
     "semantic_router_unavailable",
     "pet_candidate_not_found",
     "ambiguous_pet_candidate",
+    "target_pet_not_current",
     "source_pet_mismatch",
     "pet_command_context_missing",
     "pet_action_unrecognized",
@@ -479,7 +481,34 @@ def _semantic_prediction(
 
 
 PET_CONTEXT_TERMS = ("宠物", "电子宠物", "虚拟宠物", "桌宠", "pet", "小助手", "小人")
-PET_OPERATION_TERMS = ("状态", "目前怎么样", "唤醒", "叫出来", "隐藏", "藏起来", "换成", "切换", "重新加载", "刷新", "重载", "status", "wake", "hide", "tuck", "switch", "reload", "refresh")
+PET_OPERATION_TERMS = (
+    "状态",
+    "目前怎么样",
+    "唤醒",
+    "召唤",
+    "唤出",
+    "叫出来",
+    "叫醒",
+    "出来",
+    "出来一下",
+    "隐藏",
+    "藏起来",
+    "换成",
+    "切换",
+    "重新加载",
+    "刷新",
+    "重载",
+    "status",
+    "wake",
+    "summon",
+    "bring out",
+    "show pet",
+    "hide",
+    "tuck",
+    "switch",
+    "reload",
+    "refresh",
+)
 
 
 def _pet_command_prediction(text: str) -> dict[str, Any] | None:
@@ -510,7 +539,20 @@ def _parse_pet_command_text(text: str) -> dict[str, Any] | None:
     patterns: list[tuple[str, str, tuple[str, ...]]] = [
         ("select_swap", "select", (r"^把\s*(?P<source>.+?)\s*换成\s*(?P<target>.+?)\s*$",)),
         ("select", "select", (r"^把宠物换成\s*(?P<target>.+?)\s*$", r"^切换到\s*(?P<target>.+?)\s*$", r"^switch\s+(?:pet\s+)?to\s+(?P<target>.+?)\s*$")),
-        ("wake", "wake", (r"^唤醒\s*(?P<target>.+?)?\s*$", r"^把\s*(?P<target>.+?)\s*叫出来\s*$", r"^wake\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
+        (
+            "wake",
+            "wake",
+            (
+                r"^唤醒\s*(?P<target>.+?)?\s*$",
+                r"^召唤\s*(?P<target>.+?)?\s*$",
+                r"^唤出\s*(?P<target>.+?)?\s*$",
+                r"^叫醒\s*(?P<target>.+?)?\s*$",
+                r"^把\s*(?P<target>.+?)\s*(?:叫出来|唤出|叫醒)\s*$",
+                r"^(?P<target>.+?)\s*(?:出来|出来一下)\s*$",
+                r"^(?:wake|summon|bring\s+out)\s+(?:the\s+)?(?P<target>.+?)?\s*$",
+                r"^show\s+(?:the\s+)?pet(?:\s+(?!(?:status)\s*$)(?P<target>.+?))?\s*$",
+            ),
+        ),
         ("tuck", "tuck", (r"^隐藏\s*(?P<target>.+?)?\s*$", r"^把\s*(?P<target>.+?)\s*藏起来\s*$", r"^把\s*(?P<target>.+?)\s*隐藏\s*$", r"^(?:hide|tuck)\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
         ("reload", "reload", (r"^重新加载\s*(?P<target>.+?)?\s*$", r"^刷新\s*(?P<target>.+?)?\s*$", r"^重载\s*(?P<target>.+?)?\s*$", r"^(?:reload|refresh)\s+(?:the\s+)?(?P<target>.+?)?\s*$")),
         ("status", "status", (r"^我想看看宠物状态\s*$", r"^看看\s*(?P<target>.+?)?\s*状态\s*$", r"^(?P<target>.+?)\s*目前怎么样\s*$", r"^(?:show\s+)?(?:the\s+)?(?P<target>.+?)?\s*status\s*$")),
@@ -522,9 +564,9 @@ def _parse_pet_command_text(text: str) -> dict[str, Any] | None:
                 continue
             target = _clean_pet_hint(match.groupdict().get("target"))
             source = _clean_pet_hint(match.groupdict().get("source"))
-            if target in {"宠物", "pet", "the pet"}:
+            if target in {"宠物", "桌宠", "电子宠物", "虚拟宠物", "pet", "the pet"}:
                 target = None
-            if source in {"宠物", "pet", "the pet"}:
+            if source in {"宠物", "桌宠", "电子宠物", "虚拟宠物", "pet", "the pet"}:
                 source = None
             if not has_context and not target and action != "status":
                 return None
@@ -534,6 +576,7 @@ def _parse_pet_command_text(text: str) -> dict[str, Any] | None:
 
 def _clean_pet_hint(value: Any) -> str | None:
     text = str(value or "").strip()
+    text = re.sub(r"^(?:宠物|桌宠|电子宠物|虚拟宠物)\s*", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"^(?:the\s+)?pet\s+", "", text, flags=re.IGNORECASE).strip()
     return _short_text(text, 120) if text else None
 
@@ -571,6 +614,14 @@ def _pet_command_decision(
         reason = str(source["reason"])
     elif source and source.get("pet") and pets_state.get("default_pet", {}).get("pet") and source["pet"]["id"] != pets_state["default_pet"]["pet"]["id"]:
         reason = "source_pet_mismatch"
+    elif (
+        action in {"wake", "tuck", "reload"}
+        and target_hint
+        and target.get("pet")
+        and pets_state.get("default_pet", {}).get("pet")
+        and target["pet"]["id"] != pets_state["default_pet"]["pet"]["id"]
+    ):
+        reason = "target_pet_not_current"
     if reason is None and not target.get("pet") and action != "status":
         reason = "pet_candidate_not_found"
 

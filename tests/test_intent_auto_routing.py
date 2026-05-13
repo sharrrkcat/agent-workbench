@@ -348,6 +348,85 @@ def test_auto_pet_command_routes_only_to_pet_command() -> None:
     assert pet_runtime.command_calls == ["wake"]
 
 
+def test_auto_pet_command_persists_original_user_message_before_result() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "看看宠物状态"))
+
+    assert result.success is True
+    messages = fixture.messages.list_messages(session.session_id)
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert messages[0].content == "看看宠物状态"
+    assert messages[0].metadata["intent_routing"]["predicted_intent"] == "pet_command"
+    assert messages[0].metadata["intent_routing"]["generated_command"] == "/pet status"
+    assert "original_user_text" not in messages[0].metadata["intent_routing"]
+    assert messages[1].parent_message_id == messages[0].message_id
+    command_run = fixture.runs.get_run(result.run_id)
+    assert command_run.kind == "command"
+    assert command_run.target_id == "/pet"
+    assert command_run.metadata["input_message_id"] == messages[0].message_id
+    assert command_run.metadata["intent_routing"]["executed"] is True
+    assert command_run.metadata["intent_routing"]["generated_command"] == "/pet status"
+    assert pet_runtime.command_calls == ["status"]
+
+
+def test_auto_pet_command_show_pet_status_stays_status() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "show pet status"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert intent["pet_action"] == "status"
+    assert intent["generated_command"] == "/pet status"
+    assert pet_runtime.command_calls == ["status"]
+
+
+def test_auto_pet_command_wake_accepts_summon_phrasing() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "召唤宠物cal"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert intent["predicted_intent"] == "pet_command"
+    assert intent["pet_action"] == "wake"
+    assert intent["target_pet_id"] == "jedi_cal"
+    assert intent["generated_command"] == "/pet wake"
+    assert pet_runtime.command_calls == ["wake"]
+
+
+def test_auto_pet_command_wake_accepts_bring_out_phrasing() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "把宠物cal叫出来"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert intent["pet_action"] == "wake"
+    assert intent["target_pet_id"] == "jedi_cal"
+    assert pet_runtime.command_calls == ["wake"]
+
+
 def test_shadow_pet_command_records_metadata_without_executing() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     pet_runtime = FakePetRuntime()
@@ -401,3 +480,67 @@ def test_reality_pet_question_stays_chat() -> None:
     assert prompt_run.kind == "agent"
     assert prompt_run.target_id == "chat"
     assert intent["predicted_intent"] == "chat"
+
+
+def test_reality_pet_status_question_stays_chat() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    fixture.agent_runner.runtime_registry.replace("pet", FakePetRuntime())
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "我家的猫状态怎么样"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert prompt_run.target_id == "chat"
+    assert intent["predicted_intent"] == "chat"
+
+
+def test_pet_names_without_pet_operation_do_not_execute() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    fixture.agent_runner.runtime_registry.replace("pet", FakePetRuntime())
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "Cal 和 Yoda 的关系是什么"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert prompt_run.target_id == "chat"
+    assert intent["route_action"] != "pet_command"
+
+
+def test_pet_wake_target_not_current_does_not_select_or_execute() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime(default_pet_id="bd_1")
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "唤醒 Cal"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert prompt_run.kind == "agent"
+    assert intent["predicted_intent"] == "pet_command"
+    assert intent["target_pet_id"] == "jedi_cal"
+    assert intent["not_executed_reason"] == "target_pet_not_current"
+    assert pet_runtime.command_calls == []
+
+
+def test_explicit_pet_command_bypasses_intent_routing() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "/pet wake"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    assert command_run.kind == "command"
+    assert command_run.target_id == "/pet"
+    assert "intent_routing" not in command_run.metadata or command_run.metadata["intent_routing"].get("skip_reason") == "explicit_command"
+    assert pet_runtime.command_calls == ["wake"]

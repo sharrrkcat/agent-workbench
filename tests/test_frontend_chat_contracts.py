@@ -283,6 +283,36 @@ def test_failed_producer_messages_keep_identity_and_send_errors_are_local() -> N
     assert "speaker_name: commandErrorTitle(error)" in store
 
 
+def test_pet_auto_route_contracts_keep_original_user_message_and_readable_reasons() -> None:
+    store = read_frontend("store/useWorkbenchStore.ts")
+    settings_panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
+
+    assert "hasFetchedReplacementUser(fetched, message)" in store
+    assert "candidate.content === pending.content" in store
+    assert "generatedPetCommand" in settings_panel
+    assert "notExecutedReason" in settings_panel
+    assert "target_pet_not_current" in en_settings
+    assert "target_pet_not_current" in zh_settings
+    assert "ambiguous_pet_candidate" in en_settings
+    assert "pet_command_context_missing" in en_settings
+
+
+def test_popover_layer_uses_shared_z_index_above_composer() -> None:
+    styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    assert "--z-header: 100" in styles
+    assert "--z-popover: 120" in styles
+    assert "--z-composer: 4" in styles
+    assert ".topbar {" in styles and "z-index: var(--z-header)" in styles
+    assert ".popover-surface {" in styles and "z-index: var(--z-popover)" in styles
+    assert ".session-menu {" in styles and "z-index: var(--z-popover)" in styles
+    assert ".agent-menu {" in styles and "z-index: var(--z-popover)" in styles
+    assert ".knowledge-picker-menu {" in styles and "z-index: var(--z-popover)" in styles
+    assert ".model-selector-menu-portal {" in styles and "z-index: var(--z-popover)" in styles
+
+
 def test_store_merges_run_step_updates_by_step_id() -> None:
     source = read_frontend("store/useWorkbenchStore.ts")
 

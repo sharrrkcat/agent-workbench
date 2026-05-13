@@ -1231,14 +1231,14 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
         <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
         <Metric label={t('settings:general.wouldExecute')} value={decision.would_execute ? t('settings:general.yes') : t('settings:general.no')} />
         <Metric label={t('settings:general.routeAction')} value={String(decision.route_action || t('settings:general.none'))} />
-        <Metric label={t('settings:general.reason')} value={reason || (decision.would_execute ? t('settings:general.wouldExecuteYesReason') : t('settings:general.none'))} />
+        <Metric label={t('settings:general.notExecutedReason')} value={reason || (decision.would_execute ? t('settings:general.wouldExecuteYesReason') : t('settings:general.none'))} />
         <Metric label={t('settings:general.scoreMargin')} value={`${typeof score === 'number' ? score.toFixed(2) : t('settings:general.none')} / ${typeof margin === 'number' ? margin.toFixed(2) : t('settings:general.none')}`} />
         {decision.predicted_intent === 'pet_command' ? (
           <>
             <Metric label={t('settings:general.petAction')} value={String(decision.pet_action || t('settings:general.none'))} />
             <Metric label={t('settings:general.targetPet')} value={petSummary(decision, 'target', t)} />
             <Metric label={t('settings:general.sourcePet')} value={petSummary(decision, 'source', t)} />
-            <Metric label={t('settings:general.generatedCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
+            <Metric label={t('settings:general.generatedPetCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
           </>
         ) : null}
         <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />

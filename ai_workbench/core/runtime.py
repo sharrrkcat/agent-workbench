@@ -30,6 +30,13 @@ class WorkbenchRuntime:
         if route.kind == RouteKind.ERROR:
             return RunResult(success=False, run_id="", error=route.error_message, error_code=route.error_code)
         if route.kind == RouteKind.COMMAND:
+            if not input_message_id and isinstance(intent_metadata, dict) and intent_metadata.get("route_action") == "pet_command":
+                input_message_id = self._create_intent_command_user_message(
+                    session_id=route.session_id,
+                    content=raw_input,
+                    attachments=attachments,
+                    intent_metadata=intent_metadata,
+                )
             return await self.command_runner.run(route.target_id or "", route.args, route.session_id, input_message_id=input_message_id, intent_routing_metadata=intent_metadata)
         if route.kind == RouteKind.AGENT:
             if self.agent_runner is None:
@@ -124,6 +131,41 @@ class WorkbenchRuntime:
                 knowledge_query_override=_intent_query_override(intent_metadata),
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")
+
+    def _create_intent_command_user_message(
+        self,
+        *,
+        session_id: str,
+        content: str,
+        attachments: list[dict],
+        intent_metadata: dict[str, Any],
+    ) -> str:
+        user_message = self.command_runner.message_store.add_message(
+            session_id=session_id,
+            role="user",
+            content=content,
+            metadata={
+                "attachments": attachments,
+                "input_source": "text",
+                "intent_routing": {
+                    "predicted_intent": intent_metadata.get("predicted_intent"),
+                    "generated_command": intent_metadata.get("generated_command"),
+                    "executed": intent_metadata.get("executed"),
+                },
+                "invocation": {
+                    "route_type": "intent_auto_route",
+                    "route_kind": "intent_auto_route",
+                    "predicted_intent": intent_metadata.get("predicted_intent"),
+                    "generated_command": intent_metadata.get("generated_command"),
+                    "raw_text": content,
+                },
+            },
+            speaker_type="user",
+            speaker_id="local_user",
+            speaker_name="User",
+            origin="user_message",
+        )
+        return user_message.message_id
 
     async def retry_assistant_message(self, session: Session, message, source_user_message) -> RunResult:
         if self.agent_runner is None:
