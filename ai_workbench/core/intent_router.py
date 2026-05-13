@@ -100,7 +100,10 @@ BLOCKING_AUTO_WARNINGS = {
     "pet_candidate_not_found",
     "ambiguous_pet_candidate",
     "target_pet_not_current",
+    "select_target_missing",
     "source_pet_mismatch",
+    "source_pet_not_found",
+    "ambiguous_source_pet_candidate",
     "pet_command_context_missing",
     "pet_action_unrecognized",
     "pet_command_runtime_unavailable",
@@ -110,6 +113,11 @@ BLOCKING_AUTO_WARNINGS = {
     "utility_semantic_action_conflict",
     "validation_failed",
     "pet_domain_not_workbench_pet",
+    "not_workbench_pet_context",
+    "knowledge_query_missing_query",
+    "kb_hint_semantic_conflict",
+    "ambiguous_kb_candidate",
+    "no_kb_candidate_or_active_kbs",
 }
 CUSTOM_EXAMPLE_FIELDS = {
     "chat": "intent_routing_chat_examples",
@@ -411,11 +419,14 @@ def _decision_metadata(
     if isinstance(agent_candidate, dict) and agent_candidate.get("field") == "alias":
         metadata["matched_alias"] = _short_text(str(agent_candidate.get("text_preview") or ""), 80)
     if mode != "auto":
-        if intent_id == "pet_command" and metadata.get("utility_ok"):
-            return _pet_command_decision(
+        if intent_id in UTILITY_REQUIRED_INTENTS and metadata.get("utility_ok"):
+            return _with_pipeline_result(
                 metadata,
-                text=route.args,
-                mode=mode,
+                session=session,
+                route=route,
+                agent=agent,
+                settings=settings,
+                knowledge_store=knowledge_store,
                 runtime_registry=runtime_registry,
                 capability_config_store=capability_config_store,
                 auto_mode=False,
@@ -500,32 +511,25 @@ def _decision_metadata(
         metadata["executor_plan"] = {"route_action": "current_prompt_agent", "auto_executable": True}
         return metadata
     if intent_id == "knowledge_query":
-        decision = _knowledge_query_decision(metadata, session, agent, knowledge_store)
-        if decision.get("route_action") == "knowledge_override":
-            decision["auto_executable"] = True
-            decision["executed"] = True
-            decision["would_execute"] = True
-            decision["not_executed_reason"] = None
-            decision["validation_ok"] = True
-            decision["executor_plan"] = {
-                "route_action": "knowledge_override",
-                "auto_executable": True,
-                "temporary_knowledge_base_ids": decision.get("temporary_knowledge_base_ids"),
-                "knowledge_query_override": decision.get("knowledge_query_override"),
-            }
-        else:
-            decision["auto_executable"] = False
-            decision["executed"] = False
-            decision["would_execute"] = False
-            decision["not_executed_reason"] = _knowledge_not_executed_reason(decision)
-            decision["validation_ok"] = False
-            decision["executor_plan"] = {"route_action": "fallback_current_agent", "auto_executable": False}
-        return decision
-    if intent_id == "pet_command":
-        return _pet_command_decision(
+        return _with_pipeline_result(
             metadata,
-            text=route.args,
-            mode=mode,
+            session=session,
+            route=route,
+            agent=agent,
+            settings=settings,
+            knowledge_store=knowledge_store,
+            runtime_registry=runtime_registry,
+            capability_config_store=capability_config_store,
+            auto_mode=True,
+        )
+    if intent_id == "pet_command":
+        return _with_pipeline_result(
+            metadata,
+            session=session,
+            route=route,
+            agent=agent,
+            settings=settings,
+            knowledge_store=knowledge_store,
             runtime_registry=runtime_registry,
             capability_config_store=capability_config_store,
             auto_mode=True,
@@ -565,6 +569,68 @@ def _semantic_prediction(
     if semantic_unavailable:
         prediction = {**prediction, "source": "semantic_router_unavailable", "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent", "auto_executable": False}
     return prediction
+
+
+def _with_pipeline_result(
+    metadata: dict[str, Any],
+    *,
+    session: Any,
+    route: RouteTarget,
+    agent: Any,
+    settings: Any,
+    knowledge_store: Any = None,
+    runtime_registry: Any = None,
+    capability_config_store: Any = None,
+    auto_mode: bool,
+) -> dict[str, Any]:
+    slots = metadata.get("slots") if isinstance(metadata.get("slots"), dict) else {}
+    context = IntentPipelineContext(
+        mode=str(metadata.get("mode") or getattr(settings, "intent_routing_mode", "shadow")),
+        session=session,
+        route=route,
+        agent=agent,
+        settings=settings,
+        knowledge_store=knowledge_store,
+        runtime_registry=runtime_registry,
+        capability_config_store=capability_config_store,
+        auto_mode=auto_mode,
+    )
+    validation = validate_intent(metadata, slots, context)
+    plan = build_executor_plan(validation, context, metadata)
+    normalized = validation.normalized_slots or slots
+    result = {
+        **metadata,
+        "validation_ok": validation.ok,
+        "not_executed_reason": None if validation.ok else validation.not_executed_reason,
+        "warnings": validation.warnings,
+        "executor_plan": plan.compact_dict(),
+        "route_action": plan.route_action if validation.ok and auto_mode else ("metadata_only" if validation.ok else "fallback_current_agent"),
+        "auto_executable": bool(validation.ok and plan.auto_executable),
+        "would_execute": bool(validation.ok and plan.would_execute),
+        "executed": bool(validation.ok and plan.would_execute),
+    }
+    if metadata.get("predicted_intent") == "knowledge_query":
+        result["target_agent_id"] = plan.target_agent_id or getattr(agent, "id", None)
+        result["target_action_id"] = plan.target_action_id or "default"
+        result["kb_match_source"] = normalized.get("kb_match_source") or result.get("kb_match_source") or "none"
+        if normalized.get("selected_knowledge_base_ids"):
+            result["temporary_knowledge_base_ids"] = list(normalized["selected_knowledge_base_ids"])
+        if normalized.get("query"):
+            result["knowledge_query_override"] = _short_text(str(normalized["query"]))
+        if normalized.get("kb_hint"):
+            result["matched_alias"] = _short_text(str(normalized["kb_hint"]), 80)
+        result["session_bindings_changed"] = False
+        result["session_default_changed"] = False
+    if metadata.get("predicted_intent") == "pet_command":
+        result["pet_action"] = normalized.get("action")
+        result["target_pet_hint"] = normalized.get("target_pet_hint")
+        result["target_pet_id"] = normalized.get("target_pet_id")
+        result["source_pet_hint"] = normalized.get("source_pet_hint")
+        result["source_pet_id"] = normalized.get("source_pet_id")
+        result["generated_command"] = normalized.get("generated_command") or plan.generated_command
+        result["target_command"] = "/pet"
+        result["action_match_source"] = normalized.get("action_match_source") or result.get("action_match_source")
+    return result
 
 
 PET_CONTEXT_TERMS = ("宠物", "电子宠物", "虚拟宠物", "桌宠", "pet", "小助手", "小人")
@@ -1060,12 +1126,14 @@ def _active_session_kb_ids(knowledge_store: Any, session_id: str) -> list[str]:
     return ids
 
 
-def _compact_slots(slots: dict[str, Any]) -> dict[str, str]:
-    compact: dict[str, str] = {}
-    for key in ("target_agent_hint", "kb_hint", "query", "command_hint", "domain", "action", "target_pet_hint", "source_pet_hint"):
+def _compact_slots(slots: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("intent", "target_agent_hint", "kb_hint", "query", "command_hint", "domain", "action", "target_pet_hint", "source_pet_hint"):
         value = slots.get(key)
         if isinstance(value, str) and value.strip():
             compact[key] = _short_text(value.strip())
+    if slots.get("use_original_query") is not None:
+        compact["use_original_query"] = bool(slots.get("use_original_query"))
     return compact
 
 
@@ -1141,12 +1209,15 @@ async def _maybe_apply_utility_slots(
             "warnings": _ensure_warning(list(prediction.get("warnings") or []), "utility_semantic_action_conflict"),
         }
     slots = dict(prediction.get("slots") or {}) if isinstance(prediction.get("slots"), dict) else {}
+    slots["intent"] = extracted_intent
     if predicted_intent == "knowledge_query":
         if extracted.get("kb_hint"):
             slots["kb_hint"] = extracted.get("kb_hint")
             prediction = {**prediction, "matched_alias": extracted.get("kb_hint")}
         if extracted.get("query"):
             slots["query"] = extracted.get("query")
+        if extracted.get("use_original_query") is not None:
+            slots["use_original_query"] = bool(extracted.get("use_original_query"))
         if extracted.get("kb_id"):
             prediction = {**prediction, "kb_id": extracted.get("kb_id")}
     elif predicted_intent == "pet_command":

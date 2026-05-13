@@ -86,7 +86,11 @@ def _intent_reason_label(reason: str) -> str:
         "semantic_margin_below_threshold": "margin below threshold",
         "semantic_margin_too_low": "margin below threshold",
         "no_kb_candidate": "no KB candidate",
+        "no_kb_candidate_or_active_kbs": "no KB candidate or active KBs",
         "kb_candidate_ambiguous": "KB candidate ambiguous",
+        "ambiguous_kb_candidate": "KB candidate ambiguous",
+        "kb_hint_semantic_conflict": "KB hint conflict",
+        "knowledge_query_missing_query": "Knowledge query missing query",
         "safe_auto_route_disabled": "safe auto routing disabled",
         "image_generation_auto_route_deferred_until_action_routing": "diagnostic-only",
         "command_like_auto_route_disabled": "diagnostic-only",
@@ -99,6 +103,14 @@ def _intent_reason_label(reason: str) -> str:
         "utility_semantic_action_conflict": "Utility and semantic decision conflict",
         "validation_failed": "validation failed",
         "pet_domain_not_workbench_pet": "Pet domain is not Workbench Pet",
+        "not_workbench_pet_context": "not Workbench pet",
+        "pet_candidate_not_found": "Pet candidate not found",
+        "ambiguous_pet_candidate": "Pet candidate ambiguous",
+        "select_target_missing": "select target missing",
+        "target_pet_not_current": "Target pet is not the current pet",
+        "source_pet_not_found": "Source pet not found",
+        "ambiguous_source_pet_candidate": "Source pet candidate ambiguous",
+        "source_pet_mismatch": "Source pet does not match the current default pet",
     }.get(reason, reason)
 
 

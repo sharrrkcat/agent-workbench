@@ -170,6 +170,7 @@ KNOWLEDGE_QUERY_SLOT_SCHEMA = SlotSchema(
         SlotField("intent", required=True, enum_values=("knowledge_query", "unknown"), description="Predicted intent id."),
         SlotField("query", required=True, max_chars=240, description="Short knowledge search query override."),
         SlotField("kb_hint", required=False, max_chars=120, description="Optional Knowledge Base name or alias."),
+        SlotField("use_original_query", type="boolean", required=False, max_chars=None, description="Use the original user text when query is empty."),
         SlotField("kb_id", required=False, max_chars=120, description="Optional Knowledge Base id from candidates only."),
     ),
 )
@@ -425,4 +426,3 @@ def _line_values(value: Any, max_items: int, max_chars: int) -> list[str]:
         if len(items) >= max_items:
             break
     return items
-
