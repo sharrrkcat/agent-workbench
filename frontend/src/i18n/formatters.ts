@@ -43,6 +43,11 @@ export function getKnowledgeSourceStatusLabel(status: string | undefined | null,
   return t(`status:knowledgeSource.${status}`, { defaultValue: humanizeStatus(status) });
 }
 
+export function getKnowledgeOriginStatusLabel(status: string | undefined | null, t: TFunction): string {
+  if (!status) return '';
+  return t(`status:knowledgeOrigin.${status}`, { defaultValue: humanizeStatus(status) });
+}
+
 export function getRunStepLabel(label: string | undefined | null, t: TFunction): string {
   if (!label) return '';
   const key = normalizedRunStepKey(label);

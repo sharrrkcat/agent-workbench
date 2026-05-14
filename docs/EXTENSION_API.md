@@ -535,6 +535,13 @@ Knowledge source indexing APIs:
 
 - `GET /api/knowledge/bases/{id}/sources`
 - `POST /api/knowledge/bases/{id}/sources`
+- `GET /api/knowledge/bases/{id}/origins`
+- `POST /api/knowledge/bases/{id}/origins`
+- `GET /api/knowledge/origins/{origin_id}`
+- `PATCH /api/knowledge/origins/{origin_id}`
+- `DELETE /api/knowledge/origins/{origin_id}`
+- `POST /api/knowledge/origins/{origin_id}/scan`
+- `POST /api/knowledge/origins/{origin_id}/import`
 - `GET /api/knowledge/sources/{source_id}`
 - `DELETE /api/knowledge/sources/{source_id}`
 - `POST /api/knowledge/sources/{source_id}/reindex`
@@ -552,11 +559,17 @@ and text attachments:
 {"source_type": "attachment_text", "attachment_id": "local://attachments/<id>.txt"}
 ```
 
+Managed origins expose only directories under `data/knowledge/origins/<origin_slug>/`, where `origin_slug` is a safe lowercase ASCII folder name. Origin source records use `source_type: "origin_file"` and include compact path metadata such as `origin_id`, `relative_path`, `virtual_path`, `folder_path`, `file_name`, `extension`, `path_depth`, `file_status`, `source_mtime`, and `source_size_bytes`. `file_status` may be `ready`, `new`, `changed`, `missing`, or `failed`.
+
+`POST /api/knowledge/origins/{origin_id}/scan` is lightweight. It validates that every resolved file stays inside the managed origin root, skips hidden directories, `.git`, `node_modules`, `__pycache__`, symlinks, unsupported/binary files, and files over the Knowledge source size limit, then compares mtime/size/hash and updates origin/source metadata. It returns `new_count`, `changed_count`, `missing_count`, `unchanged_count`, `failed_count`, and `warnings`. Scan does not parse, chunk, embed, write `kb_chunks`, write `kb_embeddings`, write `kb_chunk_fts`, delete missing indexes, or alter retrieval-visible index rows.
+
+`POST /api/knowledge/origins/{origin_id}/import` is the explicit heavy action. It indexes new files and reindexes changed files through the existing source indexing path. Missing files are reported/skipped and keep old chunks/embeddings/FTS rows until the user deletes the source. Single-file failures are returned in the batch summary without aborting the whole batch.
+
 The indexer validates source size and chunk limits, chunks text, embeds chunks with the KB embedding model profile using `purpose=document`, stores vectors as float32 SQLite BLOBs, and writes FTS5 rows. Pasted source originals are saved under `data/knowledge/sources/<source_id>.txt`; full pasted source text is not stored in `kb_sources`. Attachment indexing reads existing local text attachments and does not delete or modify the original attachment.
 
 Markdown sources use chunk profiles: `plain_text`, `markdown_document`, `markdown_collection`, and `markdown_auto`. Markdown defaults to `markdown_auto`; non-Markdown text stays `plain_text`. Frontmatter may override the detector with `chunk_profile: markdown_document`, `chunk_profile: markdown_collection`, or `chunk_profile: plain_text`. The parser supports simple frontmatter, ATX headings `#` through `######`, heading paths, source line/character offsets, and ignores headings inside fenced code blocks. Per-chunk metadata is compact and stored in `kb_chunks.metadata_json`: `chunk_title`, `document_title`, `entity_type`, `heading_path`, `line_start`, `line_end`, `char_start`, `char_end`, `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `title_source`, and `type_source`.
 
-`chunk_title` is the RAG chunk retrieval title and embedding `Title:` value. It is not Semantic Router metadata and is not session title metadata. `markdown_auto` uses deterministic scoring and falls back to `markdown_document` on low confidence. This contract does not add directory import, automatic sync, file watching, or automatic reindexing.
+`chunk_title` is the RAG chunk retrieval title and embedding `Title:` value. It is not Semantic Router metadata and is not session title metadata. `markdown_auto` uses deterministic scoring and falls back to `markdown_document` on low confidence. Origin file indexing uses the same chunk-profile logic; source path metadata enters chunk metadata and the embedding `Path:` line.
 
 Index responses include `source_id`, `status`, `chunks`, `embedding_model_profile_id`, `embedding_dimension`, `indexed_at`, and `error`.
 
@@ -582,7 +595,7 @@ Response shape:
 {"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "context_preview": "# Retrieved Knowledge\n...", "debug": {"warnings": [], "before_filter_count": 3, "final_result_count": 1}}
 ```
 
-Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Phase 5 adds a thin `knowledge` Capability and `/kb-search` command that wrap the same core retrieval path for explicit debugging/manual search. Current non-goals: `local_file` sources, directory import, automatic sync, automatic reindexing, automatic model download, and changes to retrieval ranking/model backends.
+Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Phase 5 adds a thin `knowledge` Capability and `/kb-search` command that wrap the same core retrieval path for explicit debugging/manual search. Managed origin import is manual only: no `local_file` source, arbitrary local path import, automatic sync, file watcher, scheduled scan, background reindex, chat-time scan/reindex, automatic model download, or retrieval ranking/model backend change is part of this contract.
 
 Session bindings:
 

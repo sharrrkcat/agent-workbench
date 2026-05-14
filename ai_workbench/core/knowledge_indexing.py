@@ -4,6 +4,7 @@ import hashlib
 import mimetypes
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -13,10 +14,9 @@ from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.knowledge_models import KnowledgeModelError, knowledge_sources_path
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
-from ai_workbench.core.time import utc_now
 
 
-KnowledgeSourceType = Literal["pasted_text", "attachment_text"]
+KnowledgeSourceType = Literal["pasted_text", "attachment_text", "origin_file"]
 
 
 class KnowledgeIndexError(Exception):
@@ -50,6 +50,14 @@ class SourceText:
     size_bytes: int
     content_hash: str
     metadata: dict[str, Any]
+    origin_id: str | None = None
+    relative_path: str = ""
+    virtual_path: str = ""
+    folder_path: str = ""
+    file_name: str = ""
+    extension: str = ""
+    path_depth: int = 0
+    source_mtime: Any = None
 
 
 def source_content_hash(text: str) -> str:
@@ -109,6 +117,58 @@ def prepare_attachment_text_source(*, attachment_id: str) -> SourceText:
         size_bytes=int(payload.get("size") or len(text.encode("utf-8"))),
         content_hash=source_content_hash(text),
         metadata={"attachment_id": path.name, "truncated": bool(payload.get("truncated"))},
+    )
+
+
+def prepare_origin_file_source(
+    *,
+    origin_id: str,
+    path: Path,
+    root: Path,
+    uri_prefix: str,
+    source_id: str | None = None,
+) -> SourceText:
+    try:
+        resolved = path.resolve()
+        origin_root = root.resolve()
+        relative = resolved.relative_to(origin_root)
+    except ValueError as exc:
+        raise KnowledgeIndexError("KNOWLEDGE_ORIGIN_PATH_INVALID", "Origin file path must stay inside the origin root.") from exc
+    if not resolved.is_file():
+        raise KnowledgeIndexError("KNOWLEDGE_ORIGIN_FILE_NOT_FOUND", "Origin file was not found.")
+    text = resolved.read_text(encoding="utf-8")
+    stat = resolved.stat()
+    relative_path = relative.as_posix()
+    folder_path = relative.parent.as_posix() if str(relative.parent) != "." else ""
+    file_name = relative.name
+    extension = resolved.suffix.lower()
+    uri = f"{uri_prefix.rstrip('/')}/{relative_path}"
+    return SourceText(
+        source_id=source_id or str(uuid4()),
+        source_type="origin_file",
+        title=relative_path,
+        text=text,
+        uri=uri,
+        mime_type=mimetypes.guess_type(resolved.name)[0] or "text/plain",
+        size_bytes=stat.st_size,
+        content_hash=source_content_hash(text),
+        metadata={
+            "origin_id": origin_id,
+            "relative_path": relative_path,
+            "virtual_path": relative_path,
+            "folder_path": folder_path,
+            "file_name": file_name,
+            "extension": extension,
+            "path_depth": len(relative.parts),
+        },
+        origin_id=origin_id,
+        relative_path=relative_path,
+        virtual_path=relative_path,
+        folder_path=folder_path,
+        file_name=file_name,
+        extension=extension,
+        path_depth=len(relative.parts),
+        source_mtime=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
     )
 
 

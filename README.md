@@ -218,14 +218,15 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 
 - local model directories under `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
 - source staging directory `data/knowledge/sources`.
+- managed origin directories under `data/knowledge/origins/<origin_slug>/`.
 - model scanning without loading models or downloading files.
 - optional local embedding and reranker backend APIs using `sentence-transformers`, `torch`, and `transformers` when installed.
 - embedding model profiles, knowledge bases, and session knowledge bindings.
 - Knowledge Base aliases for Intent Routing natural-language KB hint matching.
 - test embedding/reranker endpoints and Workbench-native JSON embedding/reranker APIs.
-- pasted text and uploaded text attachment source indexing.
+- pasted text, uploaded text attachment, and explicit managed-origin source indexing.
 - Markdown chunk profiles for source indexing: `plain_text`, `markdown_document`, `markdown_collection`, and default `markdown_auto`.
-- `kb_sources`, `kb_chunks`, `kb_embeddings`, and `kb_chunk_fts` storage.
+- `kb_origins`, `kb_sources`, `kb_chunks`, `kb_embeddings`, and `kb_chunk_fts` storage.
 - chunk embeddings stored as float32 SQLite BLOBs and keyword rows stored in FTS5.
 - `POST /api/knowledge/search` for selected KBs or session-bound KBs.
 - brute-force vector search per embedding model profile, FTS5/BM25 keyword search, RRF merge, one global optional rerank pass, and context-budget trimming.
@@ -239,7 +240,9 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 
 Markdown indexing parses simple frontmatter and ATX headings while ignoring heading-looking lines inside fenced code blocks. `markdown_document` treats a file as one subject, using frontmatter `title`, H1, or titleized filename as `document_title` and every chunk's `chunk_title`. `markdown_collection` treats repeated entity headings under category headings as separate retrieval chunks, using the entity heading as `chunk_title` and parent categories such as `Characters` or `Locations` to infer `entity_type`. `markdown_auto` chooses between those profiles with deterministic scoring and falls back to `markdown_document` on low confidence. Frontmatter can override it with `chunk_profile: markdown_document`, `chunk_profile: markdown_collection`, or `chunk_profile: plain_text`.
 
-Chunk metadata is stored compactly on `kb_chunks.metadata_json` with fields such as `chunk_title`, `document_title`, `entity_type`, `heading_path`, source line/character offsets, requested/effective profile, confidence, and title/type sources. `chunk_title` is the RAG retrieval-facing title used in the embedding `Title:` line; it is not Semantic Router metadata and is not automatic session title generation metadata. This Markdown foundation does not add directory import, file watching, automatic sync, or automatic reindexing.
+Chunk metadata is stored compactly on `kb_chunks.metadata_json` with fields such as `chunk_title`, `document_title`, `entity_type`, `heading_path`, source path, source line/character offsets, requested/effective profile, confidence, and title/type sources. `chunk_title` is the RAG retrieval-facing title used in the embedding `Title:` line; it is not Semantic Router metadata and is not automatic session title generation metadata.
+
+Managed origins are manual directory imports only. Users may place supported text files under `data/knowledge/origins/<origin_slug>/` and create the matching origin in Settings -> Knowledge -> Knowledge Bases. `Scan now` only walks that managed directory, validates paths, checks size/type/hash/mtime, and marks sources as new, changed, missing, or ready. It does not parse Markdown, chunk text, embed vectors, write FTS rows, delete source indexes, or change retrieval-visible indexes. `Import / Reindex` is the explicit action that reads new or changed files and runs the normal indexing path, including Round 1 chunk profiles and source path metadata in chunk metadata and embedding `Path:` lines. Missing files keep their old chunks/embeddings/FTS rows until the user deletes the source through the existing delete flow. There is no automatic sync, file watcher, scheduled scan, background rebuild, or chat-time scan/reindex.
 
 Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
 

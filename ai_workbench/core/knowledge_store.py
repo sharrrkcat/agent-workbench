@@ -220,8 +220,65 @@ class SessionKnowledgeBinding(BaseModel):
     knowledge_base: KnowledgeBase | None = None
 
 
-KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "needs_reindex", "failed", "deleted"]
-KnowledgeSourceType = Literal["pasted_text", "attachment_text"]
+KnowledgeOriginStatus = Literal["ready", "scan_failed", "importing", "failed"]
+KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "needs_reindex", "failed", "deleted", "new", "changed", "missing"]
+KnowledgeSourceType = Literal["pasted_text", "attachment_text", "origin_file"]
+
+
+class KnowledgeOrigin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    knowledge_base_id: str
+    name: str
+    slug: str
+    root_path: str
+    include_globs: str = "**/*"
+    exclude_globs: str = ""
+    last_scan_at: datetime | None = None
+    last_import_at: datetime | None = None
+    status: KnowledgeOriginStatus | str = "ready"
+    error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("Name must not be empty.")
+        return text
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, value: str) -> str:
+        return validate_alias(value)
+
+
+class KnowledgeOriginCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    slug: str
+    include_globs: str = "**/*"
+    exclude_globs: str = ""
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, value: str) -> str:
+        return validate_alias(value)
+
+
+class KnowledgeOriginPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    include_globs: str | None = None
+    exclude_globs: str | None = None
+    status: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class KnowledgeSource(BaseModel):
@@ -229,9 +286,19 @@ class KnowledgeSource(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     knowledge_base_id: str
+    origin_id: str | None = None
     source_type: KnowledgeSourceType
     uri: str = ""
     title: str
+    relative_path: str = ""
+    virtual_path: str = ""
+    folder_path: str = ""
+    file_name: str = ""
+    extension: str = ""
+    path_depth: int = 0
+    file_status: str = "ready"
+    source_mtime: datetime | None = None
+    source_size_bytes: int = 0
     mime_type: str | None = None
     size_bytes: int = 0
     content_hash: str
@@ -306,6 +373,21 @@ class KnowledgeStore:
         raise NotImplementedError
 
     def list_sources(self, knowledge_base_id: str) -> list[KnowledgeSource]:
+        raise NotImplementedError
+
+    def list_origins(self, knowledge_base_id: str) -> list[KnowledgeOrigin]:
+        raise NotImplementedError
+
+    def create_origin(self, origin: KnowledgeOrigin) -> KnowledgeOrigin:
+        raise NotImplementedError
+
+    def get_origin(self, origin_id: str) -> KnowledgeOrigin:
+        raise NotImplementedError
+
+    def update_origin(self, origin_id: str, values: dict[str, Any]) -> KnowledgeOrigin:
+        raise NotImplementedError
+
+    def delete_origin(self, origin_id: str) -> KnowledgeOrigin:
         raise NotImplementedError
 
     def get_source(self, source_id: str) -> KnowledgeSource:

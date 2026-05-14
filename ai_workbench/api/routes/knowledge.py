@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import or_
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlmodel import select
 from sqlmodel import Session as DbSession
@@ -17,6 +18,7 @@ from ai_workbench.core.knowledge_indexing import (
     embed_chunks,
     model_error_to_index_error,
     prepare_attachment_text_source,
+    prepare_origin_file_source,
     prepare_pasted_text_source,
     source_content_hash,
     validate_source_limits,
@@ -29,6 +31,13 @@ from ai_workbench.core.knowledge_models import (
     safe_unload_reranker_model,
     scan_local_models,
 )
+from ai_workbench.core.knowledge_origins import (
+    mark_origin_imported,
+    origin_root_for_slug,
+    safe_origin_slug,
+    scan_origin_files,
+    validate_origin_root,
+)
 from ai_workbench.core.knowledge_settings import KnowledgeSettingsPatch
 from ai_workbench.core.knowledge_store import (
     EmbeddingModelProfile,
@@ -37,11 +46,14 @@ from ai_workbench.core.knowledge_store import (
     KnowledgeBase,
     KnowledgeBaseCreate,
     KnowledgeBasePatch,
+    KnowledgeOrigin,
+    KnowledgeOriginCreate,
+    KnowledgeOriginPatch,
     KnowledgeSource,
 )
 from ai_workbench.core.rerank import rerank_documents
 from ai_workbench.core.retrieval import expand_query_variants, search_knowledge
-from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord, KnowledgeSourceRecord
+from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord, KnowledgeOriginRecord, KnowledgeSourceRecord
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -91,6 +103,12 @@ class KnowledgeSourceCreate(BaseModel):
     title: str | None = None
     text: str | None = None
     attachment_id: str | None = None
+
+
+class KnowledgeOriginImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_ids: list[str] | None = None
 
 
 class KnowledgeSearchRequest(BaseModel):
@@ -457,6 +475,41 @@ def list_knowledge_sources(knowledge_base_id: str, state: RuntimeState = Depends
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
 
 
+@router.get("/bases/{knowledge_base_id}/origins")
+def list_knowledge_origins(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
+    try:
+        return [origin.model_dump() for origin in state.knowledge.list_origins(knowledge_base_id)]
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
+
+
+@router.post("/bases/{knowledge_base_id}/origins")
+def create_knowledge_origin(knowledge_base_id: str, payload: KnowledgeOriginCreate, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        state.knowledge.get_knowledge_base(knowledge_base_id)
+        slug = safe_origin_slug(payload.slug)
+        root = origin_root_for_slug(state.repo_root or Path("."), slug)
+        root.mkdir(parents=True, exist_ok=True)
+        root_path = root.relative_to((state.repo_root or Path(".")).resolve()).as_posix()
+        origin = KnowledgeOrigin(
+            knowledge_base_id=knowledge_base_id,
+            name=payload.name,
+            slug=slug,
+            root_path=root_path,
+            include_globs=payload.include_globs or "**/*",
+            exclude_globs=payload.exclude_globs or "",
+        )
+        return state.knowledge.create_origin(origin).model_dump()
+    except ValidationError as exc:
+        _raise_validation(exc)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
+    except ValueError as exc:
+        if str(exc) == "KNOWLEDGE_ORIGIN_SLUG_EXISTS":
+            raise_error(409, "KNOWLEDGE_ORIGIN_SLUG_EXISTS", "Knowledge origin slug already exists for this knowledge base.")
+        raise_error(422, "INVALID_KNOWLEDGE_ORIGIN", str(exc))
+
+
 @router.post("/bases/{knowledge_base_id}/sources")
 def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState = Depends(get_state)) -> dict:
     try:
@@ -474,6 +527,124 @@ def get_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state
         return state.knowledge.get_source(source_id).model_dump()
     except KeyError:
         raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
+
+
+@router.get("/origins/{origin_id}")
+def get_knowledge_origin(origin_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        return state.knowledge.get_origin(origin_id).model_dump()
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_ORIGIN_NOT_FOUND", f"Knowledge origin not found: {origin_id}")
+
+
+@router.patch("/origins/{origin_id}")
+def patch_knowledge_origin(origin_id: str, payload: KnowledgeOriginPatch, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        updates = payload.model_dump(exclude_unset=True)
+        updates.pop("slug", None)
+        return state.knowledge.update_origin(origin_id, updates).model_dump()
+    except ValidationError as exc:
+        _raise_validation(exc)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_ORIGIN_NOT_FOUND", f"Knowledge origin not found: {origin_id}")
+    except ValueError as exc:
+        raise_error(422, "INVALID_KNOWLEDGE_ORIGIN", str(exc))
+
+
+@router.delete("/origins/{origin_id}")
+def delete_knowledge_origin(origin_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        origin = state.knowledge.delete_origin(origin_id)
+        return {"deleted": True, "origin_id": origin.id}
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_ORIGIN_NOT_FOUND", f"Knowledge origin not found: {origin_id}")
+
+
+@router.post("/origins/{origin_id}/scan")
+def scan_knowledge_origin(origin_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    engine = getattr(state.knowledge, "engine", None)
+    if engine is None:
+        raise_error(400, "KNOWLEDGE_STORE_UNAVAILABLE", "Knowledge origins require the SQLite knowledge store.")
+    try:
+        return scan_origin_files(
+            engine=engine,
+            origin_id=origin_id,
+            repo_root=state.repo_root or Path("."),
+            settings=state.knowledge.get_settings(),
+        )
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_ORIGIN_NOT_FOUND", f"Knowledge origin not found: {origin_id}")
+    except ValueError as exc:
+        raise_error(422, "INVALID_KNOWLEDGE_ORIGIN", str(exc))
+
+
+@router.post("/origins/{origin_id}/import")
+def import_knowledge_origin(origin_id: str, payload: KnowledgeOriginImportRequest | None = None, state: RuntimeState = Depends(get_state)) -> dict:
+    engine = getattr(state.knowledge, "engine", None)
+    if engine is None:
+        raise_error(400, "KNOWLEDGE_STORE_UNAVAILABLE", "Knowledge origins require the SQLite knowledge store.")
+    try:
+        origin = state.knowledge.get_origin(origin_id)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_ORIGIN_NOT_FOUND", f"Knowledge origin not found: {origin_id}")
+    requested = set((payload.source_ids if payload else None) or [])
+    with DbSession(engine) as session:
+        query = (
+            select(KnowledgeSourceRecord)
+            .where(KnowledgeSourceRecord.origin_id == origin_id)
+            .where(
+                or_(
+                    KnowledgeSourceRecord.status.in_(["new", "needs_reindex", "failed", "missing"]),
+                    KnowledgeSourceRecord.file_status.in_(["changed", "new"]),
+                )
+            )
+            .order_by(KnowledgeSourceRecord.relative_path)
+        )
+        records = session.exec(query).all()
+        candidates = [record for record in records if not requested or record.id in requested]
+    summary: dict[str, Any] = {
+        "origin_id": origin_id,
+        "imported_count": 0,
+        "failed_count": 0,
+        "skipped_count": 0,
+        "new_count": 0,
+        "changed_count": 0,
+        "missing_count": 0,
+        "unchanged_count": 0,
+        "warnings": [],
+        "sources": [],
+    }
+    root = validate_origin_root(state.repo_root or Path("."), origin.slug, origin.root_path)
+    try:
+        for record in candidates:
+            if record.status == "missing":
+                summary["missing_count"] += 1
+                summary["skipped_count"] += 1
+                continue
+            source_path = (root / record.relative_path).resolve()
+            try:
+                source_text = prepare_origin_file_source(
+                    origin_id=origin_id,
+                    path=source_path,
+                    root=root,
+                    uri_prefix=f"data/knowledge/origins/{origin.slug}",
+                    source_id=record.id,
+                )
+                result = _index_prepared_source(origin.knowledge_base_id, source_text, state).model_dump()
+                summary["imported_count"] += 1
+                if record.indexed_at is None:
+                    summary["new_count"] += 1
+                else:
+                    summary["changed_count"] += 1
+                summary["sources"].append(result)
+            except KnowledgeIndexError as exc:
+                state.knowledge.mark_source_failed(_source_from_origin_record(record), exc.message)
+                summary["failed_count"] += 1
+                summary["warnings"].append(f"{record.relative_path}: {exc.message}")
+                summary["sources"].append({"source_id": record.id, "status": "failed", "chunks": 0, "error": exc.message})
+    finally:
+        mark_origin_imported(engine=engine, origin_id=origin_id, summary=summary)
+    return summary
 
 
 @router.delete("/sources/{source_id}")
@@ -571,6 +742,20 @@ def _load_existing_source_text(source_id: str, state: RuntimeState):
             raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Pasted text source file was not found.")
         text = path.read_text(encoding="utf-8")
         return prepare_pasted_text_source(root=root, title=source.title, text=text, source_id=source.id)
+    if source.source_type == "origin_file":
+        if not source.origin_id:
+            raise KnowledgeIndexError("KNOWLEDGE_ORIGIN_NOT_FOUND", "Origin source has no origin_id.")
+        origin = state.knowledge.get_origin(source.origin_id)
+        root = validate_origin_root(state.repo_root or Path("."), origin.slug, origin.root_path)
+        if not source.relative_path:
+            raise KnowledgeIndexError("KNOWLEDGE_ORIGIN_PATH_INVALID", "Origin source has no relative path.")
+        return prepare_origin_file_source(
+            origin_id=origin.id,
+            path=root / source.relative_path,
+            root=root,
+            uri_prefix=f"data/knowledge/origins/{origin.slug}",
+            source_id=source.id,
+        )
     prepared = prepare_attachment_text_source(attachment_id=source.uri)
     return prepared.__class__(**{**prepared.__dict__, "source_id": source.id, "title": source.title})
 
@@ -582,9 +767,19 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
     source = KnowledgeSource(
         id=source_text.source_id,
         knowledge_base_id=knowledge_base_id,
+        origin_id=source_text.origin_id,
         source_type=source_text.source_type,
         uri=source_text.uri,
         title=source_text.title,
+        relative_path=source_text.relative_path,
+        virtual_path=source_text.virtual_path,
+        folder_path=source_text.folder_path,
+        file_name=source_text.file_name,
+        extension=source_text.extension,
+        path_depth=source_text.path_depth,
+        file_status="ready",
+        source_mtime=source_text.source_mtime,
+        source_size_bytes=source_text.size_bytes,
         mime_type=source_text.mime_type,
         size_bytes=source_text.size_bytes,
         content_hash=source_text.content_hash,
@@ -686,6 +881,31 @@ def _raise_store_error(exc: ValueError) -> None:
     if message == "KNOWLEDGE_EMBEDDING_MODEL_IN_USE":
         raise_error(409, "KNOWLEDGE_EMBEDDING_MODEL_IN_USE", "Embedding model profile is used by a knowledge base.")
     raise_error(422, "INVALID_KNOWLEDGE_VALUE", message)
+
+
+def _source_from_origin_record(record: KnowledgeSourceRecord) -> KnowledgeSource:
+    return KnowledgeSource(
+        id=record.id,
+        knowledge_base_id=record.knowledge_base_id,
+        origin_id=record.origin_id,
+        source_type="origin_file",
+        uri=record.uri,
+        title=record.title or record.relative_path or record.id,
+        relative_path=record.relative_path,
+        virtual_path=record.virtual_path,
+        folder_path=record.folder_path,
+        file_name=record.file_name,
+        extension=record.extension,
+        path_depth=record.path_depth,
+        file_status=record.file_status,
+        source_mtime=record.source_mtime,
+        source_size_bytes=record.source_size_bytes,
+        mime_type=record.mime_type,
+        size_bytes=record.size_bytes,
+        content_hash=record.content_hash,
+        status="failed",
+        metadata=_loads_json(record.metadata_json, {}),
+    )
 
 
 def _loads_json(value: str, fallback):

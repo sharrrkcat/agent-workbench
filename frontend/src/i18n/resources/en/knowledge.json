@@ -25,6 +25,7 @@
     "searchTest": "Search Test",
     "addingSources": "Adding Sources",
     "sourcesList": "Sources list",
+    "origins": "Origins",
     "overview": "Overview",
     "sourcePreview": "Source preview",
     "chunks": "Chunks"
@@ -50,6 +51,9 @@
     "indexPastedText": "Index pasted text",
     "chooseFiles": "Choose files",
     "reindex": "Reindex",
+    "scanNow": "Scan now",
+    "importReindex": "Import / Reindex",
+    "createOrigin": "Create origin",
     "reindexAll": "Reindex all",
     "reindexing": "Reindexing...",
     "closeSourceDetail": "Close source detail"
@@ -115,7 +119,11 @@
     "contentHash": "Content hash",
     "embeddingDimension": "Embedding dimension",
     "embeddingFolders": "Embedding folders",
-    "rerankerFolders": "Reranker folders"
+    "rerankerFolders": "Reranker folders",
+    "originName": "Origin name",
+    "originSlug": "Origin slug",
+    "folderPath": "Folder path",
+    "fileName": "File name"
   },
   "empty": {
     "loadingSettings": "Loading Knowledge settings.",
@@ -137,7 +145,9 @@
     "noLocalRerankerModels": "No local reranker models found",
     "sourcePreviewUnavailable": "Source preview is unavailable.",
     "noChunks": "No chunks",
-    "noChunksMessage": "No chunks are currently stored for this source."
+    "noChunksMessage": "No chunks are currently stored for this source.",
+    "noOrigins": "No origins",
+    "noOriginsMessage": "Create an origin, put files under its managed folder, then scan it."
   },
   "results": {
     "defaultsSaved": "Defaults saved.",
@@ -156,7 +166,10 @@
     "sourceDeleted": "Source deleted.",
     "reindexedChunks": "Reindexed {{count}} chunks.",
     "reindexedSources": "Reindexed {{count}} sources.",
-    "reindexedSourcesWithFailures": "Reindexed {{count}} sources; {{failed}} failed."
+    "reindexedSourcesWithFailures": "Reindexed {{count}} sources; {{failed}} failed.",
+    "originCreated": "Origin created at {{path}}.",
+    "originScanned": "Scan complete: {{new_count}} new, {{changed_count}} changed, {{missing_count}} missing.",
+    "originImported": "Imported/reindexed {{imported_count}} source(s); {{failed_count}} failed."
   },
   "dropzone": {
     "title": "Drop text files here",
@@ -229,7 +242,8 @@
     "unloadRerankerModelAfterUse": "Release the local reranker after reranking. This can reduce VRAM usage but makes the next rerank slower."
   },
   "help": {
-    "aliases": "Use English commas to separate aliases used by Intent Routing."
+    "aliases": "Use English commas to separate aliases used by Intent Routing.",
+    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index."
   },
   "errors": {
     "copyCommandFailed": "Failed to copy command. Select and copy it manually."
@@ -238,5 +252,8 @@
     "notScanned": "Not scanned",
     "available": "Available",
     "unavailableOptionalDeps": "Unavailable: optional dependencies missing"
+  },
+  "statusText": {
+    "reindexRecommended": "Reindex recommended"
   }
 }

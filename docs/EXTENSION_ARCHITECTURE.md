@@ -151,15 +151,16 @@ Agent Workbench Knowledge v1 local model foundation:
 - Phase 5 adds a thin `knowledge` Capability around core retrieval and Knowledge store status. `knowledge.search` and `/kb-search` call the existing core search service; `list_bases` and `stats` inspect compact store metadata. The Capability does not own retrieval algorithms, indexing, embedding, reranking, model downloads, or automatic context injection.
 - Local model directories are `data/models/embeddings/<model-folder>` and `data/models/rerankers/<model-folder>`.
 - Local source staging starts at `data/knowledge/sources`; pasted source originals are written there as `<source_id>.txt`.
+- Managed origin directories are limited to `data/knowledge/origins/<origin_slug>/`.
 - Embedding model profiles bind a user-named profile to an `embeddings/<folder>` model path.
 - Knowledge Defaults hold the single global reranker setting with a `rerankers/<folder>` model path.
 - The local embedding and reranker APIs use Workbench JSON shapes and optional local dependencies; missing optional dependencies must not prevent normal chat startup.
-- `kb_sources` owns source metadata and local source references, not full pasted source text.
+- `kb_origins` owns managed origin configuration and scan/import timestamps. `kb_sources` owns source metadata and local source references, including origin file relative paths and file status, not full pasted source text.
 - `kb_chunks` owns indexed chunk content, source offsets, and compact chunk metadata. Markdown chunks may record `chunk_title`, `document_title`, `entity_type`, `heading_path`, line/character offsets, requested/effective chunk profile, confidence, and title/type sources. `chunk_title` is the RAG retrieval-facing embedding title, not Semantic Router metadata or session title metadata.
 - `kb_embeddings` owns embedding snapshots and float32 vector BLOBs.
 - `kb_chunk_fts` owns keyword-search rows for future BM25 retrieval.
 - Markdown source indexing supports `plain_text`, `markdown_document`, `markdown_collection`, and default `markdown_auto`; low-confidence auto detection falls back to `markdown_document`.
-- Local-file sources, directory import, file watching, automatic sync, automatic reindexing, automatic model download, and retrieval ranking/backend changes remain out of scope.
+- Managed origin scan is lightweight metadata detection only; managed origin import/reindex is an explicit user action that runs the existing indexer. Arbitrary `local_file` sources, paths outside `data/knowledge/origins/<origin_slug>/`, file watching, automatic sync, scheduled scans, background reindexing, chat-time scan/reindex, automatic model download, and retrieval ranking/backend changes remain out of scope.
 
 Common pitfalls:
 
@@ -329,6 +330,7 @@ Knowledge configuration ownership:
 - Embedding Model Profiles store local embedding model paths and instructions.
 - Knowledge Bases store per-KB configuration, overrides, and Intent Routing aliases used only for natural-language KB hint matching.
 - Knowledge Sources, Chunks, Embeddings, and FTS rows are Workbench-owned data derived from source inputs. Deleting a source deletes its chunks, embeddings, and FTS rows without deleting the original attachment.
+- Knowledge Origins are Workbench-owned managed directory records. They never delete user source files. Scan marks source files new/changed/missing/failed/ready without changing derived index rows; Import/Reindex is the explicit operation that updates chunks, embeddings, and FTS rows for new or changed files.
 - Session Knowledge Bindings store which KBs are active for a session and Phase 4 uses them for Prompt Agent and opted-in Script Agent context injection.
 - AgentConfig may store only the tri-state `knowledge_context_mode` runtime override. Do not store Knowledge model paths in AgentConfig or CapabilityConfig.
 

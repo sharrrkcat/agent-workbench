@@ -27,7 +27,8 @@
     "sourcesList": "来源列表",
     "overview": "概览",
     "sourcePreview": "来源预览",
-    "chunks": "分块"
+    "chunks": "分块",
+    "origins": "Origins"
   },
   "actions": {
     "scanLocalModels": "扫描本地模型",
@@ -44,7 +45,10 @@
     "closeSourceDetail": "关闭来源详情",
     "copyCommand": "复制命令",
     "switchToCpu": "切换到 CPU",
-    "switchToAuto": "切换到 Auto"
+    "switchToAuto": "切换到 Auto",
+    "scanNow": "Scan now",
+    "importReindex": "Import / Reindex",
+    "createOrigin": "Create origin"
   },
   "labels": {
     "modelsRoot": "模型根目录",
@@ -107,7 +111,11 @@
     "contentHash": "内容 hash",
     "embeddingDimension": "Embedding 维度",
     "embeddingFolders": "Embedding 文件夹",
-    "rerankerFolders": "Reranker 文件夹"
+    "rerankerFolders": "Reranker 文件夹",
+    "originName": "Origin name",
+    "originSlug": "Origin slug",
+    "folderPath": "Folder path",
+    "fileName": "File name"
   },
   "empty": {
     "loadingSettings": "正在加载知识库设置。",
@@ -129,7 +137,9 @@
     "noLocalRerankerModels": "未找到本地 Reranker 模型",
     "sourcePreviewUnavailable": "来源预览不可用。",
     "noChunks": "没有 chunks",
-    "noChunksMessage": "此来源当前没有存储 chunks。"
+    "noChunksMessage": "此来源当前没有存储 chunks。",
+    "noOrigins": "No origins",
+    "noOriginsMessage": "Create an origin, put files under its managed folder, then scan it."
   },
   "results": {
     "defaultsSaved": "默认值已保存。",
@@ -148,7 +158,10 @@
     "reindexedSources": "已重建 {{count}} 个来源。",
     "reindexedSourcesWithFailures": "已重建 {{count}} 个来源；{{failed}} 个失败。",
     "commandCopied": "命令已复制。",
-    "localModelDeviceSet": "本地模型设备已设置为 {{device}}。"
+    "localModelDeviceSet": "本地模型设备已设置为 {{device}}。",
+    "originCreated": "Origin created at {{path}}.",
+    "originScanned": "Scan complete: {{new_count}} new, {{changed_count}} changed, {{missing_count}} missing.",
+    "originImported": "Imported/reindexed {{imported_count}} source(s); {{failed_count}} failed."
   },
   "dropzone": {
     "title": "将文本文件拖到这里",
@@ -234,9 +247,13 @@
     "unloadRerankerModelAfterUse": "Rerank 完成后释放本地 reranker。可以降低显存占用，但下一次 rerank 会变慢。"
   },
   "help": {
-    "aliases": "Use English commas to separate aliases used by Intent Routing."
+    "aliases": "Use English commas to separate aliases used by Intent Routing.",
+    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index."
   },
   "errors": {
     "copyCommandFailed": "复制命令失败。请选中文本后手动复制。"
+  },
+  "statusText": {
+    "reindexRecommended": "Reindex recommended"
   }
 }

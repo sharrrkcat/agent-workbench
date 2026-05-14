@@ -60,6 +60,15 @@
     "ready": "Ready",
     "failed": "Failed",
     "needs_reindex": "Needs reindex",
-    "deleted": "Deleted"
+    "deleted": "Deleted",
+    "new": "New files detected",
+    "changed": "Sources changed",
+    "missing": "Missing files detected"
+  },
+  "knowledgeOrigin": {
+    "ready": "Ready",
+    "scan_failed": "Scan failed",
+    "importing": "Importing",
+    "failed": "Failed"
   }
 }

@@ -5309,6 +5309,26 @@ input:disabled {
   overflow-x: auto;
 }
 
+.knowledge-origin-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.knowledge-origin-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.knowledge-origin-card p {
+  margin: 4px 0 8px;
+}
+
 .knowledge-sources-table {
   width: 100%;
   min-width: 760px;

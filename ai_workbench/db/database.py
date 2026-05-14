@@ -35,6 +35,8 @@ def get_engine(database_url: Optional[str] = None):
 def init_db(engine) -> None:
     SQLModel.metadata.create_all(engine)
     ensure_knowledge_index_tables(engine)
+    ensure_knowledge_origin_columns(engine)
+    ensure_knowledge_source_origin_columns(engine)
     ensure_session_model_columns(engine)
     ensure_message_speaker_columns(engine)
     ensure_agent_config_columns(engine)
@@ -69,6 +71,55 @@ def ensure_knowledge_index_tables(engine) -> None:
                 """
             )
         )
+
+
+def ensure_knowledge_origin_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "kb_origins" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(kb_origins)").fetchall()}
+        additions = {
+            "include_globs": "VARCHAR DEFAULT '**/*'",
+            "exclude_globs": "VARCHAR DEFAULT ''",
+            "last_scan_at": "DATETIME",
+            "last_import_at": "DATETIME",
+            "status": "VARCHAR DEFAULT 'ready'",
+            "error": "VARCHAR",
+            "metadata_json": "VARCHAR DEFAULT '{}'",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME",
+        }
+        for column, ddl in additions.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE kb_origins ADD COLUMN {column} {ddl}"))
+
+
+def ensure_knowledge_source_origin_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "kb_sources" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(kb_sources)").fetchall()}
+        additions = {
+            "origin_id": "VARCHAR",
+            "relative_path": "VARCHAR DEFAULT ''",
+            "virtual_path": "VARCHAR DEFAULT ''",
+            "folder_path": "VARCHAR DEFAULT ''",
+            "file_name": "VARCHAR DEFAULT ''",
+            "extension": "VARCHAR DEFAULT ''",
+            "path_depth": "INTEGER DEFAULT 0",
+            "file_status": "VARCHAR DEFAULT 'ready'",
+            "source_mtime": "DATETIME",
+            "source_size_bytes": "INTEGER DEFAULT 0",
+        }
+        for column, ddl in additions.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE kb_sources ADD COLUMN {column} {ddl}"))
 
 
 def ensure_session_model_columns(engine) -> None:

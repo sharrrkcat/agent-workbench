@@ -1,17 +1,17 @@
-import { ArrowUpDown, BrainCircuit, Clipboard, FileText, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { ArrowUpDown, BrainCircuit, Clipboard, FileText, FolderPlus, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
+import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
 import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
-import { getKnowledgeIndexStatusLabel, getKnowledgeSourceStatusLabel } from '../../i18n/formatters';
+import { getKnowledgeIndexStatusLabel, getKnowledgeOriginStatusLabel, getKnowledgeSourceStatusLabel } from '../../i18n/formatters';
 
 type FormMode = 'list' | 'new' | string;
-type SourceSortKey = 'title' | 'source_type' | 'chunks' | 'status' | 'indexed_at';
+type SourceSortKey = 'title' | 'source_type' | 'folder_path' | 'chunks' | 'status' | 'indexed_at';
 type SortDirection = 'asc' | 'desc';
 type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
 type DownloadModelType = 'embedding' | 'reranker';
@@ -882,6 +882,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [configResult, setConfigResult] = useState('');
   const [configError, setConfigError] = useState<SettingsErrorValue | null>(null);
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [origins, setOrigins] = useState<KnowledgeOrigin[]>([]);
+  const [originName, setOriginName] = useState('');
+  const [originSlug, setOriginSlug] = useState('');
   const [sourceResult, setSourceResult] = useState('');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
@@ -905,6 +908,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const selectedProfile = profiles.find((profile) => profile.id === values.embedding_model_profile_id);
   const sortedSources = useMemo(() => sortSources(sources, sourceSort), [sourceSort, sources]);
   const selectedSource = sources.find((source) => source.id === selectedSourceId) || null;
+  const hasStaleOriginSources = sources.some((source) => ['new', 'changed'].includes(source.file_status || ''));
   const dirty = stableConfigString(buildKnowledgeBasePayload(values)) !== stableConfigString(buildKnowledgeBasePayload(initial));
 
   useEffect(() => {
@@ -927,6 +931,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setSourceResult('');
     setSourceTitle('');
     setSourceText('');
+    setOriginName('');
+    setOriginSlug('');
+    setOrigins([]);
     setSelectedSourceId('');
     setSourcePreview(null);
     setSourceChunks([]);
@@ -953,16 +960,22 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   useEffect(() => {
     if (!initial.id || isNew) {
       setSources([]);
+      setOrigins([]);
       return;
     }
-    void loadSources(initial.id);
+    void loadKnowledgeLists(initial.id);
   }, [initial.id, isNew]);
 
   useEffect(() => {
     if (activeTab === 'sources' && values.id && !isNew) {
-      void loadSources(values.id);
+      void loadKnowledgeLists(values.id);
     }
   }, [activeTab, values.id, isNew]);
+
+  async function loadKnowledgeLists(knowledgeBaseId = values.id || '') {
+    if (!knowledgeBaseId) return;
+    await Promise.all([loadSources(knowledgeBaseId), loadOrigins(knowledgeBaseId)]);
+  }
 
   async function loadSources(knowledgeBaseId = values.id || '') {
     if (!knowledgeBaseId) return;
@@ -975,6 +988,20 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
         setSourceError(toSettingsError(error, 'Failed to load knowledge sources.'));
+      }
+    }
+  }
+
+  async function loadOrigins(knowledgeBaseId = values.id || '') {
+    if (!knowledgeBaseId) return;
+    try {
+      const loadedOrigins = await api.listKnowledgeOrigins(knowledgeBaseId);
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setOrigins(loadedOrigins);
+      }
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to load knowledge origins.'));
       }
     }
   }
@@ -1025,7 +1052,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       const payload = buildKnowledgeBasePayload(values);
       const saved = isNew ? await api.createKnowledgeBase(payload) : await api.patchKnowledgeBase(values.id || '', payload);
       await onRefresh(saved.id);
-      if (!isNew) await loadSources(saved.id);
+      if (!isNew) await loadKnowledgeLists(saved.id);
       setConfigResult(t('knowledge:results.knowledgeBaseSaved'));
     } catch (error) {
       setConfigError(toSettingsError(error, 'Failed to save knowledge base.'));
@@ -1045,6 +1072,66 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setConfigError(toSettingsError(error, 'Failed to delete knowledge base.'));
     } finally {
       setBusy('');
+    }
+  }
+  async function createOrigin() {
+    if (!values.id || !originName.trim() || !originSlug.trim()) return;
+    const knowledgeBaseId = values.id;
+    setBusy('creating origin');
+    try {
+      setSourceError(null);
+      setSourceResult('');
+      const created = await api.createKnowledgeOrigin(knowledgeBaseId, { name: originName, slug: originSlug });
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      setOriginName('');
+      setOriginSlug('');
+      await loadOrigins(knowledgeBaseId);
+      setSourceResult(t('knowledge:results.originCreated', { path: created.root_path }));
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to create knowledge origin.'));
+      }
+    } finally {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+    }
+  }
+  async function scanOrigin(originId: string) {
+    if (!values.id) return;
+    const knowledgeBaseId = values.id;
+    setBusy(`scan origin:${originId}`);
+    try {
+      setSourceError(null);
+      setSourceResult('');
+      const summary = await api.scanKnowledgeOrigin(originId);
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      await loadKnowledgeLists(knowledgeBaseId);
+      setSourceResult(t('knowledge:results.originScanned', summary));
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to scan knowledge origin.'));
+      }
+    } finally {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+    }
+  }
+  async function importOrigin(originId: string) {
+    if (!values.id) return;
+    const knowledgeBaseId = values.id;
+    setBusy(`import origin:${originId}`);
+    try {
+      setSourceError(null);
+      setSourceResult('');
+      const summary = await api.importKnowledgeOrigin(originId);
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      await loadKnowledgeLists(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
+      setSourceResult(t('knowledge:results.originImported', summary));
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, 'Failed to import knowledge origin.'));
+      }
+    } finally {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
   async function addPastedSource() {
@@ -1290,6 +1377,47 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
             </section>
             <section className="detail-section">
+              <div className="detail-section-heading"><h3>{t('knowledge:sections.origins')}</h3></div>
+              <div className="settings-detail-grid">
+                <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
+                <TextField label={t('knowledge:labels.originSlug')} value={originSlug} onChange={setOriginSlug} />
+              </div>
+              <p className="settings-muted-text">{t('knowledge:help.originPath')}</p>
+              <div className="settings-button-row">
+                <button className="settings-secondary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={createOrigin}>
+                  <FolderPlus size={14} />
+                  {t('knowledge:actions.createOrigin')}
+                </button>
+              </div>
+              {origins.length ? (
+                <div className="knowledge-origin-list">
+                  {origins.map((origin) => (
+                    <article className="knowledge-origin-card" key={origin.id}>
+                      <div>
+                        <strong>{origin.name}</strong>
+                        <p><code>{origin.root_path}</code></p>
+                        <div className="settings-chip-row">
+                          <span>{origin.slug}</span>
+                          <span>{getKnowledgeOriginStatusLabel(origin.status, t)}</span>
+                          <span>{formatDate(origin.last_scan_at)}</span>
+                        </div>
+                      </div>
+                      <div className="settings-button-row compact">
+                        <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => scanOrigin(origin.id)}>
+                          <Search size={14} />
+                          {busy === `scan origin:${origin.id}` ? t('knowledge:actions.scanning') : t('knowledge:actions.scanNow')}
+                        </button>
+                        <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => importOrigin(origin.id)}>
+                          <RefreshCw size={14} />
+                          {busy === `import origin:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.importReindex')}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : <Empty title={t('knowledge:empty.noOrigins')} message={t('knowledge:empty.noOriginsMessage')} />}
+            </section>
+            <section className="detail-section">
               <div className="detail-section-heading"><h3>{t('knowledge:sections.addingSources')}</h3></div>
               {sourceResult ? <span className="settings-badge success">{sourceResult}</span> : null}
               {sourceError ? <SettingsApiError error={sourceError} /> : null}
@@ -1321,6 +1449,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
             <section className="detail-section">
               <div className="detail-section-heading">
                 <h3>{t('knowledge:sections.sourcesList')}</h3>
+                {hasStaleOriginSources ? <span className="settings-badge warning">{t('knowledge:statusText.reindexRecommended')}</span> : null}
                 <button className="settings-secondary-button" type="button" disabled={!sources.length || Boolean(busy)} onClick={reindexAllSources}>
                   <RefreshCw size={14} />
                   {busy === 'reindexing all' ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindexAll')}
@@ -1417,6 +1546,7 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
         <thead>
           <tr>
             <SortableHeader label={t('knowledge:labels.nameColumn')} sortKey="title" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.folderPath')} sortKey="folder_path" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.type')} sortKey="source_type" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.chunks')} sortKey="chunks" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.indexed')} sortKey="status" activeSort={sort} onSort={onSort} />
@@ -1429,11 +1559,13 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
             <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
               <td>
                 <strong>{source.title || source.uri || source.id}</strong>
+                {source.relative_path ? <small>{source.relative_path}</small> : null}
                 {source.error ? <small className="settings-error-text">{source.error}</small> : null}
               </td>
+              <td>{source.folder_path || t('status:common.none', { ns: 'status' })}</td>
               <td>{source.source_type}</td>
               <td>{source.chunks}</td>
-              <td><StatusBadge status={source.status} /></td>
+              <td><StatusBadge status={source.file_status || source.status} /></td>
               <td>{formatDate(source.indexed_at)}</td>
               <td>
                 <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
@@ -1469,7 +1601,7 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
             <h3>{source.title || source.uri || source.id}</h3>
             <div className="settings-chip-row">
               <span>{source.source_type}</span>
-              <span>{getKnowledgeSourceStatusLabel(source.status, t)}</span>
+              <span>{getKnowledgeSourceStatusLabel(source.file_status || source.status, t)}</span>
               <span>{formatDate(source.indexed_at)}</span>
             </div>
           </div>
@@ -1485,6 +1617,8 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
             <h4>{t('knowledge:sections.overview')}</h4>
             <dl className="settings-definition-grid">
               <Metric label={t('knowledge:labels.chunks')} value={String(source.chunks)} />
+              <Metric label={t('knowledge:labels.folderPath')} value={source.folder_path || t('status:common.none')} />
+              <Metric label={t('knowledge:labels.fileName')} value={source.file_name || t('status:common.none')} />
               <Metric label={t('knowledge:labels.size')} value={formatBytes(source.size_bytes)} />
               <Metric label={t('knowledge:labels.contentHash')} value={source.content_hash || 'n/a'} />
               <Metric label={t('knowledge:labels.embeddingDimension')} value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
@@ -1531,7 +1665,7 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
 
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation('status');
-  const className = status === 'indexed' || status === 'ready' ? 'success' : status === 'needs_reindex' || status === 'failed' ? 'warning' : '';
+  const className = status === 'indexed' || status === 'ready' ? 'success' : ['needs_reindex', 'failed', 'new', 'changed', 'missing'].includes(status) ? 'warning' : '';
   return <span className={`settings-badge ${className}`}>{getKnowledgeSourceStatusLabel(status, t)}</span>;
 }
 
@@ -1726,6 +1860,8 @@ function sortSources(sources: KnowledgeSource[], sort: { key: SourceSortKey; dir
 function sourceSortValue(source: KnowledgeSource, key: SourceSortKey): string | number {
   if (key === 'chunks') return source.chunks;
   if (key === 'indexed_at') return source.indexed_at ? new Date(source.indexed_at).getTime() : 0;
+  if (key === 'folder_path') return String(source.folder_path || '').toLowerCase();
+  if (key === 'status') return String(source.file_status || source.status || '').toLowerCase();
   return String(source[key] || '').toLowerCase();
 }
 

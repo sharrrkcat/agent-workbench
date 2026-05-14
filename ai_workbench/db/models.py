@@ -297,6 +297,26 @@ class KnowledgeBaseRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class KnowledgeOriginRecord(SQLModel, table=True):
+    __tablename__ = "kb_origins"
+    __table_args__ = (UniqueConstraint("knowledge_base_id", "slug"),)
+
+    id: str = Field(primary_key=True)
+    knowledge_base_id: str = Field(index=True)
+    name: str
+    slug: str = Field(index=True)
+    root_path: str
+    include_globs: str = "**/*"
+    exclude_globs: str = ""
+    last_scan_at: Optional[datetime] = None
+    last_import_at: Optional[datetime] = None
+    status: str = Field(default="ready", index=True)
+    error: Optional[str] = None
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class SessionKnowledgeBindingRecord(SQLModel, table=True):
     __tablename__ = "session_knowledge_bindings"
     __table_args__ = (UniqueConstraint("session_id", "knowledge_base_id"),)
@@ -314,9 +334,19 @@ class KnowledgeSourceRecord(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     knowledge_base_id: str = Field(index=True)
+    origin_id: Optional[str] = Field(default=None, index=True)
     source_type: str = Field(index=True)
     uri: str = ""
     title: str = ""
+    relative_path: str = ""
+    virtual_path: str = ""
+    folder_path: str = ""
+    file_name: str = ""
+    extension: str = ""
+    path_depth: int = 0
+    file_status: str = Field(default="ready", index=True)
+    source_mtime: Optional[datetime] = None
+    source_size_bytes: int = 0
     mime_type: Optional[str] = None
     size_bytes: int = 0
     content_hash: str = Field(index=True)

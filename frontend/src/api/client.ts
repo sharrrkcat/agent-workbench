@@ -28,6 +28,10 @@ import type {
   EmbeddingModelProfileInput,
   KnowledgeBase,
   KnowledgeBaseInput,
+  KnowledgeOrigin,
+  KnowledgeOriginImportSummary,
+  KnowledgeOriginInput,
+  KnowledgeOriginScanSummary,
   SessionKnowledgeBinding,
   KnowledgeSource,
   KnowledgeSourceChunksResponse,
@@ -303,6 +307,26 @@ export const api = {
   deleteKnowledgeBase: (knowledgeBaseId: string) =>
     request<{ deleted: boolean; knowledge_base_id: string }>(`/api/knowledge/bases/${knowledgeBaseId}`, { method: 'DELETE' }),
   listKnowledgeSources: (knowledgeBaseId: string) => request<KnowledgeSource[]>(`/api/knowledge/bases/${knowledgeBaseId}/sources`),
+  listKnowledgeOrigins: (knowledgeBaseId: string) => request<KnowledgeOrigin[]>(`/api/knowledge/bases/${knowledgeBaseId}/origins`),
+  createKnowledgeOrigin: (knowledgeBaseId: string, origin: KnowledgeOriginInput) =>
+    request<KnowledgeOrigin>(`/api/knowledge/bases/${knowledgeBaseId}/origins`, {
+      method: 'POST',
+      body: JSON.stringify(origin),
+    }),
+  patchKnowledgeOrigin: (originId: string, patch: KnowledgeOriginInput) =>
+    request<KnowledgeOrigin>(`/api/knowledge/origins/${originId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteKnowledgeOrigin: (originId: string) =>
+    request<{ deleted: boolean; origin_id: string }>(`/api/knowledge/origins/${originId}`, { method: 'DELETE' }),
+  scanKnowledgeOrigin: (originId: string) =>
+    request<KnowledgeOriginScanSummary>(`/api/knowledge/origins/${originId}/scan`, { method: 'POST' }),
+  importKnowledgeOrigin: (originId: string, sourceIds?: string[]) =>
+    request<KnowledgeOriginImportSummary>(`/api/knowledge/origins/${originId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ source_ids: sourceIds || null }),
+    }),
   createPastedKnowledgeSource: (knowledgeBaseId: string, payload: { title: string; text: string }) =>
     request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${knowledgeBaseId}/sources`, {
       method: 'POST',

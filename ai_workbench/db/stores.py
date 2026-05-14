@@ -19,6 +19,7 @@ from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSet
 from ai_workbench.core.knowledge_store import (
     EmbeddingModelProfile,
     KnowledgeBase,
+    KnowledgeOrigin,
     KnowledgeSource,
     KnowledgeSourceIndexResult,
     SessionKnowledgeBinding,
@@ -41,6 +42,7 @@ from ai_workbench.db.models import (
     KnowledgeBaseRecord,
     KnowledgeChunkRecord,
     KnowledgeEmbeddingRecord,
+    KnowledgeOriginRecord,
     KnowledgeSettingsRecord,
     KnowledgeSourceRecord,
     LLMProfileRecord,
@@ -1331,10 +1333,74 @@ class SqlKnowledgeStore:
             for source_id in source_ids:
                 _delete_source_index_rows(session, source_id)
             session.exec(delete(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id == record.id))
+            session.exec(delete(KnowledgeOriginRecord).where(KnowledgeOriginRecord.knowledge_base_id == record.id))
             session.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.knowledge_base_id == record.id))
             session.delete(record)
             session.commit()
             return knowledge_base
+
+    def list_origins(self, knowledge_base_id: str) -> List[KnowledgeOrigin]:
+        with DbSession(self.engine) as session:
+            if session.get(KnowledgeBaseRecord, knowledge_base_id) is None:
+                raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+            records = session.exec(
+                select(KnowledgeOriginRecord)
+                .where(KnowledgeOriginRecord.knowledge_base_id == knowledge_base_id)
+                .order_by(KnowledgeOriginRecord.slug)
+            ).all()
+            return [_knowledge_origin_from_record(record) for record in records]
+
+    def create_origin(self, origin: KnowledgeOrigin) -> KnowledgeOrigin:
+        with DbSession(self.engine) as session:
+            if session.get(KnowledgeBaseRecord, origin.knowledge_base_id) is None:
+                raise KeyError(f"unknown knowledge base: {origin.knowledge_base_id}")
+            conflict = session.exec(
+                select(KnowledgeOriginRecord)
+                .where(KnowledgeOriginRecord.knowledge_base_id == origin.knowledge_base_id)
+                .where(KnowledgeOriginRecord.slug == origin.slug)
+            ).first()
+            if conflict is not None:
+                raise ValueError("KNOWLEDGE_ORIGIN_SLUG_EXISTS")
+            data = origin.model_dump()
+            data["metadata_json"] = _dumps(data.pop("metadata", {}))
+            record = KnowledgeOriginRecord(**data)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _knowledge_origin_from_record(record)
+
+    def get_origin(self, origin_id: str) -> KnowledgeOrigin:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeOriginRecord, origin_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge origin: {origin_id}")
+            return _knowledge_origin_from_record(record)
+
+    def update_origin(self, origin_id: str, values: Dict[str, Any]) -> KnowledgeOrigin:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeOriginRecord, origin_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge origin: {origin_id}")
+            if "metadata" in values:
+                record.metadata_json = _dumps(values.pop("metadata") or {})
+            for key, value in values.items():
+                if hasattr(record, key):
+                    setattr(record, key, value)
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _knowledge_origin_from_record(record)
+
+    def delete_origin(self, origin_id: str) -> KnowledgeOrigin:
+        with DbSession(self.engine) as session:
+            record = session.get(KnowledgeOriginRecord, origin_id)
+            if record is None:
+                raise KeyError(f"unknown knowledge origin: {origin_id}")
+            origin = _knowledge_origin_from_record(record)
+            session.delete(record)
+            session.commit()
+            return origin
 
     def list_sources(self, knowledge_base_id: str) -> List[KnowledgeSource]:
         with DbSession(self.engine) as session:
@@ -1374,9 +1440,19 @@ class SqlKnowledgeStore:
             if record is None:
                 record = KnowledgeSourceRecord(id=source.id, knowledge_base_id=source.knowledge_base_id, source_type=source.source_type, content_hash=source.content_hash)
             record.knowledge_base_id = source.knowledge_base_id
+            record.origin_id = source.origin_id
             record.source_type = source.source_type
             record.uri = source.uri
             record.title = source.title
+            record.relative_path = source.relative_path
+            record.virtual_path = source.virtual_path
+            record.folder_path = source.folder_path
+            record.file_name = source.file_name
+            record.extension = source.extension
+            record.path_depth = source.path_depth
+            record.file_status = "ready"
+            record.source_mtime = source.source_mtime
+            record.source_size_bytes = source.source_size_bytes or source.size_bytes
             record.mime_type = source.mime_type
             record.size_bytes = source.size_bytes
             record.content_hash = source.content_hash
@@ -1443,9 +1519,19 @@ class SqlKnowledgeStore:
                 existing = KnowledgeSourceRecord(
                     id=source.id,
                     knowledge_base_id=source.knowledge_base_id,
+                    origin_id=source.origin_id,
                     source_type=source.source_type,
                     uri=source.uri,
                     title=source.title,
+                    relative_path=source.relative_path,
+                    virtual_path=source.virtual_path,
+                    folder_path=source.folder_path,
+                    file_name=source.file_name,
+                    extension=source.extension,
+                    path_depth=source.path_depth,
+                    file_status="failed",
+                    source_mtime=source.source_mtime,
+                    source_size_bytes=source.source_size_bytes or source.size_bytes,
                     mime_type=source.mime_type,
                     size_bytes=source.size_bytes,
                     content_hash=source.content_hash,
@@ -1827,6 +1913,25 @@ def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
     )
 
 
+def _knowledge_origin_from_record(record: KnowledgeOriginRecord) -> KnowledgeOrigin:
+    return KnowledgeOrigin(
+        id=record.id,
+        knowledge_base_id=record.knowledge_base_id,
+        name=record.name,
+        slug=record.slug,
+        root_path=record.root_path,
+        include_globs=getattr(record, "include_globs", "") or "**/*",
+        exclude_globs=getattr(record, "exclude_globs", "") or "",
+        last_scan_at=ensure_utc(getattr(record, "last_scan_at", None)),
+        last_import_at=ensure_utc(getattr(record, "last_import_at", None)),
+        status=getattr(record, "status", "") or "ready",
+        error=getattr(record, "error", None),
+        metadata=_loads(getattr(record, "metadata_json", "{}") or "{}", {}),
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
 def _knowledge_source_from_record(session: DbSession, record: KnowledgeSourceRecord) -> KnowledgeSource:
     latest_embedding = session.exec(
         select(KnowledgeEmbeddingRecord)
@@ -1836,9 +1941,19 @@ def _knowledge_source_from_record(session: DbSession, record: KnowledgeSourceRec
     return KnowledgeSource(
         id=record.id,
         knowledge_base_id=record.knowledge_base_id,
+        origin_id=getattr(record, "origin_id", None),
         source_type=record.source_type,
         uri=record.uri,
         title=record.title,
+        relative_path=getattr(record, "relative_path", "") or "",
+        virtual_path=getattr(record, "virtual_path", "") or "",
+        folder_path=getattr(record, "folder_path", "") or "",
+        file_name=getattr(record, "file_name", "") or "",
+        extension=getattr(record, "extension", "") or "",
+        path_depth=int(getattr(record, "path_depth", 0) or 0),
+        file_status=getattr(record, "file_status", "") or "ready",
+        source_mtime=ensure_utc(getattr(record, "source_mtime", None)),
+        source_size_bytes=int(getattr(record, "source_size_bytes", 0) or 0),
         mime_type=record.mime_type,
         size_bytes=record.size_bytes,
         content_hash=record.content_hash,

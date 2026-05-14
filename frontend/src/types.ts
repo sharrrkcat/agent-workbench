@@ -452,9 +452,19 @@ export type SessionKnowledgeBinding = {
 export type KnowledgeSource = {
   id: string;
   knowledge_base_id: string;
-  source_type: 'pasted_text' | 'attachment_text' | string;
+  origin_id?: string | null;
+  source_type: 'pasted_text' | 'attachment_text' | 'origin_file' | string;
   uri: string;
   title: string;
+  relative_path?: string;
+  virtual_path?: string;
+  folder_path?: string;
+  file_name?: string;
+  extension?: string;
+  path_depth?: number;
+  file_status?: 'ready' | 'new' | 'changed' | 'missing' | 'failed' | string;
+  source_mtime?: string | null;
+  source_size_bytes?: number;
   mime_type?: string | null;
   size_bytes: number;
   content_hash: string;
@@ -467,6 +477,41 @@ export type KnowledgeSource = {
   embedding_dimension?: number | null;
   created_at: string;
   updated_at: string;
+};
+
+export type KnowledgeOrigin = {
+  id: string;
+  knowledge_base_id: string;
+  name: string;
+  slug: string;
+  root_path: string;
+  include_globs: string;
+  exclude_globs: string;
+  last_scan_at?: string | null;
+  last_import_at?: string | null;
+  status: string;
+  error?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeOriginInput = Partial<Pick<KnowledgeOrigin, 'name' | 'slug' | 'include_globs' | 'exclude_globs' | 'status' | 'metadata'>>;
+
+export type KnowledgeOriginScanSummary = {
+  origin_id: string;
+  new_count: number;
+  changed_count: number;
+  missing_count: number;
+  unchanged_count: number;
+  failed_count: number;
+  warnings: string[];
+};
+
+export type KnowledgeOriginImportSummary = KnowledgeOriginScanSummary & {
+  imported_count: number;
+  skipped_count: number;
+  sources: KnowledgeSourceIndexResult[];
 };
 
 export type KnowledgeSourceIndexResult = {
