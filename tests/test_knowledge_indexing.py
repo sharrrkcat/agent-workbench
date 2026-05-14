@@ -315,3 +315,133 @@ def test_kb_and_embedding_profile_changes_mark_existing_index_needs_reindex(tmp_
     assert changed_profile.status_code == 200, changed_profile.text
     assert client.get(f"/api/knowledge/bases/{kb['id']}").json()["index_status"] == "needs_reindex"
     assert client.get(f"/api/knowledge/sources/{source_id}").json()["status"] == "needs_reindex"
+
+
+def test_markdown_collection_auto_chunks_entity_headings_and_metadata(tmp_path: Path) -> None:
+    client, _db_path, backend = make_client(tmp_path)
+    kb = create_kb(client, chunk_size=500, chunk_overlap=0)
+    markdown = """# Jedi Fallen Order
+
+## Characters
+
+### Cal Kestis
+Cal is a Jedi survivor.
+
+### Cere Junda
+Cere is a mentor.
+
+## Locations
+
+### Bracca
+Bracca is a scrapyard world.
+"""
+
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "jedi-fallen-order.md", "text": markdown},
+    )
+
+    assert created.status_code == 200, created.text
+    chunks = client.get(f"/api/knowledge/sources/{created.json()['source_id']}/chunks").json()["chunks"]
+    metadata = [chunk["metadata"] for chunk in chunks]
+    assert [item["chunk_title"] for item in metadata] == ["Cal Kestis", "Cere Junda", "Bracca"]
+    assert [item["entity_type"] for item in metadata] == ["Character", "Character", "Location"]
+    assert all(item["document_title"] == "Jedi Fallen Order" for item in metadata)
+    assert all(item["chunk_profile_effective"] == "markdown_collection" for item in metadata)
+    assert metadata[0]["heading_path"] == "Jedi Fallen Order > Characters > Cal Kestis"
+    assert metadata[0]["line_start"] == 5
+    assert "Title: Cal Kestis" in backend.calls[-1]["texts"][0]
+    assert "Document: Jedi Fallen Order" in backend.calls[-1]["texts"][0]
+    assert "Type: Character" in backend.calls[-1]["texts"][0]
+    assert "Section: Jedi Fallen Order > Characters > Cal Kestis" in backend.calls[-1]["texts"][0]
+    assert "jedi-fallen-order.md" in backend.calls[-1]["texts"][0]
+
+
+def test_markdown_document_auto_uses_document_title_for_all_chunks(tmp_path: Path) -> None:
+    client, _db_path, backend = make_client(tmp_path)
+    kb = create_kb(client, chunk_size=500, chunk_overlap=0)
+    markdown = """# Cal Kestis
+
+## Summary
+Jedi survivor.
+
+## Role in Fallen Order
+Main protagonist.
+
+## Relationships
+Cere and BD-1.
+"""
+
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "characters/cal-kestis.md", "text": markdown},
+    )
+
+    assert created.status_code == 200, created.text
+    chunks = client.get(f"/api/knowledge/sources/{created.json()['source_id']}/chunks").json()["chunks"]
+    metadata = [chunk["metadata"] for chunk in chunks]
+    assert {item["chunk_profile_effective"] for item in metadata} == {"markdown_document"}
+    assert {item["chunk_title"] for item in metadata} == {"Cal Kestis"}
+    assert {item["entity_type"] for item in metadata} == {"Character"}
+    assert any(item["heading_path"] == "Cal Kestis > Role in Fallen Order" for item in metadata)
+    assert any("Title: Cal Kestis" in text for text in backend.calls[-1]["texts"])
+    assert not any("Title: cal-kestis.md" in text or "Title: characters/cal-kestis.md" in text for text in backend.calls[-1]["texts"])
+
+
+def test_markdown_fenced_code_hash_is_not_heading(tmp_path: Path) -> None:
+    client, _db_path, _backend = make_client(tmp_path)
+    kb = create_kb(client, chunk_size=500, chunk_overlap=0)
+    markdown = """# Real Title
+
+```python
+# Not A Heading
+print("ok")
+```
+
+## Real Section
+Content.
+"""
+
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "real-title.md", "text": markdown},
+    )
+
+    assert created.status_code == 200, created.text
+    chunks = client.get(f"/api/knowledge/sources/{created.json()['source_id']}/chunks").json()["chunks"]
+    heading_paths = [chunk["metadata"]["heading_path"] for chunk in chunks]
+    assert "Real Title > Not A Heading" not in heading_paths
+    assert "Real Title > Real Section" in heading_paths
+
+
+def test_frontmatter_chunk_profile_overrides_auto_detector(tmp_path: Path) -> None:
+    client, _db_path, _backend = make_client(tmp_path)
+    kb = create_kb(client, chunk_size=500, chunk_overlap=0)
+    markdown = """---
+title: Jedi Fallen Order
+chunk_profile: markdown_document
+type: Document
+---
+# Jedi Fallen Order
+
+## Characters
+
+### Cal Kestis
+Cal is a Jedi survivor.
+
+### Cere Junda
+Cere is a mentor.
+"""
+
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "jedi-fallen-order.md", "text": markdown},
+    )
+
+    assert created.status_code == 200, created.text
+    chunks = client.get(f"/api/knowledge/sources/{created.json()['source_id']}/chunks").json()["chunks"]
+    metadata = [chunk["metadata"] for chunk in chunks]
+    assert {item["chunk_profile_requested"] for item in metadata} == {"markdown_document"}
+    assert {item["chunk_profile_effective"] for item in metadata} == {"markdown_document"}
+    assert {item["chunk_title"] for item in metadata} == {"Jedi Fallen Order"}
+    assert {item["entity_type"] for item in metadata} == {"Document"}

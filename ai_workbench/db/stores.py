@@ -1403,6 +1403,7 @@ class SqlKnowledgeStore:
                         char_end=chunk.char_end,
                         token_count=chunk.token_count,
                         content_hash=chunk.content_hash,
+                        metadata_json=_dumps(chunk.metadata),
                     )
                 )
                 session.add(

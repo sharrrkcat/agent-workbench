@@ -155,10 +155,11 @@ Agent Workbench Knowledge v1 local model foundation:
 - Knowledge Defaults hold the single global reranker setting with a `rerankers/<folder>` model path.
 - The local embedding and reranker APIs use Workbench JSON shapes and optional local dependencies; missing optional dependencies must not prevent normal chat startup.
 - `kb_sources` owns source metadata and local source references, not full pasted source text.
-- `kb_chunks` owns indexed chunk content and source offsets.
+- `kb_chunks` owns indexed chunk content, source offsets, and compact chunk metadata. Markdown chunks may record `chunk_title`, `document_title`, `entity_type`, `heading_path`, line/character offsets, requested/effective chunk profile, confidence, and title/type sources. `chunk_title` is the RAG retrieval-facing embedding title, not Semantic Router metadata or session title metadata.
 - `kb_embeddings` owns embedding snapshots and float32 vector BLOBs.
 - `kb_chunk_fts` owns keyword-search rows for future BM25 retrieval.
-- Local-file sources, automatic model download, and retrieval/indexing/backend changes remain later phases.
+- Markdown source indexing supports `plain_text`, `markdown_document`, `markdown_collection`, and default `markdown_auto`; low-confidence auto detection falls back to `markdown_document`.
+- Local-file sources, directory import, file watching, automatic sync, automatic reindexing, automatic model download, and retrieval ranking/backend changes remain out of scope.
 
 Common pitfalls:
 

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -340,6 +341,7 @@ def get_knowledge_chunk(chunk_id: str, state: RuntimeState = Depends(get_state))
             "heading_path": chunk.heading_path,
             "content": chunk.content,
             "chunk_index": chunk.chunk_index,
+            "metadata": _loads_json(chunk.metadata_json, {}),
         }
 
 
@@ -392,6 +394,7 @@ def list_knowledge_source_chunks(source_id: str, state: RuntimeState = Depends(g
                     "heading_path": chunk.heading_path,
                     "char_start": chunk.char_start,
                     "char_end": chunk.char_end,
+                    "metadata": _loads_json(chunk.metadata_json, {}),
                     "content": chunk.content,
                     "content_preview": content_preview,
                     "truncated": len(chunk.content) > CHUNK_CONTENT_PREVIEW_MAX_CHARS,
@@ -590,7 +593,13 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
     )
     try:
         validate_source_limits(source_text.text, source_text.size_bytes, settings)
-        chunks = chunk_source_text(source_text.text, settings=settings, knowledge_base=knowledge_base)
+        chunks = chunk_source_text(
+            source_text.text,
+            settings=settings,
+            knowledge_base=knowledge_base,
+            source_title=source.title,
+            source_uri=source.uri,
+        )
         try:
             embedding_result = embed_chunks(
                 backend=state.knowledge_model_backend,
@@ -600,7 +609,7 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
             )
         except KnowledgeModelError as exc:
             raise model_error_to_index_error(exc) from exc
-        search_texts = [build_search_text(source.title, chunk.heading_path, chunk.content) for chunk in chunks]
+        search_texts = [build_search_text(source.title, chunk.heading_path, chunk.content, chunk.metadata) for chunk in chunks]
         return state.knowledge.upsert_indexed_source(
             source=source,
             chunks=chunks,
@@ -677,3 +686,12 @@ def _raise_store_error(exc: ValueError) -> None:
     if message == "KNOWLEDGE_EMBEDDING_MODEL_IN_USE":
         raise_error(409, "KNOWLEDGE_EMBEDDING_MODEL_IN_USE", "Embedding model profile is used by a knowledge base.")
     raise_error(422, "INVALID_KNOWLEDGE_VALUE", message)
+
+
+def _loads_json(value: str, fallback):
+    if not value:
+        return fallback
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return fallback

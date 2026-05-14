@@ -554,7 +554,13 @@ and text attachments:
 
 The indexer validates source size and chunk limits, chunks text, embeds chunks with the KB embedding model profile using `purpose=document`, stores vectors as float32 SQLite BLOBs, and writes FTS5 rows. Pasted source originals are saved under `data/knowledge/sources/<source_id>.txt`; full pasted source text is not stored in `kb_sources`. Attachment indexing reads existing local text attachments and does not delete or modify the original attachment.
 
+Markdown sources use chunk profiles: `plain_text`, `markdown_document`, `markdown_collection`, and `markdown_auto`. Markdown defaults to `markdown_auto`; non-Markdown text stays `plain_text`. Frontmatter may override the detector with `chunk_profile: markdown_document`, `chunk_profile: markdown_collection`, or `chunk_profile: plain_text`. The parser supports simple frontmatter, ATX headings `#` through `######`, heading paths, source line/character offsets, and ignores headings inside fenced code blocks. Per-chunk metadata is compact and stored in `kb_chunks.metadata_json`: `chunk_title`, `document_title`, `entity_type`, `heading_path`, `line_start`, `line_end`, `char_start`, `char_end`, `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `title_source`, and `type_source`.
+
+`chunk_title` is the RAG chunk retrieval title and embedding `Title:` value. It is not Semantic Router metadata and is not session title metadata. `markdown_auto` uses deterministic scoring and falls back to `markdown_document` on low confidence. This contract does not add directory import, automatic sync, file watching, or automatic reindexing.
+
 Index responses include `source_id`, `status`, `chunks`, `embedding_model_profile_id`, `embedding_dimension`, `indexed_at`, and `error`.
+
+Chunk inspection endpoints such as `GET /api/knowledge/chunks/{chunk_id}` and `GET /api/knowledge/sources/{source_id}/chunks` return chunk content plus compact `metadata`; they do not return vectors or full source originals.
 
 Knowledge search:
 
@@ -576,7 +582,7 @@ Response shape:
 {"query": "...", "results": [{"rank": 1, "chunk_id": "...", "content": "...", "rrf_score": 0.031, "rerank_score": null}], "context_preview": "# Retrieved Knowledge\n...", "debug": {"warnings": [], "before_filter_count": 3, "final_result_count": 1}}
 ```
 
-Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Phase 5 adds a thin `knowledge` Capability and `/kb-search` command that wrap the same core retrieval path for explicit debugging/manual search. Current non-goals: `local_file` sources, automatic model download, and changes to retrieval/indexing/model backends.
+Phase 4 adds automatic Prompt Agent and Script Agent Knowledge context injection plus a chat session KB picker. Phase 5 adds a thin `knowledge` Capability and `/kb-search` command that wrap the same core retrieval path for explicit debugging/manual search. Current non-goals: `local_file` sources, directory import, automatic sync, automatic reindexing, automatic model download, and changes to retrieval ranking/model backends.
 
 Session bindings:
 

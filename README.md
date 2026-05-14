@@ -224,6 +224,7 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - Knowledge Base aliases for Intent Routing natural-language KB hint matching.
 - test embedding/reranker endpoints and Workbench-native JSON embedding/reranker APIs.
 - pasted text and uploaded text attachment source indexing.
+- Markdown chunk profiles for source indexing: `plain_text`, `markdown_document`, `markdown_collection`, and default `markdown_auto`.
 - `kb_sources`, `kb_chunks`, `kb_embeddings`, and `kb_chunk_fts` storage.
 - chunk embeddings stored as float32 SQLite BLOBs and keyword rows stored in FTS5.
 - `POST /api/knowledge/search` for selected KBs or session-bound KBs.
@@ -235,6 +236,10 @@ Knowledge RAG v1 Phase 5 provides the local foundation, synchronous source index
 - Assistant messages that used automatic context can show a footer action for the injected context used by that run. The modal shows only context types that were actually used: current Core Memory, current Worldbook entry content fetched by entry refs, and Knowledge snippets fetched on demand by chunk refs.
 - `knowledge` Capability methods `search`, `list_bases`, and `stats` wrap the core Knowledge store and retrieval service for Script Agents.
 - `/kb-search <query>` runs an explicit command search against the current session active KBs and returns JSON for debugging/manual lookup. It does not call an LLM or participate in automatic context injection.
+
+Markdown indexing parses simple frontmatter and ATX headings while ignoring heading-looking lines inside fenced code blocks. `markdown_document` treats a file as one subject, using frontmatter `title`, H1, or titleized filename as `document_title` and every chunk's `chunk_title`. `markdown_collection` treats repeated entity headings under category headings as separate retrieval chunks, using the entity heading as `chunk_title` and parent categories such as `Characters` or `Locations` to infer `entity_type`. `markdown_auto` chooses between those profiles with deterministic scoring and falls back to `markdown_document` on low confidence. Frontmatter can override it with `chunk_profile: markdown_document`, `chunk_profile: markdown_collection`, or `chunk_profile: plain_text`.
+
+Chunk metadata is stored compactly on `kb_chunks.metadata_json` with fields such as `chunk_title`, `document_title`, `entity_type`, `heading_path`, source line/character offsets, requested/effective profile, confidence, and title/type sources. `chunk_title` is the RAG retrieval-facing title used in the embedding `Title:` line; it is not Semantic Router metadata and is not automatic session title generation metadata. This Markdown foundation does not add directory import, file watching, automatic sync, or automatic reindexing.
 
 Optional local model dependencies are not installed by a normal `uv sync` and are only needed when using Knowledge embedding/reranker APIs. If they are missing, normal chat and non-RAG features still start and run; Knowledge model APIs return `KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE`, and Settings shows the backend as unavailable.
 
