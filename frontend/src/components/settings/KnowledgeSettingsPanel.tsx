@@ -15,6 +15,7 @@ type SourceSortKey = 'title' | 'source_type' | 'folder_path' | 'chunks' | 'statu
 type SortDirection = 'asc' | 'desc';
 type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
 type DownloadModelType = 'embedding' | 'reranker';
+type ChunkProfile = 'plain_text' | 'markdown_document' | 'markdown_collection' | 'markdown_auto';
 type EmbeddingProfilePreset = {
   name: string;
   alias: string;
@@ -174,7 +175,10 @@ const defaultKnowledgeBase: Partial<KnowledgeBase> = {
   keyword_candidate_k_override: null,
   final_top_k_override: null,
   max_context_chars_override: null,
+  default_chunk_profile: null,
 };
+
+const CHUNK_PROFILES: ChunkProfile[] = ['markdown_auto', 'markdown_document', 'markdown_collection', 'plain_text'];
 
 export function KnowledgeSettingsDetail({
   category,
@@ -598,7 +602,21 @@ function KnowledgeChunkingTab({ values, setValues }: { values: KnowledgeSettings
   const { t } = useTranslation('knowledge');
   return (
     <>
-      <NumberGroup title={t('sections.chunking')} values={values} setValues={setValues} fields={[['default_chunk_size', t('labels.chunkSize')], ['default_chunk_overlap', t('labels.chunkOverlap')]]} />
+      <div className="detail-section">
+        <div className="detail-section-heading"><h3>{t('sections.chunking')}</h3></div>
+        <div className="settings-detail-grid">
+          <NumberField label={t('labels.chunkSize')} value={values.default_chunk_size} onChange={(value) => { if (value !== '') setValues({ ...values, default_chunk_size: value }); }} />
+          <NumberField label={t('labels.chunkOverlap')} value={values.default_chunk_overlap} onChange={(value) => { if (value !== '') setValues({ ...values, default_chunk_overlap: value }); }} />
+          <SelectField
+            label={t('labels.defaultChunkProfile')}
+            value={values.default_chunk_profile || 'markdown_auto'}
+            options={CHUNK_PROFILES}
+            labels={chunkProfileLabels(t)}
+            onChange={(value) => setValues({ ...values, default_chunk_profile: value as ChunkProfile })}
+          />
+        </div>
+        <p className="settings-muted-text">{t('help.chunkProfileDefaults')}</p>
+      </div>
       <NumberGroup title={t('sections.indexLimits')} values={values} setValues={setValues} fields={[['max_source_size_bytes', t('labels.maxSourceSizeBytes')], ['max_chunks_per_source', t('labels.maxChunksPerSource')], ['max_total_index_chars_per_source', t('labels.maxTotalIndexCharsPerSource')]]} />
     </>
   );
@@ -885,6 +903,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [origins, setOrigins] = useState<KnowledgeOrigin[]>([]);
   const [originName, setOriginName] = useState('');
   const [originSlug, setOriginSlug] = useState('');
+  const [originDefaultChunkProfile, setOriginDefaultChunkProfile] = useState('');
   const [sourceResult, setSourceResult] = useState('');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
@@ -933,6 +952,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setSourceText('');
     setOriginName('');
     setOriginSlug('');
+    setOriginDefaultChunkProfile('');
     setOrigins([]);
     setSelectedSourceId('');
     setSourcePreview(null);
@@ -1081,10 +1101,15 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     try {
       setSourceError(null);
       setSourceResult('');
-      const created = await api.createKnowledgeOrigin(knowledgeBaseId, { name: originName, slug: originSlug });
+      const created = await api.createKnowledgeOrigin(knowledgeBaseId, {
+        name: originName,
+        slug: originSlug,
+        default_chunk_profile: originDefaultChunkProfile ? originDefaultChunkProfile as ChunkProfile : null,
+      });
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       setOriginName('');
       setOriginSlug('');
+      setOriginDefaultChunkProfile('');
       await loadOrigins(knowledgeBaseId);
       setSourceResult(t('knowledge:results.originCreated', { path: created.root_path }));
     } catch (error) {
@@ -1114,14 +1139,14 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
-  async function importOrigin(originId: string) {
+  async function importOrigin(originId: string, sourceIds?: string[], actionLabel = 'import origin') {
     if (!values.id) return;
     const knowledgeBaseId = values.id;
-    setBusy(`import origin:${originId}`);
+    setBusy(`${actionLabel}:${originId}`);
     try {
       setSourceError(null);
       setSourceResult('');
-      const summary = await api.importKnowledgeOrigin(originId);
+      const summary = await api.importKnowledgeOrigin(originId, sourceIds);
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       await loadKnowledgeLists(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
@@ -1359,6 +1384,14 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                 <NumberField label={t('knowledge:labels.keywordCandidateKOverride')} value={values.keyword_candidate_k_override ?? ''} onChange={(value) => setValues({ ...values, keyword_candidate_k_override: value === '' ? null : Number(value) })} />
                 <NumberField label={t('knowledge:labels.finalTopKOverride')} value={values.final_top_k_override ?? ''} onChange={(value) => setValues({ ...values, final_top_k_override: value === '' ? null : Number(value) })} />
                 <NumberField label={t('knowledge:labels.maxContextCharsOverride')} value={values.max_context_chars_override ?? ''} onChange={(value) => setValues({ ...values, max_context_chars_override: value === '' ? null : Number(value) })} />
+                <SelectField
+                  label={t('knowledge:labels.defaultChunkProfile')}
+                  value={values.default_chunk_profile || ''}
+                  options={CHUNK_PROFILES}
+                  labels={chunkProfileLabels(t)}
+                  placeholder={t('knowledge:placeholders.useKnowledgeDefault')}
+                  onChange={(value) => setValues({ ...values, default_chunk_profile: value ? value as ChunkProfile : null })}
+                />
               </div>
             </section>
           </>
@@ -1381,8 +1414,17 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               <div className="settings-detail-grid">
                 <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
                 <TextField label={t('knowledge:labels.originSlug')} value={originSlug} onChange={setOriginSlug} />
+                <SelectField
+                  label={t('knowledge:labels.originDefaultChunkProfile')}
+                  value={originDefaultChunkProfile}
+                  options={CHUNK_PROFILES}
+                  labels={chunkProfileLabels(t)}
+                  placeholder={t('knowledge:placeholders.useKnowledgeBaseDefault')}
+                  onChange={setOriginDefaultChunkProfile}
+                />
               </div>
               <p className="settings-muted-text">{t('knowledge:help.originPath')}</p>
+              <p className="settings-muted-text">{t('knowledge:help.manualOriginWorkflow')}</p>
               <div className="settings-button-row">
                 <button className="settings-secondary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={createOrigin}>
                   <FolderPlus size={14} />
@@ -1393,13 +1435,24 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                 <div className="knowledge-origin-list">
                   {origins.map((origin) => (
                     <article className="knowledge-origin-card" key={origin.id}>
+                      {(() => {
+                        const originSources = sources.filter((source) => source.origin_id === origin.id);
+                        const newSourceIds = originSources.filter((source) => source.file_status === 'new').map((source) => source.id);
+                        const changedSourceIds = originSources.filter((source) => source.file_status === 'changed' || source.status === 'needs_reindex').map((source) => source.id);
+                        const missingCount = originSources.filter((source) => source.file_status === 'missing').length;
+                        return (
+                          <>
                       <div>
                         <strong>{origin.name}</strong>
                         <p><code>{origin.root_path}</code></p>
                         <div className="settings-chip-row">
                           <span>{origin.slug}</span>
                           <span>{getKnowledgeOriginStatusLabel(origin.status, t)}</span>
-                          <span>{formatDate(origin.last_scan_at)}</span>
+                          <span>{t('knowledge:labels.lastScan')}: {formatDate(origin.last_scan_at)}</span>
+                          <span>{t('knowledge:labels.defaultChunkProfile')}: {origin.default_chunk_profile ? chunkProfileLabel(origin.default_chunk_profile, t) : t('knowledge:placeholders.useKnowledgeBaseDefault')}</span>
+                          <span>{t('knowledge:labels.newFiles')}: {newSourceIds.length}</span>
+                          <span>{t('knowledge:labels.changedFiles')}: {changedSourceIds.length}</span>
+                          <span>{t('knowledge:labels.missingFiles')}: {missingCount}</span>
                         </div>
                       </div>
                       <div className="settings-button-row compact">
@@ -1407,11 +1460,22 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                           <Search size={14} />
                           {busy === `scan origin:${origin.id}` ? t('knowledge:actions.scanning') : t('knowledge:actions.scanNow')}
                         </button>
+                        <button className="settings-secondary-button" type="button" disabled={!newSourceIds.length || Boolean(busy)} onClick={() => importOrigin(origin.id, newSourceIds, 'import new')}>
+                          <RefreshCw size={14} />
+                          {busy === `import new:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.importNewFiles')}
+                        </button>
+                        <button className="settings-secondary-button" type="button" disabled={!changedSourceIds.length || Boolean(busy)} onClick={() => importOrigin(origin.id, changedSourceIds, 'reindex changed')}>
+                          <RefreshCw size={14} />
+                          {busy === `reindex changed:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindexChangedFiles')}
+                        </button>
                         <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => importOrigin(origin.id)}>
                           <RefreshCw size={14} />
                           {busy === `import origin:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.importReindex')}
                         </button>
                       </div>
+                          </>
+                        );
+                      })()}
                     </article>
                   ))}
                 </div>
@@ -1549,6 +1613,7 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
             <SortableHeader label={t('knowledge:labels.folderPath')} sortKey="folder_path" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.type')} sortKey="source_type" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.chunks')} sortKey="chunks" activeSort={sort} onSort={onSort} />
+            <th>{t('knowledge:labels.profile')}</th>
             <SortableHeader label={t('knowledge:labels.indexed')} sortKey="status" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.indexedDate')} sortKey="indexed_at" activeSort={sort} onSort={onSort} />
             <th>{t('knowledge:labels.actions')}</th>
@@ -1565,6 +1630,7 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
               <td>{source.folder_path || t('status:common.none', { ns: 'status' })}</td>
               <td>{source.source_type}</td>
               <td>{source.chunks}</td>
+              <td><ProfileSummary source={source} /></td>
               <td><StatusBadge status={source.file_status || source.status} /></td>
               <td>{formatDate(source.indexed_at)}</td>
               <td>
@@ -1622,6 +1688,12 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
               <Metric label={t('knowledge:labels.size')} value={formatBytes(source.size_bytes)} />
               <Metric label={t('knowledge:labels.contentHash')} value={source.content_hash || 'n/a'} />
               <Metric label={t('knowledge:labels.embeddingDimension')} value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
+              <Metric label={t('knowledge:labels.effectiveProfile')} value={sourceProfileText(source, t)} />
+              <Metric label={t('knowledge:labels.profileSource')} value={profileSourceLabel(source.profile_source || source.metadata?.profile_source, t)} />
+              <Metric label={t('knowledge:labels.confidence')} value={confidenceLabel(source.chunk_profile_confidence ?? source.metadata?.chunk_profile_confidence, t)} />
+              <Metric label={t('knowledge:labels.entityLevel')} value={entityLevelLabel(source.entity_level ?? source.metadata?.entity_level, t)} />
+              <Metric label={t('knowledge:labels.titleSource')} value={profileSourceLabel(source.title_source || source.metadata?.title_source, t)} />
+              <Metric label={t('knowledge:labels.typeSource')} value={profileSourceLabel(source.type_source || source.metadata?.type_source, t)} />
             </dl>
             {source.error ? <p className="settings-error-text">{source.error}</p> : null}
           </section>
@@ -1646,11 +1718,19 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
                 {chunks.map((chunk) => (
                   <details className="knowledge-chunk-card" key={chunk.chunk_id} open={chunk.chunk_index < 3}>
                     <summary>
-                      <strong>Chunk {chunk.chunk_index}</strong>
+                      <strong>{t('knowledge:labels.chunkNumber', { index: chunk.chunk_index })}</strong>
                       <span>{chunk.char_start}-{chunk.char_end}</span>
                       {chunk.embedding_dimension ? <span>{chunk.embedding_dimension}d</span> : null}
+                      {chunk.metadata?.chunk_profile_effective ? <span>{chunkProfileLabel(String(chunk.metadata.chunk_profile_effective), t)}</span> : null}
                     </summary>
                     {chunk.heading_path ? <small>{chunk.heading_path}</small> : null}
+                    {chunk.metadata ? (
+                      <div className="settings-chip-row">
+                        <span>{profileReasonText(chunk.metadata, t)}</span>
+                        <span>{t('knowledge:labels.titleSource')}: {profileSourceLabel(chunk.metadata.title_source, t)}</span>
+                        <span>{t('knowledge:labels.typeSource')}: {profileSourceLabel(chunk.metadata.type_source, t)}</span>
+                      </div>
+                    ) : null}
                     <pre>{chunk.content_preview || chunk.content}{chunk.truncated ? '\n...' : ''}</pre>
                   </details>
                 ))}
@@ -1659,6 +1739,18 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
           </section>
         </div>
       </section>
+    </div>
+  );
+}
+
+function ProfileSummary({ source }: { source: KnowledgeSource }) {
+  const { t } = useTranslation(['knowledge', 'status']);
+  const profile = source.chunk_profile_effective || String(source.metadata?.chunk_profile_effective || '');
+  if (!profile) return <span className="settings-badge muted">{t('status:common.unknown')}</span>;
+  return (
+    <div className="settings-chip-row compact">
+      <span>{sourceProfileText(source, t)}</span>
+      <span>{profileSourceLabel(source.profile_source || source.metadata?.profile_source, t)}</span>
     </div>
   );
 }
@@ -1831,6 +1923,7 @@ function buildKnowledgeBasePayload(values: Partial<KnowledgeBase>): KnowledgeBas
     keyword_candidate_k_override: parseOptionalInteger(values.keyword_candidate_k_override, 'Keyword candidate K override'),
     final_top_k_override: parseOptionalInteger(values.final_top_k_override, 'Final top K override'),
     max_context_chars_override: parseOptionalInteger(values.max_context_chars_override, 'Max context chars override'),
+    default_chunk_profile: values.default_chunk_profile || null,
   };
 }
 
@@ -1863,6 +1956,55 @@ function sourceSortValue(source: KnowledgeSource, key: SourceSortKey): string | 
   if (key === 'folder_path') return String(source.folder_path || '').toLowerCase();
   if (key === 'status') return String(source.file_status || source.status || '').toLowerCase();
   return String(source[key] || '').toLowerCase();
+}
+
+function chunkProfileLabels(t: ReturnType<typeof useTranslation>['t']): Record<string, string> {
+  return Object.fromEntries(CHUNK_PROFILES.map((profile) => [profile, chunkProfileLabel(profile, t)]));
+}
+
+function chunkProfileLabel(profile: unknown, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = String(profile || '');
+  return key ? t(`knowledge:chunkProfiles.${key}`, { defaultValue: key }) : t('status:common.unknown', { ns: 'status' });
+}
+
+function profileSourceLabel(source: unknown, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = String(source || '');
+  return key ? t(`knowledge:profileSources.${key}`, { defaultValue: key }) : t('status:common.unknown', { ns: 'status' });
+}
+
+function confidenceLabel(value: unknown, t: ReturnType<typeof useTranslation>['t']): string {
+  const confidence = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(confidence)) return t('status:common.unknown', { ns: 'status' });
+  if (confidence >= 0.8) return t('knowledge:confidence.high');
+  if (confidence >= 0.6) return t('knowledge:confidence.medium');
+  return t('knowledge:confidence.low');
+}
+
+function entityLevelLabel(value: unknown, t: ReturnType<typeof useTranslation>['t']): string {
+  const level = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(level) || level <= 0) return t('status:common.none', { ns: 'status' });
+  return t('knowledge:labels.headingLevel', { level });
+}
+
+function sourceProfileText(source: KnowledgeSource, t: ReturnType<typeof useTranslation>['t']): string {
+  const requested = source.chunk_profile_requested || String(source.metadata?.chunk_profile_requested || '');
+  const effective = source.chunk_profile_effective || String(source.metadata?.chunk_profile_effective || '');
+  if (requested === 'markdown_auto' && effective) {
+    return t('knowledge:labels.autoToProfile', { profile: chunkProfileLabel(effective, t) });
+  }
+  return chunkProfileLabel(effective || requested, t);
+}
+
+function profileReasonText(metadata: Record<string, unknown>, t: ReturnType<typeof useTranslation>['t']): string {
+  const requested = String(metadata.chunk_profile_requested || '');
+  const effective = String(metadata.chunk_profile_effective || '');
+  const source = profileSourceLabel(metadata.profile_source, t);
+  const confidence = confidenceLabel(metadata.chunk_profile_confidence, t);
+  const entityLevel = entityLevelLabel(metadata.entity_level, t);
+  if (requested === 'markdown_auto' && effective) {
+    return t('knowledge:labels.profileReasonAuto', { profile: chunkProfileLabel(effective, t), source, confidence, entityLevel });
+  }
+  return t('knowledge:labels.profileReason', { profile: chunkProfileLabel(effective || requested, t), source, confidence, entityLevel });
 }
 
 function formatDate(value?: string | null): string {

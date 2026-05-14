@@ -57,6 +57,21 @@ def create_kb(client: TestClient, *, chunk_size: int = 100, chunk_overlap: int =
     return response.json()
 
 
+def create_kb_with_profile(client: TestClient, *, default_chunk_profile: str | None, chunk_size: int = 500, chunk_overlap: int = 0, alias: str = "bge_m3") -> dict:
+    profile = create_embedding_profile(client, alias=alias)
+    payload = {
+        "name": "Docs",
+        "embedding_model_profile_id": profile["id"],
+        "chunk_size_override": chunk_size,
+        "chunk_overlap_override": chunk_overlap,
+    }
+    if default_chunk_profile is not None:
+        payload["default_chunk_profile"] = default_chunk_profile
+    response = client.post("/api/knowledge/bases", json=payload)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def table_count(db_path: Path, table: str, where: str = "", params: tuple = ()) -> int:
     with sqlite3.connect(db_path) as connection:
         suffix = f" WHERE {where}" if where else ""
@@ -445,3 +460,79 @@ Cere is a mentor.
     assert {item["chunk_profile_effective"] for item in metadata} == {"markdown_document"}
     assert {item["chunk_title"] for item in metadata} == {"Jedi Fallen Order"}
     assert {item["entity_type"] for item in metadata} == {"Document"}
+    assert {item["profile_source"] for item in metadata} == {"frontmatter"}
+
+
+def test_chunk_profile_precedence_frontmatter_origin_kb_auto_fallback(tmp_path: Path) -> None:
+    client, _db_path, _backend = make_client(tmp_path)
+    kb = create_kb_with_profile(client, default_chunk_profile="markdown_document")
+    markdown = "# Codex Docs\n\n## Characters\n\n### Ada\nAda writes notes.\n\n### Ben\nBen reads notes."
+
+    kb_default = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "collection.md", "text": markdown},
+    )
+    assert kb_default.status_code == 200, kb_default.text
+    kb_meta = client.get(f"/api/knowledge/sources/{kb_default.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
+    assert kb_meta["chunk_profile_effective"] == "markdown_document"
+    assert kb_meta["profile_source"] == "kb_default"
+
+    origin = client.post(
+        f"/api/knowledge/bases/{kb['id']}/origins",
+        json={"name": "Origin", "slug": "origin_docs", "default_chunk_profile": "markdown_collection"},
+    ).json()
+    source_path = tmp_path / origin["root_path"] / "collection.md"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(markdown, encoding="utf-8")
+    client.post(f"/api/knowledge/origins/{origin['id']}/scan")
+    imported = client.post(f"/api/knowledge/origins/{origin['id']}/import", json={})
+    assert imported.status_code == 200, imported.text
+    origin_source = client.get(f"/api/knowledge/bases/{kb['id']}/sources").json()[-1]
+    origin_meta = client.get(f"/api/knowledge/sources/{origin_source['id']}/chunks").json()["chunks"][0]["metadata"]
+    assert origin_meta["chunk_profile_effective"] == "markdown_collection"
+    assert origin_meta["profile_source"] == "origin_default"
+    assert origin_meta["entity_level"] == 3
+
+    source_path.write_text("---\nchunk_profile: markdown_document\n---\n" + markdown, encoding="utf-8")
+    client.post(f"/api/knowledge/origins/{origin['id']}/scan")
+    client.post(f"/api/knowledge/origins/{origin['id']}/import", json={})
+    frontmatter_meta = client.get(f"/api/knowledge/sources/{origin_source['id']}/chunks").json()["chunks"][0]["metadata"]
+    assert frontmatter_meta["chunk_profile_effective"] == "markdown_document"
+    assert frontmatter_meta["profile_source"] == "frontmatter"
+
+    auto_kb = create_kb_with_profile(client, default_chunk_profile=None, alias="bge_m3_auto")
+    auto_source = client.post(
+        f"/api/knowledge/bases/{auto_kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "auto.md", "text": markdown},
+    )
+    auto_meta = client.get(f"/api/knowledge/sources/{auto_source.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
+    assert auto_meta["chunk_profile_requested"] == "markdown_auto"
+    assert auto_meta["profile_source"] == "auto_detector"
+
+    fallback_source = client.post(
+        f"/api/knowledge/bases/{auto_kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "plain.txt", "text": "no markdown here"},
+    )
+    fallback_meta = client.get(f"/api/knowledge/sources/{fallback_source.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
+    assert fallback_meta["chunk_profile_effective"] == "markdown_document"
+    assert fallback_meta["profile_source"] == "fallback"
+
+
+def test_api_compact_profile_fields_and_old_metadata_fallback(tmp_path: Path) -> None:
+    client, db_path, _backend = make_client(tmp_path)
+    kb = create_kb_with_profile(client, default_chunk_profile=None, alias="bge_m3_compact")
+    created = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "compact.md", "text": "# Title\n\n## Summary\nBody"},
+    ).json()
+    source = client.get(f"/api/knowledge/sources/{created['source_id']}").json()
+    assert source["chunk_profile_effective"] == "markdown_document"
+    assert source["profile_source"] == "auto_detector"
+    assert source["title_source"] in {"h1", "filename"}
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("UPDATE kb_sources SET metadata_json = '{}' WHERE id = ?", (created["source_id"],))
+        connection.commit()
+    old_source = client.get(f"/api/knowledge/sources/{created['source_id']}")
+    assert old_source.status_code == 200, old_source.text
+    assert old_source.json()["chunk_profile_effective"] is None

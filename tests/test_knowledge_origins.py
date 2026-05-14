@@ -100,6 +100,31 @@ def test_origin_scan_changed_then_import_reindexes_and_preserves_old_index(tmp_p
     assert ready["file_status"] == "ready"
 
 
+def test_origin_default_chunk_profile_change_marks_reindex_without_rebuilding(tmp_path: Path) -> None:
+    client, db_path, _backend = make_client(tmp_path)
+    kb = create_kb(client, chunk_size=500, chunk_overlap=0)
+    origin = client.post(
+        f"/api/knowledge/bases/{kb['id']}/origins",
+        json={"name": "Docs", "slug": "docs", "default_chunk_profile": "markdown_document"},
+    ).json()
+    source_path = tmp_path / origin["root_path"] / "note.md"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("# Note\n\n## Summary\nold", encoding="utf-8")
+    client.post(f"/api/knowledge/origins/{origin['id']}/scan")
+    client.post(f"/api/knowledge/origins/{origin['id']}/import", json={})
+    source = client.get(f"/api/knowledge/bases/{kb['id']}/sources").json()[0]
+    old_chunk_count = table_count(db_path, "kb_chunks", "source_id = ?", (source["id"],))
+
+    patched = client.patch(f"/api/knowledge/origins/{origin['id']}", json={"default_chunk_profile": "markdown_collection"})
+
+    assert patched.status_code == 200, patched.text
+    stale = client.get(f"/api/knowledge/sources/{source['id']}").json()
+    assert stale["status"] == "needs_reindex"
+    assert stale["file_status"] == "ready"
+    assert client.get(f"/api/knowledge/bases/{kb['id']}").json()["index_status"] == "needs_reindex"
+    assert table_count(db_path, "kb_chunks", "source_id = ?", (source["id"],)) == old_chunk_count
+
+
 def test_origin_scan_missing_keeps_old_index(tmp_path: Path) -> None:
     client, db_path, _backend = make_client(tmp_path)
     kb = create_kb(client, chunk_size=500, chunk_overlap=0)

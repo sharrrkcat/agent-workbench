@@ -5,7 +5,12 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from ai_workbench.core.time import utc_now
-from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
+from ai_workbench.core.knowledge_settings import (
+    ChunkProfile,
+    KnowledgeSettings,
+    KnowledgeSettingsPatch,
+    knowledge_settings_patch_updates,
+)
 
 
 ALIAS_PATTERN_DESCRIPTION = "lowercase letters, numbers, underscores, and hyphens only"
@@ -149,6 +154,7 @@ class KnowledgeBase(BaseModel):
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
+    default_chunk_profile: ChunkProfile | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -180,6 +186,7 @@ class KnowledgeBaseCreate(BaseModel):
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
+    default_chunk_profile: ChunkProfile | None = None
 
     @field_validator("aliases_text", mode="before")
     @classmethod
@@ -201,6 +208,7 @@ class KnowledgeBasePatch(BaseModel):
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
+    default_chunk_profile: ChunkProfile | None = None
 
     @field_validator("aliases_text", mode="before")
     @classmethod
@@ -235,6 +243,7 @@ class KnowledgeOrigin(BaseModel):
     root_path: str
     include_globs: str = "**/*"
     exclude_globs: str = ""
+    default_chunk_profile: ChunkProfile | None = None
     last_scan_at: datetime | None = None
     last_import_at: datetime | None = None
     status: KnowledgeOriginStatus | str = "ready"
@@ -264,6 +273,7 @@ class KnowledgeOriginCreate(BaseModel):
     slug: str
     include_globs: str = "**/*"
     exclude_globs: str = ""
+    default_chunk_profile: ChunkProfile | None = None
 
     @field_validator("slug")
     @classmethod
@@ -277,6 +287,7 @@ class KnowledgeOriginPatch(BaseModel):
     name: str | None = None
     include_globs: str | None = None
     exclude_globs: str | None = None
+    default_chunk_profile: ChunkProfile | None = None
     status: str | None = None
     metadata: dict[str, Any] | None = None
 
@@ -309,6 +320,13 @@ class KnowledgeSource(BaseModel):
     chunks: int = 0
     embedding_model_profile_id: str | None = None
     embedding_dimension: int | None = None
+    chunk_profile_requested: str | None = None
+    chunk_profile_effective: str | None = None
+    chunk_profile_confidence: float | None = None
+    profile_source: str | None = None
+    entity_level: int | None = None
+    title_source: str | None = None
+    type_source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -431,7 +449,7 @@ class MemoryKnowledgeStore(KnowledgeStore):
         updates = knowledge_settings_patch_updates(patch)
         changed_chunk_defaults = any(
             key in updates and getattr(self._settings, key) != updates[key]
-            for key in ("default_chunk_size", "default_chunk_overlap")
+            for key in ("default_chunk_size", "default_chunk_overlap", "default_chunk_profile")
         )
         self._settings = KnowledgeSettings.model_validate({**self._settings.model_dump(), **updates})
         if changed_chunk_defaults:
@@ -487,7 +505,7 @@ class MemoryKnowledgeStore(KnowledgeStore):
 
     def update_knowledge_base(self, knowledge_base_id: str, values: dict[str, Any]) -> KnowledgeBase:
         existing = self.get_knowledge_base(knowledge_base_id)
-        stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override"}
+        stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override", "default_chunk_profile"}
         needs_reindex = any(key in values and getattr(existing, key) != values[key] for key in stale_keys)
         updated = KnowledgeBase.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
         if needs_reindex and existing.index_status in {"ready", "needs_reindex", "failed"}:

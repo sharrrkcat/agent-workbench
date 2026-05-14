@@ -84,6 +84,7 @@ def ensure_knowledge_origin_columns(engine) -> None:
         additions = {
             "include_globs": "VARCHAR DEFAULT '**/*'",
             "exclude_globs": "VARCHAR DEFAULT ''",
+            "default_chunk_profile": "VARCHAR",
             "last_scan_at": "DATETIME",
             "last_import_at": "DATETIME",
             "status": "VARCHAR DEFAULT 'ready'",
@@ -211,6 +212,7 @@ def ensure_knowledge_settings_columns(engine) -> None:
             ),
             "unload_embedding_model_after_use": "BOOLEAN DEFAULT 0",
             "unload_reranker_model_after_use": "BOOLEAN DEFAULT 0",
+            "default_chunk_profile": "VARCHAR",
         }
         for column, ddl in additions.items():
             if column not in columns:
@@ -227,6 +229,8 @@ def ensure_knowledge_base_columns(engine) -> None:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(knowledge_bases)").fetchall()}
         if "aliases_text" not in columns:
             connection.execute(text("ALTER TABLE knowledge_bases ADD COLUMN aliases_text VARCHAR DEFAULT ''"))
+        if "default_chunk_profile" not in columns:
+            connection.execute(text("ALTER TABLE knowledge_bases ADD COLUMN default_chunk_profile VARCHAR"))
 
 
 def ensure_worldbook_settings_columns(engine) -> None:

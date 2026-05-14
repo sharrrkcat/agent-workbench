@@ -53,6 +53,8 @@
     "reindex": "Reindex",
     "scanNow": "Scan now",
     "importReindex": "Import / Reindex",
+    "importNewFiles": "Import new files",
+    "reindexChangedFiles": "Reindex changed files",
     "createOrigin": "Create origin",
     "reindexAll": "Reindex all",
     "reindexing": "Reindexing...",
@@ -122,8 +124,26 @@
     "rerankerFolders": "Reranker folders",
     "originName": "Origin name",
     "originSlug": "Origin slug",
+    "originDefaultChunkProfile": "Origin default chunk profile",
     "folderPath": "Folder path",
-    "fileName": "File name"
+    "fileName": "File name",
+    "defaultChunkProfile": "Default chunk profile",
+    "profile": "Profile",
+    "effectiveProfile": "Effective profile",
+    "profileSource": "Profile source",
+    "confidence": "Confidence",
+    "entityLevel": "Entity level",
+    "titleSource": "Title source",
+    "typeSource": "Type source",
+    "lastScan": "Last scan",
+    "newFiles": "New files",
+    "changedFiles": "Changed files",
+    "missingFiles": "Missing files",
+    "chunkNumber": "Chunk {{index}}",
+    "headingLevel": "H{{level}}",
+    "autoToProfile": "Auto → {{profile}}",
+    "profileReason": "{{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
+    "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}"
   },
   "empty": {
     "loadingSettings": "Loading Knowledge settings.",
@@ -243,7 +263,37 @@
   },
   "help": {
     "aliases": "Use English commas to separate aliases used by Intent Routing.",
-    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index."
+    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index.",
+    "manualOriginWorkflow": "Scan checks file changes only. Reindex updates chunks and embeddings.",
+    "chunkProfileDefaults": "Changing a chunk profile default marks affected indexed sources for reindex; it does not rebuild them automatically."
+  },
+  "placeholders": {
+    "useKnowledgeDefault": "Use Knowledge default",
+    "useKnowledgeBaseDefault": "Use Knowledge Base default"
+  },
+  "chunkProfiles": {
+    "plain_text": "Plain text",
+    "markdown_document": "Markdown document",
+    "markdown_collection": "Markdown collection",
+    "markdown_auto": "Markdown auto"
+  },
+  "profileSources": {
+    "frontmatter": "Frontmatter",
+    "source_override": "Source override",
+    "origin_default": "Origin default",
+    "kb_default": "Knowledge Base default",
+    "auto_detector": "Auto detector",
+    "fallback": "Fallback",
+    "heading": "Heading",
+    "h1": "H1",
+    "filename": "Filename",
+    "path": "Path",
+    "parent_heading": "Parent heading"
+  },
+  "confidence": {
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low"
   },
   "errors": {
     "copyCommandFailed": "Failed to copy command. Select and copy it manually."

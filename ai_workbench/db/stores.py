@@ -1202,16 +1202,19 @@ class SqlKnowledgeStore:
             if record is None:
                 record = KnowledgeSettingsRecord(id=1)
             current = _knowledge_settings_from_record(record)
-            chunk_defaults_changed = any(
+            chunk_size_defaults_changed = any(
                 key in updates and getattr(current, key) != updates[key]
                 for key in ("default_chunk_size", "default_chunk_overlap")
             )
+            chunk_profile_default_changed = "default_chunk_profile" in updates and current.default_chunk_profile != updates["default_chunk_profile"]
             next_settings = KnowledgeSettings.model_validate({**current.model_dump(), **updates})
             _apply_knowledge_settings_to_record(record, next_settings)
             record.updated_at = utc_now()
             session.add(record)
-            if chunk_defaults_changed:
+            if chunk_size_defaults_changed:
                 _mark_kbs_using_default_chunking_needs_reindex(session)
+            if chunk_profile_default_changed:
+                _mark_kbs_using_default_chunk_profile_needs_reindex(session)
             session.commit()
             session.refresh(record)
             return _knowledge_settings_from_record(record)
@@ -1305,7 +1308,7 @@ class SqlKnowledgeStore:
             record = session.get(KnowledgeBaseRecord, knowledge_base_id)
             if record is None:
                 raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
-            stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override"}
+            stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override", "default_chunk_profile"}
             needs_reindex = any(key in values and getattr(record, key) != values[key] for key in stale_keys)
             candidate = _knowledge_base_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
             knowledge_base = KnowledgeBase.model_validate(candidate.model_dump())
@@ -1383,11 +1386,17 @@ class SqlKnowledgeStore:
                 raise KeyError(f"unknown knowledge origin: {origin_id}")
             if "metadata" in values:
                 record.metadata_json = _dumps(values.pop("metadata") or {})
+            default_chunk_profile_changed = (
+                "default_chunk_profile" in values
+                and getattr(record, "default_chunk_profile", None) != values.get("default_chunk_profile")
+            )
             for key, value in values.items():
                 if hasattr(record, key):
                     setattr(record, key, value)
             record.updated_at = utc_now()
             session.add(record)
+            if default_chunk_profile_changed:
+                _mark_origin_sources_needs_reindex(session, record.id)
             session.commit()
             session.refresh(record)
             return _knowledge_origin_from_record(record)
@@ -1908,6 +1917,7 @@ def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
         keyword_candidate_k_override=record.keyword_candidate_k_override,
         final_top_k_override=record.final_top_k_override,
         max_context_chars_override=record.max_context_chars_override,
+        default_chunk_profile=getattr(record, "default_chunk_profile", None),
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )
@@ -1922,6 +1932,7 @@ def _knowledge_origin_from_record(record: KnowledgeOriginRecord) -> KnowledgeOri
         root_path=record.root_path,
         include_globs=getattr(record, "include_globs", "") or "**/*",
         exclude_globs=getattr(record, "exclude_globs", "") or "",
+        default_chunk_profile=getattr(record, "default_chunk_profile", None),
         last_scan_at=ensure_utc(getattr(record, "last_scan_at", None)),
         last_import_at=ensure_utc(getattr(record, "last_import_at", None)),
         status=getattr(record, "status", "") or "ready",
@@ -1938,6 +1949,7 @@ def _knowledge_source_from_record(session: DbSession, record: KnowledgeSourceRec
         .where(KnowledgeEmbeddingRecord.source_id == record.id)
         .order_by(KnowledgeEmbeddingRecord.created_at.desc())
     ).first()
+    metadata = _loads(record.metadata_json, {})
     return KnowledgeSource(
         id=record.id,
         knowledge_base_id=record.knowledge_base_id,
@@ -1960,10 +1972,17 @@ def _knowledge_source_from_record(session: DbSession, record: KnowledgeSourceRec
         indexed_at=ensure_utc(record.indexed_at),
         status=record.status,
         error=record.error,
-        metadata=_loads(record.metadata_json, {}),
+        metadata=metadata,
         chunks=_source_chunk_count(session, record.id),
         embedding_model_profile_id=latest_embedding.embedding_model_profile_id if latest_embedding is not None else None,
         embedding_dimension=latest_embedding.embedding_dimension if latest_embedding is not None else None,
+        chunk_profile_requested=metadata.get("chunk_profile_requested"),
+        chunk_profile_effective=metadata.get("chunk_profile_effective"),
+        chunk_profile_confidence=metadata.get("chunk_profile_confidence"),
+        profile_source=metadata.get("profile_source"),
+        entity_level=metadata.get("entity_level"),
+        title_source=metadata.get("title_source"),
+        type_source=metadata.get("type_source"),
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )
@@ -1995,6 +2014,28 @@ def _mark_kbs_using_default_chunking_needs_reindex(session: DbSession) -> None:
     ).all()
     for kb_record in kb_records:
         _mark_kb_needs_reindex(session, kb_record.id)
+
+
+def _mark_kbs_using_default_chunk_profile_needs_reindex(session: DbSession) -> None:
+    kb_records = session.exec(
+        select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.default_chunk_profile == None)  # noqa: E711
+    ).all()
+    for kb_record in kb_records:
+        _mark_kb_needs_reindex(session, kb_record.id)
+
+
+def _mark_origin_sources_needs_reindex(session: DbSession, origin_id: str) -> None:
+    origin = session.get(KnowledgeOriginRecord, origin_id)
+    if origin is None:
+        return
+    now = utc_now()
+    session.exec(
+        update(KnowledgeSourceRecord)
+        .where(KnowledgeSourceRecord.origin_id == origin_id)
+        .where(KnowledgeSourceRecord.status == "indexed")
+        .values(status="needs_reindex", updated_at=now)
+    )
+    _mark_kb_needs_reindex(session, origin.knowledge_base_id)
 
 
 def _mark_kb_needs_reindex(session: DbSession, knowledge_base_id: str) -> None:

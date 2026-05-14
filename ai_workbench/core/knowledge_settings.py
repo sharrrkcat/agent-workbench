@@ -24,6 +24,9 @@ Return only a JSON array of strings.
 User query:
 {query}"""
 
+ChunkProfile = Literal["plain_text", "markdown_document", "markdown_collection", "markdown_auto"]
+VALID_CHUNK_PROFILES: set[str] = {"plain_text", "markdown_document", "markdown_collection", "markdown_auto"}
+
 
 class KnowledgeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -55,11 +58,19 @@ class KnowledgeSettings(BaseModel):
     rrf_k: int = Field(default=60, ge=1, le=1000)
     default_chunk_size: int = Field(default=1000, ge=100, le=10000)
     default_chunk_overlap: int = Field(default=150, ge=0, le=5000)
+    default_chunk_profile: ChunkProfile | None = None
     max_source_size_bytes: int = Field(default=2097152, ge=1024, le=104857600)
     max_chunks_per_source: int = Field(default=500, ge=1, le=100000)
     max_total_index_chars_per_source: int = Field(default=200000, ge=1000, le=10000000)
     knowledge_context_instruction: str = DEFAULT_KNOWLEDGE_CONTEXT_INSTRUCTION
     knowledge_context_snippet_template: str = DEFAULT_KNOWLEDGE_CONTEXT_SNIPPET_TEMPLATE
+
+    @field_validator("default_chunk_profile")
+    @classmethod
+    def _default_chunk_profile(cls, value: str | None) -> str | None:
+        if value is not None and value not in VALID_CHUNK_PROFILES:
+            raise ValueError("Default chunk profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.")
+        return value
 
     @field_validator("reranker_model_path", mode="before")
     @classmethod
@@ -120,11 +131,19 @@ class KnowledgeSettingsPatch(BaseModel):
     rrf_k: int | None = Field(default=None, ge=1, le=1000)
     default_chunk_size: int | None = Field(default=None, ge=100, le=10000)
     default_chunk_overlap: int | None = Field(default=None, ge=0, le=5000)
+    default_chunk_profile: ChunkProfile | None = None
     max_source_size_bytes: int | None = Field(default=None, ge=1024, le=104857600)
     max_chunks_per_source: int | None = Field(default=None, ge=1, le=100000)
     max_total_index_chars_per_source: int | None = Field(default=None, ge=1000, le=10000000)
     knowledge_context_instruction: str | None = None
     knowledge_context_snippet_template: str | None = None
+
+    @field_validator("default_chunk_profile")
+    @classmethod
+    def _default_chunk_profile(cls, value: str | None) -> str | None:
+        if value is not None and value not in VALID_CHUNK_PROFILES:
+            raise ValueError("Default chunk profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.")
+        return value
 
     @field_validator("reranker_model_path", mode="before")
     @classmethod

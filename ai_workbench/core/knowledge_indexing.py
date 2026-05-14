@@ -12,7 +12,7 @@ from uuid import uuid4
 from ai_workbench.core.attachments import read_attachment_text, resolve_attachment_uri
 from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.knowledge_models import KnowledgeModelError, knowledge_sources_path
-from ai_workbench.core.knowledge_settings import KnowledgeSettings
+from ai_workbench.core.knowledge_settings import ChunkProfile, KnowledgeSettings, VALID_CHUNK_PROFILES
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
 
 
@@ -187,10 +187,6 @@ def validate_source_limits(text: str, size_bytes: int, settings: KnowledgeSettin
         )
 
 
-ChunkProfile = Literal["plain_text", "markdown_document", "markdown_collection", "markdown_auto"]
-
-VALID_CHUNK_PROFILES: set[str] = {"plain_text", "markdown_document", "markdown_collection", "markdown_auto"}
-
 ENTITY_TYPE_BY_CATEGORY = {
     "characters": "Character",
     "people": "Person",
@@ -258,6 +254,8 @@ class ProfileDecision:
     confidence: float
     document_score: int
     collection_score: int
+    profile_source: str
+    entity_level: int | None = None
 
 
 def chunk_source_text(
@@ -267,19 +265,29 @@ def chunk_source_text(
     knowledge_base: KnowledgeBase,
     source_title: str = "",
     source_uri: str = "",
+    origin_default_chunk_profile: str | None = None,
 ) -> list[ChunkDraft]:
     chunk_size = knowledge_base.chunk_size_override or settings.default_chunk_size
     chunk_overlap = knowledge_base.chunk_overlap_override if knowledge_base.chunk_overlap_override is not None else settings.default_chunk_overlap
     if chunk_overlap >= chunk_size:
         raise KnowledgeIndexError("KNOWLEDGE_INVALID_CHUNKING", "Chunk overlap must be smaller than chunk size.")
     parse = parse_markdown(text)
-    requested = _requested_chunk_profile(parse, source_title=source_title, source_uri=source_uri, text=text)
+    requested, profile_source = _requested_chunk_profile(
+        parse,
+        source_title=source_title,
+        source_uri=source_uri,
+        text=text,
+        origin_default_chunk_profile=origin_default_chunk_profile,
+        knowledge_base_default_chunk_profile=knowledge_base.default_chunk_profile,
+        settings_default_chunk_profile=settings.default_chunk_profile,
+    )
     if requested == "plain_text":
-        return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings)
+        return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings, profile_source=profile_source)
     chunks = _markdown_chunks(
         text,
         parse=parse,
         requested_profile=requested,
+        profile_source=profile_source,
         source_title=source_title,
         source_uri=source_uri,
         chunk_size=chunk_size,
@@ -288,10 +296,10 @@ def chunk_source_text(
     )
     if chunks:
         return chunks
-    return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings)
+    return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings, profile_source="fallback")
 
 
-def _plain_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int, settings: KnowledgeSettings) -> list[ChunkDraft]:
+def _plain_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int, settings: KnowledgeSettings, profile_source: str = "fallback") -> list[ChunkDraft]:
     chunks: list[ChunkDraft] = []
     start = 0
     text_length = len(text)
@@ -311,6 +319,7 @@ def _plain_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int, settin
                     "chunk_profile_requested": "plain_text",
                     "chunk_profile_effective": "plain_text",
                     "chunk_profile_confidence": 1.0,
+                    "profile_source": profile_source,
                 },
             )
         )
@@ -416,17 +425,27 @@ def _markdown_chunks(
     *,
     parse: MarkdownParseResult,
     requested_profile: str,
+    profile_source: str,
     source_title: str,
     source_uri: str,
     chunk_size: int,
     chunk_overlap: int,
     settings: KnowledgeSettings,
 ) -> list[ChunkDraft]:
-    decision = _profile_decision(requested_profile, parse=parse, source_title=source_title, source_uri=source_uri)
+    decision = _profile_decision(requested_profile, parse=parse, source_title=source_title, source_uri=source_uri, profile_source=profile_source)
     document_title = _document_title(parse=parse, source_title=source_title)
     source_path = _source_path(source_title=source_title, source_uri=source_uri)
     if decision.effective == "markdown_collection":
         entity_level = _collection_entity_level(parse.headings)
+        decision = ProfileDecision(
+            requested=decision.requested,
+            effective=decision.effective,
+            confidence=decision.confidence,
+            document_score=decision.document_score,
+            collection_score=decision.collection_score,
+            profile_source=decision.profile_source,
+            entity_level=entity_level,
+        )
         sections = _collection_sections(text, parse=parse, entity_level=entity_level)
     else:
         sections = _document_sections(text, parse=parse)
@@ -460,7 +479,16 @@ def _markdown_chunks(
     return drafts
 
 
-def _requested_chunk_profile(parse: MarkdownParseResult, *, source_title: str, source_uri: str, text: str) -> str:
+def _requested_chunk_profile(
+    parse: MarkdownParseResult,
+    *,
+    source_title: str,
+    source_uri: str,
+    text: str,
+    origin_default_chunk_profile: str | None,
+    knowledge_base_default_chunk_profile: str | None,
+    settings_default_chunk_profile: str | None,
+) -> tuple[str, str]:
     override = str(parse.frontmatter.get("chunk_profile") or "").strip()
     if override:
         if override not in VALID_CHUNK_PROFILES:
@@ -469,10 +497,28 @@ def _requested_chunk_profile(parse: MarkdownParseResult, *, source_title: str, s
                 "Frontmatter chunk_profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.",
                 {"chunk_profile": override},
             )
-        return override
+        return override, "frontmatter"
+    if origin_default_chunk_profile:
+        _validate_profile(origin_default_chunk_profile, "Origin default chunk profile")
+        return origin_default_chunk_profile, "origin_default"
+    if knowledge_base_default_chunk_profile:
+        _validate_profile(knowledge_base_default_chunk_profile, "Knowledge base default chunk profile")
+        return knowledge_base_default_chunk_profile, "kb_default"
+    if settings_default_chunk_profile:
+        _validate_profile(settings_default_chunk_profile, "Knowledge default chunk profile")
+        return settings_default_chunk_profile, "kb_default"
     if _looks_like_markdown(source_title=source_title, source_uri=source_uri, text=text, parse=parse):
-        return "markdown_auto"
-    return "plain_text"
+        return "markdown_auto", "auto_detector"
+    return "markdown_document", "fallback"
+
+
+def _validate_profile(value: str, label: str) -> None:
+    if value not in VALID_CHUNK_PROFILES:
+        raise KnowledgeIndexError(
+            "KNOWLEDGE_INVALID_CHUNK_PROFILE",
+            f"{label} must be plain_text, markdown_document, markdown_collection, or markdown_auto.",
+            {"chunk_profile": value},
+        )
 
 
 def _looks_like_markdown(*, source_title: str, source_uri: str, text: str, parse: MarkdownParseResult) -> bool:
@@ -487,16 +533,16 @@ def _looks_like_markdown(*, source_title: str, source_uri: str, text: str, parse
     return bool(re.search(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+\S", text))
 
 
-def _profile_decision(requested_profile: str, *, parse: MarkdownParseResult, source_title: str, source_uri: str) -> ProfileDecision:
+def _profile_decision(requested_profile: str, *, parse: MarkdownParseResult, source_title: str, source_uri: str, profile_source: str) -> ProfileDecision:
     if requested_profile in {"plain_text", "markdown_document", "markdown_collection"}:
-        return ProfileDecision(requested=requested_profile, effective=requested_profile, confidence=1.0, document_score=0, collection_score=0)
+        return ProfileDecision(requested=requested_profile, effective=requested_profile, confidence=1.0, document_score=0, collection_score=0, profile_source=profile_source)
     document_score, collection_score = _profile_scores(parse=parse, source_title=source_title, source_uri=source_uri)
     diff = collection_score - document_score
     if collection_score >= 3 and diff >= 2:
         confidence = min(0.95, 0.55 + (diff * 0.1))
-        return ProfileDecision("markdown_auto", "markdown_collection", confidence, document_score, collection_score)
+        return ProfileDecision("markdown_auto", "markdown_collection", confidence, document_score, collection_score, profile_source)
     confidence = 0.55 if abs(diff) <= 1 else min(0.9, 0.55 + (abs(diff) * 0.08))
-    return ProfileDecision("markdown_auto", "markdown_document", confidence, document_score, collection_score)
+    return ProfileDecision("markdown_auto", "markdown_document", confidence, document_score, collection_score, profile_source)
 
 
 def _profile_scores(*, parse: MarkdownParseResult, source_title: str, source_uri: str) -> tuple[int, int]:
@@ -653,6 +699,8 @@ def _section_metadata(
         "chunk_profile_requested": decision.requested,
         "chunk_profile_effective": decision.effective,
         "chunk_profile_confidence": round(decision.confidence, 3),
+        "profile_source": decision.profile_source,
+        "entity_level": decision.entity_level,
         "title_source": title_source,
         "type_source": type_source,
         "path": source_path or source_title,

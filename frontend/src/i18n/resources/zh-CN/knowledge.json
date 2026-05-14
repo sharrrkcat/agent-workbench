@@ -48,6 +48,8 @@
     "switchToAuto": "切换到 Auto",
     "scanNow": "Scan now",
     "importReindex": "Import / Reindex",
+    "importNewFiles": "导入新文件",
+    "reindexChangedFiles": "重建已变更文件索引",
     "createOrigin": "Create origin"
   },
   "labels": {
@@ -114,8 +116,26 @@
     "rerankerFolders": "Reranker 文件夹",
     "originName": "Origin name",
     "originSlug": "Origin slug",
+    "originDefaultChunkProfile": "Origin 默认分块配置",
     "folderPath": "Folder path",
-    "fileName": "File name"
+    "fileName": "File name",
+    "defaultChunkProfile": "默认分块配置",
+    "profile": "分块配置",
+    "effectiveProfile": "实际配置",
+    "profileSource": "配置来源",
+    "confidence": "置信度",
+    "entityLevel": "实体层级",
+    "titleSource": "标题来源",
+    "typeSource": "类型来源",
+    "lastScan": "上次扫描",
+    "newFiles": "新文件",
+    "changedFiles": "已变更文件",
+    "missingFiles": "缺失文件",
+    "chunkNumber": "Chunk {{index}}",
+    "headingLevel": "H{{level}}",
+    "autoToProfile": "Auto → {{profile}}",
+    "profileReason": "{{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
+    "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}"
   },
   "empty": {
     "loadingSettings": "正在加载知识库设置。",
@@ -248,7 +268,37 @@
   },
   "help": {
     "aliases": "Use English commas to separate aliases used by Intent Routing.",
-    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index."
+    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index.",
+    "manualOriginWorkflow": "扫描只检查文件变化。重建索引会更新 chunks 和 embeddings。",
+    "chunkProfileDefaults": "修改分块配置默认值只会将受影响来源标记为建议重建索引，不会自动重建。"
+  },
+  "placeholders": {
+    "useKnowledgeDefault": "使用 Knowledge 默认值",
+    "useKnowledgeBaseDefault": "使用知识库默认值"
+  },
+  "chunkProfiles": {
+    "plain_text": "纯文本",
+    "markdown_document": "Markdown 文档",
+    "markdown_collection": "Markdown 集合",
+    "markdown_auto": "Markdown 自动"
+  },
+  "profileSources": {
+    "frontmatter": "Frontmatter",
+    "source_override": "来源覆盖",
+    "origin_default": "Origin 默认值",
+    "kb_default": "知识库默认值",
+    "auto_detector": "自动检测",
+    "fallback": "Fallback",
+    "heading": "标题",
+    "h1": "H1",
+    "filename": "文件名",
+    "path": "路径",
+    "parent_heading": "父级标题"
+  },
+  "confidence": {
+    "high": "高",
+    "medium": "中",
+    "low": "低"
   },
   "errors": {
     "copyCommandFailed": "复制命令失败。请选中文本后手动复制。"

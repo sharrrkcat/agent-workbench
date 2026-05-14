@@ -183,6 +183,7 @@ class KnowledgeSettingsRecord(SQLModel, table=True):
     rrf_k: int = 60
     default_chunk_size: int = 1000
     default_chunk_overlap: int = 150
+    default_chunk_profile: Optional[str] = None
     max_source_size_bytes: int = 2097152
     max_chunks_per_source: int = 500
     max_total_index_chars_per_source: int = 200000
@@ -293,6 +294,7 @@ class KnowledgeBaseRecord(SQLModel, table=True):
     keyword_candidate_k_override: Optional[int] = None
     final_top_k_override: Optional[int] = None
     max_context_chars_override: Optional[int] = None
+    default_chunk_profile: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -308,6 +310,7 @@ class KnowledgeOriginRecord(SQLModel, table=True):
     root_path: str
     include_globs: str = "**/*"
     exclude_globs: str = ""
+    default_chunk_profile: Optional[str] = None
     last_scan_at: Optional[datetime] = None
     last_import_at: Optional[datetime] = None
     status: str = Field(default="ready", index=True)

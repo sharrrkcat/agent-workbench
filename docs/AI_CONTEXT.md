@@ -487,6 +487,8 @@ Likely source:
 - `frontend/src/components/settings/SettingsObjectList.tsx`
 - `frontend/src/components/settings/SettingsDetailPanel.tsx`
 - `frontend/src/i18n/resources/*/knowledge.json` when changing user-visible Knowledge UI text
+- `ai_workbench/core/knowledge_origins.py`, `ai_workbench/db/models.py`, and `ai_workbench/db/stores.py` when changing managed origins, chunk profile defaults, compact source metadata, or stale/reindex status
+- `frontend/src/types.ts` and `frontend/src/api/client.ts` when Knowledge settings, origin, source, or chunk API response fields change
 
 Tests:
 - `uv run pytest tests/test_knowledge_settings.py tests/test_knowledge_models.py`
@@ -502,6 +504,8 @@ Avoid unless explicitly in scope:
 - The Knowledge Defaults Download tab generates copyable `uv run python scripts/download_knowledge_model.py --type ... --model-id ... --target ...` commands only. Presets should stay grouped as recommended/advanced embeddings and recommended/advanced rerankers, with the same model IDs and target folder names documented in `README.md`.
 - Do not recommend `uv pip install ".[knowledge]"` or project-extra Knowledge install commands until `pyproject.toml` packaging is fixed for this flat-layout repository. Prefer direct dependency install commands such as `uv pip install sentence-transformers torch transformers` plus CUDA-specific PyTorch commands confirmed through the PyTorch install selector.
 - Managed Knowledge origins are manual-only directories under `data/knowledge/origins/<origin_slug>/`; scan detects file status only, while import/reindex performs indexing. Do not add automatic sync, file watching, scheduled scans, or chat-time reindex behavior.
+- Chunk profile work must preserve `chunk_title` semantics and avoid adding `semantic_title`. Profile precedence is frontmatter, source override if the source schema explicitly supports it, origin default, Knowledge Base default, Knowledge Defaults default, auto detector, then `markdown_document` fallback. Changing profile defaults should mark affected sources stale/reindex recommended only; do not rebuild automatically.
+- Stale origin/source UI work should keep scan/import/reindex manual. Do not add automatic sync, file watching, scheduled scans, background reindex, chat-time scan/reindex, or roadmap/TODO wording that implies those features.
 
 UI/i18n rule:
 - Any new or changed user-visible frontend text must update every supported locale file in `frontend/src/i18n/resources`. Do not leave new Knowledge Defaults, Download, or Install text hardcoded in JSX.

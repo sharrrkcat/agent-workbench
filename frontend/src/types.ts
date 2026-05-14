@@ -366,6 +366,7 @@ export type KnowledgeSettings = {
   rrf_k: number;
   default_chunk_size: number;
   default_chunk_overlap: number;
+  default_chunk_profile?: 'plain_text' | 'markdown_document' | 'markdown_collection' | 'markdown_auto' | null;
   max_source_size_bytes: number;
   max_chunks_per_source: number;
   max_total_index_chars_per_source: number;
@@ -418,6 +419,7 @@ export type KnowledgeBase = {
   keyword_candidate_k_override?: number | null;
   final_top_k_override?: number | null;
   max_context_chars_override?: number | null;
+  default_chunk_profile?: 'plain_text' | 'markdown_document' | 'markdown_collection' | 'markdown_auto' | null;
   created_at: string;
   updated_at: string;
 };
@@ -436,6 +438,7 @@ export type KnowledgeBaseInput = Partial<
     | 'keyword_candidate_k_override'
     | 'final_top_k_override'
     | 'max_context_chars_override'
+    | 'default_chunk_profile'
   >
 >;
 
@@ -475,6 +478,13 @@ export type KnowledgeSource = {
   chunks: number;
   embedding_model_profile_id?: string | null;
   embedding_dimension?: number | null;
+  chunk_profile_requested?: string | null;
+  chunk_profile_effective?: string | null;
+  chunk_profile_confidence?: number | null;
+  profile_source?: string | null;
+  entity_level?: number | null;
+  title_source?: string | null;
+  type_source?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -487,6 +497,7 @@ export type KnowledgeOrigin = {
   root_path: string;
   include_globs: string;
   exclude_globs: string;
+  default_chunk_profile?: 'plain_text' | 'markdown_document' | 'markdown_collection' | 'markdown_auto' | null;
   last_scan_at?: string | null;
   last_import_at?: string | null;
   status: string;
@@ -496,7 +507,7 @@ export type KnowledgeOrigin = {
   updated_at: string;
 };
 
-export type KnowledgeOriginInput = Partial<Pick<KnowledgeOrigin, 'name' | 'slug' | 'include_globs' | 'exclude_globs' | 'status' | 'metadata'>>;
+export type KnowledgeOriginInput = Partial<Pick<KnowledgeOrigin, 'name' | 'slug' | 'include_globs' | 'exclude_globs' | 'default_chunk_profile' | 'status' | 'metadata'>>;
 
 export type KnowledgeOriginScanSummary = {
   origin_id: string;
@@ -544,6 +555,7 @@ export type KnowledgeSourceChunk = {
   content_preview: string;
   truncated?: boolean;
   embedding_dimension?: number | null;
+  metadata: Record<string, unknown>;
 };
 
 export type KnowledgeSourceChunksResponse = {
@@ -601,6 +613,7 @@ export type KnowledgeChunk = {
   heading_path: string;
   content: string;
   chunk_index: number;
+  metadata?: Record<string, unknown>;
 };
 
 export type WorldbookSettings = {

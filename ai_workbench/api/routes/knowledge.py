@@ -498,6 +498,7 @@ def create_knowledge_origin(knowledge_base_id: str, payload: KnowledgeOriginCrea
             root_path=root_path,
             include_globs=payload.include_globs or "**/*",
             exclude_globs=payload.exclude_globs or "",
+            default_chunk_profile=payload.default_chunk_profile,
         )
         return state.knowledge.create_origin(origin).model_dump()
     except ValidationError as exc:
@@ -794,7 +795,9 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
             knowledge_base=knowledge_base,
             source_title=source.title,
             source_uri=source.uri,
+            origin_default_chunk_profile=_origin_default_chunk_profile(state, source_text.origin_id),
         )
+        source.metadata = _source_profile_metadata(source.metadata, chunks)
         try:
             embedding_result = embed_chunks(
                 backend=state.knowledge_model_backend,
@@ -906,6 +909,30 @@ def _source_from_origin_record(record: KnowledgeSourceRecord) -> KnowledgeSource
         status="failed",
         metadata=_loads_json(record.metadata_json, {}),
     )
+
+
+def _origin_default_chunk_profile(state: RuntimeState, origin_id: str | None) -> str | None:
+    if not origin_id:
+        return None
+    try:
+        return state.knowledge.get_origin(origin_id).default_chunk_profile
+    except KeyError:
+        return None
+
+
+def _source_profile_metadata(metadata: dict, chunks: list) -> dict:
+    first = next((chunk.metadata for chunk in chunks if getattr(chunk, "metadata", None)), {})
+    compact_keys = [
+        "chunk_profile_requested",
+        "chunk_profile_effective",
+        "chunk_profile_confidence",
+        "profile_source",
+        "entity_level",
+        "title_source",
+        "type_source",
+    ]
+    compact = {key: first.get(key) for key in compact_keys if first.get(key) is not None}
+    return {**(metadata or {}), **compact}
 
 
 def _loads_json(value: str, fallback):
