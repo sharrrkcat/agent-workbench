@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from ai_workbench.api.main import create_app
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.settings import AppSettings
-from ai_workbench.core.utility_llm import UtilityLLMService, extract_json_object, normalize_utility_model_path, scan_utility_models, validate_intent_prediction
+from ai_workbench.core.utility_llm import UtilityLLMError, UtilityGeneration, UtilityLLMService, extract_json_object, normalize_utility_model_path, scan_utility_models, validate_intent_prediction
 from tests.test_session_titles import set_chat_title_profile
 from tests.test_prompt_agent_execution import FakeLLMRuntime, PromptRuntimeFixture, run
 from tests.test_intent_routing import enable_semantic_router
@@ -361,6 +361,52 @@ def test_json_extractor_validation_clamps_and_filters_slots() -> None:
     assert data["confidence"] == 1.0
     assert data["kb_hint"] == "KB"
     assert data["query"] == "Q"
+
+
+def test_json_extractor_accepts_fenced_and_balanced_json_with_extra_fields() -> None:
+    fenced = extract_json_object('Here:\n```json\n{"intent":"pet_command","domain":"workbench_pet","action":"wake","extra":{"nested":true}}\n```\nDone')
+    prefixed = extract_json_object('Utility says {"intent":"pet_command","domain":"workbench_pet","action":"wake"} trailing {ignored}')
+
+    assert fenced["intent"] == "pet_command"
+    assert fenced["extra"]["nested"] is True
+    assert prefixed["action"] == "wake"
+
+
+def test_utility_extract_slots_fail_for_missing_required_or_invalid_enum() -> None:
+    async def generate_missing(prompt, settings, max_new_tokens=128):
+        return UtilityGeneration(text='{"intent":"pet_command","domain":"workbench_pet"}', model_path="utility_llms/test", device="cpu", backend="transformers")
+
+    async def generate_invalid(prompt, settings, max_new_tokens=128):
+        return UtilityGeneration(text='{"intent":"pet_command","domain":"workbench_pet","action":"dance"}', model_path="utility_llms/test", device="cpu", backend="transformers")
+
+    settings = AppSettings(intent_routing_utility_llm_model_path="utility_llms/test")
+    context = {"top_route_specs": [{"intent": "pet_command", "slot_schema": {"required": ["intent", "domain", "action"]}}]}
+    service = UtilityLLMService()
+
+    service.generate = generate_missing
+    try:
+        run(service.extract_intent_json("wake pet", settings, context=context))
+    except UtilityLLMError as exc:
+        assert exc.code == "utility_slots_failed"
+    else:
+        raise AssertionError("missing required pet action should fail slots validation")
+
+    service.generate = generate_invalid
+    try:
+        run(service.extract_intent_json("wake pet", settings, context=context))
+    except UtilityLLMError as exc:
+        assert exc.code == "utility_slots_failed"
+    else:
+        raise AssertionError("invalid pet action enum should fail slots validation")
+
+
+def test_json_extractor_malformed_json_still_fails() -> None:
+    try:
+        extract_json_object('prefix {"intent":"pet_command"')
+    except Exception:
+        pass
+    else:
+        raise AssertionError("malformed JSON should fail")
 
 
 def test_title_generation_prefers_utility_llm_when_available() -> None:

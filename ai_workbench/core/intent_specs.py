@@ -183,6 +183,8 @@ PET_COMMAND_SLOT_SCHEMA = SlotSchema(
         SlotField("action", required=True, enum_values=("status", "wake", "tuck", "select", "reload", "unknown"), description="Allowlisted pet action."),
         SlotField("target_pet_hint", required=False, max_chars=120, description="Optional target pet name/id hint."),
         SlotField("source_pet_hint", required=False, max_chars=120, description="Optional current/source pet hint."),
+        SlotField("target_pet_explicit", type="boolean", required=False, max_chars=None, description="Whether the target pet was explicitly named."),
+        SlotField("source_pet_explicit", type="boolean", required=False, max_chars=None, description="Whether the source pet was explicitly named."),
     ),
 )
 
@@ -306,7 +308,7 @@ def get_builtin_action_specs() -> tuple[ActionSpec, ...]:
         "validator_id": "pet_command",
         "executor_id": "pet_command",
         "required_slots": ("domain", "action"),
-        "optional_slots": ("target_pet_hint", "source_pet_hint"),
+        "optional_slots": ("target_pet_hint", "source_pet_hint", "target_pet_explicit", "source_pet_explicit"),
         "safety_notes": ("Workbench desktop pet only.",),
     }
     return (

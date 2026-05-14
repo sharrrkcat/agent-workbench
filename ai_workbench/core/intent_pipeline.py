@@ -169,7 +169,7 @@ class PetCommandValidator:
         route_spec_id = str(decision.get("route_spec_id") or decision.get("predicted_intent") or "")
         if decision.get("predicted_intent") != "pet_command" or route_spec_id != "pet_command":
             return _failed("utility_semantic_intent_conflict", slots, warnings)
-        if not _semantic_thresholds_pass(decision):
+        if not _semantic_score_pass(decision):
             return _failed(str(decision.get("not_executed_reason") or "semantic_confidence_too_low"), slots, warnings)
         if slots.get("intent") != "pet_command":
             return _failed("utility_semantic_intent_conflict", slots, warnings)
@@ -181,9 +181,7 @@ class PetCommandValidator:
             return _failed("pet_action_unrecognized", slots, _ensure_warning(warnings, "pet_action_unrecognized"))
 
         semantic_action = _semantic_action(decision)
-        if semantic_action and semantic_action != action:
-            return _failed("utility_semantic_action_conflict", slots, _ensure_warning(warnings, "utility_semantic_action_conflict"))
-        action_match_source = "semantic" if semantic_action else "utility_only"
+        action_match_source = "semantic" if semantic_action == action else "utility_slots"
         pets_state = _load_pet_candidates(context.runtime_registry, context.capability_config_store)
         if pets_state.get("warning"):
             reason = str(pets_state["warning"])
@@ -191,34 +189,25 @@ class PetCommandValidator:
 
         target_hint = str(slots.get("target_pet_hint") or "").strip()
         source_hint = str(slots.get("source_pet_hint") or "").strip()
-        default_target = pets_state.get("default_pet") or {}
-        target = _resolve_pet_hint(target_hint, pets_state) if target_hint else default_target
+        target = _resolve_pet_hint(target_hint, pets_state) if target_hint and action in {"wake", "select"} else {}
         source = _resolve_pet_hint(source_hint, pets_state) if source_hint else {}
         reason = None
-        if target_hint and target.get("reason"):
+        target_ignored = bool(target_hint and action in {"status", "tuck", "reload"})
+        if action in {"wake", "select"} and target_hint and target.get("reason"):
             reason = str(target["reason"])
         elif action == "select" and not target_hint:
             reason = "select_target_missing"
-        elif source_hint and source.get("reason"):
-            source_reason = str(source["reason"])
-            if source_reason == "pet_candidate_not_found":
-                reason = "source_pet_not_found"
-            elif source_reason == "ambiguous_pet_candidate":
-                reason = "ambiguous_source_pet_candidate"
-            else:
-                reason = source_reason
-        elif source.get("pet") and default_target.get("pet") and source["pet"]["id"] != default_target["pet"]["id"]:
-            reason = "source_pet_mismatch"
-        elif action in {"wake", "tuck", "reload"} and target_hint and target.get("pet") and default_target.get("pet") and target["pet"]["id"] != default_target["pet"]["id"]:
-            reason = "target_pet_not_current"
-        elif not target.get("pet") and action != "status":
+        elif action == "select" and not target.get("pet"):
             reason = "pet_candidate_not_found"
         if reason is not None:
             return _pet_failed(reason, action, target, source, slots, warnings, target_hint, source_hint)
+        if target_ignored:
+            warnings = _ensure_warning(warnings, "pet_target_ignored_for_action")
 
         target_pet = target.get("pet") if isinstance(target, dict) else None
         source_pet = source.get("pet") if isinstance(source, dict) else None
-        generated_command = _generated_pet_command(action, target_pet.get("id") if action == "select" and isinstance(target_pet, dict) else None)
+        command_target_pet_id = target_pet.get("id") if action in {"wake", "select"} and isinstance(target_pet, dict) else None
+        generated_command = _generated_pet_command(action, command_target_pet_id)
         normalized = {
             **slots,
             "domain": domain,
@@ -229,6 +218,7 @@ class PetCommandValidator:
             "source_pet_id": source_pet.get("id") if isinstance(source_pet, dict) else None,
             "generated_command": generated_command,
             "action_match_source": action_match_source,
+            "target_ignored_for_action": target_ignored,
         }
         plan = ExecutorPlan(
             route_action="pet_command",
@@ -240,6 +230,7 @@ class PetCommandValidator:
                 "target_pet_id": normalized["target_pet_id"],
                 "source_pet_id": normalized["source_pet_id"],
                 "pet_action": action,
+                "target_ignored_for_action": target_ignored,
             },
         )
         return ValidatorResult(ok=True, warnings=warnings, normalized_slots=normalized, executor_plan=plan)
@@ -275,6 +266,15 @@ def _semantic_thresholds_pass(decision: dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+def _semantic_score_pass(decision: dict[str, Any]) -> bool:
+    thresholds = decision.get("semantic_thresholds_used") if isinstance(decision.get("semantic_thresholds_used"), dict) else {}
+    score = decision.get("semantic_score", decision.get("confidence"))
+    try:
+        return score is None or float(score) >= float(thresholds.get("intent_min_score", 0.0))
+    except (TypeError, ValueError):
+        return False
 
 
 def _semantic_action(decision: dict[str, Any]) -> str | None:
@@ -460,7 +460,7 @@ def _resolve_pet_hint(hint: Any, pets_state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _generated_pet_command(action: str, target_pet_id: str | None) -> str:
-    if action == "select" and target_pet_id:
+    if action in {"wake", "select"} and target_pet_id:
         return f"/pet select {target_pet_id}"
     if action == "status":
         return "/pet status"

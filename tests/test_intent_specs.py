@@ -119,6 +119,50 @@ def test_pet_pipeline_select_builds_generated_command() -> None:
     assert validation.executor_plan.generated_command == "/pet select bd_1"
 
 
+def test_pet_pipeline_wake_target_selects_single_pet() -> None:
+    context = IntentPipelineContext(mode="auto", runtime_registry=_PetRuntimeRegistry(), auto_mode=True)
+    slots = {"intent": "pet_command", "domain": "workbench_pet", "action": "wake", "target_pet_hint": "BD-1"}
+
+    validation = validate_intent(_base_decision("pet_command"), slots, context)
+
+    assert validation.ok is True
+    assert validation.normalized_slots["target_pet_id"] == "bd_1"
+    assert validation.executor_plan.generated_command == "/pet select bd_1"
+
+
+def test_pet_pipeline_tuck_ignores_target_hint() -> None:
+    context = IntentPipelineContext(mode="auto", runtime_registry=_PetRuntimeRegistry(), auto_mode=True)
+    slots = {"intent": "pet_command", "domain": "workbench_pet", "action": "tuck", "target_pet_hint": "BD-1"}
+
+    validation = validate_intent(_base_decision("pet_command"), slots, context)
+
+    assert validation.ok is True
+    assert validation.normalized_slots["generated_command"] == "/pet tuck"
+    assert validation.normalized_slots["target_ignored_for_action"] is True
+    assert "pet_target_ignored_for_action" in validation.warnings
+
+
+def test_pet_pipeline_source_hint_never_blocks_select() -> None:
+    context = IntentPipelineContext(mode="auto", runtime_registry=_PetRuntimeRegistry(), auto_mode=True)
+    slots = {"intent": "pet_command", "domain": "workbench_pet", "action": "select", "source_pet_hint": "Unknown", "target_pet_hint": "BD-1"}
+
+    validation = validate_intent(_base_decision("pet_command"), slots, context)
+
+    assert validation.ok is True
+    assert validation.executor_plan.generated_command == "/pet select bd_1"
+
+
+def test_pet_pipeline_low_semantic_margin_warns_without_blocking() -> None:
+    context = IntentPipelineContext(mode="auto", runtime_registry=_PetRuntimeRegistry(), auto_mode=True)
+    decision = {**_base_decision("pet_command"), "semantic_margin": 0.0}
+    slots = {"intent": "pet_command", "domain": "workbench_pet", "action": "select", "target_pet_hint": "BD-1"}
+
+    validation = validate_intent(decision, slots, context)
+
+    assert validation.ok is True
+    assert validation.executor_plan.generated_command == "/pet select bd_1"
+
+
 def test_pet_pipeline_rejects_non_workbench_domain() -> None:
     context = IntentPipelineContext(mode="auto", runtime_registry=_PetRuntimeRegistry(), auto_mode=True)
     slots = {"intent": "pet_command", "domain": "real_pet", "action": "status"}
@@ -129,15 +173,16 @@ def test_pet_pipeline_rejects_non_workbench_domain() -> None:
     assert validation.not_executed_reason == "not_workbench_pet_context"
 
 
-def test_pet_pipeline_rejects_explicit_semantic_action_conflict() -> None:
+def test_pet_pipeline_uses_utility_action_over_semantic_action_candidate() -> None:
     context = IntentPipelineContext(mode="auto", runtime_registry=_PetRuntimeRegistry(), auto_mode=True)
     decision = {**_base_decision("pet_command"), "action_candidate": {"action_spec_id": "pet.wake", "explicit": True}}
     slots = {"intent": "pet_command", "domain": "workbench_pet", "action": "tuck"}
 
     validation = validate_intent(decision, slots, context)
 
-    assert validation.ok is False
-    assert validation.not_executed_reason == "utility_semantic_action_conflict"
+    assert validation.ok is True
+    assert validation.normalized_slots["generated_command"] == "/pet tuck"
+    assert validation.normalized_slots["action_match_source"] == "utility_slots"
 
 
 def _base_decision(intent: str) -> dict:

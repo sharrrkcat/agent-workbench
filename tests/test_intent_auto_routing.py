@@ -470,11 +470,11 @@ def test_auto_pet_command_routes_only_to_pet_command() -> None:
     assert intent["predicted_intent"] == "pet_command"
     assert intent["pet_action"] == "wake"
     assert intent["target_pet_id"] == "jedi_cal"
-    assert intent["generated_command"] == "/pet wake"
+    assert intent["generated_command"] == "/pet select jedi_cal"
     assert intent["route_action"] == "pet_command"
     assert intent["auto_executable"] is True
     assert intent["executed"] is True
-    assert pet_runtime.command_calls == ["wake"]
+    assert pet_runtime.command_calls == ["select jedi_cal"]
 
 
 def test_auto_pet_command_uses_utility_llm_model_profile_slots() -> None:
@@ -503,8 +503,8 @@ def test_auto_pet_command_uses_utility_llm_model_profile_slots() -> None:
     intent = command_run.metadata["intent_routing"]
     assert command_run.kind == "command"
     assert intent["route_action"] == "pet_command"
-    assert intent["generated_command"] == "/pet wake"
-    assert pet_runtime.command_calls == ["wake"]
+    assert intent["generated_command"] == "/pet select jedi_cal"
+    assert pet_runtime.command_calls == ["select jedi_cal"]
     assert llm.calls[0]["model_config"]["model"] == "utility-model"
 
 
@@ -569,8 +569,8 @@ def test_auto_pet_command_wake_accepts_summon_phrasing() -> None:
     assert intent["predicted_intent"] == "pet_command"
     assert intent["pet_action"] == "wake"
     assert intent["target_pet_id"] == "jedi_cal"
-    assert intent["generated_command"] == "/pet wake"
-    assert pet_runtime.command_calls == ["wake"]
+    assert intent["generated_command"] == "/pet select jedi_cal"
+    assert pet_runtime.command_calls == ["select jedi_cal"]
 
 
 def test_auto_pet_command_wake_accepts_bring_out_phrasing() -> None:
@@ -588,7 +588,8 @@ def test_auto_pet_command_wake_accepts_bring_out_phrasing() -> None:
     assert command_run.kind == "command"
     assert intent["pet_action"] == "wake"
     assert intent["target_pet_id"] == "jedi_cal"
-    assert pet_runtime.command_calls == ["wake"]
+    assert intent["generated_command"] == "/pet select jedi_cal"
+    assert pet_runtime.command_calls == ["select jedi_cal"]
 
 
 def test_shadow_pet_command_records_metadata_without_executing() -> None:
@@ -608,7 +609,9 @@ def test_shadow_pet_command_records_metadata_without_executing() -> None:
     assert prompt_run.target_id == "chat"
     assert intent["predicted_intent"] == "pet_command"
     assert intent["pet_action"] == "tuck"
-    assert intent["target_pet_id"] == "jedi_cal"
+    assert intent["target_pet_id"] is None
+    assert intent["target_ignored_for_action"] is True
+    assert "pet_target_ignored_for_action" in intent["warnings"]
     assert intent["executed"] is False
     assert pet_runtime.command_calls == []
 
@@ -678,7 +681,7 @@ def test_pet_names_without_pet_operation_do_not_execute() -> None:
     assert intent["route_action"] != "pet_command"
 
 
-def test_pet_wake_target_not_current_does_not_select_or_execute() -> None:
+def test_pet_wake_target_not_current_selects_target_pet() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     pet_runtime = FakePetRuntime(default_pet_id="bd_1")
     fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
@@ -688,13 +691,67 @@ def test_pet_wake_target_not_current_does_not_select_or_execute() -> None:
 
     result = run(fixture.runtime.handle_input(session, "唤醒 Cal"))
 
-    prompt_run = fixture.runs.get_run(result.run_id)
-    intent = prompt_run.metadata["intent_routing"]
-    assert prompt_run.kind == "agent"
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
     assert intent["predicted_intent"] == "pet_command"
     assert intent["target_pet_id"] == "jedi_cal"
-    assert intent["not_executed_reason"] == "target_pet_not_current"
-    assert pet_runtime.command_calls == []
+    assert intent["generated_command"] == "/pet select jedi_cal"
+    assert pet_runtime.command_calls == ["select jedi_cal"]
+
+
+def test_pet_select_low_semantic_margin_executes_with_warning() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime(default_pet_id="bd_1")
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    fixture.agent_runner.semantic_router = type(
+        "LowMarginPetRouter",
+        (),
+        {
+            "decide": lambda self, *args, **kwargs: {
+                "predicted_intent": "pet_command",
+                "confidence": 0.9,
+                "semantic_score": 0.9,
+                "semantic_margin": 0.0,
+                "semantic_thresholds_used": {"intent_min_score": 0.5, "intent_min_margin": 0.03},
+                "route_action": "metadata_only",
+                "auto_executable": True,
+                "warnings": [],
+            }
+        },
+    )()
+    enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "select", "target_pet_hint": "Cal", "source_pet_hint": "Old Pet"})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "select pet Cal"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert intent["generated_command"] == "/pet select jedi_cal"
+    assert intent["would_execute"] is True
+    assert "semantic_margin_too_low" in intent["warnings"]
+    assert pet_runtime.command_calls == ["select jedi_cal"]
+
+
+def test_pet_reload_ignores_target_hint_and_executes_current_command() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    pet_runtime = FakePetRuntime()
+    fixture.agent_runner.runtime_registry.replace("pet", pet_runtime)
+    enable_auto(fixture)
+    enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "reload", "target_pet_hint": "Cal"})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "reload pet Cal"))
+
+    command_run = fixture.runs.get_run(result.run_id)
+    intent = command_run.metadata["intent_routing"]
+    assert command_run.kind == "command"
+    assert intent["generated_command"] == "/pet reload"
+    assert intent["target_ignored_for_action"] is True
+    assert "pet_target_ignored_for_action" in intent["warnings"]
+    assert pet_runtime.command_calls == ["reload"]
 
 
 def test_explicit_pet_command_bypasses_intent_routing() -> None:

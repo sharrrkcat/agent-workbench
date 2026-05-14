@@ -602,7 +602,7 @@ class UtilityLLMService:
         compact_context = json.dumps(context or {}, ensure_ascii=False)[:6000]
         prompt = (
             "Classify the user's message for internal shadow diagnostics only.\n"
-            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, use_original_query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint.\n"
+            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, use_original_query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint, target_pet_explicit, source_pet_explicit.\n"
             "Allowed intent values: chat, image_generation, knowledge_query, pet_command, agent_route, command_like, unknown.\n"
             "Use compact top RouteSpec/ActionSpec candidates and slot schemas only; do not invent agent ids or knowledge base ids outside the candidates.\n"
             "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query must provide query and may provide kb_hint; only set use_original_query=true when the original message is the best retrieval query. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
@@ -616,6 +616,7 @@ class UtilityLLMService:
         except Exception as exc:
             raise UtilityLLMError(UTILITY_INVALID_JSON, "Utility LLM returned invalid JSON.") from exc
         result = validate_intent_prediction(data)
+        _validate_extracted_slots(result, context)
         if raw.backend == "model_profile":
             result["_utility_backend"] = "utility_llm:model_profile"
             result["_model_profile_id"] = raw.model_profile_id
@@ -642,16 +643,47 @@ def extract_json_object(text: str) -> dict[str, Any]:
     value = str(text or "").strip()
     if not value:
         raise ValueError("empty JSON output")
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", value, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        value = fenced.group(1).strip()
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", value, flags=re.DOTALL)
-        if not match:
+        balanced = _first_balanced_json_object(value)
+        if balanced is None:
             raise
-        parsed = json.loads(match.group(0))
+        parsed = json.loads(balanced)
     if not isinstance(parsed, dict):
         raise ValueError("Utility LLM JSON output must be an object.")
     return parsed
+
+
+def _first_balanced_json_object(value: str) -> str | None:
+    start = value.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(value)):
+            char = value[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return value[start : index + 1]
+        start = value.find("{", start + 1)
+    return None
 
 
 def validate_intent_prediction(data: dict[str, Any]) -> dict[str, Any]:
@@ -678,7 +710,29 @@ def validate_intent_prediction(data: dict[str, Any]) -> dict[str, Any]:
         "action": _pet_action(data.get("action")),
         "target_pet_hint": _slot(data.get("target_pet_hint")),
         "source_pet_hint": _slot(data.get("source_pet_hint")),
+        "target_pet_explicit": _optional_bool(data.get("target_pet_explicit")),
+        "source_pet_explicit": _optional_bool(data.get("source_pet_explicit")),
     }
+
+
+def _validate_extracted_slots(result: dict[str, Any], context: dict[str, Any] | None) -> None:
+    route_specs = (context or {}).get("top_route_specs") if isinstance(context, dict) else None
+    route_spec = route_specs[0] if isinstance(route_specs, list) and route_specs and isinstance(route_specs[0], dict) else {}
+    intent = str(route_spec.get("intent") or route_spec.get("id") or "")
+    if not intent:
+        return
+    if result.get("intent") != intent:
+        raise UtilityLLMError("utility_slots_failed", "Utility LLM slots do not match the expected intent.")
+    schema = route_spec.get("slot_schema") if isinstance(route_spec.get("slot_schema"), dict) else {}
+    required = schema.get("required") if isinstance(schema, dict) else []
+    for field in required if isinstance(required, list) else []:
+        if result.get(str(field)) in (None, ""):
+            raise UtilityLLMError("utility_slots_failed", "Utility LLM slots are missing required fields.")
+    if intent == "pet_command":
+        if result.get("domain") not in PET_DOMAINS:
+            raise UtilityLLMError("utility_slots_failed", "Utility LLM pet domain slot is invalid.")
+        if result.get("action") not in PET_ACTIONS:
+            raise UtilityLLMError("utility_slots_failed", "Utility LLM pet action slot is invalid.")
 
 
 def _slot(value: Any) -> str | None:
@@ -686,6 +740,19 @@ def _slot(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text[:200] if text else None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().casefold()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return None
 
 
 def _pet_domain(value: Any) -> str | None:

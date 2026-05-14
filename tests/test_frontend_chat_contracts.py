@@ -292,11 +292,11 @@ def test_pet_auto_route_contracts_keep_original_user_message_and_readable_reason
     assert "hasFetchedReplacementUser(fetched, message)" in store
     assert "candidate.content === pending.content" in store
     assert "generatedPetCommand" in settings_panel
+    assert "targetIgnoredForAction" in settings_panel
     assert "notExecutedReason" in settings_panel
-    assert "target_pet_not_current" in en_settings
-    assert "target_pet_not_current" in zh_settings
+    assert "pet_target_ignored_for_action" in en_settings
+    assert "pet_target_ignored_for_action" in zh_settings
     assert "ambiguous_pet_candidate" in en_settings
-    assert "pet_command_context_missing" in en_settings
 
 
 def test_popover_layer_uses_shared_z_index_above_composer() -> None:

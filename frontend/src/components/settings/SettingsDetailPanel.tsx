@@ -1340,6 +1340,7 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
           <Metric label={t('settings:general.petAction')} value={String(decision.pet_action || t('settings:general.none'))} />
           <Metric label={t('settings:general.targetPet')} value={petSummary(decision, 'target', t)} />
           <Metric label={t('settings:general.sourcePet')} value={petSummary(decision, 'source', t)} />
+          <Metric label={t('settings:general.targetIgnoredForAction')} value={decision.target_ignored_for_action ? t('settings:general.yes') : t('settings:general.no')} />
           <Metric label={t('settings:general.generatedPetCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
           <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
           <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />

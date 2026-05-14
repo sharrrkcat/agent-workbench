@@ -30,11 +30,7 @@ BLOCKING_AUTO_WARNINGS = {
     "semantic_router_unavailable",
     "pet_candidate_not_found",
     "ambiguous_pet_candidate",
-    "target_pet_not_current",
     "select_target_missing",
-    "source_pet_mismatch",
-    "source_pet_not_found",
-    "ambiguous_source_pet_candidate",
     "pet_command_context_missing",
     "pet_action_unrecognized",
     "pet_command_runtime_unavailable",
@@ -392,11 +388,15 @@ def _decision_metadata(
         metadata["warnings"] = _ensure_warning(warnings, reason)
         return metadata
     if semantic_margin is not None and semantic_margin < thresholds["intent_min_margin"]:
-        metadata["route_action"] = "fallback_current_agent"
-        metadata["auto_executable"] = False
-        metadata["not_executed_reason"] = "semantic_margin_too_low"
-        metadata["warnings"] = _ensure_warning(warnings, "semantic_margin_too_low")
-        return metadata
+        if intent_id == "pet_command":
+            metadata["warnings"] = _ensure_warning(warnings, "semantic_margin_too_low")
+            warnings = metadata["warnings"]
+        else:
+            metadata["route_action"] = "fallback_current_agent"
+            metadata["auto_executable"] = False
+            metadata["not_executed_reason"] = "semantic_margin_too_low"
+            metadata["warnings"] = _ensure_warning(warnings, "semantic_margin_too_low")
+            return metadata
     if any(warning in BLOCKING_AUTO_WARNINGS for warning in warnings):
         metadata["route_action"] = "fallback_current_agent"
         metadata["auto_executable"] = False
@@ -557,6 +557,7 @@ def _with_pipeline_result(
         result["generated_command"] = normalized.get("generated_command") or plan.generated_command
         result["target_command"] = "/pet"
         result["action_match_source"] = normalized.get("action_match_source") or result.get("action_match_source")
+        result["target_ignored_for_action"] = bool(normalized.get("target_ignored_for_action"))
     return result
 
 
@@ -788,6 +789,9 @@ def _compact_slots(slots: dict[str, Any]) -> dict[str, Any]:
         value = slots.get(key)
         if isinstance(value, str) and value.strip():
             compact[key] = _short_text(value.strip())
+    for key in ("target_pet_explicit", "source_pet_explicit"):
+        if slots.get(key) is not None:
+            compact[key] = bool(slots.get(key))
     if slots.get("use_original_query") is not None:
         compact["use_original_query"] = bool(slots.get("use_original_query"))
     return compact
@@ -878,8 +882,8 @@ async def _maybe_apply_utility_slots(
         if extracted.get("kb_id"):
             prediction = {**prediction, "kb_id": extracted.get("kb_id")}
     elif predicted_intent == "pet_command":
-        for key in ("domain", "action", "target_pet_hint", "source_pet_hint"):
-            if extracted.get(key):
+        for key in ("domain", "action", "target_pet_hint", "source_pet_hint", "target_pet_explicit", "source_pet_explicit"):
+            if extracted.get(key) is not None:
                 slots[key] = extracted.get(key)
     return {
         **prediction,
