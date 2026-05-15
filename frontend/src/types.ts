@@ -1300,6 +1300,12 @@ export type GeneralSettings = {
   resource_status_ram_display_mode: 'percent' | 'value';
   resource_status_vram_display_mode: 'percent' | 'value';
   resource_status_show_tokens: boolean;
+  appearance_font_ui_family: string;
+  appearance_font_message_family: string;
+  appearance_font_code_family: string;
+  appearance_font_ui_custom_id: string | null;
+  appearance_font_message_custom_id: string | null;
+  appearance_font_code_custom_id: string | null;
   core_memory_content: string;
   core_memory_enabled_for_prompt_agents: boolean;
   core_memory_enabled_for_script_agents: boolean;
@@ -1326,6 +1332,21 @@ export type GeneralSettings = {
   intent_routing_knowledge_query_examples: string;
   intent_routing_agent_route_examples: string;
   intent_routing_command_like_examples: string;
+};
+
+export type FontAsset = {
+  id: string;
+  filename: string;
+  display_name: string;
+  extension: '.woff2' | '.woff' | '.ttf' | '.otf' | string;
+  size_bytes: number;
+  mtime: number;
+  css_family: string;
+  url: string;
+};
+
+export type FontAssetsResponse = {
+  fonts: FontAsset[];
 };
 
 export type IntentRouteTestResponse = {

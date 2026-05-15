@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, attachments, commands, configs, data, diagnostics, health, intent, knowledge, llm_profiles, llm_provider_profiles, messages, pets, runs, runtime, sessions, settings, worldbook
+from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, intent, knowledge, llm_profiles, llm_provider_profiles, messages, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
 
 
@@ -67,6 +67,7 @@ def create_app(
         return JSONResponse(status_code=422, content={"error": {"code": code, "message": message}})
 
     app.include_router(agents.router)
+    app.include_router(assets.router)
     app.include_router(attachments.router)
     app.include_router(commands.router)
     app.include_router(configs.router)

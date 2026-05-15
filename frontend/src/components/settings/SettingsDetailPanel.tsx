@@ -1,9 +1,9 @@
-import { Activity, Database, Play, RefreshCw, Save, Search, Settings, Trash2 } from 'lucide-react';
+import { Activity, Database, Play, RefreshCw, Save, Search, Settings, Trash2, Type } from 'lucide-react';
 import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -16,6 +16,7 @@ import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSett
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
 import { WorldbookSettingsDetail } from './WorldbookSettingsPanel';
+import { DEFAULT_CODE_FONT, DEFAULT_MESSAGE_FONT, DEFAULT_UI_FONT, fontFamilyFor } from '../../utils/fonts';
 
 export function SettingsDetailPanel({
   section,
@@ -140,6 +141,8 @@ export function SettingsDetailPanel({
       <section className="settings-detail-panel">
         {appearanceCategory === 'pet' ? (
           <PetSettingsDetail activeTab={activeTab} onTabChange={onTabChange} onDirtyChange={onDirtyChange} />
+        ) : appearanceCategory === 'fonts' ? (
+          <FontsSettingsDetail onDirtyChange={onDirtyChange} />
         ) : (
           <ChatStatusPanelDetail onDirtyChange={onDirtyChange} />
         )}
@@ -384,6 +387,223 @@ function GeneralDetail({
   );
 }
 
+function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const { t } = useTranslation(['settings', 'common']);
+  const { generalSettings, fontAssets, refreshGeneralSettings, refreshFontAssets, updateGeneralSettings } = useWorkbenchStore();
+  const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
+  const [localFonts, setLocalFonts] = useState<FontAsset[]>(fontAssets);
+  const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const dirty = Boolean(values && generalSettings && JSON.stringify(fontSettingsPatch(values)) !== JSON.stringify(fontSettingsPatch(generalSettings)));
+
+  useEffect(() => {
+    void refreshGeneralSettings();
+  }, [refreshGeneralSettings]);
+
+  useEffect(() => {
+    if (generalSettings) setValues(generalSettings);
+  }, [generalSettings]);
+
+  useEffect(() => {
+    setLocalFonts(fontAssets);
+  }, [fontAssets]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!values) return;
+    try {
+      setLocalError(null);
+      await updateGeneralSettings(fontSettingsPatch(values));
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1400);
+    } catch (error) {
+      setLocalError(toSettingsError(error, t('settings:appearance.saveFontsFailed')));
+    }
+  }
+
+  async function rescanFonts() {
+    setBusy(true);
+    try {
+      setLocalError(null);
+      const fonts = await refreshFontAssets();
+      setLocalFonts(fonts);
+    } catch (error) {
+      setLocalError(toSettingsError(error, t('settings:appearance.rescanFontsFailed')));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setFont(key: 'ui' | 'message' | 'code', patch: { family?: string; customId?: string | null }) {
+    setValues((current) => {
+      if (!current) return current;
+      if (key === 'ui') {
+        return {
+          ...current,
+          appearance_font_ui_family: patch.family ?? current.appearance_font_ui_family,
+          appearance_font_ui_custom_id: patch.customId !== undefined ? patch.customId : current.appearance_font_ui_custom_id,
+        };
+      }
+      if (key === 'message') {
+        return {
+          ...current,
+          appearance_font_message_family: patch.family ?? current.appearance_font_message_family,
+          appearance_font_message_custom_id: patch.customId !== undefined ? patch.customId : current.appearance_font_message_custom_id,
+        };
+      }
+      return {
+        ...current,
+        appearance_font_code_family: patch.family ?? current.appearance_font_code_family,
+        appearance_font_code_custom_id: patch.customId !== undefined ? patch.customId : current.appearance_font_code_custom_id,
+      };
+    });
+  }
+
+  function resetDefaults() {
+    setValues((current) => current ? {
+      ...current,
+      appearance_font_ui_family: DEFAULT_UI_FONT,
+      appearance_font_message_family: DEFAULT_MESSAGE_FONT,
+      appearance_font_code_family: DEFAULT_CODE_FONT,
+      appearance_font_ui_custom_id: null,
+      appearance_font_message_custom_id: null,
+      appearance_font_code_custom_id: null,
+    } : current);
+  }
+
+  if (!values) return <EmptyDetail title={t('settings:appearance.fonts')} message={t('settings:general.loading')} />;
+
+  return (
+    <form className="settings-detail-form" onSubmit={save}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">
+            <Type size={18} />
+          </div>
+          <div>
+            <h2>{t('settings:appearance.fonts')}</h2>
+            <p>{t('settings:appearance.fontsDescription')}</p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {saved ? <span className="settings-badge success">{t('common:saved')}</span> : null}
+          <button className="settings-secondary-button" type="button" onClick={rescanFonts} disabled={busy}>
+            <RefreshCw size={14} />
+            {busy ? t('settings:appearance.rescanningFonts') : t('settings:appearance.rescanFonts')}
+          </button>
+          <button className="settings-secondary-button" type="button" onClick={resetDefaults}>
+            {t('settings:appearance.resetFonts')}
+          </button>
+          {dirty ? (
+            <button className="settings-primary-button" type="submit">
+              <Save size={14} />
+              {t('common:save')}
+            </button>
+          ) : null}
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {localError ? <SettingsApiError error={localError} /> : null}
+        <div className="detail-section">
+          <div className="detail-section-heading">
+            <h3>{t('settings:appearance.fonts')}</h3>
+          </div>
+          <p className="settings-muted-copy">{t('settings:appearance.fontsDirectoryHelp')}</p>
+          <div className="font-settings-grid">
+            <FontSettingRow
+              title={t('settings:appearance.uiFont')}
+              preview={t('settings:appearance.uiFontPreview')}
+              family={values.appearance_font_ui_family}
+              customId={values.appearance_font_ui_custom_id}
+              fonts={localFonts}
+              onFamilyChange={(family) => setFont('ui', { family })}
+              onCustomIdChange={(customId) => setFont('ui', { customId })}
+            />
+            <FontSettingRow
+              title={t('settings:appearance.messageFont')}
+              preview={t('settings:appearance.messageFontPreview')}
+              family={values.appearance_font_message_family}
+              customId={values.appearance_font_message_custom_id}
+              fonts={localFonts}
+              onFamilyChange={(family) => setFont('message', { family })}
+              onCustomIdChange={(customId) => setFont('message', { customId })}
+            />
+            <FontSettingRow
+              title={t('settings:appearance.codeFont')}
+              preview={t('settings:appearance.codeFontPreview')}
+              family={values.appearance_font_code_family}
+              customId={values.appearance_font_code_custom_id}
+              fonts={localFonts}
+              onFamilyChange={(family) => setFont('code', { family })}
+              onCustomIdChange={(customId) => setFont('code', { customId })}
+              monospace
+            />
+          </div>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function FontSettingRow({
+  title,
+  preview,
+  family,
+  customId,
+  fonts,
+  monospace,
+  onFamilyChange,
+  onCustomIdChange,
+}: {
+  title: string;
+  preview: string;
+  family: string;
+  customId: string | null;
+  fonts: FontAsset[];
+  monospace?: boolean;
+  onFamilyChange: (family: string) => void;
+  onCustomIdChange: (customId: string | null) => void;
+}) {
+  const { t } = useTranslation('settings');
+  const source = customId ? 'custom' : 'system';
+  const missingCustom = customId && !fonts.some((font) => font.id === customId);
+  return (
+    <div className="font-settings-row">
+      <div className="font-settings-row-header">
+        <strong>{title}</strong>
+        <select value={source} onChange={(event) => onCustomIdChange(event.currentTarget.value === 'custom' ? fonts[0]?.id || customId || null : null)}>
+          <option value="system">{t('appearance.systemFont')}</option>
+          <option value="custom">{t('appearance.customFont')}</option>
+        </select>
+      </div>
+      <label className="config-field settings-config-field">
+        <span>{t('appearance.fontFamily')}</span>
+        <input type="text" value={family} onChange={(event) => onFamilyChange(event.currentTarget.value)} />
+      </label>
+      {source === 'custom' ? (
+        <label className="config-field settings-config-field">
+          <span>{t('appearance.localFontFile')}</span>
+          <select value={customId || ''} onChange={(event) => onCustomIdChange(event.currentTarget.value || null)}>
+            {missingCustom ? <option value={customId || ''}>{t('appearance.selectedFontMissing')}</option> : null}
+            <option value="">{t('appearance.noCustomFontSelected')}</option>
+            {fonts.map((font) => (
+              <option key={font.id} value={font.id}>{font.display_name} ({font.extension})</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <div className={`font-preview ${monospace ? 'monospace' : ''}`} style={{ fontFamily: fontFamilyFor(family, customId, fonts) }}>
+        {preview}
+      </div>
+    </div>
+  );
+}
+
 function ChatStatusPanelDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { t } = useTranslation(['settings', 'common']);
   const { generalSettings, refreshGeneralSettings, updateGeneralSettings } = useWorkbenchStore();
@@ -514,6 +734,17 @@ function resourceStatusSettingsPatch(values: GeneralSettings): Partial<GeneralSe
     resource_status_ram_display_mode: values.resource_status_ram_display_mode,
     resource_status_vram_display_mode: values.resource_status_vram_display_mode,
     resource_status_show_tokens: values.resource_status_show_tokens,
+  };
+}
+
+function fontSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
+  return {
+    appearance_font_ui_family: values.appearance_font_ui_family,
+    appearance_font_message_family: values.appearance_font_message_family,
+    appearance_font_code_family: values.appearance_font_code_family,
+    appearance_font_ui_custom_id: values.appearance_font_ui_custom_id,
+    appearance_font_message_custom_id: values.appearance_font_message_custom_id,
+    appearance_font_code_custom_id: values.appearance_font_code_custom_id,
   };
 }
 
@@ -1261,6 +1492,12 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     session_title_max_input_chars: values.session_title_max_input_chars,
     group_transcript_system_instruction: values.group_transcript_system_instruction,
     command_result_context_instruction: values.command_result_context_instruction,
+    appearance_font_ui_family: values.appearance_font_ui_family,
+    appearance_font_message_family: values.appearance_font_message_family,
+    appearance_font_code_family: values.appearance_font_code_family,
+    appearance_font_ui_custom_id: values.appearance_font_ui_custom_id,
+    appearance_font_message_custom_id: values.appearance_font_message_custom_id,
+    appearance_font_code_custom_id: values.appearance_font_code_custom_id,
     core_memory_content: values.core_memory_content,
     core_memory_enabled_for_prompt_agents: values.core_memory_enabled_for_prompt_agents,
     core_memory_enabled_for_script_agents: values.core_memory_enabled_for_script_agents,

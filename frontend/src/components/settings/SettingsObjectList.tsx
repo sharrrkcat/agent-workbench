@@ -1,4 +1,4 @@
-import { Boxes, Gauge, PawPrint, Plus, SlidersHorizontal } from 'lucide-react';
+import { Boxes, Gauge, PawPrint, Plus, SlidersHorizontal, Type } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, Worldbook } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
@@ -10,7 +10,7 @@ import { StatusChip } from '../ui';
 import { getKnowledgeIndexStatusLabel } from '../../i18n/formatters';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory' | 'utility_llm' | 'intent_routing';
-export type AppearanceSettingsCategory = 'pet' | 'chat_status_panel';
+export type AppearanceSettingsCategory = 'pet' | 'fonts' | 'chat_status_panel';
 export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
 export type WorldbookSettingsCategory = WorldbookSettingsSubsection;
 
@@ -77,6 +77,7 @@ export function SettingsObjectList({
   ];
   const appearanceCategories: { id: AppearanceSettingsCategory; name: string; description: string; icon: typeof PawPrint }[] = [
     { id: 'pet', name: t('settings:appearance.pet'), description: t('settings:appearance.petDescription'), icon: PawPrint },
+    { id: 'fonts', name: t('settings:appearance.fonts'), description: t('settings:appearance.fontsDescription'), icon: Type },
     { id: 'chat_status_panel', name: t('settings:appearance.chatStatusPanel'), description: t('settings:appearance.chatStatusPanelDescription'), icon: Gauge },
   ];
 

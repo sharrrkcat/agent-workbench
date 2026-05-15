@@ -10,6 +10,7 @@ from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.events import EventBus
+from ai_workbench.core.font_assets import ensure_fonts_directory
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
@@ -92,6 +93,7 @@ def build_runtime_state(
     use_memory: bool = False,
 ) -> RuntimeState:
     repo_root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
+    ensure_fonts_directory(repo_root)
     ensure_knowledge_directories(repo_root)
     agents = AgentRegistry()
     agents.load_from_directory(repo_root / "agents")

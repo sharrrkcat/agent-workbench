@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator, model_validator
 
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.utility_llm import normalize_utility_backend, normalize_utility_model_path
@@ -28,6 +28,10 @@ Return only the title.
 
 User message:
 {user_input}"""
+
+DEFAULT_UI_FONT_FAMILY = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+DEFAULT_MESSAGE_FONT_FAMILY = DEFAULT_UI_FONT_FAMILY
+DEFAULT_CODE_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace'
 
 
 def normalize_optional_instruction(value: Any) -> str | None:
@@ -77,6 +81,12 @@ class AppSettings(BaseModel):
     resource_status_ram_display_mode: str = "percent"
     resource_status_vram_display_mode: str = "percent"
     resource_status_show_tokens: StrictBool = True
+    appearance_font_ui_family: StrictStr = DEFAULT_UI_FONT_FAMILY
+    appearance_font_message_family: StrictStr = DEFAULT_MESSAGE_FONT_FAMILY
+    appearance_font_code_family: StrictStr = DEFAULT_CODE_FONT_FAMILY
+    appearance_font_ui_custom_id: StrictStr | None = None
+    appearance_font_message_custom_id: StrictStr | None = None
+    appearance_font_code_custom_id: StrictStr | None = None
     core_memory_content: str = ""
     core_memory_enabled_for_prompt_agents: StrictBool = True
     core_memory_enabled_for_script_agents: StrictBool = False
@@ -139,6 +149,26 @@ class AppSettings(BaseModel):
         if value not in {"percent", "value"}:
             raise ValueError("Display mode must be percent or value.")
         return value
+
+    @field_validator("appearance_font_ui_family", "appearance_font_message_family", "appearance_font_code_family", mode="before")
+    @classmethod
+    def _normalize_font_family(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            raise ValueError("Font family must not be empty.")
+        return text
+
+    @field_validator("appearance_font_ui_custom_id", "appearance_font_message_custom_id", "appearance_font_code_custom_id", mode="before")
+    @classmethod
+    def _normalize_font_custom_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        return text or None
 
     @field_validator("intent_routing_mode")
     @classmethod
@@ -238,6 +268,12 @@ class AppSettingsPatch(BaseModel):
     resource_status_ram_display_mode: str | None = None
     resource_status_vram_display_mode: str | None = None
     resource_status_show_tokens: StrictBool | None = None
+    appearance_font_ui_family: StrictStr | None = None
+    appearance_font_message_family: StrictStr | None = None
+    appearance_font_code_family: StrictStr | None = None
+    appearance_font_ui_custom_id: StrictStr | None = None
+    appearance_font_message_custom_id: StrictStr | None = None
+    appearance_font_code_custom_id: StrictStr | None = None
     core_memory_content: str | None = None
     core_memory_enabled_for_prompt_agents: StrictBool | None = None
     core_memory_enabled_for_script_agents: StrictBool | None = None
@@ -307,6 +343,28 @@ class AppSettingsPatch(BaseModel):
             raise ValueError("Display mode must be percent or value.")
         return value
 
+    @field_validator("appearance_font_ui_family", "appearance_font_message_family", "appearance_font_code_family", mode="before")
+    @classmethod
+    def _normalize_font_family(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            raise ValueError("Font family must not be empty.")
+        return text
+
+    @field_validator("appearance_font_ui_custom_id", "appearance_font_message_custom_id", "appearance_font_code_custom_id", mode="before")
+    @classmethod
+    def _normalize_font_custom_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        return text or None
+
     @field_validator("intent_routing_mode")
     @classmethod
     def _validate_intent_routing_mode(cls, value: str | None) -> str | None:
@@ -361,6 +419,13 @@ class AppSettingsPatch(BaseModel):
         text = str(value).strip()
         return text or None
 
+    @model_validator(mode="after")
+    def _reject_null_font_families(self) -> "AppSettingsPatch":
+        for key in ("appearance_font_ui_family", "appearance_font_message_family", "appearance_font_code_family"):
+            if key in self.model_fields_set and getattr(self, key) is None:
+                raise ValueError(f"{key} must be a string.")
+        return self
+
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:
     payload = settings.model_dump()
@@ -384,6 +449,9 @@ def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
         "intent_routing_embedding_model_profile_id",
         "intent_routing_utility_llm_model_profile_id",
         "session_title_model_profile_id",
+        "appearance_font_ui_custom_id",
+        "appearance_font_message_custom_id",
+        "appearance_font_code_custom_id",
     ):
         if key in patch.model_fields_set and getattr(patch, key) is None:
             updates[key] = None
@@ -399,7 +467,7 @@ class AppSettingsStore:
         return self._settings
 
     def patch(self, values: dict[str, Any]) -> AppSettings:
-        patch = AppSettingsPatch.model_validate(sanitize_app_settings_payload(values))
+        patch = AppSettingsPatch.model_validate(values)
         updates = app_settings_patch_updates(patch)
         if not updates:
             return self._settings

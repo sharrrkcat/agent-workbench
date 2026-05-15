@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ApiError, api } from '../api/client';
+import { applyAppearanceFonts } from '../utils/fonts';
 import { resolveEffectiveInputLlmProfile } from '../utils/modelStatus';
 import { parseServerTime } from '../utils/time';
 import type {
@@ -12,6 +13,7 @@ import type {
   LlmResolvedConfig,
   LlmDefaults,
   GeneralSettings,
+  FontAsset,
   LlmProfile,
   LlmProviderProfile,
   LlmProviderStatus,
@@ -49,6 +51,7 @@ type WorkbenchState = {
   completedMessageIds: Record<string, boolean>;
   health?: HealthDetails;
   generalSettings?: GeneralSettings;
+  fontAssets: FontAsset[];
   runEventLoading?: string;
   loading: boolean;
   creatingSession: boolean;
@@ -86,6 +89,7 @@ type WorkbenchState = {
   testLlmConnection: () => Promise<LlmTestResult>;
   refreshHealth: () => Promise<void>;
   refreshGeneralSettings: () => Promise<void>;
+  refreshFontAssets: () => Promise<FontAsset[]>;
   updateGeneralSettings: (patch: Partial<GeneralSettings>) => Promise<void>;
   loadRunEvents: (runId: string) => Promise<void>;
   setRunStepsExpanded: (runId: string, expanded: boolean) => void;
@@ -120,6 +124,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   runEvents: {},
   lastMessageSeqById: {},
   completedMessageIds: {},
+  fontAssets: [],
   loading: false,
   creatingSession: false,
   sending: false,
@@ -132,7 +137,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   initialize: async () => {
     set({ loading: true, error: undefined, lastError: undefined });
     try {
-      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings] = await Promise.all([
+      const [agents, commands, sessions, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, fontAssetsResponse] = await Promise.all([
         api.listAgents(),
         api.listCommands(),
         api.listSessions(),
@@ -142,10 +147,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         api.listLlmProviderProfiles(),
         api.getLlmDefaults(),
         api.getGeneralSettings(),
+        api.listFontAssets(),
       ]);
+      applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
       const sortedSessions = sortSessionsByRecent(sessions.map(normalizeSession));
       const currentSession = sortedSessions[0];
-      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, loading: false });
+      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, fontAssets: fontAssetsResponse.fonts, loading: false });
       if (currentSession) {
         await get().refreshCurrent();
         void get().refreshCurrentResolvedProviderStatus();
@@ -482,17 +489,28 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   refreshGeneralSettings: async () => {
     try {
-      const generalSettings = await api.getGeneralSettings();
-      set({ generalSettings });
+      const [generalSettings, fontAssetsResponse] = await Promise.all([api.getGeneralSettings(), api.listFontAssets()]);
+      applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
+      set({ generalSettings, fontAssets: fontAssetsResponse.fonts });
     } catch (error) {
       set(formatError(error, 'Failed to load general settings'));
     }
   },
 
+  refreshFontAssets: async () => {
+    const fontAssetsResponse = await api.listFontAssets();
+    const generalSettings = get().generalSettings;
+    applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
+    set({ fontAssets: fontAssetsResponse.fonts });
+    return fontAssetsResponse.fonts;
+  },
+
   updateGeneralSettings: async (patch) => {
     try {
       const generalSettings = await api.updateGeneralSettings(patch);
-      set({ generalSettings, error: undefined, lastError: undefined });
+      const fontAssetsResponse = await api.listFontAssets();
+      applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
+      set({ generalSettings, fontAssets: fontAssetsResponse.fonts, error: undefined, lastError: undefined });
     } catch (error) {
       set(formatError(error, 'Failed to update general settings'));
       throw error;

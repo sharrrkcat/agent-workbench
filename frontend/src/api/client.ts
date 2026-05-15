@@ -23,6 +23,7 @@ import type {
   HealthDetails,
   CleanupOrphansResult,
   GeneralSettings,
+  FontAssetsResponse,
   OrphanScanResult,
   EmbeddingModelProfile,
   EmbeddingModelProfileInput,
@@ -199,6 +200,7 @@ export const api = {
   testLlmProfile: (profileIdOrAlias: string) =>
     request<LlmTestResult>(`/api/llm-profiles/${profileIdOrAlias}/test`, { method: 'POST' }),
   getGeneralSettings: () => request<GeneralSettings>('/api/settings/general'),
+  listFontAssets: () => request<FontAssetsResponse>('/api/assets/fonts'),
   getLlmDefaults: () => request<LlmDefaults>('/api/settings/llm-defaults'),
   updateLlmDefaults: (patch: Partial<LlmDefaults>) =>
     request<LlmDefaults>('/api/settings/llm-defaults', {

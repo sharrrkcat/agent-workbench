@@ -145,7 +145,9 @@ Knowledge RAG v1 provides local embedding/reranker settings, embedding model pro
 
 Settings uses manifest-declared AgentConfig and CapabilityConfig `config_schema` fields. Unknown user config fields are rejected by the API, and secret fields are masked in API/UI responses while still stored as plaintext JSON in SQLite in this alpha.
 
-Settings -> General stores local app settings for Files, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings belong to LLM & Prompts; Utility LLM backend/model/device/options belong to Utility LLM; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
+Settings -> General stores local app settings for Files, Appearance fonts, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings belong to LLM & Prompts; Utility LLM backend/model/device/options belong to Utility LLM; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
+
+Settings -> Appearance -> Fonts configures separate UI, message, and code font stacks. Users can enter installed system font families or copy `.woff2`, `.woff`, `.ttf`, or `.otf` files into `data/assets/fonts` and rescan local font assets. Local font files are served through generated asset ids, not arbitrary disk paths.
 
 Settings -> Knowledge owns local RAG defaults, embedding model profiles, Knowledge Bases, and source indexing status. The Chat header Context Sources modal manages session Knowledge Base and Worldbook bindings. KB binding order is preserved for UI continuity but does not change Knowledge retrieval ranking.
 

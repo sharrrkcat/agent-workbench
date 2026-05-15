@@ -23,6 +23,7 @@ generated files.
 Settings -> General owns local app settings for:
 
 - Files
+- Appearance
 - LLM & Prompts
 - Memory
 - Utility LLM
@@ -50,6 +51,53 @@ CapabilityConfig settings.
 
 Attachment and vision behavior is owned by
 [attachments-vision.md](attachments-vision.md).
+
+## Appearance
+
+Settings -> Appearance -> Fonts stores three General settings font groups:
+
+- `appearance_font_ui_family`
+- `appearance_font_message_family`
+- `appearance_font_code_family`
+- `appearance_font_ui_custom_id`
+- `appearance_font_message_custom_id`
+- `appearance_font_code_custom_id`
+
+The `*_family` fields are plain CSS `font-family` strings for user-entered
+system font names or font stacks. The `*_custom_id` fields are nullable local
+font asset ids. Empty family strings are rejected, unknown General settings
+fields are rejected, and custom ids do not expose filesystem paths.
+
+Local custom font assets live under `data/assets/fonts`. The app ensures this
+directory exists and scans only `.woff2`, `.woff`, `.ttf`, and `.otf` files.
+Users copy files there manually and use the Settings UI rescan action; the app
+does not download remote fonts, upload fonts, package fonts, or parse complex
+font metadata.
+
+Font asset APIs:
+
+- `GET /api/assets/fonts` returns scanned local font assets with `id`,
+  `filename`, `display_name`, `extension`, `size_bytes`, `mtime`, `css_family`,
+  and `url`.
+- `GET /api/assets/fonts/{id}` serves one scanned font file by generated id.
+
+Font ids are generated from local filenames, not accepted paths. Serving a font
+must resolve the selected file under `data/assets/fonts` and reject missing ids,
+absolute paths, `..` traversal, unsupported extensions, and symlink/path escapes
+outside that directory.
+
+The frontend applies saved font settings by writing CSS variables on
+`document.documentElement`:
+
+- `--aw-font-ui`
+- `--aw-font-message`
+- `--aw-font-code`
+
+The root UI uses `--aw-font-ui`, message bodies explicitly use
+`--aw-font-message`, and code/json/file-content/manifest/Knowledge monospace
+surfaces use `--aw-font-code`. When a custom font is selected, the frontend
+injects `@font-face` rules using the backend-provided `css_family` and safe
+asset URL.
 
 ## LLM And Prompts
 

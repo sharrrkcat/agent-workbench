@@ -8,6 +8,7 @@ from sqlmodel import Session as DbSession, create_engine
 from ai_workbench.api.main import create_app
 from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION, DEFAULT_SESSION_TITLE_PROMPT
+from ai_workbench.core.settings import DEFAULT_CODE_FONT_FAMILY, DEFAULT_MESSAGE_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.db.models import AppMetadataRecord
 from ai_workbench.core.schema.run import RunStatus
@@ -38,6 +39,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["command_result_context_instruction"] is None
     assert response.json()["resource_status_panel_enabled"] is False
     assert response.json()["resource_status_show_tokens"] is True
+    assert response.json()["appearance_font_ui_family"] == DEFAULT_UI_FONT_FAMILY
+    assert response.json()["appearance_font_message_family"] == DEFAULT_MESSAGE_FONT_FAMILY
+    assert response.json()["appearance_font_code_family"] == DEFAULT_CODE_FONT_FAMILY
+    assert response.json()["appearance_font_ui_custom_id"] is None
+    assert response.json()["appearance_font_message_custom_id"] is None
+    assert response.json()["appearance_font_code_custom_id"] is None
     assert response.json()["core_memory_content"] == ""
     assert response.json()["core_memory_enabled_for_prompt_agents"] is True
     assert response.json()["core_memory_enabled_for_script_agents"] is False
@@ -89,6 +96,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "resource_status_panel_enabled": True,
             "resource_status_show_tokens": False,
             "resource_status_ram_display_mode": "value",
+            "appearance_font_ui_family": "Arial, sans-serif",
+            "appearance_font_message_family": "Georgia, serif",
+            "appearance_font_code_family": "Cascadia Mono, monospace",
+            "appearance_font_ui_custom_id": "aaaaaaaaaaaaaaaa",
+            "appearance_font_message_custom_id": None,
+            "appearance_font_code_custom_id": "bbbbbbbbbbbbbbbb",
             "core_memory_content": "Remember local preferences.",
             "core_memory_enabled_for_prompt_agents": False,
             "core_memory_enabled_for_script_agents": True,
@@ -103,7 +116,6 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_auto_route_safe_intents": True,
             "intent_routing_confirm_uncertain": False,
             "intent_routing_embedding_model_profile_id": "embedding-profile-1",
-            "intent_routing_embedding_model_path": "embeddings/legacy-ignored",
             "intent_routing_utility_llm_backend": "llama_cpp",
             "intent_routing_utility_llm_model_profile_id": "utility-profile",
             "intent_routing_utility_llm_context_size": 8192,
@@ -135,6 +147,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["resource_status_panel_enabled"] is True
     assert patched.json()["resource_status_show_tokens"] is False
     assert patched.json()["resource_status_ram_display_mode"] == "value"
+    assert patched.json()["appearance_font_ui_family"] == "Arial, sans-serif"
+    assert patched.json()["appearance_font_message_family"] == "Georgia, serif"
+    assert patched.json()["appearance_font_code_family"] == "Cascadia Mono, monospace"
+    assert patched.json()["appearance_font_ui_custom_id"] == "aaaaaaaaaaaaaaaa"
+    assert patched.json()["appearance_font_message_custom_id"] is None
+    assert patched.json()["appearance_font_code_custom_id"] == "bbbbbbbbbbbbbbbb"
     assert patched.json()["core_memory_content"] == "Remember local preferences."
     assert patched.json()["core_memory_enabled_for_prompt_agents"] is False
     assert patched.json()["core_memory_enabled_for_script_agents"] is True
@@ -206,6 +224,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"session_title_unload_after_generation": "yes"}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_prompt": "   "}).status_code == 422
     assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"appearance_font_ui_family": ""}).status_code == 422
+    assert client.patch("/api/settings/general", json={"appearance_font_ui_family": None}).status_code == 422
+    assert client.patch("/api/settings/general", json={"appearance_font_ui_custom_id": 42}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_mode": "unsafe"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_device": "metal"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "openai"}).status_code == 422
@@ -216,7 +237,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_model_path": "llms/Qwen3-0.6B"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "llama_cpp", "intent_routing_utility_llm_model_path": "utility_llms/model.gguf"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "transformers", "intent_routing_utility_llm_model_path": "utility_llms/qwen3/model.gguf"}).status_code == 422
-    assert client.patch("/api/settings/general", json={"intent_routing_low_confidence_threshold": 0.95}).status_code == 200
+    assert client.patch("/api/settings/general", json={"intent_routing_low_confidence_threshold": 0.95}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
@@ -229,6 +250,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["session_title_prompt"] == "Title from {user_input}"
     assert restarted.get("/api/settings/general").json()["group_transcript_system_instruction"] is None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["appearance_font_ui_family"] == "Arial, sans-serif"
+    assert restarted.patch("/api/settings/general", json={"appearance_font_ui_custom_id": None}).json()["appearance_font_ui_custom_id"] is None
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
@@ -276,9 +299,40 @@ def test_general_settings_ignores_legacy_embedding_path_in_stored_json(tmp_path:
     assert "intent_routing_embedding_model_path" not in response.json()
     assert "intent_routing_high_confidence_threshold" not in response.json()
     assert "intent_routing_low_confidence_threshold" not in response.json()
-    assert patched.status_code == 200
-    assert patched.json()["intent_routing_embedding_model_profile_id"] == "profile-id"
-    assert "intent_routing_embedding_model_path" not in patched.json()
+    assert patched.status_code == 422
+
+
+def test_font_assets_scan_and_secure_serving(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'fonts.db'}"))
+    fonts_dir = Path(client.app.state.runtime_state.repo_root) / "data" / "assets" / "fonts"
+    font_file = fonts_dir / "pytest-demo-font.woff2"
+    ignored_file = fonts_dir / "pytest-not-a-font.txt"
+    font_file.write_bytes(b"font-bytes")
+    ignored_file.write_text("not a font", encoding="utf-8")
+    try:
+        response = client.get("/api/assets/fonts")
+        assert response.status_code == 200
+        fonts = [item for item in response.json()["fonts"] if item["filename"].startswith("pytest-")]
+        assert len(fonts) == 1
+        font = fonts[0]
+        assert font["filename"] == "pytest-demo-font.woff2"
+        assert font["display_name"] == "pytest demo font"
+        assert font["extension"] == ".woff2"
+        assert font["size_bytes"] == len(b"font-bytes")
+        assert font["css_family"].startswith("AW Local Font ")
+        assert font["url"] == f"/api/assets/fonts/{font['id']}"
+
+        served = client.get(font["url"])
+        assert served.status_code == 200
+        assert served.content == b"font-bytes"
+        assert served.headers["content-type"].startswith("font/woff2")
+
+        assert client.get("/api/assets/fonts/../secret").status_code == 404
+        assert client.get("/api/assets/fonts/C:%5Csecret").status_code == 404
+        assert client.get("/api/assets/fonts/not-a-font").status_code == 404
+    finally:
+        font_file.unlink(missing_ok=True)
+        ignored_file.unlink(missing_ok=True)
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

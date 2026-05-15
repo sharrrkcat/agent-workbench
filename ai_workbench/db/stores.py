@@ -948,7 +948,7 @@ class SqlAppSettingsStore:
             return AppSettings.model_validate(sanitize_app_settings_payload(_loads(record.value, {})))
 
     def patch(self, values: Dict[str, Any]) -> AppSettings:
-        patch = AppSettingsPatch.model_validate(sanitize_app_settings_payload(values))
+        patch = AppSettingsPatch.model_validate(values)
         updates = app_settings_patch_updates(patch)
         with DbSession(self.engine) as session:
             record = session.get(AppMetadataRecord, self.SETTINGS_KEY)

@@ -4,5 +4,10 @@ __pycache__/
 *.py[cod]
 frontend/node_modules/
 frontend/dist/
-data/
+data/*
+!data/assets/
+data/assets/*
+!data/assets/fonts/
+data/assets/fonts/*
+!data/assets/fonts/.gitkeep
 dist/
