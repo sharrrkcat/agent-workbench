@@ -1407,7 +1407,14 @@ class SqlKnowledgeStore:
             if record is None:
                 raise KeyError(f"unknown knowledge origin: {origin_id}")
             origin = _knowledge_origin_from_record(record)
+            source_records = session.exec(
+                select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.origin_id == origin_id)
+            ).all()
+            for source_record in source_records:
+                _delete_source_index_rows(session, source_record.id)
+                session.delete(source_record)
             session.delete(record)
+            _refresh_kb_index_status(session, origin.knowledge_base_id)
             session.commit()
             return origin
 

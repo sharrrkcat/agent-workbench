@@ -5425,6 +5425,160 @@ input:disabled {
   gap: 12px;
 }
 
+.knowledge-origin-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr) minmax(150px, auto);
+  gap: 12px;
+  align-items: end;
+}
+
+.knowledge-origin-folder-field {
+  gap: 6px;
+}
+
+.knowledge-origin-folder-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.knowledge-origin-folder-input code {
+  padding: 0 10px;
+  color: rgba(255, 255, 255, 0.58);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.knowledge-origin-folder-input input {
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0;
+  background: transparent;
+}
+
+.knowledge-folder-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.knowledge-folder-suggestions > span {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+.knowledge-folder-suggestions button,
+.knowledge-selected-file {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.knowledge-folder-suggestions button {
+  min-height: 28px;
+  padding: 0 9px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+}
+
+.knowledge-file-dropzone {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 92px;
+  padding: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.82);
+  text-align: left;
+}
+
+.knowledge-file-dropzone.active,
+.knowledge-file-dropzone:hover:not(:disabled) {
+  border-color: rgba(134, 239, 172, 0.52);
+  background: rgba(134, 239, 172, 0.08);
+}
+
+.knowledge-file-dropzone span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.knowledge-file-dropzone strong {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+}
+
+.knowledge-file-dropzone small {
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 12px;
+}
+
+.knowledge-selected-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.knowledge-selected-file {
+  gap: 8px;
+  max-width: 100%;
+  min-height: 38px;
+  padding: 6px 7px 6px 9px;
+}
+
+.knowledge-selected-file span {
+  display: grid;
+  min-width: 0;
+}
+
+.knowledge-selected-file strong,
+.knowledge-selected-file small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-selected-file strong {
+  max-width: 240px;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+}
+
+.knowledge-selected-file small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+}
+
+.knowledge-origin-danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.knowledge-origin-danger-zone p {
+  flex: 1 1 260px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .knowledge-modal-help {
   display: grid;
   gap: 6px;
@@ -7160,6 +7314,7 @@ input:disabled {
   .settings-detail-grid,
   .settings-diagnostics-grid,
   .settings-definition-grid,
+  .knowledge-origin-create-row,
   .worldbook-entry-form-row,
   .pet-bubble-grid,
   .pet-general-layout {

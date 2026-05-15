@@ -12,15 +12,38 @@ def test_create_origin_validates_slug_and_managed_root(tmp_path: Path) -> None:
 
     rejected = client.post(f"/api/knowledge/bases/{kb['id']}/origins", json={"name": "Bad", "slug": "../bad"})
     created = client.post(f"/api/knowledge/bases/{kb['id']}/origins", json={"name": "Manual Docs", "slug": "manual_docs"})
+    nested_root = tmp_path / "data" / "knowledge" / "origins" / "starwars" / "canon"
+    nested_root.mkdir(parents=True)
+    nested = client.post(f"/api/knowledge/bases/{kb['id']}/origins", json={"name": "Canon", "slug": "starwars/canon"})
 
     assert rejected.status_code == 422
     assert created.status_code == 200, created.text
+    assert nested.status_code == 200, nested.text
     origin = created.json()
     assert origin["root_path"] == "data/knowledge/origins/manual_docs"
     assert (tmp_path / origin["root_path"]).is_dir()
+    assert nested.json()["root_path"] == "data/knowledge/origins/starwars/canon"
+    assert nested_root.is_dir()
     with sqlite3.connect(db_path) as connection:
         root_path = connection.execute("SELECT root_path FROM kb_origins WHERE id = ?", (origin["id"],)).fetchone()[0]
     assert root_path == "data/knowledge/origins/manual_docs"
+
+
+def test_origin_folder_suggestions_list_directories_only(tmp_path: Path) -> None:
+    client, _db_path, _backend = make_client(tmp_path)
+    root = tmp_path / "data" / "knowledge" / "origins"
+    (root / "starwars" / "canon").mkdir(parents=True)
+    (root / "starwars" / "legends").mkdir(parents=True)
+    (root / "starwars" / "note.txt").write_text("ignore", encoding="utf-8")
+    (root / "stargate").mkdir()
+
+    top = client.get("/api/knowledge/origins/folders", params={"prefix": "sta"}).json()
+    nested = client.get("/api/knowledge/origins/folders", params={"prefix": "starwars/"}).json()
+    rejected = client.get("/api/knowledge/origins/folders", params={"prefix": "../bad"})
+
+    assert [item["path"] for item in top["folders"]] == ["stargate", "starwars"]
+    assert [item["path"] for item in nested["folders"]] == ["starwars/canon", "starwars/legends"]
+    assert rejected.status_code == 422
 
 
 def test_origin_scan_finds_new_file_without_indexing(tmp_path: Path) -> None:
@@ -166,3 +189,25 @@ def test_origin_scan_skips_unsupported_oversize_and_traversal_slug(tmp_path: Pat
     assert scanned.json()["new_count"] == 0
     assert len(scanned.json()["warnings"]) >= 2
     assert table_count(db_path, "kb_sources") == 0
+
+
+def test_delete_origin_cascades_sources_and_index_without_deleting_files(tmp_path: Path) -> None:
+    client, db_path, _backend = make_client(tmp_path)
+    kb = create_kb(client, chunk_size=500, chunk_overlap=0)
+    origin = client.post(f"/api/knowledge/bases/{kb['id']}/origins", json={"name": "Docs", "slug": "docs"}).json()
+    source_path = tmp_path / origin["root_path"] / "note.md"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("# Note\nindexed", encoding="utf-8")
+    client.post(f"/api/knowledge/origins/{origin['id']}/scan")
+    client.post(f"/api/knowledge/origins/{origin['id']}/import", json={})
+    source = client.get(f"/api/knowledge/bases/{kb['id']}/sources").json()[0]
+
+    deleted = client.delete(f"/api/knowledge/origins/{origin['id']}")
+
+    assert deleted.status_code == 200, deleted.text
+    assert client.get(f"/api/knowledge/bases/{kb['id']}/sources").json() == []
+    assert table_count(db_path, "kb_sources", "id = ?", (source["id"],)) == 0
+    assert table_count(db_path, "kb_chunks", "source_id = ?", (source["id"],)) == 0
+    assert table_count(db_path, "kb_embeddings", "source_id = ?", (source["id"],)) == 0
+    assert table_count(db_path, "kb_chunk_fts", "source_id = ?", (source["id"],)) == 0
+    assert source_path.exists()

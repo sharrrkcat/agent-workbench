@@ -33,6 +33,7 @@ from ai_workbench.core.knowledge_models import (
     scan_local_models,
 )
 from ai_workbench.core.knowledge_origins import (
+    list_origin_folder_suggestions,
     mark_origin_imported,
     origin_root_for_slug,
     safe_origin_slug,
@@ -525,6 +526,15 @@ def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSourceCrea
         raise_error(400 if exc.code.startswith("KNOWLEDGE_ATTACHMENT") else 422, exc.code, exc.message, exc.details)
     except KeyError:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
+
+
+@router.get("/origins/folders")
+def list_knowledge_origin_folders(prefix: str = "", state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        folders = list_origin_folder_suggestions(state.repo_root or Path("."), prefix)
+        return {"prefix": prefix, "folders": folders}
+    except ValueError as exc:
+        raise_error(422, "INVALID_KNOWLEDGE_ORIGIN_FOLDER_PREFIX", str(exc))
 
 
 @router.get("/sources/{source_id}")

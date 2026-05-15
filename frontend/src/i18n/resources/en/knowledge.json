@@ -61,9 +61,12 @@
     "createOrigin": "Create origin",
     "create": "Create",
     "createAndScan": "Create and scan",
+    "createAndIndex": "Create and index",
     "importFiles": "Import files",
     "pasteText": "Paste text",
     "index": "Index",
+    "deleteOrigin": "Delete origin",
+    "removeFile": "Remove file",
     "reindexAll": "Reindex all",
     "reindexing": "Reindexing...",
     "closeSourceDetail": "Close source detail"
@@ -133,9 +136,11 @@
     "rerankerFolders": "Reranker folders",
     "originName": "Origin name",
     "originSlug": "Origin slug",
+    "originFolder": "Origin folder",
     "originDefaultChunkProfile": "Origin default chunk profile",
     "resolvedFolderPath": "Resolved folder path",
     "scanAfterCreate": "Scan after create",
+    "indexAfterCreate": "Index after create",
     "folderPath": "Folder path",
     "sourcesFolderPath": "Sources folder path",
     "fileName": "File name",
@@ -162,7 +167,9 @@
     "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
     "profileWithSource": "{{profile}} · {{source}}",
     "selectedFiles": "{{count}} file selected",
-    "selectedFiles_plural": "{{count}} files selected"
+    "selectedFiles_plural": "{{count}} files selected",
+    "folderSuggestions": "Folder suggestions",
+    "loadingSuggestions": "Loading suggestions..."
   },
   "empty": {
     "loadingSettings": "Loading Knowledge settings.",
@@ -209,11 +216,12 @@
     "reindexedSourcesWithFailures": "Reindexed {{count}} sources; {{failed}} failed.",
     "originCreated": "Origin created at {{path}}.",
     "originScanned": "Scan complete: {{new_count}} new, {{changed_count}} changed, {{missing_count}} missing.",
-    "originImported": "Imported/reindexed {{imported_count}} source(s); {{failed_count}} failed."
+    "originImported": "Imported/reindexed {{imported_count}} source(s); {{failed_count}} failed.",
+    "originDeleted": "Origin deleted. Indexed sources were removed; disk files were kept."
   },
   "dropzone": {
-    "title": "Drop text files here",
-    "description": "Supports text, code, and config files already accepted by attachments."
+    "title": "Drop text files here or choose files",
+    "description": "Supports multiple text, code, and config files. Folder upload is not used."
   },
   "install": {
     "title": "Install commands",
@@ -289,7 +297,11 @@
     "managedOriginPath": "Managed origins live under data/knowledge/origins/<origin_slug>/.",
     "precreateOriginFolder": "You can create the folder manually first, then create the origin with the same slug.",
     "scanOnlyChecksChanges": "Scan checks file changes only.",
-    "sourcesFolderPath": "This is a Knowledge Base folder path, not a system folder path. Leave it empty to place sources at the KB root."
+    "sourcesFolderPath": "This is a Knowledge Base folder path, not a system folder path. Leave it empty to place sources at the KB root.",
+    "sourcesFolderPathShort": "Knowledge Base folder path, not a system folder.",
+    "originFolderShort": "Choose an existing managed folder or type a new relative folder path.",
+    "indexAfterCreate": "Index after create runs parsing, chunking, and embeddings once after the origin is created.",
+    "deleteOriginKeepsFiles": "This removes the origin and its indexed sources from this Knowledge Base. It does not delete files from disk."
   },
   "modals": {
     "createOriginTitle": "Create origin",
@@ -302,7 +314,9 @@
   },
   "placeholders": {
     "useKnowledgeDefault": "Use Knowledge default",
-    "useKnowledgeBaseDefault": "Use Knowledge Base default"
+    "useKnowledgeBaseDefault": "Use Knowledge Base default",
+    "kbRootFolder": "Leave empty for KB root",
+    "originFolder": "folder or nested/folder"
   },
   "chunkProfiles": {
     "plain_text": "Plain text",
@@ -334,7 +348,19 @@
     "low": "Low"
   },
   "errors": {
-    "copyCommandFailed": "Failed to copy command. Select and copy it manually."
+    "copyCommandFailed": "Failed to copy command. Select and copy it manually.",
+    "loadOriginFoldersFailed": "Failed to load origin folder suggestions.",
+    "createOriginFailed": "Failed to create origin.",
+    "originFolderAlreadyRegistered": "This origin folder is already registered for this knowledge base.",
+    "indexPastedTextFailed": "Failed to index pasted text source.",
+    "indexFilesFailed": "Failed to index selected files.",
+    "unsupportedFileType": "Unsupported file type: {{name}}.",
+    "duplicateFilesSkipped": "{{count}} duplicate file was skipped.",
+    "duplicateFilesSkipped_plural": "{{count}} duplicate files were skipped.",
+    "deleteOriginFailed": "Failed to delete origin."
+  },
+  "confirm": {
+    "deleteOrigin": "Delete origin \"{{name}}\"?\n\nThis removes the origin and its indexed sources from this Knowledge Base. It does not delete files from disk."
   },
   "backend": {
     "notScanned": "Not scanned",

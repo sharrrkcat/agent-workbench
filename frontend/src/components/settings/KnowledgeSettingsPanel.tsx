@@ -1,8 +1,8 @@
 import { ArrowUpDown, BrainCircuit, ChevronDown, Clipboard, FileText, FolderPlus, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
+import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
 import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
@@ -907,14 +907,18 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [originName, setOriginName] = useState('');
   const [originSlug, setOriginSlug] = useState('');
   const [originDefaultChunkProfile, setOriginDefaultChunkProfile] = useState('');
-  const [originCreateScan, setOriginCreateScan] = useState(false);
+  const [originIndexAfterCreate, setOriginIndexAfterCreate] = useState(false);
+  const [originFolderSuggestions, setOriginFolderSuggestions] = useState<KnowledgeOriginFolderSuggestion[]>([]);
+  const [originFolderSuggestionsLoading, setOriginFolderSuggestionsLoading] = useState(false);
   const [sourceResult, setSourceResult] = useState('');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
   const [sourceFolderPath, setSourceFolderPath] = useState('');
   const [sourceChunkProfile, setSourceChunkProfile] = useState('');
   const [importFiles, setImportFiles] = useState<File[]>([]);
+  const [importDragActive, setImportDragActive] = useState(false);
   const [sourceError, setSourceError] = useState<SettingsErrorValue | null>(null);
+  const [modalError, setModalError] = useState<SettingsErrorValue | null>(null);
   const [sourceSort, setSourceSort] = useState<{ key: SourceSortKey; direction: SortDirection }>({ key: 'indexed_at', direction: 'desc' });
   const [selectedSourceId, setSelectedSourceId] = useState('');
   const [sourcePreview, setSourcePreview] = useState<KnowledgeSourcePreview | null>(null);
@@ -966,7 +970,10 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setOriginName('');
     setOriginSlug('');
     setOriginDefaultChunkProfile('');
-    setOriginCreateScan(false);
+    setOriginIndexAfterCreate(false);
+    setOriginFolderSuggestions([]);
+    setModalError(null);
+    setImportDragActive(false);
     setOrigins([]);
     setExpandedOriginIds(new Set());
     setSelectedSourceId('');
@@ -1006,6 +1013,32 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       void loadKnowledgeLists(values.id);
     }
   }, [activeTab, values.id, isNew]);
+
+  useEffect(() => {
+    if (sourceModal !== 'create_origin') {
+      setOriginFolderSuggestions([]);
+      setOriginFolderSuggestionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setOriginFolderSuggestionsLoading(true);
+      api.listKnowledgeOriginFolders(originSlug)
+        .then((response) => {
+          if (!cancelled) setOriginFolderSuggestions(response.folders);
+        })
+        .catch((error) => {
+          if (!cancelled) setModalError(toSettingsError(error, t('knowledge:errors.loadOriginFoldersFailed')));
+        })
+        .finally(() => {
+          if (!cancelled) setOriginFolderSuggestionsLoading(false);
+        });
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [originSlug, sourceModal, t]);
 
   async function loadKnowledgeLists(knowledgeBaseId = values.id || '') {
     if (!knowledgeBaseId) return;
@@ -1109,12 +1142,12 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setBusy('');
     }
   }
-  async function createOrigin(scanAfter = false) {
+  async function createOrigin(indexAfter = false) {
     if (!values.id || !originName.trim() || !originSlug.trim()) return;
     const knowledgeBaseId = values.id;
     setBusy('creating origin');
     try {
-      setSourceError(null);
+      setModalError(null);
       setSourceResult('');
       const created = await api.createKnowledgeOrigin(knowledgeBaseId, {
         name: originName,
@@ -1122,17 +1155,25 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         default_chunk_profile: originDefaultChunkProfile ? originDefaultChunkProfile as ChunkProfile : null,
       });
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      if (indexAfter) {
+        await api.scanKnowledgeOrigin(created.id);
+        await api.importKnowledgeOrigin(created.id);
+      }
       setOriginName('');
       setOriginSlug('');
       setOriginDefaultChunkProfile('');
-      setOriginCreateScan(false);
+      setOriginIndexAfterCreate(false);
+      setOriginFolderSuggestions([]);
       setSourceModal(null);
-      await loadOrigins(knowledgeBaseId);
-      if (scanAfter) await scanOrigin(created.id);
+      await loadKnowledgeLists(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
       setSourceResult(t('knowledge:results.originCreated', { path: created.root_path }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
-        setSourceError(toSettingsError(error, 'Failed to create knowledge origin.'));
+        const nextError = toSettingsError(error, t('knowledge:errors.createOriginFailed'));
+        setModalError(nextError.code === 'KNOWLEDGE_ORIGIN_SLUG_EXISTS'
+          ? { ...nextError, message: t('knowledge:errors.originFolderAlreadyRegistered') }
+          : nextError);
       }
     } finally {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
@@ -1178,14 +1219,14 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     }
   }
   async function addPastedSource() {
-    if (!values.id || !sourceText.trim()) return;
+    if (!values.id || !sourceTitle.trim() || !sourceText.trim()) return;
     const knowledgeBaseId = values.id;
     setBusy('indexing');
     try {
-      setSourceError(null);
+      setModalError(null);
       setSourceResult('');
       const indexed = await api.createPastedKnowledgeSource(knowledgeBaseId, {
-        title: sourceTitle || t('knowledge:defaults.pastedTextTitle'),
+        title: sourceTitle,
         text: sourceText,
         folder_path: sourceFolderPath,
         chunk_profile: sourceChunkProfile || null,
@@ -1202,7 +1243,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setSourceResult(t('knowledge:results.indexedChunks', { count: indexed.chunks }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
-        setSourceError(toSettingsError(error, 'Failed to index pasted text source.'));
+        setModalError(toSettingsError(error, t('knowledge:errors.indexPastedTextFailed')));
       }
     } finally {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
@@ -1214,12 +1255,12 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     const accepted = Array.from(files).filter(isSupportedTextFile);
     const rejected = Array.from(files).filter((file) => !isSupportedTextFile(file));
     if (rejected.length) {
-      setSourceError({ code: 'UNSUPPORTED_FILE_TYPE', message: `Unsupported file type: ${rejected[0].name || rejected[0].type || 'file'}` });
+      setModalError({ code: 'UNSUPPORTED_FILE_TYPE', message: t('knowledge:errors.unsupportedFileType', { name: rejected[0].name || rejected[0].type || t('knowledge:labels.fileName') }) });
       if (!accepted.length) return;
     }
     setBusy('indexing file');
     try {
-      setSourceError(null);
+      setModalError(null);
       setSourceResult('');
       let indexedCount = 0;
       for (const file of accepted) {
@@ -1244,7 +1285,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setSourceResult(t('knowledge:results.indexedFiles', { chunks: indexedCount, files: accepted.length, count: accepted.length }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
-        setSourceError(toSettingsError(error, 'Failed to index text file source.'));
+        setModalError(toSettingsError(error, t('knowledge:errors.indexFilesFailed')));
       }
     } finally {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
@@ -1252,8 +1293,83 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   }
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
     const files = event.currentTarget.files;
-    if (files) setImportFiles(Array.from(files));
+    if (files) addImportFiles(Array.from(files));
     event.currentTarget.value = '';
+  }
+  function openSourceModal(modal: SourceModal) {
+    setModalError(null);
+    setImportDragActive(false);
+    setSourceModal(modal);
+  }
+  function closeSourceModal() {
+    setSourceModal(null);
+    setModalError(null);
+    setImportDragActive(false);
+  }
+  function addImportFiles(files: File[]) {
+    const next = [...importFiles];
+    let duplicateCount = 0;
+    for (const file of files.filter(isSupportedTextFile)) {
+      const duplicate = next.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified);
+      if (duplicate) {
+        duplicateCount += 1;
+        continue;
+      }
+      next.push(file);
+    }
+    const unsupported = files.find((file) => !isSupportedTextFile(file));
+    setImportFiles(next);
+    if (unsupported) {
+      setModalError({ code: 'UNSUPPORTED_FILE_TYPE', message: t('knowledge:errors.unsupportedFileType', { name: unsupported.name || unsupported.type || t('knowledge:labels.fileName') }) });
+    } else if (duplicateCount) {
+      setModalError({ code: 'DUPLICATE_FILE_SKIPPED', message: t('knowledge:errors.duplicateFilesSkipped', { count: duplicateCount }) });
+    } else {
+      setModalError(null);
+    }
+  }
+  function removeImportFile(index: number) {
+    setImportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+  function onImportDragOver(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setImportDragActive(true);
+  }
+  function onImportDragLeave(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setImportDragActive(false);
+  }
+  function onImportDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setImportDragActive(false);
+    addImportFiles(Array.from(event.dataTransfer.files));
+  }
+  async function deleteOrigin(origin: KnowledgeOrigin) {
+    if (!values.id) return;
+    const confirmed = window.confirm(t('knowledge:confirm.deleteOrigin', { name: origin.name }));
+    if (!confirmed) return;
+    const knowledgeBaseId = values.id;
+    setBusy(`delete origin:${origin.id}`);
+    try {
+      setSourceError(null);
+      setSourceResult('');
+      await api.deleteKnowledgeOrigin(origin.id);
+      if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
+      setExpandedOriginIds((current) => {
+        const next = new Set(current);
+        next.delete(origin.id);
+        return next;
+      });
+      setSelectedSourceId((current) => sources.some((source) => source.origin_id === origin.id && source.id === current) ? '' : current);
+      await loadKnowledgeLists(knowledgeBaseId);
+      await onRefresh(knowledgeBaseId);
+      setSourceResult(t('knowledge:results.originDeleted'));
+    } catch (error) {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceError(toSettingsError(error, t('knowledge:errors.deleteOriginFailed')));
+      }
+    } finally {
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+    }
   }
   function toggleSourceSort(key: SourceSortKey) {
     setSourceSort((current) => ({
@@ -1429,15 +1545,15 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           <>
             <section className="detail-section">
               <div className="knowledge-source-toolbar">
-                <button className="settings-primary-button" type="button" disabled={Boolean(busy)} onClick={() => setSourceModal('create_origin')}>
+                <button className="settings-primary-button" type="button" disabled={Boolean(busy)} onClick={() => openSourceModal('create_origin')}>
                   <FolderPlus size={14} />
                   {t('knowledge:actions.createOrigin')}
                 </button>
-                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => setSourceModal('import_files')}>
+                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => openSourceModal('import_files')}>
                   <Upload size={14} />
                   {t('knowledge:actions.importFiles')}
                 </button>
-                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => setSourceModal('paste_text')}>
+                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => openSourceModal('paste_text')}>
                   <Clipboard size={14} />
                   {t('knowledge:actions.pasteText')}
                 </button>
@@ -1465,6 +1581,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                       })}
                       onScan={() => scanOrigin(origin.id)}
                       onReindex={() => importOrigin(origin.id)}
+                      onDelete={() => deleteOrigin(origin)}
                     />
                   ))}
                 </div>
@@ -1528,44 +1645,91 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         ) : null}
         {activeTab !== 'config' && (isNew || !values.id) ? <Empty title={t('knowledge:empty.saveFirst')} message={t('knowledge:empty.saveFirstMessage')} /> : null}
       </div>
-      <AppModal open={sourceModal === 'create_origin'} title={t('knowledge:modals.createOriginTitle')} closeLabel={t('common:close')} onClose={() => setSourceModal(null)}>
+      <AppModal open={sourceModal === 'create_origin'} title={t('knowledge:modals.createOriginTitle')} closeLabel={t('common:close')} onClose={closeSourceModal}>
         <div className="knowledge-source-modal-form">
-          <div className="settings-detail-grid">
+          <div className="knowledge-origin-create-row">
             <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
-            <TextField label={t('knowledge:labels.originSlug')} value={originSlug} onChange={setOriginSlug} />
             <SelectField label={t('knowledge:labels.originDefaultChunkProfile')} value={originDefaultChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setOriginDefaultChunkProfile} />
+            <label className="config-field settings-config-field boolean-field compact">
+              <span>{t('knowledge:labels.indexAfterCreate')}</span>
+              <ToggleSwitch checked={originIndexAfterCreate} onChange={setOriginIndexAfterCreate} disabled={Boolean(busy)} />
+            </label>
           </div>
-          <Metric label={t('knowledge:labels.resolvedFolderPath')} value={originSlug.trim() ? `data/knowledge/origins/${originSlug.trim()}/` : 'data/knowledge/origins/<origin_slug>/'} />
-          <div className="knowledge-modal-help">
-            <p>{t('knowledge:help.managedOriginPath')}</p>
-            <p>{t('knowledge:help.precreateOriginFolder')}</p>
-            <p>{t('knowledge:help.scanOnlyChecksChanges')}</p>
-          </div>
-          <label className="config-field settings-config-field boolean-field compact">
-            <span>{t('knowledge:labels.scanAfterCreate')}</span>
-            <ToggleSwitch checked={originCreateScan} onChange={setOriginCreateScan} disabled={Boolean(busy)} />
+          <label className="config-field settings-config-field knowledge-origin-folder-field">
+            <span>{t('knowledge:labels.originFolder')}</span>
+            <div className="knowledge-origin-folder-input">
+              <code>data/knowledge/origins/</code>
+              <input
+                className="settings-form-control"
+                type="text"
+                value={originSlug}
+                placeholder={t('knowledge:placeholders.originFolder')}
+                onChange={(event) => setOriginSlug(event.currentTarget.value)}
+              />
+            </div>
+            <small>{t('knowledge:help.originFolderShort')}</small>
           </label>
+          {originFolderSuggestions.length || originFolderSuggestionsLoading ? (
+            <div className="knowledge-folder-suggestions">
+              <span>{originFolderSuggestionsLoading ? t('knowledge:labels.loadingSuggestions') : t('knowledge:labels.folderSuggestions')}</span>
+              {originFolderSuggestions.map((folder) => (
+                <button key={folder.path} type="button" onClick={() => setOriginSlug(folder.path)}>
+                  {folder.path}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <Metric label={t('knowledge:labels.resolvedFolderPath')} value={originSlug.trim() ? `data/knowledge/origins/${originSlug.trim()}/` : 'data/knowledge/origins/'} />
+          <p className="settings-muted-copy">{t('knowledge:help.indexAfterCreate')}</p>
+          {modalError ? <SettingsApiError error={modalError} /> : null}
           <div className="settings-button-row">
-            <button className="settings-primary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={() => createOrigin(originCreateScan)}>
+            <button className="settings-primary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={() => createOrigin(originIndexAfterCreate)}>
               <FolderPlus size={14} />
-              {originCreateScan ? t('knowledge:actions.createAndScan') : t('knowledge:actions.create')}
+              {originIndexAfterCreate ? t('knowledge:actions.createAndIndex') : t('knowledge:actions.create')}
             </button>
           </div>
         </div>
       </AppModal>
-      <AppModal open={sourceModal === 'import_files'} title={t('knowledge:modals.importFilesTitle')} closeLabel={t('common:close')} onClose={() => setSourceModal(null)}>
+      <AppModal open={sourceModal === 'import_files'} title={t('knowledge:modals.importFilesTitle')} closeLabel={t('common:close')} onClose={closeSourceModal}>
         <div className="knowledge-source-modal-form">
           <input ref={fileInputRef} className="sr-only" type="file" multiple accept={TEXT_ATTACHMENT_ACCEPT} onChange={onFileChange} />
-          <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => fileInputRef.current?.click()}>
+          <button
+            className={`knowledge-file-dropzone ${importDragActive ? 'active' : ''}`}
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={onImportDragOver}
+            onDragLeave={onImportDragLeave}
+            onDrop={onImportDrop}
+          >
             <FileText size={14} />
-            {t('knowledge:actions.chooseFiles')}
+            <span>
+              <strong>{t('knowledge:dropzone.title')}</strong>
+              <small>{t('knowledge:dropzone.description')}</small>
+            </span>
           </button>
-          {importFiles.length ? <p className="settings-muted-text">{t('knowledge:labels.selectedFiles', { count: importFiles.length })}</p> : <p className="settings-muted-text">{t('knowledge:empty.noFilesSelected')}</p>}
+          {importFiles.length ? (
+            <div className="knowledge-selected-file-list">
+              {importFiles.map((file, index) => (
+                <div className="knowledge-selected-file" key={`${file.name}:${file.size}:${file.lastModified}`}>
+                  <FileText size={14} />
+                  <span>
+                    <strong>{file.name}</strong>
+                    <small>{fileExtension(file.name) || file.type || t('status:common.unknown', { ns: 'status' })} · {formatBytes(file.size)}</small>
+                  </span>
+                  <button className="icon-button" type="button" onClick={() => removeImportFile(index)} aria-label={t('knowledge:actions.removeFile')}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : <p className="settings-muted-text">{t('knowledge:empty.noFilesSelected')}</p>}
           <div className="settings-detail-grid">
-            <TextField label={t('knowledge:labels.sourcesFolderPath')} value={sourceFolderPath} onChange={setSourceFolderPath} />
+            <TextField label={t('knowledge:labels.sourcesFolderPath')} value={sourceFolderPath} placeholder={t('knowledge:placeholders.kbRootFolder')} onChange={setSourceFolderPath} />
             <SelectField label={t('knowledge:labels.chunkProfile')} value={sourceChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setSourceChunkProfile} />
           </div>
-          <p className="settings-muted-text">{t('knowledge:help.sourcesFolderPath')}</p>
+          <p className="settings-muted-copy">{t('knowledge:help.sourcesFolderPathShort')}</p>
+          {modalError ? <SettingsApiError error={modalError} /> : null}
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!importFiles.length || Boolean(busy)} onClick={() => addFiles(importFiles, { folderPath: sourceFolderPath, chunkProfile: sourceChunkProfile || null })}>
               <Play size={14} />
@@ -1574,17 +1738,18 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           </div>
         </div>
       </AppModal>
-      <AppModal open={sourceModal === 'paste_text'} title={t('knowledge:modals.pasteTextTitle')} closeLabel={t('common:close')} onClose={() => setSourceModal(null)}>
+      <AppModal open={sourceModal === 'paste_text'} title={t('knowledge:modals.pasteTextTitle')} closeLabel={t('common:close')} onClose={closeSourceModal}>
         <div className="knowledge-source-modal-form">
           <div className="settings-detail-grid">
             <TextField label={t('knowledge:labels.title')} value={sourceTitle} onChange={setSourceTitle} />
-            <TextField label={t('knowledge:labels.sourcesFolderPath')} value={sourceFolderPath} onChange={setSourceFolderPath} />
+            <TextField label={t('knowledge:labels.sourcesFolderPath')} value={sourceFolderPath} placeholder={t('knowledge:placeholders.kbRootFolder')} onChange={setSourceFolderPath} />
             <SelectField label={t('knowledge:labels.chunkProfile')} value={sourceChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setSourceChunkProfile} />
           </div>
           <TextAreaField label={t('knowledge:labels.textContent')} value={sourceText} onChange={setSourceText} />
-          <p className="settings-muted-text">{t('knowledge:help.sourcesFolderPath')}</p>
+          <p className="settings-muted-copy">{t('knowledge:help.sourcesFolderPathShort')}</p>
+          {modalError ? <SettingsApiError error={modalError} /> : null}
           <div className="settings-button-row">
-            <button className="settings-primary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}>
+            <button className="settings-primary-button" type="button" disabled={!sourceTitle.trim() || !sourceText.trim() || Boolean(busy)} onClick={addPastedSource}>
               <Play size={14} />
               {t('knowledge:actions.index')}
             </button>
@@ -1644,6 +1809,7 @@ function OriginAccordionCard({
   onToggle,
   onScan,
   onReindex,
+  onDelete,
 }: {
   origin: KnowledgeOrigin;
   sources: KnowledgeSource[];
@@ -1653,6 +1819,7 @@ function OriginAccordionCard({
   onToggle: () => void;
   onScan: () => void;
   onReindex: () => void;
+  onDelete: () => void;
 }) {
   const { t } = useTranslation(['knowledge', 'status']);
   const originSources = sources.filter((source) => source.origin_id === origin.id);
@@ -1690,6 +1857,13 @@ function OriginAccordionCard({
             <Metric label={t('knowledge:labels.missingFiles')} value={String(missingCount)} />
           </dl>
           {origin.error ? <p className="settings-error-text">{origin.error}</p> : null}
+          <div className="knowledge-origin-danger-zone">
+            <p>{t('knowledge:help.deleteOriginKeepsFiles')}</p>
+            <button className="settings-secondary-button danger" type="button" disabled={Boolean(busy)} onClick={onDelete}>
+              <Trash2 size={14} />
+              {t('knowledge:actions.deleteOrigin')}
+            </button>
+          </div>
         </div>
       ) : null}
     </article>
@@ -1941,8 +2115,8 @@ function NumberGroup({ title, values, setValues, fields }: { title: string; valu
   );
 }
 
-function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="config-field settings-config-field"><span>{label}</span><input className="settings-form-control" type="text" value={value} onChange={(event) => onChange(event.currentTarget.value)} /></label>;
+function TextField({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (value: string) => void }) {
+  return <label className="config-field settings-config-field"><span>{label}</span><input className="settings-form-control" type="text" value={value} placeholder={placeholder} onChange={(event) => onChange(event.currentTarget.value)} /></label>;
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: number | string; onChange: (value: number | '') => void }) {

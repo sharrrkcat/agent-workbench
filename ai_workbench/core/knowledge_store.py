@@ -263,7 +263,9 @@ class KnowledgeOrigin(BaseModel):
     @field_validator("slug")
     @classmethod
     def _slug(cls, value: str) -> str:
-        return validate_alias(value)
+        from ai_workbench.core.knowledge_origins import safe_origin_slug
+
+        return safe_origin_slug(value)
 
 
 class KnowledgeOriginCreate(BaseModel):
@@ -278,7 +280,9 @@ class KnowledgeOriginCreate(BaseModel):
     @field_validator("slug")
     @classmethod
     def _slug(cls, value: str) -> str:
-        return validate_alias(value)
+        from ai_workbench.core.knowledge_origins import safe_origin_slug
+
+        return safe_origin_slug(value)
 
 
 class KnowledgeOriginPatch(BaseModel):

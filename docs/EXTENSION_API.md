@@ -537,6 +537,7 @@ Knowledge source indexing APIs:
 - `POST /api/knowledge/bases/{id}/sources`
 - `GET /api/knowledge/bases/{id}/origins`
 - `POST /api/knowledge/bases/{id}/origins`
+- `GET /api/knowledge/origins/folders?prefix=<relative_path>`
 - `GET /api/knowledge/origins/{origin_id}`
 - `PATCH /api/knowledge/origins/{origin_id}`
 - `DELETE /api/knowledge/origins/{origin_id}`
@@ -559,11 +560,13 @@ and text attachments:
   {"source_type": "attachment_text", "attachment_id": "local://attachments/<id>.txt", "folder_path": "imports", "chunk_profile": "plain_text"}
 ```
 
-Managed origins expose only directories under `data/knowledge/origins/<origin_slug>/`, where `origin_slug` is a safe lowercase ASCII folder name. Creating an origin reuses an existing matching directory and rejects an existing non-directory path. Origin records may include `default_chunk_profile`; source records use `source_type: "origin_file"` and include compact path metadata such as `origin_id`, `relative_path`, `virtual_path`, `folder_path`, `file_name`, `extension`, `path_depth`, `file_status`, `source_mtime`, and `source_size_bytes`. Source responses also include compact effective profile/status fields: `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `profile_source`, `entity_level`, `title_source`, and `type_source`. `file_status` may be `ready`, `new`, `changed`, `missing`, or `failed`.
+Managed origins expose only directories under `data/knowledge/origins/<origin_folder>/`, where `origin_folder` is a safe relative folder path. It may include nested segments such as `starwars/canon`, but it must not be absolute, contain `..`, empty segments, or backslashes, and the resolved root must stay inside `data/knowledge/origins`. `GET /api/knowledge/origins/folders` lists existing directory suggestions only; it does not read file contents, scan, index, or create sources. Creating an origin reuses an existing matching directory and rejects an existing non-directory path. Origin records may include `default_chunk_profile`; source records use `source_type: "origin_file"` and include compact path metadata such as `origin_id`, `relative_path`, `virtual_path`, `folder_path`, `file_name`, `extension`, `path_depth`, `file_status`, `source_mtime`, and `source_size_bytes`. Source responses also include compact effective profile/status fields: `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `profile_source`, `entity_level`, `title_source`, and `type_source`. `file_status` may be `ready`, `new`, `changed`, `missing`, or `failed`.
 
 `POST /api/knowledge/origins/{origin_id}/scan` is lightweight. It validates that every resolved file stays inside the managed origin root, skips hidden directories, `.git`, `node_modules`, `__pycache__`, symlinks, unsupported/binary files, and files over the Knowledge source size limit, then compares mtime/size/hash and updates origin/source metadata. It returns `new_count`, `changed_count`, `missing_count`, `unchanged_count`, `failed_count`, and `warnings`. Scan does not parse, chunk, embed, write `kb_chunks`, write `kb_embeddings`, write `kb_chunk_fts`, delete missing indexes, or alter retrieval-visible index rows.
 
 `POST /api/knowledge/origins/{origin_id}/import` is the explicit heavy action. It indexes new files and reindexes changed files through the existing source indexing path. Missing files are reported/skipped and keep old chunks/embeddings/FTS rows until the user deletes the source. Single-file failures are returned in the batch summary without aborting the whole batch.
+
+`DELETE /api/knowledge/origins/{origin_id}` deletes the origin record plus its `origin_file` source rows and derived chunks, embeddings, and FTS rows for that Knowledge Base. It never deletes the managed origin directory or files from disk. The Settings UI may offer an explicit Create and index action that runs one user-triggered scan plus import/reindex immediately after creating the origin; this is not automatic sync.
 
 The indexer validates source size and chunk limits, chunks text, embeds chunks with the KB embedding model profile using `purpose=document`, stores vectors as float32 SQLite BLOBs, and writes FTS5 rows. Pasted source originals are saved under `data/knowledge/sources/<source_id>.txt`; full pasted source text is not stored in `kb_sources`. Attachment indexing reads existing local text attachments and does not delete or modify the original attachment.
 

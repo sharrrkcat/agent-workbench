@@ -513,6 +513,16 @@ export type KnowledgeOrigin = {
 
 export type KnowledgeOriginInput = Partial<Pick<KnowledgeOrigin, 'name' | 'slug' | 'include_globs' | 'exclude_globs' | 'default_chunk_profile' | 'status' | 'metadata'>>;
 
+export type KnowledgeOriginFolderSuggestion = {
+  name: string;
+  path: string;
+};
+
+export type KnowledgeOriginFolderSuggestionsResponse = {
+  prefix: string;
+  folders: KnowledgeOriginFolderSuggestion[];
+};
+
 export type KnowledgeOriginScanSummary = {
   origin_id: string;
   new_count: number;

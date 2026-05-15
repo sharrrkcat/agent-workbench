@@ -62,22 +62,28 @@ class OriginFileSnapshot:
 
 
 def safe_origin_slug(value: str) -> str:
-    slug = str(value or "").strip().lower()
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", slug):
-        raise ValueError("Origin slug must be a safe lowercase ASCII folder name.")
-    if "/" in slug or "\\" in slug or ".." in slug or not all(part for part in slug.split("/")):
-        raise ValueError("Origin slug must not contain path separators or traversal.")
-    return slug
+    folder = str(value or "").strip()
+    path = Path(folder)
+    if not folder:
+        raise ValueError("Origin folder must not be empty.")
+    if path.is_absolute() or folder.startswith("/") or folder.endswith("/") or "\\" in folder:
+        raise ValueError("Origin folder must be a relative path under data/knowledge/origins.")
+    parts = folder.split("/")
+    if any(not part or part in {".", ".."} for part in parts):
+        raise ValueError("Origin folder must not contain empty segments or traversal.")
+    if not all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", part) for part in parts):
+        raise ValueError("Origin folder segments may contain letters, numbers, dots, underscores, and hyphens.")
+    return "/".join(parts)
 
 
 def origin_root_for_slug(repo_root: Path, slug: str) -> Path:
     safe = safe_origin_slug(slug)
     base = (repo_root / "data" / "knowledge" / "origins").resolve()
-    root = (base / safe).resolve()
+    root = (base / Path(*safe.split("/"))).resolve()
     try:
         root.relative_to(base)
     except ValueError as exc:
-        raise ValueError("Origin root must stay inside data/knowledge/origins/<origin_slug>.") from exc
+        raise ValueError("Origin root must stay inside data/knowledge/origins/.") from exc
     return root
 
 
@@ -85,8 +91,55 @@ def validate_origin_root(repo_root: Path, slug: str, root_path: str) -> Path:
     expected = origin_root_for_slug(repo_root, slug)
     candidate = (repo_root / root_path).resolve() if not Path(root_path).is_absolute() else Path(root_path).resolve()
     if candidate != expected:
-        raise ValueError("Origin root must be data/knowledge/origins/<origin_slug>.")
+        raise ValueError("Origin root must be under data/knowledge/origins/.")
     return expected
+
+
+def list_origin_folder_suggestions(repo_root: Path, prefix: str = "") -> list[dict[str, str]]:
+    normalized = str(prefix or "").strip()
+    base = (repo_root / "data" / "knowledge" / "origins").resolve()
+    if "\\" in normalized or ":" in normalized or Path(normalized).is_absolute():
+        raise ValueError("Origin folder prefix must be a relative path.")
+    if normalized.startswith("/") or "//" in normalized:
+        raise ValueError("Origin folder prefix must not contain empty path segments.")
+    if any(part in {".", ".."} for part in normalized.split("/") if part):
+        raise ValueError("Origin folder prefix must not contain traversal.")
+    if any(part and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", part) for part in normalized.split("/")):
+        raise ValueError("Origin folder prefix contains unsupported characters.")
+    parent_text, partial = _folder_parent_and_partial(normalized)
+    if not base.exists():
+        return []
+    if not base.is_dir():
+        raise ValueError("Origin folder root exists but is not a directory.")
+    parent = (base / Path(*parent_text.split("/"))).resolve() if parent_text else base
+    try:
+        parent.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("Origin folder prefix must stay inside data/knowledge/origins/.") from exc
+    if not parent.exists():
+        return []
+    if not parent.is_dir():
+        raise ValueError("Origin folder prefix exists but is not a directory.")
+    suggestions: list[dict[str, str]] = []
+    for child in sorted(parent.iterdir(), key=lambda path: path.name.lower()):
+        if not child.is_dir():
+            continue
+        if partial and not child.name.lower().startswith(partial.lower()):
+            continue
+        value = f"{parent_text}/{child.name}" if parent_text else child.name
+        suggestions.append({"name": child.name, "path": value.replace("\\", "/")})
+    return suggestions[:50]
+
+
+def _folder_parent_and_partial(prefix: str) -> tuple[str, str]:
+    if not prefix:
+        return "", ""
+    if prefix.endswith("/"):
+        return prefix.rstrip("/"), ""
+    parts = prefix.split("/")
+    if len(parts) == 1:
+        return "", parts[0]
+    return "/".join(parts[:-1]), parts[-1]
 
 
 def scan_origin_files(

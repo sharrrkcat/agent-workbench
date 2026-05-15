@@ -53,9 +53,12 @@
     "createOrigin": "创建 Origin",
     "create": "创建",
     "createAndScan": "创建并扫描",
+    "createAndIndex": "创建并索引",
     "importFiles": "导入文件",
     "pasteText": "粘贴文本",
-    "index": "索引"
+    "index": "索引",
+    "deleteOrigin": "删除 Origin",
+    "removeFile": "移除文件"
   },
   "labels": {
     "modelsRoot": "模型根目录",
@@ -122,9 +125,11 @@
     "rerankerFolders": "Reranker 文件夹",
     "originName": "Origin name",
     "originSlug": "Origin slug",
+    "originFolder": "Origin 文件夹",
     "originDefaultChunkProfile": "Origin 默认分块配置",
     "resolvedFolderPath": "解析后的文件夹路径",
     "scanAfterCreate": "创建后扫描",
+    "indexAfterCreate": "创建后索引",
     "folderPath": "文件夹路径",
     "sourcesFolderPath": "来源文件夹路径",
     "fileName": "文件名",
@@ -151,7 +156,9 @@
     "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
     "profileWithSource": "{{profile}} · {{source}}",
     "selectedFiles": "已选择 {{count}} 个文件",
-    "selectedFiles_plural": "已选择 {{count}} 个文件"
+    "selectedFiles_plural": "已选择 {{count}} 个文件",
+    "folderSuggestions": "文件夹建议",
+    "loadingSuggestions": "正在加载建议..."
   },
   "empty": {
     "loadingSettings": "正在加载知识库设置。",
@@ -196,13 +203,14 @@
     "reindexedSourcesWithFailures": "已重建 {{count}} 个来源；{{failed}} 个失败。",
     "commandCopied": "命令已复制。",
     "localModelDeviceSet": "本地模型设备已设置为 {{device}}。",
-    "originCreated": "Origin created at {{path}}.",
-    "originScanned": "Scan complete: {{new_count}} new, {{changed_count}} changed, {{missing_count}} missing.",
-    "originImported": "Imported/reindexed {{imported_count}} source(s); {{failed_count}} failed."
+    "originCreated": "Origin 已创建：{{path}}。",
+    "originScanned": "扫描完成：{{new_count}} 个新文件，{{changed_count}} 个变更文件，{{missing_count}} 个缺失文件。",
+    "originImported": "已导入/重建 {{imported_count}} 个来源；{{failed_count}} 个失败。",
+    "originDeleted": "Origin 已删除。已移除索引来源，磁盘文件已保留。"
   },
   "dropzone": {
-    "title": "将文本文件拖到这里",
-    "description": "支持附件系统已接受的文本、代码和配置文件。"
+    "title": "将文本文件拖到这里或选择文件",
+    "description": "支持多个文本、代码和配置文件。不使用文件夹上传。"
   },
   "backend": {
     "notScanned": "未扫描",
@@ -294,7 +302,11 @@
     "managedOriginPath": "托管 Origins 位于 data/knowledge/origins/<origin_slug>/。",
     "precreateOriginFolder": "你可以先手动创建文件夹，然后用同一个 slug 创建 Origin。",
     "scanOnlyChecksChanges": "扫描只检查文件变化。",
-    "sourcesFolderPath": "这是知识库内部的文件夹路径，不是系统文件夹路径。留空时放在知识库根目录。"
+    "sourcesFolderPath": "这是知识库内部的文件夹路径，不是系统文件夹路径。留空时放在知识库根目录。",
+    "sourcesFolderPathShort": "知识库内部文件夹路径，不是系统文件夹。",
+    "originFolderShort": "选择已有托管文件夹，或输入新的相对文件夹路径。",
+    "indexAfterCreate": "创建后索引会在 Origin 创建后执行一次解析、分块和 embedding。",
+    "deleteOriginKeepsFiles": "这会从此知识库移除该 Origin 及其已索引来源，不会删除磁盘文件。"
   },
   "modals": {
     "createOriginTitle": "创建 Origin",
@@ -307,7 +319,9 @@
   },
   "placeholders": {
     "useKnowledgeDefault": "使用 Knowledge 默认值",
-    "useKnowledgeBaseDefault": "使用知识库默认值"
+    "useKnowledgeBaseDefault": "使用知识库默认值",
+    "kbRootFolder": "留空时放在知识库根目录",
+    "originFolder": "folder 或 nested/folder"
   },
   "chunkProfiles": {
     "plain_text": "纯文本",
@@ -339,7 +353,19 @@
     "low": "低"
   },
   "errors": {
-    "copyCommandFailed": "复制命令失败。请选中文本后手动复制。"
+    "copyCommandFailed": "复制命令失败。请选中文本后手动复制。",
+    "loadOriginFoldersFailed": "加载 Origin 文件夹建议失败。",
+    "createOriginFailed": "创建 Origin 失败。",
+    "originFolderAlreadyRegistered": "此 Origin 文件夹已注册到当前知识库。",
+    "indexPastedTextFailed": "索引粘贴文本来源失败。",
+    "indexFilesFailed": "索引所选文件失败。",
+    "unsupportedFileType": "不支持的文件类型：{{name}}。",
+    "duplicateFilesSkipped": "已跳过 {{count}} 个重复文件。",
+    "duplicateFilesSkipped_plural": "已跳过 {{count}} 个重复文件。",
+    "deleteOriginFailed": "删除 Origin 失败。"
+  },
+  "confirm": {
+    "deleteOrigin": "删除 Origin \"{{name}}\"？\n\n这会从此知识库移除该 Origin 及其已索引来源，不会删除磁盘文件。"
   },
   "statusText": {
     "reindexRecommended": "Reindex recommended"

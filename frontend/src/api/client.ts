@@ -29,6 +29,7 @@ import type {
   KnowledgeBase,
   KnowledgeBaseInput,
   KnowledgeOrigin,
+  KnowledgeOriginFolderSuggestionsResponse,
   KnowledgeOriginImportSummary,
   KnowledgeOriginInput,
   KnowledgeOriginScanSummary,
@@ -308,6 +309,8 @@ export const api = {
     request<{ deleted: boolean; knowledge_base_id: string }>(`/api/knowledge/bases/${knowledgeBaseId}`, { method: 'DELETE' }),
   listKnowledgeSources: (knowledgeBaseId: string) => request<KnowledgeSource[]>(`/api/knowledge/bases/${knowledgeBaseId}/sources`),
   listKnowledgeOrigins: (knowledgeBaseId: string) => request<KnowledgeOrigin[]>(`/api/knowledge/bases/${knowledgeBaseId}/origins`),
+  listKnowledgeOriginFolders: (prefix = '') =>
+    request<KnowledgeOriginFolderSuggestionsResponse>(`/api/knowledge/origins/folders?prefix=${encodeURIComponent(prefix)}`),
   createKnowledgeOrigin: (knowledgeBaseId: string, origin: KnowledgeOriginInput) =>
     request<KnowledgeOrigin>(`/api/knowledge/bases/${knowledgeBaseId}/origins`, {
       method: 'POST',
