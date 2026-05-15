@@ -1,4 +1,4 @@
-import { ArrowUpDown, BrainCircuit, ChevronDown, Clipboard, FileText, FolderPlus, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { ArrowUpDown, BrainCircuit, ChevronDown, Clipboard, FileText, FolderPlus, Loader2, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -1748,7 +1748,10 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               <TextField label={t('knowledge:labels.query')} value={searchQuery} onChange={setSearchQuery} />
             </div>
             <div className="settings-button-row">
-              <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />{t('knowledge:actions.search')}</button>
+              <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}>
+                {busy === 'searching' ? <LoadingSpinner /> : <Search size={14} />}
+                {t('knowledge:actions.search')}
+              </button>
             </div>
             {searchError ? <SettingsApiError error={searchError} /> : null}
             {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
@@ -1828,7 +1831,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         <div className="knowledge-modal-footer">
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={() => createOrigin(originIndexAfterCreate)}>
-              <FolderPlus size={14} />
+              {busy === 'creating origin' ? <LoadingSpinner /> : <FolderPlus size={14} />}
               {originIndexAfterCreate ? t('knowledge:actions.createAndIndex') : t('knowledge:actions.create')}
             </button>
           </div>
@@ -1880,7 +1883,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         <div className="knowledge-modal-footer">
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!importFiles.length || Boolean(busy)} onClick={() => addFiles(importFiles, { folderPath: sourceFolderPath, chunkProfile: sourceChunkProfile || null })}>
-              <Play size={14} />
+              {busy === 'indexing file' ? <LoadingSpinner /> : <Play size={14} />}
               {t('knowledge:actions.index')}
             </button>
           </div>
@@ -1902,7 +1905,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         <div className="knowledge-modal-footer">
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!sourceTitle.trim() || !sourceText.trim() || Boolean(busy)} onClick={addPastedSource}>
-              <Play size={14} />
+              {busy === 'indexing' ? <LoadingSpinner /> : <Play size={14} />}
               {t('knowledge:actions.index')}
             </button>
           </div>
@@ -2119,22 +2122,21 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
           {error ? <SettingsApiError error={error} /> : null}
           <section className="knowledge-source-subsection">
             <h4>{t('knowledge:sections.overview')}</h4>
-            <dl className="settings-definition-grid knowledge-source-overview-grid">
+            <dl className="settings-definition-grid knowledge-source-overview-row first">
               <Metric label={t('knowledge:labels.chunks')} value={String(source.chunks)} />
-              <Metric label={t('knowledge:labels.folderPath')} value={source.folder_path || t('status:common.none')} />
-              <Metric label={t('knowledge:labels.fileName')} value={source.file_name || t('status:common.none')} />
-              <Metric label={t('knowledge:labels.lastIndexedAt')} value={lastIndexed} />
-              <Metric label={t('knowledge:labels.size')} value={formatBytes(source.size_bytes)} />
-            </dl>
-            <dl className="settings-definition-grid knowledge-source-profile-grid">
-              <Metric label={t('knowledge:labels.effectiveProfile')} value={sourceProfileText(source, t)} />
-              <Metric label={t('knowledge:labels.profileSource')} value={profileSourceLabel(source.profile_source || source.metadata?.profile_source, t)} />
+              <Metric label={t('knowledge:labels.embeddingDimension')} value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
               <Metric label={t('knowledge:labels.confidence')} value={confidenceLabel(source.chunk_profile_confidence ?? source.metadata?.chunk_profile_confidence, t)} />
               <Metric label={t('knowledge:labels.entityLevel')} value={entityLevelLabel(source.entity_level ?? source.metadata?.entity_level, t)} />
+            </dl>
+            <dl className="settings-definition-grid knowledge-source-overview-row second">
+              <Metric label={t('knowledge:labels.contentHash')} value={source.content_hash || 'n/a'} valueClassName="knowledge-content-hash-value" />
+              <Metric label={t('knowledge:labels.size')} value={formatBytes(source.size_bytes)} />
+            </dl>
+            <dl className="settings-definition-grid knowledge-source-overview-row third">
+              <Metric label={t('knowledge:labels.effectiveProfile')} value={sourceProfileText(source, t)} />
+              <Metric label={t('knowledge:labels.profileSource')} value={profileSourceLabel(source.profile_source || source.metadata?.profile_source, t)} />
               <Metric label={t('knowledge:labels.titleSource')} value={profileSourceLabel(source.title_source || source.metadata?.title_source, t)} />
               <Metric label={t('knowledge:labels.typeSource')} value={profileSourceLabel(source.type_source || source.metadata?.type_source, t)} />
-              <Metric label={t('knowledge:labels.embeddingDimension')} value={source.embedding_dimension ? String(source.embedding_dimension) : 'n/a'} />
-              <Metric label={t('knowledge:labels.contentHash')} value={source.content_hash || 'n/a'} />
             </dl>
             {source.error ? <p className="settings-error-text">{source.error}</p> : null}
           </section>
@@ -2303,8 +2305,12 @@ function SelectField({ label, value, options, labels, placeholder, disabled, onC
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd title={value}>{value}</dd></div>;
+function Metric({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+  return <div><dt>{label}</dt><dd className={valueClassName} title={value}>{value}</dd></div>;
+}
+
+function LoadingSpinner() {
+  return <Loader2 className="spin" size={14} aria-hidden="true" />;
 }
 
 function CommandCard({ command, title, onCopy }: { command: string; title?: string; onCopy: (text: string) => void }) {

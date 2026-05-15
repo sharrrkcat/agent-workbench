@@ -5498,6 +5498,11 @@ input:disabled {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.knowledge-origin-folder-input:focus-within {
+  border-color: rgba(34, 160, 107, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 160, 107, 0.15);
+}
+
 .knowledge-origin-folder-input code {
   padding: 0 10px;
   color: rgba(255, 255, 255, 0.58);
@@ -5506,11 +5511,12 @@ input:disabled {
   white-space: nowrap;
 }
 
-.knowledge-origin-folder-input input {
+.settings-config-field .knowledge-origin-folder-input input[type="text"] {
   border: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0;
   background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .knowledge-folder-suggestion-popup {
@@ -5872,9 +5878,17 @@ input:disabled {
   text-transform: uppercase;
 }
 
-.settings-definition-grid.knowledge-source-overview-grid,
-.settings-definition-grid.knowledge-source-profile-grid {
+.settings-definition-grid.knowledge-source-overview-row.first,
+.settings-definition-grid.knowledge-source-overview-row.third {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-definition-grid.knowledge-source-overview-row.second {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.knowledge-content-hash-value {
+  font-family: var(--aw-font-code);
 }
 
 .knowledge-source-preview,
@@ -7532,6 +7546,12 @@ input:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .settings-definition-grid.knowledge-source-overview-row.first,
+  .settings-definition-grid.knowledge-source-overview-row.second,
+  .settings-definition-grid.knowledge-source-overview-row.third {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .pet-list-item {
     grid-template-columns: 52px minmax(0, 1fr);
   }
@@ -7558,6 +7578,12 @@ input:disabled {
 
 @media (max-width: 620px) {
   .settings-definition-grid.semantic-candidate-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-definition-grid.knowledge-source-overview-row.first,
+  .settings-definition-grid.knowledge-source-overview-row.second,
+  .settings-definition-grid.knowledge-source-overview-row.third {
     grid-template-columns: 1fr;
   }
 
