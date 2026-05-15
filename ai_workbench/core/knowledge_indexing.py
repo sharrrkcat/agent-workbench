@@ -323,6 +323,8 @@ def chunk_source_text(
     )
     if chunks:
         return chunks
+    if parse.headings or parse.frontmatter:
+        return chunks
     return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings, profile_source="fallback")
 
 
@@ -478,7 +480,7 @@ def _markdown_chunks(
         sections = _document_sections(text, parse=parse)
     drafts: list[ChunkDraft] = []
     for section in sections:
-        if not section.content.strip():
+        if not section.content.strip() or not _has_non_heading_body(section.content):
             continue
         metadata_base = _section_metadata(
             section=section,
@@ -629,15 +631,16 @@ def _document_title(*, parse: MarkdownParseResult, source_title: str) -> str:
 def _document_sections(text: str, *, parse: MarkdownParseResult) -> list[MarkdownSection]:
     headings = parse.headings
     if not headings:
+        body = text[parse.body_start_char :]
         return [
             MarkdownSection(
                 heading=None,
                 heading_path="",
-                char_start=0,
+                char_start=parse.body_start_char,
                 char_end=len(text),
-                line_start=1,
+                line_start=_line_for_char(parse.line_starts, parse.body_start_char),
                 line_end=_line_for_char(parse.line_starts, len(text)),
-                content=text,
+                content=body,
             )
         ]
     sections: list[MarkdownSection] = []
@@ -760,7 +763,7 @@ def _split_section(
     section_length = section.char_end - section.char_start
     local_start = 0
     while local_start < section_length:
-        local_end = min(local_start + chunk_size, section_length)
+        local_end = _choose_split_end(section.content, local_start=local_start, section_length=section_length, chunk_size=chunk_size)
         char_start = section.char_start + local_start
         char_end = section.char_start + local_end
         content = section.content[local_start:local_end]
@@ -785,8 +788,120 @@ def _split_section(
         )
         if local_end >= section_length:
             break
-        local_start = local_end - chunk_overlap
+        next_start = max(local_start + 1, local_end - chunk_overlap)
+        local_start = _choose_overlap_start(
+            section.content,
+            target_start=next_start,
+            current_start=local_start,
+            local_end=local_end,
+            section_length=section_length,
+        )
     return drafts
+
+
+_HEADING_LINE_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+\S.*?[ \t]*#*[ \t]*$")
+_SENTENCE_BOUNDARY_RE = re.compile(r"[.!?;:。！？；：][ \t\r\n]+")
+
+
+def _has_non_heading_body(content: str) -> bool:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _HEADING_LINE_RE.match(line.rstrip("\r\n")):
+            continue
+        return True
+    return False
+
+
+def _choose_split_end(content: str, *, local_start: int, section_length: int, chunk_size: int) -> int:
+    target = min(local_start + chunk_size, section_length)
+    if target >= section_length:
+        return section_length
+    min_length = max(1, min(chunk_size // 2, chunk_size - 1))
+    min_end = min(target, local_start + min_length)
+    for boundary in _split_boundary_candidates(content, local_start=local_start, target=target, min_end=min_end):
+        if boundary > local_start:
+            return boundary
+    return target
+
+
+def _split_boundary_candidates(content: str, *, local_start: int, target: int, min_end: int) -> list[int]:
+    window = content[min_end:target]
+    ranked: list[int] = []
+    for marker in ("\n\n", "\r\n\r\n"):
+        index = window.rfind(marker)
+        if index >= 0:
+            ranked.append(min_end + index + len(marker))
+    if ranked:
+        return _valid_boundaries(ranked, local_start=local_start, target=target)
+
+    newline = max(window.rfind("\n"), window.rfind("\r"))
+    if newline >= 0:
+        return _valid_boundaries([min_end + newline + 1], local_start=local_start, target=target)
+
+    sentence = None
+    for match in _SENTENCE_BOUNDARY_RE.finditer(window):
+        sentence = min_end + match.end()
+    if sentence is not None:
+        return _valid_boundaries([sentence], local_start=local_start, target=target)
+
+    whitespace = None
+    for index in range(len(window) - 1, -1, -1):
+        if window[index].isspace():
+            whitespace = min_end + index + 1
+            break
+    if whitespace is not None:
+        return _valid_boundaries([whitespace], local_start=local_start, target=target)
+    return []
+
+
+def _valid_boundaries(candidates: list[int], *, local_start: int, target: int) -> list[int]:
+    return sorted({candidate for candidate in candidates if local_start < candidate <= target}, reverse=True)
+
+
+def _choose_overlap_start(
+    content: str,
+    *,
+    target_start: int,
+    current_start: int,
+    local_end: int,
+    section_length: int,
+) -> int:
+    if target_start >= section_length:
+        return section_length
+    lower = max(current_start + 1, target_start - 24)
+    upper = min(local_end - 1, section_length - 1, target_start + 24)
+    if lower > upper:
+        return target_start
+    for candidate in _overlap_boundary_candidates(content, lower=lower, upper=upper, target=target_start):
+        if current_start < candidate < section_length:
+            return candidate
+    return target_start
+
+
+def _overlap_boundary_candidates(content: str, *, lower: int, upper: int, target: int) -> list[int]:
+    candidates: list[int] = []
+    for marker in ("\n\n", "\r\n\r\n"):
+        search_start = lower
+        while True:
+            index = content.find(marker, search_start, upper + len(marker))
+            if index < 0:
+                break
+            candidate = index + len(marker)
+            if lower <= candidate <= upper:
+                candidates.append(candidate)
+            search_start = index + 1
+    for index in range(lower, upper + 1):
+        if content[index - 1 : index + 1] in {"\n", "\r"} or content[index - 1 : index + 1].endswith("\n") or content[index - 1 : index + 1].endswith("\r"):
+            candidates.append(index)
+        previous = content[index - 1] if index > 0 else ""
+        current = content[index] if index < len(content) else ""
+        if previous in ".!?;:。！？；：" and current.isspace():
+            candidates.append(index + 1 if index + 1 <= upper else index)
+        if current.isspace():
+            candidates.append(index + 1 if index + 1 <= upper else index)
+    return sorted({candidate for candidate in candidates if lower <= candidate <= upper}, key=lambda value: abs(value - target))
 
 
 def build_embedding_input(source_title: str, chunk: ChunkDraft) -> str:

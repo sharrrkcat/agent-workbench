@@ -75,6 +75,26 @@ def create_kb_with_profile(client: TestClient, *, default_chunk_profile: str | N
     return response.json()
 
 
+def make_unit_kb(*, default_chunk_profile: str = "markdown_document", chunk_size: int = 500, chunk_overlap: int = 0) -> KnowledgeBase:
+    return KnowledgeBase.model_construct(
+        id="kb",
+        name="Docs",
+        description="",
+        aliases_text="",
+        embedding_model_profile_id="profile",
+        enabled=True,
+        index_status="empty",
+        index_error=None,
+        chunk_size_override=chunk_size,
+        chunk_overlap_override=chunk_overlap,
+        vector_candidate_k_override=None,
+        keyword_candidate_k_override=None,
+        final_top_k_override=None,
+        max_context_chars_override=None,
+        default_chunk_profile=default_chunk_profile,
+    )
+
+
 def table_count(db_path: Path, table: str, where: str = "", params: tuple = ()) -> int:
     with sqlite3.connect(db_path) as connection:
         suffix = f" WHERE {where}" if where else ""
@@ -404,6 +424,142 @@ Cere and BD-1.
     assert any(item["heading_path"] == "Cal Kestis > Role in Fallen Order" for item in metadata)
     assert any("Title: Cal Kestis" in text for text in backend.calls[-1]["texts"])
     assert not any("Title: cal-kestis.md" in text or "Title: characters/cal-kestis.md" in text for text in backend.calls[-1]["texts"])
+
+
+def test_markdown_document_skips_h1_parent_without_direct_body() -> None:
+    chunks = chunk_source_text(
+        "# Parent\n\n## Child\nText\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(),
+        source_title="parent.md",
+    )
+
+    assert [chunk.content.strip() for chunk in chunks] == ["## Child\nText"]
+    assert chunks[0].metadata["heading_path"] == "Parent > Child"
+
+
+def test_markdown_document_skips_h3_parent_without_direct_body() -> None:
+    chunks = chunk_source_text(
+        "### Parent\n\n#### Child\nText\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(),
+        source_title="parent.md",
+    )
+
+    assert [chunk.content.strip() for chunk in chunks] == ["#### Child\nText"]
+    assert chunks[0].metadata["heading_path"] == "Parent > Child"
+
+
+def test_markdown_document_keeps_parent_with_direct_body_and_child() -> None:
+    chunks = chunk_source_text(
+        "### Parent\nDirect text.\n\n#### Child\nText\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(),
+        source_title="parent.md",
+    )
+
+    assert [chunk.metadata["heading_path"] for chunk in chunks] == ["Parent", "Parent > Child"]
+    assert chunks[0].content.strip() == "### Parent\nDirect text."
+    assert chunks[1].content.strip() == "#### Child\nText"
+
+
+def test_markdown_heading_only_defensive_filter_removes_heading_only_chunks() -> None:
+    chunks = chunk_source_text(
+        "# Parent\n\n## Child\n\n### Empty\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(),
+        source_title="headings.md",
+    )
+
+    assert chunks == []
+
+
+def test_markdown_english_split_boundaries_avoid_mid_word_starts_and_ends() -> None:
+    text = (
+        "# Notes\n\n"
+        "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda. "
+        "Second sentence keeps enough words for another chunk boundary. "
+        "Third sentence continues with ordinary English words and spaces. "
+        "Fourth sentence finishes the example cleanly."
+    )
+    chunks = chunk_source_text(
+        text,
+        settings=KnowledgeSettings(default_chunk_size=100, default_chunk_overlap=24),
+        knowledge_base=make_unit_kb(chunk_size=90, chunk_overlap=24),
+        source_title="notes.md",
+    )
+
+    assert len(chunks) >= 2
+    starts = [chunk.char_start for chunk in chunks]
+    assert starts == sorted(starts)
+    assert len(chunks) <= 5
+    for chunk in chunks[1:]:
+        assert not (text[chunk.char_start - 1].isalnum() and text[chunk.char_start].isalnum())
+    for chunk in chunks[:-1]:
+        assert not (text[chunk.char_end - 1].isalnum() and text[chunk.char_end].isalnum())
+
+
+def test_markdown_overlap_start_avoids_english_mid_word() -> None:
+    text = (
+        "# Notes\n\n"
+        "One two three four five six seven eight nine ten eleven twelve. "
+        "Thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty. "
+        "Twenty one twenty two twenty three twenty four twenty five."
+    )
+    chunks = chunk_source_text(
+        text,
+        settings=KnowledgeSettings(default_chunk_size=100, default_chunk_overlap=25),
+        knowledge_base=make_unit_kb(chunk_size=70, chunk_overlap=25),
+        source_title="notes.md",
+    )
+
+    assert 2 <= len(chunks) <= 6
+    previous_start = -1
+    for chunk in chunks:
+        assert chunk.char_start > previous_start
+        previous_start = chunk.char_start
+    for chunk in chunks[1:]:
+        assert not (text[chunk.char_start - 1].isalnum() and text[chunk.char_start].isalnum())
+
+
+def test_markdown_frontmatter_is_not_chunk_content() -> None:
+    chunks = chunk_source_text(
+        "---\ntitle: Example\n---\n# Example\nText\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(),
+        source_title="example.md",
+    )
+
+    assert len(chunks) == 1
+    assert "---" not in chunks[0].content
+    assert "title: Example" not in chunks[0].content
+    assert chunks[0].content.strip() == "# Example\nText"
+
+
+def test_markdown_fenced_code_heading_is_not_heading_path() -> None:
+    chunks = chunk_source_text(
+        "```md\n# Not a heading\n````\n\n# Real heading\n\nText\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(),
+        source_title="example.md",
+    )
+
+    heading_paths = [chunk.metadata["heading_path"] for chunk in chunks]
+    assert "Real heading" in heading_paths
+    assert all("Not a heading" not in heading_path for heading_path in heading_paths)
+
+
+def test_markdown_collection_still_chunks_entity_level_with_body() -> None:
+    chunks = chunk_source_text(
+        "# Codex Docs\n\n## Characters\n\n### Ada\nAda writes notes.\n\n### Ben\nBen reads notes.\n",
+        settings=KnowledgeSettings(default_chunk_size=500, default_chunk_overlap=0),
+        knowledge_base=make_unit_kb(default_chunk_profile="markdown_collection"),
+        source_title="collection.md",
+    )
+
+    assert [chunk.metadata["chunk_title"] for chunk in chunks] == ["Ada", "Ben"]
+    assert [chunk.metadata["entity_type"] for chunk in chunks] == ["Character", "Character"]
+    assert [chunk.metadata["heading_path"] for chunk in chunks] == ["Codex Docs > Characters > Ada", "Codex Docs > Characters > Ben"]
 
 
 def test_markdown_fenced_code_hash_is_not_heading(tmp_path: Path) -> None:

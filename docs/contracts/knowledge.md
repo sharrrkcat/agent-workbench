@@ -194,6 +194,13 @@ It is not Semantic Router metadata and not session title metadata.
 category headings to compact entity types. `markdown_auto` is deterministic and
 falls back to `markdown_document` on low confidence or ambiguity.
 
+Markdown chunking skips sections whose content is only one or more heading
+lines. Parent headings with no direct body are not emitted as standalone chunks,
+but they remain in `heading_path` metadata for child chunks. Overflow splitting
+prefers paragraph, line, sentence, and whitespace boundaries before hard
+character cuts. Existing indexed sources keep their current chunks until the
+user explicitly reindexes or imports them again.
+
 ## Retrieval
 
 `POST /api/knowledge/search` accepts a non-empty query and either explicit
