@@ -1303,9 +1303,18 @@ export type GeneralSettings = {
   appearance_font_ui_family: string;
   appearance_font_message_family: string;
   appearance_font_code_family: string;
+  appearance_font_ui_source: FontSource;
+  appearance_font_message_source: FontSource;
+  appearance_font_code_source: FontSource;
+  appearance_font_ui_system_name: string;
+  appearance_font_message_system_name: string;
+  appearance_font_code_system_name: string;
   appearance_font_ui_custom_id: string | null;
   appearance_font_message_custom_id: string | null;
   appearance_font_code_custom_id: string | null;
+  appearance_font_ui_custom_family_id: string | null;
+  appearance_font_message_custom_family_id: string | null;
+  appearance_font_code_custom_family_id: string | null;
   core_memory_content: string;
   core_memory_enabled_for_prompt_agents: boolean;
   core_memory_enabled_for_script_agents: boolean;
@@ -1334,6 +1343,8 @@ export type GeneralSettings = {
   intent_routing_command_like_examples: string;
 };
 
+export type FontSource = 'system' | 'custom_file' | 'custom_family';
+
 export type FontAsset = {
   id: string;
   filename: string;
@@ -1345,8 +1356,25 @@ export type FontAsset = {
   url: string;
 };
 
+export type FontFamilyFace = {
+  file: string;
+  weight: number | string;
+  style: 'normal' | 'italic' | string;
+  url: string;
+  registered_weight: string;
+};
+
+export type FontFamilyAsset = {
+  id: string;
+  display_name: string;
+  css_family: string;
+  faces: FontFamilyFace[];
+};
+
 export type FontAssetsResponse = {
   fonts: FontAsset[];
+  files: FontAsset[];
+  families: FontFamilyAsset[];
 };
 
 export type IntentRouteTestResponse = {

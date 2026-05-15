@@ -42,9 +42,18 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["appearance_font_ui_family"] == DEFAULT_UI_FONT_FAMILY
     assert response.json()["appearance_font_message_family"] == DEFAULT_MESSAGE_FONT_FAMILY
     assert response.json()["appearance_font_code_family"] == DEFAULT_CODE_FONT_FAMILY
+    assert response.json()["appearance_font_ui_source"] == "system"
+    assert response.json()["appearance_font_message_source"] == "system"
+    assert response.json()["appearance_font_code_source"] == "system"
+    assert response.json()["appearance_font_ui_system_name"] == "Inter"
+    assert response.json()["appearance_font_message_system_name"] == "Inter"
+    assert response.json()["appearance_font_code_system_name"] == "ui-monospace"
     assert response.json()["appearance_font_ui_custom_id"] is None
     assert response.json()["appearance_font_message_custom_id"] is None
     assert response.json()["appearance_font_code_custom_id"] is None
+    assert response.json()["appearance_font_ui_custom_family_id"] is None
+    assert response.json()["appearance_font_message_custom_family_id"] is None
+    assert response.json()["appearance_font_code_custom_family_id"] is None
     assert response.json()["core_memory_content"] == ""
     assert response.json()["core_memory_enabled_for_prompt_agents"] is True
     assert response.json()["core_memory_enabled_for_script_agents"] is False
@@ -99,9 +108,18 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "appearance_font_ui_family": "Arial, sans-serif",
             "appearance_font_message_family": "Georgia, serif",
             "appearance_font_code_family": "Cascadia Mono, monospace",
+            "appearance_font_ui_source": "system",
+            "appearance_font_message_source": "custom_family",
+            "appearance_font_code_source": "custom_file",
+            "appearance_font_ui_system_name": "Arial",
+            "appearance_font_message_system_name": "Georgia",
+            "appearance_font_code_system_name": "Cascadia Mono",
             "appearance_font_ui_custom_id": "aaaaaaaaaaaaaaaa",
             "appearance_font_message_custom_id": None,
             "appearance_font_code_custom_id": "bbbbbbbbbbbbbbbb",
+            "appearance_font_ui_custom_family_id": None,
+            "appearance_font_message_custom_family_id": "cccccccccccccccc",
+            "appearance_font_code_custom_family_id": None,
             "core_memory_content": "Remember local preferences.",
             "core_memory_enabled_for_prompt_agents": False,
             "core_memory_enabled_for_script_agents": True,
@@ -150,9 +168,16 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["appearance_font_ui_family"] == "Arial, sans-serif"
     assert patched.json()["appearance_font_message_family"] == "Georgia, serif"
     assert patched.json()["appearance_font_code_family"] == "Cascadia Mono, monospace"
+    assert patched.json()["appearance_font_ui_source"] == "system"
+    assert patched.json()["appearance_font_message_source"] == "custom_family"
+    assert patched.json()["appearance_font_code_source"] == "custom_file"
+    assert patched.json()["appearance_font_ui_system_name"] == "Arial"
+    assert patched.json()["appearance_font_message_system_name"] == "Georgia"
+    assert patched.json()["appearance_font_code_system_name"] == "Cascadia Mono"
     assert patched.json()["appearance_font_ui_custom_id"] == "aaaaaaaaaaaaaaaa"
     assert patched.json()["appearance_font_message_custom_id"] is None
     assert patched.json()["appearance_font_code_custom_id"] == "bbbbbbbbbbbbbbbb"
+    assert patched.json()["appearance_font_message_custom_family_id"] == "cccccccccccccccc"
     assert patched.json()["core_memory_content"] == "Remember local preferences."
     assert patched.json()["core_memory_enabled_for_prompt_agents"] is False
     assert patched.json()["core_memory_enabled_for_script_agents"] is True
@@ -226,6 +251,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"resource_status_ram_display_mode": "raw"}).status_code == 422
     assert client.patch("/api/settings/general", json={"appearance_font_ui_family": ""}).status_code == 422
     assert client.patch("/api/settings/general", json={"appearance_font_ui_family": None}).status_code == 422
+    assert client.patch("/api/settings/general", json={"appearance_font_ui_system_name": ""}).status_code == 422
+    assert client.patch("/api/settings/general", json={"appearance_font_ui_source": "remote"}).status_code == 422
     assert client.patch("/api/settings/general", json={"appearance_font_ui_custom_id": 42}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_mode": "unsafe"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_device": "metal"}).status_code == 422
@@ -252,6 +279,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["resource_status_panel_enabled"] is True
     assert restarted.get("/api/settings/general").json()["appearance_font_ui_family"] == "Arial, sans-serif"
     assert restarted.patch("/api/settings/general", json={"appearance_font_ui_custom_id": None}).json()["appearance_font_ui_custom_id"] is None
+    assert restarted.patch("/api/settings/general", json={"appearance_font_message_custom_family_id": None}).json()["appearance_font_message_custom_family_id"] is None
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
@@ -284,6 +312,9 @@ def test_general_settings_ignores_legacy_embedding_path_in_stored_json(tmp_path:
                         "intent_routing_embedding_model_path": "embeddings/legacy-path",
                         "intent_routing_high_confidence_threshold": 0.99,
                         "intent_routing_low_confidence_threshold": 0.01,
+                        "appearance_font_ui_family": '"Segoe UI", sans-serif',
+                        "appearance_font_code_family": "Cascadia Mono, monospace",
+                        "appearance_font_message_custom_id": "dddddddddddddddd",
                     }
                 ),
             )
@@ -296,6 +327,9 @@ def test_general_settings_ignores_legacy_embedding_path_in_stored_json(tmp_path:
     assert response.status_code == 200
     assert response.json()["intent_routing_enabled"] is True
     assert response.json()["intent_routing_embedding_model_profile_id"] == "profile-id"
+    assert response.json()["appearance_font_ui_system_name"] == "Segoe UI"
+    assert response.json()["appearance_font_code_system_name"] == "Cascadia Mono"
+    assert response.json()["appearance_font_message_source"] == "custom_file"
     assert "intent_routing_embedding_model_path" not in response.json()
     assert "intent_routing_high_confidence_threshold" not in response.json()
     assert "intent_routing_low_confidence_threshold" not in response.json()
@@ -307,12 +341,20 @@ def test_font_assets_scan_and_secure_serving(tmp_path: Path) -> None:
     fonts_dir = Path(client.app.state.runtime_state.repo_root) / "data" / "assets" / "fonts"
     font_file = fonts_dir / "pytest-demo-font.woff2"
     ignored_file = fonts_dir / "pytest-not-a-font.txt"
+    family_dir = fonts_dir / "pytest-family"
+    family_dir.mkdir(exist_ok=True)
+    (family_dir / "MyFont-Light.ttf").write_bytes(b"light")
+    (family_dir / "MyFont-BoldItalic.ttf").write_bytes(b"bold-italic")
+    (family_dir / "MyFont-ExtraLightItalic.ttf").write_bytes(b"extra-light-italic")
+    (family_dir / "ignored.txt").write_text("nope", encoding="utf-8")
     font_file.write_bytes(b"font-bytes")
     ignored_file.write_text("not a font", encoding="utf-8")
     try:
         response = client.get("/api/assets/fonts")
         assert response.status_code == 200
-        fonts = [item for item in response.json()["fonts"] if item["filename"].startswith("pytest-")]
+        assert "files" in response.json()
+        assert "families" in response.json()
+        fonts = [item for item in response.json()["files"] if item["filename"].startswith("pytest-")]
         assert len(fonts) == 1
         font = fonts[0]
         assert font["filename"] == "pytest-demo-font.woff2"
@@ -327,12 +369,65 @@ def test_font_assets_scan_and_secure_serving(tmp_path: Path) -> None:
         assert served.content == b"font-bytes"
         assert served.headers["content-type"].startswith("font/woff2")
 
+        families = [item for item in response.json()["families"] if item["display_name"] == "pytest family"]
+        assert len(families) == 1
+        family = families[0]
+        assert family["css_family"].startswith("AW Local Font Family ")
+        faces = {(face["file"], face["weight"], face["style"], face["registered_weight"]) for face in family["faces"]}
+        assert ("MyFont-Light.ttf", 300, "normal", "250 349") in faces
+        assert ("MyFont-BoldItalic.ttf", 700, "italic", "650 749") in faces
+        assert ("MyFont-ExtraLightItalic.ttf", 200, "italic", "150 249") in faces
+
+        face = next(item for item in family["faces"] if item["file"] == "MyFont-BoldItalic.ttf")
+        served_face = client.get(face["url"])
+        assert served_face.status_code == 200
+        assert served_face.content == b"bold-italic"
+        assert client.get(f"/api/assets/font-families/{family['id']}/..%2Fsecret.ttf").status_code == 404
+
         assert client.get("/api/assets/fonts/../secret").status_code == 404
         assert client.get("/api/assets/fonts/C:%5Csecret").status_code == 404
         assert client.get("/api/assets/fonts/not-a-font").status_code == 404
     finally:
         font_file.unlink(missing_ok=True)
         ignored_file.unlink(missing_ok=True)
+        for child in family_dir.iterdir():
+            child.unlink(missing_ok=True)
+        family_dir.rmdir()
+
+
+def test_font_family_manifest_supports_variable_weight_ranges(tmp_path: Path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'font-family.db'}"))
+    fonts_dir = Path(client.app.state.runtime_state.repo_root) / "data" / "assets" / "fonts"
+    family_dir = fonts_dir / "pytest-variable"
+    family_dir.mkdir(exist_ok=True)
+    (family_dir / "Variable.woff2").write_bytes(b"variable")
+    (family_dir / "Italic.woff2").write_bytes(b"italic")
+    (family_dir / "font.json").write_text(
+        json.dumps(
+            {
+                "family": "Pytest Variable",
+                "display_name": "Pytest Variable",
+                "faces": [
+                    {"file": "Variable.woff2", "weight": "100 900", "style": "normal"},
+                    {"file": "Italic.woff2", "weight": 400, "style": "italic"},
+                    {"file": "../escape.woff2", "weight": 700, "style": "normal"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    try:
+        response = client.get("/api/assets/fonts")
+        assert response.status_code == 200
+        family = next(item for item in response.json()["families"] if item["display_name"] == "Pytest Variable")
+        faces = {(face["file"], face["weight"], face["style"], face["registered_weight"]) for face in family["faces"]}
+        assert ("Variable.woff2", "100 900", "normal", "100 900") in faces
+        assert ("Italic.woff2", 400, "italic", "350 449") in faces
+        assert all(face["file"] != "../escape.woff2" for face in family["faces"])
+    finally:
+        for child in family_dir.iterdir():
+            child.unlink(missing_ok=True)
+        family_dir.rmdir()
 
 
 def test_message_upload_limits_use_general_settings(monkeypatch, tmp_path: Path) -> None:

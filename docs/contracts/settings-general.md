@@ -59,14 +59,36 @@ Settings -> Appearance -> Fonts stores three General settings font groups:
 - `appearance_font_ui_family`
 - `appearance_font_message_family`
 - `appearance_font_code_family`
+- `appearance_font_ui_source`
+- `appearance_font_message_source`
+- `appearance_font_code_source`
+- `appearance_font_ui_system_name`
+- `appearance_font_message_system_name`
+- `appearance_font_code_system_name`
 - `appearance_font_ui_custom_id`
 - `appearance_font_message_custom_id`
 - `appearance_font_code_custom_id`
+- `appearance_font_ui_custom_family_id`
+- `appearance_font_message_custom_family_id`
+- `appearance_font_code_custom_family_id`
 
-The `*_family` fields are plain CSS `font-family` strings for user-entered
-system font names or font stacks. The `*_custom_id` fields are nullable local
-font asset ids. Empty family strings are rejected, unknown General settings
-fields are rejected, and custom ids do not expose filesystem paths.
+The `*_source` fields select `system`, `custom_file`, or `custom_family`.
+The `*_system_name` fields store a single user-facing installed font name.
+The legacy `*_family` fields remain plain CSS `font-family` strings for
+advanced fallback stacks and compatibility; they are not the normal Font name
+input. The `*_custom_id` fields are nullable local single-file font ids, and
+the `*_custom_family_id` fields are nullable local font-family folder ids.
+Empty family/system strings are rejected, unknown General settings fields are
+rejected, and custom ids do not expose filesystem paths.
+
+Runtime CSS font stacks are derived from source:
+
+- System font: `"<system_name>", var(--aw-font-*-fallback)`
+- Custom font: `"<custom_file.css_family>", var(--aw-font-*-fallback)`
+- Custom font family: `"<custom_family.css_family>", var(--aw-font-*-fallback)`
+
+The frontend quotes font family names before writing CSS and injects
+`@font-face` rules for selected local files or family faces.
 
 Local custom font assets live under `data/assets/fonts`. The app ensures this
 directory exists and scans only `.woff2`, `.woff`, `.ttf`, and `.otf` files.
@@ -74,17 +96,55 @@ Users copy files there manually and use the Settings UI rescan action; the app
 does not download remote fonts, upload fonts, package fonts, or parse complex
 font metadata.
 
+Single files directly under `data/assets/fonts` are Custom font assets. Folders
+under `data/assets/fonts/<folder>/` are Custom font family assets. A family
+folder may include `font.json`:
+
+```json
+{
+  "family": "Example Sans",
+  "display_name": "Example Sans",
+  "faces": [
+    { "file": "ExampleSans-Regular.woff2", "weight": 400, "style": "normal" },
+    { "file": "ExampleSans-Italic.woff2", "weight": 400, "style": "italic" },
+    { "file": "ExampleSans-Variable.woff2", "weight": "100 900", "style": "normal" }
+  ]
+}
+```
+
+`weight` accepts numeric values from 1 through 1000 or a variable font range
+string such as `"100 900"`. `style` supports `normal` and `italic`; other
+values are normalized to `normal`.
+
+If `font.json` is absent or has no valid faces, the scanner infers faces from
+filename suffixes with longest-match precedence: `ThinItalic`, `Thin`,
+`ExtraLightItalic`, `ExtraLight`, `LightItalic`, `Light`, `Regular`, `Italic`,
+`MediumItalic`, `Medium`, `SemiBoldItalic`, `SemiBold`, `BoldItalic`, `Bold`,
+`ExtraBoldItalic`, `ExtraBold`, `BlackItalic`, and `Black`. Unknown suffixes
+fall back to weight `400`, style `normal`.
+
+Static inferred or numeric manifest faces register a default coverage range so
+non-hundred CSS weights match the expected face, for example SemiBold `600`
+registers `550 649` and Bold `700` registers `650 749`. Explicit variable
+ranges from `font.json` are preserved as declared.
+
 Font asset APIs:
 
-- `GET /api/assets/fonts` returns scanned local font assets with `id`,
+- `GET /api/assets/fonts` returns `files` and `families`. For backward
+  compatibility it also returns `fonts` as the same list as `files`.
+- Each file item includes `id`,
   `filename`, `display_name`, `extension`, `size_bytes`, `mtime`, `css_family`,
   and `url`.
+- Each family item includes `id`, `display_name`, `css_family`, and `faces`.
+  Each face includes `file`, `weight`, `style`, `registered_weight`, and `url`.
 - `GET /api/assets/fonts/{id}` serves one scanned font file by generated id.
+- `GET /api/assets/font-families/{family_id}/{filename}` serves one scanned
+  font-family face by generated family id and basename.
 
-Font ids are generated from local filenames, not accepted paths. Serving a font
-must resolve the selected file under `data/assets/fonts` and reject missing ids,
-absolute paths, `..` traversal, unsupported extensions, and symlink/path escapes
-outside that directory.
+Font ids are generated from local filenames or folder names, not accepted paths.
+Serving a font must resolve the selected file under `data/assets/fonts` and
+reject missing ids, absolute paths, `..` traversal, unsupported extensions,
+remote URLs, and symlink/path escapes outside that directory.
 
 The frontend applies saved font settings by writing CSS variables on
 `document.documentElement`:
@@ -92,6 +152,9 @@ The frontend applies saved font settings by writing CSS variables on
 - `--aw-font-ui`
 - `--aw-font-message`
 - `--aw-font-code`
+- `--aw-font-ui-fallback`
+- `--aw-font-message-fallback`
+- `--aw-font-code-fallback`
 
 The root UI uses `--aw-font-ui`, message bodies explicitly use
 `--aw-font-message`, and code/json/file-content/manifest/Knowledge monospace

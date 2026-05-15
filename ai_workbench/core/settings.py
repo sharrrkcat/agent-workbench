@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator, model_validator
@@ -32,6 +33,10 @@ User message:
 DEFAULT_UI_FONT_FAMILY = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 DEFAULT_MESSAGE_FONT_FAMILY = DEFAULT_UI_FONT_FAMILY
 DEFAULT_CODE_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace'
+DEFAULT_UI_FONT_SYSTEM_NAME = "Inter"
+DEFAULT_MESSAGE_FONT_SYSTEM_NAME = "Inter"
+DEFAULT_CODE_FONT_SYSTEM_NAME = "ui-monospace"
+FONT_SOURCES = {"system", "custom_file", "custom_family"}
 
 
 def normalize_optional_instruction(value: Any) -> str | None:
@@ -41,6 +46,13 @@ def normalize_optional_instruction(value: Any) -> str | None:
         stripped = value.strip()
         return stripped or None
     return value
+
+
+def _first_font_family(value: str) -> str:
+    match = re.match(r'\s*("([^"\\]|\\.)*"|\'([^\'\\]|\\.)*\'|[^,]+)', value)
+    if not match:
+        return ""
+    return match.group(1).strip().strip("\"'")
 
 
 LEGACY_IGNORED_APP_SETTINGS_KEYS = {
@@ -84,9 +96,18 @@ class AppSettings(BaseModel):
     appearance_font_ui_family: StrictStr = DEFAULT_UI_FONT_FAMILY
     appearance_font_message_family: StrictStr = DEFAULT_MESSAGE_FONT_FAMILY
     appearance_font_code_family: StrictStr = DEFAULT_CODE_FONT_FAMILY
+    appearance_font_ui_source: StrictStr = "system"
+    appearance_font_message_source: StrictStr = "system"
+    appearance_font_code_source: StrictStr = "system"
+    appearance_font_ui_system_name: StrictStr = DEFAULT_UI_FONT_SYSTEM_NAME
+    appearance_font_message_system_name: StrictStr = DEFAULT_MESSAGE_FONT_SYSTEM_NAME
+    appearance_font_code_system_name: StrictStr = DEFAULT_CODE_FONT_SYSTEM_NAME
     appearance_font_ui_custom_id: StrictStr | None = None
     appearance_font_message_custom_id: StrictStr | None = None
     appearance_font_code_custom_id: StrictStr | None = None
+    appearance_font_ui_custom_family_id: StrictStr | None = None
+    appearance_font_message_custom_family_id: StrictStr | None = None
+    appearance_font_code_custom_family_id: StrictStr | None = None
     core_memory_content: str = ""
     core_memory_enabled_for_prompt_agents: StrictBool = True
     core_memory_enabled_for_script_agents: StrictBool = False
@@ -113,6 +134,28 @@ class AppSettings(BaseModel):
     intent_routing_knowledge_query_examples: str = ""
     intent_routing_agent_route_examples: str = ""
     intent_routing_command_like_examples: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_font_fields(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        next_values = dict(values)
+        defaults = {
+            "ui": DEFAULT_UI_FONT_SYSTEM_NAME,
+            "message": DEFAULT_MESSAGE_FONT_SYSTEM_NAME,
+            "code": DEFAULT_CODE_FONT_SYSTEM_NAME,
+        }
+        for key, default_name in defaults.items():
+            family_key = f"appearance_font_{key}_family"
+            source_key = f"appearance_font_{key}_source"
+            system_key = f"appearance_font_{key}_system_name"
+            custom_key = f"appearance_font_{key}_custom_id"
+            if source_key not in next_values and next_values.get(custom_key):
+                next_values[source_key] = "custom_file"
+            if system_key not in next_values and isinstance(next_values.get(family_key), str):
+                next_values[system_key] = _first_font_family(next_values[family_key]) or default_name
+        return next_values
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -160,7 +203,32 @@ class AppSettings(BaseModel):
             raise ValueError("Font family must not be empty.")
         return text
 
-    @field_validator("appearance_font_ui_custom_id", "appearance_font_message_custom_id", "appearance_font_code_custom_id", mode="before")
+    @field_validator("appearance_font_ui_system_name", "appearance_font_message_system_name", "appearance_font_code_system_name", mode="before")
+    @classmethod
+    def _normalize_font_system_name(cls, value: Any) -> str:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            raise ValueError("Font system name must not be empty.")
+        return text
+
+    @field_validator("appearance_font_ui_source", "appearance_font_message_source", "appearance_font_code_source")
+    @classmethod
+    def _validate_font_source(cls, value: str) -> str:
+        if value not in FONT_SOURCES:
+            raise ValueError("Font source must be system, custom_file, or custom_family.")
+        return value
+
+    @field_validator(
+        "appearance_font_ui_custom_id",
+        "appearance_font_message_custom_id",
+        "appearance_font_code_custom_id",
+        "appearance_font_ui_custom_family_id",
+        "appearance_font_message_custom_family_id",
+        "appearance_font_code_custom_family_id",
+        mode="before",
+    )
     @classmethod
     def _normalize_font_custom_id(cls, value: Any) -> str | None:
         if value is None:
@@ -271,9 +339,18 @@ class AppSettingsPatch(BaseModel):
     appearance_font_ui_family: StrictStr | None = None
     appearance_font_message_family: StrictStr | None = None
     appearance_font_code_family: StrictStr | None = None
+    appearance_font_ui_source: StrictStr | None = None
+    appearance_font_message_source: StrictStr | None = None
+    appearance_font_code_source: StrictStr | None = None
+    appearance_font_ui_system_name: StrictStr | None = None
+    appearance_font_message_system_name: StrictStr | None = None
+    appearance_font_code_system_name: StrictStr | None = None
     appearance_font_ui_custom_id: StrictStr | None = None
     appearance_font_message_custom_id: StrictStr | None = None
     appearance_font_code_custom_id: StrictStr | None = None
+    appearance_font_ui_custom_family_id: StrictStr | None = None
+    appearance_font_message_custom_family_id: StrictStr | None = None
+    appearance_font_code_custom_family_id: StrictStr | None = None
     core_memory_content: str | None = None
     core_memory_enabled_for_prompt_agents: StrictBool | None = None
     core_memory_enabled_for_script_agents: StrictBool | None = None
@@ -355,7 +432,36 @@ class AppSettingsPatch(BaseModel):
             raise ValueError("Font family must not be empty.")
         return text
 
-    @field_validator("appearance_font_ui_custom_id", "appearance_font_message_custom_id", "appearance_font_code_custom_id", mode="before")
+    @field_validator("appearance_font_ui_system_name", "appearance_font_message_system_name", "appearance_font_code_system_name", mode="before")
+    @classmethod
+    def _normalize_font_system_name(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            raise ValueError("Font system name must not be empty.")
+        return text
+
+    @field_validator("appearance_font_ui_source", "appearance_font_message_source", "appearance_font_code_source")
+    @classmethod
+    def _validate_font_source(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in FONT_SOURCES:
+            raise ValueError("Font source must be system, custom_file, or custom_family.")
+        return value
+
+    @field_validator(
+        "appearance_font_ui_custom_id",
+        "appearance_font_message_custom_id",
+        "appearance_font_code_custom_id",
+        "appearance_font_ui_custom_family_id",
+        "appearance_font_message_custom_family_id",
+        "appearance_font_code_custom_family_id",
+        mode="before",
+    )
     @classmethod
     def _normalize_font_custom_id(cls, value: Any) -> str | None:
         if value is None:
@@ -424,6 +530,9 @@ class AppSettingsPatch(BaseModel):
         for key in ("appearance_font_ui_family", "appearance_font_message_family", "appearance_font_code_family"):
             if key in self.model_fields_set and getattr(self, key) is None:
                 raise ValueError(f"{key} must be a string.")
+        for key in ("appearance_font_ui_system_name", "appearance_font_message_system_name", "appearance_font_code_system_name"):
+            if key in self.model_fields_set and getattr(self, key) is None:
+                raise ValueError(f"{key} must be a string.")
         return self
 
 
@@ -452,6 +561,9 @@ def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
         "appearance_font_ui_custom_id",
         "appearance_font_message_custom_id",
         "appearance_font_code_custom_id",
+        "appearance_font_ui_custom_family_id",
+        "appearance_font_message_custom_family_id",
+        "appearance_font_code_custom_family_id",
     ):
         if key in patch.model_fields_set and getattr(patch, key) is None:
             updates[key] = None

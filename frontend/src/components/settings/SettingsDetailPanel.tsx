@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -16,7 +16,7 @@ import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSett
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
 import { WorldbookSettingsDetail } from './WorldbookSettingsPanel';
-import { DEFAULT_CODE_FONT, DEFAULT_MESSAGE_FONT, DEFAULT_UI_FONT, fontFamilyFor } from '../../utils/fonts';
+import { DEFAULT_CODE_FONT, DEFAULT_CODE_FONT_NAME, DEFAULT_MESSAGE_FONT, DEFAULT_MESSAGE_FONT_NAME, DEFAULT_UI_FONT, DEFAULT_UI_FONT_NAME, fontFamilyFor, shortFontName } from '../../utils/fonts';
 
 export function SettingsDetailPanel({
   section,
@@ -389,9 +389,10 @@ function GeneralDetail({
 
 function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { t } = useTranslation(['settings', 'common']);
-  const { generalSettings, fontAssets, refreshGeneralSettings, refreshFontAssets, updateGeneralSettings } = useWorkbenchStore();
+  const { generalSettings, fontAssets, fontFamilies, refreshGeneralSettings, refreshFontAssets, updateGeneralSettings } = useWorkbenchStore();
   const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
   const [localFonts, setLocalFonts] = useState<FontAsset[]>(fontAssets);
+  const [localFamilies, setLocalFamilies] = useState<FontFamilyAsset[]>(fontFamilies);
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -408,6 +409,10 @@ function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean
   useEffect(() => {
     setLocalFonts(fontAssets);
   }, [fontAssets]);
+
+  useEffect(() => {
+    setLocalFamilies(fontFamilies);
+  }, [fontFamilies]);
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -432,6 +437,7 @@ function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean
       setLocalError(null);
       const fonts = await refreshFontAssets();
       setLocalFonts(fonts);
+      setLocalFamilies(useWorkbenchStore.getState().fontFamilies);
     } catch (error) {
       setLocalError(toSettingsError(error, t('settings:appearance.rescanFontsFailed')));
     } finally {
@@ -439,28 +445,16 @@ function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean
     }
   }
 
-  function setFont(key: 'ui' | 'message' | 'code', patch: { family?: string; customId?: string | null }) {
+  function setFont(key: 'ui' | 'message' | 'code', patch: Partial<Pick<GeneralSettings,
+    'appearance_font_ui_family' | 'appearance_font_message_family' | 'appearance_font_code_family' |
+    'appearance_font_ui_source' | 'appearance_font_message_source' | 'appearance_font_code_source' |
+    'appearance_font_ui_system_name' | 'appearance_font_message_system_name' | 'appearance_font_code_system_name' |
+    'appearance_font_ui_custom_id' | 'appearance_font_message_custom_id' | 'appearance_font_code_custom_id' |
+    'appearance_font_ui_custom_family_id' | 'appearance_font_message_custom_family_id' | 'appearance_font_code_custom_family_id'
+  >>) {
     setValues((current) => {
       if (!current) return current;
-      if (key === 'ui') {
-        return {
-          ...current,
-          appearance_font_ui_family: patch.family ?? current.appearance_font_ui_family,
-          appearance_font_ui_custom_id: patch.customId !== undefined ? patch.customId : current.appearance_font_ui_custom_id,
-        };
-      }
-      if (key === 'message') {
-        return {
-          ...current,
-          appearance_font_message_family: patch.family ?? current.appearance_font_message_family,
-          appearance_font_message_custom_id: patch.customId !== undefined ? patch.customId : current.appearance_font_message_custom_id,
-        };
-      }
-      return {
-        ...current,
-        appearance_font_code_family: patch.family ?? current.appearance_font_code_family,
-        appearance_font_code_custom_id: patch.customId !== undefined ? patch.customId : current.appearance_font_code_custom_id,
-      };
+      return { ...current, ...patch };
     });
   }
 
@@ -470,9 +464,18 @@ function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean
       appearance_font_ui_family: DEFAULT_UI_FONT,
       appearance_font_message_family: DEFAULT_MESSAGE_FONT,
       appearance_font_code_family: DEFAULT_CODE_FONT,
+      appearance_font_ui_source: 'system',
+      appearance_font_message_source: 'system',
+      appearance_font_code_source: 'system',
+      appearance_font_ui_system_name: DEFAULT_UI_FONT_NAME,
+      appearance_font_message_system_name: DEFAULT_MESSAGE_FONT_NAME,
+      appearance_font_code_system_name: DEFAULT_CODE_FONT_NAME,
       appearance_font_ui_custom_id: null,
       appearance_font_message_custom_id: null,
       appearance_font_code_custom_id: null,
+      appearance_font_ui_custom_family_id: null,
+      appearance_font_message_custom_family_id: null,
+      appearance_font_code_custom_family_id: null,
     } : current);
   }
 
@@ -519,28 +522,40 @@ function FontsSettingsDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean
               title={t('settings:appearance.uiFont')}
               preview={t('settings:appearance.uiFontPreview')}
               family={values.appearance_font_ui_family}
+              source={values.appearance_font_ui_source}
+              systemName={values.appearance_font_ui_system_name || shortFontName(values.appearance_font_ui_family, DEFAULT_UI_FONT_NAME)}
               customId={values.appearance_font_ui_custom_id}
+              customFamilyId={values.appearance_font_ui_custom_family_id}
               fonts={localFonts}
-              onFamilyChange={(family) => setFont('ui', { family })}
-              onCustomIdChange={(customId) => setFont('ui', { customId })}
+              families={localFamilies}
+              fontKind="ui"
+              onChange={(patch) => setFont('ui', patch)}
             />
             <FontSettingRow
               title={t('settings:appearance.messageFont')}
               preview={t('settings:appearance.messageFontPreview')}
               family={values.appearance_font_message_family}
+              source={values.appearance_font_message_source}
+              systemName={values.appearance_font_message_system_name || shortFontName(values.appearance_font_message_family, DEFAULT_MESSAGE_FONT_NAME)}
               customId={values.appearance_font_message_custom_id}
+              customFamilyId={values.appearance_font_message_custom_family_id}
               fonts={localFonts}
-              onFamilyChange={(family) => setFont('message', { family })}
-              onCustomIdChange={(customId) => setFont('message', { customId })}
+              families={localFamilies}
+              fontKind="message"
+              onChange={(patch) => setFont('message', patch)}
             />
             <FontSettingRow
               title={t('settings:appearance.codeFont')}
               preview={t('settings:appearance.codeFontPreview')}
               family={values.appearance_font_code_family}
+              source={values.appearance_font_code_source}
+              systemName={values.appearance_font_code_system_name || shortFontName(values.appearance_font_code_family, DEFAULT_CODE_FONT_NAME)}
               customId={values.appearance_font_code_custom_id}
+              customFamilyId={values.appearance_font_code_custom_family_id}
               fonts={localFonts}
-              onFamilyChange={(family) => setFont('code', { family })}
-              onCustomIdChange={(customId) => setFont('code', { customId })}
+              families={localFamilies}
+              fontKind="code"
+              onChange={(patch) => setFont('code', patch)}
               monospace
             />
           </div>
@@ -554,41 +569,91 @@ function FontSettingRow({
   title,
   preview,
   family,
+  source,
+  systemName,
   customId,
+  customFamilyId,
   fonts,
+  families,
+  fontKind,
   monospace,
-  onFamilyChange,
-  onCustomIdChange,
+  onChange,
 }: {
   title: string;
   preview: string;
   family: string;
+  source: FontSource;
+  systemName: string;
   customId: string | null;
+  customFamilyId: string | null;
   fonts: FontAsset[];
+  families: FontFamilyAsset[];
+  fontKind: 'ui' | 'message' | 'code';
   monospace?: boolean;
-  onFamilyChange: (family: string) => void;
-  onCustomIdChange: (customId: string | null) => void;
+  onChange: (patch: Partial<GeneralSettings>) => void;
 }) {
   const { t } = useTranslation('settings');
-  const source = customId ? 'custom' : 'system';
   const missingCustom = customId && !fonts.some((font) => font.id === customId);
+  const selectedFamily = customFamilyId ? families.find((fontFamily) => fontFamily.id === customFamilyId) : undefined;
+  const missingFamily = customFamilyId && !selectedFamily;
+  const previewSettings = {
+    [`appearance_font_${fontKind}_family`]: family,
+    [`appearance_font_${fontKind}_source`]: source,
+    [`appearance_font_${fontKind}_system_name`]: systemName,
+    [`appearance_font_${fontKind}_custom_id`]: customId,
+    [`appearance_font_${fontKind}_custom_family_id`]: customFamilyId,
+  } as Partial<GeneralSettings>;
+  const effectivePreview = fontFamilyFor(fontKind, previewSettings as GeneralSettings, fonts, families);
+
+  function setSource(nextSource: FontSource) {
+    const firstFile = fonts[0]?.id || null;
+    const firstFamily = families[0]?.id || null;
+    onChange({
+      [`appearance_font_${fontKind}_source`]: nextSource,
+      [`appearance_font_${fontKind}_custom_id`]: nextSource === 'custom_file' ? customId || firstFile : customId,
+      [`appearance_font_${fontKind}_custom_family_id`]: nextSource === 'custom_family' ? customFamilyId || firstFamily : customFamilyId,
+    } as Partial<GeneralSettings>);
+  }
+
+  function setSystemName(nextName: string) {
+    onChange({ [`appearance_font_${fontKind}_system_name`]: nextName } as Partial<GeneralSettings>);
+  }
+
+  function setAdvancedStack(nextFamily: string) {
+    onChange({ [`appearance_font_${fontKind}_family`]: nextFamily } as Partial<GeneralSettings>);
+  }
+
+  function setCustomId(nextId: string | null) {
+    onChange({ [`appearance_font_${fontKind}_custom_id`]: nextId } as Partial<GeneralSettings>);
+  }
+
+  function setCustomFamilyId(nextId: string | null) {
+    onChange({ [`appearance_font_${fontKind}_custom_family_id`]: nextId } as Partial<GeneralSettings>);
+  }
+
   return (
     <div className="font-settings-row">
       <div className="font-settings-row-header">
         <strong>{title}</strong>
-        <select value={source} onChange={(event) => onCustomIdChange(event.currentTarget.value === 'custom' ? fonts[0]?.id || customId || null : null)}>
-          <option value="system">{t('appearance.systemFont')}</option>
-          <option value="custom">{t('appearance.customFont')}</option>
-        </select>
       </div>
       <label className="config-field settings-config-field">
-        <span>{t('appearance.fontFamily')}</span>
-        <input type="text" value={family} onChange={(event) => onFamilyChange(event.currentTarget.value)} />
+        <span>{t('appearance.source')}</span>
+        <select className="settings-form-control" value={source} onChange={(event) => setSource(event.currentTarget.value as FontSource)}>
+          <option value="system">{t('appearance.systemFont')}</option>
+          <option value="custom_file">{t('appearance.customFont')}</option>
+          <option value="custom_family">{t('appearance.customFontFamily')}</option>
+        </select>
       </label>
-      {source === 'custom' ? (
+      {source === 'system' ? (
+        <label className="config-field settings-config-field">
+          <span>{t('appearance.fontName')}</span>
+          <input type="text" value={systemName} onChange={(event) => setSystemName(event.currentTarget.value)} />
+        </label>
+      ) : null}
+      {source === 'custom_file' ? (
         <label className="config-field settings-config-field">
           <span>{t('appearance.localFontFile')}</span>
-          <select value={customId || ''} onChange={(event) => onCustomIdChange(event.currentTarget.value || null)}>
+          <select className="settings-form-control" value={customId || ''} onChange={(event) => setCustomId(event.currentTarget.value || null)}>
             {missingCustom ? <option value={customId || ''}>{t('appearance.selectedFontMissing')}</option> : null}
             <option value="">{t('appearance.noCustomFontSelected')}</option>
             {fonts.map((font) => (
@@ -597,11 +662,60 @@ function FontSettingRow({
           </select>
         </label>
       ) : null}
-      <div className={`font-preview ${monospace ? 'monospace' : ''}`} style={{ fontFamily: fontFamilyFor(family, customId, fonts) }}>
-        {preview}
+      {source === 'custom_family' ? (
+        <label className="config-field settings-config-field">
+          <span>{t('appearance.localFontFamily')}</span>
+          <select className="settings-form-control" value={customFamilyId || ''} onChange={(event) => setCustomFamilyId(event.currentTarget.value || null)}>
+            {missingFamily ? <option value={customFamilyId || ''}>{t('appearance.selectedFontFamilyMissing')}</option> : null}
+            <option value="">{t('appearance.noCustomFontFamilySelected')}</option>
+            {families.map((fontFamily) => (
+              <option key={fontFamily.id} value={fontFamily.id}>{fontFamily.display_name}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <div className={`font-preview ${monospace ? 'monospace' : ''}`} style={{ fontFamily: effectivePreview }}>
+        <span>{preview}</span>
+        <strong>{t('appearance.fontPreviewBold')}</strong>
+        <em>{t('appearance.fontPreviewItalic')}</em>
       </div>
+      <details className="font-settings-advanced">
+        <summary>{t('appearance.advancedFallbackStack')}</summary>
+        <label className="config-field settings-config-field">
+          <span>{t('appearance.fallbackStack')}</span>
+          <textarea value={family} rows={2} onChange={(event) => setAdvancedStack(event.currentTarget.value)} />
+        </label>
+        {source === 'custom_family' && selectedFamily ? (
+          <div className="font-face-list">
+            <span>{t('appearance.detectedFaces')}</span>
+            <ul>
+              {selectedFamily.faces.map((face) => (
+                <li key={`${face.file}-${face.weight}-${face.style}`}>
+                  {face.weight} {faceLabel(face.weight, face.style, t)} <small>{t('appearance.registeredWeight', { weight: face.registered_weight })}</small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </details>
     </div>
   );
+}
+
+function faceLabel(weight: number | string, style: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const labels: Record<string, string> = {
+    '100': t('appearance.faceThin'),
+    '200': t('appearance.faceExtraLight'),
+    '300': t('appearance.faceLight'),
+    '400': style === 'italic' ? t('appearance.faceItalic') : t('appearance.faceRegular'),
+    '500': t('appearance.faceMedium'),
+    '600': t('appearance.faceSemiBold'),
+    '700': t('appearance.faceBold'),
+    '800': t('appearance.faceExtraBold'),
+    '900': t('appearance.faceBlack'),
+  };
+  const base = labels[String(weight)] || String(weight);
+  return style === 'italic' && base !== t('appearance.faceItalic') ? t('appearance.faceItalicLabel', { face: base }) : base;
 }
 
 function ChatStatusPanelDetail({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
@@ -742,9 +856,18 @@ function fontSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
     appearance_font_ui_family: values.appearance_font_ui_family,
     appearance_font_message_family: values.appearance_font_message_family,
     appearance_font_code_family: values.appearance_font_code_family,
+    appearance_font_ui_source: values.appearance_font_ui_source,
+    appearance_font_message_source: values.appearance_font_message_source,
+    appearance_font_code_source: values.appearance_font_code_source,
+    appearance_font_ui_system_name: values.appearance_font_ui_system_name,
+    appearance_font_message_system_name: values.appearance_font_message_system_name,
+    appearance_font_code_system_name: values.appearance_font_code_system_name,
     appearance_font_ui_custom_id: values.appearance_font_ui_custom_id,
     appearance_font_message_custom_id: values.appearance_font_message_custom_id,
     appearance_font_code_custom_id: values.appearance_font_code_custom_id,
+    appearance_font_ui_custom_family_id: values.appearance_font_ui_custom_family_id,
+    appearance_font_message_custom_family_id: values.appearance_font_message_custom_family_id,
+    appearance_font_code_custom_family_id: values.appearance_font_code_custom_family_id,
   };
 }
 
@@ -1495,9 +1618,18 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     appearance_font_ui_family: values.appearance_font_ui_family,
     appearance_font_message_family: values.appearance_font_message_family,
     appearance_font_code_family: values.appearance_font_code_family,
+    appearance_font_ui_source: values.appearance_font_ui_source,
+    appearance_font_message_source: values.appearance_font_message_source,
+    appearance_font_code_source: values.appearance_font_code_source,
+    appearance_font_ui_system_name: values.appearance_font_ui_system_name,
+    appearance_font_message_system_name: values.appearance_font_message_system_name,
+    appearance_font_code_system_name: values.appearance_font_code_system_name,
     appearance_font_ui_custom_id: values.appearance_font_ui_custom_id,
     appearance_font_message_custom_id: values.appearance_font_message_custom_id,
     appearance_font_code_custom_id: values.appearance_font_code_custom_id,
+    appearance_font_ui_custom_family_id: values.appearance_font_ui_custom_family_id,
+    appearance_font_message_custom_family_id: values.appearance_font_message_custom_family_id,
+    appearance_font_code_custom_family_id: values.appearance_font_code_custom_family_id,
     core_memory_content: values.core_memory_content,
     core_memory_enabled_for_prompt_agents: values.core_memory_enabled_for_prompt_agents,
     core_memory_enabled_for_script_agents: values.core_memory_enabled_for_script_agents,

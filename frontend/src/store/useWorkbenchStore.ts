@@ -14,6 +14,7 @@ import type {
   LlmDefaults,
   GeneralSettings,
   FontAsset,
+  FontFamilyAsset,
   LlmProfile,
   LlmProviderProfile,
   LlmProviderStatus,
@@ -52,6 +53,7 @@ type WorkbenchState = {
   health?: HealthDetails;
   generalSettings?: GeneralSettings;
   fontAssets: FontAsset[];
+  fontFamilies: FontFamilyAsset[];
   runEventLoading?: string;
   loading: boolean;
   creatingSession: boolean;
@@ -125,6 +127,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   lastMessageSeqById: {},
   completedMessageIds: {},
   fontAssets: [],
+  fontFamilies: [],
   loading: false,
   creatingSession: false,
   sending: false,
@@ -149,10 +152,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         api.getGeneralSettings(),
         api.listFontAssets(),
       ]);
-      applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
+      applyAppearanceFonts(generalSettings, fontAssetsResponse.files || fontAssetsResponse.fonts, fontAssetsResponse.families || []);
       const sortedSessions = sortSessionsByRecent(sessions.map(normalizeSession));
       const currentSession = sortedSessions[0];
-      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, fontAssets: fontAssetsResponse.fonts, loading: false });
+      set({ agents, commands, sessions: sortedSessions, currentSession, agentConfigs, capabilityConfigs, llmProfiles, llmProviderProfiles, llmDefaults, generalSettings, fontAssets: fontAssetsResponse.files || fontAssetsResponse.fonts, fontFamilies: fontAssetsResponse.families || [], loading: false });
       if (currentSession) {
         await get().refreshCurrent();
         void get().refreshCurrentResolvedProviderStatus();
@@ -490,8 +493,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   refreshGeneralSettings: async () => {
     try {
       const [generalSettings, fontAssetsResponse] = await Promise.all([api.getGeneralSettings(), api.listFontAssets()]);
-      applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
-      set({ generalSettings, fontAssets: fontAssetsResponse.fonts });
+      applyAppearanceFonts(generalSettings, fontAssetsResponse.files || fontAssetsResponse.fonts, fontAssetsResponse.families || []);
+      set({ generalSettings, fontAssets: fontAssetsResponse.files || fontAssetsResponse.fonts, fontFamilies: fontAssetsResponse.families || [] });
     } catch (error) {
       set(formatError(error, 'Failed to load general settings'));
     }
@@ -500,17 +503,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   refreshFontAssets: async () => {
     const fontAssetsResponse = await api.listFontAssets();
     const generalSettings = get().generalSettings;
-    applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
-    set({ fontAssets: fontAssetsResponse.fonts });
-    return fontAssetsResponse.fonts;
+    applyAppearanceFonts(generalSettings, fontAssetsResponse.files || fontAssetsResponse.fonts, fontAssetsResponse.families || []);
+    set({ fontAssets: fontAssetsResponse.files || fontAssetsResponse.fonts, fontFamilies: fontAssetsResponse.families || [] });
+    return fontAssetsResponse.files || fontAssetsResponse.fonts;
   },
 
   updateGeneralSettings: async (patch) => {
     try {
       const generalSettings = await api.updateGeneralSettings(patch);
       const fontAssetsResponse = await api.listFontAssets();
-      applyAppearanceFonts(generalSettings, fontAssetsResponse.fonts);
-      set({ generalSettings, fontAssets: fontAssetsResponse.fonts, error: undefined, lastError: undefined });
+      applyAppearanceFonts(generalSettings, fontAssetsResponse.files || fontAssetsResponse.fonts, fontAssetsResponse.families || []);
+      set({ generalSettings, fontAssets: fontAssetsResponse.files || fontAssetsResponse.fonts, fontFamilies: fontAssetsResponse.families || [], error: undefined, lastError: undefined });
     } catch (error) {
       set(formatError(error, 'Failed to update general settings'));
       throw error;

@@ -147,7 +147,7 @@ Settings uses manifest-declared AgentConfig and CapabilityConfig `config_schema`
 
 Settings -> General stores local app settings for Files, Appearance fonts, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings belong to LLM & Prompts; Utility LLM backend/model/device/options belong to Utility LLM; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
 
-Settings -> Appearance -> Fonts configures separate UI, message, and code font stacks. Users can enter installed system font families or copy `.woff2`, `.woff`, `.ttf`, or `.otf` files into `data/assets/fonts` and rescan local font assets. Local font files are served through generated asset ids, not arbitrary disk paths.
+Settings -> Appearance -> Fonts configures separate UI, message, and code fonts. Each font can use a single installed system font name, a single local custom font file, or a local custom font family folder under `data/assets/fonts/<folder>/`. Family folders may include `font.json` to declare Regular/Bold/Italic/variable faces; otherwise common filename suffixes such as `BoldItalic`, `Light`, and `SemiBold` are inferred. Local font files are served through generated asset ids, not arbitrary disk paths.
 
 Settings -> Knowledge owns local RAG defaults, embedding model profiles, Knowledge Bases, and source indexing status. The Chat header Context Sources modal manages session Knowledge Base and Worldbook bindings. KB binding order is preserved for UI continuity but does not change Knowledge retrieval ranking.
 
