@@ -301,6 +301,7 @@
     "sourcesFolderPathShort": "Knowledge Base folder path, not a system folder.",
     "originFolderShort": "Choose an existing managed folder or type a new relative folder path.",
     "indexAfterCreate": "Index after create runs parsing, chunking, and embeddings once after the origin is created.",
+    "indexAfterCreateShort": "Create the origin, then index files once.",
     "deleteOriginKeepsFiles": "This removes the origin and its indexed sources from this Knowledge Base. It does not delete files from disk."
   },
   "modals": {

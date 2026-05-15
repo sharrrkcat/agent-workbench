@@ -306,6 +306,7 @@
     "sourcesFolderPathShort": "知识库内部文件夹路径，不是系统文件夹。",
     "originFolderShort": "选择已有托管文件夹，或输入新的相对文件夹路径。",
     "indexAfterCreate": "创建后索引会在 Origin 创建后执行一次解析、分块和 embedding。",
+    "indexAfterCreateShort": "创建 Origin 后索引文件一次。",
     "deleteOriginKeepsFiles": "这会从此知识库移除该 Origin 及其已索引来源，不会删除磁盘文件。"
   },
   "modals": {

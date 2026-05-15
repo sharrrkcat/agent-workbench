@@ -1,5 +1,5 @@
 import { ArrowUpDown, BrainCircuit, ChevronDown, Clipboard, FileText, FolderPlus, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
@@ -7,7 +7,7 @@ import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
-import { ToggleSwitch } from './ToggleSwitch';
+import { MiniToggle, ToggleSwitch } from './ToggleSwitch';
 import { getKnowledgeIndexStatusLabel, getKnowledgeOriginStatusLabel, getKnowledgeSourceStatusLabel } from '../../i18n/formatters';
 import { AppModal, StatusChip } from '../ui';
 
@@ -910,6 +910,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [originIndexAfterCreate, setOriginIndexAfterCreate] = useState(false);
   const [originFolderSuggestions, setOriginFolderSuggestions] = useState<KnowledgeOriginFolderSuggestion[]>([]);
   const [originFolderSuggestionsLoading, setOriginFolderSuggestionsLoading] = useState(false);
+  const [originFolderSuggestionsOpen, setOriginFolderSuggestionsOpen] = useState(false);
+  const [originFolderSuggestionActiveIndex, setOriginFolderSuggestionActiveIndex] = useState(0);
+  const [originFolderSuggestionError, setOriginFolderSuggestionError] = useState(false);
   const [sourceResult, setSourceResult] = useState('');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
@@ -933,6 +936,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [expandedOriginIds, setExpandedOriginIds] = useState<Set<string>>(() => new Set());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestRef = useRef(0);
+  const originFolderRequestRef = useRef(0);
+  const originFolderLastRequestRef = useRef('');
+  const originFolderSuggestionCacheRef = useRef<Map<string, KnowledgeOriginFolderSuggestion[]>>(new Map());
   const currentKnowledgeBaseIdRef = useRef(initial.id || '');
   currentKnowledgeBaseIdRef.current = initial.id || '';
   const scopeId = isNew ? 'new' : initial.id || '';
@@ -942,6 +948,18 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const selectedSource = sources.find((source) => source.id === selectedSourceId) || null;
   const hasStaleOriginSources = sources.some((source) => ['new', 'changed'].includes(source.file_status || '') || source.status === 'needs_reindex');
   const dirty = stableConfigString(buildKnowledgeBasePayload(values)) !== stableConfigString(buildKnowledgeBasePayload(initial));
+  const originFolderParent = originFolderParentPrefix(originSlug);
+  const originFolderSearch = originFolderSearchTerm(originSlug);
+  const visibleOriginFolderSuggestions = useMemo(() => {
+    const query = originFolderSearch.toLowerCase();
+    return originFolderSuggestions.filter((folder) => {
+      if (!query) return true;
+      return folder.name.toLowerCase().includes(query) || originFolderLeafName(folder.path).toLowerCase().includes(query);
+    });
+  }, [originFolderSearch, originFolderSuggestions]);
+  const showOriginFolderSuggestions = sourceModal === 'create_origin'
+    && originFolderSuggestionsOpen
+    && (visibleOriginFolderSuggestions.length > 0 || originFolderSuggestionsLoading);
 
   useEffect(() => {
     setValues(initial);
@@ -972,6 +990,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setOriginDefaultChunkProfile('');
     setOriginIndexAfterCreate(false);
     setOriginFolderSuggestions([]);
+    setOriginFolderSuggestionsOpen(false);
+    setOriginFolderSuggestionActiveIndex(0);
+    setOriginFolderSuggestionError(false);
     setModalError(null);
     setImportDragActive(false);
     setOrigins([]);
@@ -1018,27 +1039,52 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     if (sourceModal !== 'create_origin') {
       setOriginFolderSuggestions([]);
       setOriginFolderSuggestionsLoading(false);
+      setOriginFolderSuggestionError(false);
+      originFolderRequestRef.current += 1;
       return;
     }
-    let cancelled = false;
+    const parent = originFolderParent;
+    const cached = originFolderSuggestionCacheRef.current.get(parent);
+    if (cached) {
+      setOriginFolderSuggestions(cached);
+      setOriginFolderSuggestionsLoading(false);
+      setOriginFolderSuggestionError(false);
+      originFolderLastRequestRef.current = parent;
+      return;
+    }
+    if (originFolderLastRequestRef.current === parent && originFolderSuggestions.length) {
+      return;
+    }
+    const requestId = originFolderRequestRef.current + 1;
+    originFolderRequestRef.current = requestId;
     const timer = window.setTimeout(() => {
+      originFolderLastRequestRef.current = parent;
       setOriginFolderSuggestionsLoading(true);
-      api.listKnowledgeOriginFolders(originSlug)
+      setOriginFolderSuggestionError(false);
+      api.listKnowledgeOriginFolders(parent)
         .then((response) => {
-          if (!cancelled) setOriginFolderSuggestions(response.folders);
+          if (originFolderRequestRef.current !== requestId) return;
+          originFolderSuggestionCacheRef.current.set(parent, response.folders);
+          setOriginFolderSuggestions(response.folders);
         })
-        .catch((error) => {
-          if (!cancelled) setModalError(toSettingsError(error, t('knowledge:errors.loadOriginFoldersFailed')));
+        .catch(() => {
+          if (originFolderRequestRef.current !== requestId) return;
+          setOriginFolderSuggestionError(true);
+          setOriginFolderSuggestions([]);
         })
         .finally(() => {
-          if (!cancelled) setOriginFolderSuggestionsLoading(false);
+          if (originFolderRequestRef.current === requestId) setOriginFolderSuggestionsLoading(false);
         });
-    }, 120);
+    }, 200);
     return () => {
-      cancelled = true;
+      originFolderRequestRef.current += 1;
       window.clearTimeout(timer);
     };
-  }, [originSlug, sourceModal, t]);
+  }, [originFolderParent, sourceModal]);
+
+  useEffect(() => {
+    setOriginFolderSuggestionActiveIndex(0);
+  }, [originFolderSearch, originFolderSuggestions]);
 
   async function loadKnowledgeLists(knowledgeBaseId = values.id || '') {
     if (!knowledgeBaseId) return;
@@ -1164,6 +1210,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setOriginDefaultChunkProfile('');
       setOriginIndexAfterCreate(false);
       setOriginFolderSuggestions([]);
+      setOriginFolderSuggestionsOpen(false);
+      setOriginFolderSuggestionActiveIndex(0);
+      setOriginFolderSuggestionError(false);
       setSourceModal(null);
       await loadKnowledgeLists(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
@@ -1296,15 +1345,56 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     if (files) addImportFiles(Array.from(files));
     event.currentTarget.value = '';
   }
-  function openSourceModal(modal: SourceModal) {
+  const openSourceModal = useCallback((modal: SourceModal) => {
     setModalError(null);
     setImportDragActive(false);
     setSourceModal(modal);
-  }
-  function closeSourceModal() {
+  }, []);
+  const closeSourceModal = useCallback(() => {
+    if (sourceModal === 'create_origin') {
+      setOriginName('');
+      setOriginSlug('');
+      setOriginDefaultChunkProfile('');
+      setOriginIndexAfterCreate(false);
+      setOriginFolderSuggestions([]);
+      setOriginFolderSuggestionsOpen(false);
+      setOriginFolderSuggestionActiveIndex(0);
+      setOriginFolderSuggestionError(false);
+    }
+    if (sourceModal === 'import_files') {
+      setImportFiles([]);
+      setSourceFolderPath('');
+      setSourceChunkProfile('');
+    }
+    if (sourceModal === 'paste_text') {
+      setSourceTitle('');
+      setSourceText('');
+      setSourceFolderPath('');
+      setSourceChunkProfile('');
+    }
     setSourceModal(null);
     setModalError(null);
     setImportDragActive(false);
+  }, [sourceModal]);
+  function selectOriginFolderSuggestion(path: string) {
+    setOriginSlug(path);
+    setOriginFolderSuggestionsOpen(false);
+  }
+  function onOriginFolderKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!showOriginFolderSuggestions) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setOriginFolderSuggestionActiveIndex((current) => Math.min(current + 1, Math.max(visibleOriginFolderSuggestions.length - 1, 0)));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setOriginFolderSuggestionActiveIndex((current) => Math.max(current - 1, 0));
+    } else if (event.key === 'Enter' && visibleOriginFolderSuggestions[originFolderSuggestionActiveIndex]) {
+      event.preventDefault();
+      selectOriginFolderSuggestion(visibleOriginFolderSuggestions[originFolderSuggestionActiveIndex].path);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setOriginFolderSuggestionsOpen(false);
+    }
   }
   function addImportFiles(files: File[]) {
     const next = [...importFiles];
@@ -1645,43 +1735,68 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         ) : null}
         {activeTab !== 'config' && (isNew || !values.id) ? <Empty title={t('knowledge:empty.saveFirst')} message={t('knowledge:empty.saveFirstMessage')} /> : null}
       </div>
-      <AppModal open={sourceModal === 'create_origin'} title={t('knowledge:modals.createOriginTitle')} closeLabel={t('common:close')} onClose={closeSourceModal}>
-        <div className="knowledge-source-modal-form">
-          <div className="knowledge-origin-create-row">
-            <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
-            <SelectField label={t('knowledge:labels.originDefaultChunkProfile')} value={originDefaultChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setOriginDefaultChunkProfile} />
-            <label className="config-field settings-config-field boolean-field compact">
-              <span>{t('knowledge:labels.indexAfterCreate')}</span>
-              <ToggleSwitch checked={originIndexAfterCreate} onChange={setOriginIndexAfterCreate} disabled={Boolean(busy)} />
+      <AppModal open={sourceModal === 'create_origin'} title={t('knowledge:modals.createOriginTitle')} closeLabel={t('common:close')} bodyClassName="knowledge-modal-shell" onClose={closeSourceModal}>
+        <div className="knowledge-modal-body">
+          <div className="knowledge-source-modal-form">
+            <div className="knowledge-origin-create-row">
+              <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
+              <SelectField label={t('knowledge:labels.originDefaultChunkProfile')} value={originDefaultChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setOriginDefaultChunkProfile} />
+              <label className="knowledge-index-toggle-row" title={t('knowledge:help.indexAfterCreateShort')}>
+                <span>{t('knowledge:labels.indexAfterCreate')}</span>
+                <MiniToggle checked={originIndexAfterCreate} onChange={setOriginIndexAfterCreate} disabled={Boolean(busy)} />
+              </label>
+            </div>
+            <label className="config-field settings-config-field knowledge-origin-folder-field">
+              <span>{t('knowledge:labels.originFolder')}</span>
+              <div className="knowledge-origin-folder-combobox">
+                <div className="knowledge-origin-folder-input">
+                  <code>data/knowledge/origins/</code>
+                  <input
+                    className="settings-form-control"
+                    type="text"
+                    value={originSlug}
+                    placeholder={t('knowledge:placeholders.originFolder')}
+                    onChange={(event) => {
+                      setOriginSlug(event.currentTarget.value);
+                      setOriginFolderSuggestionsOpen(true);
+                    }}
+                    onFocus={() => setOriginFolderSuggestionsOpen(true)}
+                    onBlur={() => setOriginFolderSuggestionsOpen(false)}
+                    onKeyDown={onOriginFolderKeyDown}
+                    role="combobox"
+                    aria-expanded={showOriginFolderSuggestions}
+                    aria-autocomplete="list"
+                  />
+                </div>
+                {showOriginFolderSuggestions ? (
+                  <div className="knowledge-folder-suggestion-popup" role="listbox">
+                    {originFolderSuggestionsLoading ? <div className="knowledge-folder-suggestion-status">{t('knowledge:labels.loadingSuggestions')}</div> : null}
+                    {visibleOriginFolderSuggestions.map((folder, index) => (
+                      <button
+                        className={index === originFolderSuggestionActiveIndex ? 'active' : ''}
+                        key={folder.path}
+                        type="button"
+                        role="option"
+                        aria-selected={index === originFolderSuggestionActiveIndex}
+                        onMouseEnter={() => setOriginFolderSuggestionActiveIndex(index)}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          selectOriginFolderSuggestion(folder.path);
+                        }}
+                      >
+                        {folder.path}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <small>{t('knowledge:help.originFolderShort')}</small>
+              {originFolderSuggestionError ? <small className="settings-error-text">{t('knowledge:errors.loadOriginFoldersFailed')}</small> : null}
             </label>
+            {modalError ? <SettingsApiError error={modalError} /> : null}
           </div>
-          <label className="config-field settings-config-field knowledge-origin-folder-field">
-            <span>{t('knowledge:labels.originFolder')}</span>
-            <div className="knowledge-origin-folder-input">
-              <code>data/knowledge/origins/</code>
-              <input
-                className="settings-form-control"
-                type="text"
-                value={originSlug}
-                placeholder={t('knowledge:placeholders.originFolder')}
-                onChange={(event) => setOriginSlug(event.currentTarget.value)}
-              />
-            </div>
-            <small>{t('knowledge:help.originFolderShort')}</small>
-          </label>
-          {originFolderSuggestions.length || originFolderSuggestionsLoading ? (
-            <div className="knowledge-folder-suggestions">
-              <span>{originFolderSuggestionsLoading ? t('knowledge:labels.loadingSuggestions') : t('knowledge:labels.folderSuggestions')}</span>
-              {originFolderSuggestions.map((folder) => (
-                <button key={folder.path} type="button" onClick={() => setOriginSlug(folder.path)}>
-                  {folder.path}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <Metric label={t('knowledge:labels.resolvedFolderPath')} value={originSlug.trim() ? `data/knowledge/origins/${originSlug.trim()}/` : 'data/knowledge/origins/'} />
-          <p className="settings-muted-copy">{t('knowledge:help.indexAfterCreate')}</p>
-          {modalError ? <SettingsApiError error={modalError} /> : null}
+        </div>
+        <div className="knowledge-modal-footer">
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={() => createOrigin(originIndexAfterCreate)}>
               <FolderPlus size={14} />
@@ -1690,7 +1805,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           </div>
         </div>
       </AppModal>
-      <AppModal open={sourceModal === 'import_files'} title={t('knowledge:modals.importFilesTitle')} closeLabel={t('common:close')} onClose={closeSourceModal}>
+      <AppModal open={sourceModal === 'import_files'} title={t('knowledge:modals.importFilesTitle')} closeLabel={t('common:close')} bodyClassName="knowledge-modal-shell" onClose={closeSourceModal}>
+        <div className="knowledge-modal-body">
         <div className="knowledge-source-modal-form">
           <input ref={fileInputRef} className="sr-only" type="file" multiple accept={TEXT_ATTACHMENT_ACCEPT} onChange={onFileChange} />
           <button
@@ -1730,6 +1846,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           </div>
           <p className="settings-muted-copy">{t('knowledge:help.sourcesFolderPathShort')}</p>
           {modalError ? <SettingsApiError error={modalError} /> : null}
+        </div>
+        </div>
+        <div className="knowledge-modal-footer">
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!importFiles.length || Boolean(busy)} onClick={() => addFiles(importFiles, { folderPath: sourceFolderPath, chunkProfile: sourceChunkProfile || null })}>
               <Play size={14} />
@@ -1738,7 +1857,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           </div>
         </div>
       </AppModal>
-      <AppModal open={sourceModal === 'paste_text'} title={t('knowledge:modals.pasteTextTitle')} closeLabel={t('common:close')} onClose={closeSourceModal}>
+      <AppModal open={sourceModal === 'paste_text'} title={t('knowledge:modals.pasteTextTitle')} closeLabel={t('common:close')} bodyClassName="knowledge-modal-shell" onClose={closeSourceModal}>
+        <div className="knowledge-modal-body">
         <div className="knowledge-source-modal-form">
           <div className="settings-detail-grid">
             <TextField label={t('knowledge:labels.title')} value={sourceTitle} onChange={setSourceTitle} />
@@ -1748,6 +1868,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           <TextAreaField label={t('knowledge:labels.textContent')} value={sourceText} onChange={setSourceText} />
           <p className="settings-muted-copy">{t('knowledge:help.sourcesFolderPathShort')}</p>
           {modalError ? <SettingsApiError error={modalError} /> : null}
+        </div>
+        </div>
+        <div className="knowledge-modal-footer">
           <div className="settings-button-row">
             <button className="settings-primary-button" type="button" disabled={!sourceTitle.trim() || !sourceText.trim() || Boolean(busy)} onClick={addPastedSource}>
               <Play size={14} />
@@ -2196,6 +2319,30 @@ function modelPathOptions(models: { model_path: string }[], currentPath: string)
 
 function modelPathLabels(paths: string[]): Record<string, string> {
   return Object.fromEntries(paths.map((path) => [path, modelFolderName(path)]));
+}
+
+function normalizedOriginFolder(value: string): string {
+  return value.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+}
+
+function originFolderParentPrefix(value: string): string {
+  const normalized = normalizedOriginFolder(value);
+  if (!normalized || normalized.endsWith('/')) return normalized;
+  const slashIndex = normalized.lastIndexOf('/');
+  return slashIndex >= 0 ? normalized.slice(0, slashIndex + 1) : '';
+}
+
+function originFolderSearchTerm(value: string): string {
+  const normalized = normalizedOriginFolder(value);
+  if (!normalized || normalized.endsWith('/')) return '';
+  const slashIndex = normalized.lastIndexOf('/');
+  return slashIndex >= 0 ? normalized.slice(slashIndex + 1) : normalized;
+}
+
+function originFolderLeafName(value: string): string {
+  const normalized = normalizedOriginFolder(value).replace(/\/+$/, '');
+  const slashIndex = normalized.lastIndexOf('/');
+  return slashIndex >= 0 ? normalized.slice(slashIndex + 1) : normalized;
 }
 
 function embeddingPresetForPath(modelPath: string) {
