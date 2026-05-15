@@ -8,9 +8,9 @@
     "disabled": "Disabled",
     "yes": "Yes",
     "no": "No",
-    "none": "None",
+    "none": "无",
     "notSelected": "Not selected",
-    "notIndexed": "Not indexed"
+    "notIndexed": "未索引"
   },
   "llmProvider": {
     "READY": "Ready",
@@ -48,23 +48,23 @@
   },
   "knowledgeIndex": {
     "empty": "Empty",
-    "ready": "Ready",
+    "ready": "就绪",
     "indexing": "Indexing",
     "failed": "Failed",
-    "needs_reindex": "Needs reindex",
+    "needs_reindex": "需要重建索引",
     "needs_index": "Needs index"
   },
   "knowledgeSource": {
-    "pending": "Pending",
-    "indexing": "Indexing",
-    "indexed": "Indexed",
-    "ready": "Ready",
-    "failed": "Failed",
-    "needs_reindex": "Needs reindex",
-    "deleted": "Deleted",
-    "new": "New files detected",
-    "changed": "Sources changed",
-    "missing": "Missing files detected"
+    "pending": "待处理",
+    "indexing": "索引中",
+    "indexed": "已索引",
+    "ready": "就绪",
+    "failed": "失败",
+    "needs_reindex": "需要重建索引",
+    "deleted": "已删除",
+    "new": "检测到新文件",
+    "changed": "来源已变更",
+    "missing": "检测到缺失文件"
   },
   "knowledgeOrigin": {
     "ready": "Ready",

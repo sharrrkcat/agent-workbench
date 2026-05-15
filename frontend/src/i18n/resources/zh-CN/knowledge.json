@@ -111,6 +111,13 @@
     "query": "查询",
     "pastedSourceTitle": "粘贴来源标题",
     "pastedText": "粘贴文本",
+    "source": "来源",
+    "sourceDetail": "来源详情",
+    "folder": "文件夹",
+    "index": "索引",
+    "lastIndexed": "上次索引",
+    "lastIndexedAt": "上次索引时间",
+    "lastIndexedAtValue": "上次索引时间：{{value}}",
     "nameColumn": "名称",
     "type": "类型",
     "indexed": "索引",
@@ -375,7 +382,7 @@
     "deleteOrigin": "删除 Origin \"{{name}}\"？\n\n这会从此知识库移除该 Origin 及其已索引来源，不会删除磁盘文件。"
   },
   "statusText": {
-    "reindexRecommended": "Reindex recommended"
+    "reindexRecommended": "建议重建索引"
   },
   "profileSourceShort": {
     "frontmatter": "Frontmatter",

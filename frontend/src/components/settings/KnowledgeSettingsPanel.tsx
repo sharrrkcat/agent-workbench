@@ -890,7 +890,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const { t } = useTranslation(['knowledge', 'common']);
+  const { t } = useTranslation(['knowledge', 'common', 'status']);
   const [values, setValues] = useState<Partial<KnowledgeBase>>(initial);
   const [busy, setBusy] = useState('');
   const [configResult, setConfigResult] = useState('');
@@ -2001,7 +2001,7 @@ function OriginAccordionCard({
       {expanded ? (
         <div className="knowledge-origin-card-body">
           <dl className="settings-definition-grid">
-            <Metric label={t('knowledge:labels.lastScan')} value={formatDate(origin.last_scan_at)} />
+            <Metric label={t('knowledge:labels.lastScan')} value={formatDate(origin.last_scan_at, t('status:common.none', { ns: 'status' }))} />
             <Metric label={t('knowledge:labels.defaultChunkProfile')} value={originProfileText(origin.default_chunk_profile || null, kbDefaultProfile, t)} />
             <Metric label={t('knowledge:labels.totalFiles')} value={String(originSources.length)} />
             <Metric label={t('knowledge:labels.newFiles')} value={String(newCount)} />
@@ -2032,18 +2032,17 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
   onDelete: (sourceId: string) => void;
   busy: string;
 }) {
-  const { t } = useTranslation(['knowledge', 'common']);
+  const { t } = useTranslation(['knowledge', 'common', 'status']);
   return (
     <div className="knowledge-table-scroll">
       <table className="knowledge-sources-table">
         <thead>
           <tr>
-            <SortableHeader label={t('knowledge:labels.nameColumn')} sortKey="title" activeSort={sort} onSort={onSort} />
-            <SortableHeader label={t('knowledge:labels.folderPath')} sortKey="folder_path" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.source')} sortKey="title" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.folder')} sortKey="folder_path" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.type')} sortKey="source_type" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.chunks')} sortKey="chunks" activeSort={sort} onSort={onSort} />
-            <SortableHeader label={t('knowledge:labels.indexed')} sortKey="status" activeSort={sort} onSort={onSort} />
-            <SortableHeader label={t('knowledge:labels.indexedDate')} sortKey="indexed_at" activeSort={sort} onSort={onSort} />
+            <SortableHeader label={t('knowledge:labels.index')} sortKey="indexed_at" activeSort={sort} onSort={onSort} />
             <th>{t('knowledge:labels.actions')}</th>
           </tr>
         </thead>
@@ -2051,12 +2050,13 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
           {sources.map((source) => (
             <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
               <SourceNameCell source={source} />
-              <td>{source.folder_path || t('status:common.none', { ns: 'status' })}</td>
+              <td className="knowledge-source-folder-cell" title={source.folder_path || t('status:common.none', { ns: 'status' })}>
+                {source.folder_path || t('status:common.none', { ns: 'status' })}
+              </td>
               <td>{source.source_type}</td>
               <td>{source.chunks}</td>
-              <td><SourceIndexedStatus source={source} /></td>
-              <td>{formatDate(source.indexed_at)}</td>
-              <td>
+              <td><SourceIndexCell source={source} /></td>
+              <td className="knowledge-source-actions-cell">
                 <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
                   <button className="settings-secondary-button icon-only" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy)} aria-label={t('knowledge:actions.reindex')} title={t('knowledge:actions.reindex')}><RefreshCw size={14} /></button>
                   <button className="settings-secondary-button icon-only danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy)} aria-label={t('common:delete')} title={t('common:delete')}><Trash2 size={14} /></button>
@@ -2071,7 +2071,8 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
 }
 
 function SourceNameCell({ source }: { source: KnowledgeSource }) {
-  const title = sourceListTitle(source);
+  const { t } = useTranslation('knowledge');
+  const title = sourceListTitle(source, t);
   const subtitle = sourceListSubtitle(source);
   return (
     <td>
@@ -2094,16 +2095,18 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
   onDelete: () => void;
 }) {
   const { t } = useTranslation(['knowledge', 'common', 'status']);
+  const lastIndexed = formatDate(source.indexed_at, t('status:common.notIndexed', { ns: 'status' }));
+  const lastIndexedLabel = t('knowledge:labels.lastIndexedAtValue', { value: lastIndexed });
   return (
-    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="Source detail" onClick={onClose}>
+    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label={t('knowledge:labels.sourceDetail')} onClick={onClose}>
       <section className="knowledge-source-modal" onClick={(event) => event.stopPropagation()}>
         <header className="knowledge-source-modal-header">
           <div>
-            <h3>{source.title || source.uri || source.id}</h3>
+            <h3>{sourceListTitle(source, t)}</h3>
             <div className="settings-chip-row">
               <span>{source.source_type}</span>
               <span>{getKnowledgeSourceStatusLabel(source.file_status || source.status, t)}</span>
-              <span>{formatDate(source.indexed_at)}</span>
+              <span title={lastIndexedLabel}>{lastIndexedLabel}</span>
             </div>
           </div>
           <div className="settings-button-row compact">
@@ -2120,6 +2123,7 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
               <Metric label={t('knowledge:labels.chunks')} value={String(source.chunks)} />
               <Metric label={t('knowledge:labels.folderPath')} value={source.folder_path || t('status:common.none')} />
               <Metric label={t('knowledge:labels.fileName')} value={source.file_name || t('status:common.none')} />
+              <Metric label={t('knowledge:labels.lastIndexedAt')} value={lastIndexed} />
               <Metric label={t('knowledge:labels.size')} value={formatBytes(source.size_bytes)} />
             </dl>
             <dl className="settings-definition-grid knowledge-source-profile-grid">
@@ -2180,13 +2184,18 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
   );
 }
 
-function SourceIndexedStatus({ source }: { source: KnowledgeSource }) {
-  const { t } = useTranslation('status');
+function SourceIndexCell({ source }: { source: KnowledgeSource }) {
+  const { t } = useTranslation(['knowledge', 'status']);
   const status = sourceIndexStatus(source);
+  const indexedAt = formatDate(source.indexed_at, t('status:common.notIndexed', { ns: 'status' }));
+  const indexedTitle = t('knowledge:labels.lastIndexedAtValue', { value: indexedAt });
   return (
-    <StatusChip tone={knowledgeSourceTone(status)} title={formatDate(source.indexed_at)}>
-      {getKnowledgeSourceStatusLabel(status, t)}
-    </StatusChip>
+    <div className="knowledge-source-index-cell" title={indexedTitle}>
+      <StatusChip tone={knowledgeSourceTone(status)}>
+        {getKnowledgeSourceStatusLabel(status, t)}
+      </StatusChip>
+      {source.indexed_at ? <small>{indexedAt}</small> : null}
+    </div>
   );
 }
 
@@ -2239,7 +2248,7 @@ function SortableHeader({ label, sortKey, activeSort, onSort }: { label: string;
     <th aria-sort={active ? (activeSort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
       <button className="knowledge-sort-button" type="button" onClick={() => onSort(sortKey)} aria-label={label} title={label}>
         {label}
-        {active ? <span aria-hidden="true">{activeSort.direction === 'asc' ? '↑' : '↓'}</span> : <ArrowUpDown size={12} aria-hidden="true" />}
+        {active ? <ChevronDown className={activeSort.direction === 'asc' ? 'asc' : undefined} size={12} aria-hidden="true" /> : <ArrowUpDown size={12} aria-hidden="true" />}
       </button>
     </th>
   );
@@ -2490,14 +2499,22 @@ function sourceProfileText(source: KnowledgeSource, t: ReturnType<typeof useTran
   return chunkProfileLabel(effective || requested, t);
 }
 
-function sourceListTitle(source: KnowledgeSource): string {
+function sourceListTitle(source: KnowledgeSource, t?: ReturnType<typeof useTranslation>['t']): string {
   const rawTitle = cleanSourceText(source.title) || cleanSourceText(source.metadata?.display_title) || cleanSourceText(source.metadata?.source_display_title);
-  const fallback = fileStem(source.file_name || source.relative_path || source.virtual_path || source.uri) || cleanSourceText(source.file_name) || cleanSourceText(source.relative_path) || shortSourceId(source.id);
+  const fileName = cleanSourceText(source.file_name);
+  const relativePath = cleanSourceText(source.relative_path);
+  const fallback = fileStem(fileName) || fileName || relativePath || shortSourceId(source.id);
+  if (source.source_type === 'pasted_text') {
+    return rawTitle || t?.('knowledge:defaults.pastedTextTitle') || shortSourceId(source.id);
+  }
+  if (source.source_type === 'attachment_text') {
+    return rawTitle || t?.('knowledge:defaults.attachmentTextTitle') || shortSourceId(source.id);
+  }
   if (source.source_type === 'origin_file') {
     const metadataTitle = cleanSourceText(source.metadata?.chunk_title) || cleanSourceText(source.metadata?.document_title);
     return rawTitle || metadataTitle || fallback;
   }
-  return rawTitle || fallback;
+  return rawTitle || fileStem(source.file_name || source.relative_path || source.virtual_path || source.uri) || fallback;
 }
 
 function sourceListSubtitle(source: KnowledgeSource): string {
@@ -2556,8 +2573,8 @@ function profileReasonText(metadata: Record<string, unknown>, t: ReturnType<type
   return t('knowledge:labels.profileReason', { profile: chunkProfileLabel(effective || requested, t), source, confidence, entityLevel });
 }
 
-function formatDate(value?: string | null): string {
-  return value ? new Date(value).toLocaleString() : 'Not indexed';
+function formatDate(value?: string | null, fallback = ''): string {
+  return value ? new Date(value).toLocaleString() : fallback;
 }
 
 function formatBytes(value?: number | null): string {
