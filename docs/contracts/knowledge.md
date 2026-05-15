@@ -220,6 +220,9 @@ Retrieval pipeline:
 - apply per-source and per-KB chunk limits.
 - trim by top-k and context budget.
 
+Keyword search sanitizes user queries before FTS5 `MATCH`; unsupported FTS
+syntax is treated as search text or skipped with a compact warning.
+
 Vector scores from different embedding profiles are not compared directly. If
 reranking is disabled or fails, results keep RRF order and debug warnings record
 the reason. `min_score_threshold` applies to rerank score when reranking was

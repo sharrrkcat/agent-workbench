@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 
 @dataclass
@@ -29,23 +30,39 @@ def search_keywords(
     if not knowledge_base_ids or top_k <= 0:
         return [], []
     warnings: list[str] = []
-    raw_query = query.strip()
-    sanitized_query = sanitize_fts_query(raw_query)
-    for match_query, label in ((raw_query, "raw"), (sanitized_query, "sanitized")):
-        if not match_query:
-            continue
-        try:
-            return _execute_keyword_search(engine=engine, query=match_query, knowledge_base_ids=knowledge_base_ids, top_k=top_k), warnings
-        except Exception as exc:
-            warnings.append(f"Keyword search {label} query failed: {exc}")
-            continue
-    warnings.append("Keyword search returned no candidates because the query could not be parsed by FTS5.")
-    return [], warnings
+    match_query = build_safe_fts_query(query)
+    if match_query is None:
+        warnings.append("KEYWORD_QUERY_UNSAFE: Keyword search skipped: query could not be converted to a safe FTS query.")
+        return [], warnings
+    try:
+        return _execute_keyword_search(engine=engine, query=match_query, knowledge_base_ids=knowledge_base_ids, top_k=top_k), warnings
+    except (OperationalError, SQLAlchemyError):
+        warnings.append("KEYWORD_SEARCH_FAILED: Keyword search skipped: FTS query failed after sanitization.")
+        return [], warnings
 
 
-def sanitize_fts_query(query: str) -> str:
-    tokens = re.findall(r"[\w\u3400-\u9fff\u3040-\u30ff]+", query, flags=re.UNICODE)
-    return " ".join(f'"{token}"' for token in tokens)
+def build_safe_fts_query(raw_query: str) -> str | None:
+    tokens = _safe_fts_tokens(raw_query)
+    if not tokens:
+        return None
+    return " ".join(_quote_fts_term(token) for token in tokens)
+
+
+def sanitize_fts_query(query: str) -> str | None:
+    return build_safe_fts_query(query)
+
+
+def _safe_fts_tokens(raw_query: str) -> list[str]:
+    tokens = re.findall(r"[\w\u3400-\u9fff\u3040-\u30ff]+", raw_query, flags=re.UNICODE)
+    return [token for token in tokens if _has_searchable_character(token)]
+
+
+def _has_searchable_character(token: str) -> bool:
+    return any(character.isalnum() or "\u3400" <= character <= "\u9fff" or "\u3040" <= character <= "\u30ff" for character in token)
+
+
+def _quote_fts_term(term: str) -> str:
+    return f'"{term.replace(chr(34), chr(34) + chr(34))}"'
 
 
 def _execute_keyword_search(

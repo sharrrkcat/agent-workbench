@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 
+from ai_workbench.core import keyword_search
+from ai_workbench.core.keyword_search import build_safe_fts_query
 from ai_workbench.api.main import create_app
 from ai_workbench.core.retrieval import RetrievalCandidate, rrf_merge
 from tests.test_prompt_agent_execution import FakeLLMRuntime
@@ -100,6 +103,15 @@ def add_source(client: TestClient, kb_id: str, title: str, text: str) -> dict:
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def assert_warning_hygiene(warnings: list[str]) -> None:
+    warning_text = "\n".join(warnings).lower()
+    assert "select" not in warning_text
+    assert " match " not in warning_text
+    assert "sqlalchemy" not in warning_text
+    assert "parameters" not in warning_text
+    assert "https://sqlalche.me" not in warning_text
 
 
 def setup_indexed_kbs(client: TestClient) -> tuple[dict, dict]:
@@ -220,6 +232,97 @@ def test_bm25_search_returns_candidates_and_filters_selected_kbs(tmp_path: Path)
     payload = response.json()
     assert payload["debug"]["keyword_candidate_count"] == 0
     assert all(result["knowledge_base_id"] == kb_a["id"] for result in payload["results"])
+
+
+def test_fts_query_builder_quotes_punctuation_and_hyphenated_queries() -> None:
+    queries = [
+        "他们俩和r5-d4又是什么关系",
+        "R5-D4",
+        "Qwen3.5-9B",
+        "C++",
+        "foo:bar",
+        '"quoted"',
+        "(abc)",
+        "path/to/file",
+        "relationship with rebellion",
+        "他们是什么关系",
+    ]
+
+    for query in queries:
+        built = build_safe_fts_query(query)
+        assert built
+        assert "-" not in built
+        assert ":" not in built
+        assert "(" not in built
+        assert ")" not in built
+
+    assert build_safe_fts_query("--- ::: ()") is None
+
+
+def test_keyword_search_handles_hyphen_cjk_and_punctuation_without_sql_warnings(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    profile = create_profile(client, "punctuation", "punctuation-model")
+    kb = create_kb(client, profile["id"], "Punctuation")
+    add_source(
+        client,
+        kb["id"],
+        "Mixed Tokens",
+        '他们俩和R5-D4又是什么关系。Qwen3.5-9B, C++, foo:bar, "quoted", (abc), path/to/file, relationship with rebellion, 他们是什么关系。 ' * 4,
+    )
+
+    queries = [
+        "他们俩和r5-d4又是什么关系",
+        "R5-D4",
+        "Qwen3.5-9B",
+        "C++",
+        "foo:bar",
+        '"quoted"',
+        "(abc)",
+        "path/to/file",
+        "relationship with rebellion",
+        "他们是什么关系",
+    ]
+
+    for query in queries:
+        response = client.post("/api/knowledge/search", json={"query": query, "knowledge_base_ids": [kb["id"]], "debug": True})
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["results"]
+        assert_warning_hygiene(payload["debug"]["warnings"])
+
+
+def test_keyword_search_skips_all_punctuation_query_with_short_warning(tmp_path: Path) -> None:
+    client, _backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+
+    response = client.post("/api/knowledge/search", json={"query": "--- ::: ()", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    warnings = response.json()["debug"]["warnings"]
+    assert "KEYWORD_QUERY_UNSAFE: Keyword search skipped: query could not be converted to a safe FTS query." in warnings
+    assert_warning_hygiene(warnings)
+
+
+def test_keyword_operational_error_records_compact_warning_and_keeps_vector_results(tmp_path: Path, monkeypatch) -> None:
+    client, _backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+
+    def fail_keyword_search(**_kwargs):
+        raise OperationalError(
+            "SELECT * FROM kb_chunk_fts WHERE kb_chunk_fts MATCH :query",
+            {"query": "R5-D4"},
+            Exception("no such column: d4; see https://sqlalche.me/e/20/e3q8"),
+        )
+
+    monkeypatch.setattr(keyword_search, "_execute_keyword_search", fail_keyword_search)
+
+    response = client.post("/api/knowledge/search", json={"query": "R5-D4", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["results"]
+    assert payload["debug"]["warnings"] == ["KEYWORD_SEARCH_FAILED: Keyword search skipped: FTS query failed after sanitization."]
+    assert_warning_hygiene(payload["debug"]["warnings"])
 
 
 def test_rrf_merge_dedupes_same_chunk_and_keeps_branch_scores() -> None:
