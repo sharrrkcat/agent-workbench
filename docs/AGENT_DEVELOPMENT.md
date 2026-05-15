@@ -88,11 +88,9 @@ Display resolution:
 AgentConfig display override > manifest/package avatar > generated fallback
 ```
 
-LLM resolution:
-
-```text
-session override, when allowed > AgentConfig runtime llm_profile_id > manifest llm.profile > default model profile > legacy global fallback > environment fallback
-```
+LLM resolution is shared with Prompt Agents, Script `ctx.llm.*` calls, and model
+diagnostics. See [contracts/runtime-llm-resolution.md](contracts/runtime-llm-resolution.md)
+for the full priority order and Provider/Profile runtime semantics.
 
 Context and lifecycle resolution:
 

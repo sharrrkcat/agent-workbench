@@ -1,8 +1,9 @@
 # Capability Development
 
-For compact API contracts and generated registry, see:
+For compact API contracts, runtime contracts, and generated registry, see:
 
 - [EXTENSION_API.md](EXTENSION_API.md)
+- [RUNTIME_PROTOCOLS.md](RUNTIME_PROTOCOLS.md)
 - [generated/REGISTRY.md](generated/REGISTRY.md)
 
 Capabilities live under `capabilities/<capability_id>/` with a `capability.yaml` manifest and a Python runtime in `__init__.py`. Capability ids are global, lowercase snake_case, and unique.
@@ -84,7 +85,11 @@ Use `file_content` for source files, config files, logs, and other raw text that
 
 For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, non-blocking prompt status, fetch, interrupt, upload, object info, and `free_memory` for ComfyUI `POST /free`; helper methods normalize outputs and collect images for a prompt. It also owns local workflow and preset library directories, scanning API-format workflow files, rejecting unsupported GUI-format files, hash de-duplication, preset loading, preset validation, per-workflow draft skip reasons, and draft preset creation. The preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results. `free_memory` is a protocol method only: it requests unload/free behavior from the connected ComfyUI service and does not decide whether a user workflow should call it. ComfyUI is an external service and local asset capability, not a user-facing workflow Agent by itself.
 
-The `knowledge` Capability is a thin wrapper over Workbench-owned Knowledge storage and retrieval. It exposes `search`, `list_bases`, and `stats` for Script Agents and `/kb-search` for explicit manual search of the current session active KBs. It must not reimplement vector search, BM25, RRF, reranking, indexing, or model backend behavior; those stay in core Knowledge modules.
+The `knowledge` Capability is a thin wrapper over Workbench-owned Knowledge
+storage and retrieval. It exposes `search`, `list_bases`, and `stats` for Script
+Agents and `/kb-search` for explicit manual search of the current session active
+KBs. Full Knowledge ownership lives in
+[contracts/knowledge.md](contracts/knowledge.md).
 
 ## CLI Workflow
 
