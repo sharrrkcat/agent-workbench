@@ -825,7 +825,12 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
               {busy === 'saving' ? t('common:saving') : t('common:save')}
             </button>
           ) : null}
-          {!isNew ? <button className="settings-secondary-button" type="button" onClick={test} disabled={Boolean(busy)}><Play size={14} />{busy === 'testing' ? t('knowledge:actions.testing') : t('knowledge:actions.test')}</button> : null}
+          {!isNew ? (
+            <button className="settings-secondary-button" type="button" onClick={test} disabled={Boolean(busy)}>
+              {busy === 'testing' ? <LoadingSpinner /> : <Play size={14} />}
+              {t('knowledge:actions.test')}
+            </button>
+          ) : null}
           {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
           <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
         </div>
@@ -922,6 +927,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [sourceChunks, setSourceChunks] = useState<KnowledgeSourceChunk[]>([]);
   const [sourceDetailError, setSourceDetailError] = useState<SettingsErrorValue | null>(null);
   const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
+  const [sourceReindexingIds, setSourceReindexingIds] = useState<Set<string>>(() => new Set());
+  const [originReindexingIds, setOriginReindexingIds] = useState<Set<string>>(() => new Set());
+  const [reindexAllLoading, setReindexAllLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResponse, setSearchResponse] = useState<KnowledgeSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<SettingsErrorValue | null>(null);
@@ -1006,6 +1014,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setSourcePreview(null);
     setSourceChunks([]);
     setSourceDetailError(null);
+    setSourceReindexingIds(new Set());
+    setOriginReindexingIds(new Set());
+    setReindexAllLoading(false);
     searchRequestRef.current += 1;
     currentKnowledgeBaseIdRef.current = initial.id || '';
   }, [initial.id, isNew]);
@@ -1269,9 +1280,10 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     }
   }
   async function importOrigin(originId: string, sourceIds?: string[], actionLabel = 'import origin') {
-    if (!values.id) return;
+    if (!values.id || originReindexingIds.has(originId)) return;
     const knowledgeBaseId = values.id;
-    setBusy(`${actionLabel}:${originId}`);
+    void actionLabel;
+    setOriginReindexingIds((current) => new Set(current).add(originId));
     try {
       setSourceError(null);
       setSourceResult('');
@@ -1285,7 +1297,13 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         setSourceError(toSettingsError(error, 'Failed to import knowledge origin.'));
       }
     } finally {
-      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setOriginReindexingIds((current) => {
+          const next = new Set(current);
+          next.delete(originId);
+          return next;
+        });
+      }
     }
   }
   async function addPastedSource() {
@@ -1515,9 +1533,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     }
   }
   async function reindexSource(sourceId: string) {
-    if (!values.id) return;
+    if (!values.id || sourceReindexingIds.has(sourceId) || reindexAllLoading) return;
     const knowledgeBaseId = values.id;
-    setBusy('reindexing');
+    setSourceReindexingIds((current) => new Set(current).add(sourceId));
     try {
       setSourceError(null);
       setSourceResult('');
@@ -1532,13 +1550,19 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         setSourceError(toSettingsError(error, 'Failed to reindex source.'));
       }
     } finally {
-      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
+        setSourceReindexingIds((current) => {
+          const next = new Set(current);
+          next.delete(sourceId);
+          return next;
+        });
+      }
     }
   }
   async function reindexAllSources() {
-    if (!values.id) return;
+    if (!values.id || reindexAllLoading) return;
     const knowledgeBaseId = values.id;
-    setBusy('reindexing all');
+    setReindexAllLoading(true);
     try {
       setSourceError(null);
       setSourceResult('');
@@ -1554,7 +1578,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         setSourceError(toSettingsError(error, 'Failed to reindex knowledge base.'));
       }
     } finally {
-      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
+      if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setReindexAllLoading(false);
     }
   }
   async function runSearch() {
@@ -1684,6 +1708,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                       kbDefaultProfile={values.default_chunk_profile || null}
                       expanded={expandedOriginIds.has(origin.id)}
                       busy={busy}
+                      reindexing={originReindexingIds.has(origin.id)}
                       onToggle={() => setExpandedOriginIds((current) => {
                         const next = new Set(current);
                         if (next.has(origin.id)) next.delete(origin.id);
@@ -1708,9 +1733,9 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               <div className="detail-section-heading">
                 <h3>{t('knowledge:sections.sourcesList')}</h3>
                 {hasStaleOriginSources ? <span className="settings-badge warning">{t('knowledge:statusText.reindexRecommended')}</span> : null}
-                <button className="settings-secondary-button" type="button" disabled={!sources.length || Boolean(busy)} onClick={reindexAllSources}>
-                  <RefreshCw size={14} />
-                  {busy === 'reindexing all' ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindexAll')}
+                <button className="settings-secondary-button" type="button" disabled={!sources.length || Boolean(busy) || reindexAllLoading} onClick={reindexAllSources}>
+                  {reindexAllLoading ? <LoadingSpinner /> : <RefreshCw size={14} />}
+                  {t('knowledge:actions.reindexAll')}
                 </button>
               </div>
               {sources.length ? (
@@ -1723,6 +1748,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                   onReindex={reindexSource}
                   onDelete={deleteSource}
                   busy={busy}
+                  reindexAllLoading={reindexAllLoading}
+                  sourceReindexingIds={sourceReindexingIds}
                 />
               ) : <Empty title={t('knowledge:empty.noSources')} message={t('knowledge:empty.noSourcesMessage')} />}
             </section>
@@ -1734,6 +1761,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                 loading={sourceDetailLoading}
                 error={sourceDetailError}
                 busy={busy}
+                reindexing={sourceReindexingIds.has(selectedSource.id) || reindexAllLoading}
                 onClose={() => setSelectedSourceId('')}
                 onReindex={() => reindexSource(selectedSource.id)}
                 onDelete={() => deleteSource(selectedSource.id)}
@@ -1961,6 +1989,7 @@ function OriginAccordionCard({
   kbDefaultProfile,
   expanded,
   busy,
+  reindexing,
   onToggle,
   onScan,
   onReindex,
@@ -1971,6 +2000,7 @@ function OriginAccordionCard({
   kbDefaultProfile: string | null;
   expanded: boolean;
   busy: string;
+  reindexing: boolean;
   onToggle: () => void;
   onScan: () => void;
   onReindex: () => void;
@@ -1996,9 +2026,9 @@ function OriginAccordionCard({
           <Search size={14} />
           {busy === `scan origin:${origin.id}` ? t('knowledge:actions.scanning') : t('knowledge:actions.scan')}
         </button>
-        <button className="settings-secondary-button" type="button" disabled={reindexDisabled || Boolean(busy)} onClick={onReindex}>
-          <RefreshCw size={14} />
-          {busy === `import origin:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindex')}
+        <button className="settings-secondary-button" type="button" disabled={reindexDisabled || reindexing} onClick={onReindex}>
+          {reindexing ? <LoadingSpinner /> : <RefreshCw size={14} />}
+          {t('knowledge:actions.reindex')}
         </button>
       </div>
       {expanded ? (
@@ -2025,7 +2055,7 @@ function OriginAccordionCard({
   );
 }
 
-function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onReindex, onDelete, busy }: {
+function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onReindex, onDelete, busy, reindexAllLoading, sourceReindexingIds }: {
   sources: KnowledgeSource[];
   sort: { key: SourceSortKey; direction: SortDirection };
   onSort: (key: SourceSortKey) => void;
@@ -2034,6 +2064,8 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
   onReindex: (sourceId: string) => void;
   onDelete: (sourceId: string) => void;
   busy: string;
+  reindexAllLoading: boolean;
+  sourceReindexingIds: Set<string>;
 }) {
   const { t } = useTranslation(['knowledge', 'common', 'status']);
   return (
@@ -2050,23 +2082,28 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
           </tr>
         </thead>
         <tbody>
-          {sources.map((source) => (
-            <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
-              <SourceNameCell source={source} />
-              <td className="knowledge-source-folder-cell" title={source.folder_path || t('status:common.none', { ns: 'status' })}>
-                {source.folder_path || t('status:common.none', { ns: 'status' })}
-              </td>
-              <td>{source.source_type}</td>
-              <td>{source.chunks}</td>
-              <td><SourceIndexCell source={source} /></td>
-              <td className="knowledge-source-actions-cell">
-                <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
-                  <button className="settings-secondary-button icon-only" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy)} aria-label={t('knowledge:actions.reindex')} title={t('knowledge:actions.reindex')}><RefreshCw size={14} /></button>
-                  <button className="settings-secondary-button icon-only danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy)} aria-label={t('common:delete')} title={t('common:delete')}><Trash2 size={14} /></button>
-                </div>
-              </td>
-            </tr>
-          ))}
+          {sources.map((source) => {
+            const sourceReindexing = sourceReindexingIds.has(source.id) || reindexAllLoading;
+            return (
+              <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
+                <SourceNameCell source={source} />
+                <td className="knowledge-source-folder-cell" title={source.folder_path || t('status:common.none', { ns: 'status' })}>
+                  {source.folder_path || t('status:common.none', { ns: 'status' })}
+                </td>
+                <td>{source.source_type}</td>
+                <td>{source.chunks}</td>
+                <td><SourceIndexCell source={source} /></td>
+                <td className="knowledge-source-actions-cell">
+                  <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
+                    <button className="settings-secondary-button icon-only" type="button" onClick={() => onReindex(source.id)} disabled={Boolean(busy) || sourceReindexing} aria-label={t('knowledge:actions.reindex')} title={t('knowledge:actions.reindex')}>
+                      {sourceReindexing ? <LoadingSpinner /> : <RefreshCw size={14} />}
+                    </button>
+                    <button className="settings-secondary-button icon-only danger" type="button" onClick={() => onDelete(source.id)} disabled={Boolean(busy) || sourceReindexing} aria-label={t('common:delete')} title={t('common:delete')}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -2086,13 +2123,14 @@ function SourceNameCell({ source }: { source: KnowledgeSource }) {
   );
 }
 
-function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, onReindex, onDelete }: {
+function SourceDetail({ source, preview, chunks, loading, error, busy, reindexing, onClose, onReindex, onDelete }: {
   source: KnowledgeSource;
   preview: KnowledgeSourcePreview | null;
   chunks: KnowledgeSourceChunk[];
   loading: boolean;
   error: SettingsErrorValue | null;
   busy: string;
+  reindexing: boolean;
   onClose: () => void;
   onReindex: () => void;
   onDelete: () => void;
@@ -2113,8 +2151,11 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
             </div>
           </div>
           <div className="settings-button-row compact">
-            <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy)}><RefreshCw size={14} />{t('knowledge:actions.reindex')}</button>
-            <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button>
+            <button className="settings-secondary-button" type="button" onClick={onReindex} disabled={Boolean(busy) || reindexing}>
+              {reindexing ? <LoadingSpinner /> : <RefreshCw size={14} />}
+              {t('knowledge:actions.reindex')}
+            </button>
+            <button className="settings-secondary-button danger" type="button" onClick={onDelete} disabled={Boolean(busy) || reindexing}><Trash2 size={14} />{t('common:delete')}</button>
             <button className="settings-secondary-button icon-only" type="button" onClick={onClose} aria-label={t('knowledge:actions.closeSourceDetail')}><X size={16} /></button>
           </div>
         </header>
