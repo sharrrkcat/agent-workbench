@@ -137,7 +137,8 @@
     "originName": "Origin name",
     "originSlug": "Origin slug",
     "originFolder": "Origin folder",
-    "originDefaultChunkProfile": "Origin default chunk profile",
+    "originDefaultChunkProfile": "Origin chunk profile override",
+    "originChunkProfileOverride": "Origin chunk profile override",
     "resolvedFolderPath": "Resolved folder path",
     "scanAfterCreate": "Scan after create",
     "indexAfterCreate": "Index after create",
@@ -148,6 +149,7 @@
     "textContent": "Text content",
     "defaultChunkProfile": "Default chunk profile",
     "chunkProfile": "Chunk profile",
+    "chunkProfileOverride": "Chunk profile override",
     "profile": "Profile",
     "effectiveProfile": "Effective profile",
     "profileSource": "Profile source",
@@ -166,6 +168,7 @@
     "profileReason": "{{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
     "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
     "profileWithSource": "{{profile}} · {{source}}",
+    "profileCompact": "{{profile}} · {{source}}",
     "selectedFiles": "{{count}} file selected",
     "selectedFiles_plural": "{{count}} files selected",
     "folderSuggestions": "Folder suggestions",
@@ -316,6 +319,7 @@
   "placeholders": {
     "useKnowledgeDefault": "Use Knowledge default",
     "useKnowledgeBaseDefault": "Use Knowledge Base default",
+    "noOverride": "No override",
     "kbRootFolder": "Leave empty for KB root",
     "originFolder": "folder or nested/folder"
   },
@@ -328,9 +332,11 @@
   "profileSources": {
     "frontmatter": "Frontmatter",
     "source_override": "Source override",
-    "origin_default": "Origin default",
+    "origin_default": "Origin override",
+    "origin_override": "Origin override",
     "kb_default": "Knowledge Base default",
-    "auto_detector": "Auto detector",
+    "auto_detector": "Auto",
+    "auto": "Auto",
     "fallback": "Fallback",
     "heading": "Heading",
     "h1": "H1",
@@ -338,10 +344,20 @@
     "path": "Path",
     "parent_heading": "Parent heading"
   },
+  "profileSourceShort": {
+    "frontmatter": "Frontmatter",
+    "source_override": "Source",
+    "origin_default": "Origin",
+    "origin_override": "Origin",
+    "kb_default": "KB",
+    "auto_detector": "Auto",
+    "auto": "Auto",
+    "fallback": "Fallback"
+  },
   "profileSourcePhrases": {
-    "inheritedFromKnowledgeBase": "inherited from Knowledge Base",
-    "originOverride": "origin override",
-    "sourceOverride": "source/frontmatter override"
+    "inheritedFromKnowledgeBase": "Knowledge Base default",
+    "originOverride": "Origin override",
+    "sourceOverride": "Source override"
   },
   "confidence": {
     "high": "High",

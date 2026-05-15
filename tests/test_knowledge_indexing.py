@@ -8,8 +8,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.knowledge_indexing import chunk_source_text
 from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.knowledge_models import KnowledgeModelError
+from ai_workbench.core.knowledge_settings import KnowledgeSettings
+from ai_workbench.core.knowledge_store import KnowledgeBase
 from ai_workbench.db.database import get_engine, init_db
 from tests.test_knowledge_settings import create_embedding_profile
 from tests.test_prompt_agent_execution import FakeLLMRuntime
@@ -468,6 +471,9 @@ def test_chunk_profile_precedence_frontmatter_origin_kb_auto_fallback(tmp_path: 
     kb = create_kb_with_profile(client, default_chunk_profile="markdown_document")
     markdown = "# Codex Docs\n\n## Characters\n\n### Ada\nAda writes notes.\n\n### Ben\nBen reads notes."
 
+    settings_default = client.patch("/api/knowledge/settings", json={"default_chunk_profile": "plain_text"})
+    assert settings_default.status_code == 200, settings_default.text
+
     kb_default = client.post(
         f"/api/knowledge/bases/{kb['id']}/sources",
         json={"source_type": "pasted_text", "title": "collection.md", "text": markdown},
@@ -476,6 +482,15 @@ def test_chunk_profile_precedence_frontmatter_origin_kb_auto_fallback(tmp_path: 
     kb_meta = client.get(f"/api/knowledge/sources/{kb_default.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
     assert kb_meta["chunk_profile_effective"] == "markdown_document"
     assert kb_meta["profile_source"] == "kb_default"
+
+    source_override = client.post(
+        f"/api/knowledge/bases/{kb['id']}/sources",
+        json={"source_type": "pasted_text", "title": "source-override.md", "text": markdown, "chunk_profile": "markdown_collection"},
+    )
+    assert source_override.status_code == 200, source_override.text
+    source_override_meta = client.get(f"/api/knowledge/sources/{source_override.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
+    assert source_override_meta["chunk_profile_effective"] == "markdown_collection"
+    assert source_override_meta["profile_source"] == "source_override"
 
     origin = client.post(
         f"/api/knowledge/bases/{kb['id']}/origins",
@@ -501,13 +516,14 @@ def test_chunk_profile_precedence_frontmatter_origin_kb_auto_fallback(tmp_path: 
     assert frontmatter_meta["profile_source"] == "frontmatter"
 
     auto_kb = create_kb_with_profile(client, default_chunk_profile=None, alias="bge_m3_auto")
+    assert auto_kb["default_chunk_profile"] == "markdown_auto"
     auto_source = client.post(
         f"/api/knowledge/bases/{auto_kb['id']}/sources",
         json={"source_type": "pasted_text", "title": "auto.md", "text": markdown},
     )
     auto_meta = client.get(f"/api/knowledge/sources/{auto_source.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
     assert auto_meta["chunk_profile_requested"] == "markdown_auto"
-    assert auto_meta["profile_source"] == "auto_detector"
+    assert auto_meta["profile_source"] == "kb_default"
 
     fallback_source = client.post(
         f"/api/knowledge/bases/{auto_kb['id']}/sources",
@@ -515,7 +531,8 @@ def test_chunk_profile_precedence_frontmatter_origin_kb_auto_fallback(tmp_path: 
     )
     fallback_meta = client.get(f"/api/knowledge/sources/{fallback_source.json()['source_id']}/chunks").json()["chunks"][0]["metadata"]
     assert fallback_meta["chunk_profile_effective"] == "markdown_document"
-    assert fallback_meta["profile_source"] == "fallback"
+    assert fallback_meta["chunk_profile_requested"] == "markdown_auto"
+    assert fallback_meta["profile_source"] == "kb_default"
 
 
 def test_api_compact_profile_fields_and_old_metadata_fallback(tmp_path: Path) -> None:
@@ -527,7 +544,7 @@ def test_api_compact_profile_fields_and_old_metadata_fallback(tmp_path: Path) ->
     ).json()
     source = client.get(f"/api/knowledge/sources/{created['source_id']}").json()
     assert source["chunk_profile_effective"] == "markdown_document"
-    assert source["profile_source"] == "auto_detector"
+    assert source["profile_source"] == "kb_default"
     assert source["title_source"] in {"h1", "filename"}
 
     with sqlite3.connect(db_path) as connection:
@@ -536,3 +553,32 @@ def test_api_compact_profile_fields_and_old_metadata_fallback(tmp_path: Path) ->
     old_source = client.get(f"/api/knowledge/sources/{created['source_id']}")
     assert old_source.status_code == 200, old_source.text
     assert old_source.json()["chunk_profile_effective"] is None
+
+
+def test_legacy_empty_kb_profile_ignores_knowledge_defaults_profile() -> None:
+    settings = KnowledgeSettings(default_chunk_profile="plain_text", default_chunk_size=500, default_chunk_overlap=0)
+    legacy_kb = KnowledgeBase.model_construct(
+        id="legacy",
+        name="Legacy",
+        description="",
+        aliases_text="",
+        embedding_model_profile_id="profile",
+        enabled=True,
+        index_status="empty",
+        index_error=None,
+        chunk_size_override=500,
+        chunk_overlap_override=0,
+        vector_candidate_k_override=None,
+        keyword_candidate_k_override=None,
+        final_top_k_override=None,
+        max_context_chars_override=None,
+        default_chunk_profile=None,
+    )
+
+    markdown_chunks = chunk_source_text("# Title\n\nBody", settings=settings, knowledge_base=legacy_kb, source_title="note.md")
+    plain_chunks = chunk_source_text("plain text only", settings=settings, knowledge_base=legacy_kb, source_title="note.txt")
+
+    assert markdown_chunks[0].metadata["chunk_profile_requested"] == "markdown_auto"
+    assert markdown_chunks[0].metadata["profile_source"] == "auto_detector"
+    assert plain_chunks[0].metadata["chunk_profile_effective"] == "markdown_document"
+    assert plain_chunks[0].metadata["profile_source"] == "fallback"

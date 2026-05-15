@@ -126,7 +126,7 @@
     "originName": "Origin name",
     "originSlug": "Origin slug",
     "originFolder": "Origin 文件夹",
-    "originDefaultChunkProfile": "Origin 默认分块配置",
+    "originDefaultChunkProfile": "Origin 分块配置覆盖",
     "resolvedFolderPath": "解析后的文件夹路径",
     "scanAfterCreate": "创建后扫描",
     "indexAfterCreate": "创建后索引",
@@ -158,7 +158,10 @@
     "selectedFiles": "已选择 {{count}} 个文件",
     "selectedFiles_plural": "已选择 {{count}} 个文件",
     "folderSuggestions": "文件夹建议",
-    "loadingSuggestions": "正在加载建议..."
+    "loadingSuggestions": "正在加载建议...",
+    "originChunkProfileOverride": "Origin 分块配置覆盖",
+    "chunkProfileOverride": "分块配置覆盖",
+    "profileCompact": "{{profile}} · {{source}}"
   },
   "empty": {
     "loadingSettings": "正在加载知识库设置。",
@@ -322,7 +325,8 @@
     "useKnowledgeDefault": "使用 Knowledge 默认值",
     "useKnowledgeBaseDefault": "使用知识库默认值",
     "kbRootFolder": "留空时放在知识库根目录",
-    "originFolder": "folder 或 nested/folder"
+    "originFolder": "folder 或 nested/folder",
+    "noOverride": "不覆盖"
   },
   "chunkProfiles": {
     "plain_text": "纯文本",
@@ -333,20 +337,22 @@
   "profileSources": {
     "frontmatter": "Frontmatter",
     "source_override": "来源覆盖",
-    "origin_default": "Origin 默认值",
+    "origin_default": "Origin 覆盖",
     "kb_default": "知识库默认值",
-    "auto_detector": "自动检测",
+    "auto_detector": "自动",
     "fallback": "Fallback",
     "heading": "标题",
     "h1": "H1",
     "filename": "文件名",
     "path": "路径",
-    "parent_heading": "父级标题"
+    "parent_heading": "父级标题",
+    "origin_override": "Origin 覆盖",
+    "auto": "自动"
   },
   "profileSourcePhrases": {
-    "inheritedFromKnowledgeBase": "继承自知识库",
+    "inheritedFromKnowledgeBase": "知识库默认值",
     "originOverride": "Origin 覆盖",
-    "sourceOverride": "来源 / frontmatter 覆盖"
+    "sourceOverride": "来源覆盖"
   },
   "confidence": {
     "high": "高",
@@ -370,5 +376,15 @@
   },
   "statusText": {
     "reindexRecommended": "Reindex recommended"
+  },
+  "profileSourceShort": {
+    "frontmatter": "Frontmatter",
+    "source_override": "来源",
+    "origin_default": "Origin",
+    "origin_override": "Origin",
+    "kb_default": "KB",
+    "auto_detector": "自动",
+    "auto": "自动",
+    "fallback": "Fallback"
   }
 }

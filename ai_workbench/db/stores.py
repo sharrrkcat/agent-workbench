@@ -1206,15 +1206,12 @@ class SqlKnowledgeStore:
                 key in updates and getattr(current, key) != updates[key]
                 for key in ("default_chunk_size", "default_chunk_overlap")
             )
-            chunk_profile_default_changed = "default_chunk_profile" in updates and current.default_chunk_profile != updates["default_chunk_profile"]
             next_settings = KnowledgeSettings.model_validate({**current.model_dump(), **updates})
             _apply_knowledge_settings_to_record(record, next_settings)
             record.updated_at = utc_now()
             session.add(record)
             if chunk_size_defaults_changed:
                 _mark_kbs_using_default_chunking_needs_reindex(session)
-            if chunk_profile_default_changed:
-                _mark_kbs_using_default_chunk_profile_needs_reindex(session)
             session.commit()
             session.refresh(record)
             return _knowledge_settings_from_record(record)
@@ -1924,7 +1921,7 @@ def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
         keyword_candidate_k_override=record.keyword_candidate_k_override,
         final_top_k_override=record.final_top_k_override,
         max_context_chars_override=record.max_context_chars_override,
-        default_chunk_profile=getattr(record, "default_chunk_profile", None),
+        default_chunk_profile=getattr(record, "default_chunk_profile", None) or "markdown_auto",
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )
@@ -2018,14 +2015,6 @@ def _mark_kbs_using_default_chunking_needs_reindex(session: DbSession) -> None:
         select(KnowledgeBaseRecord)
         .where(KnowledgeBaseRecord.chunk_size_override == None)  # noqa: E711
         .where(KnowledgeBaseRecord.chunk_overlap_override == None)  # noqa: E711
-    ).all()
-    for kb_record in kb_records:
-        _mark_kb_needs_reindex(session, kb_record.id)
-
-
-def _mark_kbs_using_default_chunk_profile_needs_reindex(session: DbSession) -> None:
-    kb_records = session.exec(
-        select(KnowledgeBaseRecord).where(KnowledgeBaseRecord.default_chunk_profile == None)  # noqa: E711
     ).all()
     for kb_record in kb_records:
         _mark_kb_needs_reindex(session, kb_record.id)

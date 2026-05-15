@@ -154,7 +154,7 @@ class KnowledgeBase(BaseModel):
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
-    default_chunk_profile: ChunkProfile | None = None
+    default_chunk_profile: ChunkProfile | None = "markdown_auto"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -171,6 +171,11 @@ class KnowledgeBase(BaseModel):
     def _aliases_text(cls, value: Any) -> str:
         return normalize_aliases_text(value)
 
+    @field_validator("default_chunk_profile", mode="before")
+    @classmethod
+    def _default_chunk_profile(cls, value: Any) -> str:
+        return str(value or "markdown_auto")
+
 
 class KnowledgeBaseCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -186,12 +191,17 @@ class KnowledgeBaseCreate(BaseModel):
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
-    default_chunk_profile: ChunkProfile | None = None
+    default_chunk_profile: ChunkProfile | None = "markdown_auto"
 
     @field_validator("aliases_text", mode="before")
     @classmethod
     def _aliases_text(cls, value: Any) -> str:
         return normalize_aliases_text(value)
+
+    @field_validator("default_chunk_profile", mode="before")
+    @classmethod
+    def _default_chunk_profile(cls, value: Any) -> str:
+        return str(value or "markdown_auto")
 
 
 class KnowledgeBasePatch(BaseModel):
@@ -214,6 +224,11 @@ class KnowledgeBasePatch(BaseModel):
     @classmethod
     def _aliases_text(cls, value: Any) -> str | None:
         return normalize_aliases_text(value) if value is not None else None
+
+    @field_validator("default_chunk_profile", mode="before")
+    @classmethod
+    def _default_chunk_profile(cls, value: Any) -> str | None:
+        return "markdown_auto" if value is None else str(value)
 
 
 class SessionKnowledgeBinding(BaseModel):
@@ -453,7 +468,7 @@ class MemoryKnowledgeStore(KnowledgeStore):
         updates = knowledge_settings_patch_updates(patch)
         changed_chunk_defaults = any(
             key in updates and getattr(self._settings, key) != updates[key]
-            for key in ("default_chunk_size", "default_chunk_overlap", "default_chunk_profile")
+            for key in ("default_chunk_size", "default_chunk_overlap")
         )
         self._settings = KnowledgeSettings.model_validate({**self._settings.model_dump(), **updates})
         if changed_chunk_defaults:

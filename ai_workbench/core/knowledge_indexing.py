@@ -307,7 +307,6 @@ def chunk_source_text(
         source_chunk_profile=source_chunk_profile,
         origin_default_chunk_profile=origin_default_chunk_profile,
         knowledge_base_default_chunk_profile=knowledge_base.default_chunk_profile,
-        settings_default_chunk_profile=settings.default_chunk_profile,
     )
     if requested == "plain_text":
         return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings, profile_source=profile_source)
@@ -516,7 +515,6 @@ def _requested_chunk_profile(
     source_chunk_profile: str | None,
     origin_default_chunk_profile: str | None,
     knowledge_base_default_chunk_profile: str | None,
-    settings_default_chunk_profile: str | None,
 ) -> tuple[str, str]:
     override = str(parse.frontmatter.get("chunk_profile") or "").strip()
     if override:
@@ -536,9 +534,6 @@ def _requested_chunk_profile(
     if knowledge_base_default_chunk_profile:
         _validate_profile(knowledge_base_default_chunk_profile, "Knowledge base default chunk profile")
         return knowledge_base_default_chunk_profile, "kb_default"
-    if settings_default_chunk_profile:
-        _validate_profile(settings_default_chunk_profile, "Knowledge default chunk profile")
-        return settings_default_chunk_profile, "kb_default"
     if _looks_like_markdown(source_title=source_title, source_uri=source_uri, text=text, parse=parse):
         return "markdown_auto", "auto_detector"
     return "markdown_document", "fallback"

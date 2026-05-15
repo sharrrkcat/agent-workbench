@@ -167,6 +167,7 @@ def test_knowledge_base_crud_and_session_bindings(tmp_path: Path) -> None:
     kb = client.post("/api/knowledge/bases", json={"name": "Docs", "embedding_model_profile_id": profile["id"], "aliases_text": "docs, project docs"}).json()
     assert kb["index_status"] == "empty"
     assert kb["aliases_text"] == "docs, project docs"
+    assert kb["default_chunk_profile"] == "markdown_auto"
     assert client.get("/api/knowledge/bases").json()[0]["name"] == "Docs"
     patched = client.patch(f"/api/knowledge/bases/{kb['id']}", json={"enabled": False, "final_top_k_override": 5, "aliases_text": "docs, Docs, 星战"})
     assert patched.status_code == 200

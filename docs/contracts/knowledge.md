@@ -96,8 +96,9 @@ candidate embeddings.
 
 ## Data Ownership
 
-- `kb_origins` owns managed origin configuration, optional
-  `default_chunk_profile`, and scan/import timestamps.
+- `kb_origins` owns managed origin configuration, optional chunk profile
+  override data stored in the legacy `default_chunk_profile` field, and
+  scan/import timestamps.
 - `kb_sources` owns source metadata and local source references, including
   origin relative paths, virtual folder grouping, file status, and compact
   effective profile fields. It does not store full pasted source text.
@@ -131,6 +132,13 @@ Scan and import are separate operations:
   rows, delete old derived indexes, or change retrieval-visible indexes.
 - Import/Reindex is the explicit heavy action that indexes new or changed files
   through the normal source indexer.
+- Origin chunk profile override is optional. When set, it overrides the
+  Knowledge Base default for files under that origin unless frontmatter or a
+  source/import override is present. When unset, files use the Knowledge Base
+  default.
+- Pasted text and text attachment imports may set a one-time source/import
+  chunk profile override. No override means the source uses the origin override
+  when applicable, otherwise the Knowledge Base default.
 - There is no file watcher, scheduled scan, automatic sync, background reindex,
   or chat-time scan/reindex.
 - Missing files keep old derived indexes until the user deletes the source or
@@ -150,18 +158,26 @@ Markdown source indexing supports:
 - `markdown_collection`
 - `markdown_auto`
 
+Each Knowledge Base owns a concrete `default_chunk_profile`. New Knowledge
+Bases default to `markdown_auto`. Legacy Knowledge Bases with an empty or
+missing default use `markdown_auto` effectively and may write that value back
+when saved through the normal settings flow. The old Knowledge Defaults
+`default_chunk_profile` field may still be read for compatibility, but it does
+not participate in profile resolution.
+
 Profile resolution precedence is:
 
 1. frontmatter `chunk_profile`.
-2. source-create override for pasted text or text attachments.
-3. origin `default_chunk_profile`.
+2. source/import chunk profile override for pasted text or text attachments.
+3. origin chunk profile override stored as origin `default_chunk_profile`.
 4. Knowledge Base `default_chunk_profile`.
-5. Knowledge Defaults `default_chunk_profile`.
-6. markdown auto detection.
-7. `markdown_document` fallback.
+5. `markdown_auto`.
+6. `markdown_document` fallback.
 
-Changing an origin, KB, or Knowledge default profile marks affected indexed
+Changing an origin override or KB default profile marks affected indexed
 sources as needing reindex and does not change existing chunks or embeddings.
+Changing the legacy Knowledge Defaults profile field does not affect profile
+resolution and must not mark sources for reindex.
 
 The deterministic Markdown parser reads simple frontmatter, ATX headings `#`
 through `######`, and ignores headings inside fenced code blocks. Per-chunk
