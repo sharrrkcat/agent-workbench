@@ -6,6 +6,8 @@ import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilit
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
 import { initials } from './configUtils';
 import { getResolvedAgentDisplay } from '../../utils/agents';
+import { StatusChip } from '../ui';
+import { getKnowledgeIndexStatusLabel } from '../../i18n/formatters';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory' | 'utility_llm' | 'intent_routing';
 export type AppearanceSettingsCategory = 'pet' | 'chat_status_panel';
@@ -65,7 +67,7 @@ export function SettingsObjectList({
   onSelectKnowledgeItem?: (itemId: string) => void;
   onSelectWorldbookItem?: (itemId: string) => void;
 }) {
-  const { t } = useTranslation(['settings', 'common']);
+  const { t } = useTranslation(['settings', 'common', 'status']);
   const generalCategories: { id: GeneralSettingsCategory; name: string; description: string }[] = [
     { id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') },
     { id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') },
@@ -449,18 +451,33 @@ function KnowledgeBaseListItem({
   active: boolean;
   onClick: () => void;
 }) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'status', 'knowledge']);
   const profile = embeddingProfiles.find((item) => item.id === knowledgeBase.embedding_model_profile_id);
+  const profileName = knowledgeBase.embedding_model_profile_name || profile?.name || t('status:common.unavailable');
+  const profileTitle = [
+    knowledgeBase.embedding_model_profile_alias || profile?.alias ? `${t('knowledge:labels.profileKey')}: ${knowledgeBase.embedding_model_profile_alias || profile?.alias}` : '',
+    knowledgeBase.embedding_model_profile_model_path || profile?.model_path ? `${t('knowledge:labels.modelPath')}: ${knowledgeBase.embedding_model_profile_model_path || profile?.model_path}` : '',
+  ].filter(Boolean).join('\n');
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${knowledgeBase.enabled ? '' : 'disabled'}`} onClick={onClick}>
       <div className="settings-object-avatar">{initials(knowledgeBase.name) || <SlidersHorizontal size={16} />}</div>
       <div className="settings-object-copy">
         <strong>{knowledgeBase.name || 'Untitled knowledge base'}</strong>
-        <small>{knowledgeBase.index_status || 'empty'} / {profile?.alias || 'missing model'}</small>
+        <div className="settings-object-chip-row">
+          <StatusChip tone={knowledgeIndexTone(knowledgeBase.index_status || 'empty')}>{getKnowledgeIndexStatusLabel(knowledgeBase.index_status || 'empty', t)}</StatusChip>
+          <StatusChip tone="neutral" title={profileTitle}>{profileName}</StatusChip>
+        </div>
       </div>
       <span className={`settings-status-dot ${knowledgeBase.enabled ? 'enabled' : ''}`}>{knowledgeBase.enabled ? t('enabled') : t('disabled')}</span>
     </button>
   );
+}
+
+function knowledgeIndexTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
+  if (status === 'ready') return 'active';
+  if (status === 'indexing') return 'warning';
+  if (['needs_reindex', 'needs_index', 'failed'].includes(status)) return 'danger';
+  return 'neutral';
 }
 
 function AgentListItem({ config, active, onClick }: { config: AgentConfig; active: boolean; onClick: () => void }) {

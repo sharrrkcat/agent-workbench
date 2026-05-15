@@ -51,7 +51,8 @@
     "ready": "Ready",
     "indexing": "Indexing",
     "failed": "Failed",
-    "needs_reindex": "Needs reindex"
+    "needs_reindex": "Needs reindex",
+    "needs_index": "Needs index"
   },
   "knowledgeSource": {
     "pending": "Pending",

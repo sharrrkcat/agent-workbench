@@ -529,7 +529,7 @@ Knowledge base APIs:
 - `PATCH /api/knowledge/bases/{id}`
 - `DELETE /api/knowledge/bases/{id}`
 
-Knowledge Base create, read, and patch payloads include `aliases_text`, a comma-separated string used only by Intent Routing KB hint matching. Aliases are trimmed, empty pieces are ignored, duplicate aliases are removed case-insensitively, each alias is capped, and the stored list is capped. Patching only `aliases_text` does not change embedding profiles, index status, sources, chunks, retrieval ranking, RRF, or reranker behavior.
+Knowledge Base create, read, and patch payloads include `aliases_text`, a comma-separated string used only by Intent Routing KB hint matching. Aliases are trimmed, empty pieces are ignored, duplicate aliases are removed case-insensitively, each alias is capped, and the stored list is capped. Read/list responses also include compact embedding profile display fields such as `embedding_model_profile_name`, `embedding_model_profile_alias`, `embedding_model_profile_model_path`, and `embedding_model_profile_dimension` for UI display/debugging; the stored contract still uses `embedding_model_profile_id`. Patching only `aliases_text` does not change embedding profiles, index status, sources, chunks, retrieval ranking, RRF, or reranker behavior.
 
 Knowledge source indexing APIs:
 
@@ -550,16 +550,16 @@ Knowledge source indexing APIs:
 `POST /api/knowledge/bases/{id}/sources` supports pasted text:
 
 ```json
-{"source_type": "pasted_text", "title": "Notes", "text": "..."}
+{"source_type": "pasted_text", "title": "Notes", "text": "...", "folder_path": "notes", "chunk_profile": "markdown_auto"}
 ```
 
 and text attachments:
 
 ```json
-{"source_type": "attachment_text", "attachment_id": "local://attachments/<id>.txt"}
+  {"source_type": "attachment_text", "attachment_id": "local://attachments/<id>.txt", "folder_path": "imports", "chunk_profile": "plain_text"}
 ```
 
-Managed origins expose only directories under `data/knowledge/origins/<origin_slug>/`, where `origin_slug` is a safe lowercase ASCII folder name. Origin records may include `default_chunk_profile`; source records use `source_type: "origin_file"` and include compact path metadata such as `origin_id`, `relative_path`, `virtual_path`, `folder_path`, `file_name`, `extension`, `path_depth`, `file_status`, `source_mtime`, and `source_size_bytes`. Source responses also include compact effective profile/status fields: `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `profile_source`, `entity_level`, `title_source`, and `type_source`. `file_status` may be `ready`, `new`, `changed`, `missing`, or `failed`.
+Managed origins expose only directories under `data/knowledge/origins/<origin_slug>/`, where `origin_slug` is a safe lowercase ASCII folder name. Creating an origin reuses an existing matching directory and rejects an existing non-directory path. Origin records may include `default_chunk_profile`; source records use `source_type: "origin_file"` and include compact path metadata such as `origin_id`, `relative_path`, `virtual_path`, `folder_path`, `file_name`, `extension`, `path_depth`, `file_status`, `source_mtime`, and `source_size_bytes`. Source responses also include compact effective profile/status fields: `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `profile_source`, `entity_level`, `title_source`, and `type_source`. `file_status` may be `ready`, `new`, `changed`, `missing`, or `failed`.
 
 `POST /api/knowledge/origins/{origin_id}/scan` is lightweight. It validates that every resolved file stays inside the managed origin root, skips hidden directories, `.git`, `node_modules`, `__pycache__`, symlinks, unsupported/binary files, and files over the Knowledge source size limit, then compares mtime/size/hash and updates origin/source metadata. It returns `new_count`, `changed_count`, `missing_count`, `unchanged_count`, `failed_count`, and `warnings`. Scan does not parse, chunk, embed, write `kb_chunks`, write `kb_embeddings`, write `kb_chunk_fts`, delete missing indexes, or alter retrieval-visible index rows.
 
@@ -567,7 +567,7 @@ Managed origins expose only directories under `data/knowledge/origins/<origin_sl
 
 The indexer validates source size and chunk limits, chunks text, embeds chunks with the KB embedding model profile using `purpose=document`, stores vectors as float32 SQLite BLOBs, and writes FTS5 rows. Pasted source originals are saved under `data/knowledge/sources/<source_id>.txt`; full pasted source text is not stored in `kb_sources`. Attachment indexing reads existing local text attachments and does not delete or modify the original attachment.
 
-Markdown sources use chunk profiles: `plain_text`, `markdown_document`, `markdown_collection`, and `markdown_auto`. Profile resolution precedence is frontmatter `chunk_profile`, source override when the future source-edit contract supports it, origin `default_chunk_profile`, Knowledge Base `default_chunk_profile`, Knowledge Defaults `default_chunk_profile`, markdown auto detection, then `markdown_document` fallback. Frontmatter may override with `chunk_profile: markdown_document`, `chunk_profile: markdown_collection`, or `chunk_profile: plain_text`. The parser supports simple frontmatter, ATX headings `#` through `######`, heading paths, source line/character offsets, and ignores headings inside fenced code blocks. Per-chunk metadata is compact and stored in `kb_chunks.metadata_json`: `chunk_title`, `document_title`, `entity_type`, `heading_path`, `line_start`, `line_end`, `char_start`, `char_end`, `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `profile_source`, `entity_level`, `title_source`, and `type_source`.
+Markdown sources use chunk profiles: `plain_text`, `markdown_document`, `markdown_collection`, and `markdown_auto`. Profile resolution precedence is frontmatter `chunk_profile`, source-create override for pasted text/text attachments, origin `default_chunk_profile`, Knowledge Base `default_chunk_profile`, Knowledge Defaults `default_chunk_profile`, markdown auto detection, then `markdown_document` fallback. Frontmatter may override with `chunk_profile: markdown_document`, `chunk_profile: markdown_collection`, or `chunk_profile: plain_text`. The parser supports simple frontmatter, ATX headings `#` through `######`, heading paths, source line/character offsets, and ignores headings inside fenced code blocks. Per-chunk metadata is compact and stored in `kb_chunks.metadata_json`: `chunk_title`, `document_title`, `entity_type`, `heading_path`, `line_start`, `line_end`, `char_start`, `char_end`, `chunk_profile_requested`, `chunk_profile_effective`, `chunk_profile_confidence`, `profile_source`, `entity_level`, `title_source`, and `type_source`.
 
 `chunk_title` is the RAG chunk retrieval title and embedding `Title:` value. It is not Semantic Router metadata and is not session title metadata. `markdown_auto` uses deterministic scoring and falls back to `markdown_document` on low confidence. Origin file indexing uses the same chunk-profile logic; source path metadata enters chunk metadata and the embedding `Path:` line.
 

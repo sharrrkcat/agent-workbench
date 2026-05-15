@@ -22,6 +22,7 @@ from ai_workbench.core.knowledge_indexing import (
     prepare_pasted_text_source,
     source_content_hash,
     validate_source_limits,
+    with_source_overrides,
 )
 from ai_workbench.core.knowledge_context import render_knowledge_context_preview
 from ai_workbench.core.knowledge_models import (
@@ -103,6 +104,8 @@ class KnowledgeSourceCreate(BaseModel):
     title: str | None = None
     text: str | None = None
     attachment_id: str | None = None
+    folder_path: str | None = None
+    chunk_profile: Literal["plain_text", "markdown_document", "markdown_collection", "markdown_auto"] | None = None
 
 
 class KnowledgeOriginImportRequest(BaseModel):
@@ -424,7 +427,7 @@ def list_knowledge_source_chunks(source_id: str, state: RuntimeState = Depends(g
 
 @router.get("/bases")
 def list_knowledge_bases(state: RuntimeState = Depends(get_state)) -> list[dict]:
-    return [knowledge_base.model_dump() for knowledge_base in state.knowledge.list_knowledge_bases()]
+    return [_knowledge_base_payload(knowledge_base, state) for knowledge_base in state.knowledge.list_knowledge_bases()]
 
 
 @router.post("/bases")
@@ -432,7 +435,7 @@ def create_knowledge_base(payload: KnowledgeBaseCreate, state: RuntimeState = De
     _require_embedding_profile(state, payload.embedding_model_profile_id)
     try:
         knowledge_base = KnowledgeBase.model_validate(payload.model_dump())
-        return state.knowledge.create_knowledge_base(knowledge_base).model_dump()
+        return _knowledge_base_payload(state.knowledge.create_knowledge_base(knowledge_base), state)
     except ValidationError as exc:
         _raise_validation(exc)
 
@@ -440,7 +443,7 @@ def create_knowledge_base(payload: KnowledgeBaseCreate, state: RuntimeState = De
 @router.get("/bases/{knowledge_base_id}")
 def get_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        return state.knowledge.get_knowledge_base(knowledge_base_id).model_dump()
+        return _knowledge_base_payload(state.knowledge.get_knowledge_base(knowledge_base_id), state)
     except KeyError:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
 
@@ -451,7 +454,7 @@ def patch_knowledge_base(knowledge_base_id: str, payload: KnowledgeBasePatch, st
     if "embedding_model_profile_id" in updates:
         _require_embedding_profile(state, updates["embedding_model_profile_id"])
     try:
-        return state.knowledge.update_knowledge_base(knowledge_base_id, updates).model_dump()
+        return _knowledge_base_payload(state.knowledge.update_knowledge_base(knowledge_base_id, updates), state)
     except ValidationError as exc:
         _raise_validation(exc)
     except KeyError:
@@ -489,6 +492,8 @@ def create_knowledge_origin(knowledge_base_id: str, payload: KnowledgeOriginCrea
         state.knowledge.get_knowledge_base(knowledge_base_id)
         slug = safe_origin_slug(payload.slug)
         root = origin_root_for_slug(state.repo_root or Path("."), slug)
+        if root.exists() and not root.is_dir():
+            raise_error(422, "KNOWLEDGE_ORIGIN_ROOT_NOT_DIRECTORY", "Knowledge origin path exists but is not a directory.")
         root.mkdir(parents=True, exist_ok=True)
         root_path = root.relative_to((state.repo_root or Path(".")).resolve()).as_posix()
         origin = KnowledgeOrigin(
@@ -726,6 +731,8 @@ def _prepare_source_input(knowledge_base_id: str, payload: KnowledgeSourceCreate
         prepared = prepare_attachment_text_source(attachment_id=payload.attachment_id)
         if payload.title and payload.title.strip():
             prepared = prepared.__class__(**{**prepared.__dict__, "title": payload.title.strip()})
+    if payload.folder_path or payload.chunk_profile:
+        prepared = with_source_overrides(prepared, folder_path=payload.folder_path or "", chunk_profile=payload.chunk_profile)
     return prepared
 
 
@@ -795,6 +802,7 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
             knowledge_base=knowledge_base,
             source_title=source.title,
             source_uri=source.uri,
+            source_chunk_profile=source_text.metadata.get("chunk_profile_override"),
             origin_default_chunk_profile=_origin_default_chunk_profile(state, source_text.origin_id),
         )
         source.metadata = _source_profile_metadata(source.metadata, chunks)
@@ -867,6 +875,31 @@ def _context_preview_for_search_response(response: dict, state: RuntimeState) ->
         except KeyError:
             kb_names[str(knowledge_base_id)] = str(knowledge_base_id)
     return render_knowledge_context_preview(settings=state.knowledge.get_settings(), results=results, knowledge_base_names=kb_names)
+
+
+def _knowledge_base_payload(knowledge_base: KnowledgeBase, state: RuntimeState) -> dict:
+    payload = knowledge_base.model_dump()
+    try:
+        profile = state.knowledge.get_embedding_profile(knowledge_base.embedding_model_profile_id)
+    except KeyError:
+        payload.update(
+            {
+                "embedding_model_profile_name": None,
+                "embedding_model_profile_alias": None,
+                "embedding_model_profile_model_path": None,
+                "embedding_model_profile_dimension": None,
+            }
+        )
+        return payload
+    payload.update(
+        {
+            "embedding_model_profile_name": profile.name,
+            "embedding_model_profile_alias": profile.alias,
+            "embedding_model_profile_model_path": profile.model_path,
+            "embedding_model_profile_dimension": profile.dimension,
+        }
+    )
+    return payload
 
 
 def _raise_validation(exc: ValidationError) -> None:

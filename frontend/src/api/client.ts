@@ -327,12 +327,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ source_ids: sourceIds || null }),
     }),
-  createPastedKnowledgeSource: (knowledgeBaseId: string, payload: { title: string; text: string }) =>
+  createPastedKnowledgeSource: (knowledgeBaseId: string, payload: { title: string; text: string; folder_path?: string; chunk_profile?: string | null }) =>
     request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${knowledgeBaseId}/sources`, {
       method: 'POST',
       body: JSON.stringify({ source_type: 'pasted_text', ...payload }),
     }),
-  createAttachmentKnowledgeSource: (knowledgeBaseId: string, payload: { attachment_id: string; title?: string }) =>
+  createAttachmentKnowledgeSource: (knowledgeBaseId: string, payload: { attachment_id: string; title?: string; folder_path?: string; chunk_profile?: string | null }) =>
     request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${knowledgeBaseId}/sources`, {
       method: 'POST',
       body: JSON.stringify({ source_type: 'attachment_text', ...payload }),

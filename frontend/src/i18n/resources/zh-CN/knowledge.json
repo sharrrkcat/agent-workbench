@@ -5,8 +5,7 @@
     "newKnowledgeBase": "新建知识库"
   },
   "descriptions": {
-    "defaults": "本地模型、检索、分块和上下文 prompt 默认值。",
-    "knowledgeBase": "知识库配置、来源和本地索引。"
+    "defaults": "本地模型、检索、分块和上下文 prompt 默认值。"
   },
   "sections": {
     "localModels": "本地模型",
@@ -46,11 +45,17 @@
     "copyCommand": "复制命令",
     "switchToCpu": "切换到 CPU",
     "switchToAuto": "切换到 Auto",
-    "scanNow": "Scan now",
-    "importReindex": "Import / Reindex",
+    "scanNow": "立即扫描",
+    "scan": "扫描",
+    "importReindex": "导入 / 重建索引",
     "importNewFiles": "导入新文件",
     "reindexChangedFiles": "重建已变更文件索引",
-    "createOrigin": "Create origin"
+    "createOrigin": "创建 Origin",
+    "create": "创建",
+    "createAndScan": "创建并扫描",
+    "importFiles": "导入文件",
+    "pasteText": "粘贴文本",
+    "index": "索引"
   },
   "labels": {
     "modelsRoot": "模型根目录",
@@ -90,6 +95,7 @@
     "queryInstruction": "查询 instruction",
     "notes": "备注",
     "embeddingModelProfile": "Embedding 模型配置",
+    "missingEmbeddingModel": "缺少 Embedding 模型",
     "aliases": "Aliases",
     "description": "描述",
     "indexStatus": "索引状态",
@@ -117,9 +123,15 @@
     "originName": "Origin name",
     "originSlug": "Origin slug",
     "originDefaultChunkProfile": "Origin 默认分块配置",
-    "folderPath": "Folder path",
-    "fileName": "File name",
+    "resolvedFolderPath": "解析后的文件夹路径",
+    "scanAfterCreate": "创建后扫描",
+    "folderPath": "文件夹路径",
+    "sourcesFolderPath": "来源文件夹路径",
+    "fileName": "文件名",
+    "title": "标题",
+    "textContent": "文本内容",
     "defaultChunkProfile": "默认分块配置",
+    "chunkProfile": "分块配置",
     "profile": "分块配置",
     "effectiveProfile": "实际配置",
     "profileSource": "配置来源",
@@ -128,6 +140,7 @@
     "titleSource": "标题来源",
     "typeSource": "类型来源",
     "lastScan": "上次扫描",
+    "totalFiles": "文件总数",
     "newFiles": "新文件",
     "changedFiles": "已变更文件",
     "missingFiles": "缺失文件",
@@ -135,7 +148,10 @@
     "headingLevel": "H{{level}}",
     "autoToProfile": "Auto → {{profile}}",
     "profileReason": "{{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
-    "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}"
+    "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
+    "profileWithSource": "{{profile}} · {{source}}",
+    "selectedFiles": "已选择 {{count}} 个文件",
+    "selectedFiles_plural": "已选择 {{count}} 个文件"
   },
   "empty": {
     "loadingSettings": "正在加载知识库设置。",
@@ -159,7 +175,8 @@
     "noChunks": "没有 chunks",
     "noChunksMessage": "此来源当前没有存储 chunks。",
     "noOrigins": "No origins",
-    "noOriginsMessage": "Create an origin, put files under its managed folder, then scan it."
+    "noOriginsMessage": "创建 Origin，将文件放到它的托管文件夹下，然后扫描。",
+    "noFilesSelected": "未选择文件。"
   },
   "results": {
     "defaultsSaved": "默认值已保存。",
@@ -198,7 +215,10 @@
     "retrieval": "检索",
     "chunking": "分块与索引",
     "context": "上下文",
-    "download": "下载"
+    "download": "下载",
+    "manageSources": "管理来源",
+    "sourceList": "来源列表",
+    "search": "搜索"
   },
   "install": {
     "title": "安装命令",
@@ -267,10 +287,23 @@
     "unloadRerankerModelAfterUse": "Rerank 完成后释放本地 reranker。可以降低显存占用，但下一次 rerank 会变慢。"
   },
   "help": {
-    "aliases": "Use English commas to separate aliases used by Intent Routing.",
-    "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index.",
+    "aliases": "使用英文逗号分隔 Intent Routing 使用的别名。",
+    "originPath": "托管 Origin 只使用 data/knowledge/origins/<origin_slug>/。扫描检测变化；导入 / 重建索引会更新索引。",
     "manualOriginWorkflow": "扫描只检查文件变化。重建索引会更新 chunks 和 embeddings。",
-    "chunkProfileDefaults": "修改分块配置默认值只会将受影响来源标记为建议重建索引，不会自动重建。"
+    "chunkProfileDefaults": "修改分块配置默认值只会将受影响来源标记为建议重建索引，不会自动重建。",
+    "managedOriginPath": "托管 Origins 位于 data/knowledge/origins/<origin_slug>/。",
+    "precreateOriginFolder": "你可以先手动创建文件夹，然后用同一个 slug 创建 Origin。",
+    "scanOnlyChecksChanges": "扫描只检查文件变化。",
+    "sourcesFolderPath": "这是知识库内部的文件夹路径，不是系统文件夹路径。留空时放在知识库根目录。"
+  },
+  "modals": {
+    "createOriginTitle": "创建 Origin",
+    "importFilesTitle": "导入文件",
+    "pasteTextTitle": "粘贴文本"
+  },
+  "defaults": {
+    "pastedTextTitle": "粘贴文本",
+    "attachmentTextTitle": "附件文本"
   },
   "placeholders": {
     "useKnowledgeDefault": "使用 Knowledge 默认值",
@@ -294,6 +327,11 @@
     "filename": "文件名",
     "path": "路径",
     "parent_heading": "父级标题"
+  },
+  "profileSourcePhrases": {
+    "inheritedFromKnowledgeBase": "继承自知识库",
+    "originOverride": "Origin 覆盖",
+    "sourceOverride": "来源 / frontmatter 覆盖"
   },
   "confidence": {
     "high": "高",

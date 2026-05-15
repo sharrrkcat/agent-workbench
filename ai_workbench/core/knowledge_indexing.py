@@ -85,6 +85,32 @@ def prepare_pasted_text_source(*, root: Path, title: str, text: str, source_id: 
     )
 
 
+def with_source_overrides(source: SourceText, *, folder_path: str = "", chunk_profile: str | None = None) -> SourceText:
+    folder = _normalize_virtual_folder_path(folder_path)
+    file_name = source.file_name or _safe_virtual_file_name(source.title, ".txt")
+    virtual_path = f"{folder}/{file_name}" if folder else file_name
+    metadata = {
+        **source.metadata,
+        "virtual_path": virtual_path,
+        "folder_path": folder,
+        "file_name": file_name,
+        "path_depth": len([part for part in virtual_path.split("/") if part]),
+    }
+    if chunk_profile:
+        _validate_profile(chunk_profile, "Source chunk profile")
+        metadata["chunk_profile_override"] = chunk_profile
+    return SourceText(
+        **{
+            **source.__dict__,
+            "virtual_path": virtual_path,
+            "folder_path": folder,
+            "file_name": file_name,
+            "path_depth": metadata["path_depth"],
+            "metadata": metadata,
+        }
+    )
+
+
 def prepare_attachment_text_source(*, attachment_id: str) -> SourceText:
     filename = attachment_id.strip()
     try:
@@ -265,6 +291,7 @@ def chunk_source_text(
     knowledge_base: KnowledgeBase,
     source_title: str = "",
     source_uri: str = "",
+    source_chunk_profile: str | None = None,
     origin_default_chunk_profile: str | None = None,
 ) -> list[ChunkDraft]:
     chunk_size = knowledge_base.chunk_size_override or settings.default_chunk_size
@@ -277,6 +304,7 @@ def chunk_source_text(
         source_title=source_title,
         source_uri=source_uri,
         text=text,
+        source_chunk_profile=source_chunk_profile,
         origin_default_chunk_profile=origin_default_chunk_profile,
         knowledge_base_default_chunk_profile=knowledge_base.default_chunk_profile,
         settings_default_chunk_profile=settings.default_chunk_profile,
@@ -485,6 +513,7 @@ def _requested_chunk_profile(
     source_title: str,
     source_uri: str,
     text: str,
+    source_chunk_profile: str | None,
     origin_default_chunk_profile: str | None,
     knowledge_base_default_chunk_profile: str | None,
     settings_default_chunk_profile: str | None,
@@ -498,6 +527,9 @@ def _requested_chunk_profile(
                 {"chunk_profile": override},
             )
         return override, "frontmatter"
+    if source_chunk_profile:
+        _validate_profile(source_chunk_profile, "Source chunk profile")
+        return source_chunk_profile, "source_override"
     if origin_default_chunk_profile:
         _validate_profile(origin_default_chunk_profile, "Origin default chunk profile")
         return origin_default_chunk_profile, "origin_default"
@@ -519,6 +551,20 @@ def _validate_profile(value: str, label: str) -> None:
             f"{label} must be plain_text, markdown_document, markdown_collection, or markdown_auto.",
             {"chunk_profile": value},
         )
+
+
+def _normalize_virtual_folder_path(value: str) -> str:
+    raw = value.strip().replace("\\", "/")
+    if not raw:
+        return ""
+    parts = [part.strip() for part in raw.split("/") if part.strip() and part.strip() not in {".", ".."}]
+    return "/".join(re.sub(r"[^A-Za-z0-9._ -]+", "-", part).strip(" .") or "folder" for part in parts)
+
+
+def _safe_virtual_file_name(title: str, suffix: str) -> str:
+    base = Path(title.strip() or "source").name
+    safe = re.sub(r"[^A-Za-z0-9._ -]+", "-", base).strip(" .") or "source"
+    return safe if Path(safe).suffix else f"{safe}{suffix}"
 
 
 def _looks_like_markdown(*, source_title: str, source_uri: str, text: str, parse: MarkdownParseResult) -> bool:

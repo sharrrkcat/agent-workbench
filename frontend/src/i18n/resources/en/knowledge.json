@@ -5,8 +5,7 @@
     "newKnowledgeBase": "New knowledge base"
   },
   "descriptions": {
-    "defaults": "Local model, retrieval, chunking, and context prompt defaults.",
-    "knowledgeBase": "Knowledge base configuration, sources, and local indexes."
+    "defaults": "Local model, retrieval, chunking, and context prompt defaults."
   },
   "sections": {
     "localModels": "Local Models",
@@ -36,7 +35,10 @@
     "retrieval": "Retrieval",
     "chunking": "Chunking & Indexing",
     "context": "Context",
-    "download": "Download"
+    "download": "Download",
+    "manageSources": "Manage sources",
+    "sourceList": "Source list",
+    "search": "Search"
   },
   "actions": {
     "scanLocalModels": "Scan local models",
@@ -52,10 +54,16 @@
     "chooseFiles": "Choose files",
     "reindex": "Reindex",
     "scanNow": "Scan now",
+    "scan": "Scan",
     "importReindex": "Import / Reindex",
     "importNewFiles": "Import new files",
     "reindexChangedFiles": "Reindex changed files",
     "createOrigin": "Create origin",
+    "create": "Create",
+    "createAndScan": "Create and scan",
+    "importFiles": "Import files",
+    "pasteText": "Paste text",
+    "index": "Index",
     "reindexAll": "Reindex all",
     "reindexing": "Reindexing...",
     "closeSourceDetail": "Close source detail"
@@ -98,6 +106,7 @@
     "queryInstruction": "Query instruction",
     "notes": "Notes",
     "embeddingModelProfile": "Embedding model profile",
+    "missingEmbeddingModel": "Missing embedding model",
     "aliases": "Aliases",
     "description": "Description",
     "indexStatus": "Index status",
@@ -125,9 +134,15 @@
     "originName": "Origin name",
     "originSlug": "Origin slug",
     "originDefaultChunkProfile": "Origin default chunk profile",
+    "resolvedFolderPath": "Resolved folder path",
+    "scanAfterCreate": "Scan after create",
     "folderPath": "Folder path",
+    "sourcesFolderPath": "Sources folder path",
     "fileName": "File name",
+    "title": "Title",
+    "textContent": "Text content",
     "defaultChunkProfile": "Default chunk profile",
+    "chunkProfile": "Chunk profile",
     "profile": "Profile",
     "effectiveProfile": "Effective profile",
     "profileSource": "Profile source",
@@ -136,6 +151,7 @@
     "titleSource": "Title source",
     "typeSource": "Type source",
     "lastScan": "Last scan",
+    "totalFiles": "Total files",
     "newFiles": "New files",
     "changedFiles": "Changed files",
     "missingFiles": "Missing files",
@@ -143,7 +159,10 @@
     "headingLevel": "H{{level}}",
     "autoToProfile": "Auto → {{profile}}",
     "profileReason": "{{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
-    "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}"
+    "profileReasonAuto": "Auto → {{profile}} · {{source}} · {{confidence}} · {{entityLevel}}",
+    "profileWithSource": "{{profile}} · {{source}}",
+    "selectedFiles": "{{count}} file selected",
+    "selectedFiles_plural": "{{count}} files selected"
   },
   "empty": {
     "loadingSettings": "Loading Knowledge settings.",
@@ -167,7 +186,8 @@
     "noChunks": "No chunks",
     "noChunksMessage": "No chunks are currently stored for this source.",
     "noOrigins": "No origins",
-    "noOriginsMessage": "Create an origin, put files under its managed folder, then scan it."
+    "noOriginsMessage": "Create an origin, put files under its managed folder, then scan it.",
+    "noFilesSelected": "No files selected."
   },
   "results": {
     "defaultsSaved": "Defaults saved.",
@@ -265,7 +285,20 @@
     "aliases": "Use English commas to separate aliases used by Intent Routing.",
     "originPath": "Managed origins use data/knowledge/origins/<origin_slug>/ only. Scan detects changes; Import / Reindex updates the index.",
     "manualOriginWorkflow": "Scan checks file changes only. Reindex updates chunks and embeddings.",
-    "chunkProfileDefaults": "Changing a chunk profile default marks affected indexed sources for reindex; it does not rebuild them automatically."
+    "chunkProfileDefaults": "Changing a chunk profile default marks affected indexed sources for reindex; it does not rebuild them automatically.",
+    "managedOriginPath": "Managed origins live under data/knowledge/origins/<origin_slug>/.",
+    "precreateOriginFolder": "You can create the folder manually first, then create the origin with the same slug.",
+    "scanOnlyChecksChanges": "Scan checks file changes only.",
+    "sourcesFolderPath": "This is a Knowledge Base folder path, not a system folder path. Leave it empty to place sources at the KB root."
+  },
+  "modals": {
+    "createOriginTitle": "Create origin",
+    "importFilesTitle": "Import files",
+    "pasteTextTitle": "Paste text"
+  },
+  "defaults": {
+    "pastedTextTitle": "Pasted text",
+    "attachmentTextTitle": "Attachment text"
   },
   "placeholders": {
     "useKnowledgeDefault": "Use Knowledge default",
@@ -289,6 +322,11 @@
     "filename": "Filename",
     "path": "Path",
     "parent_heading": "Parent heading"
+  },
+  "profileSourcePhrases": {
+    "inheritedFromKnowledgeBase": "inherited from Knowledge Base",
+    "originOverride": "origin override",
+    "sourceOverride": "source/frontmatter override"
   },
   "confidence": {
     "high": "High",

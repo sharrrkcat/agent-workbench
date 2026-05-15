@@ -1,5 +1,5 @@
-import { ArrowUpDown, BrainCircuit, Clipboard, FileText, FolderPlus, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpDown, BrainCircuit, ChevronDown, Clipboard, FileText, FolderPlus, Play, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
@@ -9,11 +9,14 @@ import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
 import { getKnowledgeIndexStatusLabel, getKnowledgeOriginStatusLabel, getKnowledgeSourceStatusLabel } from '../../i18n/formatters';
+import { AppModal, StatusChip } from '../ui';
 
 type FormMode = 'list' | 'new' | string;
 type SourceSortKey = 'title' | 'source_type' | 'folder_path' | 'chunks' | 'status' | 'indexed_at';
 type SortDirection = 'asc' | 'desc';
 type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
+type KnowledgeBaseTab = 'config' | 'manage_sources' | 'source_list' | 'search';
+type SourceModal = 'create_origin' | 'import_files' | 'paste_text' | null;
 type DownloadModelType = 'embedding' | 'reranker';
 type ChunkProfile = 'plain_text' | 'markdown_document' | 'markdown_collection' | 'markdown_auto';
 type EmbeddingProfilePreset = {
@@ -191,7 +194,7 @@ export function KnowledgeSettingsDetail({
   onObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const { t } = useTranslation(['knowledge', 'common']);
+  const { t } = useTranslation(['knowledge', 'common', 'status']);
   const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
   const [values, setValues] = useState<KnowledgeSettings | null>(null);
   const [scan, setScan] = useState<KnowledgeModelScan | null>(null);
@@ -904,9 +907,13 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [originName, setOriginName] = useState('');
   const [originSlug, setOriginSlug] = useState('');
   const [originDefaultChunkProfile, setOriginDefaultChunkProfile] = useState('');
+  const [originCreateScan, setOriginCreateScan] = useState(false);
   const [sourceResult, setSourceResult] = useState('');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceText, setSourceText] = useState('');
+  const [sourceFolderPath, setSourceFolderPath] = useState('');
+  const [sourceChunkProfile, setSourceChunkProfile] = useState('');
+  const [importFiles, setImportFiles] = useState<File[]>([]);
   const [sourceError, setSourceError] = useState<SettingsErrorValue | null>(null);
   const [sourceSort, setSourceSort] = useState<{ key: SourceSortKey; direction: SortDirection }>({ key: 'indexed_at', direction: 'desc' });
   const [selectedSourceId, setSelectedSourceId] = useState('');
@@ -914,20 +921,22 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const [sourceChunks, setSourceChunks] = useState<KnowledgeSourceChunk[]>([]);
   const [sourceDetailError, setSourceDetailError] = useState<SettingsErrorValue | null>(null);
   const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResponse, setSearchResponse] = useState<KnowledgeSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<SettingsErrorValue | null>(null);
-  const [activeTab, setActiveTab] = useState<'config' | 'sources'>('config');
+  const [activeTab, setActiveTab] = useState<KnowledgeBaseTab>('config');
+  const [sourceModal, setSourceModal] = useState<SourceModal>(null);
+  const [expandedOriginIds, setExpandedOriginIds] = useState<Set<string>>(() => new Set());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestRef = useRef(0);
   const currentKnowledgeBaseIdRef = useRef(initial.id || '');
   currentKnowledgeBaseIdRef.current = initial.id || '';
   const scopeId = isNew ? 'new' : initial.id || '';
   const selectedProfile = profiles.find((profile) => profile.id === values.embedding_model_profile_id);
+  const selectedProfileName = values.embedding_model_profile_name || selectedProfile?.name || '';
   const sortedSources = useMemo(() => sortSources(sources, sourceSort), [sourceSort, sources]);
   const selectedSource = sources.find((source) => source.id === selectedSourceId) || null;
-  const hasStaleOriginSources = sources.some((source) => ['new', 'changed'].includes(source.file_status || ''));
+  const hasStaleOriginSources = sources.some((source) => ['new', 'changed'].includes(source.file_status || '') || source.status === 'needs_reindex');
   const dirty = stableConfigString(buildKnowledgeBasePayload(values)) !== stableConfigString(buildKnowledgeBasePayload(initial));
 
   useEffect(() => {
@@ -950,10 +959,16 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     setSourceResult('');
     setSourceTitle('');
     setSourceText('');
+    setSourceFolderPath('');
+    setSourceChunkProfile('');
+    setImportFiles([]);
+    setSourceModal(null);
     setOriginName('');
     setOriginSlug('');
     setOriginDefaultChunkProfile('');
+    setOriginCreateScan(false);
     setOrigins([]);
+    setExpandedOriginIds(new Set());
     setSelectedSourceId('');
     setSourcePreview(null);
     setSourceChunks([]);
@@ -987,7 +1002,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   }, [initial.id, isNew]);
 
   useEffect(() => {
-    if (activeTab === 'sources' && values.id && !isNew) {
+    if (activeTab !== 'config' && values.id && !isNew) {
       void loadKnowledgeLists(values.id);
     }
   }, [activeTab, values.id, isNew]);
@@ -1094,7 +1109,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setBusy('');
     }
   }
-  async function createOrigin() {
+  async function createOrigin(scanAfter = false) {
     if (!values.id || !originName.trim() || !originSlug.trim()) return;
     const knowledgeBaseId = values.id;
     setBusy('creating origin');
@@ -1110,7 +1125,10 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       setOriginName('');
       setOriginSlug('');
       setOriginDefaultChunkProfile('');
+      setOriginCreateScan(false);
+      setSourceModal(null);
       await loadOrigins(knowledgeBaseId);
+      if (scanAfter) await scanOrigin(created.id);
       setSourceResult(t('knowledge:results.originCreated', { path: created.root_path }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
@@ -1166,10 +1184,18 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
     try {
       setSourceError(null);
       setSourceResult('');
-      const indexed = await api.createPastedKnowledgeSource(knowledgeBaseId, { title: sourceTitle || 'Pasted text', text: sourceText });
+      const indexed = await api.createPastedKnowledgeSource(knowledgeBaseId, {
+        title: sourceTitle || t('knowledge:defaults.pastedTextTitle'),
+        text: sourceText,
+        folder_path: sourceFolderPath,
+        chunk_profile: sourceChunkProfile || null,
+      });
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       setSourceTitle('');
       setSourceText('');
+      setSourceFolderPath('');
+      setSourceChunkProfile('');
+      setSourceModal(null);
       setSelectedSourceId(indexed.source_id);
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
@@ -1182,7 +1208,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) setBusy('');
     }
   }
-  async function addFiles(files: FileList | File[]) {
+  async function addFiles(files: FileList | File[], options: { folderPath?: string; chunkProfile?: string | null } = {}) {
     if (!values.id) return;
     const knowledgeBaseId = values.id;
     const accepted = Array.from(files).filter(isSupportedTextFile);
@@ -1200,12 +1226,21 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
         const attachment = await api.uploadAttachment(file);
         const attachmentId = (attachment.uri || '').replace(/^local:\/\/attachments\//, '');
         if (!attachmentId) throw new Error('Uploaded attachment did not return a local attachment id.');
-        const indexed = await api.createAttachmentKnowledgeSource(knowledgeBaseId, { attachment_id: attachmentId, title: file.name || 'Attachment text' });
+        const indexed = await api.createAttachmentKnowledgeSource(knowledgeBaseId, {
+          attachment_id: attachmentId,
+          title: file.name || t('knowledge:defaults.attachmentTextTitle'),
+          folder_path: options.folderPath || '',
+          chunk_profile: options.chunkProfile || null,
+        });
         indexedCount += indexed.chunks;
       }
       if (currentKnowledgeBaseIdRef.current !== knowledgeBaseId) return;
       await loadSources(knowledgeBaseId);
       await onRefresh(knowledgeBaseId);
+      setImportFiles([]);
+      setSourceFolderPath('');
+      setSourceChunkProfile('');
+      setSourceModal(null);
       setSourceResult(t('knowledge:results.indexedFiles', { chunks: indexedCount, files: accepted.length, count: accepted.length }));
     } catch (error) {
       if (currentKnowledgeBaseIdRef.current === knowledgeBaseId) {
@@ -1217,24 +1252,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   }
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
     const files = event.currentTarget.files;
-    if (files) void addFiles(files);
+    if (files) setImportFiles(Array.from(files));
     event.currentTarget.value = '';
-  }
-  function onDragOver(event: DragEvent<HTMLDivElement>) {
-    if (!hasFiles(event.dataTransfer)) return;
-    event.preventDefault();
-    setDragActive(true);
-  }
-  function onDragLeave(event: DragEvent<HTMLDivElement>) {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      setDragActive(false);
-    }
-  }
-  function onDrop(event: DragEvent<HTMLDivElement>) {
-    if (!hasFiles(event.dataTransfer)) return;
-    event.preventDefault();
-    setDragActive(false);
-    void addFiles(event.dataTransfer.files);
   }
   function toggleSourceSort(key: SourceSortKey) {
     setSourceSort((current) => ({
@@ -1340,11 +1359,12 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           <div className="settings-detail-avatar">{profileInitials(values.name || 'KB') || <BrainCircuit size={18} />}</div>
           <div>
             <h2>{values.name || t('knowledge:titles.newKnowledgeBase')}</h2>
-            <p>
-              <span>{t('knowledge:descriptions.knowledgeBase')}</span>
-              <span>{'index_status' in values ? getKnowledgeIndexStatusLabel(values.index_status || 'empty', t) : t('status:common.unset', { ns: 'status' })}</span>
-              <span>{selectedProfile?.alias || 'missing model'}</span>
-            </p>
+            <div className="knowledge-header-chip-row">
+              {'index_status' in values ? <KnowledgeIndexChip status={values.index_status || 'empty'} /> : <StatusChip tone="neutral">{t('status:common.unset', { ns: 'status' })}</StatusChip>}
+              <StatusChip tone="neutral" className="knowledge-model-chip" title={embeddingProfileDebugTitle(values, selectedProfile, t)}>
+                {selectedProfileName || t('knowledge:labels.missingEmbeddingModel')}
+              </StatusChip>
+            </div>
           </div>
         </div>
         <div className="settings-detail-actions">
@@ -1359,7 +1379,16 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
           <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
         </div>
       </header>
-      <DetailTabs tabs={[{ id: 'config', label: t('knowledge:sections.config') }, { id: 'sources', label: t('knowledge:sections.sourcesList'), enabled: !isNew && Boolean(values.id) }]} activeTab={activeTab} onChange={(tab) => setActiveTab(tab as 'config' | 'sources')} />
+      <DetailTabs
+        tabs={[
+          { id: 'config', label: t('knowledge:sections.config') },
+          { id: 'manage_sources', label: t('knowledge:tabs.manageSources'), enabled: !isNew && Boolean(values.id) },
+          { id: 'source_list', label: t('knowledge:tabs.sourceList'), enabled: !isNew && Boolean(values.id) },
+          { id: 'search', label: t('knowledge:tabs.search'), enabled: !isNew && Boolean(values.id) },
+        ]}
+        activeTab={activeTab}
+        onChange={(tab) => setActiveTab(tab as KnowledgeBaseTab)}
+      />
       <div className="settings-detail-body">
         {activeTab === 'config' ? (
           <>
@@ -1368,7 +1397,7 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
               <h3>{t('knowledge:sections.config')}</h3>
               <div className="settings-detail-grid">
                 <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
-                <SelectField label={t('knowledge:labels.embeddingModelProfile')} value={values.embedding_model_profile_id || ''} options={profiles.map((profile) => profile.id)} labels={Object.fromEntries(profiles.map((profile) => [profile.id, profile.alias]))} onChange={(value) => setValues({ ...values, embedding_model_profile_id: value })} />
+                <SelectField label={t('knowledge:labels.embeddingModelProfile')} value={values.embedding_model_profile_id || ''} options={profiles.map((profile) => profile.id)} labels={Object.fromEntries(profiles.map((profile) => [profile.id, profile.name]))} onChange={(value) => setValues({ ...values, embedding_model_profile_id: value })} />
               </div>
               <TextAreaField label={t('knowledge:labels.aliases')} value={values.aliases_text || ''} onChange={(value) => setValues({ ...values, aliases_text: value })} />
               <p className="settings-muted-text">{t('knowledge:help.aliases')}</p>
@@ -1396,121 +1425,58 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
             </section>
           </>
         ) : null}
-        {activeTab === 'sources' && !isNew && values.id ? (
+        {activeTab === 'manage_sources' && !isNew && values.id ? (
           <>
             <section className="detail-section">
-              <div className="detail-section-heading"><h3>{t('knowledge:sections.searchTest')}</h3></div>
-              <div className="settings-detail-grid">
-                <TextField label={t('knowledge:labels.query')} value={searchQuery} onChange={setSearchQuery} />
-              </div>
-              <div className="settings-button-row">
-                <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />{t('knowledge:actions.search')}</button>
-              </div>
-              {searchError ? <SettingsApiError error={searchError} /> : null}
-              {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
-            </section>
-            <section className="detail-section">
-              <div className="detail-section-heading"><h3>{t('knowledge:sections.origins')}</h3></div>
-              <div className="settings-detail-grid">
-                <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
-                <TextField label={t('knowledge:labels.originSlug')} value={originSlug} onChange={setOriginSlug} />
-                <SelectField
-                  label={t('knowledge:labels.originDefaultChunkProfile')}
-                  value={originDefaultChunkProfile}
-                  options={CHUNK_PROFILES}
-                  labels={chunkProfileLabels(t)}
-                  placeholder={t('knowledge:placeholders.useKnowledgeBaseDefault')}
-                  onChange={setOriginDefaultChunkProfile}
-                />
-              </div>
-              <p className="settings-muted-text">{t('knowledge:help.originPath')}</p>
-              <p className="settings-muted-text">{t('knowledge:help.manualOriginWorkflow')}</p>
-              <div className="settings-button-row">
-                <button className="settings-secondary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={createOrigin}>
+              <div className="knowledge-source-toolbar">
+                <button className="settings-primary-button" type="button" disabled={Boolean(busy)} onClick={() => setSourceModal('create_origin')}>
                   <FolderPlus size={14} />
                   {t('knowledge:actions.createOrigin')}
                 </button>
+                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => setSourceModal('import_files')}>
+                  <Upload size={14} />
+                  {t('knowledge:actions.importFiles')}
+                </button>
+                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => setSourceModal('paste_text')}>
+                  <Clipboard size={14} />
+                  {t('knowledge:actions.pasteText')}
+                </button>
               </div>
+              {sourceResult ? <span className="settings-badge success">{sourceResult}</span> : null}
+              {sourceError ? <SettingsApiError error={sourceError} /> : null}
+            </section>
+            <section className="detail-section">
+              <div className="detail-section-heading"><h3>{t('knowledge:sections.origins')}</h3></div>
               {origins.length ? (
                 <div className="knowledge-origin-list">
                   {origins.map((origin) => (
-                    <article className="knowledge-origin-card" key={origin.id}>
-                      {(() => {
-                        const originSources = sources.filter((source) => source.origin_id === origin.id);
-                        const newSourceIds = originSources.filter((source) => source.file_status === 'new').map((source) => source.id);
-                        const changedSourceIds = originSources.filter((source) => source.file_status === 'changed' || source.status === 'needs_reindex').map((source) => source.id);
-                        const missingCount = originSources.filter((source) => source.file_status === 'missing').length;
-                        return (
-                          <>
-                      <div>
-                        <strong>{origin.name}</strong>
-                        <p><code>{origin.root_path}</code></p>
-                        <div className="settings-chip-row">
-                          <span>{origin.slug}</span>
-                          <span>{getKnowledgeOriginStatusLabel(origin.status, t)}</span>
-                          <span>{t('knowledge:labels.lastScan')}: {formatDate(origin.last_scan_at)}</span>
-                          <span>{t('knowledge:labels.defaultChunkProfile')}: {origin.default_chunk_profile ? chunkProfileLabel(origin.default_chunk_profile, t) : t('knowledge:placeholders.useKnowledgeBaseDefault')}</span>
-                          <span>{t('knowledge:labels.newFiles')}: {newSourceIds.length}</span>
-                          <span>{t('knowledge:labels.changedFiles')}: {changedSourceIds.length}</span>
-                          <span>{t('knowledge:labels.missingFiles')}: {missingCount}</span>
-                        </div>
-                      </div>
-                      <div className="settings-button-row compact">
-                        <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => scanOrigin(origin.id)}>
-                          <Search size={14} />
-                          {busy === `scan origin:${origin.id}` ? t('knowledge:actions.scanning') : t('knowledge:actions.scanNow')}
-                        </button>
-                        <button className="settings-secondary-button" type="button" disabled={!newSourceIds.length || Boolean(busy)} onClick={() => importOrigin(origin.id, newSourceIds, 'import new')}>
-                          <RefreshCw size={14} />
-                          {busy === `import new:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.importNewFiles')}
-                        </button>
-                        <button className="settings-secondary-button" type="button" disabled={!changedSourceIds.length || Boolean(busy)} onClick={() => importOrigin(origin.id, changedSourceIds, 'reindex changed')}>
-                          <RefreshCw size={14} />
-                          {busy === `reindex changed:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindexChangedFiles')}
-                        </button>
-                        <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => importOrigin(origin.id)}>
-                          <RefreshCw size={14} />
-                          {busy === `import origin:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.importReindex')}
-                        </button>
-                      </div>
-                          </>
-                        );
-                      })()}
-                    </article>
+                    <OriginAccordionCard
+                      key={origin.id}
+                      origin={origin}
+                      sources={sources}
+                      kbDefaultProfile={values.default_chunk_profile || null}
+                      expanded={expandedOriginIds.has(origin.id)}
+                      busy={busy}
+                      onToggle={() => setExpandedOriginIds((current) => {
+                        const next = new Set(current);
+                        if (next.has(origin.id)) next.delete(origin.id);
+                        else next.add(origin.id);
+                        return next;
+                      })}
+                      onScan={() => scanOrigin(origin.id)}
+                      onReindex={() => importOrigin(origin.id)}
+                    />
                   ))}
                 </div>
               ) : <Empty title={t('knowledge:empty.noOrigins')} message={t('knowledge:empty.noOriginsMessage')} />}
             </section>
+          </>
+        ) : null}
+        {activeTab === 'source_list' && !isNew && values.id ? (
+          <>
             <section className="detail-section">
-              <div className="detail-section-heading"><h3>{t('knowledge:sections.addingSources')}</h3></div>
               {sourceResult ? <span className="settings-badge success">{sourceResult}</span> : null}
               {sourceError ? <SettingsApiError error={sourceError} /> : null}
-              <div className="settings-detail-grid">
-                <TextField label={t('knowledge:labels.pastedSourceTitle')} value={sourceTitle} onChange={setSourceTitle} />
-              </div>
-              <TextAreaField label={t('knowledge:labels.pastedText')} value={sourceText} onChange={setSourceText} />
-              <div className="settings-button-row">
-                <button className="settings-secondary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}><Play size={14} />{t('knowledge:actions.indexPastedText')}</button>
-              </div>
-              <div
-                className={`knowledge-dropzone ${dragActive ? 'active' : ''}`}
-                onDragOver={onDragOver}
-                onDragLeave={onDragLeave}
-                onDrop={onDrop}
-              >
-                <Upload size={18} />
-                <div>
-                  <strong>{t('knowledge:dropzone.title')}</strong>
-                  <p>{t('knowledge:dropzone.description')}</p>
-                </div>
-                <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => fileInputRef.current?.click()}>
-                  <FileText size={14} />
-                  {t('knowledge:actions.chooseFiles')}
-                </button>
-                <input ref={fileInputRef} className="sr-only" type="file" multiple accept={TEXT_ATTACHMENT_ACCEPT} onChange={onFileChange} />
-              </div>
-            </section>
-            <section className="detail-section">
               <div className="detail-section-heading">
                 <h3>{t('knowledge:sections.sourcesList')}</h3>
                 {hasStaleOriginSources ? <span className="settings-badge warning">{t('knowledge:statusText.reindexRecommended')}</span> : null}
@@ -1547,8 +1513,84 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
             ) : null}
           </>
         ) : null}
-        {activeTab === 'sources' && (isNew || !values.id) ? <Empty title={t('knowledge:empty.saveFirst')} message={t('knowledge:empty.saveFirstMessage')} /> : null}
+        {activeTab === 'search' && !isNew && values.id ? (
+          <section className="detail-section">
+            <div className="detail-section-heading"><h3>{t('knowledge:sections.searchTest')}</h3></div>
+            <div className="settings-detail-grid">
+              <TextField label={t('knowledge:labels.query')} value={searchQuery} onChange={setSearchQuery} />
+            </div>
+            <div className="settings-button-row">
+              <button className="settings-secondary-button" type="button" disabled={!searchQuery.trim() || Boolean(busy)} onClick={runSearch}><Search size={14} />{t('knowledge:actions.search')}</button>
+            </div>
+            {searchError ? <SettingsApiError error={searchError} /> : null}
+            {searchResponse ? <KnowledgeSearchResults response={searchResponse} /> : null}
+          </section>
+        ) : null}
+        {activeTab !== 'config' && (isNew || !values.id) ? <Empty title={t('knowledge:empty.saveFirst')} message={t('knowledge:empty.saveFirstMessage')} /> : null}
       </div>
+      <AppModal open={sourceModal === 'create_origin'} title={t('knowledge:modals.createOriginTitle')} closeLabel={t('common:close')} onClose={() => setSourceModal(null)}>
+        <div className="knowledge-source-modal-form">
+          <div className="settings-detail-grid">
+            <TextField label={t('knowledge:labels.originName')} value={originName} onChange={setOriginName} />
+            <TextField label={t('knowledge:labels.originSlug')} value={originSlug} onChange={setOriginSlug} />
+            <SelectField label={t('knowledge:labels.originDefaultChunkProfile')} value={originDefaultChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setOriginDefaultChunkProfile} />
+          </div>
+          <Metric label={t('knowledge:labels.resolvedFolderPath')} value={originSlug.trim() ? `data/knowledge/origins/${originSlug.trim()}/` : 'data/knowledge/origins/<origin_slug>/'} />
+          <div className="knowledge-modal-help">
+            <p>{t('knowledge:help.managedOriginPath')}</p>
+            <p>{t('knowledge:help.precreateOriginFolder')}</p>
+            <p>{t('knowledge:help.scanOnlyChecksChanges')}</p>
+          </div>
+          <label className="config-field settings-config-field boolean-field compact">
+            <span>{t('knowledge:labels.scanAfterCreate')}</span>
+            <ToggleSwitch checked={originCreateScan} onChange={setOriginCreateScan} disabled={Boolean(busy)} />
+          </label>
+          <div className="settings-button-row">
+            <button className="settings-primary-button" type="button" disabled={!originName.trim() || !originSlug.trim() || Boolean(busy)} onClick={() => createOrigin(originCreateScan)}>
+              <FolderPlus size={14} />
+              {originCreateScan ? t('knowledge:actions.createAndScan') : t('knowledge:actions.create')}
+            </button>
+          </div>
+        </div>
+      </AppModal>
+      <AppModal open={sourceModal === 'import_files'} title={t('knowledge:modals.importFilesTitle')} closeLabel={t('common:close')} onClose={() => setSourceModal(null)}>
+        <div className="knowledge-source-modal-form">
+          <input ref={fileInputRef} className="sr-only" type="file" multiple accept={TEXT_ATTACHMENT_ACCEPT} onChange={onFileChange} />
+          <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={() => fileInputRef.current?.click()}>
+            <FileText size={14} />
+            {t('knowledge:actions.chooseFiles')}
+          </button>
+          {importFiles.length ? <p className="settings-muted-text">{t('knowledge:labels.selectedFiles', { count: importFiles.length })}</p> : <p className="settings-muted-text">{t('knowledge:empty.noFilesSelected')}</p>}
+          <div className="settings-detail-grid">
+            <TextField label={t('knowledge:labels.sourcesFolderPath')} value={sourceFolderPath} onChange={setSourceFolderPath} />
+            <SelectField label={t('knowledge:labels.chunkProfile')} value={sourceChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setSourceChunkProfile} />
+          </div>
+          <p className="settings-muted-text">{t('knowledge:help.sourcesFolderPath')}</p>
+          <div className="settings-button-row">
+            <button className="settings-primary-button" type="button" disabled={!importFiles.length || Boolean(busy)} onClick={() => addFiles(importFiles, { folderPath: sourceFolderPath, chunkProfile: sourceChunkProfile || null })}>
+              <Play size={14} />
+              {t('knowledge:actions.index')}
+            </button>
+          </div>
+        </div>
+      </AppModal>
+      <AppModal open={sourceModal === 'paste_text'} title={t('knowledge:modals.pasteTextTitle')} closeLabel={t('common:close')} onClose={() => setSourceModal(null)}>
+        <div className="knowledge-source-modal-form">
+          <div className="settings-detail-grid">
+            <TextField label={t('knowledge:labels.title')} value={sourceTitle} onChange={setSourceTitle} />
+            <TextField label={t('knowledge:labels.sourcesFolderPath')} value={sourceFolderPath} onChange={setSourceFolderPath} />
+            <SelectField label={t('knowledge:labels.chunkProfile')} value={sourceChunkProfile} options={CHUNK_PROFILES} labels={chunkProfileLabels(t)} placeholder={effectiveKbProfileText(values.default_chunk_profile || null, t)} onChange={setSourceChunkProfile} />
+          </div>
+          <TextAreaField label={t('knowledge:labels.textContent')} value={sourceText} onChange={setSourceText} />
+          <p className="settings-muted-text">{t('knowledge:help.sourcesFolderPath')}</p>
+          <div className="settings-button-row">
+            <button className="settings-primary-button" type="button" disabled={!sourceText.trim() || Boolean(busy)} onClick={addPastedSource}>
+              <Play size={14} />
+              {t('knowledge:actions.index')}
+            </button>
+          </div>
+        </div>
+      </AppModal>
     </form>
   );
 }
@@ -1593,6 +1635,67 @@ function KnowledgeSearchResults({ response }: { response: KnowledgeSearchRespons
   );
 }
 
+function OriginAccordionCard({
+  origin,
+  sources,
+  kbDefaultProfile,
+  expanded,
+  busy,
+  onToggle,
+  onScan,
+  onReindex,
+}: {
+  origin: KnowledgeOrigin;
+  sources: KnowledgeSource[];
+  kbDefaultProfile: string | null;
+  expanded: boolean;
+  busy: string;
+  onToggle: () => void;
+  onScan: () => void;
+  onReindex: () => void;
+}) {
+  const { t } = useTranslation(['knowledge', 'status']);
+  const originSources = sources.filter((source) => source.origin_id === origin.id);
+  const newCount = originSources.filter((source) => source.file_status === 'new').length;
+  const changedCount = originSources.filter((source) => source.file_status === 'changed' || source.status === 'needs_reindex').length;
+  const missingCount = originSources.filter((source) => source.file_status === 'missing').length;
+  const reindexDisabled = !newCount && !changedCount && !missingCount;
+  return (
+    <article className={`knowledge-origin-card ${expanded ? 'expanded' : ''}`}>
+      <button className="knowledge-origin-card-header" type="button" onClick={onToggle} aria-expanded={expanded}>
+        <ChevronDown className="knowledge-origin-chevron" size={16} />
+        <div className="knowledge-origin-title">
+          <strong>{origin.name}</strong>
+          <small>{origin.root_path || `data/knowledge/origins/${origin.slug}`}</small>
+        </div>
+      </button>
+      <div className="knowledge-origin-actions" onClick={(event) => event.stopPropagation()}>
+        <button className="settings-secondary-button" type="button" disabled={Boolean(busy)} onClick={onScan}>
+          <Search size={14} />
+          {busy === `scan origin:${origin.id}` ? t('knowledge:actions.scanning') : t('knowledge:actions.scan')}
+        </button>
+        <button className="settings-secondary-button" type="button" disabled={reindexDisabled || Boolean(busy)} onClick={onReindex}>
+          <RefreshCw size={14} />
+          {busy === `import origin:${origin.id}` ? t('knowledge:actions.reindexing') : t('knowledge:actions.reindex')}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="knowledge-origin-card-body">
+          <dl className="settings-definition-grid">
+            <Metric label={t('knowledge:labels.lastScan')} value={formatDate(origin.last_scan_at)} />
+            <Metric label={t('knowledge:labels.defaultChunkProfile')} value={originProfileText(origin.default_chunk_profile || null, kbDefaultProfile, t)} />
+            <Metric label={t('knowledge:labels.totalFiles')} value={String(originSources.length)} />
+            <Metric label={t('knowledge:labels.newFiles')} value={String(newCount)} />
+            <Metric label={t('knowledge:labels.changedFiles')} value={String(changedCount)} />
+            <Metric label={t('knowledge:labels.missingFiles')} value={String(missingCount)} />
+          </dl>
+          {origin.error ? <p className="settings-error-text">{origin.error}</p> : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onReindex, onDelete, busy }: {
   sources: KnowledgeSource[];
   sort: { key: SourceSortKey; direction: SortDirection };
@@ -1624,7 +1727,7 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
             <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
               <td>
                 <strong>{source.title || source.uri || source.id}</strong>
-                {source.relative_path ? <small>{source.relative_path}</small> : null}
+                {source.virtual_path || source.relative_path ? <small>{source.virtual_path || source.relative_path}</small> : null}
                 {source.error ? <small className="settings-error-text">{source.error}</small> : null}
               </td>
               <td>{source.folder_path || t('status:common.none', { ns: 'status' })}</td>
@@ -1759,6 +1862,46 @@ function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation('status');
   const className = status === 'indexed' || status === 'ready' ? 'success' : ['needs_reindex', 'failed', 'new', 'changed', 'missing'].includes(status) ? 'warning' : '';
   return <span className={`settings-badge ${className}`}>{getKnowledgeSourceStatusLabel(status, t)}</span>;
+}
+
+function KnowledgeIndexChip({ status }: { status: string }) {
+  const { t } = useTranslation('status');
+  return <StatusChip tone={knowledgeIndexTone(status)}>{getKnowledgeIndexStatusLabel(status, t)}</StatusChip>;
+}
+
+function knowledgeIndexTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
+  if (status === 'ready') return 'active';
+  if (status === 'indexing') return 'warning';
+  if (['needs_reindex', 'needs_index', 'failed'].includes(status)) return 'danger';
+  return 'neutral';
+}
+
+function embeddingProfileDebugTitle(values: Partial<KnowledgeBase>, profile: EmbeddingModelProfile | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  const alias = values.embedding_model_profile_alias || profile?.alias || values.embedding_model_profile_id || '';
+  const path = values.embedding_model_profile_model_path || profile?.model_path || '';
+  const dimension = values.embedding_model_profile_dimension ?? profile?.dimension;
+  return [
+    alias ? `${t('knowledge:labels.profileKey')}: ${alias}` : '',
+    path ? `${t('knowledge:labels.modelPath')}: ${path}` : '',
+    dimension ? `${t('knowledge:labels.dimension')}: ${dimension}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function effectiveKbProfileText(profile: string | null, t: ReturnType<typeof useTranslation>['t']): string {
+  return profile ? chunkProfileLabel(profile, t) : t('knowledge:placeholders.useKnowledgeDefault');
+}
+
+function originProfileText(originProfile: string | null, kbDefaultProfile: string | null, t: ReturnType<typeof useTranslation>['t']): string {
+  if (originProfile) {
+    return t('knowledge:labels.profileWithSource', {
+      profile: chunkProfileLabel(originProfile, t),
+      source: t('knowledge:profileSourcePhrases.originOverride'),
+    });
+  }
+  return t('knowledge:labels.profileWithSource', {
+    profile: chunkProfileLabel(kbDefaultProfile || 'markdown_auto', t),
+    source: t('knowledge:profileSourcePhrases.inheritedFromKnowledgeBase'),
+  });
 }
 
 function SortableHeader({ label, sortKey, activeSort, onSort }: { label: string; sortKey: SourceSortKey; activeSort: { key: SourceSortKey; direction: SortDirection }; onSort: (key: SourceSortKey) => void }) {
@@ -2016,10 +2159,6 @@ function formatBytes(value?: number | null): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function hasFiles(dataTransfer: DataTransfer): boolean {
-  return Array.from(dataTransfer.types).includes('Files');
 }
 
 function isSupportedTextFile(file: File): boolean {

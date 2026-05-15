@@ -410,6 +410,10 @@ export type KnowledgeBase = {
   description: string;
   aliases_text: string;
   embedding_model_profile_id: string;
+  embedding_model_profile_name?: string | null;
+  embedding_model_profile_alias?: string | null;
+  embedding_model_profile_model_path?: string | null;
+  embedding_model_profile_dimension?: number | null;
   enabled: boolean;
   index_status: 'empty' | 'ready' | 'indexing' | 'failed' | 'needs_reindex' | string;
   index_error?: string | null;
