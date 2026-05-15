@@ -5676,18 +5676,51 @@ input:disabled {
 
 .knowledge-sources-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 700px;
   border-collapse: collapse;
+  table-layout: fixed;
   color: rgba(255, 255, 255, 0.78);
   font-size: 12px;
 }
 
 .knowledge-sources-table th,
 .knowledge-sources-table td {
+  min-width: 0;
+  overflow: hidden;
   padding: 9px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
+  text-overflow: ellipsis;
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+.knowledge-sources-table th:nth-child(1) {
+  width: 30%;
+}
+
+.knowledge-sources-table th:nth-child(2) {
+  width: 18%;
+}
+
+.knowledge-sources-table th:nth-child(3) {
+  width: 14%;
+}
+
+.knowledge-sources-table th:nth-child(4) {
+  width: 8%;
+}
+
+.knowledge-sources-table th:nth-child(5) {
+  width: 14%;
+}
+
+.knowledge-sources-table th:nth-child(6) {
+  width: 12%;
+}
+
+.knowledge-sources-table th:nth-child(7) {
+  width: 86px;
 }
 
 .knowledge-sources-table th {
@@ -5700,7 +5733,7 @@ input:disabled {
 .knowledge-sources-table td strong,
 .knowledge-sources-table td small {
   display: block;
-  max-width: 260px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -612,7 +612,6 @@ function KnowledgeChunkingTab({ values, setValues }: { values: KnowledgeSettings
           <NumberField label={t('labels.chunkSize')} value={values.default_chunk_size} onChange={(value) => { if (value !== '') setValues({ ...values, default_chunk_size: value }); }} />
           <NumberField label={t('labels.chunkOverlap')} value={values.default_chunk_overlap} onChange={(value) => { if (value !== '') setValues({ ...values, default_chunk_overlap: value }); }} />
         </div>
-        <p className="settings-muted-text">{t('help.chunkProfileDefaults')}</p>
       </div>
       <NumberGroup title={t('sections.indexLimits')} values={values} setValues={setValues} fields={[['max_source_size_bytes', t('labels.maxSourceSizeBytes')], ['max_chunks_per_source', t('labels.maxChunksPerSource')], ['max_total_index_chars_per_source', t('labels.maxTotalIndexCharsPerSource')]]} />
     </>
@@ -2043,7 +2042,6 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
             <SortableHeader label={t('knowledge:labels.folderPath')} sortKey="folder_path" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.type')} sortKey="source_type" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.chunks')} sortKey="chunks" activeSort={sort} onSort={onSort} />
-            <th>{t('knowledge:labels.profile')}</th>
             <SortableHeader label={t('knowledge:labels.indexed')} sortKey="status" activeSort={sort} onSort={onSort} />
             <SortableHeader label={t('knowledge:labels.indexedDate')} sortKey="indexed_at" activeSort={sort} onSort={onSort} />
             <th>{t('knowledge:labels.actions')}</th>
@@ -2052,16 +2050,11 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
         <tbody>
           {sources.map((source) => (
             <tr className={source.id === selectedSourceId ? 'selected' : ''} key={source.id} onClick={() => onSelect(source.id)}>
-              <td>
-                <strong title={sourceListTitle(source)}>{sourceListTitle(source)}</strong>
-                <small title={sourceListSubtitle(source)}>{sourceListSubtitle(source)}</small>
-                {source.error ? <small className="settings-error-text">{source.error}</small> : null}
-              </td>
+              <SourceNameCell source={source} />
               <td>{source.folder_path || t('status:common.none', { ns: 'status' })}</td>
               <td>{source.source_type}</td>
               <td>{source.chunks}</td>
-              <td><ProfileSummary source={source} /></td>
-              <td><StatusBadge status={source.file_status || source.status} /></td>
+              <td><SourceIndexedStatus source={source} /></td>
               <td>{formatDate(source.indexed_at)}</td>
               <td>
                 <div className="settings-button-row compact" onClick={(event) => event.stopPropagation()}>
@@ -2074,6 +2067,18 @@ function SourcesTable({ sources, sort, onSort, selectedSourceId, onSelect, onRei
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SourceNameCell({ source }: { source: KnowledgeSource }) {
+  const title = sourceListTitle(source);
+  const subtitle = sourceListSubtitle(source);
+  return (
+    <td>
+      <strong title={title}>{title}</strong>
+      {subtitle ? <small title={subtitle}>{subtitle}</small> : null}
+      {source.error ? <small className="settings-error-text">{source.error}</small> : null}
+    </td>
   );
 }
 
@@ -2175,28 +2180,14 @@ function SourceDetail({ source, preview, chunks, loading, error, busy, onClose, 
   );
 }
 
-function ProfileSummary({ source }: { source: KnowledgeSource }) {
-  const { t } = useTranslation(['knowledge', 'status']);
-  const profile = source.chunk_profile_effective || String(source.metadata?.chunk_profile_effective || '');
-  if (!profile) return <span className="settings-badge muted">{t('status:common.unknown')}</span>;
-  const sourceLabel = compactProfileSourceLabel(source.profile_source || source.metadata?.profile_source, t);
-  const fullSourceLabel = profileSourceLabel(source.profile_source || source.metadata?.profile_source, t);
-  const profileLabel = chunkProfileLabel(profile, t);
-  const title = [
-    `${t('knowledge:labels.effectiveProfile')}: ${profileLabel}`,
-    `${t('knowledge:labels.profileSource')}: ${fullSourceLabel}`,
-  ].join('\n');
-  return (
-    <span className="knowledge-profile-compact" title={title}>
-      {t('knowledge:labels.profileCompact', { profile: profileLabel, source: sourceLabel })}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
+function SourceIndexedStatus({ source }: { source: KnowledgeSource }) {
   const { t } = useTranslation('status');
-  const className = status === 'indexed' || status === 'ready' ? 'success' : ['needs_reindex', 'failed', 'new', 'changed', 'missing'].includes(status) ? 'warning' : '';
-  return <span className={`settings-badge ${className}`}>{getKnowledgeSourceStatusLabel(status, t)}</span>;
+  const status = sourceIndexStatus(source);
+  return (
+    <StatusChip tone={knowledgeSourceTone(status)} title={formatDate(source.indexed_at)}>
+      {getKnowledgeSourceStatusLabel(status, t)}
+    </StatusChip>
+  );
 }
 
 function KnowledgeIndexChip({ status }: { status: string }) {
@@ -2208,6 +2199,13 @@ function knowledgeIndexTone(status: string): 'neutral' | 'active' | 'warning' | 
   if (status === 'ready') return 'active';
   if (status === 'indexing') return 'warning';
   if (['needs_reindex', 'needs_index', 'failed'].includes(status)) return 'danger';
+  return 'neutral';
+}
+
+function knowledgeSourceTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
+  if (status === 'ready' || status === 'indexed') return 'active';
+  if (status === 'indexing' || status === 'pending' || status === 'new' || status === 'changed' || status === 'missing' || status === 'needs_reindex') return 'warning';
+  if (status === 'failed') return 'danger';
   return 'neutral';
 }
 
@@ -2238,11 +2236,10 @@ function originProfileText(originProfile: string | null, kbDefaultProfile: strin
 function SortableHeader({ label, sortKey, activeSort, onSort }: { label: string; sortKey: SourceSortKey; activeSort: { key: SourceSortKey; direction: SortDirection }; onSort: (key: SourceSortKey) => void }) {
   const active = activeSort.key === sortKey;
   return (
-    <th>
-      <button className="knowledge-sort-button" type="button" onClick={() => onSort(sortKey)} aria-sort={active ? (activeSort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+    <th aria-sort={active ? (activeSort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <button className="knowledge-sort-button" type="button" onClick={() => onSort(sortKey)} aria-label={label} title={label}>
         {label}
-        <ArrowUpDown size={12} />
-        {active ? <span>{activeSort.direction === 'asc' ? 'Asc' : 'Desc'}</span> : null}
+        {active ? <span aria-hidden="true">{activeSort.direction === 'asc' ? '↑' : '↓'}</span> : <ArrowUpDown size={12} aria-hidden="true" />}
       </button>
     </th>
   );
@@ -2452,7 +2449,7 @@ function sourceSortValue(source: KnowledgeSource, key: SourceSortKey): string | 
   if (key === 'chunks') return source.chunks;
   if (key === 'indexed_at') return source.indexed_at ? new Date(source.indexed_at).getTime() : 0;
   if (key === 'folder_path') return String(source.folder_path || '').toLowerCase();
-  if (key === 'status') return String(source.file_status || source.status || '').toLowerCase();
+  if (key === 'status') return sourceIndexStatus(source).toLowerCase();
   return String(source[key] || '').toLowerCase();
 }
 
@@ -2468,11 +2465,6 @@ function chunkProfileLabel(profile: unknown, t: ReturnType<typeof useTranslation
 function profileSourceLabel(source: unknown, t: ReturnType<typeof useTranslation>['t']): string {
   const key = String(source || '');
   return key ? t(`knowledge:profileSources.${key}`, { defaultValue: key }) : t('status:common.unknown', { ns: 'status' });
-}
-
-function compactProfileSourceLabel(source: unknown, t: ReturnType<typeof useTranslation>['t']): string {
-  const key = String(source || '');
-  return key ? t(`knowledge:profileSourceShort.${key}`, { defaultValue: profileSourceLabel(key, t) }) : t('status:common.unknown', { ns: 'status' });
 }
 
 function confidenceLabel(value: unknown, t: ReturnType<typeof useTranslation>['t']): string {
@@ -2499,21 +2491,24 @@ function sourceProfileText(source: KnowledgeSource, t: ReturnType<typeof useTran
 }
 
 function sourceListTitle(source: KnowledgeSource): string {
-  const rawTitle = cleanSourceText(source.title);
+  const rawTitle = cleanSourceText(source.title) || cleanSourceText(source.metadata?.display_title) || cleanSourceText(source.metadata?.source_display_title);
+  const fallback = fileStem(source.file_name || source.relative_path || source.virtual_path || source.uri) || cleanSourceText(source.file_name) || cleanSourceText(source.relative_path) || shortSourceId(source.id);
   if (source.source_type === 'origin_file') {
     const metadataTitle = cleanSourceText(source.metadata?.chunk_title) || cleanSourceText(source.metadata?.document_title);
-    return metadataTitle || fileStem(source.file_name || source.relative_path || rawTitle) || shortSourceId(source.id);
+    return rawTitle || metadataTitle || fallback;
   }
-  return rawTitle || fileStem(source.file_name || source.virtual_path || source.relative_path) || shortSourceId(source.id);
+  return rawTitle || fallback;
 }
 
 function sourceListSubtitle(source: KnowledgeSource): string {
-  if (source.source_type === 'pasted_text') {
-    return source.virtual_path || source.file_name || source.uri || source.source_type;
+  if (source.source_type === 'pasted_text' || source.source_type === 'attachment_text') {
+    return '';
   }
-  const compactPath = compactSourcePath(source);
+  const compactPath = source.source_type === 'origin_file' ? compactOriginSourcePath(source) : compactSourcePath(source);
   const title = sourceListTitle(source);
-  return compactPath && compactPath !== title ? compactPath : (source.file_name || source.relative_path || source.uri || shortSourceId(source.id));
+  const fallback = source.file_name || source.relative_path || source.uri || '';
+  if (compactPath && compactPath !== title) return compactPath;
+  return fallback && fallback !== title ? fallback : '';
 }
 
 function compactSourcePath(source: KnowledgeSource): string {
@@ -2521,6 +2516,18 @@ function compactSourcePath(source: KnowledgeSource): string {
   const normalized = path.replace(/\\/g, '/').replace(/^data\/knowledge\/origins\/[^/]+\//, '');
   const parts = normalized.split('/').filter(Boolean);
   return parts.length > 2 ? parts.slice(-2).join('/') : normalized;
+}
+
+function compactOriginSourcePath(source: KnowledgeSource): string {
+  const path = source.relative_path || source.file_name || source.virtual_path || source.uri || '';
+  return path.replace(/\\/g, '/').replace(/^data\/knowledge\/origins\/[^/]+\//, '');
+}
+
+function sourceIndexStatus(source: KnowledgeSource): string {
+  const dynamicSource = source as KnowledgeSource & { indexed_status?: string | null; index_status?: string | null; needs_reindex?: boolean | null };
+  if (dynamicSource.needs_reindex) return 'needs_reindex';
+  const status = cleanSourceText(dynamicSource.indexed_status) || cleanSourceText(dynamicSource.index_status) || cleanSourceText(source.file_status) || cleanSourceText(source.status);
+  return status === 'indexed' ? 'ready' : status || 'pending';
 }
 
 function cleanSourceText(value: unknown): string {
