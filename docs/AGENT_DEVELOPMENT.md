@@ -20,7 +20,7 @@ Add `--dry-run` to preview files and `--force` only when intentionally overwriti
 
 ## Agent Types
 
-Prompt Agents send core-built context plus a manifest prompt to an OpenAI-compatible LLM runtime. The model output is treated as plain text.
+Prompt Agents send core-built context plus a manifest prompt to an OpenAI-compatible LLM runtime. The model output is treated as markdown text assistant content.
 
 Script Agents are trusted local Python code imported and run inside the backend process. They can call Capabilities and LLM helpers through `AgentContext`. There is no sandbox, so do not run Agents from untrusted sources.
 
@@ -148,6 +148,10 @@ async def run(ctx):
 Useful reply helpers:
 
 ```python
+await ctx.reply_parts([
+    {"type": "text", "format": "markdown", "text": "**markdown**"},
+    {"type": "json", "data": {"ok": True}},
+])
 await ctx.reply_text("plain text")
 await ctx.reply_markdown("**markdown**")
 await ctx.reply_json({"ok": True})
@@ -168,6 +172,10 @@ await ctx.reply_images([
     {"url": "https://example.test/b.png", "alt": "B"},
 ])
 ```
+
+`reply_parts` is the Message Parts v2 base helper. The other reply helpers are
+wrappers that write parts plus temporary `content` / `output_type`
+compatibility fields for the current frontend renderer.
 
 Optional LLM helper:
 
@@ -280,6 +288,10 @@ Supported rendered output types are:
 - `rich_content`: ordered text, markdown, image, file content, and `action_form` blocks.
 
 Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
+
+Message Parts v2 is now the backend storage path for new Agent and Script Agent
+assistant replies. The old output types above remain as compatibility renderer
+hints until the frontend renderer moves fully to parts.
 
 ## CLI Workflow
 

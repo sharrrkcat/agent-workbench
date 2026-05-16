@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
+from ai_workbench.core.message_parts import validate_message_parts
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
@@ -125,6 +126,8 @@ class MessageStore:
         action_id: Optional[str] = None,
         run_id: Optional[str] = None,
         output_type: str = "text",
+        content_version: Optional[int] = None,
+        parts: Optional[List[Dict[str, Any]]] = None,
         available_actions: Optional[List[Dict[str, Any]]] = None,
         parent_message_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -143,6 +146,7 @@ class MessageStore:
             speaker_name=speaker_name,
             origin=origin,
         )
+        validated_parts = validate_message_parts(parts) if parts is not None else []
         message = MessageSchema(
             message_id=str(uuid4()),
             session_id=session_id,
@@ -154,6 +158,8 @@ class MessageStore:
             action_id=action_id,
             run_id=run_id,
             output_type=output_type,
+            content_version=content_version,
+            parts=validated_parts,
             available_actions=available_actions or [],
             parent_message_id=parent_message_id,
             metadata=metadata or {},

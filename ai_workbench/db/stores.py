@@ -11,6 +11,7 @@ from sqlmodel import update
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
+from ai_workbench.core.message_parts import validate_message_parts
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
@@ -240,6 +241,8 @@ class SqlMessageStore:
         action_id: Optional[str] = None,
         run_id: Optional[str] = None,
         output_type: str = "text",
+        content_version: Optional[int] = None,
+        parts: Optional[List[Dict[str, Any]]] = None,
         available_actions: Optional[List[Dict[str, Any]]] = None,
         parent_message_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -258,6 +261,7 @@ class SqlMessageStore:
             speaker_name=speaker_name,
             origin=origin,
         )
+        validated_parts = validate_message_parts(parts) if parts is not None else []
         record = MessageRecord(
             message_id=str(uuid4()),
             session_id=session_id,
@@ -268,6 +272,8 @@ class SqlMessageStore:
             speaker_name=speaker["speaker_name"],
             origin=speaker["origin"],
             output_type=output_type,
+            content_version=content_version,
+            parts_json=_dumps(validated_parts),
             agent_id=agent_id,
             command_name=command_name,
             action_id=action_id,
@@ -304,6 +310,8 @@ class SqlMessageStore:
             record.speaker_name = message.speaker_name
             record.origin = message.origin
             record.output_type = message.output_type
+            record.content_version = message.content_version
+            record.parts_json = _dumps(message.parts)
             record.agent_id = message.agent_id
             record.command_name = message.command_name
             record.action_id = message.action_id
@@ -1650,6 +1658,8 @@ def _message_from_record(record: MessageRecord) -> MessageSchema:
         speaker_name=getattr(record, "speaker_name", None),
         origin=getattr(record, "origin", None),
         output_type=record.output_type,
+        content_version=getattr(record, "content_version", None),
+        parts=_loads(getattr(record, "parts_json", "[]"), []),
         agent_id=record.agent_id,
         command_name=record.command_name,
         action_id=record.action_id,

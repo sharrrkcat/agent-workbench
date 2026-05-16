@@ -106,6 +106,8 @@ class MessageSchema(BaseModel):
     action_id: Optional[str] = None
     run_id: Optional[str] = None
     output_type: str = "text"
+    content_version: Optional[int] = None
+    parts: list[Dict[str, Any]] = Field(default_factory=list)
     parent_message_id: Optional[str] = None
     available_actions: list = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)

@@ -20,6 +20,7 @@ from ai_workbench.core.context import ContextBuilder, LLMContextError, group_tra
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
+from ai_workbench.core.message_parts import make_error_part, make_text_part
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
 from ai_workbench.core.provider_status import (
@@ -728,7 +729,9 @@ class AgentRunner:
             agent_id=agent.id,
             action_id=action_id,
             run_id=run.run_id,
-            output_type="text",
+            output_type="markdown",
+            content_version=2,
+            parts=[make_text_part(content, format="markdown")],
             parent_message_id=parent_id or None,
             available_actions=self._available_actions(agent, source_message_id=""),
             metadata=metadata,
@@ -1015,7 +1018,9 @@ class AgentRunner:
             agent_id=agent.id,
             action_id=action_id,
             run_id=run_id,
-            output_type="text",
+            output_type="markdown",
+            content_version=2,
+            parts=[make_text_part(content, format="markdown")],
             parent_message_id=parent_id or None,
             available_actions=self._available_actions(agent, source_message_id=""),
             metadata=metadata,
@@ -1057,6 +1062,8 @@ class AgentRunner:
             action_id=action_id,
             run_id=run_id,
             output_type="error",
+            content_version=2,
+            parts=[make_error_part(error, code=error_code or "RUN_FAILED")],
             parent_message_id=parent_id or None,
             available_actions=[],
             metadata=metadata,

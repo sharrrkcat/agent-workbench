@@ -156,6 +156,9 @@ def test_translate_agent_executes_and_writes_agent_message() -> None:
     assert messages[1].agent_id == "translate"
     assert messages[1].action_id == "default"
     assert messages[1].content == "hello"
+    assert messages[1].output_type == "markdown"
+    assert messages[1].content_version == 2
+    assert messages[1].parts == [{"id": "part_1", "type": "text", "format": "markdown", "text": "hello"}]
     assert messages[0].speaker_type == "user"
     assert messages[0].speaker_name == "User"
     assert messages[0].origin == "user_message"

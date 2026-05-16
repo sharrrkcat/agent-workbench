@@ -25,6 +25,18 @@ from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
+from ai_workbench.core.message_parts import (
+    blocks_to_parts,
+    legacy_output_to_parts,
+    make_file_part,
+    make_error_part,
+    make_image_part,
+    make_json_part,
+    make_media_group_part,
+    make_text_part,
+    parts_to_legacy_output,
+    validate_message_parts,
+)
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
 from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
@@ -202,6 +214,7 @@ class ScriptOutputProxy:
         self,
         final_content: Any = None,
         output_type: Optional[str] = None,
+        parts: Optional[list[dict[str, Any]]] = None,
         actions=None,
         metadata: Optional[Dict[str, Any]] = None,
         agent_id: Optional[str] = None,
@@ -215,6 +228,13 @@ class ScriptOutputProxy:
             if output_type:
                 self._output_type = output_type
             return None
+        resolved_parts = validate_message_parts(parts) if parts is not None else None
+        if resolved_parts is None and final_content is not None:
+            resolved_parts = legacy_output_to_parts(output_type or self._output_type, final_content)
+        elif resolved_parts is not None:
+            legacy = parts_to_legacy_output(resolved_parts)
+            if legacy is not None:
+                output_type, final_content = legacy
         if self.completed:
             if final_content is None and output_type is None and actions is None and metadata is None:
                 return self.message_store.get_message(self.message_id)
@@ -226,6 +246,8 @@ class ScriptOutputProxy:
                 action_id=action_id,
                 run_id=self.run_id,
                 output_type=output_type or self._output_type,
+                content_version=2 if resolved_parts is not None else None,
+                parts=resolved_parts,
                 parent_message_id=parent_message_id,
                 available_actions=actions or [],
                 metadata=metadata or {"success": True},
@@ -246,6 +268,8 @@ class ScriptOutputProxy:
             self._output_type = output_type
         if final_content is not None:
             self._content = final_content if isinstance(final_content, str) else final_content
+        if resolved_parts is None:
+            resolved_parts = legacy_output_to_parts(self._output_type, self._content)
         if not self.message_id:
             raise RuntimeError("Output message is not configured.")
         message = self.message_store.get_message(self.message_id)
@@ -254,6 +278,8 @@ class ScriptOutputProxy:
             update={
                 "content": self._content,
                 "output_type": self._output_type,
+                "content_version": 2,
+                "parts": resolved_parts,
                 "available_actions": actions or message.available_actions,
                 "metadata": next_metadata,
                 "agent_id": agent_id or message.agent_id,
@@ -901,11 +927,19 @@ class AgentContext:
 
     async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         resolved_output_type = output_type or type
+        parts = legacy_output_to_parts(resolved_output_type, content)
+        return await self.reply_parts(parts, actions=actions, metadata=metadata)
+
+    async def reply_parts(self, parts: list[dict[str, Any]], actions=None, metadata: Optional[Dict[str, Any]] = None):
+        message_parts = validate_message_parts(parts)
+        legacy = parts_to_legacy_output(message_parts) or ("json", {"parts": message_parts})
+        resolved_output_type, legacy_content = legacy
         message_metadata = {"success": True, **self.llm.message_metadata(), **(metadata or {})}
         self.llm.record_run_llm_metadata()
         message = await self.output.finish(
-            final_content=content,
+            final_content=legacy_content,
             output_type=resolved_output_type,
+            parts=message_parts,
             actions=actions or [],
             metadata=message_metadata,
             agent_id=self.agent.id,
@@ -915,21 +949,22 @@ class AgentContext:
         return message
 
     async def reply_text(self, text: str, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        return await self.reply(text, output_type="text", actions=actions, metadata=metadata)
+        return await self.reply_parts([make_text_part(text, format="plain")], actions=actions, metadata=metadata)
 
     async def reply_markdown(self, markdown: str, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        return await self.reply(markdown, output_type="markdown", actions=actions, metadata=metadata)
+        return await self.reply_parts([make_text_part(markdown, format="markdown")], actions=actions, metadata=metadata)
 
     async def reply_json(self, data: dict | list, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        return await self.reply(data, output_type="json", actions=actions, metadata=metadata)
+        return await self.reply_parts([make_json_part(data)], actions=actions, metadata=metadata)
 
     async def reply_image(self, url: str, alt: str = None, title: str = None, caption: str = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         payload = ImagePayload(url=url, alt=alt, title=title, caption=caption)
-        return await self.reply(payload.model_dump(exclude_none=True), output_type="image", actions=actions, metadata=metadata)
+        return await self.reply_parts([make_image_part(**payload.model_dump(exclude_none=True))], actions=actions, metadata=metadata)
 
     async def reply_images(self, images: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
         payload = ImageGalleryPayload(images=[ImagePayload.model_validate(image) for image in images])
-        return await self.reply(payload.model_dump(exclude_none=True), output_type="image_gallery", actions=actions, metadata=metadata)
+        items = [{"type": "image", **image.model_dump(exclude_none=True)} for image in payload.images]
+        return await self.reply_parts([make_media_group_part(items)], actions=actions, metadata=metadata)
 
     async def reply_file_content(
         self,
@@ -940,30 +975,31 @@ class AgentContext:
         size: int = None,
         truncated: bool = False,
         actions=None,
+        metadata: Optional[Dict[str, Any]] = None,
     ):
-        payload = {
-            "content": content,
-            "filename": filename,
-            "language": language,
-            "mime_type": mime_type,
-            "size": size,
-            "truncated": truncated,
-        }
-        return await self.reply({key: value for key, value in payload.items() if value is not None}, output_type="file_content", actions=actions)
+        part = make_file_part(
+            content,
+            filename=filename,
+            language=language,
+            mime_type=mime_type,
+            size=size,
+            truncated=truncated,
+        )
+        return await self.reply_parts([part], actions=actions, metadata=metadata)
 
-    async def reply_blocks(self, blocks: list, actions=None):
+    async def reply_blocks(self, blocks: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
         payload = RichContentPayload.model_validate({"blocks": blocks})
-        return await self.reply(payload.model_dump(exclude_none=True), output_type="rich_content", actions=actions)
+        return await self.reply_parts(blocks_to_parts(payload.model_dump(exclude_none=True)["blocks"]), actions=actions, metadata=metadata)
 
-    async def reply_form(self, form: dict, title: str = None, actions=None):
+    async def reply_form(self, form: dict, title: str = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         block = dict(form or {})
         if title is not None:
             block["title"] = title
         block = validate_action_form_block(block)
-        return await self.reply_blocks([block], actions=actions)
+        return await self.reply_blocks([block], actions=actions, metadata=metadata)
 
-    async def reply_action_form(self, form: dict, actions=None):
-        return await self.reply_form(form, actions=actions)
+    async def reply_action_form(self, form: dict, actions=None, metadata: Optional[Dict[str, Any]] = None):
+        return await self.reply_form(form, actions=actions, metadata=metadata)
 
     def read_attachment_bytes(self, attachment: dict[str, Any] | str) -> bytes:
         return read_attachment_bytes(self._attachment_for_read(attachment))
@@ -1480,7 +1516,15 @@ class ScriptAgentRunner:
             "placeholder": False,
             "error": {"code": error_code, "message": error},
         }
-        updated = message.model_copy(update={"content": {"code": error_code, "message": error}, "output_type": "error", "metadata": metadata})
+        updated = message.model_copy(
+            update={
+                "content": {"code": error_code, "message": error},
+                "output_type": "error",
+                "content_version": 2,
+                "parts": [make_error_part(error, code=error_code)],
+                "metadata": metadata,
+            }
+        )
         updated = self.message_store.update_message(updated)
         self.event_bus.emit(
             "message_completed",

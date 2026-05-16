@@ -949,6 +949,86 @@ export type ChatContentBlock =
   | ActionFormBlock
   | CommandButtonsBlock;
 
+export type TextMessagePart = {
+  id: string;
+  type: 'text';
+  format: 'plain' | 'markdown';
+  text: string;
+};
+
+export type JsonMessagePart = {
+  id: string;
+  type: 'json';
+  data: Record<string, unknown> | unknown[];
+};
+
+export type FileMessagePart = {
+  id: string;
+  type: 'file';
+  mode: 'inline_text' | 'attachment_ref';
+  content?: string | null;
+  attachment_id?: string | null;
+  filename?: string | null;
+  language?: string | null;
+  mime_type?: string | null;
+  size?: number | null;
+  truncated?: boolean;
+  path?: string | null;
+};
+
+export type ImageMessagePart = {
+  id: string;
+  type: 'image';
+  url?: string | null;
+  attachment_id?: string | null;
+  alt?: string | null;
+  title?: string | null;
+  caption?: string | null;
+};
+
+export type MediaGroupMessagePart = {
+  id: string;
+  type: 'media_group';
+  layout: 'gallery';
+  items: ({ type: 'image' } & Omit<ImageMessagePart, 'id'>)[];
+};
+
+export type FormMessagePart = Omit<ActionFormBlock, 'type'> & {
+  id: string;
+  type: 'form';
+};
+
+export type CommandButtonsMessagePart = {
+  id: string;
+  type: 'command_buttons';
+  buttons: { label: string; message: string }[];
+};
+
+export type NoticeMessagePart = {
+  id: string;
+  type: 'notice';
+  level: 'info' | 'warning' | 'success';
+  text: string;
+};
+
+export type ErrorMessagePart = {
+  id: string;
+  type: 'error';
+  message: string;
+  code?: string | null;
+};
+
+export type MessagePart =
+  | TextMessagePart
+  | JsonMessagePart
+  | FileMessagePart
+  | ImageMessagePart
+  | MediaGroupMessagePart
+  | FormMessagePart
+  | CommandButtonsMessagePart
+  | NoticeMessagePart
+  | ErrorMessagePart;
+
 export type Message = {
   message_id: string;
   session_id: string;
@@ -963,6 +1043,8 @@ export type Message = {
   action_id?: string | null;
   run_id?: string | null;
   output_type: string;
+  content_version?: number | null;
+  parts?: MessagePart[];
   parent_message_id?: string | null;
   metadata?: Record<string, unknown>;
   run?: Run;

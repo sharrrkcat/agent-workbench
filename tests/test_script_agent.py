@@ -1133,6 +1133,33 @@ def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
         ("**bold**", "markdown"),
         ({"ok": True}, "json"),
     ]
+    assert [message.content_version for message in messages[-3:]] == [2, 2, 2]
+    assert [message.parts[0]["type"] for message in messages[-3:]] == ["text", "text", "json"]
+    assert messages[-3].parts[0]["format"] == "plain"
+    assert messages[-2].parts[0]["format"] == "markdown"
+
+
+def test_reply_parts_writes_v2_parts_and_legacy_compat(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "reply_parts_script",
+        "async def run(ctx):\n"
+        "    await ctx.reply_parts([\n"
+        "        {'type': 'text', 'format': 'markdown', 'text': '**Ready**'},\n"
+        "        {'type': 'json', 'data': {'ok': True}},\n"
+        "    ])\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@reply_parts_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert message.content_version == 2
+    assert [part["type"] for part in message.parts] == ["text", "json"]
+    assert message.output_type == "json"
+    assert message.content == {"parts": message.parts}
 
 
 def test_image_output_schema_accepts_supported_payloads() -> None:

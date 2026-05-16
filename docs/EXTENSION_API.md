@@ -99,8 +99,9 @@ is owned by
 ## Prompt Agents
 
 Prompt Agents let the core runtime build context and call the LLM. Model output
-is treated as assistant content, not tool calls or structured commands. Prompt
-Agents that call an LLM should declare `capabilities: [llm]`.
+is treated as markdown text assistant content, not tool calls or structured
+commands. Prompt Agent final messages persist a markdown `text` part in Message
+Parts v2. Prompt Agents that call an LLM should declare `capabilities: [llm]`.
 
 Core Memory, Worldbook, Knowledge, streaming, LLM resolution, and title
 generation are runtime-owned. See:
@@ -202,6 +203,7 @@ Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 
 ### Reply Helpers
 
+- `reply_parts`: send ordered Message Parts v2 content.
 - `reply_text`: send plain text.
 - `reply_markdown`: send markdown-rendered content.
 - `reply_json`: send a JSON object or array.
@@ -213,6 +215,10 @@ Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 
 Reply helpers accept optional message metadata for durable compact details such
 as generated image recipe metadata.
+
+`reply_parts(parts, metadata=None)` is the v2 foundation; runtime sets
+`content_version=2`. Existing helpers wrap parts and still write temporary
+`content` / `output_type` compatibility fields.
 
 ## Attachments In Script Agents
 
@@ -293,17 +299,18 @@ core-owned services, not Capability backends. See:
 
 ## Output Payloads
 
-| output type | use when | minimal shape | common pitfall |
-| --- | --- | --- | --- |
-| `text` | Plain text. | `"hello"` | Markdown is not rendered as markdown. |
-| `markdown` | Rendered markdown. | `"**hello**"` | Do not use for raw file dumps. |
-| `json` | Structured display. | `{"ok": true}` | Lists are command-valid; `reply_json` expects object or array. |
-| `image` | One renderable image. | `{"url": "..."}` | Missing `url` fails validation. |
-| `image_gallery` | Multiple images. | `{"images": [{"url": "..."}]}` | Every image must satisfy image payload shape. |
-| `file_content` | Raw text file display. | `{"content": "...", "filename": "a.txt"}` | Raw text; not markdown. |
-| `rich_content` | Ordered mixed blocks. | `{"blocks": [{"type": "markdown", "text": "..."}]}` | Keep block order explicit. |
-| `action_form` block | Declarative form in `rich_content`. | `{"type": "action_form", "form_id": "demo", "fields": [...]}` | Forms submit only to internal Agent actions. |
-| `command_buttons` block | Send-message shortcuts. | `{"type": "command_buttons", "buttons": [{"label": "Run", "message": "@agent:run"}]}` | Buttons send ordinary user messages only. |
+### Message Parts v2
+
+New Agent and Script Agent replies persist visible content as
+`content_version=2` plus ordered `parts`. Round 1 supports `text`, `json`,
+`file`, `image`, `media_group`, `form`, `command_buttons`, `notice`, and
+`error`; full rules live in [contracts/message-parts.md](contracts/message-parts.md).
+Legacy `content` and `output_type` remain transitional renderer fields.
+
+Legacy output types are `text`, `markdown`, `json`, `image`,
+`image_gallery`, `file_content`, and `rich_content`. `action_form` and
+`command_buttons` remain trusted `rich_content` blocks during the transition.
+Use `file_content` for raw text that must not be markdown-rendered.
 
 If a command returns a dict with no declared output, the runner may infer `json`,
 `image`, `image_gallery`, or `rich_content`.
@@ -336,14 +343,6 @@ payloads, arbitrary URLs, or executable frontend code.
 
 Streaming and command-button runtime behavior:
 [contracts/runtime-streaming.md](contracts/runtime-streaming.md#command-buttons).
-
-## Validation And CLI
-
-```powershell
-uv run python scripts/check_agents.py --strict
-uv run python scripts/run_agent.py demo "hello"
-uv run python scripts/run_command.py "/demo hello"
-```
 
 ## Source And Tests
 

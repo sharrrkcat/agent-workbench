@@ -23,6 +23,14 @@ preview, and input image refs are filtered before final rendering.
 Legacy image attachments with `data_url` may remain supported for display and
 vision compatibility, but new generated outputs should use attachment storage.
 
+Message Parts v2 keeps the same storage rule. `image` parts should point at a
+local attachment URL such as `/api/attachments/<id>.png` or carry an
+`attachment_id` ref. `media_group` parts use image items with the same URL/ref
+shape. `file` parts may carry small inline raw text with `mode="inline_text"`
+for the current `file_content` compatibility path; long files and binary files
+should be saved as attachments in later rounds. Durable message parts must not
+introduce a new large base64 storage path.
+
 ## Prompt Agent File Context
 
 Prompt Agents may include ordinary text file attachment content in LLM context
@@ -105,6 +113,10 @@ Backend output type selects the frontend renderer:
 
 Renderer changes that alter payload shapes update
 [../EXTENSION_API.md](../EXTENSION_API.md#output-payloads).
+
+During Message Parts v2 migration, legacy `output_type` remains a compatibility
+renderer hint. New Agent/Script outputs also persist `content_version=2` and
+`parts`, with image/file/media parts following the attachment rules above.
 
 ComfyUI preset schema is documented in
 [../COMFYUI_PRESET_SCHEMA.md](../COMFYUI_PRESET_SCHEMA.md). ComfyUI output

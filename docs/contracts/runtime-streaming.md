@@ -48,6 +48,18 @@ diagnostic events.
 
 `message_completed` persists the final assistant message content.
 
+Starting with Message Parts v2 Round 1, final persisted assistant messages may
+also include:
+
+- `content_version: 2`
+- `parts: [...]`
+
+For this round, `message_delta` remains text-only for public visible streaming
+content. The final `message_completed.message` is allowed to carry parts while
+also retaining legacy `content` and `output_type` compatibility fields. The
+authoritative persisted visible content is migrating to `parts`; the old fields
+exist only for the transitional renderer and API tests.
+
 ## Producer Rules
 
 - Emit `message_started` before public deltas for a new assistant draft.
@@ -71,7 +83,8 @@ planning, JSON extraction, or validation. Public output streaming requires
 - Use `message_id` plus `draft_message_id` to resolve the active streaming row.
 - Track the last accepted `seq` per message.
 - Mark a message completed after `message_completed`.
-- Treat `message_completed.message.content` as final authoritative content.
+- Treat `message_completed.message.parts` as final authoritative content when
+  `content_version=2`; otherwise use legacy `message.content`.
 - Merge run metrics, steps, warnings, attachments, status, and `run_id` without
   resetting streamed content.
 - During streaming, `message_updated` may conservatively merge metadata,

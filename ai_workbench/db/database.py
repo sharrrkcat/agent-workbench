@@ -164,6 +164,10 @@ def ensure_message_speaker_columns(engine) -> None:
         for column in ("speaker_type", "speaker_id", "speaker_name", "origin"):
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE messagerecord ADD COLUMN {column} VARCHAR"))
+        if "content_version" not in columns:
+            connection.execute(text("ALTER TABLE messagerecord ADD COLUMN content_version INTEGER"))
+        if "parts_json" not in columns:
+            connection.execute(text("ALTER TABLE messagerecord ADD COLUMN parts_json VARCHAR DEFAULT '[]'"))
 
 
 def ensure_agent_config_columns(engine) -> None:
