@@ -33,11 +33,6 @@ actions:
       mode: selected_message
       include_original_user_message: true
 
-model:
-  provider: openai_compatible
-  base_url: http://localhost:1234/v1
-  model: qwen2.5-1.5b-instruct
-
 prompt: |
   Translate the user input into natural, accurate English.
   Output only the translation.

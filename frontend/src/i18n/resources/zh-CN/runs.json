@@ -15,7 +15,7 @@
     "runningCommand": "运行命令",
     "knowledgeRetrieval": "知识库检索",
     "preparingResponse": "准备响应",
-    "intentSemanticRouting": "??????"
+    "intentSemanticRouting": "意图语义路由"
   },
   "panel": {
     "title": "运行步骤",
