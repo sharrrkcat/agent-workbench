@@ -14,8 +14,13 @@ export function safeImageUrl(value: string | null | undefined): string {
 }
 
 export function resolveAttachmentUrl(value: string | Attachment | null | undefined): string {
-  const raw = typeof value === 'string' ? value : value?.uri || value?.data_url || '';
+  const raw = typeof value === 'string' ? value : value?.uri || attachmentDataUrl(value) || '';
   return resolveAttachmentUrlFromBase(API_BASE_URL, raw);
+}
+
+function attachmentDataUrl(value: Attachment | null | undefined): string {
+  if (!value || !('data_url' in value)) return '';
+  return value.data_url || '';
 }
 
 export function attachmentImageUrl(value: string | null | undefined): string {

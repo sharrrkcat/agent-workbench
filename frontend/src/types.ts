@@ -929,7 +929,18 @@ export type FileAttachment = {
   created_at?: string;
 };
 
-export type Attachment = ImageAttachment | FileAttachment;
+export type AudioAttachment = {
+  id: string;
+  type: 'audio';
+  mime_type: string;
+  name: string;
+  size: number;
+  uri?: string;
+  url?: string;
+  created_at?: string;
+};
+
+export type Attachment = ImageAttachment | FileAttachment | AudioAttachment;
 
 export type FileContentPayload = {
   filename?: string | null;
@@ -980,6 +991,18 @@ export type ImageMessagePart = {
   mime_type?: string | null;
 };
 
+export type AudioMessagePart = {
+  id: string;
+  type: 'audio';
+  source: 'attachment';
+  attachment_id: string;
+  url: string;
+  mime_type: string;
+  filename?: string | null;
+  title?: string | null;
+  duration_ms?: number | null;
+};
+
 export type MediaGroupMessagePart = {
   id: string;
   type: 'media_group';
@@ -1017,6 +1040,7 @@ export type MessagePart =
   | JsonMessagePart
   | FileMessagePart
   | ImageMessagePart
+  | AudioMessagePart
   | MediaGroupMessagePart
   | FormMessagePart
   | CommandButtonsMessagePart

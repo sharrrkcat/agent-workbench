@@ -27,6 +27,9 @@ class OutputRuntime:
     def image(self, args: str) -> dict[str, Any]:
         return {"url": "/api/attachments/image.png", "alt": "Image"}
 
+    def audio(self, args: str) -> dict[str, Any]:
+        return {"source": "attachment", "attachment_id": "att-1", "url": "/api/attachments/att-1.wav", "mime_type": "audio/wav"}
+
     def image_gallery(self, args: str) -> dict[str, Any]:
         return {"images": [{"url": "/api/attachments/a.png", "alt": "A"}]}
 
@@ -63,6 +66,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"id": "json", "output": {"part_type": "json"}},
                 {"id": "file_content", "output": {"part_type": "file", "mode": "inline_text"}},
                 {"id": "image", "output": {"part_type": "image"}},
+                {"id": "audio", "output": {"part_type": "audio"}},
                 {"id": "image_gallery", "output": {"part_type": "media_group", "layout": "gallery"}},
                 {"id": "rich_form", "output": {"part_type": "parts"}},
                 {"id": "rich_buttons", "output": {"part_type": "parts"}},
@@ -74,6 +78,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"name": "/out-json", "method": "json"},
                 {"name": "/out-file", "method": "file_content"},
                 {"name": "/out-image", "method": "image"},
+                {"name": "/out-audio", "method": "audio"},
                 {"name": "/out-gallery", "method": "image_gallery"},
                 {"name": "/out-form", "method": "rich_form"},
                 {"name": "/out-buttons", "method": "rich_buttons"},
@@ -151,6 +156,22 @@ def test_capability_command_image_output_writes_image_part() -> None:
     _, message, _ = command_message("/out-image")
 
     assert message.parts == [{"id": "part_1", "type": "image", "url": "/api/attachments/image.png", "alt": "Image"}]
+    assert not hasattr(message, "output_type")
+
+
+def test_capability_command_audio_output_writes_audio_part() -> None:
+    _, message, _ = command_message("/out-audio")
+
+    assert message.parts == [
+        {
+            "id": "part_1",
+            "type": "audio",
+            "source": "attachment",
+            "attachment_id": "att-1",
+            "url": "/api/attachments/att-1.wav",
+            "mime_type": "audio/wav",
+        }
+    ]
     assert not hasattr(message, "output_type")
 
 

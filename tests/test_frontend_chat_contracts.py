@@ -8,6 +8,10 @@ def read_frontend(path: str) -> str:
     return (ROOT / "frontend" / "src" / path).read_text(encoding="utf-8")
 
 
+def read_repo(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
 def test_status_bar_does_not_render_global_error_text() -> None:
     source = read_frontend("components/StatusBar.tsx")
 
@@ -105,6 +109,9 @@ def test_message_type_exposes_message_parts_contract() -> None:
     assert "export type FileMessagePart" in source
     assert "mode: 'inline_text' | 'attachment_ref'" in source
     assert "export type ImageMessagePart" in source
+    assert "export type AudioMessagePart" in source
+    assert "type: 'audio'" in source
+    assert "source: 'attachment'" in source
     assert "export type MediaGroupMessagePart" in source
     assert "layout: 'gallery'" in source
     assert "export type FormMessagePart" in source
@@ -138,6 +145,8 @@ def test_message_parts_renderer_routes_first_batch_part_types() -> None:
     assert "FilePartRenderer" in renderer
     assert "case 'image'" in renderer
     assert "ImagePartRenderer" in renderer
+    assert "case 'audio'" in renderer
+    assert "AudioPartRenderer" in renderer
     assert "case 'media_group'" in renderer
     assert "MediaGroupPartRenderer" in renderer
     assert "case 'form'" in renderer
@@ -183,6 +192,21 @@ def test_json_file_image_and_gallery_parts_delegate_to_legacy_renderers() -> Non
     assert "renderFile={(payload) => <FileContentRenderer payload={payload} />}" in bubble
     assert "renderImage={(image) => <ImageRenderer image={image} onPreviewImage={onPreviewImage} />}" in bubble
     assert "renderImageGallery={(images) => <ImageGalleryRenderer images={images} onPreviewImage={onPreviewImage} />}" in bubble
+
+
+def test_audio_part_renderer_uses_audio_controls_for_local_attachments() -> None:
+    source = read_frontend("components/messages/parts/AudioPartRenderer.tsx")
+
+    assert "export function AudioPartRenderer" in source
+    assert "<audio controls src={url} />" in source
+    assert "part.source === 'attachment'" in source
+    assert "^\\/api\\/attachments\\/" in source
+
+
+def test_generated_registry_lists_file_audio_output() -> None:
+    registry = read_repo("docs/generated/REGISTRY.md")
+
+    assert "| file | File Capability | read_text, read_image, read_audio | /read-file, /read-image, /file-audio | file, image, audio |" in registry
 
 
 def test_form_and_command_button_parts_keep_existing_interactions() -> None:

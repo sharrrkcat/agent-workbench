@@ -25,7 +25,7 @@ class CapabilityMethodSchema(BaseModel):
         if "type" in self.output:
             raise ValueError("capability method output.type is not supported; use output.part_type")
         part_type = self.output.get("part_type")
-        allowed = {"text", "json", "file", "image", "media_group", "parts"}
+        allowed = {"text", "json", "file", "image", "audio", "media_group", "parts"}
         if part_type is not None and part_type not in allowed:
             raise ValueError(f"unsupported output.part_type: {part_type}")
         if part_type == "text" and self.output.get("format", "plain") not in {"plain", "markdown"}:

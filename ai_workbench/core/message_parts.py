@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from itertools import count
+import re
 from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
@@ -14,12 +15,15 @@ MessagePartType = Literal[
     "json",
     "file",
     "image",
+    "audio",
     "media_group",
     "form",
     "command_buttons",
     "notice",
     "error",
 ]
+
+_LOCAL_ATTACHMENT_URL_RE = re.compile(r"^/api/attachments/[A-Za-z0-9_-]+\.[A-Za-z0-9]+$")
 
 
 class MessagePartValidationError(ValueError):
@@ -87,6 +91,36 @@ class ImagePart(_PartBase):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("image url is required")
+        return cleaned
+
+
+class AudioPart(_PartBase):
+    type: Literal["audio"]
+    source: Literal["attachment"] = "attachment"
+    attachment_id: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    mime_type: str = Field(min_length=1)
+    filename: str | None = None
+    title: str | None = None
+    duration_ms: int | None = Field(default=None, ge=0)
+
+    @field_validator("url")
+    @classmethod
+    def validate_local_attachment_url(cls, value: str) -> str:
+        cleaned = value.strip()
+        lowered = cleaned.lower()
+        if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:")):
+            raise ValueError("audio url must be a local attachment URL")
+        if not _LOCAL_ATTACHMENT_URL_RE.match(cleaned):
+            raise ValueError("audio url must use /api/attachments/<id>.<ext>")
+        return cleaned
+
+    @field_validator("mime_type")
+    @classmethod
+    def validate_audio_mime_type(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if not cleaned.startswith("audio/"):
+            raise ValueError("audio mime_type must be audio/*")
         return cleaned
 
 
@@ -162,6 +196,7 @@ _PART_ADAPTERS = {
     "json": TypeAdapter(JsonPart),
     "file": TypeAdapter(FilePart),
     "image": TypeAdapter(ImagePart),
+    "audio": TypeAdapter(AudioPart),
     "media_group": TypeAdapter(MediaGroupPart),
     "form": TypeAdapter(FormPart),
     "command_buttons": TypeAdapter(CommandButtonsPart),
@@ -220,6 +255,33 @@ def make_image_part(
     part_id: str | None = None,
 ) -> dict[str, Any]:
     return validate_message_part(_drop_none({"id": part_id or "part_1", "type": "image", "url": url, "attachment_id": attachment_id, "alt": alt, "title": title, "caption": caption}))
+
+
+def make_audio_part(
+    *,
+    attachment_id: str,
+    url: str,
+    mime_type: str,
+    filename: str | None = None,
+    title: str | None = None,
+    duration_ms: int | None = None,
+    part_id: str | None = None,
+) -> dict[str, Any]:
+    return validate_message_part(
+        _drop_none(
+            {
+                "id": part_id or "part_1",
+                "type": "audio",
+                "source": "attachment",
+                "attachment_id": attachment_id,
+                "url": url,
+                "mime_type": mime_type,
+                "filename": filename,
+                "title": title,
+                "duration_ms": duration_ms,
+            }
+        )
+    )
 
 
 def make_media_group_part(items: Sequence[Mapping[str, Any]], *, layout: Literal["gallery"] = "gallery", part_id: str | None = None) -> dict[str, Any]:
@@ -299,6 +361,10 @@ def capability_output_to_parts(output: Mapping[str, Any] | None, content: Any) -
         if not isinstance(content, Mapping):
             raise MessagePartValidationError("image output must be an object")
         return validate_message_parts([{"type": "image", **dict(content)}])
+    if kind == "audio":
+        if not isinstance(content, Mapping):
+            raise MessagePartValidationError("audio output must be an object")
+        return validate_message_parts([{"type": "audio", **dict(content)}])
     if kind == "media_group":
         if not isinstance(content, Mapping):
             raise MessagePartValidationError("media_group output must be an object")

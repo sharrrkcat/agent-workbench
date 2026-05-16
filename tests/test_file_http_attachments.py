@@ -17,7 +17,7 @@ from ai_workbench.core.attachments import (
 from capabilities.file import CapabilityRuntime as FileRuntime
 from capabilities.http import CapabilityRuntime as HttpRuntime
 from scripts.cleanup_attachments import main as cleanup_main
-from tests.test_api import SVG_DATA_URL, create_session, image_attachment
+from tests.test_api import SVG_DATA_URL, create_llm_profile, create_session, image_attachment
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
 
@@ -136,6 +136,27 @@ def test_attachment_api_accepts_text_file_upload(monkeypatch, tmp_path: Path) ->
     assert resolve_attachment_uri(payload["uri"]).read_text(encoding="utf-8") == "hello knowledge"
 
 
+def test_attachment_api_accepts_and_serves_audio_upload(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+
+    response = client.post(
+        "/api/attachments",
+        files={"file": ("demo.wav", b"RIFF----WAVEfmt ", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "audio"
+    assert payload["name"] == "demo.wav"
+    path = resolve_attachment_uri(payload["uri"])
+    assert path.parent.name == "audios"
+    served = client.get(payload["url"])
+    assert served.status_code == 200
+    assert served.headers["content-type"].startswith("audio/wav")
+    assert served.content == b"RIFF----WAVEfmt "
+
+
 def test_attachment_api_returns_text_file_bytes(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     stored = save_attachment_from_upload("note.txt", "text/plain", b"hello text")
@@ -193,6 +214,8 @@ def test_non_vision_model_does_not_read_local_attachment(monkeypatch, tmp_path: 
     llm = FakeLLMRuntime(response="text")
     client = TestClient(create_app(llm_runtime=llm, use_memory=True))
     session = create_session(client)
+    profile = create_llm_profile(client, alias="nonvision")
+    client.patch(f"/api/sessions/{session['session_id']}", json={"llm_profile_id": profile["id"]})
 
     response = client.post(
         f"/api/sessions/{session['session_id']}/messages",
@@ -393,6 +416,67 @@ def test_file_capability_reads_image_and_rejects_non_image(monkeypatch, tmp_path
         raise AssertionError("expected non-image rejection")
 
 
+def test_file_capability_reads_audio_and_rejects_non_audio(monkeypatch, tmp_path: Path) -> None:
+    attachments_dir = tmp_path / "attachments"
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(attachments_dir))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    audio = allowed / "demo.wav"
+    text = allowed / "note.txt"
+    audio.write_bytes(b"RIFF----WAVEfmt ")
+    text.write_text("hello", encoding="utf-8")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    payload = runtime.read_audio(str(audio))
+
+    assert payload["source"] == "attachment"
+    assert payload["mime_type"] == "audio/wav"
+    assert payload["filename"] == "demo.wav"
+    assert payload["url"].startswith("/api/attachments/")
+    assert resolve_attachment_uri(f"local://attachments/{Path(payload['url']).name}").read_bytes() == b"RIFF----WAVEfmt "
+    try:
+        runtime.read_audio(str(text))
+    except ValueError as exc:
+        assert "Only WAV" in str(exc)
+    else:
+        raise AssertionError("expected non-audio rejection")
+
+
+def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    denied = tmp_path / "denied"
+    allowed.mkdir()
+    denied.mkdir()
+    audio = allowed / "demo.mp3"
+    large_audio = allowed / "large.mp3"
+    denied_audio = denied / "secret.mp3"
+    audio.write_bytes(b"audio")
+    large_audio.write_bytes(b"x" * 20)
+    denied_audio.write_bytes(b"secret")
+    config = {
+        "allowed_directories": [str(allowed)],
+        "max_local_audio_read_size_mb": 0.00001,
+        "enable_read_audio": True,
+    }
+    runtime = FileRuntime()
+
+    payload = runtime.read_audio(str(audio), context={"capability_config": config})
+    assert payload["mime_type"] == "audio/mpeg"
+    try:
+        runtime.read_audio(str(large_audio), context={"capability_config": config})
+    except ValueError as exc:
+        assert "File too large" in str(exc)
+    else:
+        raise AssertionError("expected audio size rejection")
+    try:
+        runtime.read_audio(str(denied_audio), context={"capability_config": config})
+    except ValueError as exc:
+        assert "File access denied" in str(exc)
+    else:
+        raise AssertionError("expected audio path rejection")
+
+
 def test_http_capability_rejects_non_http_scheme() -> None:
     runtime = HttpRuntime()
     try:
@@ -460,6 +544,7 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
     assert resolved["allowed_directories"] == ["./data", "./examples", "./agents", "./capabilities"]
     assert resolved["max_local_text_read_size_mb"] == 2.0
     assert resolved["max_local_image_read_size_mb"] == 10.0
+    assert resolved["max_local_audio_read_size_mb"] == 10.0
 
     patched = client.patch(
         "/api/capability-configs/file",
@@ -468,6 +553,7 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
                 "allowed_directories": [str(allowed)],
                 "max_local_text_read_size_mb": 0.5,
                 "max_local_image_read_size_mb": 0.5,
+                "max_local_audio_read_size_mb": 0.5,
             }
         },
     )
@@ -475,6 +561,7 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
     assert patched.json()["resolved_config"]["allowed_directories"] == [str(allowed)]
     assert patched.json()["resolved_config"]["max_local_text_read_size_mb"] == 0.5
     assert patched.json()["resolved_config"]["max_local_image_read_size_mb"] == 0.5
+    assert patched.json()["resolved_config"]["max_local_audio_read_size_mb"] == 0.5
 
     assert client.patch("/api/capability-configs/file", json={"user_config": {"unknown": True}}).status_code == 400
     assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_file": "yes"}}).status_code == 400
@@ -500,6 +587,10 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     image.write_bytes(b"hello")
     large_image = allowed / "large.png"
     large_image.write_bytes(b"x" * (200 * 1024))
+    audio = allowed / "demo.wav"
+    audio.write_bytes(b"RIFF----WAVEfmt ")
+    large_audio = allowed / "large.wav"
+    large_audio.write_bytes(b"x" * (200 * 1024))
 
     client.patch(
         "/api/capability-configs/file",
@@ -508,9 +599,11 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
                 "allowed_directories": [str(allowed)],
                 "max_local_text_read_size_mb": 0.1,
                 "max_local_image_read_size_mb": 0.1,
+                "max_local_audio_read_size_mb": 0.1,
                 "allowed_text_extensions": [".txt"],
                 "enable_read_file": True,
                 "enable_read_image": True,
+                "enable_read_audio": True,
             }
         },
     )
@@ -521,6 +614,8 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     bad_ext = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {blocked}"})
     image_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
     image_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {large_image}"})
+    audio_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
+    audio_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {large_audio}"})
 
     assert accepted.json()["run"]["status"] == "DONE"
     assert accepted.json()["run"]["target_id"] == "/read-file"
@@ -532,6 +627,10 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     assert image_ok.json()["run"]["status"] == "DONE"
     assert image_ok.json()["messages"][-1]["parts"][0]["type"] == "image"
     assert "File too large" in image_large.json()["run"]["error"]
+    assert audio_ok.json()["run"]["status"] == "DONE"
+    assert audio_ok.json()["messages"][-1]["parts"][0]["type"] == "audio"
+    assert audio_ok.json()["messages"][-1]["parts"][0]["source"] == "attachment"
+    assert "File too large" in audio_large.json()["run"]["error"]
 
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_file": False}})
     disabled_file = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
@@ -540,6 +639,10 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_image": False}})
     disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
     assert "Command disabled" in disabled_image.json()["run"]["error"]
+
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_audio": False}})
+    disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
+    assert "Command disabled" in disabled_audio.json()["run"]["error"]
 
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": []}})
     empty_dirs = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})

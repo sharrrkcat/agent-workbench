@@ -486,6 +486,9 @@ def _parts_text_for_context(parts: Any) -> str:
             rendered.append(str(part.get("content") or part.get("filename") or ""))
         elif part_type == "image":
             rendered.append("[image]" + (" " + str(part.get("alt")) if part.get("alt") else ""))
+        elif part_type == "audio":
+            name = part.get("title") or part.get("filename") or part.get("mime_type") or "audio"
+            rendered.append(f"[audio attachment: {name}]")
         elif part_type == "media_group":
             items = part.get("items") if isinstance(part.get("items"), list) else []
             rendered.append(f"[image gallery: {len(items)} image(s)]")

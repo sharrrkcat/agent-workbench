@@ -1267,7 +1267,7 @@ function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { att
               <img src={attachmentUrl(attachment)} alt={attachment.name || t('renderers:labels.attachedImage')} loading="lazy" />
             </button>
           </figure>
-        ) : (
+        ) : attachment.type === 'file' ? (
           <button
             className="message-file-chip"
             key={attachment.id}
@@ -1293,7 +1293,7 @@ function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { att
               <small>{fileKindLabel(attachment.mime_type, attachment.name)} / {formatBytes(attachment.size)}</small>
             </span>
           </button>
-        ),
+        ) : null,
       )}
     </div>
   );
@@ -1817,6 +1817,7 @@ function copyablePartContent(part: MessagePart): string {
     return [part.filename, part.attachment_id, part.url].filter(Boolean).join(' ');
   }
   if (part.type === 'image') return [part.alt, part.url, part.attachment_id].filter(Boolean).join(' ');
+  if (part.type === 'audio') return [part.title, part.filename, part.mime_type, part.url].filter(Boolean).join(' ');
   if (part.type === 'media_group') {
     return (part.items || []).map((item) => [item.alt, item.url, item.attachment_id].filter(Boolean).join(' ')).filter(Boolean).join('\n');
   }
@@ -1845,7 +1846,10 @@ function isAttachment(value: unknown): value is Attachment {
     ((typeof item.data_url === 'string' && Boolean(safeImageUrl(item.data_url))) ||
       (typeof item.uri === 'string' && Boolean(safeImageUrl(item.uri))));
   if (base) return true;
-  return item.type === 'file' && typeof item.id === 'string' && typeof item.mime_type === 'string' && typeof item.name === 'string' && typeof item.size === 'number' && (typeof item.uri === 'string' || typeof item.data_url === 'string');
+  if (item.type === 'file') {
+    return typeof item.id === 'string' && typeof item.mime_type === 'string' && typeof item.name === 'string' && typeof item.size === 'number' && (typeof item.uri === 'string' || typeof item.data_url === 'string');
+  }
+  return item.type === 'audio' && typeof item.id === 'string' && typeof item.mime_type === 'string' && typeof item.name === 'string' && typeof item.size === 'number' && typeof item.uri === 'string';
 }
 
 function attachmentUrl(attachment: ImageAttachment): string {

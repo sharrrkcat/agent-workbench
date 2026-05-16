@@ -1,6 +1,8 @@
 import asyncio
+import io
 import json
 import re
+import wave
 from typing import Any
 
 
@@ -20,6 +22,9 @@ async def run(ctx):
         return
     if ctx.action_id == "public_stream":
         await run_public_stream(ctx)
+        return
+    if ctx.action_id == "audio_demo":
+        await run_audio_demo(ctx)
         return
     raise ValueError(f"Unknown action: {ctx.action_id}")
 
@@ -125,6 +130,19 @@ async def run_public_stream(ctx) -> None:
         raise
 
 
+async def run_audio_demo(ctx) -> None:
+    duration_ms = 500
+    wav_data = _silent_wav(duration_ms=duration_ms)
+    attachment = await ctx.save_attachment_bytes(
+        wav_data,
+        filename="demo.wav",
+        mime_type="audio/wav",
+        kind="audio",
+        metadata={"source": "script_lifecycle_lab.audio_demo"},
+    )
+    await ctx.reply_audio(attachment, title="Demo audio", duration_ms=duration_ms)
+
+
 async def _sleeping_step(ctx, label: str, message: str, seconds: float) -> None:
     step = ctx.run.start_step(label, message=message)
     try:
@@ -151,6 +169,17 @@ def _extract_json_text(content: str) -> str:
     if match:
         return match.group(1).strip()
     return content.strip()
+
+
+def _silent_wav(duration_ms: int, sample_rate: int = 8000) -> bytes:
+    frame_count = int(sample_rate * duration_ms / 1000)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(b"\x00\x00" * frame_count)
+    return buffer.getvalue()
 
 
 def _normalize_brief(data: dict[str, Any]) -> dict[str, Any]:

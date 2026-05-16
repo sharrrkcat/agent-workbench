@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from ai_workbench.core.agent_registry import AgentRegistry
@@ -2094,6 +2095,10 @@ class CommandRunner:
             input_message_id=input_message_id,
             success=True,
         )
+        output_attachments = _attachments_from_command_output(data)
+        if output_attachments:
+            command_metadata["attachments"] = output_attachments
+            command_metadata["generated_attachments"] = output_attachments
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
@@ -2186,6 +2191,8 @@ class CommandRunner:
         if declared:
             return declared
         if isinstance(data, dict):
+            if data.get("source") == "attachment" and str(data.get("mime_type") or "").startswith("audio/"):
+                return {"part_type": "audio"}
             if "url" in data:
                 return {"part_type": "image"}
             if "images" in data:
@@ -2206,3 +2213,25 @@ class CommandRunner:
         if method is None or not isinstance(method.output, dict):
             return {}
         return dict(method.output)
+
+
+def _attachments_from_command_output(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, dict) or data.get("source") != "attachment":
+        return []
+    attachment_id = data.get("attachment_id")
+    url = data.get("url")
+    mime_type = data.get("mime_type")
+    if not attachment_id or not url or not mime_type:
+        return []
+    attachment_type = "audio" if str(mime_type).lower().startswith("audio/") else "file"
+    return [
+        {
+            "id": str(attachment_id),
+            "type": attachment_type,
+            "mime_type": str(mime_type),
+            "name": str(data.get("filename") or data.get("title") or attachment_id),
+            "size": int(data["size"]) if isinstance(data.get("size"), int) else 0,
+            "uri": f"local://attachments/{Path(str(url)).name}",
+            "url": str(url),
+        }
+    ]

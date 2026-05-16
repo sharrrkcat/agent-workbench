@@ -20,6 +20,16 @@ ALLOWED_IMAGE_MIME_TYPES = {
     "image/gif",
     "image/svg+xml",
 }
+ALLOWED_AUDIO_MIME_TYPES = {
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/flac",
+    "audio/webm",
+}
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".m4a", ".flac", ".webm"}
 MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_FILE_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_CONFIGURABLE_ATTACHMENT_BYTES = 100 * 1024 * 1024
@@ -62,6 +72,13 @@ _MIME_EXTENSIONS = {
     "image/webp": ".webp",
     "image/gif": ".gif",
     "image/svg+xml": ".svg",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".m4a",
+    "audio/flac": ".flac",
+    "audio/webm": ".webm",
     "application/octet-stream": ".bin",
 }
 _EXTENSION_MIME_TYPES = {
@@ -71,6 +88,12 @@ _EXTENSION_MIME_TYPES = {
     ".webp": "image/webp",
     ".gif": "image/gif",
     ".svg": "image/svg+xml",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".webm": "audio/webm",
     ".txt": "text/plain",
     ".md": "text/markdown",
     ".py": "text/x-python",
@@ -155,7 +178,7 @@ class Attachment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1)
-    type: Literal["image", "file"]
+    type: Literal["image", "file", "audio"]
     mime_type: str
     name: str = ""
     size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
@@ -256,7 +279,7 @@ def save_attachment_from_data_url(attachment: dict[str, Any], settings: Any = No
     attachment_id = str(uuid4())
     extension = _extension_for_attachment(parsed.name, mime_type)
     filename = f"{attachment_id}{extension}"
-    target_dir = attachments_root() / ("images" if inferred_type == "image" else "files")
+    target_dir = attachments_root() / _attachment_subdir(inferred_type)
     target_dir.mkdir(parents=True, exist_ok=True)
     target = (target_dir / filename).resolve()
     target.write_bytes(attachment_bytes)
@@ -298,7 +321,7 @@ def save_generated_attachment_bytes(
     data: bytes,
     filename: str,
     mime_type: str,
-    kind: Literal["image", "file"] = "file",
+    kind: Literal["image", "file", "audio"] = "file",
     metadata: dict[str, Any] | None = None,
     settings: Any = None,
 ) -> dict[str, Any]:
@@ -322,7 +345,7 @@ def save_generated_attachment_base64(
     data_base64: str,
     filename: str,
     mime_type: str,
-    kind: Literal["image", "file"] = "file",
+    kind: Literal["image", "file", "audio"] = "file",
     metadata: dict[str, Any] | None = None,
     settings: Any = None,
 ) -> dict[str, Any]:
@@ -344,7 +367,7 @@ def _store_attachment_bytes(name: str, mime_type: str, data: bytes, attachment_t
     attachment_id = str(uuid4())
     extension = _extension_for_attachment(name, mime_type)
     filename = f"{attachment_id}{extension}"
-    target_dir = attachments_root() / ("images" if attachment_type == "image" else "files")
+    target_dir = attachments_root() / _attachment_subdir(attachment_type)
     target_dir.mkdir(parents=True, exist_ok=True)
     target = (target_dir / filename).resolve()
     target.write_bytes(data)
@@ -374,7 +397,7 @@ def resolve_attachment_uri(uri_or_id: str) -> Path:
             raise ValueError("Invalid attachment id.")
 
     suffix = Path(filename).suffix.lower()
-    subdir = "images" if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"} else "files"
+    subdir = _attachment_subdir("image" if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"} else "audio" if suffix in ALLOWED_AUDIO_EXTENSIONS else "file")
     root = (attachments_root() / subdir).resolve()
     path = (root / filename).resolve()
     try:
@@ -440,11 +463,13 @@ def read_attachment_text(attachment: dict[str, Any], limit: int = TEXT_READ_LIMI
     raise ValueError("Unsupported file encoding. Only UTF-8 text files are readable.")
 
 
-def infer_attachment_type(name: str | None, mime_type: str | None) -> Literal["image", "file"]:
+def infer_attachment_type(name: str | None, mime_type: str | None) -> Literal["image", "file", "audio"]:
     cleaned_mime = (mime_type or "").strip().lower()
     suffix = Path(name or "").suffix.lower()
     if cleaned_mime in ALLOWED_IMAGE_MIME_TYPES or suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}:
         return "image"
+    if cleaned_mime in ALLOWED_AUDIO_MIME_TYPES or suffix in ALLOWED_AUDIO_EXTENSIONS:
+        return "audio"
     return "file"
 
 
@@ -549,10 +574,18 @@ def _decode_base64_payload(data_base64: str) -> tuple[bytes, str | None]:
     return data, None
 
 
-def _normalize_attachment_kind(kind: str) -> Literal["image", "file"]:
-    if kind not in {"image", "file"}:
-        raise ValueError("Generated attachment kind must be 'image' or 'file'.")
+def _normalize_attachment_kind(kind: str) -> Literal["image", "file", "audio"]:
+    if kind not in {"image", "file", "audio"}:
+        raise ValueError("Generated attachment kind must be 'image', 'file', or 'audio'.")
     return kind  # type: ignore[return-value]
+
+
+def _attachment_subdir(attachment_type: str) -> str:
+    if attachment_type == "image":
+        return "images"
+    if attachment_type == "audio":
+        return "audios"
+    return "files"
 
 
 def _mime_type_for_attachment_path(path: Path) -> str:
@@ -590,6 +623,13 @@ def _validate_attachment_payload(name: str | None, mime_type: str, data: bytes, 
             raise ValueError("Unsupported image MIME type.")
         _validate_attachment_size(len(data), attachment_type, settings=settings)
         return
+    if attachment_type == "audio":
+        if mime_type not in ALLOWED_AUDIO_MIME_TYPES:
+            raise ValueError("Unsupported audio MIME type.")
+        if Path(name or "").suffix.lower() not in ALLOWED_AUDIO_EXTENSIONS:
+            raise ValueError("Unsupported audio file type.")
+        _validate_attachment_size(len(data), attachment_type, settings=settings)
+        return
     suffix = Path(name or "").suffix.lower()
     if suffix not in ALLOWED_TEXT_EXTENSIONS:
         raise ValueError("Unsupported file type.")
@@ -601,6 +641,13 @@ def _validate_generated_attachment_payload(name: str, mime_type: str, data: byte
         raise ValueError("Unsupported image MIME type.")
     if attachment_type == "file" and infer_attachment_type(name, mime_type) == "image":
         raise ValueError("Generated image attachments must use kind='image'.")
+    if attachment_type == "audio":
+        if mime_type not in ALLOWED_AUDIO_MIME_TYPES:
+            raise ValueError("Unsupported audio MIME type.")
+        if Path(name).suffix.lower() not in ALLOWED_AUDIO_EXTENSIONS:
+            raise ValueError("Unsupported audio file type.")
+    if attachment_type == "file" and infer_attachment_type(name, mime_type) == "audio":
+        raise ValueError("Generated audio attachments must use kind='audio'.")
     _extension_for_attachment(name, mime_type)
     _validate_attachment_size(len(data), attachment_type, settings=settings)
 

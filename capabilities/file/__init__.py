@@ -3,15 +3,17 @@ import codecs
 import os
 from pathlib import Path
 
-from ai_workbench.core.attachments import ALLOWED_IMAGE_MIME_TYPES
+from ai_workbench.core.attachments import ALLOWED_AUDIO_MIME_TYPES, ALLOWED_IMAGE_MIME_TYPES, save_generated_attachment_bytes
 
 
 MAX_TEXT_BYTES = 1 * 1024 * 1024
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_AUDIO_BYTES = 10 * 1024 * 1024
 CONFIG_DEFAULTS = {
     "allowed_directories": ["./data", "./examples", "./agents", "./capabilities"],
     "max_local_text_read_size_mb": 2,
     "max_local_image_read_size_mb": 10,
+    "max_local_audio_read_size_mb": 10,
     "allowed_text_extensions": [
         ".txt",
         ".md",
@@ -39,6 +41,7 @@ CONFIG_DEFAULTS = {
     ],
     "enable_read_file": True,
     "enable_read_image": True,
+    "enable_read_audio": True,
 }
 _IMAGE_MIME_BY_EXT = {
     ".png": "image/png",
@@ -47,6 +50,14 @@ _IMAGE_MIME_BY_EXT = {
     ".webp": "image/webp",
     ".gif": "image/gif",
     ".svg": "image/svg+xml",
+}
+_AUDIO_MIME_BY_EXT = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".webm": "audio/webm",
 }
 _LANGUAGE_BY_EXT = {
     ".py": "python",
@@ -138,6 +149,32 @@ class CapabilityRuntime:
             "caption": f"Loaded from local file - {mime_type} - {size} bytes",
         }
 
+    def read_audio(self, text: str, context: dict | None = None) -> dict:
+        config = _runtime_config(context)
+        if not bool(config["enable_read_audio"]):
+            raise ValueError("Command disabled: /file-audio is disabled in File Capability settings.")
+        path = _resolve_allowed_file(text, config, context=context)
+        mime_type = _audio_mime_type(path)
+        size = path.stat().st_size
+        limit = _mb_to_bytes(config["max_local_audio_read_size_mb"])
+        if size > limit:
+            raise ValueError(f"File too large for /file-audio. Maximum size is {_format_mb(config['max_local_audio_read_size_mb'])}.")
+        attachment = save_generated_attachment_bytes(
+            data=path.read_bytes(),
+            filename=path.name,
+            mime_type=mime_type,
+            kind="audio",
+            metadata={"source": "file_capability"},
+        )
+        return {
+            "source": "attachment",
+            "attachment_id": attachment["id"],
+            "url": attachment["url"],
+            "mime_type": attachment["mime_type"],
+            "filename": attachment["name"],
+            "title": attachment["name"],
+        }
+
 
 def _runtime_config(context: dict | None) -> dict:
     config = dict(CONFIG_DEFAULTS)
@@ -151,6 +188,7 @@ def _runtime_config(context: dict | None) -> dict:
             config["allowed_directories"] = [*CONFIG_DEFAULTS["allowed_directories"], *extras]
     if context is None:
         config["max_local_text_read_size_mb"] = MAX_TEXT_BYTES / (1024 * 1024)
+        config["max_local_audio_read_size_mb"] = MAX_AUDIO_BYTES / (1024 * 1024)
     return config
 
 
@@ -194,6 +232,13 @@ def _image_mime_type(path: Path) -> str:
     mime_type = _IMAGE_MIME_BY_EXT.get(path.suffix.lower(), "")
     if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
         raise ValueError("Only PNG, JPEG, WebP, GIF, and SVG image files are supported by /read-image.")
+    return mime_type
+
+
+def _audio_mime_type(path: Path) -> str:
+    mime_type = _AUDIO_MIME_BY_EXT.get(path.suffix.lower(), "")
+    if mime_type not in ALLOWED_AUDIO_MIME_TYPES:
+        raise ValueError("Only WAV, MP3, OGG, M4A, FLAC, and WebM audio files are supported by /file-audio.")
     return mime_type
 
 

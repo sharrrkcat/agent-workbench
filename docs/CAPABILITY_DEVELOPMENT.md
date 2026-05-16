@@ -79,6 +79,7 @@ authority. Manifest methods declare `output.part_type`:
 - `part_type: json`.
 - `part_type: file` with `mode: inline_text`.
 - `part_type: image`.
+- `part_type: audio`.
 - `part_type: media_group` with `layout: gallery`.
 - `part_type: parts` for a validated list of message parts.
 
@@ -86,7 +87,9 @@ authority. Manifest methods declare `output.part_type`:
 returns a dict and the method has no declared output, the runner infers the
 current parts contract, normally JSON unless the payload is shaped like an image
 or media group. Use `file` parts for source files, config files, logs, and other
-raw text that must not be interpreted as Markdown.
+raw text that must not be interpreted as Markdown. Use `audio` parts only for
+local attachment-backed audio payloads with `source: attachment`; remote audio
+URLs, TTS, ASR, and transcription are not implemented.
 
 For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, non-blocking prompt status, fetch, interrupt, upload, object info, and `free_memory` for ComfyUI `POST /free`; helper methods normalize outputs and collect images for a prompt. It also owns local workflow and preset library directories, scanning API-format workflow files, rejecting unsupported GUI-format files, hash de-duplication, preset loading, preset validation, per-workflow draft skip reasons, and draft preset creation. The preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results. `free_memory` is a protocol method only: it requests unload/free behavior from the connected ComfyUI service and does not decide whether a user workflow should call it. ComfyUI is an external service and local asset capability, not a user-facing workflow Agent by itself.
 
@@ -113,6 +116,7 @@ uv run python scripts/run_command.py "/base64 hello"
 uv run python scripts/run_command.py "/base64-decode aGVsbG8="
 uv run python scripts/run_command.py "/base64-image data:image/svg+xml;base64,..."
 uv run python scripts/run_command.py "/image-base64" --image path/to/cat.png
+uv run python scripts/run_command.py "/file-audio path/to/demo.wav"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
 

@@ -18,6 +18,9 @@ actions:
   - id: public_stream
     label: Public Stream
     description: Test public output streaming from a script agent.
+  - id: audio_demo
+    label: Audio Demo
+    description: Generate a tiny local audio attachment and return it as AudioPart.
 
 capabilities:
   - llm

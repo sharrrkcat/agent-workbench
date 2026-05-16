@@ -41,6 +41,10 @@ def image_part(message):
     return next(part for part in message.parts if part.get("type") == "image")
 
 
+def audio_part(message):
+    return next(part for part in message.parts if part.get("type") == "audio")
+
+
 def media_group_part(message):
     return next(part for part in message.parts if part.get("type") == "media_group")
 
@@ -175,7 +179,7 @@ def test_script_lifecycle_lab_manifest_loads() -> None:
     assert agent.type == "script"
     assert agent.entry == "agent.py"
     assert "llm" in agent.capabilities
-    assert {action.id for action in agent.actions} == {"default", "steps", "hidden_json", "public_stream"}
+    assert {action.id for action in agent.actions} == {"default", "steps", "hidden_json", "public_stream", "audio_demo"}
 
 
 def test_script_agent_with_llm_defaults_to_no_knowledge(monkeypatch, tmp_path: Path) -> None:
@@ -424,6 +428,27 @@ def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
     ]
     running_step = next(step for step in steps if step.label == "Running script")
     assert {step.parent_step_id for step in lab_steps} == {running_step.step_id}
+
+
+def test_script_lifecycle_lab_audio_demo_returns_audio_part(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    fixture = ScriptRuntimeFixture(llm=FakeLLMRuntime(response="should not be called"))
+    session = fixture.sessions.create_session(title="Lifecycle lab audio test")
+
+    result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:audio_demo"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    part = audio_part(message)
+    attachment = message.metadata["attachments"][0]
+
+    assert result.success is True
+    assert part["source"] == "attachment"
+    assert part["attachment_id"] == attachment["id"]
+    assert part["url"] == attachment["url"]
+    assert part["mime_type"] == "audio/wav"
+    assert part["filename"] == "demo.wav"
+    assert part["duration_ms"] == 500
+    assert attachment["type"] == "audio"
+    assert resolve_attachment_uri(attachment["uri"]).read_bytes().startswith(b"RIFF")
 
 
 def test_script_lifecycle_lab_hidden_json_uses_internal_stream_without_public_delta() -> None:
@@ -1165,6 +1190,30 @@ def test_reply_helpers_write_expected_parts(tmp_path: Path) -> None:
     assert [message.parts[0]["type"] for message in messages[-3:]] == ["text", "text", "json"]
     assert messages[-3].parts[0]["format"] == "plain"
     assert messages[-2].parts[0]["format"] == "markdown"
+
+
+def test_reply_audio_helper_writes_audio_part(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    registry = write_script_agent(
+        tmp_path,
+        "audio_reply_script",
+        "async def run(ctx):\n"
+        "    attachment = await ctx.save_attachment_bytes(b'RIFF----WAVEfmt ', filename='demo.wav', mime_type='audio/wav', kind='audio')\n"
+        "    await ctx.reply_audio(attachment, title='Demo audio', duration_ms=500)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@audio_reply_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    part = audio_part(message)
+
+    assert result.success is True
+    assert part["type"] == "audio"
+    assert part["source"] == "attachment"
+    assert part["mime_type"] == "audio/wav"
+    assert part["title"] == "Demo audio"
+    assert part["duration_ms"] == 500
 
 
 def test_reply_parts_writes_v2_parts_without_legacy_visible_content(tmp_path: Path) -> None:

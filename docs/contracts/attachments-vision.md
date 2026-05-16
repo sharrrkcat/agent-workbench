@@ -11,7 +11,7 @@ attachment ids, type, MIME type, name, size, URI/URL, timestamps, dimensions, an
 compact source details where relevant. It must not store full base64 payloads
 for normal local attachments.
 
-Generated files and images should be saved as local attachments and returned by
+Generated files, audio, and images should be saved as local attachments and returned by
 local URLs such as `/api/attachments/<id>.png`. Do not put large base64 data URLs
 in durable message content.
 
@@ -25,9 +25,12 @@ vision compatibility, but new generated outputs should use attachment storage.
 
 Message Parts v2 keeps the same storage rule. `image` parts should point at a
 local attachment URL such as `/api/attachments/<id>.png` or carry an
-`attachment_id` ref. `media_group` parts use image items with the same URL/ref
-shape. `file` parts may carry small inline raw text with `mode="inline_text"`;
-long files and binary files should be saved as attachments in later rounds.
+`attachment_id` ref. `audio` parts are implemented as local attachment refs only:
+`source` must be `attachment`, `url` must be a local `/api/attachments/...`
+route, and `mime_type` must be `audio/*`. `media_group` parts use image items
+with the same URL/ref shape. `file` parts may carry small inline raw text with
+`mode="inline_text"`; long files and binary files should be saved as
+attachments in later rounds.
 Durable message parts must not introduce a new large base64 storage path.
 
 ## Prompt Agent File Context
@@ -68,6 +71,7 @@ attachments through:
 - `ctx.attachment_as_data_url(attachment_or_id)`
 - `await ctx.save_attachment_bytes(data, filename, mime_type, kind="file", metadata=None)`
 - `await ctx.save_attachment_base64(data_base64, filename, mime_type, kind="file", metadata=None)`
+- `await ctx.reply_audio(audio_attachment_or_part, title=None, duration_ms=None, metadata=None)`
 
 Image attachments can be read by scripts regardless of Prompt Agent vision
 support. Text/code/config files can be read by scripts through helpers; Prompt
@@ -89,6 +93,11 @@ Generated attachment helpers return local attachment metadata shaped like:
 }
 ```
 
+Generated audio attachments use `type: "audio"` and are stored under the local
+attachment root's `audios` subdirectory, for example
+`data/attachments/audios/<id>.wav`. Supported v1 formats include WAV, MP3, and
+OGG, with M4A, FLAC, and WebM accepted by MIME/extension policy.
+
 ## Route And Store Safety
 
 Local attachment serving resolves only files inside the configured attachment
@@ -109,6 +118,7 @@ Message Parts v2 selects the frontend renderer for new messages:
 - `file` parts render raw inline text or attachment refs.
 - `image` and `media_group` parts require renderable local attachment URLs or
   attachment ids.
+- `audio` parts render local attachment audio with native browser controls.
 - `form` and `command_buttons` parts are the interactive block path.
 
 Renderer changes that alter payload shapes update

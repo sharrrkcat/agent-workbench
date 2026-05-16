@@ -30,6 +30,7 @@ from ai_workbench.core.message_parts import (
     capability_output_to_parts,
     make_file_part,
     make_error_part,
+    make_audio_part,
     make_image_part,
     make_json_part,
     make_media_group_part,
@@ -933,6 +934,37 @@ class AgentContext:
 
     async def reply_image(self, url: str, alt: str = None, title: str = None, caption: str = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         return await self.reply_parts([make_image_part(url=url, alt=alt, title=title, caption=caption)], actions=actions, metadata=metadata)
+
+    async def reply_audio(
+        self,
+        audio_attachment_or_part: dict[str, Any],
+        title: str = None,
+        duration_ms: int = None,
+        actions=None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        payload = dict(audio_attachment_or_part or {})
+        if payload.get("type") == "audio" and payload.get("source") == "attachment":
+            part = make_audio_part(
+                attachment_id=str(payload.get("attachment_id") or ""),
+                url=str(payload.get("url") or ""),
+                mime_type=str(payload.get("mime_type") or ""),
+                filename=payload.get("filename"),
+                title=title if title is not None else payload.get("title"),
+                duration_ms=duration_ms if duration_ms is not None else payload.get("duration_ms"),
+            )
+        else:
+            if payload.get("type") not in {"audio", None}:
+                raise ValueError("reply_audio requires an audio attachment or AudioPart.")
+            part = make_audio_part(
+                attachment_id=str(payload.get("id") or payload.get("attachment_id") or ""),
+                url=str(payload.get("url") or ""),
+                mime_type=str(payload.get("mime_type") or ""),
+                filename=payload.get("name") or payload.get("filename"),
+                title=title,
+                duration_ms=duration_ms,
+            )
+        return await self.reply_parts([part], actions=actions, metadata=metadata)
 
     async def reply_images(self, images: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
         items = [{"type": "image", **dict(image)} for image in images]

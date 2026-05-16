@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ActionFormBlock, CommandButtonsBlock, FileContentPayload, ImagePayload, Message, MessagePart } from '../../types';
+import { AudioPartRenderer } from './parts/AudioPartRenderer';
 import { CommandButtonsPartRenderer } from './parts/CommandButtonsPartRenderer';
 import { ErrorPartRenderer } from './parts/ErrorPartRenderer';
 import { FilePartRenderer } from './parts/FilePartRenderer';
@@ -50,6 +51,8 @@ export function MessagePartsRenderer({
               return <FilePartRenderer key={key} part={part} renderFile={renderFile} renderPlainText={renderPlainText} />;
             case 'image':
               return <ImagePartRenderer key={key} part={part} renderImage={renderImage} renderPlainText={renderPlainText} />;
+            case 'audio':
+              return <AudioPartRenderer key={key} part={part} />;
             case 'media_group':
               return <MediaGroupPartRenderer key={key} part={part} renderImageGallery={renderImageGallery} renderPlainText={renderPlainText} />;
             case 'form':
@@ -85,6 +88,7 @@ function isRenderableMessagePart(part: MessagePart): boolean {
   if (part.type === 'json') return part.data !== undefined;
   if (part.type === 'file') return part.mode === 'inline_text' ? typeof part.content === 'string' : Boolean(part.attachment_id || part.url || part.filename);
   if (part.type === 'image') return Boolean(part.url || part.attachment_id || part.alt);
+  if (part.type === 'audio') return part.source === 'attachment' && Boolean(part.url && part.attachment_id && part.mime_type);
   if (part.type === 'media_group') return Array.isArray(part.items) && part.items.length > 0;
   if (part.type === 'form') return Boolean(part.form_id && Array.isArray(part.fields) && part.submit);
   if (part.type === 'command_buttons') return Array.isArray(part.buttons) && part.buttons.some((button) => button.label.trim() && button.message.trim());

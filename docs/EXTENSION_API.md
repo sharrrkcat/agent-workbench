@@ -209,6 +209,8 @@ Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 - `reply_json`: send a JSON object or array.
 - `reply_image`: send one image payload with `url`.
 - `reply_images`: send an ordered image gallery.
+- `reply_audio`: send one attachment-backed AudioPart from a saved audio
+  attachment or validated AudioPart dict.
 - `reply_blocks`: convenience helper that immediately converts block-like input
   to Message Parts. Prefer `reply_parts` and typed helpers.
 - `reply_form` / `reply_action_form`: validate and send one `form` part.
@@ -288,6 +290,9 @@ core-owned services, not Capability backends. See:
 - [contracts/intent-routing.md](contracts/intent-routing.md)
 - [contracts/settings-general.md](contracts/settings-general.md)
 
+The built-in `file` Capability exposes `/file-audio <path>` for allowed local
+audio files; it saves a local audio attachment and returns an AudioPart.
+
 ## Capability Config
 
 - `config_schema` declares Settings fields.
@@ -305,9 +310,13 @@ in [contracts/message-parts.md](contracts/message-parts.md). The frontend render
 normal messages only from `parts`.
 
 Capability commands declare `output.part_type`: `text`, `json`, `file`,
-`image`, `media_group`, or `parts`. Text declarations may set
+`image`, `audio`, `media_group`, or `parts`. Text declarations may set
 `format: plain|markdown`; file declarations may set `mode: inline_text`; media
 groups may set `layout: gallery`. `output.type` is invalid.
+
+`audio` output is local-attachment only: `source: attachment`, `attachment_id`,
+local `/api/attachments/...` URL, and `audio/*` MIME type. Remote audio URLs,
+TTS, ASR, transcription, and audio input to LLMs are not part of this API.
 
 Markdown `text` parts keep render-time Knowledge citation enhancement.
 

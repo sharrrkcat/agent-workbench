@@ -1,6 +1,6 @@
 ﻿id: file
 name: File Capability
-description: Read local text and image files from configured allowed directories. This can access local files; it is not a sandbox.
+description: Read local text, image, and audio files from configured allowed directories. This can access local files; it is not a sandbox.
 
 permissions:
   filesystem:
@@ -32,6 +32,14 @@ config_schema:
     minimum: 0.1
     maximum: 100
     description: Maximum local image size for /read-image.
+
+  - name: max_local_audio_read_size_mb
+    type: float
+    label: Max local audio read size
+    default: 10
+    minimum: 0.1
+    maximum: 100
+    description: Maximum local audio size for /file-audio.
 
   - name: allowed_text_extensions
     type: json
@@ -74,6 +82,12 @@ config_schema:
     default: true
     description: Enable /read-image.
 
+  - name: enable_read_audio
+    type: boolean
+    label: Enable /file-audio
+    default: true
+    description: Enable /file-audio.
+
 methods:
   - id: read_text
     description: Read a UTF-8 text file from an allowed local directory
@@ -94,6 +108,15 @@ methods:
     output:
       part_type: image
 
+  - id: read_audio
+    description: Read a local audio file from an allowed local directory
+    input_schema:
+      path:
+        type: string
+        required: true
+    output:
+      part_type: audio
+
 commands:
   - name: /read-file
     method: read_text
@@ -103,4 +126,9 @@ commands:
   - name: /read-image
     method: read_image
     description: Read a local image file from an allowed local directory
+    safe: true
+
+  - name: /file-audio
+    method: read_audio
+    description: Read a local audio file from an allowed local directory
     safe: true
