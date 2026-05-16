@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
@@ -11,6 +11,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { formatMessageTime, parseServerTime } from '../utils/time';
 import { resolveAttachmentUrl, safeImageUrl, type ImagePreview } from '../utils/images';
 import { getResolvedAgentDisplay } from '../utils/agents';
+import { parseKnowledgeCitationToken } from '../utils/knowledgeCitations';
 import { formatApiError, getRunStatusLabel, getRunStepLabel } from '../i18n/formatters';
 import { AppModal, Chip } from './ui';
 
@@ -38,6 +39,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(contentToText(message.content));
   const [contextModalOpen, setContextModalOpen] = useState(false);
+  const [citationModal, setCitationModal] = useState<KnowledgeCitationSelection | null>(null);
 
   if (message.output_type === 'event') {
     return <SystemEventSeparator message={message} />;
@@ -117,7 +119,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
           ) : (
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
-              <MessageContent message={message} kind={kind} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
+              <MessageContent message={message} kind={kind} contextMetadata={contextMetadata} onOpenKnowledgeCitation={setCitationModal} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
               <RunStepsPanel run={messageRun} steps={runSteps} runKnowledge={runKnowledge} />
             </>
           )}
@@ -166,6 +168,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
         ) : null}
       </div>
       {contextModalOpen ? <InjectedContextModal context={contextMetadata} onClose={() => setContextModalOpen(false)} /> : null}
+      {citationModal ? <KnowledgeCitationModal selection={citationModal} onClose={() => setCitationModal(null)} /> : null}
     </article>
   );
 }
@@ -288,6 +291,13 @@ type NormalizedContextMetadata = {
 };
 
 type ContextTab = 'knowledge' | 'worldbook' | 'memory';
+
+type KnowledgeCitationSelection = {
+  token: string;
+  labels: string[];
+  refs: KnowledgeSnippetRef[];
+  missingLabels: string[];
+};
 
 type WorldbookEntryState = {
   ref: WorldbookEntryRef;
@@ -441,6 +451,35 @@ function KnowledgeSnippetsTab({ refs }: { refs: KnowledgeSnippetRef[] }) {
           ))
         : null}
     </>
+  );
+}
+
+function KnowledgeCitationModal({ selection, onClose }: { selection: KnowledgeCitationSelection; onClose: () => void }) {
+  const { t } = useTranslation(['chat', 'common']);
+  const subtitle = selection.labels.length > 1
+    ? t('chat:citations.snippetsSubtitle', { labels: selection.labels.join(', ') })
+    : t('chat:citations.snippetSubtitle', { label: selection.labels[0] || selection.token });
+
+  return (
+    <AppModal
+      open
+      width="large"
+      title={t('chat:citations.modalTitle')}
+      subtitle={subtitle}
+      closeLabel={t('common:close')}
+      className="knowledge-snippets-modal context-modal"
+      bodyClassName="context-modal-body"
+      onClose={onClose}
+    >
+      <div className="knowledge-snippets-body context-modal-scroll">
+        {selection.missingLabels.length ? (
+          <p className="knowledge-snippets-state error">
+            {t('chat:citations.unavailableLabels', { labels: selection.missingLabels.join(', ') })}
+          </p>
+        ) : null}
+        <KnowledgeSnippetsTab refs={selection.refs} />
+      </div>
+    </AppModal>
   );
 }
 
@@ -707,6 +746,96 @@ function scoreLabel(label: string, value: number | undefined): ReactNode {
   if (value === undefined) return null;
   const display = Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
   return <span>{label}: {display}</span>;
+}
+
+function knowledgeCitationRefMap(refs: KnowledgeSnippetRef[] | undefined): Map<string, KnowledgeSnippetRef> {
+  const result = new Map<string, KnowledgeSnippetRef>();
+  (refs || []).forEach((ref, index) => {
+    const label = /^K\d+$/.test(ref.index || '') ? ref.index : `K${index + 1}`;
+    if (!result.has(label)) result.set(label, { ...ref, index: label });
+  });
+  return result;
+}
+
+function renderKnowledgeCitationChildren({
+  children,
+  refsByLabel,
+  onOpen,
+  openLabel,
+  openRangeLabel,
+}: {
+  children: ReactNode;
+  refsByLabel: Map<string, KnowledgeSnippetRef>;
+  onOpen: (selection: KnowledgeCitationSelection) => void;
+  openLabel: (label: string) => string;
+  openRangeLabel: (labels: string) => string;
+}): ReactNode {
+  return Children.map(children, (child) => renderKnowledgeCitationNode(child, refsByLabel, onOpen, openLabel, openRangeLabel));
+}
+
+function renderKnowledgeCitationNode(
+  node: ReactNode,
+  refsByLabel: Map<string, KnowledgeSnippetRef>,
+  onOpen: (selection: KnowledgeCitationSelection) => void,
+  openLabel: (label: string) => string,
+  openRangeLabel: (labels: string) => string,
+): ReactNode {
+  if (typeof node === 'string') return splitKnowledgeCitationText(node, refsByLabel, onOpen, openLabel, openRangeLabel);
+  if (!isValidElement(node)) return node;
+  if (typeof node.type === 'string' && ['a', 'code', 'pre'].includes(node.type)) return node;
+  const props = node.props as { children?: ReactNode };
+  if (!props.children) return node;
+  return cloneElement(
+    node as ReactElement<{ children?: ReactNode }>,
+    undefined,
+    renderKnowledgeCitationChildren({ children: props.children, refsByLabel, onOpen, openLabel, openRangeLabel }),
+  );
+}
+
+function splitKnowledgeCitationText(
+  text: string,
+  refsByLabel: Map<string, KnowledgeSnippetRef>,
+  onOpen: (selection: KnowledgeCitationSelection) => void,
+  openLabel: (label: string) => string,
+  openRangeLabel: (labels: string) => string,
+): ReactNode {
+  const tokenPattern = /\[K\d+(?:\s*(?:,|-|–)\s*K\d+)*\]/g;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text))) {
+    const token = match[0];
+    const parsed = parseKnowledgeCitationToken(token);
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    if (!parsed) {
+      parts.push(token);
+    } else {
+      const refs = parsed.labels.map((label) => refsByLabel.get(label)).filter((ref): ref is KnowledgeSnippetRef => Boolean(ref));
+      const missingLabels = parsed.labels.filter((label) => !refsByLabel.has(label));
+      if (!refs.length) {
+        parts.push(token);
+      } else {
+        const ariaLabel = parsed.labels.length === 1 ? openLabel(parsed.labels[0]) : openRangeLabel(parsed.labels.join(', '));
+        parts.push(
+          <button
+            key={`${token}:${match.index}`}
+            type="button"
+            className="knowledge-citation-badge"
+            aria-label={ariaLabel}
+            title={ariaLabel}
+            onClick={() => onOpen({ token, labels: parsed.labels, refs, missingLabels })}
+          >
+            {token}
+          </button>,
+        );
+      }
+    }
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length ? parts : text;
 }
 
 function ThoughtBlock({ content, streaming }: { content: string; streaming: boolean }) {
@@ -1045,18 +1174,33 @@ function InlineErrorBlock({ message }: { message: Message }) {
   );
 }
 
-function MessageContent({ message, kind, onPreviewImage, onPreviewFile }: { message: Message; kind: 'user' | 'agent' | 'command'; onPreviewImage: (image: ImagePreview) => void; onPreviewFile: (file: FilePreview) => void }) {
+function MessageContent({
+  message,
+  kind,
+  contextMetadata,
+  onOpenKnowledgeCitation,
+  onPreviewImage,
+  onPreviewFile,
+}: {
+  message: Message;
+  kind: 'user' | 'agent' | 'command';
+  contextMetadata: NormalizedContextMetadata;
+  onOpenKnowledgeCitation: (selection: KnowledgeCitationSelection) => void;
+  onPreviewImage: (image: ImagePreview) => void;
+  onPreviewFile: (file: FilePreview) => void;
+}) {
   if (message.output_type === 'error' || message.metadata?.success === false) {
     return <MessageErrorCard message={message} />;
   }
   if (kind === 'user') {
     return <UserMessageRenderer content={message.content} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
   }
+  const citationRefs = kind === 'agent' ? contextMetadata.knowledge?.snippetRefs : undefined;
   if (message.output_type === 'markdown') {
-    return <MarkdownRenderer content={message.content} />;
+    return <MarkdownRenderer content={message.content} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />;
   }
   if (message.output_type === 'text' && kind === 'agent') {
-    return <MarkdownRenderer content={message.content} />;
+    return <MarkdownRenderer content={message.content} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />;
   }
   if (message.output_type === 'json') {
     return <JsonRenderer content={message.content} />;
@@ -1162,12 +1306,52 @@ function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { att
   );
 }
 
-export function MarkdownRenderer({ content }: { content: unknown }) {
+export function MarkdownRenderer({
+  content,
+  knowledgeSnippetRefs,
+  onOpenKnowledgeCitation,
+}: {
+  content: unknown;
+  knowledgeSnippetRefs?: KnowledgeSnippetRef[];
+  onOpenKnowledgeCitation?: (selection: KnowledgeCitationSelection) => void;
+}) {
+  const { t } = useTranslation(['chat']);
   const markdown = contentToText(content);
+  const refsByLabel = knowledgeSnippetRefs?.length ? knowledgeCitationRefMap(knowledgeSnippetRefs) : undefined;
+  const renderCitationText = refsByLabel && onOpenKnowledgeCitation
+    ? (children: ReactNode) => renderKnowledgeCitationChildren({
+        children,
+        refsByLabel,
+        onOpen: onOpenKnowledgeCitation,
+        openLabel: (label) => t('chat:citations.openSnippet', { label }),
+        openRangeLabel: (labels) => t('chat:citations.openSnippets', { labels }),
+      })
+    : undefined;
+  const citationComponents = refsByLabel && onOpenKnowledgeCitation
+    ? {
+        p: ({ children, ...props }: { children?: ReactNode }) => (
+          <p {...props}>{renderCitationText?.(children)}</p>
+        ),
+        li: ({ children, ...props }: { children?: ReactNode }) => (
+          <li {...props}>{renderCitationText?.(children)}</li>
+        ),
+        blockquote: ({ children, ...props }: { children?: ReactNode }) => (
+          <blockquote {...props}>{renderCitationText?.(children)}</blockquote>
+        ),
+        h1: ({ children, ...props }: { children?: ReactNode }) => <h1 {...props}>{renderCitationText?.(children)}</h1>,
+        h2: ({ children, ...props }: { children?: ReactNode }) => <h2 {...props}>{renderCitationText?.(children)}</h2>,
+        h3: ({ children, ...props }: { children?: ReactNode }) => <h3 {...props}>{renderCitationText?.(children)}</h3>,
+        h4: ({ children, ...props }: { children?: ReactNode }) => <h4 {...props}>{renderCitationText?.(children)}</h4>,
+        h5: ({ children, ...props }: { children?: ReactNode }) => <h5 {...props}>{renderCitationText?.(children)}</h5>,
+        h6: ({ children, ...props }: { children?: ReactNode }) => <h6 {...props}>{renderCitationText?.(children)}</h6>,
+        td: ({ children, ...props }: { children?: ReactNode }) => <td {...props}>{renderCitationText?.(children)}</td>,
+        th: ({ children, ...props }: { children?: ReactNode }) => <th {...props}>{renderCitationText?.(children)}</th>,
+      }
+    : undefined;
   try {
     return (
       <div className="message-content markdown-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={citationComponents}>{markdown}</ReactMarkdown>
       </div>
     );
   } catch {

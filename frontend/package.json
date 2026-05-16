@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "test:knowledge-citations": "node scripts/test-knowledge-citations.mjs",
     "test:url": "node scripts/test-url-helpers.mjs"
   },
   "dependencies": {

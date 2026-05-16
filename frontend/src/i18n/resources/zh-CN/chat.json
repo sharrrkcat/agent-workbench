@@ -185,6 +185,14 @@
     "rerank": "rerank",
     "chunk": "chunk"
   },
+  "citations": {
+    "modalTitle": "知识引用",
+    "snippetSubtitle": "知识片段 {{label}}",
+    "snippetsSubtitle": "知识片段 {{labels}}",
+    "openSnippet": "打开知识片段 {{label}}",
+    "openSnippets": "打开知识片段 {{labels}}",
+    "unavailableLabels": "片段不可用：{{labels}}"
+  },
   "status": {
     "sending": "发送中",
     "streaming": "流式输出中",

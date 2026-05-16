@@ -185,6 +185,14 @@
     "rerank": "rerank",
     "chunk": "chunk"
   },
+  "citations": {
+    "modalTitle": "Knowledge citation",
+    "snippetSubtitle": "Knowledge snippet {{label}}",
+    "snippetsSubtitle": "Knowledge snippets {{labels}}",
+    "openSnippet": "Open Knowledge snippet {{label}}",
+    "openSnippets": "Open Knowledge snippets {{labels}}",
+    "unavailableLabels": "Snippet unavailable: {{labels}}"
+  },
   "status": {
     "sending": "Sending",
     "streaming": "Streaming",

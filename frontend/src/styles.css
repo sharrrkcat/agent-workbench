@@ -1547,6 +1547,32 @@ input:disabled {
   line-height: 1.58;
 }
 
+.knowledge-citation-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.25em;
+  margin: 0 0.12em;
+  padding: 0 0.34em;
+  transform: translateY(-0.12em);
+  border: 1px solid rgba(134, 239, 172, 0.24);
+  border-radius: 999px;
+  background: rgba(34, 160, 107, 0.14);
+  color: #bbf7d0;
+  font: inherit;
+  font-size: 0.72em;
+  font-weight: 800;
+  line-height: 1.1;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.knowledge-citation-badge:hover,
+.knowledge-citation-badge:focus-visible {
+  border-color: rgba(134, 239, 172, 0.5);
+  background: rgba(34, 160, 107, 0.24);
+  color: #dcfce7;
+}
+
 .plain-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
