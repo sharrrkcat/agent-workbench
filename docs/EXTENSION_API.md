@@ -246,7 +246,7 @@ commands.
 | `name` | Display name. | Human-readable. |
 | `methods` | Internal callable methods. | Method id must match runtime callable. |
 | `input_schema` | Method input contract. | Lightweight manifest metadata. |
-| `output.type` | Declared output renderer. | Used by commands and validation. |
+| `output.type` | Declared output shape. | Used by commands and validation before persistence as Message Parts. |
 | `commands` | User-facing slash commands. | Global namespace; names start with `/`. |
 | `safe` | Command safety hint. | Documentation/UI hint, not a sandbox. |
 | `config_schema` | Local CapabilityConfig fields. | Settings stores values by capability id. |
@@ -301,38 +301,42 @@ core-owned services, not Capability backends. See:
 
 ### Message Parts v2
 
-New Agent and Script Agent replies persist visible content as
-`content_version=2` plus ordered `parts`. Round 1 supports `text`, `json`,
-`file`, `image`, `media_group`, `form`, `command_buttons`, `notice`, and
-`error`; full rules live in [contracts/message-parts.md](contracts/message-parts.md).
-Legacy `content` and `output_type` remain transitional renderer fields.
+New Agent, Script Agent, and Capability command replies persist visible content
+as `content_version=2` plus ordered `parts`. Supported part types and rules live
+in [contracts/message-parts.md](contracts/message-parts.md). Legacy `content`
+and `output_type` remain transitional renderer fields.
 
 Legacy output types are `text`, `markdown`, `json`, `image`,
-`image_gallery`, `file_content`, and `rich_content`. `action_form` and
-`command_buttons` remain trusted `rich_content` blocks during the transition.
-Use `file_content` for raw text that must not be markdown-rendered.
+`image_gallery`, `file_content`, and `rich_content`. For Capability commands,
+`output.type` remains the developer declaration, while persisted messages are
+converted to `parts`; legacy fields are derived back for the current frontend
+renderer. Use `file_content` for raw text that must not be markdown-rendered.
 
 If a command returns a dict with no declared output, the runner may infer `json`,
-`image`, `image_gallery`, or `rich_content`.
+`image`, `image_gallery`, or `rich_content`; the inferred output is still stored
+through Message Parts. `rich_content.blocks` is an input compatibility shape.
+`action_form` becomes a `form` part and `command_buttons` becomes a
+`command_buttons` part. Round 3 migrates rendering to parts; Round 4 removes
+the old structure.
 
 ### `action_form` Block
 
 `action_form` is declarative JSON. It supports `text`, `textarea`, `integer`,
 `float`, `boolean`, `enum`, and `json` fields. It does not support HTML,
-frontend JavaScript, arbitrary URLs, file uploads, password/secret fields,
-remote options, or automatic execution.
+JavaScript, arbitrary URLs, uploads, secret fields, remote options, or automatic
+execution.
 
 Supported UI metadata is static: `sections`, form `ui.default_collapsed`,
 `ui.collapsed`, `ui.collapse_on_success`, `ui.collapsed_message`, and per-field
-`ui.section` / `ui.span`. It shapes rendering only and does not affect provider
-context, submit target resolution, or validation.
+`ui.section` / `ui.span`. It shapes rendering only, not provider context,
+target resolution, or validation.
 
 On submit, the frontend sends only `source_message_id`, `form_id`, and `values`.
 The backend reads the original message, resolves target/visibility from the
 original block, and validates values against the original fields. Message
 visibility creates a short `form_submission` user message. Silent visibility
-invokes the target action without adding a visible user message and may refresh
-the source form through trusted backend code.
+invokes the target action without a visible user message and may refresh the
+source form through trusted backend code.
 
 ### `command_buttons` Block
 
@@ -343,7 +347,3 @@ payloads, arbitrary URLs, or executable frontend code.
 
 Streaming and command-button runtime behavior:
 [contracts/runtime-streaming.md](contracts/runtime-streaming.md#command-buttons).
-
-## Source And Tests
-
-Primary source entry points are `ai_workbench/core/script.py`, `ai_workbench/core/runner.py`, `ai_workbench/core/capability_registry.py`, and `ai_workbench/core/capability_runtime.py`. Main tests include `tests/test_script_agent.py`, `tests/test_prompt_agent_execution.py`, `tests/test_frontend_chat_contracts.py`, and `tests/test_api.py`.

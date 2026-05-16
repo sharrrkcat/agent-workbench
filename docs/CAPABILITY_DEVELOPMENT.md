@@ -83,6 +83,15 @@ Allowed method output types:
 
 Use `file_content` for source files, config files, logs, and other raw text that must not be interpreted as Markdown. Its payload includes `content` plus optional `filename`, `language`, `mime_type`, `size`, and `truncated` fields. The command runner validates image, image gallery, rich content, and file content payload shapes. If a command returns a dict and the method has no declared output type, it falls back to `json`.
 
+During the Message Parts v2 transition, Capability command result messages are
+parts-first. The manifest `output.type` remains the developer declaration, but
+new persisted visible command messages write `content_version=2` and `parts`.
+Temporary legacy `content` / `output_type` fields are derived from those parts
+for the current frontend renderer. `rich_content.blocks` is still accepted as an
+input compatibility payload; `action_form` maps to a `form` part and
+`command_buttons` maps to a `command_buttons` part. Round 3 moves frontend
+rendering to parts, and Round 4 removes the old structure.
+
 For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, non-blocking prompt status, fetch, interrupt, upload, object info, and `free_memory` for ComfyUI `POST /free`; helper methods normalize outputs and collect images for a prompt. It also owns local workflow and preset library directories, scanning API-format workflow files, rejecting unsupported GUI-format files, hash de-duplication, preset loading, preset validation, per-workflow draft skip reasons, and draft preset creation. The preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results. `free_memory` is a protocol method only: it requests unload/free behavior from the connected ComfyUI service and does not decide whether a user workflow should call it. ComfyUI is an external service and local asset capability, not a user-facing workflow Agent by itself.
 
 The `knowledge` Capability is a thin wrapper over Workbench-owned Knowledge

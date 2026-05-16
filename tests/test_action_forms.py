@@ -363,6 +363,9 @@ def test_comfyui_silent_recipe_save_updates_source_form_block_without_chat_bubbl
     assert form["ui"]["collapsed_message"] == "Recipe saved. Click to expand."
     assert fields["positive_prompt"]["value"] == "new prompt"
     assert fields["steps"]["value"] == 44
+    assert updated.content_version == 2
+    form_part = next(part for part in updated.parts if part.get("type") == "form" and part.get("form_id") == "comfyui_recipe")
+    assert form_part["ui"]["collapsed"] is True
     messages = client.app.state.runtime_state.messages.list_messages(session["session_id"])
     assert [message.origin for message in messages] == ["user_message", "agent_reply"]
 

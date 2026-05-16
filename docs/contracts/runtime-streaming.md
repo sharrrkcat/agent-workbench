@@ -48,15 +48,15 @@ diagnostic events.
 
 `message_completed` persists the final assistant message content.
 
-Starting with Message Parts v2 Round 1, final persisted assistant messages may
-also include:
+Starting with Message Parts v2 Round 2, final persisted assistant and command
+result messages include:
 
 - `content_version: 2`
 - `parts: [...]`
 
 For this round, `message_delta` remains text-only for public visible streaming
-content. The final `message_completed.message` is allowed to carry parts while
-also retaining legacy `content` and `output_type` compatibility fields. The
+content. The final `message_completed.message` carries parts while also
+retaining legacy `content` and `output_type` compatibility fields. The
 authoritative persisted visible content is migrating to `parts`; the old fields
 exist only for the transitional renderer and API tests.
 
@@ -92,15 +92,19 @@ planning, JSON extraction, or validation. Public output streaming requires
 - For non-streaming source messages, `message_updated` may persist backend
   generated rich content changes, such as replacing an `action_form` block after
   a silent save or setting form-level `ui.collapsed=true`.
+- When `message_updated` changes an `action_form` or other compatible rich
+  content, backend producers must update `parts` and derive legacy
+  `content` / `output_type` from those parts.
 - The frontend must not infer streaming state from content shape.
 
 ## Command Buttons
 
-`command_buttons` rich content blocks render after message completion like other
-non-streaming rich content. Clicking a command button sends its configured text
-through the normal user-message flow. It creates an ordinary user message and
-does not mutate the source assistant message, send hidden action payloads, or
-call a backend Agent action API directly.
+`command_buttons` rich content blocks are stored as `command_buttons` Message
+Parts, with legacy rich content emitted only for the transitional renderer.
+Clicking a command button sends its configured text through the normal
+user-message flow. It creates an ordinary user message and does not mutate the
+source assistant message, send hidden action payloads, or call a backend Agent
+action API directly.
 
 ## Tiny Examples
 

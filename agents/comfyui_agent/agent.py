@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ai_workbench.core.message_parts import legacy_output_to_parts, parts_to_legacy_output
+
 
 RECIPE_KEY = "comfyui_recipe"
 INPUT_MODES = {"llm", "raw"}
@@ -1105,14 +1107,26 @@ async def update_source_recipe_form(ctx, recipe: dict, preset: dict | None, pres
     content = copy.deepcopy(source.content)
     if not _replace_action_form_block(content, form_id, block):
         return None
-    updated = ctx.message_store.update_message(source.model_copy(update={"content": content}))
+    output_type = _output_type_for_updated_content(source.output_type, content)
+    parts = legacy_output_to_parts(output_type, content)
+    legacy_output_type, legacy_content = parts_to_legacy_output(parts) or (source.output_type or "rich_content", content)
+    updated = ctx.message_store.update_message(
+        source.model_copy(
+            update={
+                "content": legacy_content,
+                "output_type": legacy_output_type,
+                "content_version": 2,
+                "parts": parts,
+            }
+        )
+    )
     if getattr(ctx, "event_bus", None) is not None:
         ctx.event_bus.emit(
             "message_updated",
             session_id=updated.session_id,
             run_id=getattr(ctx, "run_id", None),
             message_id=updated.message_id,
-            payload={"message": updated.model_dump()},
+            payload={"message": updated.model_dump(mode="json")},
         )
     return {"source_message_id": source_message_id, "form_id": form_id, "block": block}
 
@@ -1130,6 +1144,15 @@ def _replace_action_form_block(content: Any, form_id: str, block: dict) -> bool:
             blocks[index] = block
             return True
     return False
+
+
+def _output_type_for_updated_content(output_type: str | None, content: Any) -> str:
+    if isinstance(content, dict):
+        if isinstance(content.get("blocks"), list):
+            return "rich_content"
+        if content.get("type") == "action_form":
+            return "rich_content"
+    return output_type or "rich_content"
 
 
 def _prompt_enhancer_detail(ctx, action_id: str, stage: str, reached_provider: bool, llm_operation: str | None = None) -> dict:
