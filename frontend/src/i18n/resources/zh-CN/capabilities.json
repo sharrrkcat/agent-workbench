@@ -33,8 +33,18 @@
     "noCommands": "此 Capability 未暴露 slash command。"
   },
   "help": {
-    "fileSettings": "File Capability 设置只应用于 /read-file 和 /read-image。通用上传限制在 General 中配置。",
+    "fileSettings": "File Capability 设置仅适用于 /read-file、/read-image 和 /read-audio。通用上传限制在 General 中配置。",
     "httpSettings": "HTTP 设置只应用于 /http-get、/fetch-page 和 /fetch-image。它们不会影响聊天上传。"
+  },
+  "configFields": {
+    "max_local_audio_read_size_mb": {
+      "label": "最大本地音频读取大小",
+      "description": "/read-audio 可读取的最大本地音频文件大小。"
+    },
+    "enable_read_audio_command": {
+      "label": "启用 /read-audio",
+      "description": "启用 /read-audio。"
+    }
   },
   "runtime": {
     "llm": "OpenAI-compatible LLM 运行时",

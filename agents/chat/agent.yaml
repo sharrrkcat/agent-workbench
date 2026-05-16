@@ -17,6 +17,11 @@ actions:
   - id: default
     description: Normal multi-turn chat
 
+model:
+  provider: openai_compatible
+  base_url: http://localhost:1234/v1
+  model: qwen2.5-3b-instruct
+
 prompt: |
   You are a concise, reliable assistant.
 

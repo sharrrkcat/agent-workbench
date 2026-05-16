@@ -180,8 +180,10 @@ def _file_capability(state: RuntimeState) -> dict[str, Any]:
         "allowed_directories_count": len(allowed_dirs),
         "max_local_text_read_size_mb": resolved.get("max_local_text_read_size_mb"),
         "max_local_image_read_size_mb": resolved.get("max_local_image_read_size_mb"),
+        "max_local_audio_read_size_mb": resolved.get("max_local_audio_read_size_mb"),
         "read_file_enabled": bool(resolved.get("enable_read_file", True)),
         "read_image_enabled": bool(resolved.get("enable_read_image", True)),
+        "read_audio_enabled": bool(resolved.get("enable_read_audio_command", True)),
         **({"warning": "No allowed directories are configured."} if not allowed_dirs else {}),
     }
 

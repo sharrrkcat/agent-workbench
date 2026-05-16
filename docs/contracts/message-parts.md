@@ -37,6 +37,8 @@ Unknown part types fail validation. `video`, `diff`, `chart`, `table`, and
 
 AudioPart v1 does not support remote URL sources, network downloads, TTS, ASR,
 transcription, livestreams, playlists, or audio content understanding.
+The built-in file Capability creates AudioParts through `/read-audio <path>`;
+`/file-audio` is not exposed.
 
 ## Capability Outputs
 
@@ -68,6 +70,8 @@ plain text.
 The frontend renders normal messages only through `MessagePartsRenderer`.
 Missing or invalid parts produce a safe empty/error state, not a legacy fallback.
 Copyable content and renderability checks are derived from parts and status.
+Audio parts render with the project custom audio player, backed by a hidden
+`<audio>` element without native browser controls.
 
 Forms and command buttons are first-class parts. Silent form updates replace the
 matching `form` part in `Message.parts[]`.

@@ -1909,14 +1909,53 @@ input:disabled {
 
 .audio-part {
   display: grid;
-  gap: 7px;
+  gap: 10px;
   min-width: 0;
   max-width: 520px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .audio-part audio {
-  width: 100%;
-  max-width: 100%;
+  display: none;
+}
+
+.audio-part-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.audio-part-play {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.audio-part-play:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.audio-part-play:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.audio-part-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .audio-part-title {
@@ -1928,7 +1967,32 @@ input:disabled {
 .audio-part-meta {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+}
+
+.audio-part-controls {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.audio-part-time {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-part-progress {
+  min-width: 0;
+  width: 100%;
+  accent-color: #8b7cf6;
+}
+
+.audio-part-error {
+  color: #fca5a5;
   font-size: 12px;
 }
 

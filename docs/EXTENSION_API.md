@@ -283,15 +283,15 @@ release, and workflow/preset library operations. Preset YAML is documented in
 [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). User-facing generation
 workflow belongs to the Script Agent.
 
-Utility LLM, Intent Routing, General settings, and Knowledge settings are
-core-owned services, not Capability backends. See:
+Utility LLM, Intent Routing, General settings, and Knowledge settings are core-owned services, not Capability backends. See:
 
 - [contracts/utility-llm.md](contracts/utility-llm.md)
 - [contracts/intent-routing.md](contracts/intent-routing.md)
 - [contracts/settings-general.md](contracts/settings-general.md)
 
-The built-in `file` Capability exposes `/file-audio <path>` for allowed local
-audio files; it saves a local audio attachment and returns an AudioPart.
+The built-in `file` Capability exposes `/read-audio <path>`, not `/file-audio`,
+for local audio; it returns an AudioPart and uses `max_local_audio_read_size_mb`
+plus `enable_read_audio_command`.
 
 ## Capability Config
 

@@ -93,6 +93,10 @@ Generated attachment helpers return local attachment metadata shaped like:
 }
 ```
 
+The file Capability reads allowed local audio through `/read-audio <path>`,
+not `/file-audio`. It uses its own `max_local_audio_read_size_mb` size limit
+and `enable_read_audio_command` toggle before saving an audio attachment.
+
 Generated audio attachments use `type: "audio"` and are stored under the local
 attachment root's `audios` subdirectory, for example
 `data/attachments/audios/<id>.wav`. Supported v1 formats include WAV, MP3, and
@@ -118,7 +122,8 @@ Message Parts v2 selects the frontend renderer for new messages:
 - `file` parts render raw inline text or attachment refs.
 - `image` and `media_group` parts require renderable local attachment URLs or
   attachment ids.
-- `audio` parts render local attachment audio with native browser controls.
+- `audio` parts render local attachment audio with the project custom player,
+  not native browser controls.
 - `form` and `command_buttons` parts are the interactive block path.
 
 Renderer changes that alter payload shapes update

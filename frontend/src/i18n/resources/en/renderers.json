@@ -24,6 +24,12 @@
     "thought": "Thought",
     "thinking": "Thinking..."
   },
+  "audio": {
+    "play": "Play audio",
+    "pause": "Pause audio",
+    "seek": "Audio progress",
+    "loadFailed": "Audio could not be loaded."
+  },
   "modals": {
     "filePreview": "File preview",
     "closeFilePreview": "Close file preview",

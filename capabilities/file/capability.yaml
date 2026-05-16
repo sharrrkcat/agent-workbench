@@ -39,7 +39,7 @@ config_schema:
     default: 10
     minimum: 0.1
     maximum: 100
-    description: Maximum local audio size for /file-audio.
+    description: Maximum local audio file size for /read-audio.
 
   - name: allowed_text_extensions
     type: json
@@ -82,11 +82,11 @@ config_schema:
     default: true
     description: Enable /read-image.
 
-  - name: enable_read_audio
+  - name: enable_read_audio_command
     type: boolean
-    label: Enable /file-audio
+    label: Enable /read-audio
     default: true
-    description: Enable /file-audio.
+    description: Enable /read-audio.
 
 methods:
   - id: read_text
@@ -128,7 +128,7 @@ commands:
     description: Read a local image file from an allowed local directory
     safe: true
 
-  - name: /file-audio
+  - name: /read-audio
     method: read_audio
     description: Read a local audio file from an allowed local directory
     safe: true

@@ -421,6 +421,7 @@
     "allowedDirs": "Allowed dirs",
     "maxTextRead": "Max text read",
     "maxImageRead": "Max image read",
+    "maxAudioRead": "Max audio read",
     "http": "HTTP",
     "httpGet": "HTTP GET",
     "fetchImage": "Fetch image",

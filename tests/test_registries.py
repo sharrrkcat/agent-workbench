@@ -45,6 +45,19 @@ def test_command_registry_exposes_pet_command() -> None:
     assert commands.get("/pet").method == "command"
 
 
+def test_command_registry_exposes_read_audio_command() -> None:
+    capabilities = CapabilityRegistry()
+    capabilities.load_from_directory(ROOT / "capabilities")
+
+    commands = CommandRegistry.from_capability_registry(capabilities)
+    names = {command.name for command in commands.list()}
+
+    assert "/read-audio" in names
+    assert "/file-audio" not in names
+    assert commands.get("/read-audio").capability_id == "file"
+    assert commands.get("/read-audio").method == "read_audio"
+
+
 def test_duplicate_agent_id_fails() -> None:
     registry = AgentRegistry()
     agent = load_agent_manifest(ROOT / "agents" / "chat" / "agent.yaml")

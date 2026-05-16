@@ -194,11 +194,17 @@ def test_json_file_image_and_gallery_parts_delegate_to_legacy_renderers() -> Non
     assert "renderImageGallery={(images) => <ImageGalleryRenderer images={images} onPreviewImage={onPreviewImage} />}" in bubble
 
 
-def test_audio_part_renderer_uses_audio_controls_for_local_attachments() -> None:
+def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> None:
     source = read_frontend("components/messages/parts/AudioPartRenderer.tsx")
 
     assert "export function AudioPartRenderer" in source
-    assert "<audio controls src={url} />" in source
+    assert " controls" not in source
+    assert "controls=" not in source
+    assert "audioRef" in source
+    assert "togglePlayback" in source
+    assert "audio-part-play" in source
+    assert "audio-part-progress" in source
+    assert "type=\"range\"" in source
     assert "part.source === 'attachment'" in source
     assert "^\\/api\\/attachments\\/" in source
 
@@ -206,7 +212,8 @@ def test_audio_part_renderer_uses_audio_controls_for_local_attachments() -> None
 def test_generated_registry_lists_file_audio_output() -> None:
     registry = read_repo("docs/generated/REGISTRY.md")
 
-    assert "| file | File Capability | read_text, read_image, read_audio | /read-file, /read-image, /file-audio | file, image, audio |" in registry
+    assert "| file | File Capability | read_text, read_image, read_audio | /read-file, /read-image, /read-audio | file, image, audio |" in registry
+    assert "/file-audio" not in registry
 
 
 def test_form_and_command_button_parts_keep_existing_interactions() -> None:

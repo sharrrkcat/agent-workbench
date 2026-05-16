@@ -457,7 +457,7 @@ def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path:
     config = {
         "allowed_directories": [str(allowed)],
         "max_local_audio_read_size_mb": 0.00001,
-        "enable_read_audio": True,
+        "enable_read_audio_command": True,
     }
     runtime = FileRuntime()
 
@@ -603,7 +603,7 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
                 "allowed_text_extensions": [".txt"],
                 "enable_read_file": True,
                 "enable_read_image": True,
-                "enable_read_audio": True,
+                "enable_read_audio_command": True,
             }
         },
     )
@@ -614,8 +614,8 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     bad_ext = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {blocked}"})
     image_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
     image_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {large_image}"})
-    audio_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
-    audio_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {large_audio}"})
+    audio_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
+    audio_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {large_audio}"})
 
     assert accepted.json()["run"]["status"] == "DONE"
     assert accepted.json()["run"]["target_id"] == "/read-file"
@@ -640,8 +640,8 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
     assert "Command disabled" in disabled_image.json()["run"]["error"]
 
-    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_audio": False}})
-    disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_audio_command": False}})
+    disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
     assert "Command disabled" in disabled_audio.json()["run"]["error"]
 
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": []}})

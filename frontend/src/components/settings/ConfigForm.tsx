@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { ConfigFieldSchema } from '../../types';
 import type { ConfigValues } from './configUtils';
 import { SecretInput, MASKED_SECRET_VALUE } from './SecretInput';
@@ -41,17 +42,20 @@ function ConfigFieldEditor({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const label = field.label || field.name;
+  const { t } = useTranslation(['capabilities', 'common']);
+  const label = t(`capabilities:configFields.${field.name}.label`, { defaultValue: field.label || field.name });
+  const description = t(`capabilities:configFields.${field.name}.description`, { defaultValue: field.description || '' });
+  const requiredLabel = t('common:required', { defaultValue: 'required' });
   const id = `settings-config-${field.name}`;
   if (field.type === 'boolean') {
     return (
       <div className="config-field settings-config-field boolean-field">
         <span>
           {label}
-          {field.required ? <em>required</em> : null}
+          {field.required ? <em>{requiredLabel}</em> : null}
         </span>
         <ToggleSwitch checked={Boolean(value)} onChange={onChange} />
-        {field.description ? <small>{field.description}</small> : null}
+        {description ? <small>{description}</small> : null}
       </div>
     );
   }
@@ -73,10 +77,10 @@ function ConfigFieldEditor({
     <label className="config-field settings-config-field" htmlFor={id}>
       <span>
         {label}
-        {field.required ? <em>required</em> : null}
+        {field.required ? <em>{requiredLabel}</em> : null}
       </span>
       {renderInput(field, id, value, onChange)}
-      {field.description ? <small>{field.description}</small> : null}
+      {description ? <small>{description}</small> : null}
     </label>
   );
 }

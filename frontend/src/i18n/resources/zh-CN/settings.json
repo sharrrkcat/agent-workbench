@@ -421,6 +421,7 @@
     "allowedDirs": "允许目录",
     "maxTextRead": "最大文本读取",
     "maxImageRead": "最大图片读取",
+    "maxAudioRead": "最大音频读取",
     "http": "HTTP",
     "httpGet": "HTTP GET",
     "fetchImage": "Fetch image",

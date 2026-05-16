@@ -116,7 +116,7 @@ uv run python scripts/run_command.py "/base64 hello"
 uv run python scripts/run_command.py "/base64-decode aGVsbG8="
 uv run python scripts/run_command.py "/base64-image data:image/svg+xml;base64,..."
 uv run python scripts/run_command.py "/image-base64" --image path/to/cat.png
-uv run python scripts/run_command.py "/file-audio path/to/demo.wav"
+uv run python scripts/run_command.py "/read-audio path/to/demo.wav"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
 

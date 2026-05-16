@@ -21,5 +21,6 @@ Current expected reuse points:
   legacy visible message fallback; copy, renderability, forms, and command
   buttons all read `Message.parts[]`.
 - Audio message parts render through
-  `frontend/src/components/messages/parts/AudioPartRenderer.tsx` with native
-  `<audio controls>` and only local attachment-backed URLs.
+  `frontend/src/components/messages/parts/AudioPartRenderer.tsx` with a custom
+  project-styled player backed by a hidden `<audio>` element without native
+  controls. It only accepts local attachment-backed URLs.

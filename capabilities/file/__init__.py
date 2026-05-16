@@ -41,7 +41,7 @@ CONFIG_DEFAULTS = {
     ],
     "enable_read_file": True,
     "enable_read_image": True,
-    "enable_read_audio": True,
+    "enable_read_audio_command": True,
 }
 _IMAGE_MIME_BY_EXT = {
     ".png": "image/png",
@@ -151,14 +151,14 @@ class CapabilityRuntime:
 
     def read_audio(self, text: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
-        if not bool(config["enable_read_audio"]):
-            raise ValueError("Command disabled: /file-audio is disabled in File Capability settings.")
+        if not bool(config["enable_read_audio_command"]):
+            raise ValueError("Command disabled: /read-audio is disabled in File Capability settings.")
         path = _resolve_allowed_file(text, config, context=context)
         mime_type = _audio_mime_type(path)
         size = path.stat().st_size
         limit = _mb_to_bytes(config["max_local_audio_read_size_mb"])
         if size > limit:
-            raise ValueError(f"File too large for /file-audio. Maximum size is {_format_mb(config['max_local_audio_read_size_mb'])}.")
+            raise ValueError(f"File too large for /read-audio. Maximum size is {_format_mb(config['max_local_audio_read_size_mb'])}.")
         attachment = save_generated_attachment_bytes(
             data=path.read_bytes(),
             filename=path.name,
@@ -238,7 +238,7 @@ def _image_mime_type(path: Path) -> str:
 def _audio_mime_type(path: Path) -> str:
     mime_type = _AUDIO_MIME_BY_EXT.get(path.suffix.lower(), "")
     if mime_type not in ALLOWED_AUDIO_MIME_TYPES:
-        raise ValueError("Only WAV, MP3, OGG, M4A, FLAC, and WebM audio files are supported by /file-audio.")
+        raise ValueError("Only WAV, MP3, OGG, M4A, FLAC, and WebM audio files are supported by /read-audio.")
     return mime_type
 
 
