@@ -5,6 +5,7 @@ import yaml
 
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.forms import FormValidationError, validate_action_form_block, validate_action_form_values
+from ai_workbench.core.message_parts import make_form_part
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from tests.test_api import create_session, make_client, post_message
 
@@ -65,6 +66,10 @@ def demo_form(**overrides):
     }
     form.update(overrides)
     return form
+
+
+def form_part(**overrides):
+    return [make_form_part(demo_form(**overrides))]
 
 
 def test_action_form_payload_shape_validation_success() -> None:
@@ -265,8 +270,9 @@ def test_form_submit_uses_original_form_target_and_prefill() -> None:
     assert user_message["metadata"]["target_agent_id"] == "render_test"
     assert user_message["metadata"]["target_action_id"] == "form_submit"
     assert user_message["metadata"]["prefill"]["prompt"] == "submitted"
-    assert user_message["content"] == "Submitted form: Demo Form"
-    assert assistant["output_type"] is None
+    assert user_message["parts"] == [{"id": "part_1", "type": "text", "format": "plain", "text": "Submitted form: Demo Form"}]
+    assert "content" not in user_message
+    assert "output_type" not in assistant
     assert assistant["parts"][0]["type"] == "json"
     assert assistant["parts"][0]["data"]["received_prefill"]["prompt"] == "submitted"
     assert assistant["parts"][0]["data"]["source_message_id"] == form_message["message_id"]
@@ -279,24 +285,19 @@ def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_stat
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
-        content={
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "silent_demo",
-                    "title": "Silent Demo",
-                    "fields": [{"name": "prompt", "type": "text", "required": True}],
-                    "submit": {
-                        "agent_id": "render_test",
-                        "action_id": "form_submit",
-                        "visibility": "silent",
-                        "success_message": "Recipe saved",
-                    },
-                }
-            ]
-        },
+        content="",
+        parts=form_part(
+            form_id="silent_demo",
+            title="Silent Demo",
+            fields=[{"name": "prompt", "type": "text", "required": True}],
+            submit={
+                "agent_id": "render_test",
+                "action_id": "form_submit",
+                "visibility": "silent",
+                "success_message": "Recipe saved",
+            },
+        ),
         agent_id="render_test",
-        output_type="rich_content",
     )
 
     response = client.post(
@@ -400,19 +401,14 @@ def test_silent_form_submit_validation_failure_does_not_invoke_target() -> None:
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
-        content={
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "silent_invalid",
-                    "title": "Silent Invalid",
-                    "fields": [{"name": "prompt", "type": "text", "required": True}],
-                    "submit": {"agent_id": "render_test", "action_id": "form_submit", "visibility": "silent"},
-                }
-            ]
-        },
+        content="",
+        parts=form_part(
+            form_id="silent_invalid",
+            title="Silent Invalid",
+            fields=[{"name": "prompt", "type": "text", "required": True}],
+            submit={"agent_id": "render_test", "action_id": "form_submit", "visibility": "silent"},
+        ),
         agent_id="render_test",
-        output_type="rich_content",
     )
 
     response = client.post(
@@ -458,24 +454,19 @@ def test_silent_form_submit_target_failure_returns_structured_error_without_chat
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
-        content={
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "silent_fail",
-                    "title": "Silent Fail",
-                    "fields": [{"name": "prompt", "type": "text", "required": True}],
-                    "submit": {
-                        "agent_id": "render_test",
-                        "action_id": "form_submit",
-                        "visibility": "silent",
-                        "failure_message": "Save failed",
-                    },
-                }
-            ]
-        },
+        content="",
+        parts=form_part(
+            form_id="silent_fail",
+            title="Silent Fail",
+            fields=[{"name": "prompt", "type": "text", "required": True}],
+            submit={
+                "agent_id": "render_test",
+                "action_id": "form_submit",
+                "visibility": "silent",
+                "failure_message": "Save failed",
+            },
+        ),
         agent_id="render_test",
-        output_type="rich_content",
     )
 
     response = client.post(
@@ -498,19 +489,9 @@ def test_form_submit_invalid_target_action_returns_structured_error() -> None:
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
-        content={
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "bad",
-                    "title": "Bad",
-                    "fields": [{"name": "prompt", "type": "text"}],
-                    "submit": {"action_id": "missing"},
-                }
-            ]
-        },
+        content="",
+        parts=form_part(form_id="bad", title="Bad", fields=[{"name": "prompt", "type": "text"}], submit={"action_id": "missing"}),
         agent_id="render_test",
-        output_type="rich_content",
     )
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -526,19 +507,9 @@ def test_form_submit_missing_target_agent_returns_structured_error() -> None:
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
-        content={
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "bad_agent",
-                    "title": "Bad Agent",
-                    "fields": [{"name": "prompt", "type": "text"}],
-                    "submit": {"agent_id": "missing_agent", "action_id": "default"},
-                }
-            ]
-        },
+        content="",
+        parts=form_part(form_id="bad_agent", title="Bad Agent", fields=[{"name": "prompt", "type": "text"}], submit={"agent_id": "missing_agent", "action_id": "default"}),
         agent_id="render_test",
-        output_type="rich_content",
     )
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -555,19 +526,9 @@ def test_form_submit_disabled_target_agent_returns_structured_error() -> None:
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
-        content={
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "disabled_agent",
-                    "title": "Disabled Agent",
-                    "fields": [{"name": "prompt", "type": "text"}],
-                    "submit": {"agent_id": "render_test", "action_id": "form_submit"},
-                }
-            ]
-        },
+        content="",
+        parts=form_part(form_id="disabled_agent", title="Disabled Agent", fields=[{"name": "prompt", "type": "text"}], submit={"agent_id": "render_test", "action_id": "form_submit"}),
         agent_id="chat",
-        output_type="rich_content",
     )
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",

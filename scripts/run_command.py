@@ -108,8 +108,8 @@ def _print_human(payload: dict[str, Any]) -> None:
     else:
         print("run status: failed")
 
-    output_type = result.get("output_type") or _last_output_type(payload)
-    print(f"declared output_type: {output_type}")
+    part_type = _last_part_type(payload)
+    print(f"declared output part: {part_type}")
 
     if payload.get("error"):
         print(f"error: {payload['error']}")
@@ -126,21 +126,21 @@ def _print_human(payload: dict[str, Any]) -> None:
     if command_messages:
         message = command_messages[-1]
         print("content:")
-        print(_format_message(message, output_type))
+        print(_format_message(message))
 
 
-def _last_output_type(payload: dict[str, Any]) -> str:
+def _last_part_type(payload: dict[str, Any]) -> str:
     for message in reversed(payload.get("messages") or []):
         if _is_command_result_message(message):
-            return message.get("output_type") or "text"
-    return "text"
+            parts = message.get("parts")
+            if isinstance(parts, list) and parts and isinstance(parts[0], dict):
+                return str(parts[0].get("type") or "parts")
+    return "parts"
 
 
-def _format_message(message: dict[str, Any], output_type: str) -> str:
+def _format_message(message: dict[str, Any]) -> str:
     parts = message.get("parts")
-    if isinstance(parts, list) and parts:
-        return _format_parts(parts)
-    return _format_content(message.get("content"), message.get("output_type") or output_type)
+    return _format_parts(parts if isinstance(parts, list) else [])
 
 
 def _format_parts(parts: list[Any]) -> str:
@@ -173,30 +173,6 @@ def _format_parts(parts: list[Any]) -> str:
         else:
             lines.append(str(part_type or "unknown"))
     return "\n\n".join(line for line in lines if line)
-
-
-def _format_content(content: Any, output_type: str) -> str:
-    if output_type == "json":
-        return json.dumps(_safe_preview(content), ensure_ascii=False, indent=2)
-    if output_type == "image":
-        return _image_summary(content)
-    if output_type == "image_gallery":
-        images = content.get("images", []) if isinstance(content, dict) else []
-        return f"image_gallery: {len(images)} image(s)"
-    if output_type == "rich_content":
-        blocks = content.get("blocks", []) if isinstance(content, dict) else []
-        return f"rich_content: {len(blocks)} block(s)"
-    if output_type == "file_content":
-        if not isinstance(content, dict):
-            return str(content)
-        body = str(content.get("content") or "")
-        label = content.get("filename") or "file"
-        language = content.get("language") or "text"
-        suffix = " (truncated)" if content.get("truncated") else ""
-        return f"file_content: {label} [{language}] {len(body)} chars{suffix}\n{body}"
-    if isinstance(content, (dict, list)):
-        return json.dumps(_safe_preview(content), ensure_ascii=False, indent=2)
-    return "" if content is None else str(content)
 
 
 def _is_command_result_message(message: dict[str, Any]) -> bool:

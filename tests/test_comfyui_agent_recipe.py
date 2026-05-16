@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
-from ai_workbench.core.schema.message import RichContentPayload
+from ai_workbench.core.message_parts import blocks_to_parts
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from agents.comfyui_agent import agent as comfy_agent
 from ai_workbench.core.stores import SessionAgentStateStore
@@ -238,10 +238,10 @@ class FakeCtx:
         self.replies.append(("markdown", value, kwargs))
 
     async def reply_blocks(self, blocks, **kwargs):
-        self.replies.append(("rich_content", {"blocks": blocks}, kwargs))
+        self.replies.append(("parts", blocks_to_parts(blocks), kwargs))
 
     async def reply_images(self, images, **kwargs):
-        self.replies.append(("image_gallery", images, kwargs))
+        self.replies.append(("media_group", images, kwargs))
 
     async def save_attachment_base64(self, data_base64, filename, mime_type, kind="file", metadata=None):
         attachment = {"id": f"att-{len(self.attachments)}", "url": f"/api/attachments/att-{len(self.attachments)}.png", "name": filename, "metadata": metadata or {}}
@@ -255,6 +255,10 @@ def completed_status():
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def text_part(message):
+    return next(part for part in message.parts if part.get("type") == "text")
 
 
 @pytest.mark.parametrize("mode", ["llm", "raw"])
@@ -312,8 +316,8 @@ def test_save_form_same_preset_updates_recipe_values_only(tmp_path: Path):
     assert saved["user_prompt"] == "keep me"
     assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
     assert ctx.replies[-1][0] == "markdown"
-    assert all(reply[0] != "image_gallery" for reply in ctx.replies)
-    assert all(not any(block.get("type") == "action_form" for block in reply[1].get("blocks", [])) for reply in ctx.replies if reply[0] == "rich_content")
+    assert all(reply[0] != "media_group" for reply in ctx.replies)
+    assert all(not any(part.get("type") == "form" for part in reply[1]) for reply in ctx.replies if reply[0] == "parts")
 
 
 def test_save_form_changed_preset_replaces_recipe_and_drops_old_fields(tmp_path: Path):
@@ -447,7 +451,7 @@ def test_recipe_form_preserves_explicit_ui_parts_when_defaulting_missing_parts(t
     assert fields["cfg"]["ui"] == {"section": "advanced", "span": 4}
 
 
-def test_recipe_form_rejects_invalid_enum_parameter_before_rich_content_validation(tmp_path: Path):
+def test_recipe_form_rejects_invalid_enum_parameter_before_part_validation(tmp_path: Path):
     recipe = comfy_agent.recipe_from_preset(READY_PRESET, "llm")
     bad_preset = {**READY_PRESET, "parameters": [{"name": "sampler_name", "type": "enum", "default": "euler", "options": []}]}
 
@@ -475,7 +479,7 @@ def test_form_action_without_ready_preset_returns_clear_prompt_not_empty_options
     assert ctx.replies[-1][0] == "markdown"
     assert "No valid ready ComfyUI preset" in ctx.replies[-1][1]
     assert "Needs mapping presets" in ctx.replies[-1][1]
-    assert all(reply[0] != "rich_content" for reply in ctx.replies)
+    assert all(reply[0] != "parts" for reply in ctx.replies)
 
 
 def test_switch_only_changes_input_mode_and_does_not_generate(tmp_path: Path):
@@ -692,20 +696,21 @@ def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submittin
     assert [call[0] for call in ctx.llm.calls] == ["text"]
     assert not any(call[0] == "submit_workflow" for call in ctx.calls if isinstance(call, tuple))
     assert ctx.attachments == []
-    assert all(reply[0] != "image_gallery" for reply in ctx.replies)
-    assert ctx.replies[-1][0] == "rich_content"
-    blocks = ctx.replies[-1][1]["blocks"]
-    assert blocks[0] == {"type": "markdown", "text": "## Positive prompt"}
-    assert blocks[1] == {"type": "text", "text": generated}
-    assert blocks[2] == {"type": "markdown", "text": "Saved to the current session recipe."}
-    assert blocks[3] == {
+    assert all(reply[0] != "media_group" for reply in ctx.replies)
+    assert ctx.replies[-1][0] == "parts"
+    parts = ctx.replies[-1][1]
+    assert parts[0] == {"id": "part_1", "type": "text", "format": "markdown", "text": "## Positive prompt"}
+    assert parts[1] == {"id": "part_2", "type": "text", "format": "plain", "text": generated}
+    assert parts[2] == {"id": "part_3", "type": "text", "format": "markdown", "text": "Saved to the current session recipe."}
+    assert parts[3] == {
+        "id": "part_4",
         "type": "command_buttons",
         "buttons": [
             {"label": "Edit recipe", "message": "@comfyui_agent:form"},
             {"label": "Run recipe", "message": "@comfyui_agent:run"},
         ],
     }
-    body = json.dumps(blocks)
+    body = json.dumps(parts)
     assert "```" in generated
     assert "```text" not in body
     assert "````text" not in body
@@ -713,14 +718,13 @@ def test_llm_auto_run_false_saves_and_displays_positive_prompt_without_submittin
     assert ctx.run_store.metadata["comfyui_generation"]["llm_operation"] == saved["last_llm_operation"]
 
 
-def test_saved_positive_prompt_blocks_validate_as_rich_content() -> None:
-    payload = RichContentPayload.model_validate({"blocks": comfy_agent.saved_positive_prompt_blocks("wrapped prompt")})
+def test_saved_positive_prompt_blocks_validate_as_parts() -> None:
+    parts = blocks_to_parts(comfy_agent.saved_positive_prompt_blocks("wrapped prompt"))
 
-    blocks = payload.model_dump()["blocks"]
-    assert blocks[1] == {"type": "text", "text": "wrapped prompt"}
-    assert blocks[3]["type"] == "command_buttons"
-    assert blocks[3]["buttons"][0]["message"] == "@comfyui_agent:form"
-    assert blocks[3]["buttons"][1]["message"] == "@comfyui_agent:run"
+    assert parts[1] == {"id": "part_2", "type": "text", "format": "plain", "text": "wrapped prompt"}
+    assert parts[3]["type"] == "command_buttons"
+    assert parts[3]["buttons"][0]["message"] == "@comfyui_agent:form"
+    assert parts[3]["buttons"][1]["message"] == "@comfyui_agent:run"
 
 
 def test_default_respects_raw_and_llm_modes_and_generates(tmp_path: Path):
@@ -872,7 +876,7 @@ def test_generation_polls_fetches_saves_gallery_and_metadata(tmp_path: Path):
     assert ctx.calls.count("get_prompt_status") == 3
     assert any(call[0] == "fetch_image" for call in ctx.calls if isinstance(call, tuple))
     assert ctx.attachments[0]["url"].startswith("/api/attachments/")
-    assert ctx.replies[-1][0] == "image_gallery"
+    assert ctx.replies[-1][0] == "media_group"
     metadata = ctx.replies[-1][2]["metadata"]["comfyui_generation"]
     assert metadata["kind"] == "comfyui_generation"
     assert metadata["output_attachment_ids"] == ["att-0"]
@@ -906,7 +910,7 @@ def test_generation_filters_temp_and_input_images_from_gallery(tmp_path: Path):
 
     fetch_calls = [call for call in ctx.calls if isinstance(call, tuple) and call[0] == "fetch_image"]
     assert [call[1]["filename"] for call in fetch_calls] == ["out.png"]
-    assert ctx.replies[-1][0] == "image_gallery"
+    assert ctx.replies[-1][0] == "media_group"
     assert len(ctx.replies[-1][1]) == 1
     metadata = ctx.run_store.metadata["comfyui_generation"]
     assert metadata["output_attachment_ids"] == ["att-0"]
@@ -940,7 +944,7 @@ def test_generation_only_temp_images_fails_without_saving_gallery(tmp_path: Path
     assert exc.value.code == "COMFYUI_ONLY_TEMP_IMAGES"
     assert "SaveImage" in exc.value.message
     assert ctx.attachments == []
-    assert all(reply[0] != "image_gallery" for reply in ctx.replies)
+    assert all(reply[0] != "media_group" for reply in ctx.replies)
     assert ctx.run_store.metadata["comfyui_generation"]["ignored_temp_image_count"] == 1
 
 
@@ -980,7 +984,7 @@ def test_free_comfyui_memory_after_generation_runs_after_saving_and_is_best_effo
     save_index = next(index for index, call in enumerate(ctx.calls) if isinstance(call, tuple) and call[0] == "fetch_image")
     free_index = next(index for index, call in enumerate(ctx.calls) if isinstance(call, tuple) and call[0] == "free_memory")
     assert free_index > save_index
-    assert ctx.replies[-1][0] == "image_gallery"
+    assert ctx.replies[-1][0] == "media_group"
     release = ctx.run_store.metadata["comfyui_memory_release"]
     assert release["enabled"] is True
     assert release["attempted"] is True
@@ -1247,12 +1251,12 @@ def test_comfyui_agent_current_action_shortcuts_trigger_form_and_run(tmp_path: P
     assert run_result.success is True
     assert any(call[0] == "submit_workflow" for call in comfy_runtime.calls if isinstance(call, tuple))
     messages = fixture.messages.list_messages(session.session_id)
-    assert messages[0].content == ":form"
+    assert text_part(messages[0])["text"] == ":form"
     assert messages[0].metadata["invocation"]["resolved_agent_id"] == "comfyui_agent"
     assert messages[0].metadata["invocation"]["resolved_action_id"] == "form"
-    assert messages[2].content == ":raw ocean"
+    assert text_part(messages[2])["text"] == ":raw ocean"
     assert messages[2].metadata["invocation"]["args"] == "ocean"
-    assert messages[4].content == ":run"
+    assert text_part(messages[4])["text"] == ":run"
 
 
 def test_comfyui_raw_shortcut_matches_explicit_action_when_target_agent_is_same(tmp_path: Path):

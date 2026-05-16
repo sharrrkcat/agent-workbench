@@ -1,4 +1,4 @@
-id: comfyui
+﻿id: comfyui
 name: ComfyUI Capability
 description: Submit ComfyUI workflows, poll history, normalize outputs, fetch images, interrupt jobs, and upload input images over REST.
 
@@ -93,13 +93,13 @@ methods:
     description: Test whether the ComfyUI REST service is reachable and report lightweight endpoint availability.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: get_queue
     description: Return normalized running and pending ComfyUI queue entries.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: get_history
     description: Return raw ComfyUI history plus normalized output references, optionally for one prompt id.
@@ -108,7 +108,7 @@ methods:
         type: string
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: submit_workflow
     description: Submit a workflow JSON object to ComfyUI /prompt.
@@ -123,7 +123,7 @@ methods:
         type: json
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: wait_for_prompt
     description: Blocking convenience helper that polls prompt status until completion or timeout. Script Agents that need live progress or cancellation should use submit_workflow plus get_prompt_status in an async loop.
@@ -138,7 +138,7 @@ methods:
         type: float
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: get_prompt_status
     description: Return a non-blocking normalized status contract for one ComfyUI prompt using history and queue endpoints.
@@ -147,7 +147,7 @@ methods:
         type: string
         required: true
     output:
-      type: json
+      part_type: json
 
   - id: extract_outputs
     description: Normalize image, file, and text output references from a ComfyUI history payload.
@@ -156,7 +156,7 @@ methods:
         type: json
         required: true
     output:
-      type: json
+      part_type: json
 
   - id: fetch_image
     description: Fetch a ComfyUI image by filename, subfolder, and type.
@@ -174,7 +174,7 @@ methods:
         type: boolean
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: collect_images_for_prompt
     description: Get prompt history, extract image references, and optionally fetch image bytes as base64.
@@ -186,7 +186,7 @@ methods:
         type: boolean
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: free_memory
     description: Request ComfyUI to unload models and/or free execution memory.
@@ -198,13 +198,13 @@ methods:
         type: boolean
         default: true
     output:
-      type: json
+      part_type: json
 
   - id: interrupt
     description: Best-effort ComfyUI interrupt request.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: upload_image
     description: Upload an input image to ComfyUI for future img2img or control workflows.
@@ -225,31 +225,31 @@ methods:
         type: string
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: get_object_info
     description: Fetch ComfyUI node definition metadata from /object_info.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: scan_workflow_library
     description: Scan local ComfyUI workflow and preset directories, validate presets, and optionally create draft presets for unmapped workflows.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: list_workflows
     description: List scanned local API-format workflow files.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: list_presets
     description: List local ComfyUI preset YAML files with validation status.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: validate_preset
     description: Validate one local preset by id, file name, or preset object.
@@ -264,7 +264,7 @@ methods:
         type: json
         required: false
     output:
-      type: json
+      part_type: json
 
   - id: load_preset
     description: Load one local preset YAML file by id or file name and return validation details.
@@ -276,6 +276,6 @@ methods:
         type: string
         required: false
     output:
-      type: json
+      part_type: json
 
 commands: []

@@ -27,7 +27,7 @@ from ai_workbench.core.forms import validate_action_form_block
 from ai_workbench.core.llm_config import LLMConfigError, resolve_llm_config
 from ai_workbench.core.message_parts import (
     blocks_to_parts,
-    legacy_output_to_parts,
+    capability_output_to_parts,
     make_file_part,
     make_error_part,
     make_image_part,
@@ -41,7 +41,6 @@ from ai_workbench.core.memory_context import append_system_context, build_core_m
 from ai_workbench.core.provider_status import refresh_provider_status_for_profile, unload_model_for_profile
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.agent import AgentSchema
-from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CapabilityCallResult, RunResult
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.session_titles import apply_deferred_title_model_unload, maybe_generate_session_title_before_llm_call
@@ -180,19 +179,11 @@ class ScriptOutputProxy:
         self.suppress_output = suppress_output
         self.completed = False
         self._content = ""
-        self._output_type = "text"
         self._seq = 0
 
     @property
     def has_content(self) -> bool:
         return bool(self._content)
-
-    async def set_output_type(self, output_type: str) -> None:
-        self._output_type = output_type or self._output_type
-        if not self.message_id:
-            return
-        message = self.message_store.get_message(self.message_id)
-        self.message_store.update_message(message.model_copy(update={"output_type": None}))
 
     async def write_delta(self, text: str) -> None:
         if self.suppress_output:
@@ -212,7 +203,6 @@ class ScriptOutputProxy:
     async def finish(
         self,
         final_content: Any = None,
-        output_type: Optional[str] = None,
         parts: Optional[list[dict[str, Any]]] = None,
         actions=None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -224,24 +214,21 @@ class ScriptOutputProxy:
             self.completed = True
             if final_content is not None:
                 self._content = final_content if isinstance(final_content, str) else final_content
-            if output_type:
-                self._output_type = output_type
             return None
         resolved_parts = validate_message_parts(parts) if parts is not None else None
         if resolved_parts is None and final_content is not None:
-            resolved_parts = legacy_output_to_parts(output_type or self._output_type, final_content)
+            resolved_parts = capability_output_to_parts({"part_type": "text", "format": "plain"}, final_content)
         if self.completed:
-            if final_content is None and output_type is None and actions is None and metadata is None:
+            if final_content is None and actions is None and metadata is None:
                 return self.message_store.get_message(self.message_id)
             message = self.message_store.add_message(
                 session_id=self.session_id,
                 role="agent",
-                content=final_content if final_content is not None and resolved_parts is None else "",
+                content="",
                 agent_id=agent_id,
                 action_id=action_id,
                 run_id=self.run_id,
-                output_type=output_type if resolved_parts is None else None,
-                content_version=2 if resolved_parts is not None else None,
+                content_version=2,
                 parts=resolved_parts,
                 parent_message_id=parent_message_id,
                 available_actions=actions or [],
@@ -259,20 +246,16 @@ class ScriptOutputProxy:
                 payload={"available_actions": message.available_actions},
             )
             return message
-        if output_type:
-            self._output_type = output_type
         if final_content is not None:
             self._content = final_content if isinstance(final_content, str) else final_content
         if resolved_parts is None:
-            resolved_parts = legacy_output_to_parts(self._output_type, self._content)
+            resolved_parts = capability_output_to_parts({"part_type": "text", "format": "plain"}, self._content)
         if not self.message_id:
             raise RuntimeError("Output message is not configured.")
         message = self.message_store.get_message(self.message_id)
         next_metadata = {**(message.metadata or {}), **(metadata or {}), "streaming": False, "placeholder": False}
         message = message.model_copy(
             update={
-                "content": "" if resolved_parts is not None else self._content,
-                "output_type": None,
                 "content_version": 2,
                 "parts": resolved_parts,
                 "available_actions": actions or message.available_actions,
@@ -434,12 +417,11 @@ class LLMProxy:
         system: Optional[str] = None,
         user: Optional[str] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
-        output_type: str = "markdown",
+        format: str = "markdown",
         **options,
     ) -> str:
         if self.output is None:
             raise RuntimeError("Output streaming is not configured.")
-        await self.output.set_output_type(output_type)
         parts: list[str] = []
         async for chunk in self.stream(system=system, user=user, messages=messages, **options):
             if not chunk.text:
@@ -447,7 +429,7 @@ class LLMProxy:
             parts.append(chunk.text)
             await self.output.write_delta(chunk.text)
         text = "".join(parts)
-        await self.output.finish(metadata=self.message_metadata())
+        await self.output.finish(parts=[make_text_part(text, format="markdown" if format == "markdown" else "plain")], metadata=self.message_metadata())
         self.record_run_llm_metadata()
         return text
 
@@ -920,9 +902,9 @@ class AgentContext:
         self.current_parent_step_id = current_parent_step_id
         self.run = ScriptRunLifecycleProxy(run_lifecycle, run_id, default_parent_step_id=current_parent_step_id) if run_lifecycle is not None else None
 
-    async def reply(self, content: Any, type: str = "text", output_type: Optional[str] = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        resolved_output_type = output_type or type
-        parts = legacy_output_to_parts(resolved_output_type, content)
+    async def reply(self, content: Any, type: str = "text", actions=None, metadata: Optional[Dict[str, Any]] = None):
+        declaration = _reply_type_to_output(type)
+        parts = capability_output_to_parts(declaration, content)
         return await self.reply_parts(parts, actions=actions, metadata=metadata)
 
     async def reply_parts(self, parts: list[dict[str, Any]], actions=None, metadata: Optional[Dict[str, Any]] = None):
@@ -931,7 +913,6 @@ class AgentContext:
         self.llm.record_run_llm_metadata()
         message = await self.output.finish(
             final_content=None,
-            output_type=None,
             parts=message_parts,
             actions=actions or [],
             metadata=message_metadata,
@@ -951,12 +932,10 @@ class AgentContext:
         return await self.reply_parts([make_json_part(data)], actions=actions, metadata=metadata)
 
     async def reply_image(self, url: str, alt: str = None, title: str = None, caption: str = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        payload = ImagePayload(url=url, alt=alt, title=title, caption=caption)
-        return await self.reply_parts([make_image_part(**payload.model_dump(exclude_none=True))], actions=actions, metadata=metadata)
+        return await self.reply_parts([make_image_part(url=url, alt=alt, title=title, caption=caption)], actions=actions, metadata=metadata)
 
     async def reply_images(self, images: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        payload = ImageGalleryPayload(images=[ImagePayload.model_validate(image) for image in images])
-        items = [{"type": "image", **image.model_dump(exclude_none=True)} for image in payload.images]
+        items = [{"type": "image", **dict(image)} for image in images]
         return await self.reply_parts([make_media_group_part(items)], actions=actions, metadata=metadata)
 
     async def reply_file_content(
@@ -981,8 +960,7 @@ class AgentContext:
         return await self.reply_parts([part], actions=actions, metadata=metadata)
 
     async def reply_blocks(self, blocks: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
-        payload = RichContentPayload.model_validate({"blocks": blocks})
-        return await self.reply_parts(blocks_to_parts(payload.model_dump(exclude_none=True)["blocks"]), actions=actions, metadata=metadata)
+        return await self.reply_parts(blocks_to_parts(blocks), actions=actions, metadata=metadata)
 
     async def reply_form(self, form: dict, title: str = None, actions=None, metadata: Optional[Dict[str, Any]] = None):
         block = dict(form or {})
@@ -1234,7 +1212,8 @@ class ScriptAgentRunner:
                 agent_id=agent.id,
                 action_id=action_id,
                 run_id=run.run_id,
-                output_type=None,
+                content_version=2,
+                parts=[],
                 parent_message_id=parent_id or None,
                 metadata={"success": True, "streaming": True, "placeholder": True},
                 speaker_type="agent",
@@ -1377,13 +1356,13 @@ class ScriptAgentRunner:
             self.run_lifecycle.fail_step(running_step.step_id, error_message=str(exc) or "Script agent failed.")
             if ctx.output.has_content:
                 final_content = None
-                output_type = None
+                parts = None
             else:
                 final_content = {"code": "RUN_FAILED", "message": str(exc) or "Script agent failed."}
-                output_type = "error"
+                parts = [make_error_part(str(exc) or "Script agent failed.", code="RUN_FAILED")]
             await ctx.output.finish(
                 final_content=final_content,
-                output_type=output_type,
+                parts=parts,
                 metadata={"success": False, "error": str(exc) or "Script agent failed."},
                 agent_id=agent.id,
                 action_id=action_id,
@@ -1403,7 +1382,6 @@ class ScriptAgentRunner:
         if not ctx.output.completed:
             await ctx.output.finish(
                 final_content="" if script_result is None else script_result,
-                output_type="text",
                 metadata={"success": True, **ctx.llm.message_metadata()},
                 agent_id=agent.id,
                 action_id=action_id,
@@ -1480,8 +1458,9 @@ class ScriptAgentRunner:
                 message = self.message_store.get_message(input_message_id)
             except KeyError:
                 message = None
-        content = getattr(message, "content", "") if message is not None else ""
-        return content if isinstance(content, str) else ""
+        from ai_workbench.core.message_parts import text_from_parts
+
+        return text_from_parts(getattr(message, "parts", None)) if message is not None else ""
 
     def _fail(self, run_id: str, session_id: str, error: str, error_code: str = None) -> RunResult:
         failed_run = self.run_lifecycle.fail_run(run_id, error_code, error)
@@ -1500,7 +1479,7 @@ class ScriptAgentRunner:
             message = self.message_store.get_message(str(message_id))
         except KeyError:
             return
-        if message.content not in ("", None) or (message.metadata or {}).get("placeholder") is not True:
+        if (message.metadata or {}).get("placeholder") is not True:
             return
         metadata = {
             **(message.metadata or {}),
@@ -1511,8 +1490,6 @@ class ScriptAgentRunner:
         }
         updated = message.model_copy(
             update={
-                "content": "",
-                "output_type": None,
                 "content_version": 2,
                 "parts": [make_error_part(error, code=error_code)],
                 "metadata": metadata,
@@ -1637,6 +1614,25 @@ def _extract_json_text(content: str) -> str:
     if match:
         return match.group(1).strip()
     return content.strip()
+
+
+def _reply_type_to_output(reply_type: str) -> dict[str, Any]:
+    kind = (reply_type or "text").strip()
+    if kind == "markdown":
+        return {"part_type": "text", "format": "markdown"}
+    if kind == "text":
+        return {"part_type": "text", "format": "plain"}
+    if kind == "json":
+        return {"part_type": "json"}
+    if kind == "image":
+        return {"part_type": "image"}
+    if kind == "file":
+        return {"part_type": "file", "mode": "inline_text"}
+    if kind == "media_group":
+        return {"part_type": "media_group", "layout": "gallery"}
+    if kind == "parts":
+        return {"part_type": "parts"}
+    raise ValueError(f"unsupported reply type: {kind}")
 
 
 def _first_unload_error(data: Dict[str, Any]) -> Optional[str]:

@@ -1,4 +1,4 @@
-id: llm
+﻿id: llm
 name: LLM Capability
 description: OpenAI-compatible local LLM runtime
 
@@ -43,7 +43,8 @@ methods:
         type: string
         required: true
     output:
-      type: text
+      part_type: text
+      format: plain
 
   - id: chat
     description: Generate text from chat messages
@@ -52,9 +53,10 @@ methods:
         type: array
         required: true
     output:
-      type: text
+      part_type: text
+      format: plain
 
   - id: unload
     description: Best-effort model unload
     output:
-      type: json
+      part_type: json

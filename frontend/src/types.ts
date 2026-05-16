@@ -941,14 +941,6 @@ export type FileContentPayload = {
   path?: string | null;
 };
 
-export type ChatContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'markdown'; text: string }
-  | ({ type: 'image' } & ImagePayload)
-  | ({ type: 'file_content' } & FileContentPayload)
-  | ActionFormBlock
-  | CommandButtonsBlock;
-
 export type TextMessagePart = {
   id: string;
   type: 'text';
@@ -1035,7 +1027,6 @@ export type Message = {
   message_id: string;
   session_id: string;
   role: 'user' | 'assistant' | 'agent' | 'system' | 'tool' | 'command';
-  content: unknown;
   speaker_type?: 'user' | 'agent' | 'capability' | 'system' | null;
   speaker_id?: string | null;
   speaker_name?: string | null;
@@ -1044,9 +1035,8 @@ export type Message = {
   command_name?: string | null;
   action_id?: string | null;
   run_id?: string | null;
-  output_type?: string | null;
-  content_version?: number | null;
-  parts?: MessagePart[];
+  content_version: 2;
+  parts: MessagePart[];
   parent_message_id?: string | null;
   metadata?: Record<string, unknown>;
   run?: Run;

@@ -45,7 +45,7 @@ context, including:
 - per-message LLM file context limit.
 
 These settings apply to composer upload, drag-and-drop, paste, attachment
-serving, Prompt Agent file context, vision input, `file_content`, and attachment
+serving, Prompt Agent file context, vision input, file parts, and attachment
 test helpers. Active File and HTTP Capability commands use their own
 CapabilityConfig settings.
 

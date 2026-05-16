@@ -524,13 +524,13 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
 
     assert accepted.json()["run"]["status"] == "DONE"
     assert accepted.json()["run"]["target_id"] == "/read-file"
-    assert accepted.json()["messages"][-1]["output_type"] == "file_content"
+    assert accepted.json()["messages"][-1]["parts"][0]["type"] == "file"
     assert outside.json()["run"]["status"] == "FAILED"
     assert "Path outside allowed directories" in outside.json()["run"]["error"]
     assert "File too large" in too_large.json()["run"]["error"]
     assert "Extension not allowed" in bad_ext.json()["run"]["error"]
     assert image_ok.json()["run"]["status"] == "DONE"
-    assert image_ok.json()["messages"][-1]["output_type"] == "image"
+    assert image_ok.json()["messages"][-1]["parts"][0]["type"] == "image"
     assert "File too large" in image_large.json()["run"]["error"]
 
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_file": False}})
@@ -587,9 +587,9 @@ def test_http_capability_config_defaults_patch_and_runtime_enforcement() -> None
     binary = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/binary"})
 
     assert timed.json()["run"]["status"] == "DONE"
-    assert '"connect":3.0' in timed.json()["messages"][-1]["content"].replace(" ", "")
+    assert '"connect":3.0' in timed.json()["messages"][-1]["parts"][0]["text"].replace(" ", "")
     assert "Response too large" in large_text.json()["run"]["error"]
-    assert image.json()["messages"][-1]["output_type"] == "image"
+    assert image.json()["messages"][-1]["parts"][0]["type"] == "image"
     assert "Content type not allowed" in binary.json()["run"]["error"]
 
     client.patch("/api/capability-configs/http", json={"user_config": {"allowed_schemes": ["https"]}})

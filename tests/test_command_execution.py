@@ -9,8 +9,8 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.message_parts import make_file_part
 from ai_workbench.core.schema.capability import CapabilitySchema
-from ai_workbench.core.schema.message import FileContentPayload
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 
@@ -98,7 +98,7 @@ def test_base64_encode_executes_end_to_end() -> None:
 
     assert result.success is True
     assert result.data == "aGVsbG8="
-    assert result.output_type == "text"
+    assert not hasattr(result, "output_type")
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
 
 
@@ -110,7 +110,7 @@ def test_base64_decode_executes_end_to_end() -> None:
 
     assert result.success is True
     assert result.data == "hello"
-    assert result.output_type == "text"
+    assert not hasattr(result, "output_type")
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
 
 
@@ -122,13 +122,13 @@ def test_base64_image_command_returns_image_output() -> None:
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert result.output_type == "image"
+    assert not hasattr(result, "output_type")
     assert result.data["url"].startswith("data:image/svg+xml;base64,")
     assert set(result.data) == {"url", "alt", "title", "caption"}
     assert messages[-1].role == "assistant"
     assert messages[-1].command_name == "/base64-image"
-    assert messages[-1].output_type == "image"
-    assert messages[-1].content == result.data
+    assert messages[-1].parts[0]["type"] == "image"
+    assert messages[-1].parts[0]["url"] == result.data["url"]
     assert messages[-1].metadata["kind"] == "command_result"
     assert messages[-1].metadata["producer"] == "capability"
 
@@ -141,8 +141,8 @@ def test_base64_to_image_alias_returns_image_output() -> None:
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert result.output_type == "image"
-    assert message.output_type == "image"
+    assert not hasattr(result, "output_type")
+    assert message.parts[0]["type"] == "image"
 
 
 def test_image_base64_without_attachment_fails() -> None:
@@ -174,7 +174,7 @@ def test_image_base64_returns_first_attachment_data() -> None:
     result = run(fixture.command_runner.run("/image-base64", "", session.session_id, input_message_id=user.message_id))
 
     assert result.success is True
-    assert result.output_type == "json"
+    assert not hasattr(result, "output_type")
     assert result.data["name"] == "one.svg"
     assert result.data["data_url"] == SVG_DATA_URL
     assert result.data["base64"] == SVG_DATA_URL.split(",", 1)[1]
@@ -248,8 +248,8 @@ def test_successful_command_writes_message_store() -> None:
     assert messages[0].role == "assistant"
     assert messages[0].command_name == "/base64"
     assert messages[0].run_id == result.run_id
-    assert messages[0].content == "aGVsbG8="
-    assert messages[0].output_type == "text"
+    assert messages[0].parts[0]["text"] == "aGVsbG8="
+    assert messages[0].metadata["output_part_type"] == "text"
     assert messages[0].metadata["kind"] == "command_result"
     assert messages[0].metadata["producer"] == "capability"
     assert messages[0].metadata["command"] == "/base64"
@@ -260,7 +260,7 @@ def test_declared_image_output_validation_failure_fails_run() -> None:
         {
             "id": "bad_image",
             "name": "Bad Image",
-            "methods": [{"id": "make", "output": {"type": "image"}}],
+            "methods": [{"id": "make", "output": {"part_type": "image"}}],
             "commands": [{"name": "/bad-image", "method": "make"}],
         },
         runtime=RuntimeWithResult({"url": ""}),
@@ -273,7 +273,7 @@ def test_declared_image_output_validation_failure_fails_run() -> None:
 
     assert result.success is False
     assert failed_run.status == RunStatus.FAILED
-    assert message.output_type == "error"
+    assert message.parts[0]["type"] == "error"
     assert message.metadata["success"] is False
 
 
@@ -293,28 +293,25 @@ def test_dict_command_without_image_shape_falls_back_to_json_output() -> None:
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert result.output_type == "json"
-    assert message.output_type == "json"
-    assert message.content == {"ok": True, "items": [1, 2]}
+    assert not hasattr(result, "output_type")
+    assert message.parts == [{"id": "part_1", "type": "json", "data": {"ok": True, "items": [1, 2]}}]
 
 
-def test_file_content_payload_schema_accepts_expected_shape() -> None:
-    payload = FileContentPayload.model_validate(
-        {
-            "filename": "agent.yaml",
-            "language": "yaml",
-            "mime_type": "text/yaml",
-            "content": "id: chat\nname: Chat Agent\n",
-            "size": 1234,
-            "truncated": False,
-        }
+def test_file_part_schema_accepts_expected_shape() -> None:
+    payload = make_file_part(
+        "id: chat\nname: Chat Agent\n",
+        filename="agent.yaml",
+        language="yaml",
+        mime_type="text/yaml",
+        size=1234,
+        truncated=False,
     )
 
-    assert payload.content == "id: chat\nname: Chat Agent\n"
-    assert payload.truncated is False
+    assert payload["content"] == "id: chat\nname: Chat Agent\n"
+    assert payload["truncated"] is False
 
 
-def test_declared_file_content_output_is_preserved_and_validated() -> None:
+def test_declared_file_output_is_preserved_and_validated() -> None:
     data = {
         "filename": "tool.py",
         "language": "python",
@@ -327,7 +324,7 @@ def test_declared_file_content_output_is_preserved_and_validated() -> None:
         {
             "id": "file_result",
             "name": "File Result",
-            "methods": [{"id": "make", "output": {"type": "file_content"}}],
+            "methods": [{"id": "make", "output": {"part_type": "file", "mode": "inline_text"}}],
             "commands": [{"name": "/file-result", "method": "make"}],
         },
         runtime=RuntimeWithResult(data),
@@ -338,12 +335,12 @@ def test_declared_file_content_output_is_preserved_and_validated() -> None:
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert result.output_type == "file_content"
-    assert message.output_type == "file_content"
-    assert message.content == data
+    assert not hasattr(result, "output_type")
+    assert message.parts[0]["type"] == "file"
+    assert message.parts[0]["content"] == data["content"]
 
 
-def test_read_file_command_returns_file_content_for_source_yaml_env_and_markdown(monkeypatch) -> None:
+def test_read_file_command_returns_file_part_for_source_yaml_env_and_markdown(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(ROOT))
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
@@ -354,16 +351,16 @@ def test_read_file_command_returns_file_content_for_source_yaml_env_and_markdown
     md_result = run(fixture.runtime.handle_input(session, "/read-file README.md"))
     messages = fixture.messages.list_messages(session.session_id)
 
-    assert py_result.output_type == "file_content"
+    assert not hasattr(py_result, "output_type")
     assert py_result.data["language"] == "python"
     assert "\n    " in py_result.data["content"]
-    assert yaml_result.output_type == "file_content"
+    assert not hasattr(yaml_result, "output_type")
     assert yaml_result.data["language"] == "yaml"
-    assert env_result.output_type == "file_content"
+    assert not hasattr(env_result, "output_type")
     assert env_result.data["language"] == "dotenv"
-    assert md_result.output_type == "file_content"
+    assert not hasattr(md_result, "output_type")
     assert md_result.data["language"] == "markdown"
-    assert messages[-1].output_type == "file_content"
+    assert messages[-1].parts[0]["type"] == "file"
 
 
 def test_success_event_bus_records_started_and_done() -> None:
@@ -436,7 +433,7 @@ def test_failed_command_persists_capability_error_message_and_steps() -> None:
     assert message.speaker_type == "capability"
     assert message.speaker_id == "pet"
     assert message.origin == "command_result"
-    assert message.output_type == "error"
+    assert message.parts[0]["type"] == "error"
     assert message.metadata["kind"] == "command_result"
     assert message.metadata["success"] is False
     assert [step.label for step in steps] == ["Resolving command", "Running command"]

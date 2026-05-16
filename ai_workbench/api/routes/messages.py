@@ -8,6 +8,7 @@ from ai_workbench.api.errors import raise_error
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_attachments
 from ai_workbench.core.forms import FormValidationError, find_action_form_block, validate_action_form_values
 from ai_workbench.core.llm_config import LLMConfigError
+from ai_workbench.core.message_parts import make_text_part
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunStatus
 
@@ -156,7 +157,7 @@ async def edit_message(message_id: str, payload: EditMessageRequest, state: Runt
 
     session = _get_session_or_404(state, message.session_id)
     try:
-        updated_message = message.model_copy(update={"content": payload.content})
+        updated_message = message.model_copy(update={"parts": [make_text_part(payload.content, format="plain")]})
         updated_message = state.messages.update_message(updated_message)
         deleted = state.messages.delete_messages_after(message.session_id, message.message_id, include_target=False)
         _cancel_runs_for_deleted_messages(state, deleted)
@@ -223,7 +224,7 @@ async def submit_form(session_id: str, payload: SubmitFormRequest, state: Runtim
     if source.session_id != session_id:
         raise_error(404, "FORM_NOT_FOUND", f"Form source message not found in session: {payload.source_message_id}")
     try:
-        form = find_action_form_block(source.content, payload.form_id, source.parts)
+        form = find_action_form_block(source.parts, payload.form_id)
     except FormValidationError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
     if form is None:

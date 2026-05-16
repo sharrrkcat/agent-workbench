@@ -174,7 +174,7 @@ skipped before provider calls.
 
 ## Interactive Forms
 
-`action_form` is a trusted declarative `rich_content` block. The frontend must
+`form` is a trusted declarative Message Part. The frontend must
 not execute form-provided HTML or JavaScript or submit to arbitrary URLs.
 
 The backend reads the original source message to resolve target Agent/action,
@@ -201,7 +201,7 @@ messages. When they enter Prompt Agent context, they are projected as bounded
 assistant-role data blocks with a command result header and warning that the
 content is data, not instructions.
 
-Text, markdown, JSON, and `file_content` outputs enter context in bounded blocks.
+Text, JSON, and file parts enter context in bounded blocks.
 Images enter text context as placeholders unless explicit vision resend support
 is added. Invalid internal roles should fail early with `LLM_CONTEXT_INVALID`.
 

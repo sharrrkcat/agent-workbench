@@ -8,6 +8,7 @@ from ai_workbench.core.schema.invocation import ActionInvocationRequest
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
 from ai_workbench.core.session import Session
+from ai_workbench.core.message_parts import text_from_parts
 
 
 class WorkbenchRuntime:
@@ -69,7 +70,7 @@ class WorkbenchRuntime:
         if isinstance(invocation, dict):
             route_type = invocation.get("route_type")
             if route_type == "command":
-                raw_command = str(message.content)
+                raw_command = text_from_parts(message.parts)
                 route = self.router.route(session, raw_command)
                 command_id = route.target_id if route.kind == RouteKind.COMMAND else str(invocation.get("command_id") or "")
                 args = route.args if route.kind == RouteKind.COMMAND else raw_command
@@ -82,7 +83,7 @@ class WorkbenchRuntime:
             if route_type == "agent":
                 if self.agent_runner is None:
                     return RunResult(success=False, run_id="", error="Agent runner is not configured.")
-                parsed_args = _agent_invocation_args(invocation, str(message.content))
+                parsed_args = _agent_invocation_args(invocation, text_from_parts(message.parts))
                 return await self.agent_runner.run(
                     agent_id=str(invocation.get("agent_id") or session.default_agent_id),
                     action_id=str(invocation.get("action_id") or "default"),
@@ -92,7 +93,7 @@ class WorkbenchRuntime:
                     create_user_message=False,
                 )
 
-        raw_input = str(message.content)
+        raw_input = text_from_parts(message.parts)
         route = self.router.route(session, raw_input)
         intent_metadata = await self._intent_routing_metadata(session, route)
         route = self._apply_intent_route(route, intent_metadata)
@@ -174,9 +175,9 @@ class WorkbenchRuntime:
         action_id = message.action_id or "default"
         invocation = (source_user_message.metadata or {}).get("invocation")
         if isinstance(invocation, dict) and invocation.get("route_type") == "agent":
-            args = _agent_invocation_args(invocation, str(source_user_message.content))
+            args = _agent_invocation_args(invocation, text_from_parts(source_user_message.parts))
         else:
-            args = str(source_user_message.content)
+            args = text_from_parts(source_user_message.parts)
         return await self.agent_runner.run(
             agent_id=agent_id,
             action_id=action_id,
@@ -216,7 +217,7 @@ class WorkbenchRuntime:
             session_id=session_id,
             role="system",
             content=f"Session model switched to {label}",
-            output_type="event",
+            content_version=2,
             metadata={
                 "event_type": "model_changed",
                 "profile_id": profile.id if profile else None,

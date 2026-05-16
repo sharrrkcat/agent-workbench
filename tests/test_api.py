@@ -7,6 +7,7 @@ import pytest
 from ai_workbench.api.main import create_app
 from ai_workbench.api.ws import websocket_endpoint
 from ai_workbench.core.config_schema import parse_config_schema
+from ai_workbench.core.message_parts import make_image_part, make_json_part, make_text_part
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.run import RunStatus
 from tests.test_prompt_agent_execution import FakeLLMRuntime, run
@@ -667,8 +668,9 @@ def test_patch_session_can_change_context_mode_and_persist_separator() -> None:
     assert separator["role"] == "system"
     assert separator["speaker_type"] == "system"
     assert separator["origin"] == "context_mode_changed"
-    assert separator["output_type"] == "event"
-    assert separator["content"] == "Conversation mode changed to Group transcript"
+    assert "output_type" not in separator
+    assert "content" not in separator
+    assert separator["parts"][0] == {"id": "part_1", "type": "text", "format": "plain", "text": "Conversation mode changed to Group transcript"}
     assert separator["metadata"]["event_type"] == "context_mode_changed"
     assert separator["metadata"]["context_mode"] == "group_transcript"
     assert separator["metadata"]["previous_context_mode"] == "single_assistant"
@@ -1046,7 +1048,7 @@ def test_post_message_base64_executes_command() -> None:
 
     assert payload["success"] is True
     assert payload["data"] == "aGVsbG8="
-    assert payload["messages"][-1]["content"] == ""
+    assert "content" not in payload["messages"][-1]
     assert payload["messages"][-1]["parts"][0] == {"id": "part_1", "type": "text", "format": "plain", "text": "aGVsbG8="}
 
 
@@ -1082,7 +1084,8 @@ def test_session_model_change_inserts_event_before_next_user_message() -> None:
 
     payload = post_message(client, session["session_id"], "hello")
 
-    assert payload["messages"][0]["output_type"] == "event"
+    assert "output_type" not in payload["messages"][0]
+    assert payload["messages"][0]["parts"][0]["type"] == "text"
     assert payload["messages"][0]["metadata"]["event_type"] == "model_changed"
     assert payload["messages"][0]["metadata"]["profile_id"] == profile["id"]
     assert payload["messages"][1]["role"] == "user"
@@ -1098,7 +1101,7 @@ def test_multiple_session_model_changes_insert_only_final_event() -> None:
 
     payload = post_message(client, session["session_id"], "hello")
 
-    events = [message for message in payload["messages"] if message["output_type"] == "event"]
+    events = [message for message in payload["messages"] if message["metadata"].get("event_type") == "model_changed"]
     assert len(events) == 1
     assert events[0]["metadata"]["profile_id"] == second["id"]
 
@@ -1113,8 +1116,8 @@ def test_switching_session_model_back_to_default_inserts_default_event() -> None
 
     payload = post_message(client, session["session_id"], "second")
 
-    assert payload["messages"][0]["output_type"] == "event"
-    assert payload["messages"][0]["content"] == "Session model switched to Default"
+    assert "output_type" not in payload["messages"][0]
+    assert payload["messages"][0]["parts"][0]["text"] == "Session model switched to Default"
     assert payload["messages"][0]["metadata"]["is_default"] is True
 
 
@@ -1379,7 +1382,8 @@ def test_image_only_message_is_allowed_and_uses_llm_placeholder() -> None:
 
     assert response.status_code == 200
     user_message = response.json()["messages"][0]
-    assert user_message["content"] == ""
+    assert "content" not in user_message
+    assert user_message["parts"] == []
     assert user_message["metadata"]["attachments"][0]["uri"].startswith("local://attachments/")
     sent_text = "\n".join(message["content"] for message in llm.calls[-1]["messages"])
     assert "User attached 1 image, but the selected model does not support vision." in sent_text
@@ -1411,17 +1415,18 @@ def test_list_messages_returns_markdown_content_as_plain_string() -> None:
     state.messages.add_message(
         session_id=session["session_id"],
         role="agent",
-        content="# Title\n\n## Summary",
+        content="",
+        parts=[make_text_part("# Title\n\n## Summary", format="markdown")],
         agent_id="render_test",
-        output_type="markdown",
     )
 
     response = client.get(f"/api/sessions/{session['session_id']}/messages")
 
     assert response.status_code == 200
     message = response.json()[-1]
-    assert message["output_type"] == "markdown"
-    assert message["content"] == "# Title\n\n## Summary"
+    assert "output_type" not in message
+    assert "content" not in message
+    assert message["parts"][0] == {"id": "part_1", "type": "text", "format": "markdown", "text": "# Title\n\n## Summary"}
 
 
 def test_list_messages_returns_json_content_as_structured_object() -> None:
@@ -1431,17 +1436,18 @@ def test_list_messages_returns_json_content_as_structured_object() -> None:
     state.messages.add_message(
         session_id=session["session_id"],
         role="agent",
-        content={"ok": True, "items": [1, 2]},
+        content="",
+        parts=[make_json_part({"ok": True, "items": [1, 2]})],
         agent_id="render_test",
-        output_type="json",
     )
 
     response = client.get(f"/api/sessions/{session['session_id']}/messages")
 
     assert response.status_code == 200
     message = response.json()[-1]
-    assert message["output_type"] == "json"
-    assert message["content"] == {"ok": True, "items": [1, 2]}
+    assert "output_type" not in message
+    assert "content" not in message
+    assert message["parts"][0] == {"id": "part_1", "type": "json", "data": {"ok": True, "items": [1, 2]}}
 
 
 def test_list_messages_returns_image_content_as_structured_object() -> None:
@@ -1451,17 +1457,18 @@ def test_list_messages_returns_image_content_as_structured_object() -> None:
     state.messages.add_message(
         session_id=session["session_id"],
         role="agent",
-        content={"url": "https://example.test/image.png", "alt": "Example"},
+        content="",
+        parts=[make_image_part("https://example.test/image.png", alt="Example")],
         agent_id="render_test",
-        output_type="image",
     )
 
     response = client.get(f"/api/sessions/{session['session_id']}/messages")
 
     assert response.status_code == 200
     message = response.json()[-1]
-    assert message["output_type"] == "image"
-    assert message["content"] == {"url": "https://example.test/image.png", "alt": "Example"}
+    assert "output_type" not in message
+    assert "content" not in message
+    assert message["parts"][0] == {"id": "part_1", "type": "image", "url": "https://example.test/image.png", "alt": "Example"}
 
 
 def test_delete_user_message_removes_only_selected_message() -> None:
@@ -1538,7 +1545,7 @@ def test_agent_retry_deletes_target_and_later_messages_then_regenerates() -> Non
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
-    assert payload["messages"][-1]["content"] == ""
+    assert "content" not in payload["messages"][-1]
     assert payload["messages"][-1]["parts"][0]["text"] == "retry reply"
     messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
     ids = [message["message_id"] for message in messages]
@@ -1585,8 +1592,8 @@ def test_user_edit_updates_content_deletes_later_messages_and_regenerates() -> N
     assert user_message["message_id"] in ids
     assert later["messages"][0]["message_id"] not in ids
     assert later["messages"][-1]["message_id"] not in ids
-    assert next(message for message in messages if message["message_id"] == user_message["message_id"])["content"] == "edited"
-    assert messages[-1]["content"] == ""
+    assert next(message for message in messages if message["message_id"] == user_message["message_id"])["parts"][0]["text"] == "edited"
+    assert "content" not in messages[-1]
     assert messages[-1]["parts"][0]["text"] == "edited reply"
     assert messages[-1]["metadata"]["llm_resolution"]
     assert llm.calls[-1]["messages"][-1]["content"] == "edited"
@@ -1631,7 +1638,7 @@ def test_retry_edit_use_current_session_model_override_and_model_change_range() 
     assert retry_response.status_code == 200
     assert llm.calls[-1]["model_config"]["model"] == "retryprofile-model"
     messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
-    assert any(message["output_type"] == "event" and message["metadata"]["profile_id"] == profile["id"] for message in messages)
+    assert any(message["metadata"].get("event_type") == "model_changed" and message["metadata"]["profile_id"] == profile["id"] for message in messages)
     assert messages[-1]["metadata"]["llm_resolution"]["source"] == "session_override"
 
     edit_response = client.post(f"/api/messages/{user_message['message_id']}/edit", json={"content": "edited again", "rerun": True})
@@ -1674,11 +1681,11 @@ def test_agent_action_text_route_preserves_raw_user_message_and_parsed_args() ->
     messages = payload["messages"]
     user_message = messages[0]
     assert user_message["role"] == "user"
-    assert user_message["content"] == "@render_test:image 1"
+    assert user_message["parts"][0]["text"] == "@render_test:image 1"
     assert user_message["metadata"]["invocation"]["raw_text"] == "@render_test:image 1"
     assert user_message["metadata"]["invocation"]["args"] == "1"
     assert payload["run"]["metadata"]["args"] == "1"
-    assert [message["output_type"] for message in messages[1:]] == [None, None, None]
+    assert all("output_type" not in message for message in messages[1:])
     assert [message["parts"][0]["type"] for message in messages[1:]] == ["image", "text", "media_group"]
     assert all("llm_resolution" not in message["metadata"] for message in messages[1:])
 
@@ -1756,7 +1763,7 @@ def test_delete_session_does_not_affect_other_sessions() -> None:
     assert client.get(f"/api/sessions/{first['session_id']}").status_code == 404
     assert client.get(f"/api/sessions/{second['session_id']}").status_code == 200
     messages = client.get(f"/api/sessions/{second['session_id']}/messages").json()
-    assert messages[-1]["content"] == ""
+    assert "content" not in messages[-1]
     assert messages[-1]["parts"][0]["text"] == "dHdv"
 
 

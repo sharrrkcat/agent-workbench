@@ -54,10 +54,9 @@ Final persisted assistant and command result messages include:
 - `parts: [...]`
 
 `message_delta` remains text-only for public visible streaming content. During
-streaming, the frontend may display the accumulating transient `content` draft.
-After `message_completed`, `message_completed.message.parts` is the
-authoritative visible content. Legacy `content` and `output_type` are deprecated
-fallback compatibility fields and may be empty/null on new final messages.
+streaming, the frontend may display an accumulating transient draft in local
+state. After `message_completed`, `message_completed.message.parts` is the
+authoritative visible content.
 
 ## Producer Rules
 
@@ -83,25 +82,22 @@ planning, JSON extraction, or validation. Public output streaming requires
 - Track the last accepted `seq` per message.
 - Mark a message completed after `message_completed`.
 - Treat renderable `message_completed.message.parts` as final authoritative
-  content when `content_version=2`; use legacy `message.content` only for
-  no-parts historical or invalid messages.
+  content when `content_version=2`.
 - Merge run metrics, steps, warnings, attachments, status, and `run_id` without
   resetting streamed content.
 - During streaming, `message_updated` may conservatively merge metadata,
   `run_id`, attachments, status, `content_version`, and `parts`, but must not
-  replace accumulated draft `content`.
+  replace accumulated transient draft text.
 - For non-streaming source messages, `message_updated` may persist backend
-  generated rich content changes, such as replacing an `action_form` block after
-  a silent save or setting form-level `ui.collapsed=true`.
-- When `message_updated` changes an `action_form`, backend producers must
-  update the authoritative `form` part. Legacy rich content is a no-parts
-  fallback only.
+  generated part changes, such as replacing a `form` part after a silent save or
+  setting form-level `ui.collapsed=true`.
+- When `message_updated` changes a form, backend producers must update the
+  authoritative `form` part.
 - The frontend must not infer streaming state from content shape.
 
 ## Command Buttons
 
-`command_buttons` rich content blocks are converted to `command_buttons`
-Message Parts. New messages persist the part, not `rich_content.blocks`.
+`command_buttons` Message Parts are the command button content model.
 Clicking a command button sends its configured text through the normal
 user-message flow. It creates an ordinary user message and does not mutate the
 source assistant message, send hidden action payloads, or call a backend Agent
@@ -123,6 +119,13 @@ action API directly.
   "type": "message_completed",
   "run_id": "run_1",
   "message_id": "msg_1",
-  "payload": {"seq": 2, "message": {"message_id": "msg_1", "content": "hello"}}
+  "payload": {
+    "seq": 2,
+    "message": {
+      "message_id": "msg_1",
+      "content_version": 2,
+      "parts": [{"type": "text", "format": "markdown", "text": "hello"}]
+    }
+  }
 }
 ```

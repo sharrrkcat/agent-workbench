@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import base64
 from pathlib import Path
 
@@ -13,7 +13,6 @@ from ai_workbench.core.runner import AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
-from ai_workbench.core.schema.message import ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
@@ -366,7 +365,7 @@ def test_script_agent_worldbook_uses_comma_keywords_and_recursion(tmp_path: Path
         WorldbookEntry(
             worldbook_id=worldbook.id,
             name="Search",
-            keywords_text="搜索,但是不对",
+            keywords_text="鎼滅储,浣嗘槸涓嶅",
             content="This script entry mentions followup-token.",
         )
     )
@@ -375,7 +374,7 @@ def test_script_agent_worldbook_uses_comma_keywords_and_recursion(tmp_path: Path
     )
     fixture.worldbooks.replace_session_bindings(session.session_id, [worldbook.id])
 
-    result = run(fixture.runtime.handle_input(session, "@script_llm_worldbook_recursion 搜索"))
+    result = run(fixture.runtime.handle_input(session, "@script_llm_worldbook_recursion 鎼滅储"))
     system = fixture.llm.calls[0]["messages"][0]["content"]
     metadata = fixture.runs.get_run(result.run_id).metadata["worldbook_context"]
 
@@ -400,7 +399,7 @@ def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
 
     assert result.success is True
     assert fixture.llm.calls == []
-    assert messages[-1].output_type is None
+    assert not hasattr(messages[-1], "output_type")
     assert text_part(messages[-1])["format"] == "markdown"
     assert text_part(messages[-1])["text"] == (
         "# Step Test Complete\n\n"
@@ -447,7 +446,7 @@ def test_script_lifecycle_lab_hidden_json_uses_internal_stream_without_public_de
     assert result.success is True
     assert fixture.llm.calls[0]["stream"] is True
     assert [event.type for event in events].count("message_delta") == 0
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
     assert text_part(message)["format"] == "markdown"
     assert text_part(message)["text"] == (
         "# Lifecycle Lab\n\n"
@@ -474,7 +473,7 @@ def test_script_lifecycle_lab_hidden_json_parse_error_returns_friendly_markdown(
 
     assert result.success is True
     assert parse_step.status.value == "failed"
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
     assert text_part(message)["format"] == "markdown"
     assert text_part(message)["text"] == (
         "# JSON extraction failed\n\n"
@@ -504,7 +503,7 @@ def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplica
     assert len(completed) == 1
     assert completed[0].payload["seq"] == 4
     assert completed[0].message_id == message.message_id
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
     assert text_part(message)["format"] == "markdown"
     assert text_part(message)["text"] == "".join(chunks)
     assert stream_step.status.value == "completed"
@@ -602,7 +601,7 @@ def test_script_agent_failure_reuses_placeholder_and_preserves_steps(tmp_path: P
 
     assert result.success is False
     assert len([message for message in messages if message.run_id == result.run_id]) == 1
-    assert messages[-1].output_type is None
+    assert not hasattr(messages[-1], "output_type")
     assert messages[-1].parts[0]["type"] == "error"
     running_step = next(step for step in steps if step.label == "Running script")
     before_fail = next(step for step in steps if step.label == "before fail")
@@ -909,8 +908,8 @@ def test_ctx_llm_json_returns_dict(tmp_path: Path) -> None:
     assert result.success is True
     message = fixture.messages.list_messages(session.session_id)[-1]
     assert json_part(message) == {"ok": True, "value": 7}
-    assert message.content == ""
-    assert message.output_type is None
+    assert not hasattr(message, "content")
+    assert not hasattr(message, "output_type")
 
 
 def test_ctx_llm_json_extracts_fenced_json(tmp_path: Path) -> None:
@@ -992,7 +991,7 @@ def test_ctx_output_write_delta_updates_script_placeholder(tmp_path: Path) -> No
 
     assert result.success is True
     assert message.run_id == result.run_id
-    assert message.content == ""
+    assert not hasattr(message, "content")
     assert text_part(message)["text"] == "hello"
     events = fixture.events.list_events()
     assert [event.type for event in events].count("message_delta") == 2
@@ -1007,7 +1006,7 @@ def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
         tmp_path,
         "llm_stream_output_script",
         "async def run(ctx):\n"
-        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, output_type='markdown')\n",
+        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, format='markdown')\n",
         capabilities=["llm"],
     )
     fixture = ScriptRuntimeFixture(agents=registry, llm=FakeStreamingLLMRuntime(chunks=["hel", "lo"]))
@@ -1021,8 +1020,8 @@ def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.content == ""
-    assert message.output_type is None
+    assert not hasattr(message, "content")
+    assert not hasattr(message, "output_type")
     assert text_part(message)["text"] == "hello"
     assert text_part(message)["format"] == "markdown"
     events = fixture.events.list_events()
@@ -1038,7 +1037,7 @@ def test_ctx_llm_stream_to_output_deltas_are_not_persisted_by_default(tmp_path: 
         tmp_path,
         "llm_stream_output_script",
         "async def run(ctx):\n"
-        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, output_type='markdown')\n",
+        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, format='markdown')\n",
         capabilities=["llm"],
     )
     fixture = ScriptRuntimeFixture(agents=registry, llm=FakeStreamingLLMRuntime(chunks=["hel", "lo"]))
@@ -1056,7 +1055,7 @@ def test_ctx_llm_stream_to_output_deltas_are_not_persisted_by_default(tmp_path: 
     persisted = fixture.events.run_event_store.list_events(result.run_id)
 
     assert result.success is True
-    assert message.content == ""
+    assert not hasattr(message, "content")
     assert text_part(message)["text"] == "hello"
     assert "message_delta" in emitted
     assert "message_completed" in emitted
@@ -1076,7 +1075,7 @@ def test_ctx_llm_stream_to_output_failure_completes_partial_message(tmp_path: Pa
         tmp_path,
         "llm_stream_output_failure_script",
         "async def run(ctx):\n"
-        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, output_type='markdown')\n",
+        "    await ctx.llm.stream_to_output(system='System.', user=ctx.input.text, format='markdown')\n",
         capabilities=["llm"],
     )
     fixture = ScriptRuntimeFixture(agents=registry, llm=FailsAfterChunk())
@@ -1092,10 +1091,10 @@ def test_ctx_llm_stream_to_output_failure_completes_partial_message(tmp_path: Pa
 
     assert result.success is False
     assert fixture.runs.get_run(result.run_id).status == RunStatus.FAILED
-    assert message.content == ""
-    assert message.output_type is None
+    assert not hasattr(message, "content")
+    assert not hasattr(message, "output_type")
     assert text_part(message)["text"] == "partial answer"
-    assert text_part(message)["format"] == "markdown"
+    assert text_part(message)["format"] == "plain"
     assert message.metadata["success"] is False
     assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
     assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
@@ -1144,7 +1143,7 @@ def test_ctx_llm_generate_accepts_system_and_user(tmp_path: Path) -> None:
     assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "generated system"
 
 
-def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
+def test_reply_helpers_write_expected_parts(tmp_path: Path) -> None:
     registry = write_script_agent(
         tmp_path,
         "reply_helpers_script",
@@ -1160,11 +1159,8 @@ def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [(message.content, message.output_type) for message in messages[-3:]] == [
-        ("", None),
-        ("", None),
-        ("", None),
-    ]
+    assert all(not hasattr(message, "content") for message in messages[-3:])
+    assert all(not hasattr(message, "output_type") for message in messages[-3:])
     assert [message.content_version for message in messages[-3:]] == [2, 2, 2]
     assert [message.parts[0]["type"] for message in messages[-3:]] == ["text", "text", "json"]
     assert messages[-3].parts[0]["format"] == "plain"
@@ -1190,29 +1186,29 @@ def test_reply_parts_writes_v2_parts_without_legacy_visible_content(tmp_path: Pa
     assert result.success is True
     assert message.content_version == 2
     assert [part["type"] for part in message.parts] == ["text", "json"]
-    assert message.output_type is None
-    assert message.content == ""
+    assert not hasattr(message, "output_type")
+    assert not hasattr(message, "content")
 
 
-def test_image_output_schema_accepts_supported_payloads() -> None:
-    image = ImagePayload.model_validate({"url": "https://example.test/image.png", "alt": "Example"})
-    gallery = ImageGalleryPayload.model_validate({"images": [image.model_dump()]})
-    rich = RichContentPayload.model_validate(
-        {
-            "blocks": [
-                {"type": "markdown", "text": "**hello**"},
-                {"type": "image", "url": "https://example.test/inline.png", "caption": "Inline"},
-                {"type": "text", "text": "done"},
-            ]
-        }
+def test_image_output_parts_accept_supported_payloads() -> None:
+    from ai_workbench.core.message_parts import blocks_to_parts, make_image_part, make_media_group_part
+
+    image = make_image_part("https://example.test/image.png", alt="Example")
+    gallery = make_media_group_part([{"url": "https://example.test/image.png", "alt": "Example"}])
+    parts = blocks_to_parts(
+        [
+            {"type": "markdown", "text": "**hello**"},
+            {"type": "image", "url": "https://example.test/inline.png", "caption": "Inline"},
+            {"type": "text", "text": "done"},
+        ]
     )
 
-    assert image.url == "https://example.test/image.png"
-    assert gallery.images[0].alt == "Example"
-    assert [block.type for block in rich.blocks] == ["markdown", "image", "text"]
+    assert image["url"] == "https://example.test/image.png"
+    assert gallery["items"][0]["alt"] == "Example"
+    assert [part["type"] for part in parts] == ["text", "image", "text"]
 
 
-def test_image_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
+def test_image_reply_helpers_write_expected_parts(tmp_path: Path) -> None:
     registry = write_script_agent(
         tmp_path,
         "image_reply_script",
@@ -1235,7 +1231,7 @@ def test_image_reply_helpers_write_expected_output_types(tmp_path: Path) -> None
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[-3:]] == [None, None, None]
+    assert all(not hasattr(message, "output_type") for message in messages[-3:])
     assert image_part(messages[-3]) == {
         "id": "part_1",
         "type": "image",
@@ -1273,7 +1269,7 @@ def test_script_agent_sees_and_reads_input_attachments(monkeypatch, tmp_path: Pa
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
     assert file_part(message)["filename"] == "config.yaml"
     assert file_part(message)["content"] == "id: chat\n  enabled: true\n"
 
@@ -1334,7 +1330,7 @@ def test_script_agent_save_attachment_base64_supports_data_url_and_image_gallery
     attachment = message.metadata["attachments"][0]
 
     assert result.success is True
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
     assert media_group_part(message)["items"] == [{"type": "image", "url": attachment["url"], "alt": "result.png"}]
     assert attachment["type"] == "image"
     assert attachment["mime_type"] == "image/png"
@@ -1376,9 +1372,9 @@ def test_script_agent_failure_keeps_agent_error_message(tmp_path: Path) -> None:
     assert message.speaker_type == "agent"
     assert message.speaker_name == "failing_script"
     assert message.origin == "agent_reply"
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
     assert message.metadata["success"] is False
-    assert message.content == ""
+    assert not hasattr(message, "content")
     assert message.parts[0]["type"] == "error"
     assert message.parts[0]["message"] == "script boom"
     assert any(step.status.value == "failed" for step in steps)
@@ -1424,7 +1420,7 @@ def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[-3:]] == [None, None, None]
+    assert all(not hasattr(message, "output_type") for message in messages[-3:])
     assert text_part(messages[-3])["text"] == "hello"
     assert image_part(messages[-2])["url"] == image["data_url"]
     assert image_part(messages[-2])["title"] == "cat.png"
@@ -1443,7 +1439,7 @@ def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> No
 
     assert result.success is True
     assert messages[0].role == "user"
-    assert messages[0].content == "@render_test:text hello"
+    assert text_part(messages[0])["text"] == "@render_test:text hello"
     assert messages[0].metadata["invocation"]["raw_text"] == "@render_test:text hello"
     assert messages[0].metadata["invocation"]["args"] == "hello"
     assert messages[-1].role == "assistant"
@@ -1460,7 +1456,7 @@ def test_current_agent_action_shortcut_stores_raw_input_and_route_metadata() -> 
 
     assert result.success is True
     assert messages[0].role == "user"
-    assert messages[0].content == ":text hello"
+    assert text_part(messages[0])["text"] == ":text hello"
     assert messages[0].metadata["invocation"]["route_kind"] == "current_agent_action_shortcut"
     assert messages[0].metadata["invocation"]["resolved_agent_id"] == "render_test"
     assert messages[0].metadata["invocation"]["resolved_action_id"] == "text"
@@ -1494,18 +1490,17 @@ def test_render_test_image_action_returns_three_non_llm_messages() -> None:
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[1:]] == [None, None, None]
+    assert all(not hasattr(message, "output_type") for message in messages[1:])
     assert [message.parts[0]["type"] for message in messages[1:]] == ["image", "text", "media_group"]
     assert all("llm_resolution" not in message.metadata for message in messages[1:])
 
 
-def test_reply_accepts_type_and_output_type_compatibility(tmp_path: Path) -> None:
+def test_reply_accepts_type_without_output_type_compatibility(tmp_path: Path) -> None:
     registry = write_script_agent(
         tmp_path,
         "reply_compat_script",
         "async def run(ctx):\n"
-        "    await ctx.reply('type markdown', type='markdown')\n"
-        "    await ctx.reply('output markdown', output_type='markdown')\n",
+        "    await ctx.reply('type markdown', type='markdown')\n",
     )
     fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
@@ -1514,5 +1509,5 @@ def test_reply_accepts_type_and_output_type_compatibility(tmp_path: Path) -> Non
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[-2:]] == [None, None]
-    assert [text_part(message)["format"] for message in messages[-2:]] == ["markdown", "markdown"]
+    assert not hasattr(messages[-1], "output_type")
+    assert text_part(messages[-1])["format"] == "markdown"

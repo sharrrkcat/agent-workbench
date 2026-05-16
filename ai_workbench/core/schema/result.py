@@ -2,9 +2,6 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
-
-
 class CommandResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -13,7 +10,6 @@ class CommandResult(BaseModel):
     data: Optional[Any] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
-    output_type: str = "text"
 
 
 class RunResult(CommandResult):
@@ -26,4 +22,3 @@ class CapabilityCallResult(BaseModel):
     success: bool
     data: Optional[Any] = None
     error: Optional[str] = None
-    output_type: str = "text"

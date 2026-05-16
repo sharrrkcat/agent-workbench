@@ -25,13 +25,11 @@ class MessageRecord(SQLModel, table=True):
     message_id: str = Field(primary_key=True)
     session_id: str = Field(index=True)
     role: str
-    content_json: str
     speaker_type: Optional[str] = None
     speaker_id: Optional[str] = None
     speaker_name: Optional[str] = None
     origin: Optional[str] = None
-    output_type: Optional[str] = None
-    content_version: Optional[int] = 2
+    content_version: int = 2
     parts_json: str = "[]"
     agent_id: Optional[str] = None
     command_name: Optional[str] = None

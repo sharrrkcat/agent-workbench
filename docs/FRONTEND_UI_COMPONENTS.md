@@ -17,6 +17,6 @@ Current expected reuse points:
 - Settings object pages should use `SettingsDetailHeader`.
 - Worldbook entry cards should use `DragHandle`, `MiniToggle`, `Chip` / `StatusChip`, and `InlineStatus`.
 - Chat message output renders `message.parts` first through
-  `frontend/src/components/messages/MessagePartsRenderer.tsx`. Legacy
-  `content` / `output_type` / `rich_content.blocks` rendering is deprecated
-  no-parts fallback only.
+  `frontend/src/components/messages/MessagePartsRenderer.tsx`. There is no
+  legacy visible message fallback; copy, renderability, forms, and command
+  buttons all read `Message.parts[]`.

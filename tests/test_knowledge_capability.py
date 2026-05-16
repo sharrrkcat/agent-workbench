@@ -194,7 +194,7 @@ def test_kb_search_command_passes_args_as_query() -> None:
     result = run(workbench.handle_input(session, "/kb-search alpha beta"))
 
     assert result.success is True
-    assert result.output_type == "json"
+    assert not hasattr(result, "output_type")
     assert result.data["query"] == "alpha beta"
     assert service.calls[0]["query"] == "alpha beta"
     assert service.calls[0]["session_id"] == session.session_id
@@ -215,7 +215,7 @@ def test_kb_search_without_query_fails_clearly() -> None:
     assert result.error == "Query is required for /kb-search."
     assert runs.get_run(result.run_id).status == RunStatus.FAILED
     message = messages.list_messages(session.session_id)[-1]
-    assert message.content == ""
+    assert not hasattr(message, "content")
     assert message.parts[0]["type"] == "error"
     assert message.parts[0]["code"] == "COMMAND_FAILED"
     assert message.parts[0]["message"] == "Query is required for /kb-search."

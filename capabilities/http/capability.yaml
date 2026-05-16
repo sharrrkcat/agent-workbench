@@ -1,4 +1,4 @@
-id: http
+﻿id: http
 name: HTTP Capability
 description: Fetch text, simple page content, and images over HTTP GET. This can access the network; it does not use private browser cookies.
 
@@ -73,7 +73,8 @@ methods:
         type: string
         required: true
     output:
-      type: text
+      part_type: text
+      format: plain
 
   - id: fetch_page
     description: Fetch a web page and return lightweight text extracted from HTML
@@ -82,7 +83,8 @@ methods:
         type: string
         required: true
     output:
-      type: markdown
+      part_type: text
+      format: markdown
 
   - id: fetch_image
     description: Fetch an HTTP or HTTPS image and return it as an image output
@@ -91,7 +93,7 @@ methods:
         type: string
         required: true
     output:
-      type: image
+      part_type: image
 
 commands:
   - name: /http-get

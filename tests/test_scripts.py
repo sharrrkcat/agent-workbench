@@ -260,7 +260,8 @@ def test_check_agents_strict_detects_missing_runtime_method(tmp_path: Path) -> N
             methods:
               - id: missing
                 output:
-                  type: text
+                  part_type: text
+                  format: plain
             commands:
               - name: /bad-capability
                 method: missing
@@ -298,7 +299,8 @@ def test_check_agents_strict_detects_duplicate_command_name(tmp_path: Path) -> N
                 methods:
                   - id: echo
                     output:
-                      type: text
+                      part_type: text
+                      format: plain
                 commands:
                   - name: /same-command
                     method: echo
@@ -332,7 +334,7 @@ def test_run_agent_script_runs_echo_script() -> None:
 
     assert result.returncode == 0
     assert "run status: done" in result.stdout
-    assert "assistant [text]:" in result.stdout
+    assert "assistant [parts]:" in result.stdout
     assert "aGVsbG8=" in result.stdout
 
 
@@ -349,7 +351,7 @@ def test_run_agent_script_json_output_is_valid_json() -> None:
 
     assert result.returncode == 0
     assert payload["run"]["status"] == "DONE"
-    assert payload["messages"][-1]["content"] == "aGVsbG8="
+    assert payload["messages"][-1]["parts"][0]["text"] == "aGVsbG8="
     assert payload["error"] is None
 
 
@@ -363,7 +365,7 @@ def test_run_agent_script_markdown_message_has_no_extra_json_quotes() -> None:
     )
 
     assert result.returncode == 0
-    assert "assistant [markdown]:" in result.stdout
+    assert "assistant [parts]:" in result.stdout
     assert "# Render Test" in result.stdout
     assert '"# Render Test' not in result.stdout
 
@@ -378,7 +380,7 @@ def test_run_agent_script_json_message_pretty_prints() -> None:
     )
 
     assert result.returncode == 0
-    assert "assistant [json]:" in result.stdout
+    assert "assistant [parts]:" in result.stdout
     assert '{\n  "echo": "hello",\n  "items": [' in result.stdout
 
 
@@ -392,11 +394,11 @@ def test_run_agent_supports_action_argument() -> None:
     )
 
     assert result.returncode == 0
-    assert "assistant [json]:" in result.stdout
+    assert "assistant [parts]:" in result.stdout
     assert '"echo": "hello"' in result.stdout
 
 
-def test_run_agent_summarizes_image_and_rich_content_outputs() -> None:
+def test_run_agent_summarizes_image_and_parts_outputs() -> None:
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test:image", "hello"],
         cwd=ROOT,
@@ -406,10 +408,10 @@ def test_run_agent_summarizes_image_and_rich_content_outputs() -> None:
     )
 
     assert result.returncode == 0
-    assert "assistant [image]:" in result.stdout
+    assert "assistant [parts]:" in result.stdout
     assert "url_prefix=" in result.stdout
-    assert "agent [rich_content]:" in result.stdout
-    assert "rich_content: 3 block(s)" in result.stdout
+    assert "agent [parts]:" in result.stdout
+    assert "media_group: 3 image(s)" in result.stdout
 
 
 def test_run_agent_missing_llm_model_hint_mentions_env_var(monkeypatch) -> None:
@@ -464,7 +466,7 @@ def test_run_command_runs_base64() -> None:
 
     assert result.returncode == 0
     assert "run status: done" in result.stdout
-    assert "output_type: text" in result.stdout
+    assert "declared output part: text" in result.stdout
     assert "aGVsbG8=" in result.stdout
 
 
@@ -482,7 +484,7 @@ def test_run_command_summarizes_image_output_without_full_data_url() -> None:
     )
 
     assert result.returncode == 0
-    assert "output_type: image" in result.stdout
+    assert "declared output part: image" in result.stdout
     assert "mime=image/svg+xml" in result.stdout
     assert "url_length=" in result.stdout
     assert svg_data_url not in result.stdout

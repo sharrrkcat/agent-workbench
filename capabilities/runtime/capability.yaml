@@ -1,4 +1,4 @@
-id: runtime
+﻿id: runtime
 name: Runtime Control
 description: Core runtime control commands.
 
@@ -10,7 +10,8 @@ methods:
         type: string
         required: false
     output:
-      type: markdown
+      part_type: text
+      format: markdown
 
 commands:
   - name: /free-memory

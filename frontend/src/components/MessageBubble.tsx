@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, MessagePart, Run, RunStep, WorldbookEntry } from '../types';
+import type { ActionFormBlock, ActionFormField, Agent, Attachment, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, MessagePart, Run, RunStep, WorldbookEntry } from '../types';
 import { api } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
@@ -38,15 +38,15 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const storeRunSteps = useWorkbenchStore((state) => (message.run_id ? state.stepsByRunId[message.run_id] : undefined));
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(contentToText(message.content));
+  const [editValue, setEditValue] = useState(copyableMessageContent(message));
   const [contextModalOpen, setContextModalOpen] = useState(false);
   const [citationModal, setCitationModal] = useState<KnowledgeCitationSelection | null>(null);
 
-  if (message.output_type === 'event') {
+  if (message.metadata?.event_type) {
     return <SystemEventSeparator message={message} />;
   }
 
-  if ((message.output_type === 'error' || message.client_error || message.metadata?.success === false) && !hasProducerIdentity(message)) {
+  if ((hasErrorPart(message) || message.client_error || message.metadata?.success === false) && !hasProducerIdentity(message)) {
     return <InlineErrorBlock message={message} />;
   }
 
@@ -58,7 +58,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted), t) : '';
-  const reasoningContent = isAgentMessage && message.output_type === 'text' ? extractReasoningContent(message.metadata) : '';
+  const reasoningContent = isAgentMessage ? extractReasoningContent(message.metadata) : '';
   const runSteps = storeRunSteps || messageRunSteps(message);
   const messageRun = storeRun || message.run;
   const contextMetadata = isAgentMessage ? normalizeContextMetadata({ message_metadata: message.metadata, run_metadata: messageRun?.metadata, steps: runSteps }) : {};
@@ -69,8 +69,8 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   }
 
   useEffect(() => {
-    if (!editing) setEditValue(contentToText(message.content));
-  }, [editing, message.content]);
+    if (!editing) setEditValue(copyableMessageContent(message));
+  }, [editing, message.parts]);
 
   async function copyMessage() {
     try {
@@ -1119,7 +1119,7 @@ function MessageHeader({
 function SystemEventSeparator({ message }: { message: Message }) {
   return (
     <article className="message-row system event">
-      <div className="system-event-separator">{contentToText(message.content)}</div>
+      <div className="system-event-separator">{copyableMessageContent(message)}</div>
     </article>
   );
 }
@@ -1190,76 +1190,27 @@ function MessageContent({
   onPreviewImage: (image: ImagePreview) => void;
   onPreviewFile: (file: FilePreview) => void;
 }) {
-  if (message.output_type === 'error' || message.metadata?.success === false) {
+  if (hasErrorPart(message) || message.metadata?.success === false) {
     return <MessageErrorCard message={message} />;
   }
   if (kind === 'user') {
-    return <UserMessageRenderer content={message.content} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
+    return <UserMessageRenderer content={copyableMessageContent(message)} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
   }
   const citationRefs = kind === 'agent' ? contextMetadata.knowledge?.snippetRefs : undefined;
-  if (hasRenderableParts(message.parts)) {
-    return (
-      <MessagePartsRenderer
-        parts={message.parts}
-        message={message}
-        renderMarkdown={(text) => <MarkdownRenderer content={text} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />}
-        renderPlainText={(text) => <PlainTextRenderer content={text} />}
-        renderJson={(data) => <JsonRenderer content={data} />}
-        renderFile={(payload) => <FileContentRenderer payload={payload} />}
-        renderImage={(image) => <ImageRenderer image={image} onPreviewImage={onPreviewImage} />}
-        renderImageGallery={(images) => <ImageGalleryRenderer images={images} onPreviewImage={onPreviewImage} />}
-        renderForm={(form, blockIndex) => <ActionFormRenderer form={form} messageId={message.message_id} blockIndex={blockIndex} />}
-        renderCommandButtons={(block) => <CommandButtonsRenderer block={block} />}
-      />
-    );
-  }
   return (
-    <LegacyMessageFallback
+    <MessagePartsRenderer
+      parts={message.parts}
       message={message}
-      kind={kind}
-      citationRefs={citationRefs}
-      onOpenKnowledgeCitation={onOpenKnowledgeCitation}
-      onPreviewImage={onPreviewImage}
+      renderMarkdown={(text) => <MarkdownRenderer content={text} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />}
+      renderPlainText={(text) => <PlainTextRenderer content={text} />}
+      renderJson={(data) => <JsonRenderer content={data} />}
+      renderFile={(payload) => <FileContentRenderer payload={payload} />}
+      renderImage={(image) => <ImageRenderer image={image} onPreviewImage={onPreviewImage} />}
+      renderImageGallery={(images) => <ImageGalleryRenderer images={images} onPreviewImage={onPreviewImage} />}
+      renderForm={(form, blockIndex) => <ActionFormRenderer form={form} messageId={message.message_id} blockIndex={blockIndex} />}
+      renderCommandButtons={(block) => <CommandButtonsRenderer block={block} />}
     />
   );
-}
-
-function LegacyMessageFallback({
-  message,
-  kind,
-  citationRefs,
-  onOpenKnowledgeCitation,
-  onPreviewImage,
-}: {
-  message: Message;
-  kind: 'user' | 'agent' | 'command';
-  citationRefs?: KnowledgeSnippetRef[];
-  onOpenKnowledgeCitation: (selection: KnowledgeCitationSelection) => void;
-  onPreviewImage: (image: ImagePreview) => void;
-}) {
-  // Deprecated compatibility only: new assistant/command messages render via Message Parts v2.
-  if (message.output_type === 'markdown') {
-    return <MarkdownRenderer content={message.content} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />;
-  }
-  if (message.output_type === 'text' && kind === 'agent') {
-    return <MarkdownRenderer content={message.content} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />;
-  }
-  if (message.output_type === 'json') {
-    return <JsonRenderer content={message.content} />;
-  }
-  if (message.output_type === 'file_content') {
-    return <FileContentRenderer payload={normalizeFileContentPayload(message.content)} />;
-  }
-  if (message.output_type === 'image') {
-    return <ImageRenderer image={normalizeImagePayload(message.content)} onPreviewImage={onPreviewImage} />;
-  }
-  if (message.output_type === 'image_gallery') {
-    return <ImageGalleryRenderer images={normalizeImageGallery(message.content)} onPreviewImage={onPreviewImage} />;
-  }
-  if (message.output_type === 'rich_content') {
-    return <LegacyRichContentRenderer messageId={message.message_id} blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
-  }
-  return <PlainTextRenderer content={message.content} />;
 }
 
 function MessageErrorCard({ message }: { message: Message }) {
@@ -1272,7 +1223,7 @@ function MessageErrorCard({ message }: { message: Message }) {
       <CircleAlert size={16} />
       <div>
         <strong>{title}</strong>
-        <p>{displayError.message || contentToText(message.content) || t('errors:RUN_FAILED')}</p>
+        <p>{displayError.message || copyableMessageContent(message) || t('errors:RUN_FAILED')}</p>
       </div>
     </div>
   );
@@ -1589,34 +1540,6 @@ function ImageGalleryRenderer({ images, onPreviewImage }: { images: ImagePayload
   );
 }
 
-function LegacyRichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId: string; blocks: ChatContentBlock[]; onPreviewImage: (image: ImagePreview) => void }) {
-  if (!blocks.length) {
-    return <PlainTextRenderer content="" />;
-  }
-  return (
-    <div className="message-content rich-content">
-      {blocks.map((block, index) => {
-        if (block.type === 'markdown') {
-          return <MarkdownRenderer key={index} content={block.text} />;
-        }
-        if (block.type === 'image') {
-          return <ImageRenderer key={index} image={block} onPreviewImage={onPreviewImage} />;
-        }
-        if (block.type === 'file_content') {
-          return <FileContentRenderer key={index} payload={block} />;
-        }
-        if (block.type === 'action_form') {
-          return <ActionFormRenderer key={`${messageId}:action_form:${index}:${block.form_id}`} form={block} messageId={messageId} blockIndex={index} />;
-        }
-        if (block.type === 'command_buttons') {
-          return <CommandButtonsRenderer key={index} block={block} />;
-        }
-        return <PlainTextRenderer key={index} content={block.text} />;
-      })}
-    </div>
-  );
-}
-
 function CommandButtonsRenderer({ block }: { block: CommandButtonsBlock }) {
   const { t } = useTranslation(['renderers']);
   const sendMessage = useWorkbenchStore((state) => state.sendMessage);
@@ -1877,17 +1800,7 @@ export function contentToText(content: unknown): string {
 
 function copyableMessageContent(message: Message): string {
   const partsText = copyablePartsContent(message.parts);
-  if (partsText !== null) return partsText;
-  if (message.output_type === 'file_content') {
-    return normalizeFileContentPayload(message.content).content;
-  }
-  if (message.output_type === 'json') {
-    return JSON.stringify(normalizeJsonContent(message.content), null, 2);
-  }
-  if (message.output_type && ['image', 'image_gallery', 'rich_content'].includes(message.output_type)) {
-    return JSON.stringify(message.content, null, 2);
-  }
-  return contentToText(message.content);
+  return partsText !== null ? partsText : '';
 }
 
 function copyablePartsContent(parts: MessagePart[] | undefined): string | null {
@@ -1985,53 +1898,11 @@ function normalizeFileContentPayload(content: unknown): FileContentPayload {
   };
 }
 
-function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
-  if (!content || typeof content !== 'object' || Array.isArray(content)) return [];
-  const value = content as Record<string, unknown>;
-  if (!Array.isArray(value.blocks)) return [];
-  const blocks: ChatContentBlock[] = [];
-  for (const block of value.blocks) {
-    if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
-    const item = block as Record<string, unknown>;
-    if (item.type === 'text' && typeof item.text === 'string') {
-      blocks.push({ type: 'text', text: item.text });
-    } else if (item.type === 'markdown' && typeof item.text === 'string') {
-      blocks.push({ type: 'markdown', text: item.text });
-    } else if (item.type === 'image') {
-      const image = normalizeImagePayload(item);
-      if (image) blocks.push({ type: 'image', ...image });
-    } else if (item.type === 'file_content') {
-      const fileContent = normalizeFileContentPayload(item);
-      blocks.push({ type: 'file_content', ...fileContent });
-    } else if (item.type === 'action_form' && typeof item.form_id === 'string' && typeof item.title === 'string' && Array.isArray(item.fields) && item.submit && typeof item.submit === 'object') {
-      blocks.push(item as ActionFormBlock);
-    } else if (item.type === 'command_buttons' && Array.isArray(item.buttons)) {
-      const buttons = item.buttons
-        .filter((button) => button && typeof button === 'object' && !Array.isArray(button) && typeof (button as Record<string, unknown>).label === 'string' && typeof (button as Record<string, unknown>).message === 'string')
-        .map((button) => {
-          const value = button as Record<string, unknown>;
-          return { label: value.label as string, message: value.message as string };
-        });
-      if (buttons.length) blocks.push({ type: 'command_buttons', buttons });
-    }
-  }
-  return blocks;
-}
-
 function hasRenderableMessage(message: Message, reasoningContent: string): boolean {
   if (reasoningContent.trim()) return true;
   if (hasRenderableParts(message.parts)) return true;
-  return hasRenderableLegacyMessage(message);
-}
-
-function hasRenderableLegacyMessage(message: Message): boolean {
-  // Deprecated compatibility only: no-parts historical or invalid messages.
-  if (message.output_type === 'image') return normalizeImagePayload(message.content) !== null;
-  if (message.output_type === 'image_gallery') return normalizeImageGallery(message.content).length > 0;
-  if (message.output_type === 'rich_content') return normalizeRichContentBlocks(message.content).length > 0;
-  if (message.output_type === 'file_content') return Boolean(normalizeFileContentPayload(message.content).content.trim());
   if (message.role === 'user' && messageAttachments(message).length) return true;
-  return Boolean(contentToText(message.content).trim());
+  return false;
 }
 
 function hasVisibleRun(run: Run | undefined): boolean {
@@ -2346,14 +2217,13 @@ function normalizeError(message: Message): { code?: string; message?: string } {
       message: typeof error.message === 'string' ? error.message : undefined,
     };
   }
-  if (message.content && typeof message.content === 'object') {
-    const content = message.content as Record<string, unknown>;
-    return {
-      code: typeof content.code === 'string' ? content.code : undefined,
-      message: typeof content.message === 'string' ? content.message : undefined,
-    };
-  }
-  return { code: message.run_id ? 'RUN_FAILED' : undefined, message: contentToText(message.content) };
+  const errorPart = Array.isArray(message.parts) ? message.parts.find((part) => part.type === 'error') : undefined;
+  if (errorPart?.type === 'error') return { code: errorPart.code || undefined, message: errorPart.message };
+  return { code: message.run_id ? 'RUN_FAILED' : undefined, message: copyableMessageContent(message) };
+}
+
+function hasErrorPart(message: Message): boolean {
+  return Array.isArray(message.parts) && message.parts.some((part) => part.type === 'error');
 }
 
 function resolvedModelLabel(message: Message): string | undefined {

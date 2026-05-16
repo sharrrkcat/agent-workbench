@@ -98,13 +98,14 @@ methods:
         type: string
         required: false
     output:
-      type: markdown
+      part_type: text
+      format: markdown
 
   - id: get_settings
     description: Return resolved Pet capability settings.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: update_settings
     description: Update Pet capability settings.
@@ -113,19 +114,19 @@ methods:
         type: json
         required: true
     output:
-      type: json
+      part_type: json
 
   - id: list_pets
     description: List Codex-compatible pet directories under data/pet.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: scan_pets
     description: Rescan Codex-compatible pet directories under data/pet.
     input_schema: {}
     output:
-      type: json
+      part_type: json
 
   - id: validate_pet
     description: Validate one Codex-compatible pet under data/pet.
@@ -134,7 +135,7 @@ methods:
         type: string
         required: true
     output:
-      type: json
+      part_type: json
 
   - id: delete_pet
     description: Delete one non-builtin pet under data/pet.
@@ -143,7 +144,7 @@ methods:
         type: string
         required: true
     output:
-      type: json
+      part_type: json
 
   - id: import_pet
     description: Import one Codex-compatible pet from uploaded pet.json and spritesheet.webp bytes.
@@ -155,7 +156,7 @@ methods:
         type: json
         required: true
     output:
-      type: json
+      part_type: json
 
 commands:
   - name: /pet

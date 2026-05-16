@@ -169,9 +169,7 @@ def _list_run_events(state: Any, run_id: str) -> list[Any]:
 
 def _format_message(message: dict[str, Any]) -> str:
     parts = message.get("parts")
-    if isinstance(parts, list) and parts:
-        return _format_parts(parts)
-    return _format_content(message.get("content"), message.get("output_type") or "text")
+    return _format_parts(parts if isinstance(parts, list) else [])
 
 
 def _format_parts(parts: list[Any]) -> str:
@@ -206,56 +204,6 @@ def _format_parts(parts: list[Any]) -> str:
     return "\n\n".join(line for line in lines if line)
 
 
-def _format_content(content: Any, output_type: str) -> str:
-    if output_type == "image":
-        return _image_summary(content)
-    if output_type == "image_gallery":
-        images = content.get("images", []) if isinstance(content, dict) else []
-        summaries = [_image_summary(image) for image in images[:3]]
-        suffix = "" if len(images) <= 3 else f"\n... {len(images) - 3} more image(s)"
-        return f"image_gallery: {len(images)} image(s)" + (("\n" + "\n".join(summaries)) if summaries else "") + suffix
-    if output_type == "rich_content":
-        blocks = content.get("blocks", []) if isinstance(content, dict) else []
-        types = [str(block.get("type", "unknown")) for block in blocks if isinstance(block, dict)]
-        return f"rich_content: {len(blocks)} block(s); types={', '.join(types) if types else 'none'}"
-    if output_type == "file_content":
-        if not isinstance(content, dict):
-            return str(content)
-        body = str(content.get("content") or "")
-        label = content.get("filename") or "file"
-        language = content.get("language") or "text"
-        suffix = " (truncated)" if content.get("truncated") else ""
-        return f"file_content: {label} [{language}] {len(body)} chars{suffix}\n{body}"
-    if output_type == "json":
-        parsed = _parse_json_like(content)
-        if isinstance(parsed, (dict, list)):
-            return json.dumps(_safe_preview(parsed), ensure_ascii=False, indent=2)
-        return str(parsed)
-    if isinstance(content, (dict, list)):
-        return json.dumps(_safe_preview(content), ensure_ascii=False, indent=2)
-    if isinstance(content, str):
-        return _unwrap_json_string(content)
-    return "" if content is None else str(content)
-
-
-def _parse_json_like(content: Any) -> Any:
-    if not isinstance(content, str):
-        return content
-    unwrapped = _unwrap_json_string(content)
-    try:
-        return json.loads(unwrapped)
-    except json.JSONDecodeError:
-        return unwrapped
-
-
-def _unwrap_json_string(value: str) -> str:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return value
-    return parsed if isinstance(parsed, str) else value
-
-
 def _image_summary(content: Any) -> str:
     if not isinstance(content, dict):
         return str(content)
@@ -279,9 +227,8 @@ def _safe_preview_value(key: str, value: Any) -> Any:
         return {
             "message_id": value.get("message_id"),
             "role": value.get("role"),
-            "output_type": value.get("output_type"),
             "run_id": value.get("run_id"),
-            "content_length": len(str(value.get("content") or "")),
+            "parts_count": len(value.get("parts") or []) if isinstance(value.get("parts"), list) else 0,
         }
     if isinstance(value, str) and (key in {"url", "data_url", "base64"} or value.startswith("data:image/")):
         return {"prefix": value[:32], "length": len(value)}

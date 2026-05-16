@@ -275,45 +275,87 @@ def validate_message_parts(parts: Sequence[Mapping[str, Any]]) -> list[dict[str,
     return validated
 
 
-def legacy_output_to_parts(output_type: str | None, content: Any) -> list[dict[str, Any]]:
-    kind = output_type or "text"
+def capability_output_to_parts(output: Mapping[str, Any] | None, content: Any) -> list[dict[str, Any]]:
+    declaration = output or {}
+    kind = declaration.get("part_type") if isinstance(declaration, Mapping) else None
+    kind = str(kind or _infer_part_type(content)).strip()
+    if kind == "parts":
+        if not isinstance(content, Sequence) or isinstance(content, (str, bytes, bytearray)):
+            raise MessagePartValidationError("parts output must be a list")
+        return validate_message_parts(content)
     if kind == "text":
-        return validate_message_parts([{"type": "text", "format": "plain", "text": "" if content is None else str(content)}])
-    if kind == "markdown":
-        return validate_message_parts([{"type": "text", "format": "markdown", "text": "" if content is None else str(content)}])
+        text_format = str(declaration.get("format") or "plain")
+        if text_format not in {"plain", "markdown"}:
+            raise MessagePartValidationError(f"unsupported text output format: {text_format}")
+        return validate_message_parts([{"type": "text", "format": text_format, "text": "" if content is None else str(content)}])
     if kind == "json":
         return validate_message_parts([{"type": "json", "data": content}])
-    if kind == "file_content":
+    if kind == "file":
         if not isinstance(content, Mapping):
-            raise MessagePartValidationError("file_content output must be an object")
-        return validate_message_parts([{"type": "file", "mode": "inline_text", **dict(content)}])
+            raise MessagePartValidationError("file output must be an object")
+        mode = str(declaration.get("mode") or content.get("mode") or "inline_text")
+        return validate_message_parts([{"type": "file", "mode": mode, **dict(content)}])
     if kind == "image":
         if not isinstance(content, Mapping):
             raise MessagePartValidationError("image output must be an object")
         return validate_message_parts([{"type": "image", **dict(content)}])
-    if kind == "image_gallery":
+    if kind == "media_group":
         if not isinstance(content, Mapping):
-            raise MessagePartValidationError("image_gallery output must be an object")
+            raise MessagePartValidationError("media_group output must be an object")
         images = content.get("images")
+        if images is None:
+            images = content.get("items")
         if not isinstance(images, list):
-            raise MessagePartValidationError("image_gallery images must be a list")
-        return validate_message_parts([{"type": "media_group", "layout": "gallery", "items": [{"type": "image", **dict(image)} for image in images]}])
-    if kind == "rich_content":
-        if not isinstance(content, Mapping) or not isinstance(content.get("blocks"), list):
-            raise MessagePartValidationError("rich_content output must contain blocks")
-        return blocks_to_parts(content["blocks"])
+            raise MessagePartValidationError("media_group images/items must be a list")
+        layout = str(declaration.get("layout") or content.get("layout") or "gallery")
+        return validate_message_parts([{"type": "media_group", "layout": layout, "items": [{"type": "image", **dict(image)} for image in images]}])
     if kind == "error":
         if isinstance(content, Mapping):
             return validate_message_parts([{"type": "error", "code": content.get("code"), "message": str(content.get("message") or content.get("code") or "Error")}])
         return validate_message_parts([{"type": "error", "message": "" if content is None else str(content)}])
-    raise MessagePartValidationError(f"unsupported legacy output type: {kind}")
+    raise MessagePartValidationError(f"unsupported output part_type: {kind}")
+
+
+def command_result_to_parts(output: Mapping[str, Any] | None, content: Any) -> list[dict[str, Any]]:
+    return capability_output_to_parts(output, content)
+
+
+def text_from_parts(parts: Sequence[Mapping[str, Any]] | None) -> str:
+    if not parts:
+        return ""
+    chunks: list[str] = []
+    for part in parts:
+        if not isinstance(part, Mapping):
+            continue
+        part_type = part.get("type")
+        if part_type == "text":
+            chunks.append(str(part.get("text") or ""))
+        elif part_type == "error":
+            chunks.append(str(part.get("message") or ""))
+        elif part_type == "notice":
+            chunks.append(str(part.get("text") or ""))
+    return "\n\n".join(chunk for chunk in chunks if chunk)
+
+
+def _infer_part_type(content: Any) -> str:
+    if isinstance(content, list):
+        return "parts"
+    if isinstance(content, Mapping):
+        if content.get("type") in _PART_ADAPTERS:
+            return "parts"
+        if "url" in content:
+            return "image"
+        if "images" in content or "items" in content:
+            return "media_group"
+        return "json"
+    return "text"
 
 
 def blocks_to_parts(blocks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     raw_parts: list[dict[str, Any]] = []
     for block in blocks:
         if not isinstance(block, Mapping):
-            raise MessagePartValidationError("rich content block must be an object")
+            raise MessagePartValidationError("message block must be an object")
         block_type = block.get("type")
         if block_type == "text":
             raw_parts.append({"type": "text", "format": "plain", "text": block.get("text", "")})
@@ -328,61 +370,8 @@ def blocks_to_parts(blocks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
         elif block_type == "command_buttons":
             raw_parts.append({"type": "command_buttons", "buttons": block.get("buttons")})
         else:
-            raise MessagePartValidationError(f"unsupported rich content block type: {block_type}")
+            raise MessagePartValidationError(f"unsupported message block type: {block_type}")
     return validate_message_parts(raw_parts)
-
-
-def parts_to_legacy_output(parts: Sequence[Mapping[str, Any]]) -> tuple[str, Any] | None:
-    validated = validate_message_parts(parts)
-    if not validated:
-        return "text", ""
-    if len(validated) == 1:
-        part = validated[0]
-        part_type = part["type"]
-        if part_type == "text":
-            return ("markdown" if part.get("format") == "markdown" else "text", part.get("text", ""))
-        if part_type == "json":
-            return "json", part.get("data")
-        if part_type == "file":
-            return "file_content", {key: value for key, value in part.items() if key not in {"id", "type", "mode", "attachment_id"}}
-        if part_type == "image":
-            return "image", {key: value for key, value in part.items() if key not in {"id", "type", "attachment_id"}}
-        if part_type == "media_group" and part.get("layout") == "gallery":
-            return "image_gallery", {"images": [{key: value for key, value in item.items() if key not in {"type", "attachment_id"}} for item in part.get("items", [])]}
-        if part_type == "form":
-            return "rich_content", {"blocks": [_form_part_to_block(part)]}
-        if part_type == "command_buttons":
-            return "rich_content", {"blocks": [{"type": "command_buttons", "buttons": part.get("buttons", [])}]}
-        if part_type == "notice":
-            return "text", part.get("text", "")
-        if part_type == "error":
-            return "error", _drop_none({"code": part.get("code"), "message": part.get("message", "")})
-    blocks: list[dict[str, Any]] = []
-    for part in validated:
-        block = _part_to_rich_content_block(part)
-        if block is None:
-            return "json", {"parts": validated}
-        blocks.append(block)
-    return "rich_content", {"blocks": blocks}
-
-
-def _part_to_rich_content_block(part: Mapping[str, Any]) -> dict[str, Any] | None:
-    part_type = part.get("type")
-    if part_type == "text":
-        return {"type": "markdown" if part.get("format") == "markdown" else "text", "text": part.get("text", "")}
-    if part_type == "image":
-        return {"type": "image", **{key: value for key, value in part.items() if key not in {"id", "type", "attachment_id"}}}
-    if part_type == "file":
-        return {"type": "file_content", **{key: value for key, value in part.items() if key not in {"id", "type", "mode", "attachment_id"}}}
-    if part_type == "form":
-        return _form_part_to_block(part)
-    if part_type == "command_buttons":
-        return {"type": "command_buttons", "buttons": part.get("buttons", [])}
-    return None
-
-
-def _form_part_to_block(part: Mapping[str, Any]) -> dict[str, Any]:
-    return validate_action_form_block({"type": "action_form", **{key: value for key, value in part.items() if key not in {"id", "type"}}})
 
 
 def _drop_none(data: Mapping[str, Any]) -> dict[str, Any]:

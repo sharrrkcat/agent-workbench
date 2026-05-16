@@ -1,4 +1,4 @@
-id: file
+﻿id: file
 name: File Capability
 description: Read local text and image files from configured allowed directories. This can access local files; it is not a sandbox.
 
@@ -82,7 +82,8 @@ methods:
         type: string
         required: true
     output:
-      type: file_content
+      part_type: file
+      mode: inline_text
 
   - id: read_image
     description: Read a local image file from an allowed local directory
@@ -91,7 +92,7 @@ methods:
         type: string
         required: true
     output:
-      type: image
+      part_type: image
 
 commands:
   - name: /read-file

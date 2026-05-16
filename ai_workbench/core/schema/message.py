@@ -1,93 +1,9 @@
 from datetime import datetime
-from typing import Annotated, Any, Dict, Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from ai_workbench.core.forms import ActionFormBlock
 from ai_workbench.core.time import isoformat_utc, utc_now
-
-
-class ImagePayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    url: str = Field(min_length=1)
-    alt: Optional[str] = None
-    title: Optional[str] = None
-    caption: Optional[str] = None
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("image url is required")
-        return cleaned
-
-
-class ImageGalleryPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    images: list[ImagePayload]
-
-
-class FileContentPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    filename: Optional[str] = None
-    language: Optional[str] = None
-    mime_type: Optional[str] = None
-    content: str
-    size: Optional[int] = None
-    truncated: bool = False
-    path: Optional[str] = None
-
-
-class TextContentBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["text"]
-    text: str
-
-
-class MarkdownContentBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["markdown"]
-    text: str
-
-
-class ImageContentBlock(ImagePayload):
-    type: Literal["image"]
-
-
-class FileContentBlock(FileContentPayload):
-    type: Literal["file_content"]
-
-
-class CommandButton(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: str = Field(min_length=1)
-    message: str = Field(min_length=1)
-
-
-class CommandButtonsBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["command_buttons"]
-    buttons: list[CommandButton]
-
-
-ChatContentBlock = Annotated[
-    Union[TextContentBlock, MarkdownContentBlock, ImageContentBlock, FileContentBlock, ActionFormBlock, CommandButtonsBlock],
-    Field(discriminator="type"),
-]
-
-
-class RichContentPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    blocks: list[ChatContentBlock]
 
 
 class MessageSchema(BaseModel):
@@ -96,7 +12,6 @@ class MessageSchema(BaseModel):
     message_id: str
     session_id: str
     role: Literal["user", "assistant", "agent", "system", "tool", "command"]
-    content: Any = ""
     speaker_type: Optional[Literal["user", "agent", "capability", "system"]] = None
     speaker_id: Optional[str] = None
     speaker_name: Optional[str] = None
@@ -105,8 +20,7 @@ class MessageSchema(BaseModel):
     command_name: Optional[str] = None
     action_id: Optional[str] = None
     run_id: Optional[str] = None
-    output_type: Optional[str] = None
-    content_version: Optional[int] = 2
+    content_version: int = 2
     parts: list[Dict[str, Any]] = Field(default_factory=list)
     parent_message_id: Optional[str] = None
     available_actions: list = Field(default_factory=list)

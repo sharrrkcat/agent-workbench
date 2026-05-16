@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ai_workbench.core.message_parts import legacy_output_to_parts, make_form_part
+from ai_workbench.core.message_parts import make_form_part
 
 
 RECIPE_KEY = "comfyui_recipe"
@@ -1105,20 +1105,12 @@ async def update_source_recipe_form(ctx, recipe: dict, preset: dict | None, pres
     except Exception:
         return None
     parts = copy.deepcopy(getattr(source, "parts", None) or [])
-    content = copy.deepcopy(source.content)
     replaced_parts = _replace_form_part(parts, form_id, block)
-    replaced_content = False
     if not replaced_parts:
-        replaced_content = _replace_action_form_block(content, form_id, block)
-    if not replaced_parts and not replaced_content:
         return None
-    if not replaced_parts:
-        parts = legacy_output_to_parts(_output_type_for_updated_content(source.output_type, content), content)
     updated = ctx.message_store.update_message(
         source.model_copy(
             update={
-                "content": source.content if replaced_parts else content,
-                "output_type": None if replaced_parts else source.output_type,
                 "content_version": 2,
                 "parts": parts,
             }
@@ -1144,30 +1136,6 @@ def _replace_form_part(parts: Any, form_id: str, block: dict) -> bool:
             parts[index] = {**replacement, "id": item.get("id") or replacement["id"]}
             return True
     return False
-
-
-def _replace_action_form_block(content: Any, form_id: str, block: dict) -> bool:
-    if isinstance(content, dict) and content.get("type") == "action_form" and content.get("form_id") == form_id:
-        content.clear()
-        content.update(block)
-        return True
-    blocks = content.get("blocks") if isinstance(content, dict) else None
-    if not isinstance(blocks, list):
-        return False
-    for index, item in enumerate(blocks):
-        if isinstance(item, dict) and item.get("type") == "action_form" and item.get("form_id") == form_id:
-            blocks[index] = block
-            return True
-    return False
-
-
-def _output_type_for_updated_content(output_type: str | None, content: Any) -> str:
-    if isinstance(content, dict):
-        if isinstance(content.get("blocks"), list):
-            return "rich_content"
-        if content.get("type") == "action_form":
-            return "rich_content"
-    return output_type or "rich_content"
 
 
 def _prompt_enhancer_detail(ctx, action_id: str, stage: str, reached_provider: bool, llm_operation: str | None = None) -> dict:

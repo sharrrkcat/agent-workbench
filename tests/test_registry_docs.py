@@ -123,7 +123,8 @@ def write_minimal_capability(capability_dir: Path) -> None:
             methods:
               - id: echo
                 output:
-                  type: text
+                  part_type: text
+                  format: plain
             commands:
               - name: /minimal
                 method: echo

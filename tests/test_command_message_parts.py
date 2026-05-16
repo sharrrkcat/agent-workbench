@@ -31,20 +31,18 @@ class OutputRuntime:
         return {"images": [{"url": "/api/attachments/a.png", "alt": "A"}]}
 
     def rich_form(self, args: str) -> dict[str, Any]:
-        return {
-            "blocks": [
-                {
-                    "type": "action_form",
-                    "form_id": "demo",
-                    "title": "Demo",
-                    "fields": [{"name": "prompt", "type": "textarea", "required": True}],
-                    "submit": {"action_id": "submit"},
-                }
-            ]
-        }
+        return [
+            {
+                "type": "form",
+                "form_id": "demo",
+                "title": "Demo",
+                "fields": [{"name": "prompt", "type": "textarea", "required": True}],
+                "submit": {"action_id": "submit"},
+            }
+        ]
 
-    def rich_buttons(self, args: str) -> dict[str, Any]:
-        return {"blocks": [{"type": "command_buttons", "buttons": [{"label": "Run", "message": "@chat hello"}]}]}
+    def rich_buttons(self, args: str) -> list[dict[str, Any]]:
+        return [{"type": "command_buttons", "buttons": [{"label": "Run", "message": "@chat hello"}]}]
 
     def inferred_json(self, args: str) -> dict[str, Any]:
         return {"inferred": True}
@@ -60,14 +58,14 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
             "id": "output_demo",
             "name": "Output Demo",
             "methods": [
-                {"id": "text", "output": {"type": "text"}},
-                {"id": "markdown", "output": {"type": "markdown"}},
-                {"id": "json", "output": {"type": "json"}},
-                {"id": "file_content", "output": {"type": "file_content"}},
-                {"id": "image", "output": {"type": "image"}},
-                {"id": "image_gallery", "output": {"type": "image_gallery"}},
-                {"id": "rich_form", "output": {"type": "rich_content"}},
-                {"id": "rich_buttons", "output": {"type": "rich_content"}},
+                {"id": "text", "output": {"part_type": "text", "format": "plain"}},
+                {"id": "markdown", "output": {"part_type": "text", "format": "markdown"}},
+                {"id": "json", "output": {"part_type": "json"}},
+                {"id": "file_content", "output": {"part_type": "file", "mode": "inline_text"}},
+                {"id": "image", "output": {"part_type": "image"}},
+                {"id": "image_gallery", "output": {"part_type": "media_group", "layout": "gallery"}},
+                {"id": "rich_form", "output": {"part_type": "parts"}},
+                {"id": "rich_buttons", "output": {"part_type": "parts"}},
                 {"id": "inferred_json"},
             ],
             "commands": [
@@ -115,11 +113,11 @@ def command_message(command_name: str):
 def test_capability_command_text_output_writes_plain_text_part() -> None:
     result, message, events = command_message("/out-text")
 
-    assert result.output_type == "text"
+    assert not hasattr(result, "output_type")
     assert message.content_version == 2
     assert message.parts == [{"id": "part_1", "type": "text", "format": "plain", "text": "plain result"}]
-    assert message.content == ""
-    assert message.output_type is None
+    assert not hasattr(message, "content")
+    assert not hasattr(message, "output_type")
     assert _completed_message(events)["parts"] == message.parts
 
 
@@ -128,16 +126,16 @@ def test_capability_command_markdown_output_writes_markdown_text_part() -> None:
 
     assert message.parts[0]["type"] == "text"
     assert message.parts[0]["format"] == "markdown"
-    assert message.content == ""
-    assert message.output_type is None
+    assert not hasattr(message, "content")
+    assert not hasattr(message, "output_type")
 
 
 def test_capability_command_json_output_writes_json_part() -> None:
     _, message, _ = command_message("/out-json")
 
     assert message.parts == [{"id": "part_1", "type": "json", "data": {"ok": True}}]
-    assert message.content == ""
-    assert message.output_type is None
+    assert not hasattr(message, "content")
+    assert not hasattr(message, "output_type")
 
 
 def test_capability_command_file_content_output_writes_file_part() -> None:
@@ -146,14 +144,14 @@ def test_capability_command_file_content_output_writes_file_part() -> None:
     assert message.parts[0]["type"] == "file"
     assert message.parts[0]["mode"] == "inline_text"
     assert message.parts[0]["content"] == "line 1"
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
 
 
 def test_capability_command_image_output_writes_image_part() -> None:
     _, message, _ = command_message("/out-image")
 
     assert message.parts == [{"id": "part_1", "type": "image", "url": "/api/attachments/image.png", "alt": "Image"}]
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
 
 
 def test_capability_command_image_gallery_output_writes_media_group_part() -> None:
@@ -162,7 +160,7 @@ def test_capability_command_image_gallery_output_writes_media_group_part() -> No
     assert message.parts[0]["type"] == "media_group"
     assert message.parts[0]["layout"] == "gallery"
     assert message.parts[0]["items"][0]["url"] == "/api/attachments/a.png"
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
 
 
 def test_rich_content_action_form_block_writes_form_part() -> None:
@@ -170,8 +168,8 @@ def test_rich_content_action_form_block_writes_form_part() -> None:
 
     assert message.parts[0]["type"] == "form"
     assert message.parts[0]["form_id"] == "demo"
-    assert message.output_type is None
-    assert message.content == ""
+    assert not hasattr(message, "output_type")
+    assert not hasattr(message, "content")
 
 
 def test_rich_content_command_buttons_block_writes_command_buttons_part() -> None:
@@ -184,16 +182,16 @@ def test_rich_content_command_buttons_block_writes_command_buttons_part() -> Non
             "buttons": [{"label": "Run", "message": "@chat hello"}],
         }
     ]
-    assert message.output_type is None
-    assert message.content == ""
+    assert not hasattr(message, "output_type")
+    assert not hasattr(message, "content")
 
 
 def test_command_runner_inferred_dict_output_writes_json_part() -> None:
     result, message, _ = command_message("/out-inferred")
 
-    assert result.output_type == "json"
+    assert not hasattr(result, "output_type")
     assert message.parts == [{"id": "part_1", "type": "json", "data": {"inferred": True}}]
-    assert message.output_type is None
+    assert not hasattr(message, "output_type")
 
 
 def test_session_load_api_response_returns_command_result_parts() -> None:
@@ -207,8 +205,8 @@ def test_session_load_api_response_returns_command_result_parts() -> None:
     loaded_result = loaded[-1]
     assert command_result["content_version"] == 2
     assert command_result["parts"] == [{"id": "part_1", "type": "text", "format": "plain", "text": "aGVsbG8="}]
-    assert command_result["content"] == ""
-    assert command_result["output_type"] is None
+    assert "content" not in command_result
+    assert "output_type" not in command_result
     assert loaded_result["parts"] == command_result["parts"]
 
 

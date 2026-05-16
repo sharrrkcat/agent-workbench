@@ -209,13 +209,13 @@ Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 - `reply_json`: send a JSON object or array.
 - `reply_image`: send one image payload with `url`.
 - `reply_images`: send an ordered image gallery.
-- `reply_blocks`: send ordered rich content blocks.
-- `reply_form` / `reply_action_form`: validate and send one `action_form` block.
+- `reply_blocks`: convenience helper that immediately converts block-like input
+  to Message Parts. Prefer `reply_parts` and typed helpers.
+- `reply_form` / `reply_action_form`: validate and send one `form` part.
 - `reply_file_content`: send raw file text, not markdown-rendered content.
 
 `reply_parts(parts, metadata=None)` is the v2 foundation; runtime sets
-`content_version=2`. Existing helpers are parts wrappers. Legacy `content` /
-`output_type` fields are deprecated compatibility only. Reply helpers accept
+`content_version=2`. Existing helpers are parts wrappers. Reply helpers accept
 optional compact metadata such as generated image recipe refs.
 
 ## Attachments In Script Agents
@@ -244,7 +244,7 @@ commands.
 | `name` | Display name. | Human-readable. |
 | `methods` | Internal callable methods. | Method id must match runtime callable. |
 | `input_schema` | Method input contract. | Lightweight manifest metadata. |
-| `output.type` | Declared output shape. | Used by commands and validation before persistence as Message Parts. |
+| `output.part_type` | Declared output part shape. | Used by commands and validation before persistence as Message Parts. |
 | `commands` | User-facing slash commands. | Global namespace; names start with `/`. |
 | `safe` | Command safety hint. | Documentation/UI hint, not a sandbox. |
 | `config_schema` | Local CapabilityConfig fields. | Settings stores values by capability id. |
@@ -302,23 +302,14 @@ core-owned services, not Capability backends. See:
 New Agent, Script Agent, and Capability command replies persist visible content
 as `content_version=2` plus ordered `parts`; supported part types and rules live
 in [contracts/message-parts.md](contracts/message-parts.md). The frontend renders
-`parts` as the normal path and uses legacy `content` / `output_type` only as a
-deprecated no-parts fallback.
+normal messages only from `parts`.
 
-Legacy output types are `text`, `markdown`, `json`, `image`, `image_gallery`,
-`file_content`, and `rich_content`. For Capability commands, `output.type`
-remains the developer declaration, while persisted visible messages are
-converted to `parts`. Use `file_content` for raw text that must not be
-markdown-rendered.
+Capability commands declare `output.part_type`: `text`, `json`, `file`,
+`image`, `media_group`, or `parts`. Text declarations may set
+`format: plain|markdown`; file declarations may set `mode: inline_text`; media
+groups may set `layout: gallery`. `output.type` is invalid.
 
-If a command returns a dict with no declared output, the runner may infer `json`,
-`image`, `image_gallery`, or `rich_content`; the inferred output is still stored
-through Message Parts. `rich_content.blocks` is an input compatibility shape.
-`action_form` becomes a `form` part and `command_buttons` becomes a
-`command_buttons` part. `rich_content.blocks` is deprecated input compatibility,
-not a persistent message structure. Markdown `text` parts keep render-time
-Knowledge citation enhancement. Round 5 will finish test/docs cleanup and
-reserve second-batch part types.
+Markdown `text` parts keep render-time Knowledge citation enhancement.
 
 ### `action_form` Block
 

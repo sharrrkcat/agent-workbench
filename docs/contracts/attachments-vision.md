@@ -26,10 +26,9 @@ vision compatibility, but new generated outputs should use attachment storage.
 Message Parts v2 keeps the same storage rule. `image` parts should point at a
 local attachment URL such as `/api/attachments/<id>.png` or carry an
 `attachment_id` ref. `media_group` parts use image items with the same URL/ref
-shape. `file` parts may carry small inline raw text with `mode="inline_text"`
-for the current `file_content` compatibility path; long files and binary files
-should be saved as attachments in later rounds. Durable message parts must not
-introduce a new large base64 storage path.
+shape. `file` parts may carry small inline raw text with `mode="inline_text"`;
+long files and binary files should be saved as attachments in later rounds.
+Durable message parts must not introduce a new large base64 storage path.
 
 ## Prompt Agent File Context
 
@@ -42,7 +41,7 @@ When disabled, Prompt Agents add lightweight placeholders and do not read or
 send text file contents. File context metadata records included attachment refs,
 limits, truncation, and warnings without storing full file text.
 
-`file_content` displays raw text and should not be markdown-rendered.
+`file` parts display raw text and should not be markdown-rendered.
 
 ## Vision Input
 
@@ -98,7 +97,7 @@ directory and does not reset data, browse arbitrary folders, generate
 thumbnails, export/import data, or sync to cloud storage.
 
 Composer upload, drag-and-drop, paste, serving, Prompt Agent file context,
-vision input, `file_content`, and attachment echo/test agents obey General
+vision input, file parts, and attachment echo/test agents obey General
 upload and file context limits. Active File and HTTP Capabilities have their own
 CapabilityConfig limits and are not passive upload handling.
 
@@ -115,9 +114,8 @@ Message Parts v2 selects the frontend renderer for new messages:
 Renderer changes that alter payload shapes update
 [../EXTENSION_API.md](../EXTENSION_API.md#output-payloads).
 
-Legacy `output_type` remains a deprecated compatibility hint for no-parts
-messages only. New Agent/Script outputs persist `content_version=2` and
-`parts`, with image/file/media parts following the attachment rules above.
+Agent/Script outputs persist `content_version=2` and `parts`, with
+image/file/media parts following the attachment rules above.
 
 ComfyUI preset schema is documented in
 [../COMFYUI_PRESET_SCHEMA.md](../COMFYUI_PRESET_SCHEMA.md). ComfyUI output

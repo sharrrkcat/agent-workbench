@@ -55,7 +55,7 @@ def generate_registry_markdown(
             "",
             "## Capabilities",
             "",
-            "| id | name | methods | commands | output types | config keys |",
+            "| id | name | methods | commands | output parts | config keys |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
     )
@@ -68,7 +68,7 @@ def generate_registry_markdown(
                     _cell(capability.name),
                     _cell(", ".join(method.id for method in capability.methods)),
                     _cell(", ".join(command.name for command in capability.commands)),
-                    _cell(", ".join(_output_type(method.output) for method in capability.methods if _output_type(method.output))),
+                    _cell(", ".join(_output_part(method.output) for method in capability.methods if _output_part(method.output))),
                     _cell(", ".join(field.name for field in capability.config_schema)),
                 ]
             )
@@ -169,10 +169,10 @@ def _llm_profile(llm: dict[str, Any] | None) -> str:
     return str(value) if value is not None else ""
 
 
-def _output_type(output: dict[str, Any]) -> str:
+def _output_part(output: dict[str, Any]) -> str:
     if not isinstance(output, dict):
         return ""
-    value = output.get("type")
+    value = output.get("part_type")
     return str(value) if value is not None else ""
 
 

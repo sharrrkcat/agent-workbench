@@ -188,25 +188,25 @@ Core-owned configuration:
 
 Choose output payloads by returned data:
 
-- short plain text: `text`.
-- rendered prose: `markdown`.
-- structured data for inspection: `json`.
-- raw source/config/log/note text: `file_content`.
-- one image: `image`.
-- multiple images: `image_gallery`.
-- ordered mixed result: `rich_content`.
+- short plain text: `text` part with `format: plain`.
+- rendered prose: `text` part with `format: markdown`.
+- structured data for inspection: `json` part.
+- raw source/config/log/note text: `file` part.
+- one image: `image` part.
+- multiple images: `media_group` part.
+- ordered mixed result: `parts`.
 - long-term file/image result: save as local attachment or stable local
   reference where possible.
 
 Rules:
 
-- Do not return raw workflow logs as markdown when `file_content` fits better.
+- Do not return raw workflow logs as markdown when a `file` part fits better.
 - Do not use large data URLs for durable outputs when attachment storage exists.
 - Do not return remote temporary service URLs as the only final result.
-- Keep raw debug data in metadata or `file_content`, not primary prose.
+- Keep raw debug data in metadata or `file` parts, not primary prose.
 - Prefer local attachment-backed image outputs for generated images.
 - Use `json` for plans, validation reports, and structured downstream data.
-- Use `rich_content` only when ordered mixed blocks matter.
+- Use `parts` only when ordered mixed content matters.
 
 Output shape contract: [EXTENSION_API.md](EXTENSION_API.md#output-payloads).
 Attachment contract:
@@ -296,7 +296,7 @@ ComfyUI:
 - Category: External Service Integration plus Long-Running Workflow.
 - Capability: service protocol and workflow/preset assets.
 - Agent: workflow fill, progress, output rendering.
-- Output: `image_gallery` plus markdown summary.
+- Output: `media_group` plus markdown summary.
 - Tests: fake ComfyUI server or runtime.
 
 Obsidian / LLM Wiki:
@@ -304,7 +304,7 @@ Obsidian / LLM Wiki:
 - Category: Local Workspace Integration plus Knowledge Bridge.
 - Capability: vault read/search/write.
 - Agent: note generation, backlinks, preview/write.
-- Output: markdown summary plus `file_content` note preview.
+- Output: markdown summary plus `file` note preview.
 - Tests: temp vault plus mock LLM JSON.
 
 GitHub issue triage:

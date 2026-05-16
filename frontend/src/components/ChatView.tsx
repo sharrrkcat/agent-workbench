@@ -98,7 +98,7 @@ function scrollToBottom(container: HTMLElement) {
 function messagesSignature(messages: Message[]): string {
   return messages
     .map((message) => {
-      const text = typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '');
+      const text = messageText(message);
       const reasoning =
         typeof message.metadata?.reasoning_content === 'string'
           ? message.metadata.reasoning_content
@@ -120,18 +120,18 @@ function toTimelineItems(messages: Message[]): TimelineItem[] {
 }
 
 function isSystemNotificationMessage(message: Message): boolean {
-  return message.role === 'system' && (message.output_type === 'error' || message.metadata?.notification === true);
+  return message.role === 'system' && (hasErrorPart(message) || message.metadata?.notification === true);
 }
 
 function messageToNotification(message: Message): SystemNotification {
-  const content = isRecord(message.content) ? message.content : {};
+  const errorPart = Array.isArray(message.parts) ? message.parts.find((part) => part.type === 'error') : undefined;
   return {
     id: message.message_id,
     session_id: message.session_id,
     run_id: message.run_id,
     severity: typeof message.metadata?.severity === 'string' ? message.metadata.severity : 'error',
-    code: typeof message.client_error?.code === 'string' ? message.client_error.code : typeof content.code === 'string' ? content.code : null,
-    message: typeof message.client_error?.message === 'string' ? message.client_error.message : typeof content.message === 'string' ? content.message : String(message.content || ''),
+    code: typeof message.client_error?.code === 'string' ? message.client_error.code : errorPart?.type === 'error' ? errorPart.code || null : null,
+    message: typeof message.client_error?.message === 'string' ? message.client_error.message : errorPart?.type === 'error' ? errorPart.message : messageText(message),
     created_at: message.created_at,
     metadata: message.metadata,
   };
@@ -142,12 +142,12 @@ function notificationToMessage(notification: SystemNotification): Message {
     message_id: notification.id,
     session_id: notification.session_id,
     role: 'system',
-    content: { code: notification.code, message: notification.message },
+    content_version: 2,
+    parts: [{ id: 'part_1', type: 'error', code: notification.code, message: notification.message }],
     agent_id: null,
     command_name: null,
     action_id: null,
     run_id: notification.run_id || null,
-    output_type: 'error',
     parent_message_id: typeof notification.metadata?.parent_message_id === 'string' ? notification.metadata.parent_message_id : null,
     available_actions: [],
     metadata: { ...(notification.metadata || {}), notification: true, severity: notification.severity },
@@ -155,6 +155,24 @@ function notificationToMessage(notification: SystemNotification): Message {
     client_status: 'failed',
     client_error: { code: notification.code || 'NOTIFICATION', message: notification.message },
   };
+}
+
+function messageText(message: Message): string {
+  return Array.isArray(message.parts)
+    ? message.parts
+        .map((part) => {
+          if (part.type === 'text') return part.text || '';
+          if (part.type === 'error') return part.message || '';
+          if (part.type === 'notice') return part.text || '';
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n')
+    : '';
+}
+
+function hasErrorPart(message: Message): boolean {
+  return Array.isArray(message.parts) && message.parts.some((part) => part.type === 'error');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

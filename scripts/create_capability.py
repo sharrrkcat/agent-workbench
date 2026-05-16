@@ -86,7 +86,8 @@ methods:
         type: string
         required: true
     output:
-      type: text
+      part_type: text
+      format: plain
 
 commands:
   - name: {command_name}

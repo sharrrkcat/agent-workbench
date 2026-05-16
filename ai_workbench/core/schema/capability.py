@@ -18,6 +18,24 @@ class CapabilityMethodSchema(BaseModel):
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     output: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_output_contract(self) -> "CapabilityMethodSchema":
+        if not self.output:
+            return self
+        if "type" in self.output:
+            raise ValueError("capability method output.type is not supported; use output.part_type")
+        part_type = self.output.get("part_type")
+        allowed = {"text", "json", "file", "image", "media_group", "parts"}
+        if part_type is not None and part_type not in allowed:
+            raise ValueError(f"unsupported output.part_type: {part_type}")
+        if part_type == "text" and self.output.get("format", "plain") not in {"plain", "markdown"}:
+            raise ValueError("output.format must be plain or markdown")
+        if part_type == "file" and self.output.get("mode", "inline_text") not in {"inline_text", "attachment_ref"}:
+            raise ValueError("output.mode must be inline_text or attachment_ref")
+        if part_type == "media_group" and self.output.get("layout", "gallery") != "gallery":
+            raise ValueError("output.layout must be gallery")
+        return self
+
 
 class CapabilitySchema(BaseModel):
     model_config = ConfigDict(extra="forbid")

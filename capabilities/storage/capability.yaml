@@ -1,4 +1,4 @@
-id: storage
+﻿id: storage
 name: Storage
 description: Minimal internal key/value storage capability placeholder.
 methods:

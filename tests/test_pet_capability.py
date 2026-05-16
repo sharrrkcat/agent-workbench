@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -228,8 +228,9 @@ def test_pet_command_message_is_markdown_text(tmp_path: Path) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["data"] == "已唤醒 pet"
-    assert payload["messages"][-1]["output_type"] == "markdown"
-    assert payload["messages"][-1]["content"] == "已唤醒 pet"
+    assert payload["messages"][-1]["parts"][0]["type"] == "text"
+    assert payload["messages"][-1]["parts"][0]["format"] == "markdown"
+    assert payload["messages"][-1]["parts"][0]["text"] == "已唤醒 pet"
 
 
 def test_pet_settings_include_bubble_offsets_by_default(tmp_path: Path) -> None:

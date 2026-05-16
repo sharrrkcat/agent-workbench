@@ -164,7 +164,6 @@ def update_session(session_id: str, payload: UpdateSessionRequest, state: Runtim
                 session_id=session_id,
                 role="system",
                 content=f"Conversation mode changed to {_context_mode_label(payload.context_mode)}",
-                output_type="event",
                 metadata={
                     "event_type": "context_mode_changed",
                     "context_mode": payload.context_mode,

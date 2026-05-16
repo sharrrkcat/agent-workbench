@@ -622,7 +622,9 @@ def _source_user_text(message_store: Any, source_message_id: str, fallback_user_
         try:
             message = message_store.get_message(source_message_id)
             if getattr(message, "role", "") == "user":
-                return str(message.content or "")
+                from ai_workbench.core.message_parts import text_from_parts
+
+                return text_from_parts(getattr(message, "parts", None))
         except KeyError:
             pass
     return str(fallback_user_text or "")

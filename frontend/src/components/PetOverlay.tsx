@@ -564,11 +564,11 @@ function parsePetCommandMessage(message: Message, messagesById: Map<string, Mess
     if (message.metadata.success === false) return null;
     const parentId = typeof message.metadata.parent_message_id === 'string' ? message.metadata.parent_message_id : message.parent_message_id || '';
     const parent = parentId ? messagesById.get(parentId) : null;
-    const parentAction = parent ? parsePetCommandText(parent.content) : null;
+    const parentAction = parent ? parsePetCommandText(messageText(parent)) : null;
     return parentAction ? { messageId: message.message_id, action: parentAction } : null;
   }
   if (message.role !== 'user') return null;
-  const action = parsePetCommandText(message.content);
+  const action = parsePetCommandText(messageText(message));
   if (action === 'select') return null;
   return action ? { messageId: message.message_id, action } : null;
 }
@@ -579,6 +579,20 @@ function parsePetCommandText(content: unknown): 'wake' | 'tuck' | 'select' | nul
   if (!match) return null;
   const action = (match[1] || 'status').toLowerCase();
   return action === 'wake' || action === 'tuck' || action === 'select' ? action : null;
+}
+
+function messageText(message: Message): string {
+  return Array.isArray(message.parts)
+    ? message.parts
+        .map((part) => {
+          if (part.type === 'text') return part.text || '';
+          if (part.type === 'error') return part.message || '';
+          if (part.type === 'notice') return part.text || '';
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n')
+    : '';
 }
 
 function messageTimestamp(message: Message): number {

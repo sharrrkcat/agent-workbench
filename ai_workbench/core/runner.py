@@ -20,7 +20,7 @@ from ai_workbench.core.context import ContextBuilder, LLMContextError, group_tra
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
-from ai_workbench.core.message_parts import legacy_output_to_parts, make_error_part, make_text_part
+from ai_workbench.core.message_parts import command_result_to_parts, make_error_part, make_text_part
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
 from ai_workbench.core.provider_status import (
@@ -32,7 +32,6 @@ from ai_workbench.core.provider_status import (
     unload_model_for_profile,
 )
 from ai_workbench.core.run_lifecycle import RunLifecycle
-from ai_workbench.core.schema.message import FileContentPayload, ImageGalleryPayload, ImagePayload, RichContentPayload
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
 from ai_workbench.core.script import ScriptAgentRunner
@@ -729,7 +728,6 @@ class AgentRunner:
             agent_id=agent.id,
             action_id=action_id,
             run_id=run.run_id,
-            output_type=None,
             content_version=2,
             parts=[make_text_part(content, format="markdown")],
             parent_message_id=parent_id or None,
@@ -1018,7 +1016,6 @@ class AgentRunner:
             agent_id=agent.id,
             action_id=action_id,
             run_id=run_id,
-            output_type=None,
             content_version=2,
             parts=[make_text_part(content, format="markdown")],
             parent_message_id=parent_id or None,
@@ -1061,7 +1058,6 @@ class AgentRunner:
             agent_id=agent.id,
             action_id=action_id,
             run_id=run_id,
-            output_type=None,
             content_version=2,
             parts=[make_error_part(error, code=error_code or "RUN_FAILED")],
             parent_message_id=parent_id or None,
@@ -2042,9 +2038,8 @@ class CommandRunner:
         try:
             method = self.runtime_registry.get_method(command.capability_id, command.method)
             data = self._call_method(method, args, self._command_context(session_id, input_message_id, command.capability_id))
-            output_type = self._normalize_output_type(command, data)
-            self._validate_output_payload(output_type, data)
-            message_parts = legacy_output_to_parts(output_type, data)
+            output_declaration = self._output_declaration(command, data)
+            message_parts = command_result_to_parts(output_declaration, data)
         except Exception as exc:
             error = str(exc) or "Command failed."
             error_code = getattr(exc, "code", None) or "COMMAND_FAILED"
@@ -2054,7 +2049,7 @@ class CommandRunner:
             command_metadata = self._command_result_metadata(
                 command_name=command_name,
                 command=command,
-                output_type="error",
+                output_declaration={"part_type": "error"},
                 input_message_id=input_message_id,
                 success=False,
             )
@@ -2066,7 +2061,6 @@ class CommandRunner:
                 content="",
                 command_name=command_name,
                 run_id=failed_run.run_id,
-                output_type=None,
                 content_version=2,
                 parts=message_parts,
                 parent_message_id=input_message_id or None,
@@ -2096,7 +2090,7 @@ class CommandRunner:
         command_metadata = self._command_result_metadata(
             command_name=command_name,
             command=command,
-            output_type=output_type,
+            output_declaration=output_declaration,
             input_message_id=input_message_id,
             success=True,
         )
@@ -2106,7 +2100,6 @@ class CommandRunner:
             content="",
             command_name=command_name,
             run_id=run.run_id,
-            output_type=None,
             content_version=2,
             parts=message_parts,
             parent_message_id=input_message_id or None,
@@ -2132,9 +2125,9 @@ class CommandRunner:
             run_id=done_run.run_id,
             message_id=message.message_id,
         )
-        return CommandResult(success=True, run_id=done_run.run_id, data=data, output_type=output_type)
+        return CommandResult(success=True, run_id=done_run.run_id, data=data)
 
-    def _command_result_metadata(self, command_name: str, command, output_type: str, input_message_id: str, success: bool) -> dict:
+    def _command_result_metadata(self, command_name: str, command, output_declaration: dict[str, Any], input_message_id: str, success: bool) -> dict:
         capability_name = command.capability_id
         if self.capability_registry is not None:
             try:
@@ -2148,7 +2141,7 @@ class CommandRunner:
             "command": command_name,
             "capability_id": command.capability_id,
             "capability_name": capability_name,
-            "output_type": output_type,
+            "output_part_type": output_declaration.get("part_type") or "parts",
             "source_user_message_id": input_message_id or None,
             "parent_message_id": input_message_id or None,
         }
@@ -2188,41 +2181,28 @@ class CommandRunner:
             return method(args, context)
         return method(args)
 
-    def _normalize_output_type(self, command, data: Any) -> str:
-        declared = self._declared_output_type(command)
+    def _output_declaration(self, command, data: Any) -> dict[str, Any]:
+        declared = self._declared_output(command)
         if declared:
             return declared
         if isinstance(data, dict):
             if "url" in data:
-                return "image"
+                return {"part_type": "image"}
             if "images" in data:
-                return "image_gallery"
-            if "blocks" in data:
-                return "rich_content"
-            return "json"
+                return {"part_type": "media_group", "layout": "gallery"}
+            return {"part_type": "json"}
         if isinstance(data, list):
-            return "json"
-        return "text"
+            return {"part_type": "parts"}
+        return {"part_type": "text", "format": "plain"}
 
-    def _declared_output_type(self, command) -> str:
+    def _declared_output(self, command) -> dict[str, Any]:
         if self.capability_registry is None:
-            return ""
+            return {}
         try:
             capability = self.capability_registry.get(command.capability_id)
         except KeyError:
-            return ""
+            return {}
         method = next((item for item in capability.methods if item.id == command.method), None)
         if method is None or not isinstance(method.output, dict):
-            return ""
-        output_type = method.output.get("type")
-        return output_type.strip() if isinstance(output_type, str) and output_type.strip() else ""
-
-    def _validate_output_payload(self, output_type: str, data: Any) -> None:
-        if output_type == "image":
-            ImagePayload.model_validate(data)
-        elif output_type == "image_gallery":
-            ImageGalleryPayload.model_validate(data)
-        elif output_type == "rich_content":
-            RichContentPayload.model_validate(data)
-        elif output_type == "file_content":
-            FileContentPayload.model_validate(data)
+            return {}
+        return dict(method.output)

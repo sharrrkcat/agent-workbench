@@ -110,7 +110,7 @@ async def run_public_stream(ctx) -> None:
 
     step = ctx.run.start_step("Stream response to chat", message="Streaming text to the assistant message.")
     try:
-        await ctx.llm.stream_to_output(system=system, user=user, output_type="markdown")
+        await ctx.llm.stream_to_output(system=system, user=user, format="markdown")
         ctx.run.complete_step(step.step_id, message="Public stream completed.")
     except Exception as exc:
         ctx.run.fail_step(step.step_id, error_message=str(exc) or "Public stream failed.")

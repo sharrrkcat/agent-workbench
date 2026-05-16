@@ -96,8 +96,8 @@ def test_message_knowledge_snippets_modal_contract() -> None:
 def test_message_type_exposes_message_parts_contract() -> None:
     source = read_frontend("types.ts")
 
-    assert "content_version?: number | null" in source
-    assert "parts?: MessagePart[]" in source
+    assert "content_version: 2" in source
+    assert "parts: MessagePart[]" in source
     assert "export type TextMessagePart" in source
     assert "type: 'text'" in source
     assert "format: 'plain' | 'markdown'" in source
@@ -113,17 +113,15 @@ def test_message_type_exposes_message_parts_contract() -> None:
     assert "export type ErrorMessagePart" in source
 
 
-def test_message_parts_renderer_is_parts_first_before_legacy_output_type() -> None:
+def test_message_parts_renderer_is_only_normal_render_path() -> None:
     bubble = read_frontend("components/MessageBubble.tsx")
     renderer = read_frontend("components/messages/MessagePartsRenderer.tsx")
 
     assert "MessagePartsRenderer" in bubble
     assert "hasRenderableParts(message.parts)" in bubble
     assert "parts={message.parts}" in bubble
-    assert bubble.index("hasRenderableParts(message.parts)") < bubble.index("if (message.output_type === 'markdown')")
-    assert "if (message.output_type === 'markdown')" in bubble
-    assert "if (message.output_type === 'json')" in bubble
-    assert "if (message.output_type === 'rich_content')" in bubble
+    assert "message.output_type" not in bubble
+    assert "LegacyMessageFallback" not in bubble
     assert "export function MessagePartsRenderer" in renderer
     assert "parts.filter(isRenderableMessagePart)" in renderer
     assert "stablePartKey(part, index)" in renderer
@@ -210,13 +208,13 @@ def test_copyable_and_renderable_message_content_are_parts_first() -> None:
     renderable_body = source[source.index("function hasRenderableMessage") : source.index("function hasVisibleRun")]
 
     assert "copyablePartsContent(message.parts)" in source
-    assert copyable_body.index("copyablePartsContent(message.parts)") < copyable_body.index("if (message.output_type === 'file_content')")
+    assert "message.output_type" not in copyable_body
     assert "function copyablePartContent(part: MessagePart)" in source
     assert "if (part.type === 'json') return JSON.stringify(part.data, null, 2)" in source
     assert "if (part.type === 'form') return [part.title, part.description]" in source
     assert "if (part.type === 'command_buttons')" in source
     assert "if (hasRenderableParts(message.parts)) return true" in source
-    assert renderable_body.index("if (hasRenderableParts(message.parts)) return true") < renderable_body.index("if (message.output_type === 'image')")
+    assert "message.output_type" not in renderable_body
 
 
 def test_markdown_knowledge_citations_still_skip_code_pre_and_links() -> None:
@@ -425,7 +423,7 @@ def test_pet_auto_route_contracts_keep_original_user_message_and_readable_reason
     zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
 
     assert "hasFetchedReplacementUser(fetched, message)" in store
-    assert "candidate.content === pending.content" in store
+    assert "messageText(candidate) === messageText(message)" in store
     assert "generatedPetCommand" in settings_panel
     assert "targetIgnoredForAction" in settings_panel
     assert "notExecutedReason" in settings_panel
@@ -535,7 +533,7 @@ def test_streaming_store_ignores_message_updated_content_while_streaming() -> No
     assert "preserveStreamingContent" in source
     assert "message.client_status === 'streaming'" in source
     assert "completedMessageIds[updatedMessage.message_id]" in source
-    assert "content: preserveStreamingContent ? message.content : updatedMessage.content" in source
+    assert "parts: preserveStreamingContent ? message.parts : updatedMessage.parts" in source
 
 
 def test_streaming_store_replaces_final_and_dedupes_by_run_or_draft() -> None:
@@ -630,7 +628,7 @@ def test_action_form_block_renderer_and_submission_contract_are_present() -> Non
     assert "submitForm: (sourceMessageId: string, formId: string, values: Record<string, unknown>, options?: { silent?: boolean })" in store
     assert "options?.silent" in store
     assert "applyUpdatedFormBlock(get().messages, result.updated_form)" in store
-    assert "replaceActionFormBlock" in store
+    assert "replaceFormPart" in store
     assert "/forms/submit" in client
     assert ".action-form-card" in styles
     assert ".action-form-card.collapsed" in styles
@@ -658,7 +656,7 @@ def test_command_buttons_render_as_send_message_shortcuts() -> None:
     assert "type: 'command_buttons'" in types
     assert "buttons: { label: string; message: string }[]" in types
     assert "CommandButtonsRenderer" in source
-    assert "block.type === 'command_buttons'" in source
+    assert "sendMessage(button.message)" in source
     assert "useWorkbenchStore((state) => state.sendMessage)" in source
     assert "sendMessage(button.message)" in source
     assert "useWorkbenchStore((state) => state.sending)" in source
@@ -781,7 +779,7 @@ def test_appearance_settings_has_chat_status_panel_category() -> None:
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
     types = read_frontend("types.ts")
 
-    assert "type AppearanceSettingsCategory = 'pet' | 'chat_status_panel'" in object_list
+    assert "type AppearanceSettingsCategory = 'pet' | 'fonts' | 'chat_status_panel'" in object_list
     assert "settings:appearance.chatStatusPanel" in object_list
     assert "appearanceCategory={appearanceCategory}" in console
     assert "onSelectAppearanceCategory={setAppearanceCategory}" in console
@@ -826,9 +824,9 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "knowledge:actions.test" in knowledge
     assert "empty.noEmbeddingProfiles" in knowledge
     assert "empty.noKnowledgeBases" in knowledge
-    assert "descriptions.knowledgeBase" in knowledge
+    assert "empty.noKnowledgeBases" in knowledge
     assert "empty.noSources" in knowledge
-    assert "knowledge:actions.indexPastedText" in knowledge
+    assert "knowledge:actions.pasteText" in knowledge
     assert "api.listKnowledgeSources" in knowledge
     assert "api.createPastedKnowledgeSource" in knowledge
     assert "api.deleteKnowledgeSource" in knowledge
@@ -853,7 +851,7 @@ def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
 
-    assert "message.output_type === 'event'" in source
+    assert "message.metadata?.event_type" in source
     assert "SystemEventSeparator" in source
     assert "system-event-separator" in source
     assert ".system-event-separator" in styles

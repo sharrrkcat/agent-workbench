@@ -195,7 +195,7 @@ Script Agents should parse and validate LLM output explicitly. Do not depend on 
 
 The core may run automatic session title generation immediately before the first real `ctx.llm.*` call in a pending default-titled session. This pre-hook uses only the triggering user message, does not create visible messages, and does not need any Agent code. Agent authors should not call title generation manually.
 
-The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recipes and generation. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through an `action_form`, switch `input_mode` between `llm` and `raw`, fill API-format workflow JSON from preset mappings, submit workflows, poll status, fetch formal output images, save local attachments, and return an `image_gallery`.
+The built-in `comfyui_agent` is a Script Agent for ComfyUI workflow/preset recipes and generation. It uses the ComfyUI Capability workflow/preset library to create and edit a per-session recipe through a `form` part, switch `input_mode` between `llm` and `raw`, fill API-format workflow JSON from preset mappings, submit workflows, poll status, fetch formal output images, save local attachments, and return `image` or `media_group` parts.
 
 ComfyUI preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). Use that schema when creating or reviewing workflow preset files.
 
@@ -206,13 +206,13 @@ ComfyUI Agent action semantics:
 - `fresh`: one-shot LLM prompt generation that forces `input_mode=llm` and `llm_operation=fresh` for this request only. It uses only the user input to produce a complete new `values.positive_prompt`, does not modify the stored `input_mode`, and does not modify AgentConfig `llm_operation_default`.
 - `refine`: one-shot LLM prompt generation that forces `input_mode=llm` and `llm_operation=refine` for this request only. It uses the current `values.positive_prompt` plus the user input to produce a complete new `values.positive_prompt`, does not modify the stored `input_mode`, and does not modify AgentConfig `llm_operation_default`.
 - `run`: execute the current session recipe without changing prompt or parameters.
-- `form`: show the session recipe editor expanded by default only; the form does not expose `input_mode` or `user_prompt`, and form submit does not generate.
-- `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls. Silent saves update the source `action_form` block with latest values and collapse that form to the minimal `Recipe saved. Click to expand.` state; expanding it shows the same editable recipe form again.
+- `form`: show the session recipe editor expanded by default only; the form part does not expose `input_mode` or `user_prompt`, and form submit does not generate.
+- `save_recipe_from_form`: internal form submit target that saves the session recipe editor without generating images. It is marked `callable: false` and is not intended for manual composer calls. Silent saves update the source `form` part with latest values and collapse that form to the minimal `Recipe saved. Click to expand.` state; expanding it shows the same editable recipe form again.
 - `switch`, `presets`, `scan_workflows`, and `status`: update mode or inspect local state only; they do not generate.
 
 Generation filters ComfyUI temporary, preview, and input images by default. Final chat galleries use saved local attachments for formal `output` images, and attachment metadata records ComfyUI source details including prompt id, preset id, workflow file name, and `comfyui_image_type=output`.
 
-ComfyUI preset `parameter.ui.section` and `parameter.ui.span` metadata can shape the recipe editor layout. The Agent copies that metadata into the `action_form` block and copies top-level `ui.sections` when present; otherwise it applies compact defaults for prompts, sampling, image, model, and output fields. This layout metadata is static and the form still only edits the per-session recipe.
+ComfyUI preset `parameter.ui.section` and `parameter.ui.span` metadata can shape the recipe editor layout. The Agent copies that metadata into the `form` part and copies top-level `ui.sections` when present; otherwise it applies compact defaults for prompts, sampling, image, model, and output fields. This layout metadata is static and the form still only edits the per-session recipe.
 
 `input_mode` remains only `llm` or `raw`; `switch` controls only that stored recipe field and does not accept `fresh`, `refine`, or `unset`. `llm_operation_default` controls whether normal `default`/`llm` LLM-mode input uses `refine` or `fresh`, and defaults to `refine`; it does not accept `unset`.
 
@@ -276,24 +276,23 @@ uv run python scripts/run_agent.py render_test:image "1"
 uv run python scripts/run_agent.py render_test "1" --action image
 ```
 
-## Output Types
+## Message Parts Output
 
-Supported rendered output types are:
+Supported visible message parts are:
 
-- `text`: plain text with line breaks preserved.
-- `markdown`: Markdown prose, headings, lists, tables, and code blocks.
+- `text`: plain or Markdown text.
 - `json`: structured objects and arrays.
+- `file`: raw inline text or attachment references.
 - `image`: one renderable image payload.
-- `image_gallery`: a list of image payloads.
-- `file_content`: raw file text shown without Markdown rendering.
-- `rich_content`: ordered text, markdown, image, file content, and `action_form` blocks.
+- `media_group`: a gallery of image items.
+- `form`: validated interactive forms.
+- `command_buttons`: send-message shortcut buttons.
+- `notice` and `error`: simple status and error content.
 
 Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
 
 Message Parts v2 is the backend storage path and visible content authority for
-new Agent and Script Agent assistant replies. The old output types above remain
-as deprecated compatibility/declaration terms only; new messages render from
-`parts[]`.
+Agent and Script Agent assistant replies. New messages render from `parts[]`.
 
 ## CLI Workflow
 
@@ -327,7 +326,7 @@ uv run python scripts/run_agent.py demo "hello" --json
 - Missing script entry: ensure `entry: agent.py` points to an existing file inside the Agent directory.
 - Duplicate action id: every action under one Agent must be unique.
 - Unknown capability reference: add the Capability under `capabilities/<id>/` or remove the reference.
-- Image output displayed as JSON: the Agent likely used `reply_json` or returned a dict with `output_type=json`; use `reply_image` or `reply_images`.
+- Image output displayed as JSON: the Agent likely used `reply_json`; use `reply_image` or `reply_images`.
 - LLM model not configured: set `AGENT_WORKBENCH_LLM_MODEL`, save an LLM Profile, or add an Agent `llm.profile`.
 
 ## Safety

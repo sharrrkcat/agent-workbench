@@ -34,7 +34,8 @@ methods:
         type: string
         required: true
     output:
-      type: text
+      part_type: text
+      format: plain
 
 commands:
   - name: /demo_tool
@@ -69,28 +70,23 @@ Commands are user-facing wrappers declared in Capability manifests. They are glo
 
 Agents do not declare slash commands. Keep the `@agent` and `/command` namespaces separate.
 
-## Output Types
-
-Allowed method output types:
-
-- `text`
-- `markdown`
-- `json`
-- `image`
-- `image_gallery`
-- `rich_content`
-- `file_content`
-
-Use `file_content` for source files, config files, logs, and other raw text that must not be interpreted as Markdown. Its payload includes `content` plus optional `filename`, `language`, `mime_type`, `size`, and `truncated` fields. The command runner validates image, image gallery, rich content, and file content payload shapes. If a command returns a dict and the method has no declared output type, it falls back to `json`.
+## Output Parts
 
 Capability command result messages use Message Parts v2 as the visible content
-authority. The manifest `output.type` remains the developer declaration, but
-new persisted visible command messages write `content_version=2` and `parts`.
-Legacy `content` / `output_type` fields are deprecated compatibility and may be
-empty/null. `rich_content.blocks` is still accepted as an input compatibility
-payload; `action_form` maps to a `form` part and `command_buttons` maps to a
-`command_buttons` part. Round 5 will tighten tests/docs and reserve the next
-part types.
+authority. Manifest methods declare `output.part_type`:
+
+- `part_type: text` with `format: plain` or `format: markdown`.
+- `part_type: json`.
+- `part_type: file` with `mode: inline_text`.
+- `part_type: image`.
+- `part_type: media_group` with `layout: gallery`.
+- `part_type: parts` for a validated list of message parts.
+
+`output.type` is rejected by strict checks and manifest loading. If a command
+returns a dict and the method has no declared output, the runner infers the
+current parts contract, normally JSON unless the payload is shaped like an image
+or media group. Use `file` parts for source files, config files, logs, and other
+raw text that must not be interpreted as Markdown.
 
 For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, non-blocking prompt status, fetch, interrupt, upload, object info, and `free_memory` for ComfyUI `POST /free`; helper methods normalize outputs and collect images for a prompt. It also owns local workflow and preset library directories, scanning API-format workflow files, rejecting unsupported GUI-format files, hash de-duplication, preset loading, preset validation, per-workflow draft skip reasons, and draft preset creation. The preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results. `free_memory` is a protocol method only: it requests unload/free behavior from the connected ComfyUI service and does not decide whether a user workflow should call it. ComfyUI is an external service and local asset capability, not a user-facing workflow Agent by itself.
 
@@ -148,15 +144,15 @@ uv run python scripts/run_command.py "/base64 hello" --json
 - command methods matching manifest methods
 - command names starting with `/`
 - duplicate global command names
-- allowed output types
+- allowed output part declarations
 
 ## Common Errors
 
 - Missing runtime method: add a method to `CapabilityRuntime` with the same name as the manifest method id.
 - Duplicate command name: rename one command; command names are global across all Capabilities.
 - Invalid command name: command names must start with `/`.
-- Unsupported `output.type`: use one of the allowed output types above.
-- Image output displayed as JSON: declare `output.type: image` and return an image payload with `url`.
+- Unsupported `output.type`: replace it with `output.part_type`.
+- Image output displayed as JSON: declare `output.part_type: image` and return an image payload with `url`.
 - Manifest field typo: `check_agents.py --strict` reports the manifest path and object id where possible.
 
 ## Safety

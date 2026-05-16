@@ -21,7 +21,7 @@ from ai_workbench.core.script import _load_module
 ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 PROFILE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_\-]*$")
 ALLOWED_AGENT_TYPES = {"prompt", "script"}
-ALLOWED_OUTPUT_TYPES = {"text", "markdown", "json", "image", "image_gallery", "rich_content", "file_content"}
+ALLOWED_OUTPUT_PART_TYPES = {"text", "json", "file", "image", "media_group", "parts"}
 
 
 @dataclass
@@ -189,10 +189,15 @@ def _check_capabilities(capabilities_path: Path, result: CheckResult, strict: bo
             runtime = _load_capability_runtime(capability.id, manifest_path.parent, manifest_path, result)
 
         for method in capability.methods:
-            output_type = method.output.get("type") if isinstance(method.output, dict) else None
-            if strict and output_type and output_type not in ALLOWED_OUTPUT_TYPES:
+            legacy_type = method.output.get("type") if isinstance(method.output, dict) else None
+            if strict and legacy_type:
                 result.errors.append(
-                    f"{manifest_path}: capability '{capability.id}' method '{method.id}' has unsupported output.type '{output_type}'"
+                    f"{manifest_path}: capability '{capability.id}' method '{method.id}' uses unsupported output.type; use output.part_type"
+                )
+            part_type = method.output.get("part_type") if isinstance(method.output, dict) else None
+            if strict and part_type and part_type not in ALLOWED_OUTPUT_PART_TYPES:
+                result.errors.append(
+                    f"{manifest_path}: capability '{capability.id}' method '{method.id}' has unsupported output.part_type '{part_type}'"
                 )
             if strict and runtime is not None:
                 runtime_method = getattr(runtime, method.id, None)

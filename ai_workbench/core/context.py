@@ -353,7 +353,7 @@ def _is_skippable_system_message(message) -> bool:
         return False
     metadata = getattr(message, "metadata", {}) or {}
     origin = getattr(message, "origin", None) or metadata.get("event_type")
-    return origin in {"separator", "model_changed", "context_mode_changed", "system_notice"} or getattr(message, "output_type", "") == "event"
+    return origin in {"separator", "model_changed", "context_mode_changed", "system_notice"}
 
 
 def _limit_units(units: List[List[Dict[str, str]]], max_chars: Optional[int]) -> List[List[Dict[str, str]]]:
@@ -387,13 +387,13 @@ def _source_user_for_command_result(message, by_id: dict, messages: list, index:
     if parent_id and getattr(by_id.get(str(parent_id)), "role", "") == "user":
         return by_id[str(parent_id)]
     for previous in reversed(messages[:index]):
-        if getattr(previous, "role", "") == "user" and str(getattr(previous, "content", "")).lstrip().startswith("/"):
+        if getattr(previous, "role", "") == "user" and _message_text_for_context(previous).lstrip().startswith("/"):
             return previous
     return None
 
 
 def _paired_command_result_after(message, messages: list, index: int):
-    if getattr(message, "role", "") != "user" or not str(getattr(message, "content", "")).lstrip().startswith("/"):
+    if getattr(message, "role", "") != "user" or not _message_text_for_context(message).lstrip().startswith("/"):
         return None
     for candidate in messages[index + 1 :]:
         if getattr(candidate, "role", "") == "user":
@@ -407,8 +407,6 @@ def _paired_command_result_after(message, messages: list, index: int):
 
 
 def _message_can_enter_context(message) -> bool:
-    if getattr(message, "output_type", "") in {"event", "error"}:
-        return False
     if any(isinstance(part, dict) and part.get("type") == "error" for part in (getattr(message, "parts", None) or [])):
         return False
     metadata = getattr(message, "metadata", {}) or {}
@@ -423,15 +421,12 @@ def _message_text_for_context(message) -> str:
     parts_text = _parts_text_for_context(getattr(message, "parts", None))
     if parts_text.strip():
         return parts_text
-    content = str(getattr(message, "content", "") or "")
     attachments = _image_attachments(message)
-    if content.strip():
-        return content
     if attachments:
         count = len(attachments)
         suffix = "s" if count != 1 else ""
         return f"User attached {count} image{suffix}."
-    return content
+    return ""
 
 
 def _command_result_text_for_context(message, max_chars: Optional[int] = None, command_result_context_instruction: Optional[str] = None) -> str:
@@ -439,23 +434,23 @@ def _command_result_text_for_context(message, max_chars: Optional[int] = None, c
     command = str(metadata.get("command") or getattr(message, "command_name", None) or "command")
     capability_id = str(metadata.get("capability_id") or "")
     capability = str(metadata.get("capability_name") or capability_id or "capability")
-    output_type = str(metadata.get("output_type") or getattr(message, "output_type", "") or "text")
+    output_part_type = str(metadata.get("output_part_type") or "parts")
     instruction = _render_instruction_template(
         command_result_context_instruction or DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION,
         {
             "command": command,
             "capability_name": capability,
             "capability_id": capability_id,
-            "output_type": output_type,
+            "output_part_type": output_part_type,
         },
     )
-    body, truncated = _command_result_body(message, output_type, max_chars)
+    body, truncated = _command_result_body(message, max_chars)
     return (
         f"[Command result: {command}]\n"
         f"Source: {capability}\n"
-        f"Output type: {output_type}\n"
+        f"Output part type: {output_part_type}\n"
         f"{instruction}\n\n"
-        f"{body if body else _placeholder_for_output(message, output_type)}"
+        f"{body if body else _placeholder_for_output(message)}"
         f"{_truncation_note(truncated)}"
     )
 
@@ -467,68 +462,12 @@ def _render_instruction_template(template: str, values: dict[str, str]) -> str:
     return rendered
 
 
-def _command_result_body(message, output_type: str, max_chars: Optional[int]) -> tuple[str, bool]:
+def _command_result_body(message, max_chars: Optional[int]) -> tuple[str, bool]:
     parts_text = _parts_text_for_context(getattr(message, "parts", None))
     if parts_text.strip():
         text, truncated = _bounded_text(parts_text, max_chars)
         return f'<command_output type="parts" truncated="{str(truncated).lower()}">\n{text}\n</command_output>', truncated
-    content = getattr(message, "content", "")
-    if output_type in {"text", "markdown"}:
-        text, truncated = _bounded_text(str(content or ""), max_chars)
-        return f'<command_output type="{_escape_attr(output_type)}" truncated="{str(truncated).lower()}">\n{text}\n</command_output>', truncated
-    if output_type == "json":
-        text = json.dumps(content, ensure_ascii=False, indent=2, default=str)
-        text, truncated = _bounded_text(text, max_chars)
-        return f'<json command="{_escape_attr(getattr(message, "command_name", "") or "command")}" truncated="{str(truncated).lower()}">\n{text}\n</json>', truncated
-    if output_type == "file_content":
-        payload = content if isinstance(content, dict) else {"content": str(content or "")}
-        raw = str(payload.get("content") or "")
-        text, truncated_by_context = _bounded_text(raw, max_chars)
-        truncated = bool(payload.get("truncated")) or truncated_by_context
-        return (
-            "<file_content "
-            f'filename="{_escape_attr(payload.get("filename") or payload.get("path") or "")}" '
-            f'mime_type="{_escape_attr(payload.get("mime_type") or "")}" '
-            f'size="{_escape_attr(payload.get("size") or "")}" '
-            f'truncated="{str(truncated).lower()}">\n{text}\n</file_content>'
-        ), truncated_by_context
-    if output_type == "rich_content":
-        text, truncated = _rich_content_text(content, max_chars)
-        return text, truncated
-    return _placeholder_for_output(message, output_type), False
-
-
-def _rich_content_text(content: Any, max_chars: Optional[int]) -> tuple[str, bool]:
-    blocks = content.get("blocks") if isinstance(content, dict) else None
-    if not isinstance(blocks, list):
-        return _placeholder_for_output(None, "rich_content"), False
-    rendered: list[str] = []
-    truncated = False
-    remaining = max_chars
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        block_type = str(block.get("type") or "text")
-        fake_message = type("Message", (), {"content": block, "output_type": block_type, "command_name": "", "metadata": {}})()
-        if block_type in {"text", "markdown"}:
-            text = str(block.get("text") or "")
-            bounded, was_truncated = _bounded_text(text, remaining)
-            rendered.append(f'<command_output type="{_escape_attr(block_type)}" truncated="{str(was_truncated).lower()}">\n{bounded}\n</command_output>')
-        elif block_type == "file_content":
-            body, was_truncated = _command_result_body(fake_message, "file_content", remaining)
-            rendered.append(body)
-        elif block_type == "image":
-            rendered.append(_image_placeholder(block))
-            was_truncated = False
-        else:
-            rendered.append(_placeholder_for_output(fake_message, block_type))
-            was_truncated = False
-        truncated = truncated or was_truncated
-        if remaining is not None:
-            remaining = max(0, remaining - len(rendered[-1]))
-            if remaining <= 0:
-                break
-    return "\n\n".join(rendered), truncated
+    return _placeholder_for_output(message), False
 
 
 def _parts_text_for_context(parts: Any) -> str:
@@ -562,18 +501,9 @@ def _parts_text_for_context(parts: Any) -> str:
     return "\n\n".join(item for item in rendered if item)
 
 
-def _placeholder_for_output(message, output_type: str) -> str:
-    content = getattr(message, "content", None)
+def _placeholder_for_output(message) -> str:
     command = getattr(message, "command_name", None) or "command"
-    if output_type == "image":
-        return _image_placeholder(content if isinstance(content, dict) else {})
-    if output_type == "image_gallery":
-        images = content.get("images") if isinstance(content, dict) else []
-        count = len(images) if isinstance(images, list) else 0
-        return f"[Command result: {command} returned {count} images. Image data is not resent in text context.]"
-    if output_type == "binary":
-        return f"[Command result: {command} returned binary data. Raw bytes are not sent in text context.]"
-    return f"[Command result: {command} returned unsupported output type {output_type}. Raw data is not sent in text context.]"
+    return f"[Command result: {command} had no text-renderable message parts.]"
 
 
 def _image_placeholder(content: dict) -> str:

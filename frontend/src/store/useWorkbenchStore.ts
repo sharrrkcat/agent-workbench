@@ -876,12 +876,12 @@ function createOptimisticUserMessage(session: Session, content: string, attachme
     message_id: `optimistic-${newClientId()}`,
     session_id: session.session_id,
     role: 'user',
-    content,
+    content_version: 2,
+    parts: [textPart(content, 'plain')],
     agent_id: null,
     command_name: null,
     action_id: null,
     run_id: null,
-    output_type: 'text',
     parent_message_id: null,
     available_actions: [],
     metadata: { attachments },
@@ -895,7 +895,8 @@ function createInlineErrorMessage(sessionId: string, error: AppError, parentMess
     message_id: `error-${newClientId()}`,
     session_id: sessionId,
     role: 'system',
-    content: { code: error.code, message: error.message },
+    content_version: 2,
+    parts: [{ id: 'part_1', type: 'error', code: error.code, message: error.message }],
     speaker_type: 'system',
     speaker_id: 'system',
     speaker_name: commandErrorTitle(error),
@@ -904,7 +905,6 @@ function createInlineErrorMessage(sessionId: string, error: AppError, parentMess
     command_name: null,
     action_id: null,
     run_id: null,
-    output_type: 'error',
     parent_message_id: parentMessageId || null,
     available_actions: [],
     created_at: new Date().toISOString(),
@@ -925,12 +925,12 @@ function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Me
     message_id: typeof event.message_id === 'string' && event.message_id ? event.message_id : `draft-${event.run_id || newClientId()}`,
     session_id: sessionId,
     role: 'assistant',
-    content: '',
+    content_version: 2,
+    parts: [],
     agent_id: typeof payload.agent_id === 'string' ? payload.agent_id : null,
     command_name: null,
     action_id: typeof payload.action_id === 'string' ? payload.action_id : 'default',
     run_id: event.run_id || null,
-    output_type: 'text',
     parent_message_id: typeof payload.parent_message_id === 'string' ? payload.parent_message_id : null,
     available_actions: [],
     metadata: {
@@ -1013,14 +1013,14 @@ function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): M
         message_id: runErrorMessageId(run.run_id),
         session_id: run.session_id,
         role: 'system',
-        content: { code: failedRunCode(run), message: run.error || 'Run failed.' },
+        content_version: 2,
+        parts: [{ id: 'part_1', type: 'error', code: failedRunCode(run), message: run.error || 'Run failed.' }],
         agent_id: null,
         command_name: null,
         action_id: run.action_id,
         run_id: run.run_id,
         run,
         run_steps: run.steps || [],
-        output_type: 'error',
         parent_message_id: parentMessageId,
         metadata: { synthetic: true, notification: true, severity: 'error', run_kind: run.kind, target_id: run.target_id },
         available_actions: [],
@@ -1036,7 +1036,7 @@ function removeSupersededFailedDrafts(messages: Message[], runs: Run[]): Message
   if (!failedRunIds.size) return messages;
   return messages.filter((message) => {
     if (!message.run_id || !failedRunIds.has(message.run_id) || !message.message_id.startsWith('draft-')) return true;
-    return Boolean(contentToDraftText(message.content));
+    return Boolean(messageText(message));
   });
 }
 
@@ -1119,7 +1119,7 @@ function mergeTransientMessages(fetched: Message[], current: Message[], sessionI
     if (message.run_id && fetchedRunIds.has(message.run_id)) return false;
     if (message.role === 'user' && message.client_status === 'pending' && hasFetchedReplacementUser(fetched, message)) return false;
     if (message.role !== 'user') return true;
-    return !fetched.some((candidate) => candidate.role === 'user' && candidate.content === message.content && sameAttachmentIds(candidate, message));
+    return !fetched.some((candidate) => candidate.role === 'user' && messageText(candidate) === messageText(message) && sameAttachmentIds(candidate, message));
   });
 
   return [...fetched, ...remaining];
@@ -1132,8 +1132,7 @@ function isTransientMessage(message: Message): boolean {
 function isRunFailedErrorMessage(message: Message): boolean {
   if (message.message_id.startsWith('run-error:')) return true;
   if (message.client_error?.code === 'RUN_FAILED') return true;
-  if (!isRecord(message.content)) return false;
-  return message.content.code === 'RUN_FAILED';
+  return Array.isArray(message.parts) && message.parts.some((part) => part.type === 'error' && part.code === 'RUN_FAILED');
 }
 
 function runErrorMessageId(runId: string): string {
@@ -1150,7 +1149,7 @@ function hasFetchedReplacementUser(fetched: Message[], pending: Message): boolea
   const pendingTime = parseServerTime(pending.created_at || '').getTime();
   return fetched.some((candidate) => {
     if (candidate.role !== 'user') return false;
-    if (candidate.content === pending.content && sameAttachmentIds(candidate, pending)) return true;
+    if (messageText(candidate) === messageText(pending) && sameAttachmentIds(candidate, pending)) return true;
     const candidateTime = parseServerTime(candidate.created_at || '').getTime();
     if (Number.isNaN(candidateTime) || Number.isNaN(pendingTime)) return false;
     return candidateTime >= pendingTime - 5000;
@@ -1200,7 +1199,7 @@ function appendDraftDelta(messages: Message[], event: RuntimeEvent, delta: strin
     if (reasoningDelta) {
       metadata.reasoning_content = `${typeof metadata.reasoning_content === 'string' ? metadata.reasoning_content : ''}${reasoningDelta}`;
     }
-    return { ...message, content: `${contentToDraftText(message.content)}${delta}`, metadata };
+    return { ...message, parts: [textPart(`${messageText(message)}${delta}`, 'markdown')], metadata };
   });
 }
 
@@ -1234,7 +1233,7 @@ function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, compl
     return {
       ...message,
       ...updatedMessage,
-      content: preserveStreamingContent ? message.content : updatedMessage.content,
+      parts: preserveStreamingContent ? message.parts : updatedMessage.parts,
       run: message.run || updatedMessage.run,
       run_steps: mergeRunSteps(message.run_steps || [], updatedMessage.run_steps || updatedMessage.run?.steps || []),
       metadata: { ...(message.metadata || {}), ...(updatedMessage.metadata || {}) },
@@ -1248,15 +1247,12 @@ function applyUpdatedFormBlock(messages: Message[], updatedForm: NonNullable<Run
   return messages.map((message) => {
     if (message.message_id !== updatedForm.source_message_id) return message;
     const parts = replaceFormPart(message.parts, updatedForm.form_id, updatedForm.block);
-    const content = Array.isArray(message.parts) && message.parts.length
-      ? message.content
-      : replaceActionFormBlock(message.content, updatedForm.form_id, updatedForm.block);
-    return content === message.content && parts === message.parts ? message : { ...message, content, parts };
+    return parts === message.parts ? message : { ...message, parts };
   });
 }
 
-function replaceFormPart(parts: MessagePart[] | undefined, formId: string, block: unknown): MessagePart[] | undefined {
-  if (!Array.isArray(parts)) return parts;
+function replaceFormPart(parts: MessagePart[] | undefined, formId: string, block: unknown): MessagePart[] {
+  if (!Array.isArray(parts)) return [];
   let replaced = false;
   const next = parts.map((part) => {
     if (part.type === 'form' && part.form_id === formId && isRecord(block)) {
@@ -1268,25 +1264,8 @@ function replaceFormPart(parts: MessagePart[] | undefined, formId: string, block
   return replaced ? next : parts;
 }
 
-function replaceActionFormBlock(content: unknown, formId: string, block: unknown): unknown {
-  if (!isRecord(content)) return content;
-  if (content.type === 'action_form' && content.form_id === formId) {
-    return block;
-  }
-  if (!Array.isArray(content.blocks)) return content;
-  let replaced = false;
-  const blocks = content.blocks.map((item) => {
-    if (isRecord(item) && item.type === 'action_form' && item.form_id === formId) {
-      replaced = true;
-      return block;
-    }
-    return item;
-  });
-  return replaced ? { ...content, blocks } : content;
-}
-
 function removeDraftAndAppendError(messages: Message[], sessionId: string, runId: string, error: AppError): Message[] {
-  const kept = messages.filter((message) => !(message.message_id.startsWith('draft-') && message.run_id === runId && !contentToDraftText(message.content)));
+  const kept = messages.filter((message) => !(message.message_id.startsWith('draft-') && message.run_id === runId && !messageText(message)));
   return [...kept, createInlineErrorMessage(sessionId, error)];
 }
 
@@ -1369,8 +1348,22 @@ function parseLlmProviderStatusPayload(value: unknown): LlmProviderStatus | null
   return value as LlmProviderStatus;
 }
 
-function contentToDraftText(content: unknown): string {
-  return typeof content === 'string' ? content : content == null ? '' : String(content);
+function textPart(text: string, format: 'plain' | 'markdown'): MessagePart {
+  return { id: 'part_1', type: 'text', format, text };
+}
+
+function messageText(message: Pick<Message, 'parts'>): string {
+  return Array.isArray(message.parts)
+    ? message.parts
+        .map((part) => {
+          if (part.type === 'text') return part.text || '';
+          if (part.type === 'error') return part.message || '';
+          if (part.type === 'notice') return part.text || '';
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n')
+    : '';
 }
 
 function runningRunId(runs: Run[]): string | undefined {
