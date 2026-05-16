@@ -125,7 +125,7 @@ class MessageStore:
         command_name: Optional[str] = None,
         action_id: Optional[str] = None,
         run_id: Optional[str] = None,
-        output_type: str = "text",
+        output_type: Optional[str] = None,
         content_version: Optional[int] = None,
         parts: Optional[List[Dict[str, Any]]] = None,
         available_actions: Optional[List[Dict[str, Any]]] = None,
@@ -147,6 +147,9 @@ class MessageStore:
             origin=origin,
         )
         validated_parts = validate_message_parts(parts) if parts is not None else []
+        resolved_content_version = content_version
+        if resolved_content_version is None and validated_parts:
+            resolved_content_version = 2
         message = MessageSchema(
             message_id=str(uuid4()),
             session_id=session_id,
@@ -158,7 +161,7 @@ class MessageStore:
             action_id=action_id,
             run_id=run_id,
             output_type=output_type,
-            content_version=content_version,
+            content_version=resolved_content_version,
             parts=validated_parts,
             available_actions=available_actions or [],
             parent_message_id=parent_message_id,

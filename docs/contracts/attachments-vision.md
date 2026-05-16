@@ -104,18 +104,19 @@ CapabilityConfig limits and are not passive upload handling.
 
 ## Output Rendering Boundaries
 
-Backend output type selects the frontend renderer:
+Message Parts v2 selects the frontend renderer for new messages:
 
-- `markdown` renders as markdown.
-- `file_content` renders as raw text.
-- `image` and `image_gallery` require renderable URLs.
-- `rich_content` preserves ordered blocks.
+- markdown `text` parts render as markdown.
+- `file` parts render raw inline text or attachment refs.
+- `image` and `media_group` parts require renderable local attachment URLs or
+  attachment ids.
+- `form` and `command_buttons` parts are the interactive block path.
 
 Renderer changes that alter payload shapes update
 [../EXTENSION_API.md](../EXTENSION_API.md#output-payloads).
 
-During Message Parts v2 migration, legacy `output_type` remains a compatibility
-renderer hint. New Agent/Script outputs also persist `content_version=2` and
+Legacy `output_type` remains a deprecated compatibility hint for no-parts
+messages only. New Agent/Script outputs persist `content_version=2` and
 `parts`, with image/file/media parts following the attachment rules above.
 
 ComfyUI preset schema is documented in

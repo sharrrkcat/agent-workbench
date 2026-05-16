@@ -109,7 +109,7 @@ def _print_human(payload: dict[str, Any]) -> None:
         print("run status: failed")
 
     output_type = result.get("output_type") or _last_output_type(payload)
-    print(f"output_type: {output_type}")
+    print(f"declared output_type: {output_type}")
 
     if payload.get("error"):
         print(f"error: {payload['error']}")
@@ -126,7 +126,7 @@ def _print_human(payload: dict[str, Any]) -> None:
     if command_messages:
         message = command_messages[-1]
         print("content:")
-        print(_format_content(message.get("content"), message.get("output_type") or output_type))
+        print(_format_message(message, output_type))
 
 
 def _last_output_type(payload: dict[str, Any]) -> str:
@@ -134,6 +134,45 @@ def _last_output_type(payload: dict[str, Any]) -> str:
         if _is_command_result_message(message):
             return message.get("output_type") or "text"
     return "text"
+
+
+def _format_message(message: dict[str, Any], output_type: str) -> str:
+    parts = message.get("parts")
+    if isinstance(parts, list) and parts:
+        return _format_parts(parts)
+    return _format_content(message.get("content"), message.get("output_type") or output_type)
+
+
+def _format_parts(parts: list[Any]) -> str:
+    lines: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        part_type = part.get("type")
+        if part_type == "text":
+            lines.append(str(part.get("text") or ""))
+        elif part_type == "json":
+            lines.append(json.dumps(_safe_preview(part.get("data")), ensure_ascii=False, indent=2))
+        elif part_type == "file":
+            body = str(part.get("content") or "")
+            lines.append(f"file: {part.get('filename') or 'inline'} {len(body)} chars\n{body}")
+        elif part_type == "image":
+            lines.append(_image_summary(part))
+        elif part_type == "media_group":
+            items = part.get("items") if isinstance(part.get("items"), list) else []
+            lines.append(f"media_group: {len(items)} image(s)")
+        elif part_type == "form":
+            lines.append(f"form: {part.get('form_id') or ''} {part.get('title') or ''}".strip())
+        elif part_type == "command_buttons":
+            buttons = part.get("buttons") if isinstance(part.get("buttons"), list) else []
+            lines.append(f"command_buttons: {len(buttons)} button(s)")
+        elif part_type == "error":
+            lines.append(f"error: {part.get('code') or ''} {part.get('message') or ''}".strip())
+        elif part_type == "notice":
+            lines.append(str(part.get("text") or ""))
+        else:
+            lines.append(str(part_type or "unknown"))
+    return "\n\n".join(line for line in lines if line)
 
 
 def _format_content(content: Any, output_type: str) -> str:

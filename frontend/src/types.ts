@@ -1044,7 +1044,7 @@ export type Message = {
   command_name?: string | null;
   action_id?: string | null;
   run_id?: string | null;
-  output_type: string;
+  output_type?: string | null;
   content_version?: number | null;
   parts?: MessagePart[];
   parent_message_id?: string | null;

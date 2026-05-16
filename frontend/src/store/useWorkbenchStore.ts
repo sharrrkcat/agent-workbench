@@ -1247,8 +1247,10 @@ function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, compl
 function applyUpdatedFormBlock(messages: Message[], updatedForm: NonNullable<RuntimeResponse['updated_form']>): Message[] {
   return messages.map((message) => {
     if (message.message_id !== updatedForm.source_message_id) return message;
-    const content = replaceActionFormBlock(message.content, updatedForm.form_id, updatedForm.block);
     const parts = replaceFormPart(message.parts, updatedForm.form_id, updatedForm.block);
+    const content = Array.isArray(message.parts) && message.parts.length
+      ? message.content
+      : replaceActionFormBlock(message.content, updatedForm.form_id, updatedForm.block);
     return content === message.content && parts === message.parts ? message : { ...message, content, parts };
   });
 }

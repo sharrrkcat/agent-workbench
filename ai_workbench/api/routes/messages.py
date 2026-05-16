@@ -223,7 +223,7 @@ async def submit_form(session_id: str, payload: SubmitFormRequest, state: Runtim
     if source.session_id != session_id:
         raise_error(404, "FORM_NOT_FOUND", f"Form source message not found in session: {payload.source_message_id}")
     try:
-        form = find_action_form_block(source.content, payload.form_id)
+        form = find_action_form_block(source.content, payload.form_id, source.parts)
     except FormValidationError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
     if form is None:

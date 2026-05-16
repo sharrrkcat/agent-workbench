@@ -96,7 +96,7 @@ class MessageSchema(BaseModel):
     message_id: str
     session_id: str
     role: Literal["user", "assistant", "agent", "system", "tool", "command"]
-    content: Any
+    content: Any = ""
     speaker_type: Optional[Literal["user", "agent", "capability", "system"]] = None
     speaker_id: Optional[str] = None
     speaker_name: Optional[str] = None
@@ -105,8 +105,8 @@ class MessageSchema(BaseModel):
     command_name: Optional[str] = None
     action_id: Optional[str] = None
     run_id: Optional[str] = None
-    output_type: str = "text"
-    content_version: Optional[int] = None
+    output_type: Optional[str] = None
+    content_version: Optional[int] = 2
     parts: list[Dict[str, Any]] = Field(default_factory=list)
     parent_message_id: Optional[str] = None
     available_actions: list = Field(default_factory=list)

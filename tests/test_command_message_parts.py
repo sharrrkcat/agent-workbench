@@ -118,8 +118,8 @@ def test_capability_command_text_output_writes_plain_text_part() -> None:
     assert result.output_type == "text"
     assert message.content_version == 2
     assert message.parts == [{"id": "part_1", "type": "text", "format": "plain", "text": "plain result"}]
-    assert message.content == "plain result"
-    assert message.output_type == "text"
+    assert message.content == ""
+    assert message.output_type is None
     assert _completed_message(events)["parts"] == message.parts
 
 
@@ -128,16 +128,16 @@ def test_capability_command_markdown_output_writes_markdown_text_part() -> None:
 
     assert message.parts[0]["type"] == "text"
     assert message.parts[0]["format"] == "markdown"
-    assert message.content == "**markdown result**"
-    assert message.output_type == "markdown"
+    assert message.content == ""
+    assert message.output_type is None
 
 
 def test_capability_command_json_output_writes_json_part() -> None:
     _, message, _ = command_message("/out-json")
 
     assert message.parts == [{"id": "part_1", "type": "json", "data": {"ok": True}}]
-    assert message.content == {"ok": True}
-    assert message.output_type == "json"
+    assert message.content == ""
+    assert message.output_type is None
 
 
 def test_capability_command_file_content_output_writes_file_part() -> None:
@@ -146,14 +146,14 @@ def test_capability_command_file_content_output_writes_file_part() -> None:
     assert message.parts[0]["type"] == "file"
     assert message.parts[0]["mode"] == "inline_text"
     assert message.parts[0]["content"] == "line 1"
-    assert message.output_type == "file_content"
+    assert message.output_type is None
 
 
 def test_capability_command_image_output_writes_image_part() -> None:
     _, message, _ = command_message("/out-image")
 
     assert message.parts == [{"id": "part_1", "type": "image", "url": "/api/attachments/image.png", "alt": "Image"}]
-    assert message.output_type == "image"
+    assert message.output_type is None
 
 
 def test_capability_command_image_gallery_output_writes_media_group_part() -> None:
@@ -162,7 +162,7 @@ def test_capability_command_image_gallery_output_writes_media_group_part() -> No
     assert message.parts[0]["type"] == "media_group"
     assert message.parts[0]["layout"] == "gallery"
     assert message.parts[0]["items"][0]["url"] == "/api/attachments/a.png"
-    assert message.output_type == "image_gallery"
+    assert message.output_type is None
 
 
 def test_rich_content_action_form_block_writes_form_part() -> None:
@@ -170,8 +170,8 @@ def test_rich_content_action_form_block_writes_form_part() -> None:
 
     assert message.parts[0]["type"] == "form"
     assert message.parts[0]["form_id"] == "demo"
-    assert message.output_type == "rich_content"
-    assert message.content["blocks"][0]["type"] == "action_form"
+    assert message.output_type is None
+    assert message.content == ""
 
 
 def test_rich_content_command_buttons_block_writes_command_buttons_part() -> None:
@@ -184,8 +184,8 @@ def test_rich_content_command_buttons_block_writes_command_buttons_part() -> Non
             "buttons": [{"label": "Run", "message": "@chat hello"}],
         }
     ]
-    assert message.output_type == "rich_content"
-    assert message.content["blocks"][0]["type"] == "command_buttons"
+    assert message.output_type is None
+    assert message.content == ""
 
 
 def test_command_runner_inferred_dict_output_writes_json_part() -> None:
@@ -193,7 +193,7 @@ def test_command_runner_inferred_dict_output_writes_json_part() -> None:
 
     assert result.output_type == "json"
     assert message.parts == [{"id": "part_1", "type": "json", "data": {"inferred": True}}]
-    assert message.output_type == "json"
+    assert message.output_type is None
 
 
 def test_session_load_api_response_returns_command_result_parts() -> None:
@@ -207,8 +207,8 @@ def test_session_load_api_response_returns_command_result_parts() -> None:
     loaded_result = loaded[-1]
     assert command_result["content_version"] == 2
     assert command_result["parts"] == [{"id": "part_1", "type": "text", "format": "plain", "text": "aGVsbG8="}]
-    assert command_result["content"] == "aGVsbG8="
-    assert command_result["output_type"] == "text"
+    assert command_result["content"] == ""
+    assert command_result["output_type"] is None
     assert loaded_result["parts"] == command_result["parts"]
 
 

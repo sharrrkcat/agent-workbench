@@ -26,6 +26,26 @@ from tests.test_prompt_agent_execution import FakeLLMRuntime, FakeStreamingLLMRu
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def text_part(message):
+    return next(part for part in message.parts if part.get("type") == "text")
+
+
+def json_part(message):
+    return next(part for part in message.parts if part.get("type") == "json")["data"]
+
+
+def file_part(message):
+    return next(part for part in message.parts if part.get("type") == "file")
+
+
+def image_part(message):
+    return next(part for part in message.parts if part.get("type") == "image")
+
+
+def media_group_part(message):
+    return next(part for part in message.parts if part.get("type") == "media_group")
+
+
 class ScriptRuntimeFixture:
     def __init__(self, agents=None, llm=None) -> None:
         self.agents = agents or AgentRegistry()
@@ -380,8 +400,9 @@ def test_script_lifecycle_lab_steps_completes_without_llm(monkeypatch) -> None:
 
     assert result.success is True
     assert fixture.llm.calls == []
-    assert messages[-1].output_type == "markdown"
-    assert messages[-1].content == (
+    assert messages[-1].output_type is None
+    assert text_part(messages[-1])["format"] == "markdown"
+    assert text_part(messages[-1])["text"] == (
         "# Step Test Complete\n\n"
         "- Input: inspect lifecycle\n"
         "- Steps: 4\n"
@@ -426,16 +447,17 @@ def test_script_lifecycle_lab_hidden_json_uses_internal_stream_without_public_de
     assert result.success is True
     assert fixture.llm.calls[0]["stream"] is True
     assert [event.type for event in events].count("message_delta") == 0
-    assert message.output_type == "markdown"
-    assert message.content == (
+    assert message.output_type is None
+    assert text_part(message)["format"] == "markdown"
+    assert text_part(message)["text"] == (
         "# Lifecycle Lab\n\n"
         "## Summary\nA script runtime test.\n\n"
         "## Features\n- Steps\n- Internal stream\n\n"
         "## Risks\n- Bad JSON\n\n"
         "## Next steps\n- Run strict checks"
     )
-    assert "```json" not in message.content
-    assert '"features"' not in message.content
+    assert "```json" not in text_part(message)["text"]
+    assert '"features"' not in text_part(message)["text"]
     running_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Running script")
     custom_steps = [step for step in fixture.runs.list_steps(result.run_id) if step.label in {"Build extraction prompt", "LLM extracts structured JSON", "Parse JSON", "Normalize fields", "Render final markdown"}]
     assert custom_steps
@@ -452,8 +474,9 @@ def test_script_lifecycle_lab_hidden_json_parse_error_returns_friendly_markdown(
 
     assert result.success is True
     assert parse_step.status.value == "failed"
-    assert message.output_type == "markdown"
-    assert message.content == (
+    assert message.output_type is None
+    assert text_part(message)["format"] == "markdown"
+    assert text_part(message)["text"] == (
         "# JSON extraction failed\n\n"
         "The model response could not be parsed as JSON."
     )
@@ -481,8 +504,9 @@ def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplica
     assert len(completed) == 1
     assert completed[0].payload["seq"] == 4
     assert completed[0].message_id == message.message_id
-    assert message.output_type == "markdown"
-    assert message.content == "".join(chunks)
+    assert message.output_type is None
+    assert text_part(message)["format"] == "markdown"
+    assert text_part(message)["text"] == "".join(chunks)
     assert stream_step.status.value == "completed"
     running_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Running script")
     assert stream_step.parent_step_id == running_step.step_id
@@ -509,7 +533,7 @@ def test_script_agent_reply_writes_agent_message() -> None:
     messages = fixture.messages.list_messages(session.session_id)
 
     assert messages[-1].role == "assistant"
-    assert messages[-1].content == "aGVsbG8="
+    assert text_part(messages[-1])["text"] == "aGVsbG8="
     assert messages[-1].agent_id == "echo_script"
     assert messages[-1].action_id == "default"
     assert messages[-1].run_id == result.run_id
@@ -578,7 +602,8 @@ def test_script_agent_failure_reuses_placeholder_and_preserves_steps(tmp_path: P
 
     assert result.success is False
     assert len([message for message in messages if message.run_id == result.run_id]) == 1
-    assert messages[-1].output_type == "error"
+    assert messages[-1].output_type is None
+    assert messages[-1].parts[0]["type"] == "error"
     running_step = next(step for step in steps if step.label == "Running script")
     before_fail = next(step for step in steps if step.label == "before fail")
     assert before_fail.parent_step_id == running_step.step_id
@@ -592,7 +617,7 @@ def test_script_agent_can_call_base64_capability() -> None:
 
     run(fixture.runtime.handle_input(session, "@echo_script hello"))
 
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "aGVsbG8="
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "aGVsbG8="
 
 
 def test_script_agent_exception_marks_run_failed(tmp_path: Path) -> None:
@@ -712,7 +737,7 @@ def test_script_agent_can_call_llm_generate(tmp_path: Path) -> None:
     result = run(fixture.runtime.handle_input(session, "@llm_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "generated"
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "generated"
 
 
 def test_script_agent_without_llm_does_not_after_run_unload(tmp_path: Path, monkeypatch) -> None:
@@ -816,7 +841,7 @@ def test_ctx_llm_unload_model_refreshes_provider_status(tmp_path: Path, monkeypa
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.content["status_refresh"]["ok"] is True
+    assert json_part(message)["status_refresh"]["ok"] is True
     assert fixture.runs.get_run(result.run_id).metadata["llm_unload"]["ok"] is True
     unload_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Unload model")
     assert unload_step.message == "Unloaded local LLM: P"
@@ -844,7 +869,7 @@ def test_script_agent_with_dataclass_and_future_annotations_loads(tmp_path: Path
     result = run(fixture.runtime.handle_input(session, "@dataclass_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "hello"
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "hello"
 
 
 def test_ctx_llm_text_returns_string(tmp_path: Path) -> None:
@@ -861,7 +886,7 @@ def test_ctx_llm_text_returns_string(tmp_path: Path) -> None:
     result = run(fixture.runtime.handle_input(session, "@llm_text_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "text reply"
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "text reply"
     assert fixture.llm.calls[0]["messages"] == [
         {"role": "system", "content": "You are terse."},
         {"role": "user", "content": "hello"},
@@ -883,8 +908,9 @@ def test_ctx_llm_json_returns_dict(tmp_path: Path) -> None:
 
     assert result.success is True
     message = fixture.messages.list_messages(session.session_id)[-1]
-    assert message.content == {"ok": True, "value": 7}
-    assert message.output_type == "json"
+    assert json_part(message) == {"ok": True, "value": 7}
+    assert message.content == ""
+    assert message.output_type is None
 
 
 def test_ctx_llm_json_extracts_fenced_json(tmp_path: Path) -> None:
@@ -904,7 +930,7 @@ def test_ctx_llm_json_extracts_fenced_json(tmp_path: Path) -> None:
     result = run(fixture.runtime.handle_input(session, "@llm_fenced_json_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == {"answer": "yes"}
+    assert json_part(fixture.messages.list_messages(session.session_id)[-1]) == {"answer": "yes"}
 
 
 def test_ctx_llm_json_invalid_json_fails_clearly(tmp_path: Path) -> None:
@@ -944,7 +970,7 @@ def test_ctx_llm_stream_can_be_consumed_without_public_delta(tmp_path: Path) -> 
     result = run(fixture.runtime.handle_input(session, "@llm_stream_internal_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "HELLO"
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "HELLO"
     assert [event.type for event in fixture.events.list_events()].count("message_delta") == 0
     assert fixture.llm.calls[0]["stream"] is True
 
@@ -966,7 +992,8 @@ def test_ctx_output_write_delta_updates_script_placeholder(tmp_path: Path) -> No
 
     assert result.success is True
     assert message.run_id == result.run_id
-    assert message.content == "hello"
+    assert message.content == ""
+    assert text_part(message)["text"] == "hello"
     events = fixture.events.list_events()
     assert [event.type for event in events].count("message_delta") == 2
     assert [event.type for event in events].count("message_updated") == 0
@@ -994,8 +1021,10 @@ def test_ctx_llm_stream_to_output_writes_public_deltas(tmp_path: Path) -> None:
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.content == "hello"
-    assert message.output_type == "markdown"
+    assert message.content == ""
+    assert message.output_type is None
+    assert text_part(message)["text"] == "hello"
+    assert text_part(message)["format"] == "markdown"
     events = fixture.events.list_events()
     assert [event.type for event in events].count("message_delta") == 2
     assert [event.type for event in events].count("message_updated") == 0
@@ -1027,7 +1056,8 @@ def test_ctx_llm_stream_to_output_deltas_are_not_persisted_by_default(tmp_path: 
     persisted = fixture.events.run_event_store.list_events(result.run_id)
 
     assert result.success is True
-    assert message.content == "hello"
+    assert message.content == ""
+    assert text_part(message)["text"] == "hello"
     assert "message_delta" in emitted
     assert "message_completed" in emitted
     assert "message_delta" not in [event.type for event in persisted]
@@ -1062,8 +1092,10 @@ def test_ctx_llm_stream_to_output_failure_completes_partial_message(tmp_path: Pa
 
     assert result.success is False
     assert fixture.runs.get_run(result.run_id).status == RunStatus.FAILED
-    assert message.content == "partial answer"
-    assert message.output_type == "markdown"
+    assert message.content == ""
+    assert message.output_type is None
+    assert text_part(message)["text"] == "partial answer"
+    assert text_part(message)["format"] == "markdown"
     assert message.metadata["success"] is False
     assert [event.payload.get("seq") for event in events if event.type == "message_delta"] == [1, 2]
     assert [event.payload.get("seq") for event in events if event.type == "message_completed"] == [3]
@@ -1091,7 +1123,7 @@ def test_ctx_llm_stream_falls_back_to_single_chunk_when_profile_streaming_disabl
     result = run(fixture.runtime.handle_input(session, "@llm_stream_fallback_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "single"
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "single"
     assert fixture.llm.calls[0]["stream"] is False
 
 
@@ -1109,7 +1141,7 @@ def test_ctx_llm_generate_accepts_system_and_user(tmp_path: Path) -> None:
     result = run(fixture.runtime.handle_input(session, "@llm_generate_system_script hello"))
 
     assert result.success is True
-    assert fixture.messages.list_messages(session.session_id)[-1].content == "generated system"
+    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "generated system"
 
 
 def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
@@ -1129,9 +1161,9 @@ def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
 
     assert result.success is True
     assert [(message.content, message.output_type) for message in messages[-3:]] == [
-        ("plain", "text"),
-        ("**bold**", "markdown"),
-        ({"ok": True}, "json"),
+        ("", None),
+        ("", None),
+        ("", None),
     ]
     assert [message.content_version for message in messages[-3:]] == [2, 2, 2]
     assert [message.parts[0]["type"] for message in messages[-3:]] == ["text", "text", "json"]
@@ -1139,7 +1171,7 @@ def test_reply_helpers_write_expected_output_types(tmp_path: Path) -> None:
     assert messages[-2].parts[0]["format"] == "markdown"
 
 
-def test_reply_parts_writes_v2_parts_and_legacy_compat(tmp_path: Path) -> None:
+def test_reply_parts_writes_v2_parts_without_legacy_visible_content(tmp_path: Path) -> None:
     registry = write_script_agent(
         tmp_path,
         "reply_parts_script",
@@ -1158,8 +1190,8 @@ def test_reply_parts_writes_v2_parts_and_legacy_compat(tmp_path: Path) -> None:
     assert result.success is True
     assert message.content_version == 2
     assert [part["type"] for part in message.parts] == ["text", "json"]
-    assert message.output_type == "json"
-    assert message.content == {"parts": message.parts}
+    assert message.output_type is None
+    assert message.content == ""
 
 
 def test_image_output_schema_accepts_supported_payloads() -> None:
@@ -1203,26 +1235,24 @@ def test_image_reply_helpers_write_expected_output_types(tmp_path: Path) -> None
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[-3:]] == ["image", "image_gallery", "rich_content"]
-    assert messages[-3].content == {
+    assert [message.output_type for message in messages[-3:]] == [None, None, None]
+    assert image_part(messages[-3]) == {
+        "id": "part_1",
+        "type": "image",
         "url": "https://example.test/single.png",
         "alt": "Single",
         "title": "One",
         "caption": "Caption",
     }
-    assert messages[-2].content == {
-        "images": [
-            {"url": "https://example.test/a.png", "alt": "A"},
-            {"url": "https://example.test/b.png", "caption": "B caption"},
-        ]
-    }
-    assert messages[-1].content == {
-        "blocks": [
-            {"type": "markdown", "text": "**bold**"},
-            {"type": "image", "url": "https://example.test/inline.png", "alt": "Inline"},
-            {"type": "text", "text": "plain"},
-        ]
-    }
+    assert media_group_part(messages[-2])["items"] == [
+        {"type": "image", "url": "https://example.test/a.png", "alt": "A"},
+        {"type": "image", "url": "https://example.test/b.png", "caption": "B caption"},
+    ]
+    assert [(part["type"], part.get("format"), part.get("text"), part.get("url")) for part in messages[-1].parts] == [
+        ("text", "markdown", "**bold**", None),
+        ("image", None, None, "https://example.test/inline.png"),
+        ("text", "plain", "plain", None),
+    ]
 
 
 def test_script_agent_sees_and_reads_input_attachments(monkeypatch, tmp_path: Path) -> None:
@@ -1243,9 +1273,9 @@ def test_script_agent_sees_and_reads_input_attachments(monkeypatch, tmp_path: Pa
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.output_type == "file_content"
-    assert message.content["filename"] == "config.yaml"
-    assert message.content["content"] == "id: chat\n  enabled: true\n"
+    assert message.output_type is None
+    assert file_part(message)["filename"] == "config.yaml"
+    assert file_part(message)["content"] == "id: chat\n  enabled: true\n"
 
 
 def test_script_agent_save_attachment_bytes_writes_under_attachment_dir(monkeypatch, tmp_path: Path) -> None:
@@ -1269,7 +1299,7 @@ def test_script_agent_save_attachment_bytes_writes_under_attachment_dir(monkeypa
 
     result = run(fixture.runtime.handle_input(session, "@generated_attachment_writer create"))
     message = fixture.messages.list_messages(session.session_id)[-1]
-    attachment = message.content
+    attachment = json_part(message)
     path = resolve_attachment_uri(attachment["uri"])
 
     assert result.success is True
@@ -1304,8 +1334,8 @@ def test_script_agent_save_attachment_base64_supports_data_url_and_image_gallery
     attachment = message.metadata["attachments"][0]
 
     assert result.success is True
-    assert message.output_type == "image_gallery"
-    assert message.content == {"images": [{"url": attachment["url"], "alt": "result.png"}]}
+    assert message.output_type is None
+    assert media_group_part(message)["items"] == [{"type": "image", "url": attachment["url"], "alt": "result.png"}]
     assert attachment["type"] == "image"
     assert attachment["mime_type"] == "image/png"
     assert resolve_attachment_uri(attachment["uri"]).read_bytes() == b"\x89PNG\r\n\x1a\nfake"
@@ -1346,9 +1376,11 @@ def test_script_agent_failure_keeps_agent_error_message(tmp_path: Path) -> None:
     assert message.speaker_type == "agent"
     assert message.speaker_name == "failing_script"
     assert message.origin == "agent_reply"
-    assert message.output_type == "error"
+    assert message.output_type is None
     assert message.metadata["success"] is False
-    assert message.content == {"code": "RUN_FAILED", "message": "script boom"}
+    assert message.content == ""
+    assert message.parts[0]["type"] == "error"
+    assert message.parts[0]["message"] == "script boom"
     assert any(step.status.value == "failed" for step in steps)
 
 
@@ -1392,13 +1424,13 @@ def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[-3:]] == ["text", "image", "file_content"]
-    assert messages[-3].content == "hello"
-    assert messages[-2].content["url"] == image["data_url"]
-    assert messages[-2].content["title"] == "cat.png"
-    assert messages[-1].content["filename"] == "tool.py"
-    assert messages[-1].content["language"] == "python"
-    assert messages[-1].content["content"] == "def main():\n    return 'ok'\n"
+    assert [message.output_type for message in messages[-3:]] == [None, None, None]
+    assert text_part(messages[-3])["text"] == "hello"
+    assert image_part(messages[-2])["url"] == image["data_url"]
+    assert image_part(messages[-2])["title"] == "cat.png"
+    assert file_part(messages[-1])["filename"] == "tool.py"
+    assert file_part(messages[-1])["language"] == "python"
+    assert file_part(messages[-1])["content"] == "def main():\n    return 'ok'\n"
     assert fixture.llm.calls == []
 
 
@@ -1415,7 +1447,7 @@ def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> No
     assert messages[0].metadata["invocation"]["raw_text"] == "@render_test:text hello"
     assert messages[0].metadata["invocation"]["args"] == "hello"
     assert messages[-1].role == "assistant"
-    assert messages[-1].content == "hello"
+    assert text_part(messages[-1])["text"] == "hello"
 
 
 def test_current_agent_action_shortcut_stores_raw_input_and_route_metadata() -> None:
@@ -1438,7 +1470,7 @@ def test_current_agent_action_shortcut_stores_raw_input_and_route_metadata() -> 
     assert run_record.metadata["route_kind"] == "current_agent_action_shortcut"
     assert run_record.metadata["resolved_agent_id"] == "render_test"
     assert run_record.metadata["resolved_action_id"] == "text"
-    assert messages[-1].content == "hello"
+    assert text_part(messages[-1])["text"] == "hello"
     assert {message.role for message in messages} <= {"user", "assistant"}
 
 
@@ -1462,7 +1494,8 @@ def test_render_test_image_action_returns_three_non_llm_messages() -> None:
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[1:]] == ["image", "rich_content", "image_gallery"]
+    assert [message.output_type for message in messages[1:]] == [None, None, None]
+    assert [message.parts[0]["type"] for message in messages[1:]] == ["image", "text", "media_group"]
     assert all("llm_resolution" not in message.metadata for message in messages[1:])
 
 
@@ -1481,4 +1514,5 @@ def test_reply_accepts_type_and_output_type_compatibility(tmp_path: Path) -> Non
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
-    assert [message.output_type for message in messages[-2:]] == ["markdown", "markdown"]
+    assert [message.output_type for message in messages[-2:]] == [None, None]
+    assert [text_part(message)["format"] for message in messages[-2:]] == ["markdown", "markdown"]

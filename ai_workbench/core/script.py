@@ -34,7 +34,6 @@ from ai_workbench.core.message_parts import (
     make_json_part,
     make_media_group_part,
     make_text_part,
-    parts_to_legacy_output,
     validate_message_parts,
 )
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
@@ -193,7 +192,7 @@ class ScriptOutputProxy:
         if not self.message_id:
             return
         message = self.message_store.get_message(self.message_id)
-        self.message_store.update_message(message.model_copy(update={"output_type": self._output_type}))
+        self.message_store.update_message(message.model_copy(update={"output_type": None}))
 
     async def write_delta(self, text: str) -> None:
         if self.suppress_output:
@@ -231,21 +230,17 @@ class ScriptOutputProxy:
         resolved_parts = validate_message_parts(parts) if parts is not None else None
         if resolved_parts is None and final_content is not None:
             resolved_parts = legacy_output_to_parts(output_type or self._output_type, final_content)
-        elif resolved_parts is not None:
-            legacy = parts_to_legacy_output(resolved_parts)
-            if legacy is not None:
-                output_type, final_content = legacy
         if self.completed:
             if final_content is None and output_type is None and actions is None and metadata is None:
                 return self.message_store.get_message(self.message_id)
             message = self.message_store.add_message(
                 session_id=self.session_id,
                 role="agent",
-                content=final_content if final_content is not None else "",
+                content=final_content if final_content is not None and resolved_parts is None else "",
                 agent_id=agent_id,
                 action_id=action_id,
                 run_id=self.run_id,
-                output_type=output_type or self._output_type,
+                output_type=output_type if resolved_parts is None else None,
                 content_version=2 if resolved_parts is not None else None,
                 parts=resolved_parts,
                 parent_message_id=parent_message_id,
@@ -276,8 +271,8 @@ class ScriptOutputProxy:
         next_metadata = {**(message.metadata or {}), **(metadata or {}), "streaming": False, "placeholder": False}
         message = message.model_copy(
             update={
-                "content": self._content,
-                "output_type": self._output_type,
+                "content": "" if resolved_parts is not None else self._content,
+                "output_type": None,
                 "content_version": 2,
                 "parts": resolved_parts,
                 "available_actions": actions or message.available_actions,
@@ -932,13 +927,11 @@ class AgentContext:
 
     async def reply_parts(self, parts: list[dict[str, Any]], actions=None, metadata: Optional[Dict[str, Any]] = None):
         message_parts = validate_message_parts(parts)
-        legacy = parts_to_legacy_output(message_parts) or ("json", {"parts": message_parts})
-        resolved_output_type, legacy_content = legacy
         message_metadata = {"success": True, **self.llm.message_metadata(), **(metadata or {})}
         self.llm.record_run_llm_metadata()
         message = await self.output.finish(
-            final_content=legacy_content,
-            output_type=resolved_output_type,
+            final_content=None,
+            output_type=None,
             parts=message_parts,
             actions=actions or [],
             metadata=message_metadata,
@@ -1241,7 +1234,7 @@ class ScriptAgentRunner:
                 agent_id=agent.id,
                 action_id=action_id,
                 run_id=run.run_id,
-                output_type="text",
+                output_type=None,
                 parent_message_id=parent_id or None,
                 metadata={"success": True, "streaming": True, "placeholder": True},
                 speaker_type="agent",
@@ -1518,8 +1511,8 @@ class ScriptAgentRunner:
         }
         updated = message.model_copy(
             update={
-                "content": {"code": error_code, "message": error},
-                "output_type": "error",
+                "content": "",
+                "output_type": None,
                 "content_version": 2,
                 "parts": [make_error_part(error, code=error_code)],
                 "metadata": metadata,

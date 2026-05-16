@@ -1213,6 +1213,31 @@ function MessageContent({
       />
     );
   }
+  return (
+    <LegacyMessageFallback
+      message={message}
+      kind={kind}
+      citationRefs={citationRefs}
+      onOpenKnowledgeCitation={onOpenKnowledgeCitation}
+      onPreviewImage={onPreviewImage}
+    />
+  );
+}
+
+function LegacyMessageFallback({
+  message,
+  kind,
+  citationRefs,
+  onOpenKnowledgeCitation,
+  onPreviewImage,
+}: {
+  message: Message;
+  kind: 'user' | 'agent' | 'command';
+  citationRefs?: KnowledgeSnippetRef[];
+  onOpenKnowledgeCitation: (selection: KnowledgeCitationSelection) => void;
+  onPreviewImage: (image: ImagePreview) => void;
+}) {
+  // Deprecated compatibility only: new assistant/command messages render via Message Parts v2.
   if (message.output_type === 'markdown') {
     return <MarkdownRenderer content={message.content} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />;
   }
@@ -1232,7 +1257,7 @@ function MessageContent({
     return <ImageGalleryRenderer images={normalizeImageGallery(message.content)} onPreviewImage={onPreviewImage} />;
   }
   if (message.output_type === 'rich_content') {
-    return <RichContentRenderer messageId={message.message_id} blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
+    return <LegacyRichContentRenderer messageId={message.message_id} blocks={normalizeRichContentBlocks(message.content)} onPreviewImage={onPreviewImage} />;
   }
   return <PlainTextRenderer content={message.content} />;
 }
@@ -1564,7 +1589,7 @@ function ImageGalleryRenderer({ images, onPreviewImage }: { images: ImagePayload
   );
 }
 
-function RichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId: string; blocks: ChatContentBlock[]; onPreviewImage: (image: ImagePreview) => void }) {
+function LegacyRichContentRenderer({ messageId, blocks, onPreviewImage }: { messageId: string; blocks: ChatContentBlock[]; onPreviewImage: (image: ImagePreview) => void }) {
   if (!blocks.length) {
     return <PlainTextRenderer content="" />;
   }
@@ -1859,7 +1884,7 @@ function copyableMessageContent(message: Message): string {
   if (message.output_type === 'json') {
     return JSON.stringify(normalizeJsonContent(message.content), null, 2);
   }
-  if (['image', 'image_gallery', 'rich_content'].includes(message.output_type)) {
+  if (message.output_type && ['image', 'image_gallery', 'rich_content'].includes(message.output_type)) {
     return JSON.stringify(message.content, null, 2);
   }
   return contentToText(message.content);
@@ -1996,6 +2021,11 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
 function hasRenderableMessage(message: Message, reasoningContent: string): boolean {
   if (reasoningContent.trim()) return true;
   if (hasRenderableParts(message.parts)) return true;
+  return hasRenderableLegacyMessage(message);
+}
+
+function hasRenderableLegacyMessage(message: Message): boolean {
+  // Deprecated compatibility only: no-parts historical or invalid messages.
   if (message.output_type === 'image') return normalizeImagePayload(message.content) !== null;
   if (message.output_type === 'image_gallery') return normalizeImageGallery(message.content).length > 0;
   if (message.output_type === 'rich_content') return normalizeRichContentBlocks(message.content).length > 0;

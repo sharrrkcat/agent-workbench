@@ -409,13 +409,20 @@ def _paired_command_result_after(message, messages: list, index: int):
 def _message_can_enter_context(message) -> bool:
     if getattr(message, "output_type", "") in {"event", "error"}:
         return False
+    if any(isinstance(part, dict) and part.get("type") == "error" for part in (getattr(message, "parts", None) or [])):
+        return False
     metadata = getattr(message, "metadata", {}) or {}
+    if metadata.get("success") is False:
+        return False
     if metadata.get("event_type"):
         return False
     return True
 
 
 def _message_text_for_context(message) -> str:
+    parts_text = _parts_text_for_context(getattr(message, "parts", None))
+    if parts_text.strip():
+        return parts_text
     content = str(getattr(message, "content", "") or "")
     attachments = _image_attachments(message)
     if content.strip():
@@ -461,6 +468,10 @@ def _render_instruction_template(template: str, values: dict[str, str]) -> str:
 
 
 def _command_result_body(message, output_type: str, max_chars: Optional[int]) -> tuple[str, bool]:
+    parts_text = _parts_text_for_context(getattr(message, "parts", None))
+    if parts_text.strip():
+        text, truncated = _bounded_text(parts_text, max_chars)
+        return f'<command_output type="parts" truncated="{str(truncated).lower()}">\n{text}\n</command_output>', truncated
     content = getattr(message, "content", "")
     if output_type in {"text", "markdown"}:
         text, truncated = _bounded_text(str(content or ""), max_chars)
@@ -518,6 +529,37 @@ def _rich_content_text(content: Any, max_chars: Optional[int]) -> tuple[str, boo
             if remaining <= 0:
                 break
     return "\n\n".join(rendered), truncated
+
+
+def _parts_text_for_context(parts: Any) -> str:
+    if not isinstance(parts, list):
+        return ""
+    rendered: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        part_type = part.get("type")
+        if part_type == "text":
+            rendered.append(str(part.get("text") or ""))
+        elif part_type == "json":
+            rendered.append(json.dumps(part.get("data"), ensure_ascii=False, indent=2, default=str))
+        elif part_type == "file":
+            rendered.append(str(part.get("content") or part.get("filename") or ""))
+        elif part_type == "image":
+            rendered.append("[image]" + (" " + str(part.get("alt")) if part.get("alt") else ""))
+        elif part_type == "media_group":
+            items = part.get("items") if isinstance(part.get("items"), list) else []
+            rendered.append(f"[image gallery: {len(items)} image(s)]")
+        elif part_type == "form":
+            rendered.append("[form] " + str(part.get("title") or part.get("form_id") or ""))
+        elif part_type == "command_buttons":
+            buttons = part.get("buttons") if isinstance(part.get("buttons"), list) else []
+            rendered.append("\n".join(f"{button.get('label')}: {button.get('message')}" for button in buttons if isinstance(button, dict)))
+        elif part_type == "notice":
+            rendered.append(str(part.get("text") or ""))
+        elif part_type == "error":
+            rendered.append(str(part.get("message") or part.get("code") or ""))
+    return "\n\n".join(item for item in rendered if item)
 
 
 def _placeholder_for_output(message, output_type: str) -> str:

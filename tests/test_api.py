@@ -1046,7 +1046,8 @@ def test_post_message_base64_executes_command() -> None:
 
     assert payload["success"] is True
     assert payload["data"] == "aGVsbG8="
-    assert payload["messages"][-1]["content"] == "aGVsbG8="
+    assert payload["messages"][-1]["content"] == ""
+    assert payload["messages"][-1]["parts"][0] == {"id": "part_1", "type": "text", "format": "plain", "text": "aGVsbG8="}
 
 
 def test_command_run_events_include_started_and_done() -> None:
@@ -1399,7 +1400,8 @@ def test_image_base64_api_reads_current_user_message_attachment() -> None:
     assert payload["success"] is True
     assert payload["messages"][0]["metadata"]["attachments"][0]["uri"].startswith("local://attachments/")
     assert payload["messages"][-1]["command_name"] == "/image-base64"
-    assert payload["messages"][-1]["content"]["data_url"] == SVG_DATA_URL
+    assert payload["messages"][-1]["parts"][0]["type"] == "json"
+    assert payload["messages"][-1]["parts"][0]["data"]["data_url"] == SVG_DATA_URL
 
 
 def test_list_messages_returns_markdown_content_as_plain_string() -> None:
@@ -1536,7 +1538,8 @@ def test_agent_retry_deletes_target_and_later_messages_then_regenerates() -> Non
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
-    assert payload["messages"][-1]["content"] == "retry reply"
+    assert payload["messages"][-1]["content"] == ""
+    assert payload["messages"][-1]["parts"][0]["text"] == "retry reply"
     messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
     ids = [message["message_id"] for message in messages]
     assert target["message_id"] not in ids
@@ -1583,7 +1586,8 @@ def test_user_edit_updates_content_deletes_later_messages_and_regenerates() -> N
     assert later["messages"][0]["message_id"] not in ids
     assert later["messages"][-1]["message_id"] not in ids
     assert next(message for message in messages if message["message_id"] == user_message["message_id"])["content"] == "edited"
-    assert messages[-1]["content"] == "edited reply"
+    assert messages[-1]["content"] == ""
+    assert messages[-1]["parts"][0]["text"] == "edited reply"
     assert messages[-1]["metadata"]["llm_resolution"]
     assert llm.calls[-1]["messages"][-1]["content"] == "edited"
 
@@ -1674,7 +1678,8 @@ def test_agent_action_text_route_preserves_raw_user_message_and_parsed_args() ->
     assert user_message["metadata"]["invocation"]["raw_text"] == "@render_test:image 1"
     assert user_message["metadata"]["invocation"]["args"] == "1"
     assert payload["run"]["metadata"]["args"] == "1"
-    assert [message["output_type"] for message in messages[1:]] == ["image", "rich_content", "image_gallery"]
+    assert [message["output_type"] for message in messages[1:]] == [None, None, None]
+    assert [message["parts"][0]["type"] for message in messages[1:]] == ["image", "text", "media_group"]
     assert all("llm_resolution" not in message["metadata"] for message in messages[1:])
 
 
@@ -1751,7 +1756,8 @@ def test_delete_session_does_not_affect_other_sessions() -> None:
     assert client.get(f"/api/sessions/{first['session_id']}").status_code == 404
     assert client.get(f"/api/sessions/{second['session_id']}").status_code == 200
     messages = client.get(f"/api/sessions/{second['session_id']}/messages").json()
-    assert messages[-1]["content"] == "dHdv"
+    assert messages[-1]["content"] == ""
+    assert messages[-1]["parts"][0]["text"] == "dHdv"
 
 
 def test_cancel_running_run_marks_cancelled() -> None:

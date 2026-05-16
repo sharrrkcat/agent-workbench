@@ -220,7 +220,7 @@ def test_form_submit_uses_original_form_target_and_prefill() -> None:
     client = make_client()
     session = create_session(client, default_agent_id="render_test")
     payload = post_message(client, session["session_id"], "@render_test:form")
-    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+    form_message = next(message for message in payload["messages"] if any(part.get("type") == "form" and part.get("form_id") == "demo" for part in message.get("parts", [])))
 
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -266,9 +266,10 @@ def test_form_submit_uses_original_form_target_and_prefill() -> None:
     assert user_message["metadata"]["target_action_id"] == "form_submit"
     assert user_message["metadata"]["prefill"]["prompt"] == "submitted"
     assert user_message["content"] == "Submitted form: Demo Form"
-    assert assistant["output_type"] == "json"
-    assert assistant["content"]["received_prefill"]["prompt"] == "submitted"
-    assert assistant["content"]["source_message_id"] == form_message["message_id"]
+    assert assistant["output_type"] is None
+    assert assistant["parts"][0]["type"] == "json"
+    assert assistant["parts"][0]["data"]["received_prefill"]["prompt"] == "submitted"
+    assert assistant["parts"][0]["data"]["source_message_id"] == form_message["message_id"]
     assert assistant["role"] == "assistant"
 
 
@@ -338,7 +339,7 @@ def test_comfyui_silent_recipe_save_updates_source_form_block_without_chat_bubbl
     )
     session = create_session(client, default_agent_id="comfyui_agent")
     payload = post_message(client, session["session_id"], "@comfyui_agent:form")
-    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+    form_message = next(message for message in payload["messages"] if any(part.get("type") == "form" and part.get("form_id") == "comfyui_recipe" for part in message.get("parts", [])))
 
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -356,8 +357,7 @@ def test_comfyui_silent_recipe_save_updates_source_form_block_without_chat_bubbl
     assert result["messages"] == []
     assert result["updated_form"]["source_message_id"] == form_message["message_id"]
     updated = client.app.state.runtime_state.messages.get_message(form_message["message_id"])
-    blocks = updated.content["blocks"]
-    form = next(block for block in blocks if block.get("form_id") == "comfyui_recipe")
+    form = next(part for part in updated.parts if part.get("type") == "form" and part.get("form_id") == "comfyui_recipe")
     fields = {field["name"]: field for field in form["fields"]}
     assert form["ui"]["collapsed"] is True
     assert form["ui"]["collapsed_message"] == "Recipe saved. Click to expand."
@@ -379,7 +379,7 @@ def test_comfyui_silent_recipe_save_preset_switch_returns_new_form_fields(tmp_pa
     )
     session = create_session(client, default_agent_id="comfyui_agent")
     payload = post_message(client, session["session_id"], "@comfyui_agent:form")
-    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+    form_message = next(message for message in payload["messages"] if any(part.get("type") == "form" and part.get("form_id") == "comfyui_recipe" for part in message.get("parts", [])))
 
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -431,7 +431,7 @@ def test_silent_form_submit_ignores_request_visibility_and_target_overrides() ->
     client = make_client()
     session = create_session(client, default_agent_id="render_test")
     payload = post_message(client, session["session_id"], "@render_test:form")
-    form_message = next(message for message in payload["messages"] if message["output_type"] == "rich_content")
+    form_message = next(message for message in payload["messages"] if any(part.get("type") == "form" and part.get("form_id") == "demo" for part in message.get("parts", [])))
 
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",

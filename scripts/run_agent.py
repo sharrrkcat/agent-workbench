@@ -136,8 +136,8 @@ def _print_human(payload: dict[str, Any], show_trace: bool) -> None:
     if messages:
         print("messages:")
         for message in messages:
-            print(f"- {message.get('role')} [{message.get('output_type')}]:")
-            print(_format_content(message.get("content"), message.get("output_type") or "text"))
+            print(f"- {message.get('role')} [parts]:")
+            print(_format_message(message))
 
     if show_trace:
         trace = _trace_from_payload(payload)
@@ -165,6 +165,45 @@ def _list_run_events(state: Any, run_id: str) -> list[Any]:
     if hasattr(state.run_events, "list_events"):
         return state.run_events.list_events(run_id)
     return [event for event in state.events.list_events() if event.run_id == run_id]
+
+
+def _format_message(message: dict[str, Any]) -> str:
+    parts = message.get("parts")
+    if isinstance(parts, list) and parts:
+        return _format_parts(parts)
+    return _format_content(message.get("content"), message.get("output_type") or "text")
+
+
+def _format_parts(parts: list[Any]) -> str:
+    lines: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        part_type = part.get("type")
+        if part_type == "text":
+            lines.append(str(part.get("text") or ""))
+        elif part_type == "json":
+            lines.append(json.dumps(_safe_preview(part.get("data")), ensure_ascii=False, indent=2))
+        elif part_type == "file":
+            body = str(part.get("content") or "")
+            lines.append(f"file: {part.get('filename') or 'inline'} {len(body)} chars\n{body}")
+        elif part_type == "image":
+            lines.append(_image_summary(part))
+        elif part_type == "media_group":
+            items = part.get("items") if isinstance(part.get("items"), list) else []
+            lines.append(f"media_group: {len(items)} image(s)")
+        elif part_type == "form":
+            lines.append(f"form: {part.get('form_id') or ''} {part.get('title') or ''}".strip())
+        elif part_type == "command_buttons":
+            buttons = part.get("buttons") if isinstance(part.get("buttons"), list) else []
+            lines.append(f"command_buttons: {len(buttons)} button(s)")
+        elif part_type == "error":
+            lines.append(f"error: {part.get('code') or ''} {part.get('message') or ''}".strip())
+        elif part_type == "notice":
+            lines.append(str(part.get("text") or ""))
+        else:
+            lines.append(str(part_type or "unknown"))
+    return "\n\n".join(line for line in lines if line)
 
 
 def _format_content(content: Any, output_type: str) -> str:

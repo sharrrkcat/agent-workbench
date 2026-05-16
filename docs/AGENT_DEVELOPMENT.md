@@ -174,8 +174,9 @@ await ctx.reply_images([
 ```
 
 `reply_parts` is the Message Parts v2 base helper. The other reply helpers are
-wrappers that write parts plus temporary `content` / `output_type`
-compatibility fields for the current frontend renderer.
+wrappers that write parts. Prefer `reply_parts` and typed helpers for new code.
+`reply_blocks` is retained only as a legacy developer convenience and is
+converted immediately to parts.
 
 Optional LLM helper:
 
@@ -289,9 +290,10 @@ Supported rendered output types are:
 
 Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
 
-Message Parts v2 is now the backend storage path for new Agent and Script Agent
-assistant replies. The old output types above remain as compatibility renderer
-hints until the frontend renderer moves fully to parts.
+Message Parts v2 is the backend storage path and visible content authority for
+new Agent and Script Agent assistant replies. The old output types above remain
+as deprecated compatibility/declaration terms only; new messages render from
+`parts[]`.
 
 ## CLI Workflow
 

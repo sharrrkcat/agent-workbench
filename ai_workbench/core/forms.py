@@ -174,7 +174,11 @@ def validate_action_form_block(value: Any) -> dict[str, Any]:
         raise FormValidationError("FORM_INVALID", str(exc) or "Invalid action_form payload.") from exc
 
 
-def find_action_form_block(content: Any, form_id: str) -> dict[str, Any] | None:
+def find_action_form_block(content: Any, form_id: str, parts: Any = None) -> dict[str, Any] | None:
+    if isinstance(parts, list):
+        for part in parts:
+            if isinstance(part, dict) and part.get("type") == "form" and part.get("form_id") == form_id:
+                return validate_action_form_block({"type": "action_form", **{key: value for key, value in part.items() if key not in {"id", "type"}}})
     if isinstance(content, dict) and content.get("type") == "action_form" and content.get("form_id") == form_id:
         return validate_action_form_block(content)
     blocks = content.get("blocks") if isinstance(content, dict) else None

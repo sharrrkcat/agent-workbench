@@ -20,7 +20,7 @@ from ai_workbench.core.context import ContextBuilder, LLMContextError, group_tra
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
-from ai_workbench.core.message_parts import legacy_output_to_parts, make_error_part, make_text_part, parts_to_legacy_output
+from ai_workbench.core.message_parts import legacy_output_to_parts, make_error_part, make_text_part
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
 from ai_workbench.core.provider_status import (
@@ -725,11 +725,11 @@ class AgentRunner:
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
-            content=content,
+            content="",
             agent_id=agent.id,
             action_id=action_id,
             run_id=run.run_id,
-            output_type="markdown",
+            output_type=None,
             content_version=2,
             parts=[make_text_part(content, format="markdown")],
             parent_message_id=parent_id or None,
@@ -1014,11 +1014,11 @@ class AgentRunner:
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
-            content=content,
+            content="",
             agent_id=agent.id,
             action_id=action_id,
             run_id=run_id,
-            output_type="markdown",
+            output_type=None,
             content_version=2,
             parts=[make_text_part(content, format="markdown")],
             parent_message_id=parent_id or None,
@@ -1057,11 +1057,11 @@ class AgentRunner:
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
-            content={"code": error_code or "RUN_FAILED", "message": error},
+            content="",
             agent_id=agent.id,
             action_id=action_id,
             run_id=run_id,
-            output_type="error",
+            output_type=None,
             content_version=2,
             parts=[make_error_part(error, code=error_code or "RUN_FAILED")],
             parent_message_id=parent_id or None,
@@ -2045,10 +2045,6 @@ class CommandRunner:
             output_type = self._normalize_output_type(command, data)
             self._validate_output_payload(output_type, data)
             message_parts = legacy_output_to_parts(output_type, data)
-            legacy_output = parts_to_legacy_output(message_parts)
-            if legacy_output is None:
-                raise ValueError("Command output could not be converted to legacy compatibility fields.")
-            legacy_output_type, legacy_content = legacy_output
         except Exception as exc:
             error = str(exc) or "Command failed."
             error_code = getattr(exc, "code", None) or "COMMAND_FAILED"
@@ -2064,14 +2060,13 @@ class CommandRunner:
             )
             command_metadata["error"] = {"code": error_code, "message": error, "details": details if isinstance(details, dict) else None}
             message_parts = [make_error_part(error, code=error_code)]
-            legacy_output_type, legacy_content = parts_to_legacy_output(message_parts) or ("error", {"code": error_code, "message": error})
             message = self.message_store.add_message(
                 session_id=session_id,
                 role="assistant",
-                content=legacy_content,
+                content="",
                 command_name=command_name,
                 run_id=failed_run.run_id,
-                output_type=legacy_output_type,
+                output_type=None,
                 content_version=2,
                 parts=message_parts,
                 parent_message_id=input_message_id or None,
@@ -2108,10 +2103,10 @@ class CommandRunner:
         message = self.message_store.add_message(
             session_id=session_id,
             role="assistant",
-            content=legacy_content,
+            content="",
             command_name=command_name,
             run_id=run.run_id,
-            output_type=legacy_output_type,
+            output_type=None,
             content_version=2,
             parts=message_parts,
             parent_message_id=input_message_id or None,

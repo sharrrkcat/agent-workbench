@@ -213,12 +213,10 @@ Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 - `reply_form` / `reply_action_form`: validate and send one `action_form` block.
 - `reply_file_content`: send raw file text, not markdown-rendered content.
 
-Reply helpers accept optional message metadata for durable compact details such
-as generated image recipe metadata.
-
 `reply_parts(parts, metadata=None)` is the v2 foundation; runtime sets
-`content_version=2`. Existing helpers wrap parts and still write temporary
-`content` / `output_type` compatibility fields.
+`content_version=2`. Existing helpers are parts wrappers. Legacy `content` /
+`output_type` fields are deprecated compatibility only. Reply helpers accept
+optional compact metadata such as generated image recipe refs.
 
 ## Attachments In Script Agents
 
@@ -304,20 +302,23 @@ core-owned services, not Capability backends. See:
 New Agent, Script Agent, and Capability command replies persist visible content
 as `content_version=2` plus ordered `parts`; supported part types and rules live
 in [contracts/message-parts.md](contracts/message-parts.md). The frontend renders
-`parts` first and uses legacy `content` / `output_type` as fallback fields.
+`parts` as the normal path and uses legacy `content` / `output_type` only as a
+deprecated no-parts fallback.
 
-Legacy output types are `text`, `markdown`, `json`, `image`,
-`image_gallery`, `file_content`, and `rich_content`. For Capability commands,
-`output.type` remains the developer declaration, while persisted messages are
-converted to `parts`; legacy fields are derived back for the current frontend
-renderer. Use `file_content` for raw text that must not be markdown-rendered.
+Legacy output types are `text`, `markdown`, `json`, `image`, `image_gallery`,
+`file_content`, and `rich_content`. For Capability commands, `output.type`
+remains the developer declaration, while persisted visible messages are
+converted to `parts`. Use `file_content` for raw text that must not be
+markdown-rendered.
 
 If a command returns a dict with no declared output, the runner may infer `json`,
 `image`, `image_gallery`, or `rich_content`; the inferred output is still stored
 through Message Parts. `rich_content.blocks` is an input compatibility shape.
 `action_form` becomes a `form` part and `command_buttons` becomes a
-`command_buttons` part. Markdown `text` parts keep render-time Knowledge
-citation enhancement. Round 4 removes the old primary renderer structure.
+`command_buttons` part. `rich_content.blocks` is deprecated input compatibility,
+not a persistent message structure. Markdown `text` parts keep render-time
+Knowledge citation enhancement. Round 5 will finish test/docs cleanup and
+reserve second-batch part types.
 
 ### `action_form` Block
 

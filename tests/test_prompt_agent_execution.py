@@ -26,6 +26,10 @@ PNG_DATA_URL = "data:image/png;base64,aGVsbG8="
 JPEG_DATA_URL = "data:image/jpeg;base64,aGVsbG8="
 
 
+def text_part(message):
+    return next(part for part in message.parts if part.get("type") == "text")
+
+
 class FakeLLMRuntime:
     def __init__(self, response: str = "fake response", fail: bool = False, unload_result=None) -> None:
         self.response = response
@@ -155,8 +159,10 @@ def test_translate_agent_executes_and_writes_agent_message() -> None:
     assert messages[1].role == "assistant"
     assert messages[1].agent_id == "translate"
     assert messages[1].action_id == "default"
-    assert messages[1].content == "hello"
-    assert messages[1].output_type == "markdown"
+    assert messages[1].content == ""
+    assert messages[1].output_type is None
+    assert text_part(messages[1])["text"] == "hello"
+    assert text_part(messages[1])["format"] == "markdown"
     assert messages[1].content_version == 2
     assert messages[1].parts == [{"id": "part_1", "type": "text", "format": "markdown", "text": "hello"}]
     assert messages[0].speaker_type == "user"
@@ -1373,7 +1379,8 @@ def test_prompt_agent_uses_streaming_when_profile_supports_streaming() -> None:
     assert result.success is True
     assert result.data == "hello"
     assert llm.calls[0]["stream"] is True
-    assert messages[-1].content == "hello"
+    assert messages[-1].content == ""
+    assert text_part(messages[-1])["text"] == "hello"
     assert messages[-1].metadata["llm_resolution"]["profile_id"] == profile.id
     assert messages[-1].metadata["llm_metrics"]["usage_source"] == "provider"
     assert messages[-1].metadata["llm_metrics"]["prompt_tokens"] == 3
@@ -1403,7 +1410,8 @@ def test_prompt_agent_streaming_deltas_are_not_persisted_by_default() -> None:
     persisted = fixture.events.run_event_store.list_events(result.run_id)
 
     assert result.success is True
-    assert message.content == "hello"
+    assert message.content == ""
+    assert text_part(message)["text"] == "hello"
     assert "message_delta" in emitted
     assert "message_completed" in emitted
     assert "message_delta" not in [event.type for event in persisted]
@@ -1423,7 +1431,8 @@ def test_prompt_agent_uses_non_streaming_when_profile_does_not_support_streaming
     assert result.success is True
     assert llm.calls[0]["stream"] is False
     message = fixture.messages.list_messages(session.session_id)[-1]
-    assert message.content == "complete"
+    assert message.content == ""
+    assert text_part(message)["text"] == "complete"
     assert message.metadata["llm_metrics"]["streamed"] is False
     assert message.metadata["llm_metrics"]["usage_source"] == "estimated"
 
@@ -1654,7 +1663,8 @@ def test_nonstream_prompt_agent_saves_reasoning_metadata() -> None:
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.content == "visible answer"
+    assert message.content == ""
+    assert text_part(message)["text"] == "visible answer"
     assert message.metadata["reasoning_content"] == "hidden chain"
     assert message.metadata["reasoning"] == {"expected": True, "received": True, "content": "hidden chain"}
 
@@ -1670,7 +1680,8 @@ def test_nonstream_prompt_agent_without_reasoning_does_not_write_empty_thought()
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
-    assert message.content == "visible answer"
+    assert message.content == ""
+    assert text_part(message)["text"] == "visible answer"
     assert "reasoning_content" not in message.metadata
     assert message.metadata["reasoning"] == {"expected": True, "received": False, "content": None}
 
@@ -1752,7 +1763,8 @@ def test_edit_rerun_regenerates_reasoning_metadata() -> None:
 
     assert first.success is True
     assert rerun.success is True
-    assert rerun_message.content == "edited answer"
+    assert rerun_message.content == ""
+    assert text_part(rerun_message)["text"] == "edited answer"
     assert rerun_message.metadata["reasoning_content"] == "edited thought"
 
 
@@ -1792,7 +1804,8 @@ def test_streaming_reasoning_delta_accumulates_to_final_metadata() -> None:
     events = fixture.events.list_events()
 
     assert result.success is True
-    assert message.content == "visible answer"
+    assert message.content == ""
+    assert text_part(message)["text"] == "visible answer"
     assert message.metadata["reasoning_content"] == "think more"
     assert message.metadata["reasoning"] == {"expected": True, "received": True, "content": "think more"}
     assert [event.payload.get("delta") for event in events if event.type == "message_delta"] == ["", "visible ", "", "answer"]
@@ -1831,10 +1844,12 @@ def test_prompt_agent_failure_persists_agent_error_message() -> None:
     assert assistant.speaker_type == "agent"
     assert assistant.speaker_name == "Chat Agent"
     assert assistant.origin == "agent_reply"
-    assert assistant.output_type == "error"
+    assert assistant.output_type is None
     assert assistant.run_id == result.run_id
     assert assistant.metadata["success"] is False
-    assert assistant.content == {"code": "RUN_FAILED", "message": "LLM failed"}
+    assert assistant.content == ""
+    assert assistant.parts[0]["type"] == "error"
+    assert assistant.parts[0]["message"] == "LLM failed"
 
 
 def test_friendly_error_mapping_for_provider_unreachable() -> None:
@@ -1890,7 +1905,8 @@ def test_cancel_streaming_run_persists_partial_message() -> None:
 
     assert result.success is False
     assert prompt_run.status == RunStatus.CANCELLED
-    assert messages[-1].content == "part"
+    assert messages[-1].content == ""
+    assert text_part(messages[-1])["text"] == "part"
     assert messages[-1].metadata["interrupted"] is True
     assert "run_cancelled" in [event.type for event in fixture.events.list_events()]
 
