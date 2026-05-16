@@ -1910,8 +1910,9 @@ input:disabled {
 .audio-part {
   display: grid;
   gap: 10px;
+  width: min(100%, 720px);
   min-width: 0;
-  max-width: 520px;
+  max-width: 100%;
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -1973,7 +1974,7 @@ input:disabled {
 
 .audio-part-controls {
   display: grid;
-  grid-template-columns: auto minmax(120px, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   min-width: 0;

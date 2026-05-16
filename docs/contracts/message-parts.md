@@ -37,8 +37,7 @@ Unknown part types fail validation. `video`, `diff`, `chart`, `table`, and
 
 AudioPart v1 does not support remote URL sources, network downloads, TTS, ASR,
 transcription, livestreams, playlists, or audio content understanding.
-The built-in file Capability creates AudioParts through `/read-audio <path>`;
-`/file-audio` is not exposed.
+The built-in file Capability creates AudioParts through `/read-audio <path>`.
 
 ## Capability Outputs
 

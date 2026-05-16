@@ -289,9 +289,9 @@ Utility LLM, Intent Routing, General settings, and Knowledge settings are core-o
 - [contracts/intent-routing.md](contracts/intent-routing.md)
 - [contracts/settings-general.md](contracts/settings-general.md)
 
-The built-in `file` Capability exposes `/read-audio <path>`, not `/file-audio`,
-for local audio; it returns an AudioPart and uses `max_local_audio_read_size_mb`
-plus `enable_read_audio_command`.
+The built-in `file` Capability exposes `/read-audio <path>` for local audio; it
+returns an AudioPart and uses `max_local_audio_read_size_mb` plus
+`enable_read_audio_command`.
 
 ## Capability Config
 

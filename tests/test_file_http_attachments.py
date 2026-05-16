@@ -467,6 +467,9 @@ def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path:
         runtime.read_audio(str(large_audio), context={"capability_config": config})
     except ValueError as exc:
         assert "File too large" in str(exc)
+        assert "/read-audio" in str(exc)
+        assert "1e-05 MB" in str(exc)
+        assert "Attachment file is too large" not in str(exc)
     else:
         raise AssertionError("expected audio size rejection")
     try:
@@ -475,6 +478,25 @@ def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path:
         assert "File access denied" in str(exc)
     else:
         raise AssertionError("expected audio path rejection")
+
+
+def test_file_capability_audio_limit_overrides_generated_attachment_default(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    audio = allowed / "long.mp3"
+    audio.write_bytes(b"x" * (11 * 1024 * 1024))
+    config = {
+        "allowed_directories": [str(allowed)],
+        "max_local_audio_read_size_mb": 100,
+        "enable_read_audio_command": True,
+    }
+    runtime = FileRuntime()
+
+    payload = runtime.read_audio(str(audio), context={"capability_config": config})
+
+    assert payload["mime_type"] == "audio/mpeg"
+    assert resolve_attachment_uri(f"local://attachments/{Path(payload['url']).name}").stat().st_size == 11 * 1024 * 1024
 
 
 def test_http_capability_rejects_non_http_scheme() -> None:
@@ -643,6 +665,10 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_audio_command": False}})
     disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
     assert "Command disabled" in disabled_audio.json()["run"]["error"]
+
+    legacy_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
+    assert legacy_audio.status_code == 400
+    assert "Unknown command: /file-audio" in legacy_audio.text
 
     client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": []}})
     empty_dirs = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})

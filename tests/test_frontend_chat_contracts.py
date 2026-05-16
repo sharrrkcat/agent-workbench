@@ -207,6 +207,9 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert "type=\"range\"" in source
     assert "part.source === 'attachment'" in source
     assert "^\\/api\\/attachments\\/" in source
+    styles = read_frontend("styles.css")
+    assert "width: min(100%, 720px)" in styles
+    assert "grid-template-columns: auto minmax(0, 1fr) auto" in styles
 
 
 def test_generated_registry_lists_file_audio_output() -> None:

@@ -324,6 +324,8 @@ def save_generated_attachment_bytes(
     kind: Literal["image", "file", "audio"] = "file",
     metadata: dict[str, Any] | None = None,
     settings: Any = None,
+    max_size_bytes: int | None = None,
+    max_size_label: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(data, bytes):
         raise ValueError("Generated attachment data must be bytes.")
@@ -334,7 +336,15 @@ def save_generated_attachment_bytes(
     cleaned_mime = (mime_type or "").strip().lower()
     if not cleaned_mime:
         raise ValueError("Generated attachment MIME type is required.")
-    _validate_generated_attachment_payload(safe_name, cleaned_mime, data, attachment_type, settings=settings)
+    _validate_generated_attachment_payload(
+        safe_name,
+        cleaned_mime,
+        data,
+        attachment_type,
+        settings=settings,
+        max_size_bytes=max_size_bytes,
+        max_size_label=max_size_label,
+    )
     stored = _store_attachment_bytes(safe_name, cleaned_mime, data, attachment_type)
     if metadata:
         stored["metadata"] = dict(metadata)
@@ -348,6 +358,8 @@ def save_generated_attachment_base64(
     kind: Literal["image", "file", "audio"] = "file",
     metadata: dict[str, Any] | None = None,
     settings: Any = None,
+    max_size_bytes: int | None = None,
+    max_size_label: str | None = None,
 ) -> dict[str, Any]:
     data, detected_mime = _decode_base64_payload(data_base64)
     cleaned_mime = (mime_type or detected_mime or "").strip().lower()
@@ -360,6 +372,8 @@ def save_generated_attachment_base64(
         kind=kind,
         metadata=metadata,
         settings=settings,
+        max_size_bytes=max_size_bytes,
+        max_size_label=max_size_label,
     )
 
 
@@ -636,7 +650,15 @@ def _validate_attachment_payload(name: str | None, mime_type: str, data: bytes, 
     _validate_attachment_size(len(data), attachment_type, settings=settings)
 
 
-def _validate_generated_attachment_payload(name: str, mime_type: str, data: bytes, attachment_type: str, settings: Any = None) -> None:
+def _validate_generated_attachment_payload(
+    name: str,
+    mime_type: str,
+    data: bytes,
+    attachment_type: str,
+    settings: Any = None,
+    max_size_bytes: int | None = None,
+    max_size_label: str | None = None,
+) -> None:
     if attachment_type == "image" and mime_type not in ALLOWED_IMAGE_MIME_TYPES:
         raise ValueError("Unsupported image MIME type.")
     if attachment_type == "file" and infer_attachment_type(name, mime_type) == "image":
@@ -649,6 +671,11 @@ def _validate_generated_attachment_payload(name: str, mime_type: str, data: byte
     if attachment_type == "file" and infer_attachment_type(name, mime_type) == "audio":
         raise ValueError("Generated audio attachments must use kind='audio'.")
     _extension_for_attachment(name, mime_type)
+    if max_size_bytes is not None and len(data) > max_size_bytes:
+        label = max_size_label or f"{max_size_bytes} bytes"
+        raise ValueError(f"Generated attachment is too large. Maximum size is {label}.")
+    if max_size_bytes is not None:
+        return
     _validate_attachment_size(len(data), attachment_type, settings=settings)
 
 

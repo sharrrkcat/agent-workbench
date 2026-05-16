@@ -165,6 +165,8 @@ class CapabilityRuntime:
             mime_type=mime_type,
             kind="audio",
             metadata={"source": "file_capability"},
+            max_size_bytes=limit,
+            max_size_label=_format_mb(config["max_local_audio_read_size_mb"]),
         )
         return {
             "source": "attachment",
