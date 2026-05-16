@@ -54,11 +54,11 @@ result messages include:
 - `content_version: 2`
 - `parts: [...]`
 
-For this round, `message_delta` remains text-only for public visible streaming
-content. The final `message_completed.message` carries parts while also
-retaining legacy `content` and `output_type` compatibility fields. The
-authoritative persisted visible content is migrating to `parts`; the old fields
-exist only for the transitional renderer and API tests.
+`message_delta` remains text-only for public visible streaming content. During
+streaming, the frontend displays the accumulating legacy `content` draft. After
+`message_completed`, `message_completed.message.parts` is the preferred visible
+content when renderable, while legacy `content` and `output_type` remain
+fallback compatibility fields.
 
 ## Producer Rules
 
@@ -83,12 +83,13 @@ planning, JSON extraction, or validation. Public output streaming requires
 - Use `message_id` plus `draft_message_id` to resolve the active streaming row.
 - Track the last accepted `seq` per message.
 - Mark a message completed after `message_completed`.
-- Treat `message_completed.message.parts` as final authoritative content when
-  `content_version=2`; otherwise use legacy `message.content`.
+- Treat renderable `message_completed.message.parts` as final authoritative
+  content when `content_version=2`; otherwise use legacy `message.content`.
 - Merge run metrics, steps, warnings, attachments, status, and `run_id` without
   resetting streamed content.
 - During streaming, `message_updated` may conservatively merge metadata,
-  `run_id`, attachments, and status, but must not replace old content.
+  `run_id`, attachments, status, `content_version`, and `parts`, but must not
+  replace accumulated draft `content`.
 - For non-streaming source messages, `message_updated` may persist backend
   generated rich content changes, such as replacing an `action_form` block after
   a silent save or setting form-level `ui.collapsed=true`.

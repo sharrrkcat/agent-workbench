@@ -2024,8 +2024,35 @@ input:disabled {
   min-width: 0;
 }
 
+.parts-content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
 .rich-content .message-content {
   min-width: 0;
+}
+
+.parts-content .message-content {
+  min-width: 0;
+}
+
+.message-part-notice {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.message-part-notice.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.message-part-notice.success {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(34, 197, 94, 0.1);
 }
 
 .command-buttons {

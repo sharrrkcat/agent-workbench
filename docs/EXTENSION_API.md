@@ -302,9 +302,9 @@ core-owned services, not Capability backends. See:
 ### Message Parts v2
 
 New Agent, Script Agent, and Capability command replies persist visible content
-as `content_version=2` plus ordered `parts`. Supported part types and rules live
-in [contracts/message-parts.md](contracts/message-parts.md). Legacy `content`
-and `output_type` remain transitional renderer fields.
+as `content_version=2` plus ordered `parts`; supported part types and rules live
+in [contracts/message-parts.md](contracts/message-parts.md). The frontend renders
+`parts` first and uses legacy `content` / `output_type` as fallback fields.
 
 Legacy output types are `text`, `markdown`, `json`, `image`,
 `image_gallery`, `file_content`, and `rich_content`. For Capability commands,
@@ -316,8 +316,8 @@ If a command returns a dict with no declared output, the runner may infer `json`
 `image`, `image_gallery`, or `rich_content`; the inferred output is still stored
 through Message Parts. `rich_content.blocks` is an input compatibility shape.
 `action_form` becomes a `form` part and `command_buttons` becomes a
-`command_buttons` part. Round 3 migrates rendering to parts; Round 4 removes
-the old structure.
+`command_buttons` part. Markdown `text` parts keep render-time Knowledge
+citation enhancement. Round 4 removes the old primary renderer structure.
 
 ### `action_form` Block
 

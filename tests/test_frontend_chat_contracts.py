@@ -93,6 +93,141 @@ def test_message_knowledge_snippets_modal_contract() -> None:
     assert "white-space: pre-wrap" in styles
 
 
+def test_message_type_exposes_message_parts_contract() -> None:
+    source = read_frontend("types.ts")
+
+    assert "content_version?: number | null" in source
+    assert "parts?: MessagePart[]" in source
+    assert "export type TextMessagePart" in source
+    assert "type: 'text'" in source
+    assert "format: 'plain' | 'markdown'" in source
+    assert "export type JsonMessagePart" in source
+    assert "export type FileMessagePart" in source
+    assert "mode: 'inline_text' | 'attachment_ref'" in source
+    assert "export type ImageMessagePart" in source
+    assert "export type MediaGroupMessagePart" in source
+    assert "layout: 'gallery'" in source
+    assert "export type FormMessagePart" in source
+    assert "export type CommandButtonsMessagePart" in source
+    assert "export type NoticeMessagePart" in source
+    assert "export type ErrorMessagePart" in source
+
+
+def test_message_parts_renderer_is_parts_first_before_legacy_output_type() -> None:
+    bubble = read_frontend("components/MessageBubble.tsx")
+    renderer = read_frontend("components/messages/MessagePartsRenderer.tsx")
+
+    assert "MessagePartsRenderer" in bubble
+    assert "hasRenderableParts(message.parts)" in bubble
+    assert "parts={message.parts}" in bubble
+    assert bubble.index("hasRenderableParts(message.parts)") < bubble.index("if (message.output_type === 'markdown')")
+    assert "if (message.output_type === 'markdown')" in bubble
+    assert "if (message.output_type === 'json')" in bubble
+    assert "if (message.output_type === 'rich_content')" in bubble
+    assert "export function MessagePartsRenderer" in renderer
+    assert "parts.filter(isRenderableMessagePart)" in renderer
+    assert "stablePartKey(part, index)" in renderer
+
+
+def test_message_parts_renderer_routes_first_batch_part_types() -> None:
+    renderer = read_frontend("components/messages/MessagePartsRenderer.tsx")
+
+    assert "case 'text'" in renderer
+    assert "TextPartRenderer" in renderer
+    assert "case 'json'" in renderer
+    assert "JsonPartRenderer" in renderer
+    assert "case 'file'" in renderer
+    assert "FilePartRenderer" in renderer
+    assert "case 'image'" in renderer
+    assert "ImagePartRenderer" in renderer
+    assert "case 'media_group'" in renderer
+    assert "MediaGroupPartRenderer" in renderer
+    assert "case 'form'" in renderer
+    assert "FormPartRenderer" in renderer
+    assert "case 'command_buttons'" in renderer
+    assert "CommandButtonsPartRenderer" in renderer
+    assert "case 'notice'" in renderer
+    assert "NoticePartRenderer" in renderer
+    assert "case 'error'" in renderer
+    assert "ErrorPartRenderer" in renderer
+    assert "default:" in renderer
+    assert "message-part-notice warning" in renderer
+
+
+def test_text_part_renderer_uses_markdown_or_plain_paths() -> None:
+    source = read_frontend("components/messages/parts/TextPartRenderer.tsx")
+    bubble = read_frontend("components/MessageBubble.tsx")
+
+    assert "part.format === 'markdown'" in source
+    assert "renderMarkdown(text)" in source
+    assert "renderPlainText(text)" in source
+    assert "knowledgeSnippetRefs={citationRefs}" in bubble
+    assert "onOpenKnowledgeCitation={onOpenKnowledgeCitation}" in bubble
+    assert "renderKnowledgeCitationChildren" in bubble
+
+
+def test_json_file_image_and_gallery_parts_delegate_to_legacy_renderers() -> None:
+    json_source = read_frontend("components/messages/parts/JsonPartRenderer.tsx")
+    file_source = read_frontend("components/messages/parts/FilePartRenderer.tsx")
+    image_source = read_frontend("components/messages/parts/ImagePartRenderer.tsx")
+    media_source = read_frontend("components/messages/parts/MediaGroupPartRenderer.tsx")
+    bubble = read_frontend("components/MessageBubble.tsx")
+
+    assert "renderJson(part.data)" in json_source
+    assert "renderFile({" in file_source
+    assert "part.mode === 'inline_text'" in file_source
+    assert "renderPlainText(label)" in file_source
+    assert "imagePayloadFromPart" in image_source
+    assert "renderImage(image)" in image_source
+    assert "part.layout !== 'gallery'" in media_source
+    assert "renderImageGallery(images)" in media_source
+    assert "renderJson={(data) => <JsonRenderer content={data} />}" in bubble
+    assert "renderFile={(payload) => <FileContentRenderer payload={payload} />}" in bubble
+    assert "renderImage={(image) => <ImageRenderer image={image} onPreviewImage={onPreviewImage} />}" in bubble
+    assert "renderImageGallery={(images) => <ImageGalleryRenderer images={images} onPreviewImage={onPreviewImage} />}" in bubble
+
+
+def test_form_and_command_button_parts_keep_existing_interactions() -> None:
+    form_source = read_frontend("components/messages/parts/FormPartRenderer.tsx")
+    buttons_source = read_frontend("components/messages/parts/CommandButtonsPartRenderer.tsx")
+    bubble = read_frontend("components/MessageBubble.tsx")
+    store = read_frontend("store/useWorkbenchStore.ts")
+
+    assert "type: 'action_form'" in form_source
+    assert "renderForm({ ...part, type: 'action_form' }, partIndex)" in form_source
+    assert "type: 'command_buttons'" in buttons_source
+    assert "renderCommandButtons({ type: 'command_buttons', buttons: part.buttons })" in buttons_source
+    assert "renderForm={(form, blockIndex) => <ActionFormRenderer form={form} messageId={message.message_id} blockIndex={blockIndex} />}" in bubble
+    assert "renderCommandButtons={(block) => <CommandButtonsRenderer block={block} />}" in bubble
+    assert "submitForm(messageId, form.form_id, values, { silent })" in bubble
+    assert "sendMessage(button.message)" in bubble
+    assert "replaceFormPart(message.parts" in store
+
+
+def test_copyable_and_renderable_message_content_are_parts_first() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    copyable_body = source[source.index("function copyableMessageContent") : source.index("function copyablePartsContent")]
+    renderable_body = source[source.index("function hasRenderableMessage") : source.index("function hasVisibleRun")]
+
+    assert "copyablePartsContent(message.parts)" in source
+    assert copyable_body.index("copyablePartsContent(message.parts)") < copyable_body.index("if (message.output_type === 'file_content')")
+    assert "function copyablePartContent(part: MessagePart)" in source
+    assert "if (part.type === 'json') return JSON.stringify(part.data, null, 2)" in source
+    assert "if (part.type === 'form') return [part.title, part.description]" in source
+    assert "if (part.type === 'command_buttons')" in source
+    assert "if (hasRenderableParts(message.parts)) return true" in source
+    assert renderable_body.index("if (hasRenderableParts(message.parts)) return true") < renderable_body.index("if (message.output_type === 'image')")
+
+
+def test_markdown_knowledge_citations_still_skip_code_pre_and_links() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+
+    assert "parseKnowledgeCitationToken" in source
+    assert "renderKnowledgeCitationChildren" in source
+    assert "renderKnowledgeCitationNode" in source
+    assert "['a', 'code', 'pre'].includes(node.type)" in source
+
+
 def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:
     source = read_frontend("components/StatusBar.tsx")
 

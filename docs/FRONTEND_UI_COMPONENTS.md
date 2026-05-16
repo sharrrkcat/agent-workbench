@@ -16,3 +16,7 @@ Current expected reuse points:
 - Chat Context Sources uses `AppModal`, `StatusDot`, and `EmptyStateRow`.
 - Settings object pages should use `SettingsDetailHeader`.
 - Worldbook entry cards should use `DragHandle`, `MiniToggle`, `Chip` / `StatusChip`, and `InlineStatus`.
+- Chat message output renders `message.parts` first through
+  `frontend/src/components/messages/MessagePartsRenderer.tsx`; legacy
+  `content` / `output_type` remains a fallback path until the Message Parts
+  Round 4 cleanup.

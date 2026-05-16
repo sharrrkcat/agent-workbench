@@ -959,7 +959,7 @@ export type TextMessagePart = {
 export type JsonMessagePart = {
   id: string;
   type: 'json';
-  data: Record<string, unknown> | unknown[];
+  data: unknown;
 };
 
 export type FileMessagePart = {
@@ -968,6 +968,7 @@ export type FileMessagePart = {
   mode: 'inline_text' | 'attachment_ref';
   content?: string | null;
   attachment_id?: string | null;
+  url?: string | null;
   filename?: string | null;
   language?: string | null;
   mime_type?: string | null;
@@ -984,6 +985,7 @@ export type ImageMessagePart = {
   alt?: string | null;
   title?: string | null;
   caption?: string | null;
+  mime_type?: string | null;
 };
 
 export type MediaGroupMessagePart = {

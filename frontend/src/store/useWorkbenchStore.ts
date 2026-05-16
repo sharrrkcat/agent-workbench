@@ -20,6 +20,7 @@ import type {
   LlmProviderStatus,
   LlmTestResult,
   Message,
+  MessagePart,
   Run,
   RunEvent,
   RunStep,
@@ -1247,8 +1248,22 @@ function applyUpdatedFormBlock(messages: Message[], updatedForm: NonNullable<Run
   return messages.map((message) => {
     if (message.message_id !== updatedForm.source_message_id) return message;
     const content = replaceActionFormBlock(message.content, updatedForm.form_id, updatedForm.block);
-    return content === message.content ? message : { ...message, content };
+    const parts = replaceFormPart(message.parts, updatedForm.form_id, updatedForm.block);
+    return content === message.content && parts === message.parts ? message : { ...message, content, parts };
   });
+}
+
+function replaceFormPart(parts: MessagePart[] | undefined, formId: string, block: unknown): MessagePart[] | undefined {
+  if (!Array.isArray(parts)) return parts;
+  let replaced = false;
+  const next = parts.map((part) => {
+    if (part.type === 'form' && part.form_id === formId && isRecord(block)) {
+      replaced = true;
+      return { ...block, id: part.id, type: 'form' as const } as MessagePart;
+    }
+    return part;
+  });
+  return replaced ? next : parts;
 }
 
 function replaceActionFormBlock(content: unknown, formId: string, block: unknown): unknown {

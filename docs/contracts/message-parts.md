@@ -58,13 +58,31 @@ then converted to parts. `rich_content.blocks` remains an input compatibility
 format during the transition. Final messages use `form` for `action_form` blocks
 and `command_buttons` for `command_buttons` blocks.
 
+## Frontend Rendering
+
+Round 3 makes the frontend renderer parts-first. When `message.parts` contains
+at least one renderable part, chat renders ordered parts through
+`MessagePartsRenderer`. Legacy `content` and `output_type` are fallback
+compatibility fields for historical messages, streaming drafts, and transition
+paths only.
+
+Markdown `text` parts still receive render-time Knowledge citation enhancement:
+inline `[K1]` tokens are matched against compact `snippet_refs` metadata and the
+modal fetches chunk details by `chunk_id`. Chunk body text is not stored in
+message parts or metadata. Plain `text` and raw `file` parts are not markdown
+rendered.
+
+`form` and `command_buttons` parts are the new primary path for action forms and
+send-message shortcut buttons. Legacy `rich_content.blocks` remains accepted as
+an input/fallback shape during the transition. Round 4 will remove old primary
+renderer paths after verification.
+
 ## Legacy Compatibility
 
-Round 2 still writes `content` and `output_type` as transition fields for the
-current frontend renderer and API tests. They are derived from parts where
-possible and are planned for removal in a later Message Parts round. Round 3
-will migrate the frontend renderer to parts; Round 4 will remove the old
-structure. Do not copy full parts into metadata.
+Round 3 still writes `content` and `output_type` as transition fields for API
+tests, streaming draft display, and historical fallback rendering. They are
+derived from parts where possible and are planned for removal in a later Message
+Parts round. Do not copy full parts into metadata.
 
 ## Attachments
 

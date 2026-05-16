@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, Run, RunStep, WorldbookEntry } from '../types';
+import type { ActionFormBlock, ActionFormField, Agent, Attachment, ChatContentBlock, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, MessagePart, Run, RunStep, WorldbookEntry } from '../types';
 import { api } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import { ActionButtons } from './ActionButtons';
@@ -14,6 +14,7 @@ import { getResolvedAgentDisplay } from '../utils/agents';
 import { parseKnowledgeCitationToken } from '../utils/knowledgeCitations';
 import { formatApiError, getRunStatusLabel, getRunStepLabel } from '../i18n/formatters';
 import { AppModal, Chip } from './ui';
+import { MessagePartsRenderer, hasRenderableParts } from './messages/MessagePartsRenderer';
 
 export type FilePreview = {
   url: string;
@@ -1196,6 +1197,22 @@ function MessageContent({
     return <UserMessageRenderer content={message.content} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
   }
   const citationRefs = kind === 'agent' ? contextMetadata.knowledge?.snippetRefs : undefined;
+  if (hasRenderableParts(message.parts)) {
+    return (
+      <MessagePartsRenderer
+        parts={message.parts}
+        message={message}
+        renderMarkdown={(text) => <MarkdownRenderer content={text} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />}
+        renderPlainText={(text) => <PlainTextRenderer content={text} />}
+        renderJson={(data) => <JsonRenderer content={data} />}
+        renderFile={(payload) => <FileContentRenderer payload={payload} />}
+        renderImage={(image) => <ImageRenderer image={image} onPreviewImage={onPreviewImage} />}
+        renderImageGallery={(images) => <ImageGalleryRenderer images={images} onPreviewImage={onPreviewImage} />}
+        renderForm={(form, blockIndex) => <ActionFormRenderer form={form} messageId={message.message_id} blockIndex={blockIndex} />}
+        renderCommandButtons={(block) => <CommandButtonsRenderer block={block} />}
+      />
+    );
+  }
   if (message.output_type === 'markdown') {
     return <MarkdownRenderer content={message.content} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />;
   }
@@ -1834,6 +1851,8 @@ export function contentToText(content: unknown): string {
 }
 
 function copyableMessageContent(message: Message): string {
+  const partsText = copyablePartsContent(message.parts);
+  if (partsText !== null) return partsText;
   if (message.output_type === 'file_content') {
     return normalizeFileContentPayload(message.content).content;
   }
@@ -1844,6 +1863,30 @@ function copyableMessageContent(message: Message): string {
     return JSON.stringify(message.content, null, 2);
   }
   return contentToText(message.content);
+}
+
+function copyablePartsContent(parts: MessagePart[] | undefined): string | null {
+  if (!hasRenderableParts(parts)) return null;
+  const chunks = (parts || []).map(copyablePartContent).filter((item) => item.trim().length > 0);
+  return chunks.length ? chunks.join('\n\n') : '';
+}
+
+function copyablePartContent(part: MessagePart): string {
+  if (part.type === 'text') return part.text;
+  if (part.type === 'json') return JSON.stringify(part.data, null, 2);
+  if (part.type === 'file') {
+    if (part.mode === 'inline_text') return part.content || '';
+    return [part.filename, part.attachment_id, part.url].filter(Boolean).join(' ');
+  }
+  if (part.type === 'image') return [part.alt, part.url, part.attachment_id].filter(Boolean).join(' ');
+  if (part.type === 'media_group') {
+    return (part.items || []).map((item) => [item.alt, item.url, item.attachment_id].filter(Boolean).join(' ')).filter(Boolean).join('\n');
+  }
+  if (part.type === 'form') return [part.title, part.description].filter(Boolean).join('\n');
+  if (part.type === 'command_buttons') return (part.buttons || []).map((button) => `${button.label}: ${button.message}`).join('\n');
+  if (part.type === 'notice') return part.text;
+  if (part.type === 'error') return [part.code, part.message].filter(Boolean).join(': ');
+  return '';
 }
 
 function messageAttachments(message: Message): Attachment[] {
@@ -1952,6 +1995,7 @@ function normalizeRichContentBlocks(content: unknown): ChatContentBlock[] {
 
 function hasRenderableMessage(message: Message, reasoningContent: string): boolean {
   if (reasoningContent.trim()) return true;
+  if (hasRenderableParts(message.parts)) return true;
   if (message.output_type === 'image') return normalizeImagePayload(message.content) !== null;
   if (message.output_type === 'image_gallery') return normalizeImageGallery(message.content).length > 0;
   if (message.output_type === 'rich_content') return normalizeRichContentBlocks(message.content).length > 0;
