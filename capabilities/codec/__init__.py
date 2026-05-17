@@ -1,8 +1,11 @@
 import base64
 import binascii
+from io import BytesIO
 import re
 from typing import Any
 from urllib.parse import quote, unquote
+
+import segno
 
 from ai_workbench.core.attachments import read_attachment_as_data_url, save_generated_attachment_bytes
 
@@ -27,9 +30,11 @@ _DEFAULT_CONFIG = {
     "max_decoded_bytes_mb": 25,
     "max_attachment_encode_mb": 10,
     "enable_attachment_encode": True,
+    "max_qr_text_chars": 2000,
+    "qr_scale": 8,
 }
-_SUPPORTED_TEXT_CODECS = ("base64", "base64url", "url", "unicode", "hex")
-_SUPPORTED_TEXT_CODECS_DISPLAY = ", ".join(_SUPPORTED_TEXT_CODECS)
+_SUPPORTED_CODECS = ("base64", "base64url", "url", "unicode", "hex", "qr")
+_SUPPORTED_CODECS_DISPLAY = ", ".join(_SUPPORTED_CODECS)
 _BASE64URL_RE = re.compile(r"^[A-Za-z0-9_-]*={0,2}$")
 _INVALID_PERCENT_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _HEX_WHITESPACE_RE = re.compile(r"\s+")
@@ -53,9 +58,14 @@ class CapabilityRuntime:
         config = _resolved_config(context)
 
         if payload == "":
+            if selected_codec == "qr":
+                raise ValueError("Usage: /encode qr <text>")
             if selected_codec != "base64":
                 raise ValueError(f"Usage: /encode {selected_codec} <text>")
             return [_encode_current_image_attachment(context or {}, config)]
+
+        if selected_codec == "qr":
+            return [_encode_qr(payload, config)]
 
         _ensure_text_input_limit(payload, config)
         if selected_codec == "base64":
@@ -91,6 +101,8 @@ class CapabilityRuntime:
         )
         _require_supported_codec(selected_codec)
         config = _resolved_config(context)
+        if selected_codec == "qr":
+            raise ValueError("QR decode is not implemented in this round. Supported decode codecs: base64, base64url, url, unicode, hex.")
         if not payload:
             raise ValueError(f"Usage: /decode {selected_codec} <payload>")
         _ensure_text_input_limit(payload, config)
@@ -148,22 +160,22 @@ def _resolve_codec_payload(*, args: str, codec: str | None, text: str | None) ->
 
     value = str(args or "").strip()
     if not value:
-        raise ValueError(f"Usage: /encode <codec> <payload> or /decode <codec> <payload>. Supported codecs: {_SUPPORTED_TEXT_CODECS_DISPLAY}.")
+        raise ValueError(f"Usage: /encode <codec> <payload> or /decode <codec> <payload>. Supported codecs: {_SUPPORTED_CODECS_DISPLAY}.")
     parts = value.split(maxsplit=1)
     selected_codec = parts[0].strip().lower()
     payload = parts[1] if len(parts) > 1 else ""
     if not selected_codec:
-        raise ValueError(f"Usage: /encode <codec> <payload> or /decode <codec> <payload>. Supported codecs: {_SUPPORTED_TEXT_CODECS_DISPLAY}.")
+        raise ValueError(f"Usage: /encode <codec> <payload> or /decode <codec> <payload>. Supported codecs: {_SUPPORTED_CODECS_DISPLAY}.")
     return selected_codec, payload
 
 
 def _require_supported_codec(codec: str) -> None:
-    if codec not in _SUPPORTED_TEXT_CODECS:
+    if codec not in _SUPPORTED_CODECS:
         raise ValueError(_unsupported_codec_message(codec))
 
 
 def _unsupported_codec_message(codec: str) -> str:
-    return f"Unsupported codec: {codec}. Supported codecs: {_SUPPORTED_TEXT_CODECS_DISPLAY}."
+    return f"Unsupported codec: {codec}. Supported codecs: {_SUPPORTED_CODECS_DISPLAY}."
 
 
 def _resolved_config(context: dict[str, Any] | None) -> dict[str, Any]:
@@ -176,6 +188,8 @@ def _resolved_config(context: dict[str, Any] | None) -> dict[str, Any]:
     config["max_decoded_bytes_mb"] = int(config["max_decoded_bytes_mb"])
     config["max_attachment_encode_mb"] = int(config["max_attachment_encode_mb"])
     config["enable_attachment_encode"] = bool(config["enable_attachment_encode"])
+    config["max_qr_text_chars"] = int(config["max_qr_text_chars"])
+    config["qr_scale"] = int(config["qr_scale"])
     return config
 
 
@@ -191,6 +205,36 @@ def _max_decoded_bytes(config: dict[str, Any]) -> int:
 
 def _max_attachment_encode_bytes(config: dict[str, Any]) -> int:
     return config["max_attachment_encode_mb"] * 1024 * 1024
+
+
+def _encode_qr(payload: str, config: dict[str, Any]) -> dict[str, Any]:
+    max_chars = config["max_qr_text_chars"]
+    if len(payload) > max_chars:
+        raise ValueError(f"QR text payload is too large. Maximum length is {max_chars} characters.")
+
+    scale = config["qr_scale"]
+    try:
+        buffer = BytesIO()
+        qr = segno.make(payload, encoding="utf-8")
+        qr.save(buffer, kind="png", scale=scale)
+    except Exception as exc:
+        raise ValueError("Failed to generate QR code image.") from exc
+
+    attachment = save_generated_attachment_bytes(
+        buffer.getvalue(),
+        filename="qr.png",
+        mime_type="image/png",
+        kind="image",
+        metadata={"source": "codec.encode", "codec": "qr"},
+    )
+    return {
+        "type": "image",
+        "attachment_id": attachment["id"],
+        "url": attachment["url"],
+        "alt": "Generated QR code",
+        "title": attachment["name"],
+        "caption": "Generated QR code image.",
+    }
 
 
 def _decode_base64_payload(payload: str, config: dict[str, Any]) -> tuple[bytes, str | None]:

@@ -349,6 +349,25 @@ def test_session_load_api_response_returns_command_result_parts() -> None:
     assert loaded_result["parts"] == command_result["parts"]
 
 
+def test_qr_command_writes_image_part_not_inline_file_or_data_url() -> None:
+    client = make_client()
+    session = create_session(client)
+
+    payload = post_message(client, session["session_id"], "/encode qr hello")
+    command_result = payload["messages"][-1]
+    part = command_result["parts"][0]
+
+    assert command_result["content_version"] == 2
+    assert part["type"] == "image"
+    assert part["attachment_id"]
+    assert part["url"].startswith("/api/attachments/")
+    assert part["url"].endswith(".png")
+    assert not part["url"].startswith("data:")
+    assert "content" not in part
+    assert all(item["type"] != "file" for item in command_result["parts"])
+    assert command_result["metadata"]["attachments"][0]["mime_type"] == "image/png"
+
+
 def _completed_message(events: EventBus) -> dict[str, Any]:
     completed = [event for event in events.list_events() if event.type == "message_completed"]
     assert completed

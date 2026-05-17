@@ -72,6 +72,8 @@ Commands are user-facing wrappers declared in Capability manifests. They are glo
 /decode unicode \u4f60\u597d
 /encode hex 你好
 /decode hex e4bda0e5a5bd
+/encode qr hello
+/encode qr https://example.com
 ```
 
 Agents do not declare slash commands. Keep the `@agent` and `/command` namespaces separate.
@@ -135,6 +137,8 @@ uv run python scripts/run_command.py "/encode unicode 你好"
 uv run python scripts/run_command.py "/decode unicode \u4f60\u597d"
 uv run python scripts/run_command.py "/encode hex 你好"
 uv run python scripts/run_command.py "/decode hex e4bda0e5a5bd"
+uv run python scripts/run_command.py "/encode qr hello"
+uv run python scripts/run_command.py "/encode qr https://example.com"
 uv run python scripts/run_command.py "/read-file path/to/demo.wav"
 uv run python scripts/run_command.py "/read-file path/to/demo.mp4"
 uv run python scripts/run_command.py "/fetch-url https://example.test/data.json"
@@ -144,9 +148,11 @@ uv run python scripts/run_command.py "/kb-search project notes"
 The built-in `codec` Capability exposes `/encode <codec> <payload>` and
 `/decode <codec> <payload>`. It supports Base64 text, Base64URL tokens, URL
 component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs,
-and image attachment encoding. Text codec outputs are inline `file` parts. It
-does not fetch URLs, read local paths, parse or generate QR codes, transcode
-media, or inspect arbitrary binary files.
+image attachment encoding, and QR generation with `/encode qr <text>`. Text
+codec outputs are inline `file` parts. QR generation returns an
+attachment-backed PNG `image` part. QR decoding is not implemented. It does not
+fetch URLs, read local paths, transcode media, or inspect arbitrary binary
+files.
 
 The built-in `file` Capability exposes only `/read-file <path>` for user-facing
 local reads. It auto-detects supported text, image, audio, and video files and

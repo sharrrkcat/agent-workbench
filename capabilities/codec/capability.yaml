@@ -1,6 +1,6 @@
 id: codec
 name: Codec Capability
-description: Encode and decode Base64, Base64URL, URL percent encoding, Unicode escapes, hex text, data URLs, and image attachments.
+description: Encode and decode Base64, Base64URL, URL percent encoding, Unicode escapes, hex text, generate QR codes, and convert image attachments/data URLs where supported.
 
 config_schema:
   - name: max_text_input_chars
@@ -22,6 +22,16 @@ config_schema:
     type: boolean
     default: true
     description: Allow encoding the current message image attachment as Base64.
+  - name: max_qr_text_chars
+    type: integer
+    default: 2000
+    minimum: 1
+    description: Maximum text length accepted by QR generation.
+  - name: qr_scale
+    type: integer
+    default: 8
+    minimum: 1
+    description: PNG scale used when rendering QR codes.
 
 methods:
   - id: encode

@@ -9,10 +9,11 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
+from ai_workbench.core.attachments import attachment_mime_type
 from ai_workbench.core.message_parts import make_file_part
 from ai_workbench.core.schema.capability import CapabilitySchema
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
-from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+from ai_workbench.core.stores import CapabilityConfigStore, MessageStore, RunStore, SessionStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -334,6 +335,63 @@ def test_hex_decode_rejects_odd_length_and_invalid_characters() -> None:
     assert "Invalid hex input" in invalid.error
 
 
+def test_qr_encode_returns_attachment_backed_image_part() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/encode qr hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+
+    assert result.success is True
+    assert result.data[0]["type"] == "image"
+    assert result.data[0]["attachment_id"]
+    assert result.data[0]["url"].startswith("/api/attachments/")
+    assert result.data[0]["url"].endswith(".png")
+    assert not result.data[0]["url"].startswith("data:")
+    assert "content" not in result.data[0]
+    assert message.parts[0]["type"] == "image"
+    assert message.parts[0]["attachment_id"] == result.data[0]["attachment_id"]
+    assert message.parts[0]["url"] == result.data[0]["url"]
+    assert message.parts[0]["url"].startswith("/api/attachments/")
+    assert attachment_mime_type(Path(message.parts[0]["url"]).name) == "image/png"
+
+
+def test_qr_encode_accepts_unicode_urls_and_emoji() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    for command in [
+        "/encode qr 你好",
+        "/encode qr https://example.com?a=1&b=2",
+        "/encode qr 含 emoji 的文本 😀",
+    ]:
+        result = run(fixture.runtime.handle_input(session, command))
+        assert result.success is True
+        assert result.data[0]["type"] == "image"
+        assert result.data[0]["attachment_id"]
+        assert result.data[0]["url"].startswith("/api/attachments/")
+        assert not result.data[0]["url"].startswith("data:")
+
+
+def test_qr_encode_usage_limit_and_decode_not_implemented_errors() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+    capability_configs = CapabilityConfigStore()
+    capability_configs.set_config("codec", user_config={"max_qr_text_chars": 3})
+    fixture.command_runner.capability_config_store = capability_configs
+
+    usage = run(fixture.runtime.handle_input(session, "/encode qr"))
+    too_large = run(fixture.runtime.handle_input(session, "/encode qr abcd"))
+    decode = run(fixture.runtime.handle_input(session, "/decode qr hello"))
+
+    assert usage.success is False
+    assert usage.error == "Usage: /encode qr <text>"
+    assert too_large.success is False
+    assert "QR text payload is too large. Maximum length is 3 characters." == too_large.error
+    assert decode.success is False
+    assert "QR decode is not implemented in this round." in decode.error
+
+
 def test_codec_usage_and_unsupported_errors_list_supported_codecs() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
@@ -345,7 +403,7 @@ def test_codec_usage_and_unsupported_errors_list_supported_codecs() -> None:
 
     for result in [encode_usage, decode_usage, encode_unknown, decode_unknown]:
         assert result.success is False
-        assert "base64, base64url, url, unicode, hex" in result.error
+        assert "base64, base64url, url, unicode, hex, qr" in result.error
     assert "Unsupported codec: unknown" in encode_unknown.error
     assert "Unsupported codec: unknown" in decode_unknown.error
 

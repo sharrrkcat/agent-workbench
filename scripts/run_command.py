@@ -188,6 +188,11 @@ def _image_summary(content: Any) -> str:
     if not isinstance(content, dict):
         return str(content)
     url = str(content.get("url") or "")
+    if url.startswith("/api/attachments/"):
+        return (
+            f"image: mime={_attachment_url_mime(url) or 'unknown'} size=local "
+            f"url_prefix={url[:32]!r} url_length={len(url)}"
+        )
     mime = _data_url_mime(url)
     return (
         f"image: mime={mime or 'unknown'} size={_data_url_size(url) or 'unknown'} "
@@ -239,6 +244,18 @@ def _data_url_size(url: str) -> int | None:
     raw = url.split(",", 1)[1]
     padding = raw.count("=")
     return max(0, (len(raw) * 3) // 4 - padding)
+
+
+def _attachment_url_mime(url: str) -> str:
+    suffix = Path(url).suffix.lower()
+    return {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+    }.get(suffix, "")
 
 
 def _list_run_events(state: Any, run_id: str) -> list[Any]:

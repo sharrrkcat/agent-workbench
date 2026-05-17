@@ -18,7 +18,7 @@ Do not edit manually.
 
 | id | name | methods | commands | output parts | config keys |
 | --- | --- | --- | --- | --- | --- |
-| codec | Codec Capability | encode, decode | /encode, /decode | parts, parts | max_text_input_chars, max_decoded_bytes_mb, max_attachment_encode_mb, enable_attachment_encode |
+| codec | Codec Capability | encode, decode | /encode, /decode | parts, parts | max_text_input_chars, max_decoded_bytes_mb, max_attachment_encode_mb, enable_attachment_encode, max_qr_text_chars, qr_scale |
 | comfyui | ComfyUI Capability | test_connection, get_queue, get_history, submit_workflow, wait_for_prompt, get_prompt_status, extract_outputs, fetch_image, collect_images_for_prompt, free_memory, interrupt, upload_image, get_object_info, scan_workflow_library, list_workflows, list_presets, validate_preset, load_preset |  | json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json | base_url, timeout_seconds, poll_interval_seconds, max_wait_seconds, verify_ssl, default_image_response_mode, enable_upload, workflows_dir, presets_dir, auto_create_missing_presets, allow_workflow_file_write, allow_preset_file_write |
 | file | File Capability | read_file, read_text, read_image, read_audio | /read-file | parts, file, image, audio | allowed_directories, max_local_text_read_size_mb, max_local_image_read_size_mb, max_local_audio_read_size_mb, max_local_video_read_size_mb, allowed_text_extensions, enable_read_file_command |
 | http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url | parts, text, text, image | enable_fetch_url_command, allowed_schemes, timeout_seconds, max_text_response_size_mb, max_image_response_size_mb, allow_redirects, max_redirects |

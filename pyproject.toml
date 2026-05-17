@@ -11,6 +11,7 @@ dependencies = [
     "psutil>=5.9",
     "python-multipart>=0.0.9",
     "PyYAML>=6.0",
+    "segno>=1.6",
     "sqlmodel>=0.0.22",
     "uvicorn>=0.30",
     "websockets>=12.0",

@@ -78,6 +78,7 @@ hello
 @translate 你好
 @translate:formal
 /encode base64 hello
+/encode qr hello
 /free-memory all
 ```
 
@@ -302,7 +303,7 @@ Settings -> General controls chat attachment uploads: maximum image upload size,
 
 Settings -> Capabilities -> File Capability controls only active local path reads through `/read-file <path>`. It does not reuse or synchronize General upload limits. File Capability settings include allowed directories, maximum local text/image/audio/video read sizes, allowed text extensions, and the command toggle for `/read-file`. Relative allowed directories resolve from the project root. Empty allowed directories can be saved and cause file read commands to reject every path. `/read-file` returns Message Parts for supported text, image, audio, and video files.
 
-Settings -> Capabilities -> Codec Capability exposes `/encode` and `/decode`. It supports Base64 text, Base64URL tokens, URL component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs, and image attachment encoding. It does not fetch URLs, read local paths, parse or generate QR codes, transcode media, inspect JWTs, hash content, or inspect arbitrary binary files.
+Settings -> Capabilities -> Codec Capability exposes `/encode` and `/decode`. It supports Base64 text, Base64URL tokens, URL component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs, image attachment encoding, and QR generation with `/encode qr <text>`. QR generation returns an attachment-backed PNG image part. QR decoding is not implemented. It does not fetch URLs, read local paths, transcode media, inspect JWTs, hash content, or inspect arbitrary binary files.
 
 Settings -> Capabilities -> HTTP Capability controls only the active network GET command `/fetch-url <url>`. It does not affect chat uploads. `/fetch-url` auto-detects supported `text/*`, HTML, JSON, and `image/*` responses and returns the matching Message Part. HTTP settings include one command toggle, allowed URL schemes, timeout seconds, separate text and image response size limits, redirect enablement, and maximum redirects. No HTTP POST, PUT, DELETE, audio/video, remote media download/cache/proxy, HLS/DASH, livestream/radio/podcast extraction, OCR, ASR, TTS, or PDF parsing support is provided.
 

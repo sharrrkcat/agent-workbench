@@ -97,6 +97,11 @@ downloaded, cached, saved as local attachments, or proxied. HLS/DASH, `.m3u8`,
 OCR, ASR, TTS, transcription, audio/video understanding, and PDF parsing are
 not implemented.
 
+The built-in `codec` Capability declares `/encode` and `/decode` as
+`part_type: parts`. Text codec results use inline `file` parts. `/encode qr <text>`
+saves a generated PNG as a local attachment and returns an attachment-backed
+`image` part. QR decoding is not implemented.
+
 `output.type` is invalid. If a method omits `output`, the runtime infers the
 current parts contract from the returned value: lists are validated as parts,
 dicts become JSON unless they look like image/media payloads, and scalars become
