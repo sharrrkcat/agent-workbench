@@ -567,21 +567,26 @@ export function LlmProviderProfileDetail({
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
   const isNew = selectedProfileId === 'new';
   const { t } = useTranslation(['llm', 'common', 'settings']);
-  const [draft, setDraft] = useState<LlmProviderProfileInput>(() => (selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults));
+  const baseDraft = useMemo(() => selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults, [selectedProfile]);
+  const baselineKey = stableConfigString(cleanProviderInput(baseDraft));
+  const scopeId = isNew ? 'new' : selectedProfile?.id || '';
+  const [draft, setDraft] = useState<LlmProviderProfileInput>(() => baseDraft);
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
   const [result, setResult] = useState<LlmTestResult | null>(null);
   const [models, setModels] = useState<string[]>([]);
 
   useEffect(() => {
-    setDraft(selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults);
+    setDraft(baseDraft);
+    setDraftReady({ scopeId, baselineKey });
     setError(null);
     setResult(null);
     setModels([]);
-  }, [selectedProfile, selectedProfileId]);
+  }, [baselineKey, baseDraft, scopeId, selectedProfileId]);
 
-  const baseDraft = selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults;
-  const dirty = stableConfigString(cleanProviderInput(draft)) !== stableConfigString(cleanProviderInput(baseDraft));
+  const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
+  const dirty = hydrated && stableConfigString(cleanProviderInput(draft)) !== baselineKey;
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -742,7 +747,11 @@ export function LlmProfileDetail({
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
   const isNew = selectedProfileId === 'new';
   const { t } = useTranslation(['llm', 'common', 'settings']);
-  const [draft, setDraft] = useState<LlmProfileInput>(() => (selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults));
+  const baseDraft = useMemo(() => selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults, [selectedProfile]);
+  const baselineKey = stableConfigString(cleanProfileInput(baseDraft));
+  const scopeId = isNew ? 'new' : selectedProfile?.id || '';
+  const [draft, setDraft] = useState<LlmProfileInput>(() => baseDraft);
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
   const [keyTouched, setKeyTouched] = useState(false);
   const [models, setModels] = useState<LlmProviderModel[]>([]);
   const [selectedProviderModelId, setSelectedProviderModelId] = useState('');
@@ -752,7 +761,8 @@ export function LlmProfileDetail({
   const [result, setResult] = useState<LlmTestResult | null>(null);
 
   useEffect(() => {
-    setDraft(selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults);
+    setDraft(baseDraft);
+    setDraftReady({ scopeId, baselineKey });
     setKeyTouched(false);
     setSelectedProviderModelId('');
     setCapabilitiesTouched(false);
@@ -760,10 +770,10 @@ export function LlmProfileDetail({
     setBusy(false);
     setError(null);
     setResult(null);
-  }, [selectedProfile, selectedProfileId]);
+  }, [baselineKey, baseDraft, scopeId, selectedProfileId]);
 
-  const baseDraft = selectedProfile ? draftFromProfile(selectedProfile) : profileDefaults;
-  const dirty = stableConfigString(cleanProfileInput(draft)) !== stableConfigString(cleanProfileInput(baseDraft));
+  const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
+  const dirty = hydrated && stableConfigString(cleanProfileInput(draft)) !== baselineKey;
 
   useEffect(() => {
     onDirtyChange(dirty);

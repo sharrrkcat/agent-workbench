@@ -595,6 +595,8 @@ function ContextSourcesModal({
   const [worldbookBindings, setWorldbookBindings] = useState<SessionWorldbookBinding[]>([]);
   const [knowledgeStatus, setKnowledgeStatus] = useState<SaveStatus>({ state: 'idle', message: '' });
   const [worldbookStatus, setWorldbookStatus] = useState<SaveStatus>({ state: 'idle', message: '' });
+  const [knowledgeLoadedForSession, setKnowledgeLoadedForSession] = useState('');
+  const [worldbooksLoadedForSession, setWorldbooksLoadedForSession] = useState('');
   const [dragId, setDragId] = useState('');
 
   useEffect(() => {
@@ -603,6 +605,8 @@ function ContextSourcesModal({
       try {
         setKnowledgeStatus({ state: 'idle', message: '' });
         setWorldbookStatus({ state: 'idle', message: '' });
+        setKnowledgeLoadedForSession('');
+        setWorldbooksLoadedForSession('');
         const [nextBases, nextKnowledgeBindings, nextWorldbooks] = await Promise.all([
           api.listKnowledgeBases(),
           api.listSessionKnowledgeBases(sessionId),
@@ -613,10 +617,14 @@ function ContextSourcesModal({
         setKnowledgeBindings(nextKnowledgeBindings);
         setWorldbooks(nextWorldbooks.available_worldbooks);
         setWorldbookBindings(nextWorldbooks.enabled_worldbooks);
+        setKnowledgeLoadedForSession(sessionId);
+        setWorldbooksLoadedForSession(sessionId);
         onSummaryChange(summarizeContextSources(nextKnowledgeBindings, nextWorldbooks.enabled_worldbooks));
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : t('chat:contextSources.loadFailed');
+          setKnowledgeLoadedForSession('');
+          setWorldbooksLoadedForSession('');
           setKnowledgeStatus({ state: 'error', message });
           setWorldbookStatus({ state: 'error', message });
         }
@@ -636,6 +644,8 @@ function ContextSourcesModal({
   const availableBases = bases.filter((base) => !selectedKnowledgeSet.has(base.id));
   const enabledWorldbooks = selectedWorldbookIds.map((id) => worldbooks.find((worldbook) => worldbook.id === id)).filter((worldbook): worldbook is Worldbook => Boolean(worldbook));
   const availableWorldbooks = worldbooks.filter((worldbook) => !selectedWorldbookSet.has(worldbook.id));
+  const knowledgeLoaded = knowledgeLoadedForSession === sessionId;
+  const worldbooksLoaded = worldbooksLoadedForSession === sessionId;
 
   async function saveKnowledgeIds(nextIds: string[]) {
     const previousBindings = knowledgeBindings;
@@ -643,6 +653,7 @@ function ContextSourcesModal({
     try {
       const nextBindings = await api.updateSessionKnowledgeBases(sessionId, nextIds);
       setKnowledgeBindings(nextBindings);
+      setKnowledgeLoadedForSession(sessionId);
       onSummaryChange(summarizeContextSources(nextBindings, worldbookBindings));
       setKnowledgeStatus({ state: 'saved', message: t('chat:contextSources.saved') });
     } catch (err) {
@@ -681,8 +692,9 @@ function ContextSourcesModal({
             availableTitle={t('chat:contextSources.available')}
             enabledEmpty={t('chat:contextSources.noEnabledKnowledgeBases')}
             availableEmpty={t('chat:contextSources.noAvailableKnowledgeBases')}
-            enabledItems={enabledBases}
-            availableItems={availableBases}
+            enabledItems={knowledgeLoaded ? enabledBases : []}
+            availableItems={knowledgeLoaded ? availableBases : []}
+            emptyReady={knowledgeLoaded}
             status={knowledgeStatus}
             isAvailable={(base) => base.enabled}
             isWarning={(base) => base.index_status !== 'ready'}
@@ -702,8 +714,9 @@ function ContextSourcesModal({
             availableTitle={t('chat:contextSources.available')}
             enabledEmpty={t('chat:contextSources.noEnabledWorldbooks')}
             availableEmpty={t('chat:contextSources.noAvailableWorldbooks')}
-            enabledItems={enabledWorldbooks}
-            availableItems={availableWorldbooks}
+            enabledItems={worldbooksLoaded ? enabledWorldbooks : []}
+            availableItems={worldbooksLoaded ? availableWorldbooks : []}
+            emptyReady={worldbooksLoaded}
             status={worldbookStatus}
             isAvailable={(worldbook) => worldbook.enabled}
             isWarning={(worldbook) => !worldbook.enabled}
@@ -728,6 +741,7 @@ function ContextSourcesModal({
       const response = await api.updateSessionWorldbooks(sessionId, nextIds);
       setWorldbookBindings(response.enabled_worldbooks);
       setWorldbooks(response.available_worldbooks);
+      setWorldbooksLoadedForSession(sessionId);
       onSummaryChange(summarizeContextSources(knowledgeBindings, response.enabled_worldbooks));
       const warningText = response.warnings?.length ? response.warnings.join(' ') : '';
       setWorldbookStatus({ state: 'saved', message: warningText || t('chat:contextSources.saved') });
@@ -737,6 +751,7 @@ function ContextSourcesModal({
       void api.getSessionWorldbooks(sessionId).then((response) => {
         setWorldbookBindings(response.enabled_worldbooks);
         setWorldbooks(response.available_worldbooks);
+        setWorldbooksLoadedForSession(sessionId);
       }).catch(() => undefined);
     }
   }
@@ -751,6 +766,7 @@ function ContextSourceTab<T>({
   availableEmpty,
   enabledItems,
   availableItems,
+  emptyReady,
   status,
   isAvailable,
   isWarning,
@@ -770,6 +786,7 @@ function ContextSourceTab<T>({
   availableEmpty: string;
   enabledItems: T[];
   availableItems: T[];
+  emptyReady: boolean;
   status: SaveStatus;
   isAvailable: (item: T) => boolean;
   isWarning: (item: T) => boolean;
@@ -836,7 +853,7 @@ function ContextSourceTab<T>({
               );
             })}
           </div>
-        ) : <p className="knowledge-picker-empty">{enabledEmpty}</p>}
+        ) : emptyReady ? <p className="knowledge-picker-empty">{enabledEmpty}</p> : null}
       </section>
       <section className="knowledge-picker-section">
         <h3>{availableTitle}</h3>
@@ -859,12 +876,12 @@ function ContextSourceTab<T>({
               );
             })}
           </div>
-        ) : (
+        ) : emptyReady ? (
           <EmptyStateRow
             message={availableEmpty}
             action={<button type="button" className="settings-secondary-button" onClick={onOpenSettings} title={t('common:openSettings')}>{t('common:openSettings')}</button>}
           />
-        )}
+        ) : null}
       </section>
     </div>
   );

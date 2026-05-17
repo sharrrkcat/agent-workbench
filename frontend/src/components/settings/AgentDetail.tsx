@@ -9,7 +9,7 @@ import { ConfigForm } from './ConfigForm';
 import { DetailTabs } from './DetailTabs';
 import { ManifestViewer } from './ManifestViewer';
 import { ToggleSwitch } from './ToggleSwitch';
-import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
+import { buildUserConfig, displayValue, initialConfigValues, isConfigDirty, stableConfigString, type ConfigValues } from './configUtils';
 import { getResolvedAgentDisplay, resolvedAgentProfileLabel } from '../../utils/agents';
 
 const baseTabIds = ['overview', 'overrides', 'actions', 'config', 'runtime', 'intentRouting', 'manifest'] as const;
@@ -29,15 +29,22 @@ export function AgentDetail({
 }) {
   const { t } = useTranslation(['agents', 'common']);
   const { llmProfiles, updateAgentConfig, resetAgentOverrides, writeAgentOverridesToManifest, savingConfigId } = useWorkbenchStore();
+  const scopeId = config.agent_id;
+  const configBaselineKey = stableConfigString(buildUserConfig(config.config_schema || [], initialConfigValues(config)));
+  const overridesBaselineKey = stableConfigString({
+    display: config.display || config.overrides?.display || {},
+    runtime: config.runtime || config.overrides?.runtime || {},
+  });
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
   const [displayDraft, setDisplayDraft] = useState<AgentDisplayOverrides>(() => ({ ...(config.display || config.overrides?.display || {}) }));
   const [runtimeDraft, setRuntimeDraft] = useState<AgentRuntimeOverrides>(() => ({ ...(config.runtime || config.overrides?.runtime || {}) }));
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, configBaselineKey, overridesBaselineKey }));
   const [localError, setLocalError] = useState('');
   const isSaving = savingConfigId === `agent:${config.agent_id}`;
-  const dirty = isConfigDirty(config, enabled, values);
-  const overridesDirty = JSON.stringify(displayDraft) !== JSON.stringify(config.display || config.overrides?.display || {}) ||
-    JSON.stringify(runtimeDraft) !== JSON.stringify(config.runtime || config.overrides?.runtime || {});
+  const hydrated = draftReady.scopeId === scopeId && draftReady.configBaselineKey === configBaselineKey && draftReady.overridesBaselineKey === overridesBaselineKey;
+  const dirty = hydrated && isConfigDirty(config, enabled, values);
+  const overridesDirty = hydrated && stableConfigString({ display: displayDraft, runtime: runtimeDraft }) !== overridesBaselineKey;
   const hasSavedOverrides = Boolean(Object.keys(config.display || {}).length || Object.keys(config.runtime || {}).length);
   const summary = config.manifest_summary;
   const display = getResolvedAgentDisplay(config);
@@ -71,8 +78,9 @@ export function AgentDetail({
     setValues(initialConfigValues(config));
     setDisplayDraft({ ...(config.display || config.overrides?.display || {}) });
     setRuntimeDraft({ ...(config.runtime || config.overrides?.runtime || {}) });
+    setDraftReady({ scopeId, configBaselineKey, overridesBaselineKey });
     setLocalError('');
-  }, [config]);
+  }, [config, configBaselineKey, overridesBaselineKey, scopeId]);
 
   useEffect(() => {
     onDirtyChange(dirty || overridesDirty);

@@ -720,14 +720,18 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
   const [error, setError] = useState<SettingsErrorValue | null>(null);
   const [normalizeTouched, setNormalizeTouched] = useState(false);
   const scopeId = isNew ? 'new' : initial.id || '';
-  const dirty = stableConfigString(buildEmbeddingModelPayload(values)) !== stableConfigString(buildEmbeddingModelPayload(initial));
+  const baselineKey = stableConfigString(buildEmbeddingModelPayload(initial));
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
+  const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
+  const dirty = hydrated && stableConfigString(buildEmbeddingModelPayload(values)) !== baselineKey;
   const embeddingOptions = modelPathOptions(scan?.embedding_models ?? [], values.model_path || '');
   const currentEmbeddingMissing = scan ? Boolean(values.model_path) && !scan.embedding_models.some((model) => model.model_path === values.model_path) : false;
 
   useEffect(() => {
     setValues(initial);
+    setDraftReady({ scopeId, baselineKey });
     setNormalizeTouched(false);
-  }, [initial]);
+  }, [baselineKey, initial, scopeId]);
 
   useEffect(() => {
     setBusy('');
@@ -945,12 +949,15 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
   const currentKnowledgeBaseIdRef = useRef(initial.id || '');
   currentKnowledgeBaseIdRef.current = initial.id || '';
   const scopeId = isNew ? 'new' : initial.id || '';
+  const baselineKey = stableConfigString(buildKnowledgeBasePayload(initial));
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
   const selectedProfile = profiles.find((profile) => profile.id === values.embedding_model_profile_id);
   const selectedProfileName = values.embedding_model_profile_name || selectedProfile?.name || '';
   const sortedSources = useMemo(() => sortSources(sources, sourceSort), [sourceSort, sources]);
   const selectedSource = sources.find((source) => source.id === selectedSourceId) || null;
   const hasStaleOriginSources = sources.some((source) => ['new', 'changed'].includes(source.file_status || '') || source.status === 'needs_reindex');
-  const dirty = stableConfigString(buildKnowledgeBasePayload(values)) !== stableConfigString(buildKnowledgeBasePayload(initial));
+  const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
+  const dirty = hydrated && stableConfigString(buildKnowledgeBasePayload(values)) !== baselineKey;
   const originFolderParent = originFolderParentPrefix(originSlug);
   const originFolderSearch = originFolderSearchTerm(originSlug);
   const visibleOriginFolderSuggestions = useMemo(() => {
@@ -976,7 +983,8 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
 
   useEffect(() => {
     setValues(initial);
-  }, [initial]);
+    setDraftReady({ scopeId, baselineKey });
+  }, [baselineKey, initial, scopeId]);
 
   useEffect(() => {
     setBusy('');

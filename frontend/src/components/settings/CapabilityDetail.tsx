@@ -9,7 +9,7 @@ import { LlmSettingsPanel } from './LlmSettingsPanel';
 import { ManifestViewer } from './ManifestViewer';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { ToggleSwitch } from './ToggleSwitch';
-import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, type ConfigValues } from './configUtils';
+import { buildUserConfig, displayValue, initialConfigValues, initials, isConfigDirty, stableConfigString, type ConfigValues } from './configUtils';
 
 const baseTabIds = ['overview', 'commands', 'config', 'health', 'manifest'] as const;
 
@@ -28,13 +28,17 @@ export function CapabilityDetail({
 }) {
   const { t } = useTranslation(['capabilities', 'common']);
   const { updateCapabilityConfig, savingConfigId, testingLlm } = useWorkbenchStore();
+  const scopeId = config.capability_id;
+  const configBaselineKey = stableConfigString(buildUserConfig(config.config_schema || [], initialConfigValues(config)));
   const [enabled, setEnabled] = useState(config.enabled);
   const [values, setValues] = useState<ConfigValues>(() => initialConfigValues(config));
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, configBaselineKey }));
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const isSaving = savingConfigId === `capability:${config.capability_id}`;
   const saveDisabled = isSaving || (config.capability_id === 'llm' && (testingLlm || healthBusy));
-  const dirty = isConfigDirty(config, enabled, values);
+  const hydrated = draftReady.scopeId === scopeId && draftReady.configBaselineKey === configBaselineKey;
+  const dirty = hydrated && isConfigDirty(config, enabled, values);
   const summary = config.manifest_summary;
   const name = summary.name || config.capability_id;
   const capabilityCommands = commands.filter((command) => command.capability_id === config.capability_id);
@@ -63,9 +67,10 @@ export function CapabilityDetail({
   useEffect(() => {
     setEnabled(config.enabled);
     setValues(initialConfigValues(config));
+    setDraftReady({ scopeId, configBaselineKey });
     setLocalError(null);
     setHealthBusy(false);
-  }, [config]);
+  }, [config, configBaselineKey, scopeId]);
 
   useEffect(() => {
     onDirtyChange(dirty);

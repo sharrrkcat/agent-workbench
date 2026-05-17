@@ -101,11 +101,11 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   }
 
   return (
-    <article className={`message-row ${kind} ${hasWidePart ? 'message-has-wide-part' : ''}`}>
+    <article className={`message-row ${kind} ${hasWidePart ? 'message-has-wide-part' : ''} ${editing ? 'message-editing' : ''}`}>
       {!isUser ? <AgentAvatar agent={agentDisplay} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
         <MessageHeader message={message} agent={agent} agentName={agentDisplay.name} kind={kind} modelLabel={resolvedModelLabel(message)} modelMismatch={hasModelMismatch(message)} />
-        <div className={`message ${kind} ${hasWidePart ? 'message-has-wide-part' : ''} ${message.client_status ? message.client_status : ''}`}>
+        <div className={`message ${kind} ${hasWidePart ? 'message-has-wide-part' : ''} ${editing ? 'message-editing' : ''} ${message.client_status ? message.client_status : ''}`}>
           {editing ? (
             <div className="message-edit-form">
               <textarea value={editValue} onChange={(event) => setEditValue(event.target.value)} rows={Math.min(8, Math.max(3, editValue.split(/\r\n|\r|\n/).length))} />
