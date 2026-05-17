@@ -154,7 +154,53 @@ def test_attachment_api_accepts_and_serves_audio_upload(monkeypatch, tmp_path: P
     served = client.get(payload["url"])
     assert served.status_code == 200
     assert served.headers["content-type"].startswith("audio/wav")
+    assert served.headers["accept-ranges"] == "bytes"
+    assert served.headers["content-length"] == str(len(b"RIFF----WAVEfmt "))
     assert served.content == b"RIFF----WAVEfmt "
+
+
+def test_audio_attachment_api_supports_byte_ranges(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    data = bytes(range(256))
+    stored = save_attachment_from_upload("demo.wav", "audio/wav", data)
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+
+    full = client.get(stored["url"])
+    first_100 = client.get(stored["url"], headers={"Range": "bytes=0-99"})
+    from_100 = client.get(stored["url"], headers={"Range": "bytes=100-"})
+    suffix_100 = client.get(stored["url"], headers={"Range": "bytes=-100"})
+    unsatisfiable = client.get(stored["url"], headers={"Range": "bytes=256-300"})
+    escaped = client.get("/api/attachments/..%2Fsecret.wav", headers={"Range": "bytes=0-99"})
+
+    assert full.status_code == 200
+    assert full.headers["content-type"].startswith("audio/wav")
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["content-length"] == str(len(data))
+    assert full.content == data
+
+    assert first_100.status_code == 206
+    assert first_100.headers["content-type"].startswith("audio/wav")
+    assert first_100.headers["accept-ranges"] == "bytes"
+    assert first_100.headers["content-range"] == f"bytes 0-99/{len(data)}"
+    assert first_100.headers["content-length"] == "100"
+    assert first_100.content == data[:100]
+
+    assert from_100.status_code == 206
+    assert from_100.headers["content-range"] == f"bytes 100-255/{len(data)}"
+    assert from_100.headers["content-length"] == str(len(data) - 100)
+    assert from_100.content == data[100:]
+
+    assert suffix_100.status_code == 206
+    assert suffix_100.headers["content-range"] == f"bytes 156-255/{len(data)}"
+    assert suffix_100.headers["content-length"] == "100"
+    assert suffix_100.content == data[-100:]
+
+    assert unsatisfiable.status_code == 416
+    assert unsatisfiable.headers["content-range"] == f"bytes */{len(data)}"
+    assert unsatisfiable.headers["content-length"] == "0"
+    assert unsatisfiable.content == b""
+
+    assert escaped.status_code == 404
 
 
 def test_attachment_api_returns_text_file_bytes(monkeypatch, tmp_path: Path) -> None:
@@ -167,6 +213,8 @@ def test_attachment_api_returns_text_file_bytes(monkeypatch, tmp_path: Path) -> 
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.headers["content-length"] == str(len(b"hello text"))
     assert response.content == b"hello text"
 
 

@@ -25,6 +25,13 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
   const effectiveDuration = duration > 0 ? duration : fallbackDuration;
   const displayedTime = isScrubbing ? scrubTime : currentTime;
   const progressPercent = effectiveDuration > 0 ? clamp(displayedTime / effectiveDuration, 0, 1) * 100 : 0;
+  const audioDebugEnabled =
+    typeof window !== 'undefined' && window.localStorage.getItem('aw_audio_debug') === '1';
+
+  function debugLog(label: string, data: Record<string, unknown>) {
+    if (!audioDebugEnabled) return;
+    console.debug('[AudioPartRenderer]', label, data);
+  }
 
   useEffect(() => {
     setIsPlaying(false);
@@ -58,6 +65,16 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
     if (isScrubbingRef.current) return;
     if (isSeekingRef.current) return;
     const nextTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    if (audioDebugEnabled && nextTime === 0 && currentTime > 0) {
+      debugLog('updateTime.zeroAfterProgress', {
+        nextTime,
+        previousCurrentTime: currentTime,
+        isScrubbing: isScrubbingRef.current,
+        isSeeking: isSeekingRef.current,
+        readyState: audio.readyState,
+        seekableLength: audio.seekable.length,
+      });
+    }
     setCurrentTime(nextTime);
     setScrubTime(nextTime);
     scrubTimeRef.current = nextTime;
@@ -88,8 +105,25 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
     const track = progressTrackRef.current;
     if (!track || effectiveDuration <= 0) return 0;
     const rect = track.getBoundingClientRect();
-    const ratio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
-    return clamp(ratio * effectiveDuration, 0, effectiveDuration);
+    const rawRatio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+    const clampedRatio = clamp(rawRatio, 0, 1);
+    const computedTime = clamp(rawRatio * effectiveDuration, 0, effectiveDuration);
+    debugLog('timeFromPointerEvent', {
+      eventType: event.type,
+      clientX: event.clientX,
+      pageX: event.pageX,
+      rectLeft: rect.left,
+      rectWidth: rect.width,
+      rawRatio,
+      clampedRatio,
+      effectiveDuration,
+      computedTime,
+      currentTime,
+      scrubTime,
+      isScrubbing: isScrubbingRef.current,
+      isSeeking: isSeekingRef.current,
+    });
+    return computedTime;
   }
 
   function handleProgressPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -98,6 +132,18 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const nextTime = timeFromPointerEvent(event);
+    const audio = audioRef.current;
+    debugLog('handleProgressPointerDown', {
+      nextTime,
+      effectiveDuration,
+      currentTime,
+      audioCurrentTime: audio?.currentTime,
+      audioDuration: audio?.duration,
+      readyState: audio?.readyState,
+      networkState: audio?.networkState,
+      seekableLength: audio?.seekable.length,
+      seekableRanges: seekableRanges(audio),
+    });
     isScrubbingRef.current = true;
     setIsScrubbing(true);
     setScrubTime(nextTime);
@@ -107,6 +153,11 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
   function handleProgressPointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!isScrubbingRef.current) return;
     const nextTime = timeFromPointerEvent(event);
+    debugLog('handleProgressPointerMove', {
+      nextTime,
+      clientX: event.clientX,
+      isScrubbing: isScrubbingRef.current,
+    });
     setScrubTime(nextTime);
     scrubTimeRef.current = nextTime;
   }
@@ -114,6 +165,12 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
   function handleProgressPointerUp(event: PointerEvent<HTMLDivElement>) {
     if (!isScrubbingRef.current) return;
     const nextTime = timeFromPointerEvent(event);
+    const audio = audioRef.current;
+    debugLog('handleProgressPointerUp', {
+      nextTime,
+      beforeCommitCurrentTime: currentTime,
+      audioCurrentTime: audio?.currentTime,
+    });
     commitSeek(nextTime);
     isScrubbingRef.current = false;
     setIsScrubbing(false);
@@ -149,15 +206,40 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
       return;
     }
     const targetTime = clamp(targetSeconds, 0, effectiveDuration);
+    const beforeAudioCurrentTime = audio.currentTime;
     isSeekingRef.current = true;
     pendingSeekTimeRef.current = targetTime;
     try {
       audio.currentTime = targetTime;
     } catch {
+      debugLog('commitSeek', {
+        targetSeconds,
+        targetTime,
+        effectiveDuration,
+        beforeAudioCurrentTime,
+        afterAudioCurrentTime: audio.currentTime,
+        setterThrew: true,
+        audioDuration: audio.duration,
+        readyState: audio.readyState,
+        seekableLength: audio.seekable.length,
+        seekableRanges: seekableRanges(audio),
+      });
       isSeekingRef.current = false;
       pendingSeekTimeRef.current = null;
       return;
     }
+    debugLog('commitSeek', {
+      targetSeconds,
+      targetTime,
+      effectiveDuration,
+      beforeAudioCurrentTime,
+      afterAudioCurrentTime: audio.currentTime,
+      setterThrew: false,
+      audioDuration: audio.duration,
+      readyState: audio.readyState,
+      seekableLength: audio.seekable.length,
+      seekableRanges: seekableRanges(audio),
+    });
     setCurrentTime(targetTime);
     setScrubTime(targetTime);
     scrubTimeRef.current = targetTime;
@@ -167,11 +249,19 @@ export function AudioPartRenderer({ part }: { part: AudioMessagePart }) {
     const audio = audioRef.current;
     const pendingTime = pendingSeekTimeRef.current;
     const nextTime = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : pendingTime ?? currentTime;
+    const wasSeeking = isSeekingRef.current;
     setCurrentTime(nextTime);
     setScrubTime(nextTime);
     scrubTimeRef.current = nextTime;
     pendingSeekTimeRef.current = null;
     isSeekingRef.current = false;
+    debugLog('completeSeek', {
+      pendingSeekTime: pendingTime,
+      audioCurrentTime: audio?.currentTime,
+      nextTime,
+      wasSeeking,
+      isSeekingAfter: isSeekingRef.current,
+    });
   }
 
   return (
@@ -257,6 +347,14 @@ function finitePositiveNumber(value: unknown): number {
 
 function getAudioDuration(audio: HTMLAudioElement | null | undefined): number {
   return finitePositiveNumber(audio?.duration);
+}
+
+function seekableRanges(audio: HTMLAudioElement | null | undefined): { start: number; end: number }[] {
+  if (!audio) return [];
+  return Array.from({ length: audio.seekable.length }, (_, index) => ({
+    start: audio.seekable.start(index),
+    end: audio.seekable.end(index),
+  }));
 }
 
 function clamp(value: number, min: number, max: number): number {

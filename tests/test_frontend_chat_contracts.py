@@ -204,6 +204,7 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     pointer_up_body = source[source.index("function handleProgressPointerUp") : source.index("function cancelProgressScrub")]
     keydown_body = source[source.index("function handleProgressKeyDown") : source.index("function commitSeek")]
     commit_seek_body = source[source.index("function commitSeek") : source.index("function completeSeek")]
+    complete_seek_body = source[source.index("function completeSeek") : source.index("return (")]
     audio_tag = source[source.index("<audio") : source.index("/>", source.index("<audio"))]
     controls_markup = source[source.index('<div className="audio-part-controls">') : source.index('{failed ?')]
 
@@ -218,6 +219,10 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert "event.currentTarget.value" not in source
     assert "audioRef" in source
     assert "progressTrackRef" in source
+    assert "window.localStorage.getItem('aw_audio_debug') === '1'" in source
+    assert "function debugLog" in source
+    assert "if (!audioDebugEnabled) return" in source
+    assert "console.debug('[AudioPartRenderer]', label, data)" in source
     assert "togglePlayback" in source
     assert "isScrubbingRef" in source
     assert "isSeekingRef" in source
@@ -234,13 +239,21 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert "event.clientX" in pointer_time_body
     assert "rect.left" in pointer_time_body
     assert "rect.width" in pointer_time_body
-    assert "clamp(ratio * effectiveDuration, 0, effectiveDuration)" in pointer_time_body
+    assert "clamp(rawRatio * effectiveDuration, 0, effectiveDuration)" in pointer_time_body
+    assert "debugLog('timeFromPointerEvent'" in pointer_time_body
+    assert "rawRatio" in pointer_time_body
+    assert "clampedRatio" in pointer_time_body
+    assert "computedTime" in pointer_time_body
     assert "setPointerCapture?.(event.pointerId)" in pointer_down_body
+    assert "debugLog('handleProgressPointerDown'" in pointer_down_body
+    assert "seekableRanges(audio)" in pointer_down_body
     assert "setIsScrubbing(true)" in pointer_down_body
     assert source.count("setIsScrubbing(true)") == 1
     assert "if (!isScrubbingRef.current) return" in pointer_move_body
+    assert "debugLog('handleProgressPointerMove'" in pointer_move_body
     assert "if (!isScrubbingRef.current) return" in pointer_up_body
     assert "commitSeek(nextTime)" in pointer_up_body
+    assert "debugLog('handleProgressPointerUp'" in pointer_up_body
     assert "releasePointerCapture?.(event.pointerId)" in pointer_up_body
     assert "onPointerDown={handleProgressPointerDown}" in source
     assert "onPointerMove={handleProgressPointerMove}" in source
@@ -268,10 +281,17 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert "const targetTime = clamp(targetSeconds, 0, effectiveDuration)" in commit_seek_body
     assert "isSeekingRef.current = true" in commit_seek_body
     assert "pendingSeekTimeRef.current = targetTime" in commit_seek_body
+    assert "debugLog('commitSeek'" in commit_seek_body
+    assert "setterThrew: true" in commit_seek_body
+    assert "setterThrew: false" in commit_seek_body
+    assert "seekableRanges(audio)" in commit_seek_body
     assert "setCurrentTime(targetTime)" in commit_seek_body
     assert "setScrubTime(targetTime)" in commit_seek_body
     assert "audio.currentTime = targetTime" in commit_seek_body
     assert "onSeeked={completeSeek}" in source
+    assert "debugLog('completeSeek'" in complete_seek_body
+    assert "wasSeeking" in complete_seek_body
+    assert "isSeekingAfter" in complete_seek_body
     assert "onPointerDown={beginScrub}" not in source
     assert "setCurrentTime(0)" not in update_metadata_body
     assert "setScrubTime(0)" not in update_metadata_body
