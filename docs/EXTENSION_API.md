@@ -277,7 +277,7 @@ Utility LLM, Intent Routing, General settings, and Knowledge settings are core-o
 
 The built-in `file` Capability exposes only `/read-file <path>`, auto-detects text/image/audio/video into matching Message Parts, keeps one command toggle with per-kind limits, and does not support network reads or media analysis.
 
-The built-in `codec` Capability exposes `/encode` and `/decode` for Base64 text, data URLs, and image attachment encoding. It does not fetch URLs, read local paths, handle QR codes, transcode media, or inspect arbitrary binaries.
+The built-in `codec` Capability exposes `/encode` and `/decode` for Base64 text, Base64URL tokens, URL component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs, and image attachment encoding. It does not fetch URLs, read local paths, handle QR codes, transcode media, inspect JWTs, hash content, or inspect arbitrary binaries.
 
 The built-in `http` Capability exposes only `/fetch-url <url>`, auto-detects text/HTML/JSON/image/direct audio/direct video into Message Parts, and keeps one command toggle with separate text/image limits. Direct audio and video use `source: url` and are not downloaded, cached, proxied, or saved locally.
 Streaming media, OCR, ASR, TTS, transcription, and PDF parsing are unsupported.

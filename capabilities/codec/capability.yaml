@@ -1,6 +1,6 @@
 id: codec
 name: Codec Capability
-description: Encode and decode Base64 text, data URLs, and image attachments.
+description: Encode and decode Base64, Base64URL, URL percent encoding, Unicode escapes, hex text, data URLs, and image attachments.
 
 config_schema:
   - name: max_text_input_chars
@@ -12,7 +12,7 @@ config_schema:
     type: integer
     default: 25
     minimum: 1
-    description: Maximum decoded byte size for Base64 decode.
+    description: Maximum decoded byte size for Codec decode.
   - name: max_attachment_encode_mb
     type: integer
     default: 10

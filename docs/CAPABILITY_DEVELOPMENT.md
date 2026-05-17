@@ -66,6 +66,12 @@ Commands are user-facing wrappers declared in Capability manifests. They are glo
 /demo_tool hello
 /encode base64 hello
 /decode base64 aGVsbG8=
+/encode url 你好 world
+/decode url %E4%BD%A0%E5%A5%BD%20world
+/encode unicode 你好
+/decode unicode \u4f60\u597d
+/encode hex 你好
+/decode hex e4bda0e5a5bd
 ```
 
 Agents do not declare slash commands. Keep the `@agent` and `/command` namespaces separate.
@@ -123,6 +129,12 @@ uv run python scripts/run_command.py "/encode base64 hello"
 uv run python scripts/run_command.py "/decode base64 aGVsbG8="
 uv run python scripts/run_command.py "/decode base64 data:image/svg+xml;base64,..."
 uv run python scripts/run_command.py "/encode base64" --image path/to/cat.png
+uv run python scripts/run_command.py "/encode url 你好 world"
+uv run python scripts/run_command.py "/decode url %E4%BD%A0%E5%A5%BD%20world"
+uv run python scripts/run_command.py "/encode unicode 你好"
+uv run python scripts/run_command.py "/decode unicode \u4f60\u597d"
+uv run python scripts/run_command.py "/encode hex 你好"
+uv run python scripts/run_command.py "/decode hex e4bda0e5a5bd"
 uv run python scripts/run_command.py "/read-file path/to/demo.wav"
 uv run python scripts/run_command.py "/read-file path/to/demo.mp4"
 uv run python scripts/run_command.py "/fetch-url https://example.test/data.json"
@@ -130,9 +142,11 @@ uv run python scripts/run_command.py "/kb-search project notes"
 ```
 
 The built-in `codec` Capability exposes `/encode <codec> <payload>` and
-`/decode <codec> <payload>`. Round 1 supports Base64 text, Base64 data URLs,
-and image attachment encoding. It does not fetch URLs, read local paths, parse
-or generate QR codes, transcode media, or inspect arbitrary binary files.
+`/decode <codec> <payload>`. It supports Base64 text, Base64URL tokens, URL
+component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs,
+and image attachment encoding. Text codec outputs are inline `file` parts. It
+does not fetch URLs, read local paths, parse or generate QR codes, transcode
+media, or inspect arbitrary binary files.
 
 The built-in `file` Capability exposes only `/read-file <path>` for user-facing
 local reads. It auto-detects supported text, image, audio, and video files and

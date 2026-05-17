@@ -2,6 +2,7 @@ import base64
 import binascii
 import re
 from typing import Any
+from urllib.parse import quote, unquote
 
 from ai_workbench.core.attachments import read_attachment_as_data_url, save_generated_attachment_bytes
 
@@ -27,6 +28,11 @@ _DEFAULT_CONFIG = {
     "max_attachment_encode_mb": 10,
     "enable_attachment_encode": True,
 }
+_SUPPORTED_TEXT_CODECS = ("base64", "base64url", "url", "unicode", "hex")
+_SUPPORTED_TEXT_CODECS_DISPLAY = ", ".join(_SUPPORTED_TEXT_CODECS)
+_BASE64URL_RE = re.compile(r"^[A-Za-z0-9_-]*={0,2}$")
+_INVALID_PERCENT_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_HEX_WHITESPACE_RE = re.compile(r"\s+")
 
 
 class CapabilityRuntime:
@@ -42,17 +48,33 @@ class CapabilityRuntime:
             args=args,
             codec=codec,
             text=text,
-            usage="Usage: /encode base64 <text>",
         )
-        _require_base64(selected_codec)
+        _require_supported_codec(selected_codec)
         config = _resolved_config(context)
 
         if payload == "":
+            if selected_codec != "base64":
+                raise ValueError(f"Usage: /encode {selected_codec} <text>")
             return [_encode_current_image_attachment(context or {}, config)]
 
         _ensure_text_input_limit(payload, config)
-        encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
-        return [_inline_file_part("base64.txt", encoded, size=len(encoded))]
+        if selected_codec == "base64":
+            encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+            return [_inline_file_part("base64.txt", encoded, size=len(encoded))]
+        if selected_codec == "base64url":
+            encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+            return [_inline_file_part("base64url.txt", encoded, size=len(encoded))]
+        if selected_codec == "url":
+            encoded = quote(payload, safe="-_.~", encoding="utf-8", errors="strict")
+            return [_inline_file_part("url-encoded.txt", encoded, size=len(encoded))]
+        if selected_codec == "unicode":
+            encoded = _encode_unicode_escapes(payload)
+            return [_inline_file_part("unicode-escaped.txt", encoded, size=len(encoded))]
+        if selected_codec == "hex":
+            encoded = payload.encode("utf-8").hex()
+            return [_inline_file_part("hex.txt", encoded, size=len(encoded))]
+
+        raise ValueError(_unsupported_codec_message(selected_codec))
 
     def decode(
         self,
@@ -66,13 +88,25 @@ class CapabilityRuntime:
             args=args,
             codec=codec,
             text=text,
-            usage="Usage: /decode base64 <base64-or-data-url>",
         )
-        _require_base64(selected_codec)
+        _require_supported_codec(selected_codec)
         config = _resolved_config(context)
         if not payload:
-            raise ValueError("Usage: /decode base64 <base64-or-data-url>")
+            raise ValueError(f"Usage: /decode {selected_codec} <payload>")
         _ensure_text_input_limit(payload, config)
+
+        if selected_codec == "base64url":
+            decoded = _decode_base64url_payload(payload, config)
+            return [_inline_file_part("decoded.txt", _decode_utf8_text(decoded), size=len(decoded))]
+        if selected_codec == "url":
+            decoded = _decode_url_payload(payload)
+            return [_inline_file_part("url-decoded.txt", decoded, size=len(decoded.encode("utf-8")))]
+        if selected_codec == "unicode":
+            decoded = _decode_unicode_escapes(payload)
+            return [_inline_file_part("unicode-decoded.txt", decoded, size=len(decoded.encode("utf-8")))]
+        if selected_codec == "hex":
+            decoded = _decode_hex_payload(payload, config)
+            return [_inline_file_part("decoded.txt", _decode_utf8_text(decoded), size=len(decoded))]
 
         decoded, declared_mime = _decode_base64_payload(payload, config)
         image_mime = declared_mime if declared_mime and declared_mime.startswith("image/") else _detect_image_mime_type(decoded)
@@ -99,10 +133,7 @@ class CapabilityRuntime:
                 }
             ]
 
-        try:
-            text = decoded.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError("Unsupported binary decoded result. This round supports UTF-8 text and supported images only.") from exc
+        text = _decode_utf8_text(decoded, message="Unsupported binary decoded result. This round supports UTF-8 text and supported images only.")
 
         return [_inline_file_part("decoded.txt", text, size=len(decoded))]
 
@@ -111,24 +142,28 @@ def get_runtime() -> CapabilityRuntime:
     return CapabilityRuntime()
 
 
-def _resolve_codec_payload(*, args: str, codec: str | None, text: str | None, usage: str) -> tuple[str, str]:
+def _resolve_codec_payload(*, args: str, codec: str | None, text: str | None) -> tuple[str, str]:
     if codec is not None:
         return codec.strip().lower(), "" if text is None else str(text)
 
     value = str(args or "").strip()
     if not value:
-        raise ValueError(usage)
+        raise ValueError(f"Usage: /encode <codec> <payload> or /decode <codec> <payload>. Supported codecs: {_SUPPORTED_TEXT_CODECS_DISPLAY}.")
     parts = value.split(maxsplit=1)
     selected_codec = parts[0].strip().lower()
     payload = parts[1] if len(parts) > 1 else ""
     if not selected_codec:
-        raise ValueError(usage)
-    return selected_codec, payload.strip()
+        raise ValueError(f"Usage: /encode <codec> <payload> or /decode <codec> <payload>. Supported codecs: {_SUPPORTED_TEXT_CODECS_DISPLAY}.")
+    return selected_codec, payload
 
 
-def _require_base64(codec: str) -> None:
-    if codec != "base64":
-        raise ValueError(f"Unsupported codec: {codec}. Currently only base64 is supported.")
+def _require_supported_codec(codec: str) -> None:
+    if codec not in _SUPPORTED_TEXT_CODECS:
+        raise ValueError(_unsupported_codec_message(codec))
+
+
+def _unsupported_codec_message(codec: str) -> str:
+    return f"Unsupported codec: {codec}. Supported codecs: {_SUPPORTED_TEXT_CODECS_DISPLAY}."
 
 
 def _resolved_config(context: dict[str, Any] | None) -> dict[str, Any]:
@@ -187,6 +222,138 @@ def _decode_base64_payload(payload: str, config: dict[str, Any]) -> tuple[bytes,
     if len(decoded) > _max_decoded_bytes(config):
         raise ValueError(f"Decoded payload is too large. Maximum size is {config['max_decoded_bytes_mb']} MB.")
     return decoded, declared_mime
+
+
+def _decode_base64url_payload(payload: str, config: dict[str, Any]) -> bytes:
+    value = str(payload or "").strip()
+    compact = re.sub(r"\s+", "", value)
+    if not compact:
+        raise ValueError("Usage: /decode base64url <payload>")
+    if not _BASE64URL_RE.fullmatch(compact) or "=" in compact.rstrip("="):
+        raise ValueError("Invalid Base64URL input. Use only A-Z, a-z, 0-9, '-', '_', and optional trailing '=' padding.")
+    unpadded = compact.rstrip("=")
+    if len(unpadded) % 4 == 1:
+        raise ValueError("Invalid Base64URL input. Length cannot be 1 modulo 4.")
+    padded = unpadded + ("=" * ((4 - len(unpadded) % 4) % 4))
+    estimated_bytes = (len(padded) * 3) // 4 - padded.count("=")
+    if estimated_bytes > _max_decoded_bytes(config):
+        raise ValueError(f"Decoded payload is too large. Maximum size is {config['max_decoded_bytes_mb']} MB.")
+    try:
+        decoded = base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
+    except (binascii.Error, UnicodeEncodeError) as exc:
+        raise ValueError("Invalid Base64URL input.") from exc
+    if len(decoded) > _max_decoded_bytes(config):
+        raise ValueError(f"Decoded payload is too large. Maximum size is {config['max_decoded_bytes_mb']} MB.")
+    return decoded
+
+
+def _decode_url_payload(payload: str) -> str:
+    value = str(payload or "")
+    match = _INVALID_PERCENT_RE.search(value)
+    if match:
+        raise ValueError(f"Invalid URL percent escape at position {match.start()}. Expected '%' followed by two hex digits.")
+    try:
+        return unquote(value, encoding="utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Invalid URL percent-encoded UTF-8 input.") from exc
+
+
+def _encode_unicode_escapes(value: str) -> str:
+    pieces: list[str] = []
+    for char in value:
+        codepoint = ord(char)
+        if char == "\n":
+            pieces.append(r"\n")
+        elif char == "\t":
+            pieces.append(r"\t")
+        elif char == "\r":
+            pieces.append(r"\r")
+        elif 0x20 <= codepoint <= 0x7E:
+            pieces.append(char)
+        elif codepoint <= 0xFFFF:
+            pieces.append(f"\\u{codepoint:04x}")
+        else:
+            codepoint -= 0x10000
+            high = 0xD800 + (codepoint >> 10)
+            low = 0xDC00 + (codepoint & 0x3FF)
+            pieces.append(f"\\u{high:04x}\\u{low:04x}")
+    return "".join(pieces)
+
+
+def _decode_unicode_escapes(value: str) -> str:
+    pieces: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "\\":
+            pieces.append(char)
+            index += 1
+            continue
+        if index + 1 >= len(value):
+            raise ValueError("Invalid Unicode escape: trailing backslash.")
+        marker = value[index + 1]
+        if marker in {"n", "t", "r", "b", "f", "\\", '"', "/"}:
+            pieces.append({"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", "\\": "\\", '"': '"', "/": "/"}[marker])
+            index += 2
+            continue
+        if marker == "u":
+            codepoint, next_index = _read_hex_escape(value, index, digits=4, marker="u")
+            if 0xD800 <= codepoint <= 0xDBFF:
+                if next_index + 6 <= len(value) and value[next_index : next_index + 2] == "\\u":
+                    low, after_low = _read_hex_escape(value, next_index, digits=4, marker="u")
+                    if 0xDC00 <= low <= 0xDFFF:
+                        pieces.append(chr(0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00)))
+                        index = after_low
+                        continue
+                raise ValueError("Invalid Unicode escape: high surrogate must be followed by a low surrogate.")
+            if 0xDC00 <= codepoint <= 0xDFFF:
+                raise ValueError("Invalid Unicode escape: low surrogate without preceding high surrogate.")
+            pieces.append(chr(codepoint))
+            index = next_index
+            continue
+        if marker == "U":
+            codepoint, next_index = _read_hex_escape(value, index, digits=8, marker="U")
+            if codepoint > 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
+                raise ValueError("Invalid Unicode escape: code point is out of range.")
+            pieces.append(chr(codepoint))
+            index = next_index
+            continue
+        raise ValueError(f"Invalid Unicode escape: unsupported escape '\\{marker}'.")
+    return "".join(pieces)
+
+
+def _read_hex_escape(value: str, start: int, *, digits: int, marker: str) -> tuple[int, int]:
+    hex_start = start + 2
+    hex_end = hex_start + digits
+    raw = value[hex_start:hex_end]
+    if len(raw) != digits or not re.fullmatch(r"[0-9A-Fa-f]+", raw):
+        raise ValueError(f"Invalid Unicode escape: expected \\{marker}{'X' * digits}.")
+    return int(raw, 16), hex_end
+
+
+def _decode_hex_payload(payload: str, config: dict[str, Any]) -> bytes:
+    compact = _HEX_WHITESPACE_RE.sub("", str(payload or ""))
+    if not compact:
+        raise ValueError("Usage: /decode hex <payload>")
+    if len(compact) % 2:
+        raise ValueError("Invalid hex input. Hex payload must contain an even number of digits.")
+    if not re.fullmatch(r"[0-9A-Fa-f]+", compact):
+        raise ValueError("Invalid hex input. Use only hex digits and whitespace separators.")
+    estimated_bytes = len(compact) // 2
+    if estimated_bytes > _max_decoded_bytes(config):
+        raise ValueError(f"Decoded payload is too large. Maximum size is {config['max_decoded_bytes_mb']} MB.")
+    return bytes.fromhex(compact)
+
+
+def _decode_utf8_text(
+    decoded: bytes,
+    *,
+    message: str = "Unsupported binary decoded result. This round supports UTF-8 text only for this codec.",
+) -> str:
+    try:
+        return decoded.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(message) from exc
 
 
 def _encode_current_image_attachment(context: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:

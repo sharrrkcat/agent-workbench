@@ -211,6 +211,145 @@ def test_base64_decode_invalid_input_returns_failed_result_and_run() -> None:
     assert failed_run.error == "Invalid Base64 input."
 
 
+def test_base64url_encode_decodes_url_safe_text() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    encoded = run(fixture.runtime.handle_input(session, "/encode base64url hello?"))
+    unpadded = run(fixture.runtime.handle_input(session, "/decode base64url aGVsbG8"))
+    padded = run(fixture.runtime.handle_input(session, "/decode base64url aGVsbG8="))
+
+    assert encoded.success is True
+    assert encoded.data[0]["type"] == "file"
+    assert encoded.data[0]["filename"] == "base64url.txt"
+    assert encoded.data[0]["content"] == "aGVsbG8_"
+    assert unpadded.success is True
+    assert unpadded.data[0]["content"] == "hello"
+    assert padded.success is True
+    assert padded.data[0]["content"] == "hello"
+
+
+def test_base64url_decode_rejects_non_url_safe_characters() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "/decode base64url aGVsbG8/"))
+
+    assert result.success is False
+    assert "Invalid Base64URL input" in result.error
+
+
+def test_url_codec_uses_component_percent_encoding() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    encoded = run(fixture.runtime.handle_input(session, "/encode url 你好 world"))
+    decoded = run(fixture.runtime.handle_input(session, "/decode url %E4%BD%A0%E5%A5%BD%20world"))
+    plus = run(fixture.runtime.handle_input(session, "/decode url a+b"))
+
+    assert encoded.success is True
+    assert encoded.data[0]["filename"] == "url-encoded.txt"
+    assert encoded.data[0]["content"] == "%E4%BD%A0%E5%A5%BD%20world"
+    assert decoded.success is True
+    assert decoded.data[0]["filename"] == "url-decoded.txt"
+    assert decoded.data[0]["content"] == "你好 world"
+    assert plus.success is True
+    assert plus.data[0]["content"] == "a+b"
+
+
+def test_url_decode_rejects_invalid_percent_escape() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    bad_hex = run(fixture.runtime.handle_input(session, "/decode url %ZZ"))
+    incomplete = run(fixture.runtime.handle_input(session, "/decode url %A"))
+
+    assert bad_hex.success is False
+    assert "Invalid URL percent escape" in bad_hex.error
+    assert incomplete.success is False
+    assert "Invalid URL percent escape" in incomplete.error
+
+
+def test_unicode_codec_escapes_text_and_roundtrips_emoji() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    encoded = run(fixture.runtime.handle_input(session, "/encode unicode 你好"))
+    decoded = run(fixture.runtime.handle_input(session, r"/decode unicode \u4f60\u597d"))
+    emoji_encoded = run(fixture.runtime.handle_input(session, "/encode unicode hi 😀"))
+    emoji_decoded = run(fixture.runtime.handle_input(session, r"/decode unicode hi \ud83d\ude00"))
+
+    assert encoded.success is True
+    assert encoded.data[0]["filename"] == "unicode-escaped.txt"
+    assert encoded.data[0]["content"] == r"\u4f60\u597d"
+    assert decoded.success is True
+    assert decoded.data[0]["filename"] == "unicode-decoded.txt"
+    assert decoded.data[0]["content"] == "你好"
+    assert emoji_encoded.success is True
+    assert emoji_encoded.data[0]["content"] == r"hi \ud83d\ude00"
+    assert emoji_decoded.success is True
+    assert emoji_decoded.data[0]["content"] == "hi 😀"
+
+
+def test_unicode_decode_rejects_invalid_escape_without_eval_behavior() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    invalid = run(fixture.runtime.handle_input(session, r"/decode unicode \u12ZZ"))
+    unknown = run(fixture.runtime.handle_input(session, r"/decode unicode __import__('os')\q"))
+
+    assert invalid.success is False
+    assert "Invalid Unicode escape" in invalid.error
+    assert unknown.success is False
+    assert "Invalid Unicode escape" in unknown.error
+
+
+def test_hex_codec_encodes_and_decodes_utf8_text() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    encoded = run(fixture.runtime.handle_input(session, "/encode hex 你好"))
+    compact = run(fixture.runtime.handle_input(session, "/decode hex e4bda0e5a5bd"))
+    spaced = run(fixture.runtime.handle_input(session, "/decode hex e4 bd a0 e5 a5 bd"))
+
+    assert encoded.success is True
+    assert encoded.data[0]["filename"] == "hex.txt"
+    assert encoded.data[0]["content"] == "e4bda0e5a5bd"
+    assert compact.success is True
+    assert compact.data[0]["content"] == "你好"
+    assert spaced.success is True
+    assert spaced.data[0]["content"] == "你好"
+
+
+def test_hex_decode_rejects_odd_length_and_invalid_characters() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    odd = run(fixture.runtime.handle_input(session, "/decode hex abc"))
+    invalid = run(fixture.runtime.handle_input(session, "/decode hex e4zz"))
+
+    assert odd.success is False
+    assert "even number of digits" in odd.error
+    assert invalid.success is False
+    assert "Invalid hex input" in invalid.error
+
+
+def test_codec_usage_and_unsupported_errors_list_supported_codecs() -> None:
+    fixture = RuntimeFixture()
+    session = fixture.sessions.create_session()
+
+    encode_usage = run(fixture.runtime.handle_input(session, "/encode"))
+    decode_usage = run(fixture.runtime.handle_input(session, "/decode"))
+    encode_unknown = run(fixture.runtime.handle_input(session, "/encode unknown test"))
+    decode_unknown = run(fixture.runtime.handle_input(session, "/decode unknown test"))
+
+    for result in [encode_usage, decode_usage, encode_unknown, decode_unknown]:
+        assert result.success is False
+        assert "base64, base64url, url, unicode, hex" in result.error
+    assert "Unsupported codec: unknown" in encode_unknown.error
+    assert "Unsupported codec: unknown" in decode_unknown.error
+
+
 def test_successful_command_creates_done_run() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
