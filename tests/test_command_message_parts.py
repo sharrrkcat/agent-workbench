@@ -47,6 +47,9 @@ class OutputRuntime:
     def rich_buttons(self, args: str) -> list[dict[str, Any]]:
         return [{"type": "command_buttons", "buttons": [{"label": "Run", "message": "@chat hello"}]}]
 
+    def auto_detected_audio(self, args: str) -> list[dict[str, Any]]:
+        return [{"type": "audio", "source": "attachment", "attachment_id": "att-1", "url": "/api/attachments/att-1.wav", "mime_type": "audio/wav"}]
+
     def inferred_json(self, args: str) -> dict[str, Any]:
         return {"inferred": True}
 
@@ -70,6 +73,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"id": "image_gallery", "output": {"part_type": "media_group", "layout": "gallery"}},
                 {"id": "rich_form", "output": {"part_type": "parts"}},
                 {"id": "rich_buttons", "output": {"part_type": "parts"}},
+                {"id": "auto_detected_audio", "output": {"part_type": "parts"}},
                 {"id": "inferred_json"},
             ],
             "commands": [
@@ -82,6 +86,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"name": "/out-gallery", "method": "image_gallery"},
                 {"name": "/out-form", "method": "rich_form"},
                 {"name": "/out-buttons", "method": "rich_buttons"},
+                {"name": "/out-auto-audio", "method": "auto_detected_audio"},
                 {"name": "/out-inferred", "method": "inferred_json"},
             ],
         }
@@ -205,6 +210,23 @@ def test_rich_content_command_buttons_block_writes_command_buttons_part() -> Non
     ]
     assert not hasattr(message, "output_type")
     assert not hasattr(message, "content")
+
+
+def test_parts_output_keeps_audio_part_instead_of_json() -> None:
+    _, message, _ = command_message("/out-auto-audio")
+
+    assert message.parts == [
+        {
+            "id": "part_1",
+            "type": "audio",
+            "source": "attachment",
+            "attachment_id": "att-1",
+            "url": "/api/attachments/att-1.wav",
+            "mime_type": "audio/wav",
+        }
+    ]
+    assert message.metadata["output_part_type"] == "parts"
+    assert not hasattr(message, "output_type")
 
 
 def test_command_runner_inferred_dict_output_writes_json_part() -> None:

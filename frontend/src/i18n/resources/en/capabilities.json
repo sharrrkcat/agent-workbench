@@ -33,17 +33,17 @@
     "noCommands": "This capability does not expose slash commands."
   },
   "help": {
-    "fileSettings": "File Capability settings apply only to /read-file, /read-image, and /read-audio. General upload limits are configured in General.",
+    "fileSettings": "File Capability settings apply only to /read-file. General upload limits are configured in General.",
     "httpSettings": "HTTP settings apply only to /http-get, /fetch-page, and /fetch-image. They do not affect chat uploads."
   },
   "configFields": {
     "max_local_audio_read_size_mb": {
       "label": "Max local audio read size",
-      "description": "Maximum local audio file size for /read-audio."
+      "description": "Maximum local audio file size for /read-file audio results."
     },
-    "enable_read_audio_command": {
-      "label": "Enable /read-audio",
-      "description": "Enable /read-audio."
+    "enable_read_file_command": {
+      "label": "Enable /read-file",
+      "description": "Enable /read-file for text, image, and audio files."
     }
   },
   "runtime": {

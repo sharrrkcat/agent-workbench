@@ -37,7 +37,8 @@ Unknown part types fail validation. `video`, `diff`, `chart`, `table`, and
 
 AudioPart v1 does not support remote URL sources, network downloads, TTS, ASR,
 transcription, livestreams, playlists, or audio content understanding.
-The built-in file Capability creates AudioParts through `/read-audio <path>`.
+The built-in file Capability creates AudioParts through `/read-file <path>` when
+the local file is detected as supported audio.
 
 ## Capability Outputs
 
@@ -58,6 +59,11 @@ Supported declarations are:
 - `part_type: audio`.
 - `part_type: media_group`, with `layout: gallery`.
 - `part_type: parts`, for a validated list of message parts.
+
+The built-in `file` Capability declares `/read-file` as `part_type: parts`
+because it auto-detects supported local text, image, and audio files. Text files
+return a raw `file` part with `mode: inline_text`; image files return an
+`image` part; audio files return an attachment-backed `audio` part.
 
 `output.type` is invalid. If a method omits `output`, the runtime infers the
 current parts contract from the returned value: lists are validated as parts,

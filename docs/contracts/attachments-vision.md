@@ -93,14 +93,22 @@ Generated attachment helpers return local attachment metadata shaped like:
 }
 ```
 
-The file Capability reads allowed local audio through `/read-audio <path>`. It
-uses its own `max_local_audio_read_size_mb` size limit and
-`enable_read_audio_command` toggle before saving an audio attachment.
+The file Capability exposes one local read command, `/read-file <path>`. It
+auto-detects supported text, image, and audio files by extension/MIME policy.
+Text returns a raw inline `file` part, image returns a local attachment-backed
+`image` part, and audio returns a local attachment-backed `audio` part. The
+single `enable_read_file_command` toggle gates all three kinds, while
+`max_local_text_read_size_mb`, `max_local_image_read_size_mb`, and
+`max_local_audio_read_size_mb` remain independent size limits.
 
 Generated audio attachments use `type: "audio"` and are stored under the local
 attachment root's `audios` subdirectory, for example
 `data/attachments/audios/<id>.wav`. Supported v1 formats include WAV, MP3, and
 OGG, with M4A, FLAC, and WebM accepted by MIME/extension policy.
+
+The file Capability does not perform OCR, ASR/transcription, TTS, PDF parsing,
+video reading, diff rendering, binary preview, network URL reads, or web page
+fetching.
 
 ## Route And Store Safety
 

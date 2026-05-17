@@ -1552,8 +1552,6 @@ export type Diagnostics = {
       max_local_image_read_size_mb?: number;
       max_local_audio_read_size_mb?: number;
       read_file_enabled?: boolean;
-      read_image_enabled?: boolean;
-      read_audio_enabled?: boolean;
     };
     http: {
       enabled: boolean;

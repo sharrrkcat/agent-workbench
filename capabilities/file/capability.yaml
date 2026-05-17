@@ -15,7 +15,7 @@ config_schema:
       - ./examples
       - ./agents
       - ./capabilities
-    description: Directories that /read-file and /read-image are allowed to read. Relative paths resolve from the project root.
+    description: Directories that /read-file is allowed to read. Relative paths resolve from the project root.
 
   - name: max_local_text_read_size_mb
     type: float
@@ -31,7 +31,7 @@ config_schema:
     default: 10
     minimum: 0.1
     maximum: 100
-    description: Maximum local image size for /read-image.
+    description: Maximum local image size for /read-file image results.
 
   - name: max_local_audio_read_size_mb
     type: float
@@ -39,7 +39,7 @@ config_schema:
     default: 10
     minimum: 0.1
     maximum: 100
-    description: Maximum local audio file size for /read-audio.
+    description: Maximum local audio file size for /read-file audio results.
 
   - name: allowed_text_extensions
     type: json
@@ -70,25 +70,22 @@ config_schema:
       - .cfg
     description: Text file extensions allowed by /read-file.
 
-  - name: enable_read_file
+  - name: enable_read_file_command
     type: boolean
     label: Enable /read-file
     default: true
     description: Enable /read-file.
 
-  - name: enable_read_image
-    type: boolean
-    label: Enable /read-image
-    default: true
-    description: Enable /read-image.
-
-  - name: enable_read_audio_command
-    type: boolean
-    label: Enable /read-audio
-    default: true
-    description: Enable /read-audio.
-
 methods:
+  - id: read_file
+    description: Read a supported local file from an allowed local directory and render it as the appropriate Message Part.
+    input_schema:
+      path:
+        type: string
+        required: true
+    output:
+      part_type: parts
+
   - id: read_text
     description: Read a UTF-8 text file from an allowed local directory
     input_schema:
@@ -119,16 +116,6 @@ methods:
 
 commands:
   - name: /read-file
-    method: read_text
-    description: Read a UTF-8 text file from an allowed local directory
-    safe: true
-
-  - name: /read-image
-    method: read_image
-    description: Read a local image file from an allowed local directory
-    safe: true
-
-  - name: /read-audio
-    method: read_audio
-    description: Read a local audio file from an allowed local directory
+    method: read_file
+    description: Read a local file from an allowed local directory.
     safe: true

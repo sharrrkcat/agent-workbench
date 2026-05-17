@@ -1,5 +1,5 @@
-import base64
 import codecs
+import mimetypes
 import os
 from pathlib import Path
 
@@ -39,9 +39,7 @@ CONFIG_DEFAULTS = {
         ".ini",
         ".cfg",
     ],
-    "enable_read_file": True,
-    "enable_read_image": True,
-    "enable_read_audio_command": True,
+    "enable_read_file_command": True,
 }
 _IMAGE_MIME_BY_EXT = {
     ".png": "image/png",
@@ -108,11 +106,26 @@ _TEXT_MIME_BY_EXT = {
 
 
 class CapabilityRuntime:
+    def read_file(self, text: str, context: dict | None = None) -> list[dict]:
+        config = _runtime_config(context)
+        _ensure_read_file_enabled(config)
+        path = _resolve_allowed_file(text, config, context=context)
+        kind = _file_kind(path, config)
+        if kind == "text":
+            return [{"type": "file", "mode": "inline_text", **self._read_text_path(path, config, context=context)}]
+        if kind == "image":
+            return [{"type": "image", **self._read_image_path(path, config)}]
+        if kind == "audio":
+            return [{"type": "audio", **self._read_audio_path(path, config)}]
+        raise ValueError("Unsupported file type for /read-file. Supported local file types are text, image, and audio.")
+
     def read_text(self, text: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
-        if not bool(config["enable_read_file"]):
-            raise ValueError("Command disabled: /read-file is disabled in File Capability settings.")
+        _ensure_read_file_enabled(config)
         path = _resolve_allowed_file(text, config, context=context)
+        return self._read_text_path(path, config, context=context)
+
+    def _read_text_path(self, path: Path, config: dict, context: dict | None = None) -> dict:
         _ensure_text_extension_allowed(path, config)
         size = path.stat().st_size
         limit = _mb_to_bytes(config["max_local_text_read_size_mb"])
@@ -133,17 +146,28 @@ class CapabilityRuntime:
 
     def read_image(self, text: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
-        if not bool(config["enable_read_image"]):
-            raise ValueError("Command disabled: /read-image is disabled in File Capability settings.")
+        _ensure_read_file_enabled(config)
         path = _resolve_allowed_file(text, config, context=context)
+        return self._read_image_path(path, config)
+
+    def _read_image_path(self, path: Path, config: dict) -> dict:
         mime_type = _image_mime_type(path)
         size = path.stat().st_size
         limit = _mb_to_bytes(config["max_local_image_read_size_mb"])
         if size > limit:
-            raise ValueError(f"File too large for /read-image. Maximum size is {_format_mb(config['max_local_image_read_size_mb'])}.")
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            raise ValueError(f"File too large for /read-file image result. Maximum size is {_format_mb(config['max_local_image_read_size_mb'])}.")
+        attachment = save_generated_attachment_bytes(
+            data=path.read_bytes(),
+            filename=path.name,
+            mime_type=mime_type,
+            kind="image",
+            metadata={"source": "file_capability"},
+            max_size_bytes=limit,
+            max_size_label=_format_mb(config["max_local_image_read_size_mb"]),
+        )
         return {
-            "url": f"data:{mime_type};base64,{encoded}",
+            "attachment_id": attachment["id"],
+            "url": attachment["url"],
             "alt": f"Local image: {path.name}",
             "title": path.name,
             "caption": f"Loaded from local file - {mime_type} - {size} bytes",
@@ -151,14 +175,16 @@ class CapabilityRuntime:
 
     def read_audio(self, text: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
-        if not bool(config["enable_read_audio_command"]):
-            raise ValueError("Command disabled: /read-audio is disabled in File Capability settings.")
+        _ensure_read_file_enabled(config)
         path = _resolve_allowed_file(text, config, context=context)
+        return self._read_audio_path(path, config)
+
+    def _read_audio_path(self, path: Path, config: dict) -> dict:
         mime_type = _audio_mime_type(path)
         size = path.stat().st_size
         limit = _mb_to_bytes(config["max_local_audio_read_size_mb"])
         if size > limit:
-            raise ValueError(f"File too large for /read-audio. Maximum size is {_format_mb(config['max_local_audio_read_size_mb'])}.")
+            raise ValueError(f"File too large for /read-file audio result. Maximum size is {_format_mb(config['max_local_audio_read_size_mb'])}.")
         attachment = save_generated_attachment_bytes(
             data=path.read_bytes(),
             filename=path.name,
@@ -192,6 +218,11 @@ def _runtime_config(context: dict | None) -> dict:
         config["max_local_text_read_size_mb"] = MAX_TEXT_BYTES / (1024 * 1024)
         config["max_local_audio_read_size_mb"] = MAX_AUDIO_BYTES / (1024 * 1024)
     return config
+
+
+def _ensure_read_file_enabled(config: dict) -> None:
+    if not bool(config["enable_read_file_command"]):
+        raise ValueError("Command disabled: /read-file is disabled in File Capability settings.")
 
 
 def _resolve_allowed_file(raw_path: str, config: dict, context: dict | None = None) -> Path:
@@ -231,17 +262,35 @@ def _allowed_dirs(config: dict | None = None, context: dict | None = None) -> li
 
 
 def _image_mime_type(path: Path) -> str:
-    mime_type = _IMAGE_MIME_BY_EXT.get(path.suffix.lower(), "")
+    mime_type = _IMAGE_MIME_BY_EXT.get(path.suffix.lower(), "") or _guess_mime_type(path)
     if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
-        raise ValueError("Only PNG, JPEG, WebP, GIF, and SVG image files are supported by /read-image.")
+        raise ValueError("Only PNG, JPEG, WebP, GIF, and SVG image files are supported by /read-file.")
     return mime_type
 
 
 def _audio_mime_type(path: Path) -> str:
-    mime_type = _AUDIO_MIME_BY_EXT.get(path.suffix.lower(), "")
+    mime_type = _AUDIO_MIME_BY_EXT.get(path.suffix.lower(), "") or _guess_mime_type(path)
     if mime_type not in ALLOWED_AUDIO_MIME_TYPES:
-        raise ValueError("Only WAV, MP3, OGG, M4A, FLAC, and WebM audio files are supported by /read-audio.")
+        raise ValueError("Only WAV, MP3, OGG, M4A, FLAC, and WebM audio files are supported by /read-file.")
     return mime_type
+
+
+def _file_kind(path: Path, config: dict) -> str:
+    extension = _text_extension_for_policy(path)
+    allowed_text = config.get("allowed_text_extensions", [])
+    if isinstance(allowed_text, list) and extension in {str(item).lower() for item in allowed_text}:
+        return "text"
+    mime_type = _guess_mime_type(path)
+    suffix = path.suffix.lower()
+    if suffix in _IMAGE_MIME_BY_EXT or mime_type in ALLOWED_IMAGE_MIME_TYPES:
+        return "image"
+    if suffix in _AUDIO_MIME_BY_EXT or mime_type in ALLOWED_AUDIO_MIME_TYPES:
+        return "audio"
+    return "unsupported"
+
+
+def _guess_mime_type(path: Path) -> str:
+    return (mimetypes.guess_type(path.name)[0] or "").lower()
 
 
 def _ensure_text_extension_allowed(path: Path, config: dict) -> None:

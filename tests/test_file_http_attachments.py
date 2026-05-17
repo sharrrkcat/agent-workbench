@@ -400,6 +400,30 @@ def test_file_capability_reads_allowed_text_and_rejects_outside(monkeypatch, tmp
         raise AssertionError("expected denied path")
 
 
+def test_file_capability_read_file_auto_detects_text(monkeypatch, tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    text_file = allowed / "note.txt"
+    text_file.write_text("hello", encoding="utf-8")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(text_file))
+
+    assert parts == [
+        {
+            "type": "file",
+            "mode": "inline_text",
+            "filename": "note.txt",
+            "language": "text",
+            "mime_type": "text/plain",
+            "content": "hello",
+            "size": 5,
+            "truncated": False,
+        }
+    ]
+
+
 def test_file_capability_returns_language_and_preserves_content(monkeypatch, tmp_path: Path) -> None:
     allowed = tmp_path / "allowed"
     allowed.mkdir()
@@ -444,6 +468,7 @@ def test_file_capability_truncates_large_utf8_text(monkeypatch, tmp_path: Path) 
 
 
 def test_file_capability_reads_image_and_rejects_non_image(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     allowed = tmp_path / "allowed"
     allowed.mkdir()
     image = allowed / "cat.png"
@@ -455,13 +480,31 @@ def test_file_capability_reads_image_and_rejects_non_image(monkeypatch, tmp_path
 
     payload = runtime.read_image(str(image))
 
-    assert payload["url"] == PNG_DATA_URL
+    assert payload["attachment_id"]
+    assert payload["url"].startswith("/api/attachments/")
+    assert resolve_attachment_uri(f"local://attachments/{Path(payload['url']).name}").read_bytes() == b"hello"
     try:
         runtime.read_image(str(text))
     except ValueError as exc:
         assert "Only PNG" in str(exc)
     else:
         raise AssertionError("expected non-image rejection")
+
+
+def test_file_capability_read_file_auto_detects_image(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    image = allowed / "cat.png"
+    image.write_bytes(b"hello")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(image))
+
+    assert parts[0]["type"] == "image"
+    assert parts[0]["attachment_id"]
+    assert parts[0]["url"].startswith("/api/attachments/")
 
 
 def test_file_capability_reads_audio_and_rejects_non_audio(monkeypatch, tmp_path: Path) -> None:
@@ -491,6 +534,22 @@ def test_file_capability_reads_audio_and_rejects_non_audio(monkeypatch, tmp_path
         raise AssertionError("expected non-audio rejection")
 
 
+def test_file_capability_read_file_auto_detects_audio(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    audio = allowed / "demo.wav"
+    audio.write_bytes(b"RIFF----WAVEfmt ")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(audio))
+
+    assert parts[0]["type"] == "audio"
+    assert parts[0]["source"] == "attachment"
+    assert parts[0]["mime_type"] == "audio/wav"
+
+
 def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path: Path) -> None:
     allowed = tmp_path / "allowed"
     denied = tmp_path / "denied"
@@ -505,7 +564,7 @@ def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path:
     config = {
         "allowed_directories": [str(allowed)],
         "max_local_audio_read_size_mb": 0.00001,
-        "enable_read_audio_command": True,
+        "enable_read_file_command": True,
     }
     runtime = FileRuntime()
 
@@ -515,7 +574,7 @@ def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path:
         runtime.read_audio(str(large_audio), context={"capability_config": config})
     except ValueError as exc:
         assert "File too large" in str(exc)
-        assert "/read-audio" in str(exc)
+        assert "/read-file audio result" in str(exc)
         assert "1e-05 MB" in str(exc)
         assert "Attachment file is too large" not in str(exc)
     else:
@@ -537,7 +596,7 @@ def test_file_capability_audio_limit_overrides_generated_attachment_default(monk
     config = {
         "allowed_directories": [str(allowed)],
         "max_local_audio_read_size_mb": 100,
-        "enable_read_audio_command": True,
+        "enable_read_file_command": True,
     }
     runtime = FileRuntime()
 
@@ -635,6 +694,9 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
 
     assert client.patch("/api/capability-configs/file", json={"user_config": {"unknown": True}}).status_code == 400
     assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_file": "yes"}}).status_code == 400
+    assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_file_command": "yes"}}).status_code == 400
+    assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_image": False}}).status_code == 400
+    assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_audio_command": False}}).status_code == 400
 
 
 def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
@@ -671,9 +733,7 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
                 "max_local_image_read_size_mb": 0.1,
                 "max_local_audio_read_size_mb": 0.1,
                 "allowed_text_extensions": [".txt"],
-                "enable_read_file": True,
-                "enable_read_image": True,
-                "enable_read_audio_command": True,
+                "enable_read_file_command": True,
             }
         },
     )
@@ -682,10 +742,12 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     outside = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {denied_note}"})
     too_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large}"})
     bad_ext = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {blocked}"})
-    image_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
-    image_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {large_image}"})
-    audio_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
-    audio_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {large_audio}"})
+    image_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {image}"})
+    image_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large_image}"})
+    audio_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {audio}"})
+    audio_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large_audio}"})
+    removed_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
+    removed_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
 
     assert accepted.json()["run"]["status"] == "DONE"
     assert accepted.json()["run"]["target_id"] == "/read-file"
@@ -693,7 +755,7 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     assert outside.json()["run"]["status"] == "FAILED"
     assert "Path outside allowed directories" in outside.json()["run"]["error"]
     assert "File too large" in too_large.json()["run"]["error"]
-    assert "Extension not allowed" in bad_ext.json()["run"]["error"]
+    assert "Unsupported file type" in bad_ext.json()["run"]["error"]
     assert image_ok.json()["run"]["status"] == "DONE"
     assert image_ok.json()["messages"][-1]["parts"][0]["type"] == "image"
     assert "File too large" in image_large.json()["run"]["error"]
@@ -701,24 +763,24 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     assert audio_ok.json()["messages"][-1]["parts"][0]["type"] == "audio"
     assert audio_ok.json()["messages"][-1]["parts"][0]["source"] == "attachment"
     assert "File too large" in audio_large.json()["run"]["error"]
+    assert removed_image.status_code == 400
+    assert "Unknown command: /read-image" in removed_image.text
+    assert removed_audio.status_code == 400
+    assert "Unknown command: /read-audio" in removed_audio.text
 
-    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_file": False}})
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_file_command": False}})
     disabled_file = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
+    disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {image}"})
+    disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {audio}"})
     assert "Command disabled" in disabled_file.json()["run"]["error"]
-
-    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_image": False}})
-    disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
     assert "Command disabled" in disabled_image.json()["run"]["error"]
-
-    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [str(allowed)], "enable_read_audio_command": False}})
-    disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
     assert "Command disabled" in disabled_audio.json()["run"]["error"]
 
     legacy_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
     assert legacy_audio.status_code == 400
     assert "Unknown command: /file-audio" in legacy_audio.text
 
-    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": []}})
+    client.patch("/api/capability-configs/file", json={"user_config": {"allowed_directories": [], "enable_read_file_command": True}})
     empty_dirs = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
     assert "Path outside allowed directories" in empty_dirs.json()["run"]["error"]
 

@@ -164,7 +164,7 @@ function CapabilityConfigTab({
           values={values}
           onChange={onChange}
         />
-        <ConfigSection title={t('capabilities:sections.commands')} fieldNames={['enable_read_file', 'enable_read_image', 'enable_read_audio_command']} fields={fields} values={values} onChange={onChange} />
+        <ConfigSection title={t('capabilities:sections.commands')} fieldNames={['enable_read_file_command']} fields={fields} values={values} onChange={onChange} />
       </div>
     );
   }

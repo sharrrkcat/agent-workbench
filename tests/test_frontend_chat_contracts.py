@@ -355,10 +355,12 @@ def test_script_lifecycle_audio_demo_duration_contract() -> None:
     assert 'assert part["duration_ms"] == 5000' in source
 
 
-def test_generated_registry_lists_file_audio_output() -> None:
+def test_generated_registry_lists_single_file_read_command() -> None:
     registry = read_repo("docs/generated/REGISTRY.md")
 
-    assert "| file | File Capability | read_text, read_image, read_audio | /read-file, /read-image, /read-audio | file, image, audio |" in registry
+    assert "| file | File Capability | read_file, read_text, read_image, read_audio | /read-file | parts, file, image, audio |" in registry
+    assert "/read-image" not in registry
+    assert "/read-audio" not in registry
     assert "/file-audio" not in registry
 
 

@@ -2216,7 +2216,33 @@ class CommandRunner:
 
 
 def _attachments_from_command_output(data: Any) -> list[dict[str, Any]]:
-    if not isinstance(data, dict) or data.get("source") != "attachment":
+    if isinstance(data, list):
+        attachments: list[dict[str, Any]] = []
+        for item in data:
+            attachments.extend(_attachments_from_command_output(item))
+        return attachments
+    if not isinstance(data, dict):
+        return []
+    if data.get("type") == "audio":
+        payload = {key: value for key, value in data.items() if key != "type"}
+        return _attachments_from_command_output(payload)
+    if data.get("type") == "image":
+        attachment_id = data.get("attachment_id")
+        url = data.get("url")
+        if not attachment_id or not url:
+            return []
+        return [
+            {
+                "id": str(attachment_id),
+                "type": "image",
+                "mime_type": _mime_type_from_attachment_url(str(url)),
+                "name": str(data.get("title") or attachment_id),
+                "size": 0,
+                "uri": f"local://attachments/{Path(str(url)).name}",
+                "url": str(url),
+            }
+        ]
+    if data.get("source") != "attachment":
         return []
     attachment_id = data.get("attachment_id")
     url = data.get("url")
@@ -2235,3 +2261,15 @@ def _attachments_from_command_output(data: Any) -> list[dict[str, Any]]:
             "url": str(url),
         }
     ]
+
+
+def _mime_type_from_attachment_url(url: str) -> str:
+    suffix = Path(url).suffix.lower()
+    return {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+    }.get(suffix, "application/octet-stream")

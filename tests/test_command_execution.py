@@ -352,14 +352,15 @@ def test_read_file_command_returns_file_part_for_source_yaml_env_and_markdown(mo
     messages = fixture.messages.list_messages(session.session_id)
 
     assert not hasattr(py_result, "output_type")
-    assert py_result.data["language"] == "python"
-    assert "\n    " in py_result.data["content"]
+    assert py_result.data[0]["type"] == "file"
+    assert py_result.data[0]["language"] == "python"
+    assert "\n    " in py_result.data[0]["content"]
     assert not hasattr(yaml_result, "output_type")
-    assert yaml_result.data["language"] == "yaml"
+    assert yaml_result.data[0]["language"] == "yaml"
     assert not hasattr(env_result, "output_type")
-    assert env_result.data["language"] == "dotenv"
+    assert env_result.data[0]["language"] == "dotenv"
     assert not hasattr(md_result, "output_type")
-    assert md_result.data["language"] == "markdown"
+    assert md_result.data[0]["language"] == "markdown"
     assert messages[-1].parts[0]["type"] == "file"
 
 

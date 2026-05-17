@@ -2106,8 +2106,6 @@ function DiagnosticsDetail() {
                 <Metric label={t('settings:diagnostics.file')} value={`${diagnostics.capabilities.file.enabled ? t('status:common.enabled') : t('status:common.disabled')} / ${getStatusLabel(diagnostics.capabilities.file.status, t)}`} />
                 <Metric label={t('settings:diagnostics.allowedDirs')} value={String(diagnostics.capabilities.file.allowed_directories_count ?? 0)} />
                 <Metric label="/read-file" value={diagnostics.capabilities.file.read_file_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
-                <Metric label="/read-image" value={diagnostics.capabilities.file.read_image_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
-                <Metric label="/read-audio" value={diagnostics.capabilities.file.read_audio_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
                 <Metric label={t('settings:diagnostics.maxTextRead')} value={`${diagnostics.capabilities.file.max_local_text_read_size_mb ?? 0} MB`} />
                 <Metric label={t('settings:diagnostics.maxImageRead')} value={`${diagnostics.capabilities.file.max_local_image_read_size_mb ?? 0} MB`} />
                 <Metric label={t('settings:diagnostics.maxAudioRead')} value={`${diagnostics.capabilities.file.max_local_audio_read_size_mb ?? 0} MB`} />

@@ -116,9 +116,17 @@ uv run python scripts/run_command.py "/base64 hello"
 uv run python scripts/run_command.py "/base64-decode aGVsbG8="
 uv run python scripts/run_command.py "/base64-image data:image/svg+xml;base64,..."
 uv run python scripts/run_command.py "/image-base64" --image path/to/cat.png
-uv run python scripts/run_command.py "/read-audio path/to/demo.wav"
+uv run python scripts/run_command.py "/read-file path/to/demo.wav"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
+
+The built-in `file` Capability exposes only `/read-file <path>` for user-facing
+local reads. It auto-detects supported text, image, and audio files and returns
+the matching Message Part: raw inline `file` for text, `image` for images, and
+attachment-backed `audio` for audio. It keeps separate text/image/audio size
+limits behind one `enable_read_file_command` toggle. It does not support OCR,
+ASR/transcription, TTS, PDF parsing, video reading, diff rendering, binary
+preview, network URL reads, or web page fetching.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 

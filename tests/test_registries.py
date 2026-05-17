@@ -45,17 +45,19 @@ def test_command_registry_exposes_pet_command() -> None:
     assert commands.get("/pet").method == "command"
 
 
-def test_command_registry_exposes_read_audio_command() -> None:
+def test_command_registry_exposes_single_read_file_command() -> None:
     capabilities = CapabilityRegistry()
     capabilities.load_from_directory(ROOT / "capabilities")
 
     commands = CommandRegistry.from_capability_registry(capabilities)
     names = {command.name for command in commands.list()}
 
-    assert "/read-audio" in names
+    assert "/read-file" in names
+    assert "/read-image" not in names
+    assert "/read-audio" not in names
     assert "/file-audio" not in names
-    assert commands.get("/read-audio").capability_id == "file"
-    assert commands.get("/read-audio").method == "read_audio"
+    assert commands.get("/read-file").capability_id == "file"
+    assert commands.get("/read-file").method == "read_file"
 
 
 def test_duplicate_agent_id_fails() -> None:
