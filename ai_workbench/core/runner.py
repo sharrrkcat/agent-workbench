@@ -2166,7 +2166,11 @@ class CommandRunner:
                 capability = self.capability_registry.get(capability_id)
                 stored = self.capability_config_store.get_config(capability_id)
                 config_schema = capability.config_schema
-                capability_config = resolve_config(capability.config_schema, stored.get("user_config") or {})
+                user_config = dict(stored.get("user_config") or {})
+                if capability_id == "http":
+                    user_config.pop("enable_http_get", None)
+                    user_config.pop("enable_fetch_image", None)
+                capability_config = resolve_config(capability.config_schema, user_config)
             except Exception:
                 capability_config = {}
                 config_schema = []

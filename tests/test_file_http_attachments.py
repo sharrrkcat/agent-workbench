@@ -723,17 +723,21 @@ def test_file_capability_audio_limit_overrides_generated_attachment_default(monk
 def test_http_capability_rejects_non_http_scheme() -> None:
     runtime = HttpRuntime()
     try:
-        runtime.get_text("file:///tmp/secret")
+        runtime.fetch_url("file:///tmp/secret")
     except ValueError as exc:
         assert "only allows http:// and https://" in str(exc)
     else:
         raise AssertionError("expected scheme rejection")
 
 
-def test_http_capability_fetches_text_and_image_and_rejects_non_image() -> None:
+def test_http_capability_fetch_url_auto_detects_supported_parts() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/image":
             return httpx.Response(200, headers={"content-type": "image/png"}, content=b"hello", request=request)
+        if request.url.path == "/json":
+            return httpx.Response(200, headers={"content-type": "application/json"}, json={"ok": True}, request=request)
+        if request.url.path == "/html":
+            return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html><body><h1>Title</h1><script>x()</script><p>Hello page</p></body></html>", request=request)
         return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"hello text", request=request)
 
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://example.test")
@@ -741,6 +745,16 @@ def test_http_capability_fetches_text_and_image_and_rejects_non_image() -> None:
 
     assert runtime.get_text("https://example.test/text") == "hello text"
     assert runtime.fetch_image("https://example.test/image")["url"] == PNG_DATA_URL
+    assert runtime.fetch_url("https://example.test/text") == [{"type": "text", "format": "plain", "text": "hello text"}]
+    assert runtime.fetch_url("https://example.test/json") == [{"type": "json", "data": {"ok": True}}]
+    html = runtime.fetch_url("https://example.test/html")
+    assert html[0]["type"] == "text"
+    assert html[0]["format"] == "markdown"
+    assert "Title" in html[0]["text"]
+    assert "Hello page" in html[0]["text"]
+    assert "x()" not in html[0]["text"]
+    assert runtime.fetch_url("https://example.test/image")[0]["type"] == "image"
+    assert runtime.fetch_url("https://example.test/image")[0]["url"] == PNG_DATA_URL
     try:
         runtime.fetch_image("https://example.test/text")
     except ValueError as exc:
@@ -751,6 +765,8 @@ def test_http_capability_fetches_text_and_image_and_rejects_non_image() -> None:
 
 def test_http_capability_size_limit() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/image":
+            return httpx.Response(200, headers={"content-type": "image/png"}, content=b"x" * 20, request=request)
         return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"x" * (1024 * 1024 + 1), request=request)
 
     runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
@@ -761,6 +777,12 @@ def test_http_capability_size_limit() -> None:
         assert "too large" in str(exc)
     else:
         raise AssertionError("expected size rejection")
+    try:
+        runtime.fetch_url("https://example.test/image", context={"capability_config": {"max_image_response_size_mb": 0.00001}})
+    except ValueError as exc:
+        assert "too large" in str(exc)
+    else:
+        raise AssertionError("expected image size rejection")
 
 
 def test_http_capability_timeout() -> None:
@@ -775,6 +797,31 @@ def test_http_capability_timeout() -> None:
         assert "timed out" in str(exc)
     else:
         raise AssertionError("expected timeout rejection")
+
+
+def test_http_capability_fetch_url_preserves_redirect_policy() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/one":
+            return httpx.Response(302, headers={"location": "https://example.test/two"}, request=request)
+        if request.url.path == "/two":
+            return httpx.Response(302, headers={"location": "https://example.test/three"}, request=request)
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"done", request=request)
+
+    runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True, max_redirects=1))
+
+    try:
+        runtime.fetch_url("https://example.test/one", context={"capability_config": {"max_redirects": 1}})
+    except ValueError as exc:
+        assert "HTTP request failed" in str(exc)
+    else:
+        raise AssertionError("expected redirect rejection")
+
+    try:
+        runtime.fetch_url("https://example.test/one", context={"capability_config": {"allow_redirects": False}})
+    except ValueError as exc:
+        assert "HTTP request failed with status 302" in str(exc)
+    else:
+        raise AssertionError("expected non-followed redirect rejection")
 
 
 def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
@@ -922,6 +969,8 @@ def test_http_capability_config_defaults_patch_and_runtime_enforcement() -> None
             return httpx.Response(200, headers={"content-type": "application/json"}, json=timeout, request=request)
         if request.url.path == "/image":
             return httpx.Response(200, headers={"content-type": "image/png"}, content=b"hello", request=request)
+        if request.url.path == "/html":
+            return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<h1>Hello</h1><p>Page</p>", request=request)
         if request.url.path == "/binary":
             return httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"binary", request=request)
         if request.url.path == "/large":
@@ -937,6 +986,7 @@ def test_http_capability_config_defaults_patch_and_runtime_enforcement() -> None
     assert defaults.status_code == 200
     assert defaults.json()["resolved_config"]["timeout_seconds"] == 10.0
     assert defaults.json()["resolved_config"]["allowed_schemes"] == ["http", "https"]
+    assert defaults.json()["resolved_config"]["enable_fetch_url_command"] is True
 
     client.patch(
         "/api/capability-configs/http",
@@ -950,25 +1000,41 @@ def test_http_capability_config_defaults_patch_and_runtime_enforcement() -> None
             }
         },
     )
-    timed = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/timeout"})
-    large_text = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/large"})
-    image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-image https://example.test/image"})
-    binary = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/binary"})
+    timed = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/timeout"})
+    large_text = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/large"})
+    image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/image"})
+    html = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/html"})
+    binary = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/binary"})
 
     assert timed.json()["run"]["status"] == "DONE"
-    assert '"connect":3.0' in timed.json()["messages"][-1]["parts"][0]["text"].replace(" ", "")
+    assert timed.json()["messages"][-1]["parts"][0]["type"] == "json"
+    assert timed.json()["messages"][-1]["parts"][0]["data"]["connect"] == 3.0
     assert "Response too large" in large_text.json()["run"]["error"]
     assert image.json()["messages"][-1]["parts"][0]["type"] == "image"
-    assert "Content type not allowed" in binary.json()["run"]["error"]
+    assert image.json()["messages"][-1]["parts"][0]["url"].startswith("data:image/png;base64,")
+    assert html.json()["messages"][-1]["parts"][0]["type"] == "text"
+    assert "Unsupported content type" in binary.json()["run"]["error"]
 
     client.patch("/api/capability-configs/http", json={"user_config": {"allowed_schemes": ["https"]}})
-    scheme = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get http://example.test/text"})
+    scheme = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url http://example.test/text"})
     assert "Scheme not allowed" in scheme.json()["run"]["error"]
 
-    client.patch("/api/capability-configs/http", json={"user_config": {"enable_http_get": False}})
-    disabled_get = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-page https://example.test/text"})
-    assert "Command disabled" in disabled_get.json()["run"]["error"]
+    removed_get = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/http-get https://example.test/text"})
+    removed_page = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-page https://example.test/html"})
+    removed_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-image https://example.test/image"})
+    assert removed_get.status_code == 400
+    assert removed_page.status_code == 400
+    assert removed_image.status_code == 400
+    assert "Unknown command: /http-get" in removed_get.text
+    assert "Unknown command: /fetch-page" in removed_page.text
+    assert "Unknown command: /fetch-image" in removed_image.text
 
-    client.patch("/api/capability-configs/http", json={"user_config": {"enable_fetch_image": False}})
-    disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-image https://example.test/image"})
+    client.patch("/api/capability-configs/http", json={"user_config": {"enable_fetch_url_command": False}})
+    disabled_text = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/text"})
+    disabled_json = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/timeout"})
+    disabled_html = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/html"})
+    disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/fetch-url https://example.test/image"})
+    assert "Command disabled" in disabled_text.json()["run"]["error"]
+    assert "Command disabled" in disabled_json.json()["run"]["error"]
+    assert "Command disabled" in disabled_html.json()["run"]["error"]
     assert "Command disabled" in disabled_image.json()["run"]["error"]

@@ -176,7 +176,7 @@ function CapabilityConfigTab({
         </p>
         <ConfigSection
           title={t('capabilities:sections.networkAccess')}
-          fieldNames={['enable_http_get', 'enable_fetch_image', 'allowed_schemes', 'timeout_seconds', 'allow_redirects', 'max_redirects']}
+          fieldNames={['enable_fetch_url_command', 'allowed_schemes', 'timeout_seconds', 'allow_redirects', 'max_redirects']}
           fields={fields}
           values={values}
           onChange={onChange}

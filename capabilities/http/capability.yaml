@@ -1,23 +1,17 @@
 ﻿id: http
 name: HTTP Capability
-description: Fetch text, simple page content, and images over HTTP GET. This can access the network; it does not use private browser cookies.
+description: Fetch supported text, HTML, JSON, and images over HTTP GET. This can access the network; it does not use private browser cookies.
 
 permissions:
   network:
     http: true
 
 config_schema:
-  - name: enable_http_get
+  - name: enable_fetch_url_command
     type: boolean
-    label: Enable HTTP GET commands
+    label: Enable /fetch-url
     default: true
-    description: Enable /http-get and /fetch-page.
-
-  - name: enable_fetch_image
-    type: boolean
-    label: Enable /fetch-image
-    default: true
-    description: Enable /fetch-image.
+    description: Enable /fetch-url for supported text, HTML, JSON, and image URLs.
 
   - name: allowed_schemes
     type: json
@@ -25,7 +19,7 @@ config_schema:
     default:
       - http
       - https
-    description: URL schemes allowed by /http-get, /fetch-page, and /fetch-image. Supported values are http and https.
+    description: URL schemes allowed by /fetch-url. Supported values are http and https.
 
   - name: timeout_seconds
     type: float
@@ -41,7 +35,7 @@ config_schema:
     default: 1
     minimum: 0.1
     maximum: 50
-    description: Maximum text response size for /http-get and /fetch-page.
+    description: Maximum text, HTML, and JSON response size for /fetch-url.
 
   - name: max_image_response_size_mb
     type: float
@@ -49,7 +43,7 @@ config_schema:
     default: 10
     minimum: 0.1
     maximum: 100
-    description: Maximum image response size for /fetch-image.
+    description: Maximum image response size for /fetch-url.
 
   - name: allow_redirects
     type: boolean
@@ -66,6 +60,15 @@ config_schema:
     description: Maximum redirects when redirects are enabled.
 
 methods:
+  - id: fetch_url
+    description: Fetch a URL and render supported content as Message Parts.
+    input_schema:
+      url:
+        type: string
+        required: true
+    output:
+      part_type: parts
+
   - id: get_text
     description: Fetch plain text, HTML, or JSON from an HTTP or HTTPS URL
     input_schema:
@@ -96,17 +99,7 @@ methods:
       part_type: image
 
 commands:
-  - name: /http-get
-    method: get_text
-    description: Fetch text, HTML, or JSON over HTTP GET
-    safe: true
-
-  - name: /fetch-page
-    method: fetch_page
-    description: Fetch a web page and return lightweight extracted text
-    safe: true
-
-  - name: /fetch-image
-    method: fetch_image
-    description: Fetch an image over HTTP GET
+  - name: /fetch-url
+    method: fetch_url
+    description: Fetch a URL and render supported text, HTML, JSON, or image content.
     safe: true

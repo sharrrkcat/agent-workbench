@@ -121,6 +121,13 @@ diff rendering, binary preview, network URL reads, web page fetching, video
 metadata parsing, thumbnail generation, transcoding, streaming protocol
 handling, or video input to LLMs.
 
+The HTTP Capability exposes only `/fetch-url <url>` for user-facing network
+reads. It returns Message Parts for supported text, HTML, JSON, and image
+responses without creating a generalized remote attachment download/cache/proxy
+path. It does not support HTTP audio/video, HLS/DASH, livestreams, radio,
+podcasts, video-page media extraction, OCR, ASR/transcription, TTS, or PDF
+parsing.
+
 ## Route And Store Safety
 
 Local attachment serving resolves only files inside the configured attachment

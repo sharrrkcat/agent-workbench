@@ -2111,8 +2111,7 @@ function DiagnosticsDetail() {
                 <Metric label={t('settings:diagnostics.maxAudioRead')} value={`${diagnostics.capabilities.file.max_local_audio_read_size_mb ?? 0} MB`} />
                 <Metric label={t('settings:diagnostics.maxVideoRead')} value={`${diagnostics.capabilities.file.max_local_video_read_size_mb ?? 0} MB`} />
                 <Metric label={t('settings:diagnostics.http')} value={`${diagnostics.capabilities.http.enabled ? t('status:common.enabled') : t('status:common.disabled')} / ${getStatusLabel(diagnostics.capabilities.http.status, t)}`} />
-                <Metric label={t('settings:diagnostics.httpGet')} value={diagnostics.capabilities.http.http_get_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
-                <Metric label={t('settings:diagnostics.fetchImage')} value={diagnostics.capabilities.http.fetch_image_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
+                <Metric label="/fetch-url" value={diagnostics.capabilities.http.fetch_url_enabled ? t('status:common.enabled') : t('status:common.disabled')} />
                 <Metric label={t('settings:diagnostics.maxTextResponse')} value={`${diagnostics.capabilities.http.max_text_response_size_mb ?? 0} MB`} />
                 <Metric label={t('settings:diagnostics.maxImageResponse')} value={`${diagnostics.capabilities.http.max_image_response_size_mb ?? 0} MB`} />
                 <Metric label={t('settings:diagnostics.redirects')} value={diagnostics.capabilities.http.allow_redirects ? t('settings:diagnostics.allowed') : t('status:common.disabled')} />

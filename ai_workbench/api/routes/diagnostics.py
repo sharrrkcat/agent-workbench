@@ -190,12 +190,14 @@ def _file_capability(state: RuntimeState) -> dict[str, Any]:
 def _http_capability(state: RuntimeState) -> dict[str, Any]:
     stored = state.capability_configs.get_config("http")
     capability = state.capabilities.get("http")
-    resolved = resolve_config(capability.config_schema, stored.get("user_config") or {})
+    user_config = dict(stored.get("user_config") or {})
+    user_config.pop("enable_http_get", None)
+    user_config.pop("enable_fetch_image", None)
+    resolved = resolve_config(capability.config_schema, user_config)
     return {
         "enabled": bool(stored.get("enabled", True)),
         "status": "ok",
-        "http_get_enabled": bool(resolved.get("enable_http_get", True)),
-        "fetch_image_enabled": bool(resolved.get("enable_fetch_image", True)),
+        "fetch_url_enabled": bool(resolved.get("enable_fetch_url_command", True)),
         "timeout_seconds": resolved.get("timeout_seconds"),
         "max_text_response_size_mb": resolved.get("max_text_response_size_mb"),
         "max_image_response_size_mb": resolved.get("max_image_response_size_mb"),

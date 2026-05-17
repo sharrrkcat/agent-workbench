@@ -1589,8 +1589,7 @@ export type Diagnostics = {
       max_response_size_bytes?: number;
       max_text_response_size_mb?: number;
       max_image_response_size_mb?: number;
-      http_get_enabled?: boolean;
-      fetch_image_enabled?: boolean;
+      fetch_url_enabled?: boolean;
       allow_redirects?: boolean;
     };
   };

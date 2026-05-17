@@ -1,6 +1,8 @@
 import base64
+import json
 import re
 from html.parser import HTMLParser
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 import httpx
@@ -9,10 +11,10 @@ import httpx
 TEXT_LIMIT_BYTES = 1 * 1024 * 1024
 IMAGE_LIMIT_BYTES = 10 * 1024 * 1024
 TIMEOUT_SECONDS = 10.0
-TEXT_MIME_TYPES = {"application/json", "application/xml", "application/yaml", "application/x-yaml"}
+TEXT_MIME_TYPES = {"application/json", "application/xml", "application/yaml", "application/x-yaml", "text/yaml"}
+HTML_MIME_TYPES = {"text/html", "application/xhtml+xml"}
 CONFIG_DEFAULTS = {
-    "enable_http_get": True,
-    "enable_fetch_image": True,
+    "enable_fetch_url_command": True,
     "allowed_schemes": ["http", "https"],
     "timeout_seconds": 10,
     "max_text_response_size_mb": 1,
@@ -26,10 +28,34 @@ class CapabilityRuntime:
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client
 
+    def fetch_url(self, text: str, context: dict | None = None) -> list[dict]:
+        config = _runtime_config(context)
+        _ensure_fetch_url_enabled(config)
+        probe_limit = max(_mb_to_bytes(config["max_text_response_size_mb"]), _mb_to_bytes(config["max_image_response_size_mb"]))
+        response = _get(text, limit=probe_limit, config=config, client=self._client)
+        mime_type = _content_type(response)
+        kind = _response_kind(mime_type, str(response.url))
+        if kind == "json":
+            _enforce_limit(response, _mb_to_bytes(config["max_text_response_size_mb"]), config["max_text_response_size_mb"])
+            try:
+                return [{"type": "json", "data": response.json()}]
+            except json.JSONDecodeError as exc:
+                raise ValueError("Invalid JSON response.") from exc
+        if kind == "html":
+            _enforce_limit(response, _mb_to_bytes(config["max_text_response_size_mb"]), config["max_text_response_size_mb"])
+            content = response.content.decode(response.encoding or "utf-8", errors="replace")
+            return [{"type": "text", "format": "markdown", "text": _html_to_text(content)}]
+        if kind == "text":
+            _enforce_limit(response, _mb_to_bytes(config["max_text_response_size_mb"]), config["max_text_response_size_mb"])
+            return [{"type": "text", "format": "plain", "text": response.content.decode(response.encoding or "utf-8", errors="replace")}]
+        if kind == "image":
+            _enforce_limit(response, _mb_to_bytes(config["max_image_response_size_mb"]), config["max_image_response_size_mb"])
+            return [{"type": "image", **_image_payload(response, mime_type)}]
+        raise ValueError(f"Unsupported content type for /fetch-url: {mime_type or 'unknown'}.")
+
     def get_text(self, text: str, context: dict | None = None) -> str:
         config = _runtime_config(context)
-        if not bool(config["enable_http_get"]):
-            raise ValueError("Command disabled: /http-get and /fetch-page are disabled in HTTP Capability settings.")
+        _ensure_fetch_url_enabled(config)
         response = _get(text, limit=_mb_to_bytes(config["max_text_response_size_mb"]), config=config, client=self._client)
         mime_type = _content_type(response)
         if not _is_text_mime_type(mime_type):
@@ -38,8 +64,7 @@ class CapabilityRuntime:
 
     def fetch_page(self, text: str, context: dict | None = None) -> str:
         config = _runtime_config(context)
-        if not bool(config["enable_http_get"]):
-            raise ValueError("Command disabled: /http-get and /fetch-page are disabled in HTTP Capability settings.")
+        _ensure_fetch_url_enabled(config)
         response = _get(text, limit=_mb_to_bytes(config["max_text_response_size_mb"]), config=config, client=self._client)
         mime_type = _content_type(response)
         if not _is_text_mime_type(mime_type):
@@ -51,31 +76,31 @@ class CapabilityRuntime:
 
     def fetch_image(self, text: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
-        if not bool(config["enable_fetch_image"]):
-            raise ValueError("Command disabled: /fetch-image is disabled in HTTP Capability settings.")
+        _ensure_fetch_url_enabled(config)
         limit = _mb_to_bytes(config["max_image_response_size_mb"])
         response = _get(text, limit=limit, config=config, client=self._client)
         mime_type = _content_type(response)
         if not mime_type.startswith("image/"):
             raise ValueError("Image expected: HTTP response is not an image.")
-        if len(response.content) > limit:
-            raise ValueError(f"Response too large. Maximum size is {_format_mb(config['max_image_response_size_mb'])}.")
-        encoded = base64.b64encode(response.content).decode("ascii")
-        host = urlparse(str(response.url)).netloc
-        return {
-            "url": f"data:{mime_type};base64,{encoded}",
-            "alt": f"Fetched image from {host}",
-            "title": host,
-            "caption": f"Fetched from {host} - {mime_type} - {len(response.content)} bytes",
-        }
+        _enforce_limit(response, limit, config["max_image_response_size_mb"])
+        return _image_payload(response, mime_type)
 
 
 def _runtime_config(context: dict | None) -> dict:
     config = dict(CONFIG_DEFAULTS)
     provided = (context or {}).get("capability_config") if isinstance(context, dict) else None
     if isinstance(provided, dict):
-        config.update(provided)
+        config.update(_strip_legacy_config(provided))
     return config
+
+
+def _strip_legacy_config(config: dict) -> dict:
+    return {key: value for key, value in dict(config).items() if key not in {"enable_http_get", "enable_fetch_image"}}
+
+
+def _ensure_fetch_url_enabled(config: dict) -> None:
+    if not bool(config.get("enable_fetch_url_command", True)):
+        raise ValueError("Command disabled: /fetch-url is disabled in HTTP Capability settings.")
 
 
 def _get(raw_url: str, limit: int, config: dict, client: httpx.Client | None = None) -> httpx.Response:
@@ -88,11 +113,7 @@ def _get(raw_url: str, limit: int, config: dict, client: httpx.Client | None = N
         headers={"User-Agent": "agent-workbench/0.1"},
     )
     try:
-        response = active_client.get(
-            url,
-            timeout=float(config["timeout_seconds"]),
-            follow_redirects=bool(config["allow_redirects"]),
-        )
+        response = active_client.get(url, timeout=float(config["timeout_seconds"]), follow_redirects=bool(config["allow_redirects"]))
         response.raise_for_status()
     except httpx.TimeoutException as exc:
         raise ValueError("HTTP request timed out.") from exc
@@ -105,6 +126,7 @@ def _get(raw_url: str, limit: int, config: dict, client: httpx.Client | None = N
             active_client.close()
     if len(response.content) > limit:
         raise ValueError(f"Response too large. Maximum size is {_format_bytes_as_mb(limit)}.")
+    _validate_url(str(response.url), config)
     return response
 
 
@@ -134,6 +156,51 @@ def _content_type(response: httpx.Response) -> str:
 
 def _is_text_mime_type(mime_type: str) -> bool:
     return mime_type.startswith("text/") or mime_type in TEXT_MIME_TYPES
+
+
+def _response_kind(mime_type: str, url: str) -> str:
+    if _is_json_mime_type(mime_type):
+        return "json"
+    if mime_type in HTML_MIME_TYPES:
+        return "html"
+    if mime_type.startswith("image/"):
+        return "image"
+    if _is_text_mime_type(mime_type):
+        return "text"
+    return _kind_from_extension(url)
+
+
+def _is_json_mime_type(mime_type: str) -> bool:
+    return mime_type == "application/json" or mime_type.endswith("+json")
+
+
+def _kind_from_extension(url: str) -> str:
+    suffix = PurePosixPath(urlparse(url).path).suffix.lower()
+    if suffix in {".json", ".geojson"}:
+        return "json"
+    if suffix in {".html", ".htm", ".xhtml"}:
+        return "html"
+    if suffix in {".txt", ".md", ".csv", ".tsv", ".xml", ".yaml", ".yml", ".log"}:
+        return "text"
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
+        return "image"
+    return "unsupported"
+
+
+def _enforce_limit(response: httpx.Response, limit: int, limit_mb: object) -> None:
+    if len(response.content) > limit:
+        raise ValueError(f"Response too large. Maximum size is {_format_mb(limit_mb)}.")
+
+
+def _image_payload(response: httpx.Response, mime_type: str) -> dict:
+    encoded = base64.b64encode(response.content).decode("ascii")
+    host = urlparse(str(response.url)).netloc
+    return {
+        "url": f"data:{mime_type};base64,{encoded}",
+        "alt": f"Fetched image from {host}",
+        "title": host,
+        "caption": f"Fetched from {host} - {mime_type} - {len(response.content)} bytes",
+    }
 
 
 def _mb_to_bytes(value: object) -> int:

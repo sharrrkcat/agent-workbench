@@ -5,9 +5,6 @@ Agent code, config schema fields, and output payloads. Runtime protocol details
 live in [RUNTIME_PROTOCOLS.md](RUNTIME_PROTOCOLS.md) and focused contracts under
 [contracts/](contracts/).
 
-For architecture decisions about whether to build an Agent, a Capability, or
-both, read [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
-
 ## Agent Manifest
 
 | field | applies to | meaning | notes |
@@ -285,11 +282,13 @@ core-owned services, not Capability backends; see `contracts/utility-llm.md`,
 `contracts/intent-routing.md`, and `contracts/settings-general.md`.
 
 The built-in `file` Capability exposes only `/read-file <path>`, auto-detects
-supported text/image/audio/video, and returns raw `file`, `image`, local
-`audio`, or local `video` parts under one toggle with per-kind limits. Video v1
-supports `.mp4`, `.webm`, and `.ogv`; `max_local_video_read_size_mb` defaults to
-5120. It does not support network reads, streaming video protocols, thumbnails,
-metadata parsing, transcoding, or video input to LLMs.
+text/image/audio/video into matching Message Parts, keeps one command toggle
+with per-kind limits, and does not support network reads or media analysis.
+
+The built-in `http` Capability exposes only `/fetch-url <url>`, auto-detects
+text/HTML/JSON/image into matching Message Parts, keeps one command toggle with
+separate text/image limits, and does not support audio/video, remote media
+caching/proxying, streaming media, OCR, ASR, TTS, or PDF parsing.
 
 ## Capability Config
 

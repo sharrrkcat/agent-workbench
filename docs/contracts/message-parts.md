@@ -76,6 +76,13 @@ return a raw `file` part with `mode: inline_text`; image files return an
 `image` part; audio files return an attachment-backed `audio` part; video files
 return an attachment-backed `video` part.
 
+The built-in `http` Capability declares `/fetch-url` as `part_type: parts`
+because it auto-detects supported remote text, HTML, JSON, and image responses.
+Plain text returns a plain `text` part, HTML returns lightweight extracted page
+text, JSON returns a `json` part, and images return an `image` part. HTTP audio,
+video, remote media download/cache/proxy, HLS/DASH, livestream/radio/podcast
+extraction, OCR, ASR, TTS, and PDF parsing are not implemented.
+
 `output.type` is invalid. If a method omits `output`, the runtime infers the
 current parts contract from the returned value: lists are validated as parts,
 dicts become JSON unless they look like image/media payloads, and scalars become

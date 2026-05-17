@@ -149,7 +149,7 @@ def update_capability_config(
     capability = _get_capability_or_404(state, capability_id)
     user_config = None
     if payload.user_config is not None:
-        existing = state.capability_configs.get_config(capability_id)["user_config"]
+        existing = _clean_capability_user_config(capability_id, state.capability_configs.get_config(capability_id)["user_config"])
         user_config = _validate_config_patch(capability.config_schema, existing, payload.user_config)
     state.capability_configs.set_config(capability_id, enabled=payload.enabled, user_config=user_config)
     return _serialize_capability_config(state, capability_id)
@@ -256,7 +256,7 @@ def _serialize_agent_config(state: RuntimeState, agent_id: str) -> dict:
 def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dict:
     capability = state.capabilities.get(capability_id)
     config = state.capability_configs.get_config(capability_id)
-    stored_user_config = clear_empty_enum_overrides(capability.config_schema, config["user_config"])
+    stored_user_config = clear_empty_enum_overrides(capability.config_schema, _clean_capability_user_config(capability_id, config["user_config"]))
     masked_user_config = mask_config(capability.config_schema, stored_user_config)
     return {
         **config,
@@ -274,6 +274,14 @@ def _serialize_capability_config(state: RuntimeState, capability_id: str) -> dic
             "permissions": capability.permissions,
         },
     }
+
+
+def _clean_capability_user_config(capability_id: str, user_config: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned = dict(user_config or {})
+    if capability_id == "http":
+        cleaned.pop("enable_http_get", None)
+        cleaned.pop("enable_fetch_image", None)
+    return cleaned
 
 
 def _validate_config_patch(schema, existing_config: Dict[str, Any], incoming_config: Dict[str, Any]) -> Dict[str, Any]:

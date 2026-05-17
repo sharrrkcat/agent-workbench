@@ -395,6 +395,26 @@ def test_generated_registry_lists_single_file_read_command() -> None:
     assert "/file-audio" not in registry
 
 
+def test_generated_registry_lists_single_http_fetch_url_command() -> None:
+    registry = read_repo("docs/generated/REGISTRY.md")
+    capability_detail = read_frontend("components/settings/CapabilityDetail.tsx")
+    en_capabilities = read_frontend("i18n/resources/en/capabilities.json")
+    zh_capabilities = read_frontend("i18n/resources/zh-CN/capabilities.json")
+
+    assert "| http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url | parts, text, text, image |" in registry
+    assert "enable_fetch_url_command" in registry
+    assert "/http-get" not in registry
+    assert "/fetch-page" not in registry
+    assert "/fetch-image" not in registry
+    assert "enable_http_get" not in registry
+    assert "enable_fetch_image" not in registry
+    assert "enable_fetch_url_command" in capability_detail
+    assert "enable_http_get" not in capability_detail
+    assert "enable_fetch_image" not in capability_detail
+    assert "/fetch-url" in en_capabilities
+    assert "/fetch-url" in zh_capabilities
+
+
 def test_form_and_command_button_parts_keep_existing_interactions() -> None:
     form_source = read_frontend("components/messages/parts/FormPartRenderer.tsx")
     buttons_source = read_frontend("components/messages/parts/CommandButtonsPartRenderer.tsx")

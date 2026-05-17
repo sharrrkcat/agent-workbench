@@ -648,14 +648,14 @@ def test_command_result_parts_project_as_bounded_assistant_data() -> None:
         command_name="/json",
         metadata={"kind": "command_result", "capability_id": "demo", "output_part_type": "json"},
     )
-    fixture.messages.add_message(session_id=session.session_id, role="user", content="/fetch-image")
+    fixture.messages.add_message(session_id=session.session_id, role="user", content="/fetch-url")
     fixture.messages.add_message(
         session_id=session.session_id,
         role="assistant",
         content="",
         parts=[make_image_part(PNG_DATA_URL, alt="sample")],
-        command_name="/fetch-image",
-        metadata={"kind": "command_result", "capability_id": "http", "output_part_type": "image"},
+        command_name="/fetch-url",
+        metadata={"kind": "command_result", "capability_id": "http", "output_part_type": "parts"},
     )
     fixture.messages.add_message(session_id=session.session_id, role="user", content="/rich")
     fixture.messages.add_message(

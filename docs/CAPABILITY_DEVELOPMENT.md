@@ -122,6 +122,7 @@ uv run python scripts/run_command.py "/base64-image data:image/svg+xml;base64,..
 uv run python scripts/run_command.py "/image-base64" --image path/to/cat.png
 uv run python scripts/run_command.py "/read-file path/to/demo.wav"
 uv run python scripts/run_command.py "/read-file path/to/demo.mp4"
+uv run python scripts/run_command.py "/fetch-url https://example.test/data.json"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
 
@@ -135,6 +136,17 @@ video. It keeps separate text/image/audio/video size limits behind one
 ASR/transcription, TTS, PDF parsing, diff rendering, binary preview, network URL
 reads, web page fetching, HLS/DASH/livestream sources, video metadata parsing,
 thumbnail generation, transcoding, or video input to LLMs.
+
+The built-in `http` Capability exposes only `/fetch-url <url>` for user-facing
+HTTP reads. It auto-detects supported text, HTML, JSON, and image responses:
+text returns a plain text part, HTML returns lightweight extracted page text,
+JSON returns a JSON part, and images return an image part using the existing
+HTTP image payload behavior. The single `enable_fetch_url_command` toggle gates
+all supported response types. Text, HTML, and JSON use
+`max_text_response_size_mb`; images use `max_image_response_size_mb`. The HTTP
+Capability does not expose `/http-get`, `/fetch-page`, or `/fetch-image`, does
+not support audio/video, and does not download, cache, proxy, or extract remote
+streaming media such as HLS, DASH, livestreams, radio, podcasts, or video pages.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 
