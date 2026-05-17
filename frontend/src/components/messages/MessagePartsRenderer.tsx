@@ -36,9 +36,10 @@ export function MessagePartsRenderer({
 }) {
   const renderableParts = Array.isArray(parts) ? parts.filter(isRenderableMessagePart) : [];
   if (!renderableParts.length) return null;
+  const hasWidePart = renderableParts.some(isWideMessagePart);
 
   return (
-    <div className="message-content parts-content" data-message-id={message.message_id}>
+    <div className={`message-content parts-content ${hasWidePart ? 'message-content-wide' : ''}`} data-message-id={message.message_id}>
       {renderableParts.map((part, index) => {
         const key = stablePartKey(part, index);
         try {
@@ -78,8 +79,16 @@ export function hasRenderableParts(parts: MessagePart[] | undefined): boolean {
   return Array.isArray(parts) && parts.some(isRenderableMessagePart);
 }
 
+export function hasWideMessageParts(parts: MessagePart[] | undefined): boolean {
+  return Array.isArray(parts) && parts.some((part) => isRenderableMessagePart(part) && isWideMessagePart(part));
+}
+
 function stablePartKey(part: MessagePart, index: number): string {
   return typeof part.id === 'string' && part.id ? part.id : `${part.type}:${index}`;
+}
+
+function isWideMessagePart(part: MessagePart): boolean {
+  return part.type === 'audio' || part.type === 'media_group';
 }
 
 function isRenderableMessagePart(part: MessagePart): boolean {

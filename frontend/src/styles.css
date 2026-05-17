@@ -1448,6 +1448,12 @@ input:disabled {
   justify-items: end;
 }
 
+.message-row.agent.message-has-wide-part .message-stack,
+.message-row.command.message-has-wide-part .message-stack {
+  width: min(720px, calc(100% - 48px));
+  max-width: min(720px, calc(100% - 48px));
+}
+
 .message {
   min-width: 0;
   width: 100%;
@@ -1480,6 +1486,12 @@ input:disabled {
   border-top-left-radius: 8px;
   background: #302d3b;
   border-color: rgba(117, 98, 255, 0.22);
+}
+
+.message.agent.message-has-wide-part,
+.message.command.message-has-wide-part {
+  width: 100%;
+  max-width: 100%;
 }
 
 .message.pending {
@@ -1910,9 +1922,10 @@ input:disabled {
 .audio-part {
   display: grid;
   gap: 10px;
-  width: min(100%, 720px);
+  width: 100%;
   min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -1955,6 +1968,7 @@ input:disabled {
 
 .audio-part-copy {
   display: grid;
+  flex: 1 1 auto;
   gap: 2px;
   min-width: 0;
 }
@@ -1977,6 +1991,7 @@ input:disabled {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -1988,6 +2003,7 @@ input:disabled {
 
 .audio-part-progress-track {
   position: relative;
+  flex: 1 1 auto;
   min-width: 0;
   width: 100%;
   height: 18px;
@@ -2177,7 +2193,14 @@ input:disabled {
 .parts-content {
   display: grid;
   gap: 12px;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+}
+
+.message-content.parts-content.message-content-wide {
+  width: 100%;
+  max-width: 100%;
 }
 
 .rich-content .message-content {

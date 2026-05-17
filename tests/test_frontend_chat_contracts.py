@@ -134,6 +134,33 @@ def test_message_parts_renderer_is_only_normal_render_path() -> None:
     assert "stablePartKey(part, index)" in renderer
 
 
+def test_audio_message_parts_use_wide_layout_contract() -> None:
+    bubble = read_frontend("components/MessageBubble.tsx")
+    renderer = read_frontend("components/messages/MessagePartsRenderer.tsx")
+    styles = read_frontend("styles.css")
+
+    assert "hasWideMessageParts" in bubble
+    assert "const hasWidePart = !isUser && hasWideMessageParts(message.parts)" in bubble
+    assert "message-has-wide-part" in bubble
+    assert "export function hasWideMessageParts" in renderer
+    assert "isRenderableMessagePart(part) && isWideMessagePart(part)" in renderer
+    assert "function isWideMessagePart(part: MessagePart)" in renderer
+    assert "part.type === 'audio'" in renderer
+    assert "message-content-wide" in renderer
+
+    wide_stack_styles = styles[styles.index(".message-row.agent.message-has-wide-part .message-stack") : styles.index(".message {")]
+    wide_message_styles = styles[styles.index(".message.agent.message-has-wide-part") : styles.index(".message.pending")]
+    wide_content_styles = styles[styles.index(".message-content.parts-content.message-content-wide") : styles.index(".rich-content .message-content")]
+
+    assert "width: min(720px, calc(100% - 48px))" in wide_stack_styles
+    assert "max-width: min(720px, calc(100% - 48px))" in wide_stack_styles
+    assert "width: 100%" in wide_message_styles
+    assert "max-width: 100%" in wide_message_styles
+    assert "width: 100%" in wide_content_styles
+    assert "max-width: 100%" in wide_content_styles
+    assert ".message-row.user .message-stack" in styles
+
+
 def test_message_parts_renderer_routes_first_batch_part_types() -> None:
     renderer = read_frontend("components/messages/MessagePartsRenderer.tsx")
 
@@ -307,8 +334,15 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert "part.source === 'attachment'" in source
     assert "^\\/api\\/attachments\\/" in source
     styles = read_frontend("styles.css")
-    assert "width: min(100%, 720px)" in styles
+    audio_part_styles = styles[styles.index(".audio-part {") : styles.index(".audio-part audio")]
+    progress_track_styles = styles[styles.index(".audio-part-progress-track {") : styles.index(".audio-part-progress-track::before")]
+    assert "width: min(100%, 720px)" not in audio_part_styles
+    assert "width: 100%" in audio_part_styles
+    assert "max-width: 100%" in audio_part_styles
+    assert "fit-content" not in audio_part_styles
+    assert "max-content" not in audio_part_styles
     assert "grid-template-columns: auto minmax(0, 1fr) auto" in styles
+    assert "flex: 1 1 auto" in progress_track_styles
     assert ".audio-part-progress-track" in styles
     assert ".audio-part-progress-fill" in styles
     assert ".audio-part-progress-thumb" in styles

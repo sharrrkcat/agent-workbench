@@ -14,7 +14,7 @@ import { getResolvedAgentDisplay } from '../utils/agents';
 import { parseKnowledgeCitationToken } from '../utils/knowledgeCitations';
 import { formatApiError, getRunStatusLabel, getRunStepLabel } from '../i18n/formatters';
 import { AppModal, Chip } from './ui';
-import { MessagePartsRenderer, hasRenderableParts } from './messages/MessagePartsRenderer';
+import { MessagePartsRenderer, hasRenderableParts, hasWideMessageParts } from './messages/MessagePartsRenderer';
 
 export type FilePreview = {
   url: string;
@@ -56,6 +56,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const isCommand = message.role === 'command' || message.speaker_type === 'capability' || Boolean(message.command_name);
   const kind = isUser ? 'user' : isCommand ? 'command' : 'agent';
   const isAgentMessage = message.role === 'assistant' || message.role === 'agent';
+  const hasWidePart = !isUser && hasWideMessageParts(message.parts);
   const operationPending = pendingMessageActionId === message.message_id;
   const metricsLabel = isAgentMessage ? formatMetrics(message.metadata?.llm_metrics, Boolean(message.metadata?.interrupted), t) : '';
   const reasoningContent = isAgentMessage ? extractReasoningContent(message.metadata) : '';
@@ -100,11 +101,11 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   }
 
   return (
-    <article className={`message-row ${kind}`}>
+    <article className={`message-row ${kind} ${hasWidePart ? 'message-has-wide-part' : ''}`}>
       {!isUser ? <AgentAvatar agent={agentDisplay} label={message.command_name || undefined} /> : null}
       <div className="message-stack">
         <MessageHeader message={message} agent={agent} agentName={agentDisplay.name} kind={kind} modelLabel={resolvedModelLabel(message)} modelMismatch={hasModelMismatch(message)} />
-        <div className={`message ${kind} ${message.client_status ? message.client_status : ''}`}>
+        <div className={`message ${kind} ${hasWidePart ? 'message-has-wide-part' : ''} ${message.client_status ? message.client_status : ''}`}>
           {editing ? (
             <div className="message-edit-form">
               <textarea value={editValue} onChange={(event) => setEditValue(event.target.value)} rows={Math.min(8, Math.max(3, editValue.split(/\r\n|\r|\n/).length))} />
