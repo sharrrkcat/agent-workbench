@@ -171,10 +171,45 @@ def test_video_part_accepts_attachment_source() -> None:
     }
 
 
+def test_video_part_accepts_url_source() -> None:
+    parts = validate_message_parts(
+        [
+            {
+                "type": "video",
+                "source": "url",
+                "url": "https://example.test/demo.mp4",
+                "mime_type": "video/mp4",
+                "filename": "demo.mp4",
+                "title": "demo.mp4",
+                "duration_ms": 0,
+                "size_bytes": 123,
+                "width": 1920,
+                "height": 1080,
+            }
+        ]
+    )
+
+    assert parts == [
+        {
+            "id": "part_1",
+            "type": "video",
+            "source": "url",
+            "url": "https://example.test/demo.mp4",
+            "mime_type": "video/mp4",
+            "filename": "demo.mp4",
+            "title": "demo.mp4",
+            "size_bytes": 123,
+            "duration_ms": 0,
+            "width": 1920,
+            "height": 1080,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     "payload,error",
     [
-        ({"type": "video", "source": "url", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4"}, "literal_error"),
+        ({"type": "video", "source": "url", "attachment_id": "a", "url": "https://example.test/a.mp4", "mime_type": "video/mp4"}, "must not include attachment_id"),
         ({"type": "video", "source": "attachment", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4"}, "attachment_id"),
         ({"type": "video", "source": "attachment", "attachment_id": "a", "mime_type": "video/mp4"}, "url"),
         ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "text/plain"}, "video/\\*"),
@@ -194,6 +229,23 @@ def test_video_part_rejects_invalid_payloads(payload: dict, error: str) -> None:
 def test_video_part_rejects_non_local_urls(url: str) -> None:
     with pytest.raises(MessagePartValidationError, match="local attachment URL|/api/attachments"):
         validate_message_parts([{"type": "video", "source": "attachment", "attachment_id": "a", "url": url, "mime_type": "video/mp4"}])
+
+
+@pytest.mark.parametrize("url", ["file:///tmp/a.mp4", "data:video/mp4;base64,AAAA", "javascript:alert(1)", "blob:https://example.test/id", "/api/attachments/a.mp4"])
+def test_video_part_url_source_rejects_non_http_urls(url: str) -> None:
+    with pytest.raises(MessagePartValidationError, match="http:// or https://"):
+        validate_message_parts([{"type": "video", "source": "url", "url": url, "mime_type": "video/mp4"}])
+
+
+def test_video_part_url_source_rejects_non_video_mime() -> None:
+    with pytest.raises(MessagePartValidationError, match="video/\\*"):
+        validate_message_parts([{"type": "video", "source": "url", "url": "https://example.test/a.mp4", "mime_type": "text/plain"}])
+
+
+@pytest.mark.parametrize("source", ["stream", "hls", "dash", "youtube", "page"])
+def test_video_part_rejects_unsupported_sources(source: str) -> None:
+    with pytest.raises(MessagePartValidationError, match="literal_error"):
+        validate_message_parts([{"type": "video", "source": source, "url": "https://example.test/a.mp4", "mime_type": "video/mp4"}])
 
 
 def test_capability_media_group_output_converts_to_parts() -> None:

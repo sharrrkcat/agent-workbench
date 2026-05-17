@@ -59,6 +59,9 @@ class OutputRuntime:
     def auto_detected_video(self, args: str) -> list[dict[str, Any]]:
         return [{"type": "video", "source": "attachment", "attachment_id": "vid-1", "url": "/api/attachments/vid-1.mp4", "mime_type": "video/mp4"}]
 
+    def auto_detected_remote_video(self, args: str) -> list[dict[str, Any]]:
+        return [{"type": "video", "source": "url", "url": "https://example.test/video.mp4", "mime_type": "video/mp4"}]
+
     def inferred_json(self, args: str) -> dict[str, Any]:
         return {"inferred": True}
 
@@ -86,6 +89,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"id": "auto_detected_audio", "output": {"part_type": "parts"}},
                 {"id": "auto_detected_remote_audio", "output": {"part_type": "parts"}},
                 {"id": "auto_detected_video", "output": {"part_type": "parts"}},
+                {"id": "auto_detected_remote_video", "output": {"part_type": "parts"}},
                 {"id": "inferred_json"},
             ],
             "commands": [
@@ -102,6 +106,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"name": "/out-auto-audio", "method": "auto_detected_audio"},
                 {"name": "/out-auto-remote-audio", "method": "auto_detected_remote_audio"},
                 {"name": "/out-auto-video", "method": "auto_detected_video"},
+                {"name": "/out-auto-remote-video", "method": "auto_detected_remote_video"},
                 {"name": "/out-inferred", "method": "inferred_json"},
             ],
         }
@@ -286,6 +291,22 @@ def test_parts_output_keeps_video_part_instead_of_json() -> None:
             "source": "attachment",
             "attachment_id": "vid-1",
             "url": "/api/attachments/vid-1.mp4",
+            "mime_type": "video/mp4",
+        }
+    ]
+    assert message.metadata["output_part_type"] == "parts"
+    assert not hasattr(message, "output_type")
+
+
+def test_parts_output_keeps_remote_video_part_instead_of_json() -> None:
+    _, message, _ = command_message("/out-auto-remote-video")
+
+    assert message.parts == [
+        {
+            "id": "part_1",
+            "type": "video",
+            "source": "url",
+            "url": "https://example.test/video.mp4",
             "mime_type": "video/mp4",
         }
     ]

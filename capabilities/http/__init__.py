@@ -22,6 +22,11 @@ SUPPORTED_AUDIO_MIME_TYPES = {
     "audio/flac",
     "audio/webm",
 }
+SUPPORTED_VIDEO_MIME_TYPES = {
+    "video/mp4",
+    "video/webm",
+    "video/ogg",
+}
 AUDIO_EXTENSION_MIME_TYPES = {
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
@@ -29,6 +34,11 @@ AUDIO_EXTENSION_MIME_TYPES = {
     ".m4a": "audio/mp4",
     ".flac": "audio/flac",
     ".webm": "audio/webm",
+}
+VIDEO_EXTENSION_MIME_TYPES = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".ogv": "video/ogg",
 }
 REJECTED_REMOTE_MEDIA_MIME_TYPES = {
     "application/vnd.apple.mpegurl",
@@ -61,6 +71,8 @@ class CapabilityRuntime:
         kind = _response_kind(mime_type, str(response.url))
         if kind == "rejected_remote_media":
             raise ValueError("Unsupported remote media source for /fetch-url.")
+        if kind == "video":
+            return [{"type": "video", **_video_payload(response, mime_type)}]
         if kind == "audio":
             return [{"type": "audio", **_audio_payload(response, mime_type)}]
         if kind == "json":
@@ -173,7 +185,7 @@ def _request_for_fetch_url(raw_url: str, config: dict, client: httpx.Client | No
             _validate_url(str(response.url), config)
             mime_type = _content_type(response)
             kind = _response_kind(mime_type, str(response.url))
-            if kind in {"audio", "rejected_remote_media"}:
+            if kind in {"audio", "video", "rejected_remote_media"}:
                 return _metadata_response(response)
             limit = _limit_for_fetch_kind(kind, config)
             content = _read_limited_response(response, limit)
@@ -253,6 +265,8 @@ def _is_text_mime_type(mime_type: str) -> bool:
 def _response_kind(mime_type: str, url: str) -> str:
     if _is_rejected_remote_media(mime_type, url):
         return "rejected_remote_media"
+    if _is_video_mime_type(mime_type):
+        return "video"
     if _is_audio_mime_type(mime_type):
         return "audio"
     if _is_json_mime_type(mime_type):
@@ -274,6 +288,10 @@ def _is_audio_mime_type(mime_type: str) -> bool:
     return mime_type in SUPPORTED_AUDIO_MIME_TYPES
 
 
+def _is_video_mime_type(mime_type: str) -> bool:
+    return mime_type in SUPPORTED_VIDEO_MIME_TYPES
+
+
 def _is_rejected_remote_media(mime_type: str, url: str) -> bool:
     if mime_type in REJECTED_REMOTE_MEDIA_MIME_TYPES:
         return True
@@ -290,6 +308,8 @@ def _kind_from_extension(url: str) -> str:
         return "text"
     if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
         return "image"
+    if suffix in VIDEO_EXTENSION_MIME_TYPES:
+        return "video"
     if suffix in AUDIO_EXTENSION_MIME_TYPES:
         return "audio"
     return "unsupported"
@@ -318,6 +338,24 @@ def _image_payload(response: httpx.Response, mime_type: str) -> dict:
 def _audio_payload(response: httpx.Response, mime_type: str) -> dict:
     url = str(response.url)
     effective_mime = mime_type if _is_audio_mime_type(mime_type) else AUDIO_EXTENSION_MIME_TYPES.get(_url_suffix(url), "audio/mpeg")
+    filename = _filename_from_url(url)
+    payload = {
+        "source": "url",
+        "url": url,
+        "mime_type": effective_mime,
+    }
+    if filename:
+        payload["filename"] = filename
+        payload["title"] = filename
+    size_bytes = _content_length(response)
+    if size_bytes is not None:
+        payload["size_bytes"] = size_bytes
+    return payload
+
+
+def _video_payload(response: httpx.Response, mime_type: str) -> dict:
+    url = str(response.url)
+    effective_mime = mime_type if _is_video_mime_type(mime_type) else VIDEO_EXTENSION_MIME_TYPES.get(_url_suffix(url), "video/mp4")
     filename = _filename_from_url(url)
     payload = {
         "source": "url",

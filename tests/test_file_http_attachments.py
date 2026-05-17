@@ -754,6 +754,12 @@ def test_http_capability_fetch_url_auto_detects_supported_parts() -> None:
             return httpx.Response(200, headers={"content-type": "audio/ogg"}, content=b"", request=request)
         if request.url.path == "/audio.m4a":
             return httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"", request=request)
+        if request.url.path == "/video.mp4":
+            return httpx.Response(200, headers={"content-type": "video/mp4", "content-length": "12345678"}, content=b"", request=request)
+        if request.url.path == "/video.webm":
+            return httpx.Response(200, headers={"content-type": "video/webm"}, content=b"", request=request)
+        if request.url.path == "/video.ogv":
+            return httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"", request=request)
         return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"hello text", request=request)
 
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://example.test")
@@ -785,6 +791,19 @@ def test_http_capability_fetch_url_auto_detects_supported_parts() -> None:
     assert runtime.fetch_url("https://example.test/audio.ogg")[0]["source"] == "url"
     assert runtime.fetch_url("https://example.test/audio.ogg")[0]["mime_type"] == "audio/ogg"
     assert runtime.fetch_url("https://example.test/audio.m4a")[0]["mime_type"] == "audio/mp4"
+    assert runtime.fetch_url("https://example.test/video.mp4") == [
+        {
+            "type": "video",
+            "source": "url",
+            "url": "https://example.test/video.mp4",
+            "mime_type": "video/mp4",
+            "filename": "video.mp4",
+            "title": "video.mp4",
+            "size_bytes": 12345678,
+        }
+    ]
+    assert runtime.fetch_url("https://example.test/video.webm")[0]["mime_type"] == "video/webm"
+    assert runtime.fetch_url("https://example.test/video.ogv")[0]["mime_type"] == "video/ogg"
     try:
         runtime.fetch_image("https://example.test/text")
     except ValueError as exc:
@@ -811,6 +830,27 @@ def test_http_capability_fetch_url_does_not_download_audio_body() -> None:
     assert part["type"] == "audio"
     assert part["source"] == "url"
     assert part["url"] == "https://example.test/audio.mp3"
+    assert stream.iterated is False
+
+
+def test_http_capability_fetch_url_does_not_download_video_body() -> None:
+    stream = CountingByteStream([b"x" * 1024, b"y" * 1024])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "video/mp4", "content-length": "2048"},
+            stream=stream,
+            request=request,
+        )
+
+    runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    part = runtime.fetch_url("https://example.test/video.mp4")[0]
+
+    assert part["type"] == "video"
+    assert part["source"] == "url"
+    assert part["url"] == "https://example.test/video.mp4"
     assert stream.iterated is False
 
 
@@ -846,6 +886,21 @@ def test_http_capability_fetch_url_audio_is_not_json_text_or_file() -> None:
     assert [part["type"] for part in parts] == ["audio"]
     assert "data" not in parts[0]
     assert "text" not in parts[0]
+    assert parts[0]["source"] == "url"
+
+
+def test_http_capability_fetch_url_video_is_not_json_text_or_file() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "video/webm"}, content=b"", request=request)
+
+    runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    parts = runtime.fetch_url("https://example.test/video.webm")
+
+    assert [part["type"] for part in parts] == ["video"]
+    assert "data" not in parts[0]
+    assert "text" not in parts[0]
+    assert "content" not in parts[0]
     assert parts[0]["source"] == "url"
 
 

@@ -34,7 +34,7 @@
   },
   "help": {
     "fileSettings": "File Capability settings apply only to /read-file. General upload limits are configured in General.",
-    "httpSettings": "HTTP settings apply only to /fetch-url. It auto-detects supported text, HTML, JSON, image, and direct audio responses and does not affect chat uploads."
+    "httpSettings": "HTTP settings apply only to /fetch-url. It auto-detects supported text, HTML, JSON, image, and direct audio/video responses and does not affect chat uploads."
   },
   "configFields": {
     "max_local_audio_read_size_mb": {

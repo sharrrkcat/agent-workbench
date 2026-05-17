@@ -29,6 +29,7 @@ Current expected reuse points:
   server playback restrictions.
 - Video message parts render through
   `frontend/src/components/messages/parts/VideoPartRenderer.tsx` with native
-  `<video controls preload="metadata">`. It only accepts local
-  attachment-backed URLs, does not autoplay, and does not implement custom
-  playback controls.
+  `<video controls preload="metadata">`. It accepts local attachment-backed
+  URLs for `source: attachment` and HTTP/HTTPS direct video URLs for
+  `source: url`, does not autoplay, does not proxy/cache/download remote media,
+  and does not implement custom playback controls.

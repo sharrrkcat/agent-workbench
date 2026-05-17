@@ -1,6 +1,6 @@
 ﻿id: http
 name: HTTP Capability
-description: Fetch supported text, HTML, JSON, images, and direct audio URLs over HTTP GET. This can access the network; it does not use private browser cookies.
+description: Fetch supported text, HTML, JSON, images, and direct audio/video URLs over HTTP GET. This can access the network; it does not use private browser cookies.
 
 permissions:
   network:
@@ -11,7 +11,7 @@ config_schema:
     type: boolean
     label: Enable /fetch-url
     default: true
-    description: Enable /fetch-url for supported text, HTML, JSON, image, and direct audio URLs.
+    description: Enable /fetch-url for supported text, HTML, JSON, image, and direct audio/video URLs.
 
   - name: allowed_schemes
     type: json
@@ -101,5 +101,5 @@ methods:
 commands:
   - name: /fetch-url
     method: fetch_url
-    description: Fetch a URL and render supported text, HTML, JSON, image, or direct audio content.
+    description: Fetch a URL and render supported text, HTML, JSON, image, or direct audio/video content.
     safe: true

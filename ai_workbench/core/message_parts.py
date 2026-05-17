@@ -144,8 +144,8 @@ class AudioPart(_PartBase):
 
 class VideoPart(_PartBase):
     type: Literal["video"]
-    source: Literal["attachment"] = "attachment"
-    attachment_id: str = Field(min_length=1)
+    source: Literal["attachment", "url"] = "attachment"
+    attachment_id: str | None = None
     url: str = Field(min_length=1)
     mime_type: str = Field(min_length=1)
     filename: str | None = None
@@ -156,17 +156,25 @@ class VideoPart(_PartBase):
     height: int | None = Field(default=None, ge=1)
     poster_url: str | None = None
 
-    @field_validator("url", "poster_url")
+    @field_validator("url")
     @classmethod
-    def validate_local_attachment_url(cls, value: str | None) -> str | None:
+    def clean_url(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("video url is required")
+        return cleaned
+
+    @field_validator("poster_url")
+    @classmethod
+    def validate_local_poster_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
         cleaned = value.strip()
         lowered = cleaned.lower()
-        if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:")):
-            raise ValueError("video url must be a local attachment URL")
+        if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:", "blob:")):
+            raise ValueError("video poster_url must be a local attachment URL")
         if not _LOCAL_ATTACHMENT_URL_RE.match(cleaned):
-            raise ValueError("video url must use /api/attachments/<id>.<ext>")
+            raise ValueError("video poster_url must use /api/attachments/<id>.<ext>")
         return cleaned
 
     @field_validator("mime_type")
@@ -176,6 +184,24 @@ class VideoPart(_PartBase):
         if not cleaned.startswith("video/"):
             raise ValueError("video mime_type must be video/*")
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_source_contract(self) -> "VideoPart":
+        if self.source == "attachment":
+            if not self.attachment_id:
+                raise ValueError("video attachment source requires attachment_id")
+            lowered = self.url.lower()
+            if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:", "blob:")):
+                raise ValueError("video attachment url must be a local attachment URL")
+            if not _LOCAL_ATTACHMENT_URL_RE.match(self.url):
+                raise ValueError("video attachment url must use /api/attachments/<id>.<ext>")
+            return self
+        if self.attachment_id:
+            raise ValueError("video url source must not include attachment_id")
+        parsed = urlparse(self.url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("video url source must use http:// or https://")
+        return self
 
 
 class MediaGroupImageItem(BaseModel):

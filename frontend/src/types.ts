@@ -1029,7 +1029,7 @@ export type UrlAudioMessagePart = {
 
 export type AudioMessagePart = AttachmentAudioMessagePart | UrlAudioMessagePart;
 
-export type VideoMessagePart = {
+export type AttachmentVideoMessagePart = {
   id: string;
   type: 'video';
   source: 'attachment';
@@ -1044,6 +1044,23 @@ export type VideoMessagePart = {
   height?: number | null;
   poster_url?: string | null;
 };
+
+export type UrlVideoMessagePart = {
+  id: string;
+  type: 'video';
+  source: 'url';
+  url: string;
+  mime_type: string;
+  filename?: string | null;
+  title?: string | null;
+  size_bytes?: number | null;
+  duration_ms?: number | null;
+  width?: number | null;
+  height?: number | null;
+  poster_url?: string | null;
+};
+
+export type VideoMessagePart = AttachmentVideoMessagePart | UrlVideoMessagePart;
 
 export type MediaGroupMessagePart = {
   id: string;

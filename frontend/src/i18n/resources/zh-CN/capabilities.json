@@ -34,7 +34,7 @@
   },
   "help": {
     "fileSettings": "File Capability 设置仅适用于 /read-file。通用上传限制在 General 中配置。",
-    "httpSettings": "HTTP 设置只应用于 /fetch-url。它会自动检测支持的文本、HTML、JSON、图片和音频直链响应，不会影响聊天上传。"
+    "httpSettings": "HTTP 设置只应用于 /fetch-url。它会自动检测支持的文本、HTML、JSON、图片和音频/视频直链响应，不会影响聊天上传。"
   },
   "configFields": {
     "max_local_audio_read_size_mb": {

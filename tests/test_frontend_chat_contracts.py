@@ -115,8 +115,11 @@ def test_message_type_exposes_message_parts_contract() -> None:
     assert "type: 'audio'" in source
     assert "source: 'url'" in source
     assert "export type VideoMessagePart" in source
+    assert "export type AttachmentVideoMessagePart" in source
+    assert "export type UrlVideoMessagePart" in source
     assert "type: 'video'" in source
     assert "source: 'attachment'" in source
+    assert "source: 'url'" in source
     assert "export type MediaGroupMessagePart" in source
     assert "layout: 'gallery'" in source
     assert "export type FormMessagePart" in source
@@ -370,7 +373,12 @@ def test_video_part_renderer_uses_native_video_for_local_attachments() -> None:
 
     assert "export function VideoPartRenderer" in source
     assert "part.source === 'attachment'" in source
+    assert "part.source === 'url'" in source
     assert "^\\/api\\/attachments\\/" in source
+    assert "function isRemoteHttpUrl" in source
+    assert "^https?:\\/\\/" in source
+    assert "function videoSourceUrl" in source
+    assert "return isRemoteHttpUrl(part.url) ? part.url : ''" in source
     assert '<video controls preload="metadata"' in source
     assert "autoplay" not in source.lower()
     assert "loop" not in source
@@ -378,6 +386,7 @@ def test_video_part_renderer_uses_native_video_for_local_attachments() -> None:
     assert "dangerouslySetInnerHTML" not in source
     assert "case 'video'" in renderer
     assert "part.type === 'video'" in renderer
+    assert "if (part.source === 'url') return Boolean(part.url && part.mime_type)" in renderer
     assert "VideoPartRenderer" in renderer
     video_part_styles = styles[styles.index(".video-part {") : styles.index(".video-part video")]
     video_tag_styles = styles[styles.index(".video-part video") : styles.index(".video-part-header")]

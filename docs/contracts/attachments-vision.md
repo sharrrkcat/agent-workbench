@@ -27,11 +27,10 @@ Message Parts v2 keeps the same storage rule for generated local files. `image`
 parts should point at a local attachment URL such as `/api/attachments/<id>.png`
 or carry an `attachment_id` ref. Local `audio` and `video` parts use
 `source: attachment`, a local `/api/attachments/...` route, and matching
-`audio/*` or `video/*` MIME type. Audio parts may also use `source: url` for
-safe HTTP/HTTPS direct audio links; those remote audio URLs are not downloaded,
-cached, saved as local attachments, or proxied. Video parts remain local
-attachment refs only. `media_group` parts use image items with the same URL/ref
-shape. `file` parts may carry small inline raw text with `mode="inline_text"`;
+`audio/*` or `video/*` MIME type. Audio and video parts may also use
+`source: url` for safe HTTP/HTTPS direct media links; those remote URLs are not
+downloaded, cached, saved as local attachments, or proxied. `media_group` parts
+use image items with the same URL/ref shape. `file` parts may carry small inline raw text with `mode="inline_text"`;
 long files and binary files should be saved as attachments in later rounds.
 Durable message parts must not introduce a new large base64 storage path.
 
@@ -124,12 +123,13 @@ metadata parsing, thumbnail generation, transcoding, streaming protocol
 handling, or video input to LLMs.
 
 The HTTP Capability exposes only `/fetch-url <url>` for user-facing network
-reads. It returns Message Parts for supported text, HTML, JSON, image, and
-direct audio responses without creating a generalized remote attachment
-download/cache/proxy path. Direct audio returns `source: url` and is not saved
-as a local attachment. It does not support HTTP video, HLS/DASH, `.m3u8`,
-`.mpd`, `.pls`, livestreams, radio, podcast RSS, video-page media extraction,
-OCR, ASR/transcription, TTS, audio understanding, or PDF parsing.
+reads. It returns Message Parts for supported text, HTML, JSON, image, direct
+audio, and direct video responses without creating a generalized remote
+attachment download/cache/proxy path. Direct audio and video return
+`source: url` and are not saved as local attachments. It does not support
+HLS/DASH, `.m3u8`, `.mpd`, `.pls`, livestreams, radio, podcast RSS,
+video-page media extraction, OCR, ASR/transcription, TTS, audio/video
+understanding, or PDF parsing.
 
 ## Route And Store Safety
 
@@ -153,8 +153,8 @@ Message Parts v2 selects the frontend renderer for new messages:
   attachment ids.
 - `audio` parts render local attachment audio or safe HTTP/HTTPS direct audio
   URLs with the project custom player, not native browser controls.
-- `video` parts render local attachment video with native browser controls and
-  `preload="metadata"`.
+- `video` parts render local attachment video or safe HTTP/HTTPS direct video
+  URLs with native browser controls and `preload="metadata"`.
 - `form` and `command_buttons` parts are the interactive block path.
 
 Renderer changes that alter payload shapes update

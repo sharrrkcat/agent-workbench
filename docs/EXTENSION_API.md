@@ -282,10 +282,10 @@ text/image/audio/video into matching Message Parts, keeps one command toggle
 with per-kind limits, and does not support network reads or media analysis.
 
 The built-in `http` Capability exposes only `/fetch-url <url>`, auto-detects
-text/HTML/JSON/image/direct audio into Message Parts, and keeps one command
-toggle with separate text/image limits. Direct audio uses `source: url` and is
-not downloaded, cached, proxied, or saved locally. HTTP video, streaming media,
-OCR, ASR, TTS, transcription, and PDF parsing are not supported.
+text/HTML/JSON/image/direct audio/direct video into Message Parts, and keeps
+one command toggle with separate text/image limits. Direct audio and video use
+`source: url` and are not downloaded, cached, proxied, or saved locally.
+Streaming media, OCR, ASR, TTS, transcription, and PDF parsing are unsupported.
 
 ## Capability Config
 
@@ -311,11 +311,12 @@ groups may set `layout: gallery`. `output.type` is invalid.
 `audio` outputs support local attachments and safe HTTP/HTTPS direct audio URLs:
 `source: attachment` requires `attachment_id` plus local `/api/attachments/...`;
 `source: url` requires HTTP/HTTPS and is not downloaded, cached, proxied, or
-saved locally. Both require `audio/*` MIME type. `video` outputs remain local
-attachment only with `video/*` MIME type. HLS/DASH, `.m3u8`, `.mpd`, `.pls`,
-livestreams, radio, podcast RSS, TTS, ASR/transcription, audio understanding,
-thumbnails/posters, transcoding, and media input to LLMs are not part of this
-API.
+saved locally. Both require `audio/*` MIME type. `video` outputs support local
+attachments and safe HTTP/HTTPS direct video URLs with the same source rules and
+require `video/*` MIME type. HLS/DASH, `.m3u8`, `.mpd`, `.pls`, livestreams,
+radio, podcast RSS, video page extraction, TTS, ASR/transcription, audio/video
+understanding, thumbnails/posters, transcoding, and media input to LLMs are not
+part of this API.
 
 Markdown `text` parts keep render-time Knowledge citation enhancement.
 

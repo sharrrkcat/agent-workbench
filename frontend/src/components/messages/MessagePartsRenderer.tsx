@@ -105,7 +105,11 @@ function isRenderableMessagePart(part: MessagePart): boolean {
     if (part.source === 'url') return Boolean(part.url && part.mime_type);
     return false;
   }
-  if (part.type === 'video') return part.source === 'attachment' && Boolean(part.url && part.attachment_id && part.mime_type);
+  if (part.type === 'video') {
+    if (part.source === 'attachment') return Boolean(part.url && part.attachment_id && part.mime_type);
+    if (part.source === 'url') return Boolean(part.url && part.mime_type);
+    return false;
+  }
   if (part.type === 'media_group') return Array.isArray(part.items) && part.items.length > 0;
   if (part.type === 'form') return Boolean(part.form_id && Array.isArray(part.fields) && part.submit);
   if (part.type === 'command_buttons') return Array.isArray(part.buttons) && part.buttons.some((button) => button.label.trim() && button.message.trim());

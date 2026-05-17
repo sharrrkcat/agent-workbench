@@ -27,10 +27,10 @@ must not duplicate full parts.
   `source: attachment`, `attachment_id`, `/api/attachments/<id>.<ext>` URL, and
   `audio/*` MIME type. It also supports direct remote audio with `source: url`,
   an `http://` or `https://` URL, and `audio/*` MIME type.
-- `video`: one local attachment-backed video file. v1 supports only
-  `source: attachment` with `attachment_id`, `/api/attachments/<id>.<ext>` URL,
-  and `video/*` MIME type. Supported v1 extensions are `.mp4`, `.webm`, and
-  `.ogv`.
+- `video`: one video file. It supports local attachment-backed video with
+  `source: attachment`, `attachment_id`, `/api/attachments/<id>.<ext>` URL, and
+  `video/*` MIME type. It also supports direct remote video with `source: url`,
+  an `http://` or `https://` URL, and `video/*` MIME type.
 - `media_group`: `layout: gallery` with image items.
 - `form`: validated action form. It does not allow HTML, JavaScript, arbitrary
   URLs, file uploads, password/secret fields, or automatic execution.
@@ -48,10 +48,15 @@ attachment caching, HTTP media proxying, HLS/DASH manifests, `.m3u8`, `.mpd`,
 to LLMs, or audio content understanding. The built-in file Capability creates
 attachment-backed AudioParts through `/read-file <path>` when the local file is
 detected as supported audio.
-VideoPart v1 does not support remote URL sources, HTTP/HTTPS playback URLs,
-`file:` URLs, data URLs, HLS/DASH manifests, livestreams, video metadata
-parsing, thumbnails/posters, transcoding, OCR, ASR, transcription, or video
-content understanding. The built-in file Capability creates VideoParts through
+VideoPart `source: url` is only for safe HTTP/HTTPS direct video links. It does
+not allow `file:`, `data:`, `javascript:`, or `blob:` URLs and must not include
+`attachment_id`. VideoPart requires `video/*` MIME type. Remote poster URLs are
+not supported; `poster_url`, when present, must remain a local attachment URL.
+VideoPart does not support network downloads, remote attachment caching, HTTP
+media proxying, HLS/DASH manifests, `.m3u8`, `.mpd`, livestreams, video page
+extraction, metadata parsing, thumbnail or poster generation, transcoding, OCR,
+ASR, transcription, video input to LLMs, or video content understanding. The
+built-in file Capability creates attachment-backed VideoParts through
 `/read-file <path>` when the local file is detected as supported video.
 
 ## Capability Outputs
@@ -82,14 +87,15 @@ return a raw `file` part with `mode: inline_text`; image files return an
 return an attachment-backed `video` part.
 
 The built-in `http` Capability declares `/fetch-url` as `part_type: parts`
-because it auto-detects supported remote text, HTML, JSON, image, and direct
-audio responses. Plain text returns a plain `text` part, HTML returns
+because it auto-detects supported remote text, HTML, JSON, image, direct audio,
+and direct video responses. Plain text returns a plain `text` part, HTML returns
 lightweight extracted page text, JSON returns a `json` part, images return an
-`image` part, and direct audio returns an AudioPart with `source: url`. HTTP
-audio is not downloaded, cached, saved as a local attachment, or proxied. HTTP
-video, HLS/DASH, `.m3u8`, `.mpd`, `.pls`, livestream/radio/podcast extraction,
-OCR, ASR, TTS, transcription, audio understanding, and PDF parsing are not
-implemented.
+`image` part, direct audio returns an AudioPart with `source: url`, and direct
+video returns a VideoPart with `source: url`. HTTP audio and video are not
+downloaded, cached, saved as local attachments, or proxied. HLS/DASH, `.m3u8`,
+`.mpd`, `.pls`, livestream/radio/podcast extraction, video page extraction,
+OCR, ASR, TTS, transcription, audio/video understanding, and PDF parsing are
+not implemented.
 
 `output.type` is invalid. If a method omits `output`, the runtime infers the
 current parts contract from the returned value: lists are validated as parts,
@@ -105,8 +111,11 @@ Audio parts render with the project custom audio player, backed by a hidden
 `<audio>` element without native browser controls. Remote `source: url` playback
 depends on browser support and the remote server's Content-Type, Range, CORS,
 and hotlink behavior; the workbench does not proxy or repair remote media.
-Video parts render with a native `<video controls preload="metadata">` element
-and only use local attachment URLs.
+Video parts render with a native `<video controls preload="metadata">` element.
+They accept local attachment URLs for `source: attachment` and HTTP/HTTPS direct
+video URLs for `source: url`. Remote playback depends on browser support and
+the remote server's Content-Type, Range, CORS, and hotlink behavior; the
+workbench does not proxy or repair remote media.
 
 Forms and command buttons are first-class parts. Silent form updates replace the
 matching `form` part in `Message.parts[]`.
