@@ -163,3 +163,14 @@ commands:
     method: command
     description: Control the Workbench Pet overlay.
     safe: true
+    argument_suggestions:
+      - value: status
+        description: Show current pet status
+      - value: wake
+        description: Wake the current default pet
+      - value: tuck
+        description: Tuck away the current pet
+      - value: reload
+        description: Reload pet assets
+      - value: select
+        description: Select and wake a pet

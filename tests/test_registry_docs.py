@@ -69,7 +69,7 @@ def test_generate_registry_docs_handles_missing_optional_fields(tmp_path: Path) 
     content = module.generate_registry_markdown(agents_root=agents_root, capabilities_root=capabilities_root)
 
     assert "| minimal_agent | Minimal Agent | prompt | default |  |  |  |  |" in content
-    assert "| minimal_capability | Minimal Capability | echo | /minimal | text |  |" in content
+    assert "| minimal_capability | Minimal Capability | echo | /minimal |  | text |  |" in content
 
 
 def test_generate_registry_docs_cli_check_detects_mismatch(tmp_path: Path) -> None:

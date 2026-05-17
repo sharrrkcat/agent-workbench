@@ -30,6 +30,21 @@ def test_command_registry_exposes_codec_commands() -> None:
     assert commands.get("/encode").method == "encode"
     assert commands.get("/decode").capability_id == "codec"
     assert commands.get("/decode").method == "decode"
+    assert [item.value for item in commands.get("/encode").argument_suggestions] == [
+        "base64",
+        "base64url",
+        "url",
+        "unicode",
+        "hex",
+        "qr",
+    ]
+    assert [item.value for item in commands.get("/decode").argument_suggestions] == [
+        "base64",
+        "base64url",
+        "url",
+        "unicode",
+        "hex",
+    ]
 
 
 def test_command_registry_exposes_pet_command() -> None:
@@ -40,6 +55,13 @@ def test_command_registry_exposes_pet_command() -> None:
 
     assert commands.get("/pet").capability_id == "pet"
     assert commands.get("/pet").method == "command"
+    assert [item.value for item in commands.get("/pet").argument_suggestions] == [
+        "status",
+        "wake",
+        "tuck",
+        "reload",
+        "select",
+    ]
 
 
 def test_command_registry_exposes_single_read_file_command() -> None:

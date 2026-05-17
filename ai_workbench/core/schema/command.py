@@ -1,10 +1,39 @@
 import re
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 COMMAND_NAME_RE = re.compile(r"^/[a-zA-Z][a-zA-Z0-9_\-]*$")
+
+
+class CommandArgumentSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+    label: Optional[str] = None
+    description: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_shape(cls, data):
+        if not isinstance(data, dict):
+            raise ValueError("argument_suggestions items must be objects")
+        value = data.get("value")
+        if not isinstance(value, str):
+            raise ValueError("argument_suggestions.value must be a non-empty string")
+        for field_name in ("label", "description"):
+            field_value = data.get(field_name)
+            if field_value is not None and not isinstance(field_value, str):
+                raise ValueError(f"argument_suggestions.{field_name} must be a string")
+        return data
+
+    @field_validator("value")
+    @classmethod
+    def validate_value(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("argument_suggestions.value must be a non-empty string")
+        return value
 
 
 class CommandSchema(BaseModel):
@@ -15,6 +44,7 @@ class CommandSchema(BaseModel):
     description: str = ""
     safe: bool = False
     confirm: Optional[str] = None
+    argument_suggestions: list[CommandArgumentSuggestion] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -23,6 +53,15 @@ class CommandSchema(BaseModel):
             raise ValueError(
                 "command name must start with '/' and match ^/[a-zA-Z][a-zA-Z0-9_\\-]*$"
             )
+        return value
+
+    @field_validator("argument_suggestions", mode="before")
+    @classmethod
+    def validate_argument_suggestions_list(cls, value):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("argument_suggestions must be an array")
         return value
 
 
@@ -35,4 +74,4 @@ class CommandRegistration(BaseModel):
     description: str = ""
     safe: bool = False
     confirm: Optional[str] = None
-
+    argument_suggestions: list[CommandArgumentSuggestion] = Field(default_factory=list)

@@ -55,8 +55,8 @@ def generate_registry_markdown(
             "",
             "## Capabilities",
             "",
-            "| id | name | methods | commands | output parts | config keys |",
-            "| --- | --- | --- | --- | --- | --- |",
+            "| id | name | methods | commands | command argument suggestions | output parts | config keys |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for capability in sorted(capabilities, key=lambda item: item.id):
@@ -68,6 +68,7 @@ def generate_registry_markdown(
                     _cell(capability.name),
                     _cell(", ".join(method.id for method in capability.methods)),
                     _cell(", ".join(command.name for command in capability.commands)),
+                    _cell(_command_argument_suggestions(capability.commands)),
                     _cell(", ".join(_output_part(method.output) for method in capability.methods if _output_part(method.output))),
                     _cell(", ".join(field.name for field in capability.config_schema)),
                 ]
@@ -174,6 +175,15 @@ def _output_part(output: dict[str, Any]) -> str:
         return ""
     value = output.get("part_type")
     return str(value) if value is not None else ""
+
+
+def _command_argument_suggestions(commands: list[Any]) -> str:
+    summaries = []
+    for command in commands:
+        values = [suggestion.value for suggestion in getattr(command, "argument_suggestions", [])]
+        if values:
+            summaries.append(f"{command.name}: {', '.join(values)}")
+    return "; ".join(summaries)
 
 
 def _cell(value: Any) -> str:

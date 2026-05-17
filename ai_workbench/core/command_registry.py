@@ -29,6 +29,7 @@ class CommandRegistry:
                     description=command.description,
                     safe=command.safe,
                     confirm=command.confirm,
+                    argument_suggestions=command.argument_suggestions,
                 )
             )
 
@@ -50,4 +51,3 @@ class CommandRegistry:
 
     def list(self) -> List[CommandRegistration]:
         return list(self._commands.values())
-

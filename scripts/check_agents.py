@@ -164,6 +164,8 @@ def _check_capabilities(capabilities_path: Path, result: CheckResult, strict: bo
         raw = _load_raw_yaml(manifest_path, result)
         if raw is None:
             continue
+        if strict:
+            _check_raw_command_argument_suggestions(manifest_path, raw, result)
 
         try:
             capability = load_capability_manifest(manifest_path)
@@ -231,6 +233,58 @@ def _check_capabilities(capabilities_path: Path, result: CheckResult, strict: bo
                 )
 
     return capabilities
+
+
+def _check_raw_command_argument_suggestions(manifest_path: Path, raw: dict[str, Any], result: CheckResult) -> None:
+    capability_id = str(raw.get("id") or "<unknown>")
+    commands = raw.get("commands")
+    if not isinstance(commands, list):
+        return
+    for index, raw_command in enumerate(commands):
+        if not isinstance(raw_command, dict):
+            continue
+        command_name = str(raw_command.get("name") or f"<command {index}>")
+        _check_argument_suggestions(manifest_path, capability_id, command_name, raw_command, result)
+
+
+def _check_argument_suggestions(
+    manifest_path: Path,
+    capability_id: str,
+    command_name: str,
+    raw_command: dict[str, Any],
+    result: CheckResult,
+) -> None:
+    field_name = "argument_suggestions"
+    if field_name not in raw_command:
+        return
+    suggestions = raw_command.get(field_name)
+    if not isinstance(suggestions, list):
+        result.errors.append(
+            f"{manifest_path}: capability '{capability_id}' command '{command_name}' field '{field_name}' must be an array"
+        )
+        return
+    for index, suggestion in enumerate(suggestions):
+        item_field = f"{field_name}[{index}]"
+        if not isinstance(suggestion, dict):
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' field '{item_field}' must be an object"
+            )
+            continue
+        value = suggestion.get("value")
+        if "value" not in suggestion:
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' field '{item_field}.value' is required"
+            )
+        elif not isinstance(value, str) or not value.strip():
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' field '{item_field}.value' must be a non-empty string"
+            )
+        for optional_field in ("label", "description"):
+            optional_value = suggestion.get(optional_field)
+            if optional_value is not None and not isinstance(optional_value, str):
+                result.errors.append(
+                    f"{manifest_path}: capability '{capability_id}' command '{command_name}' field '{item_field}.{optional_field}' must be a string"
+                )
 
 
 def _check_actions(manifest_path: Path, agent_id: str, actions: list[Any], result: CheckResult) -> None:

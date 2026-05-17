@@ -20,6 +20,10 @@ Current expected reuse points:
   `frontend/src/components/messages/MessagePartsRenderer.tsx`. There is no
   legacy visible message fallback; copy, renderability, forms, and command
   buttons all read `Message.parts[]`.
+- Chat composer slash command autocomplete uses the shared command palette for
+  command names and static first-argument suggestions from Capability command
+  `argument_suggestions`. It does not implement dynamic path, URL history, or
+  pet id completion.
 - Audio message parts render through
   `frontend/src/components/messages/parts/AudioPartRenderer.tsx` with a custom
   project-styled player backed by a hidden `<audio>` element without native

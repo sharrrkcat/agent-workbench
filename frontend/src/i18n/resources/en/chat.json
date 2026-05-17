@@ -7,6 +7,7 @@
   "attachFiles": "Attach files",
   "mentionAgent": "Mention an agent",
   "useCommand": "Use a command",
+  "argumentSuggestions": "Arguments",
   "attachedImage": "Attached image",
   "file": "File",
   "removeAttachment": "Remove {{name}}",

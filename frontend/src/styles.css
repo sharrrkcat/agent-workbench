@@ -4164,6 +4164,15 @@ input:disabled {
   color: #f5f5f5;
 }
 
+.command-palette-heading {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 2px 10px 0;
+  text-transform: uppercase;
+}
+
 .command-palette button:hover,
 .command-palette button.selected {
   background: rgba(255, 255, 255, 0.07);

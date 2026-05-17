@@ -4,7 +4,7 @@ import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, 
 import { useTranslation } from 'react-i18next';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
-import { CommandPalette, type CommandPaletteItem } from './CommandPalette';
+import { CommandPalette, commandArgumentAutocompleteMode, type CommandPaletteItem } from './CommandPalette';
 import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
@@ -28,7 +28,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [modelMenuStyle, setModelMenuStyle] = useState<CSSProperties>({});
-  const { agents, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError, setComposerDraftText } = useWorkbenchStore();
+  const { agents, commands, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError, setComposerDraftText } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
   const modelMenuRendered = usePopoverPresence(modelMenuOpen);
 
@@ -37,12 +37,12 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const activeToken = useMemo(() => getActiveToken(value, cursorPosition), [cursorPosition, value]);
   const mode = useMemo(() => {
     if (!activeToken || suggestionsDismissed) return 'none';
-    if (activeToken.token.startsWith('/')) return 'commands';
+    if (activeToken.token.startsWith('/')) return commandArgumentAutocompleteMode(activeToken.token, commands) ? 'command-arguments' : 'commands';
     if (activeToken.token.startsWith('@') && activeToken.token.includes(':')) return 'actions';
     if (activeToken.token.startsWith('@')) return 'agents';
     if (activeToken.token.startsWith(':')) return 'current-actions';
     return 'none';
-  }, [activeToken, suggestionsDismissed]);
+  }, [activeToken, commands, suggestionsDismissed]);
 
   const suggestionPanelOpen = mode !== 'none';
   const isCompact = !isFocused && value.trim().length === 0 && attachments.length === 0 && !suggestionPanelOpen && !sending;
@@ -608,6 +608,10 @@ function getActiveToken(value: string, cursorPosition: number): { token: string;
     return { token: value, start: 0, end: cursor };
   }
   const beforeCursor = value.slice(0, cursor);
+  const slashCommandArgument = beforeCursor.match(/^(\/[a-zA-Z][a-zA-Z0-9_-]*)(?:\s+([^\s]*))?$/);
+  if (slashCommandArgument) {
+    return { token: beforeCursor, start: 0, end: cursor };
+  }
   const tokenStart = Math.max(beforeCursor.search(/\S+$/), 0);
   const token = value.slice(tokenStart, cursor);
 

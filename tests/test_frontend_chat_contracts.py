@@ -73,6 +73,23 @@ def test_composer_draft_text_drives_pet_waiting_state() -> None:
     assert "composerDraftText.trim().length > 0" in overlay_source
 
 
+def test_chat_input_supports_static_command_argument_suggestions() -> None:
+    input_source = read_frontend("components/ChatInput.tsx")
+    palette_source = read_frontend("components/CommandPalette.tsx")
+    types_source = read_frontend("types.ts")
+    en_chat = read_frontend("i18n/resources/en/chat.json")
+    zh_chat = read_frontend("i18n/resources/zh-CN/chat.json")
+
+    assert "commandArgumentAutocompleteMode(activeToken.token, commands)" in input_source
+    assert "'command-arguments'" in palette_source
+    assert "parseCommandArgumentToken" in palette_source
+    assert "suggestion.value.toLowerCase().startsWith(argumentContext.prefix.toLowerCase())" in palette_source
+    assert "value: `${argumentContext.command.name} ${suggestion.value} `" in palette_source
+    assert "argument_suggestions?: CommandArgumentSuggestion[]" in types_source
+    assert '"argumentSuggestions": "Arguments"' in en_chat
+    assert '"argumentSuggestions": "参数"' in zh_chat
+
+
 def test_message_knowledge_snippets_modal_contract() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     client = read_frontend("api/client.ts")
@@ -406,7 +423,7 @@ def test_script_lifecycle_audio_demo_duration_contract() -> None:
 def test_generated_registry_lists_single_file_read_command() -> None:
     registry = read_repo("docs/generated/REGISTRY.md")
 
-    assert "| file | File Capability | read_file, read_text, read_image, read_audio | /read-file | parts, file, image, audio |" in registry
+    assert "| file | File Capability | read_file, read_text, read_image, read_audio | /read-file |  | parts, file, image, audio |" in registry
     assert "max_local_video_read_size_mb" in registry
     assert "/read-image" not in registry
     assert "/read-audio" not in registry
@@ -420,7 +437,7 @@ def test_generated_registry_lists_single_http_fetch_url_command() -> None:
     en_capabilities = read_frontend("i18n/resources/en/capabilities.json")
     zh_capabilities = read_frontend("i18n/resources/zh-CN/capabilities.json")
 
-    assert "| http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url | parts, text, text, image |" in registry
+    assert "| http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url |  | parts, text, text, image |" in registry
     assert "enable_fetch_url_command" in registry
     assert "/http-get" not in registry
     assert "/fetch-page" not in registry

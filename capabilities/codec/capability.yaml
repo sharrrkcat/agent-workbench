@@ -63,8 +63,32 @@ commands:
     method: encode
     description: Encode text or the current image attachment.
     safe: true
+    argument_suggestions:
+      - value: base64
+        description: Standard Base64
+      - value: base64url
+        description: URL-safe Base64
+      - value: url
+        description: URL component percent encoding
+      - value: unicode
+        description: Unicode escape text
+      - value: hex
+        description: Hex encode UTF-8 text
+      - value: qr
+        description: Generate a QR code image
 
   - name: /decode
     method: decode
     description: Decode text.
     safe: true
+    argument_suggestions:
+      - value: base64
+        description: Standard Base64 or Base64 data URL
+      - value: base64url
+        description: URL-safe Base64
+      - value: url
+        description: URL component percent decoding
+      - value: unicode
+        description: Unicode escape decoding
+      - value: hex
+        description: Hex decode UTF-8 text

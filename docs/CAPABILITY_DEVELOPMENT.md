@@ -42,6 +42,9 @@ commands:
     method: echo
     description: Echo input text.
     safe: true
+    argument_suggestions:
+      - value: plain
+        description: Echo plain text
 ```
 
 `capabilities/demo_tool/__init__.py`:
@@ -77,6 +80,33 @@ Commands are user-facing wrappers declared in Capability manifests. They are glo
 ```
 
 Agents do not declare slash commands. Keep the `@agent` and `/command` namespaces separate.
+
+Commands may declare static `argument_suggestions` for the first argument when
+one command groups several modes. The suggestions are UI hints only; they do not
+validate input and they do not change runtime method arguments.
+
+```yaml
+commands:
+  - name: /encode
+    method: encode
+    description: Encode text or the current image attachment.
+    safe: true
+    argument_suggestions:
+      - value: base64
+        description: Standard Base64
+      - value: url
+        description: URL component percent encoding
+
+  - name: /decode
+    method: decode
+    description: Decode text.
+    safe: true
+    argument_suggestions:
+      - value: base64
+        description: Standard Base64 or Base64 data URL
+      - value: url
+        description: URL component percent decoding
+```
 
 ## Output Parts
 

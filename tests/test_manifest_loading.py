@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from ai_workbench.core.manifest_loader import load_agent_manifest, load_capability_manifest
 from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.capability import CapabilitySchema
+from scripts.check_agents import CheckResult, _check_capabilities
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +49,93 @@ def test_capability_manifest_loads() -> None:
     assert {method.id for method in capability.methods} == {"encode", "decode"}
     assert {command.name for command in capability.commands} == {"/encode", "/decode"}
     assert all(method.output == {"part_type": "parts"} for method in capability.methods)
+
+
+def test_command_argument_suggestions_load() -> None:
+    capability = CapabilitySchema.model_validate(
+        {
+            "id": "demo_capability",
+            "name": "Demo Capability",
+            "methods": [{"id": "encode"}],
+            "commands": [
+                {
+                    "name": "/encode",
+                    "method": "encode",
+                    "argument_suggestions": [
+                        {"value": "base64", "description": "Standard Base64"},
+                        {"value": "url", "label": "URL", "description": "URL component percent encoding"},
+                    ],
+                }
+            ],
+        }
+    )
+
+    command = capability.commands[0]
+    assert command.argument_suggestions[0].value == "base64"
+    assert command.argument_suggestions[1].label == "URL"
+
+
+def test_command_without_argument_suggestions_loads() -> None:
+    capability = CapabilitySchema.model_validate(
+        {
+            "id": "demo_capability",
+            "name": "Demo Capability",
+            "methods": [{"id": "echo"}],
+            "commands": [{"name": "/echo", "method": "echo"}],
+        }
+    )
+
+    assert capability.commands[0].argument_suggestions == []
+
+
+def test_builtin_command_argument_suggestions_load() -> None:
+    codec = load_capability_manifest(ROOT / "capabilities" / "codec" / "capability.yaml")
+    pet = load_capability_manifest(ROOT / "capabilities" / "pet" / "capability.yaml")
+
+    encode = next(command for command in codec.commands if command.name == "/encode")
+    decode = next(command for command in codec.commands if command.name == "/decode")
+    pet_command = pet.commands[0]
+
+    assert [item.value for item in encode.argument_suggestions] == ["base64", "base64url", "url", "unicode", "hex", "qr"]
+    assert [item.value for item in decode.argument_suggestions] == ["base64", "base64url", "url", "unicode", "hex"]
+    assert "qr" not in [item.value for item in decode.argument_suggestions]
+    assert [item.value for item in pet_command.argument_suggestions] == ["status", "wake", "tuck", "reload", "select"]
+
+
+@pytest.mark.parametrize(
+    ("argument_suggestions", "expected"),
+    [
+        ("bad", "field 'argument_suggestions' must be an array"),
+        ([{"description": "Missing value"}], "field 'argument_suggestions[0].value' is required"),
+        ([{"value": ""}], "field 'argument_suggestions[0].value' must be a non-empty string"),
+        ([{"value": "base64", "description": 123}], "field 'argument_suggestions[0].description' must be a string"),
+    ],
+)
+def test_strict_check_reports_invalid_argument_suggestions_shape(tmp_path: Path, argument_suggestions, expected: str) -> None:
+    capability_dir = tmp_path / "bad_capability"
+    capability_dir.mkdir()
+    capability_dir.joinpath("__init__.py").write_text(
+        "class CapabilityRuntime:\n    def echo(self, args=''):\n        return args\n",
+        encoding="utf-8",
+    )
+    capability_dir.joinpath("capability.yaml").write_text(
+        f"""
+id: bad_capability
+name: Bad Capability
+methods:
+  - id: echo
+commands:
+  - name: /bad
+    method: echo
+    argument_suggestions: {argument_suggestions!r}
+""",
+        encoding="utf-8",
+    )
+    result = CheckResult()
+
+    _check_capabilities(tmp_path, result, strict=True)
+
+    assert any("capability 'bad_capability'" in error and "command '/bad'" in error and expected in error for error in result.errors)
 
 
 def test_agent_without_default_action_fails() -> None:

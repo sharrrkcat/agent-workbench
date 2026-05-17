@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import type { Command } from '../types';
 
-type PaletteMode = 'commands' | 'agents' | 'actions' | 'current-actions' | 'none';
+type PaletteMode = 'commands' | 'command-arguments' | 'agents' | 'actions' | 'current-actions' | 'none';
 
 export type CommandPaletteItem = {
   key: string;
@@ -33,10 +34,20 @@ export function CommandPalette({
   const query = token.slice(1).toLowerCase();
   const actionQuery = token.split(':')[1]?.toLowerCase() ?? '';
   const currentActionQuery = token.slice(1).toLowerCase();
+  const argumentContext = mode === 'command-arguments' ? parseCommandArgumentToken(token, commands) : null;
 
   const items: CommandPaletteItem[] =
     mode === 'none'
       ? []
+      : mode === 'command-arguments' && argumentContext
+      ? argumentContext.command.argument_suggestions
+          ?.filter((suggestion) => suggestion.value.toLowerCase().startsWith(argumentContext.prefix.toLowerCase()))
+          .map((suggestion) => ({
+            key: `${argumentContext.command.name}:${suggestion.value}`,
+            label: suggestion.label || suggestion.value,
+            detail: suggestion.description || '',
+            value: `${argumentContext.command.name} ${suggestion.value} `,
+          })) ?? []
       : mode === 'commands'
       ? commands
           .filter((command) => command.name.toLowerCase().startsWith(token.toLowerCase()))
@@ -112,6 +123,7 @@ export function CommandPalette({
 
   return (
     <div className="command-palette">
+      {mode === 'command-arguments' ? <div className="command-palette-heading">{t('chat:argumentSuggestions')}</div> : null}
       {visibleItems.map((item) => (
         <button type="button" key={item.key} onClick={() => !item.disabled && onPick(item.value)} className={`${item.disabled ? 'disabled' : ''} ${item.key === activeKey ? 'selected' : ''}`.trim()} disabled={item.disabled}>
           <span>{item.label}</span>
@@ -120,4 +132,16 @@ export function CommandPalette({
       ))}
     </div>
   );
+}
+
+export function commandArgumentAutocompleteMode(token: string, commands: Command[]): boolean {
+  return parseCommandArgumentToken(token, commands) !== null;
+}
+
+function parseCommandArgumentToken(token: string, commands: Command[]): { command: Command; prefix: string } | null {
+  const match = token.match(/^(\/[a-zA-Z][a-zA-Z0-9_-]*)(?:\s+([^\s]*))?$/);
+  if (!match) return null;
+  const command = commands.find((item) => item.name === match[1]);
+  if (!command?.argument_suggestions?.length) return null;
+  return { command, prefix: match[2] ?? '' };
 }

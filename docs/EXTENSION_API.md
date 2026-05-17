@@ -101,14 +101,8 @@ commands. Prompt Agent final messages persist a markdown `text` part in Message
 Parts v2. Prompt Agents that call an LLM should declare `capabilities: [llm]`.
 
 Core Memory, Worldbook, Knowledge, streaming, LLM resolution, and title
-generation are runtime-owned. See:
-
-- [contracts/runtime-llm-resolution.md](contracts/runtime-llm-resolution.md)
-- [contracts/runtime-streaming.md](contracts/runtime-streaming.md)
-- [contracts/runtime-run-lifecycle.md](contracts/runtime-run-lifecycle.md)
-- [contracts/memory-worldbook.md](contracts/memory-worldbook.md)
-- [contracts/knowledge.md](contracts/knowledge.md)
-- [contracts/utility-llm.md](contracts/utility-llm.md)
+generation are runtime-owned. See the focused runtime, Memory/Worldbook,
+Knowledge, and Utility LLM contracts under [contracts/](contracts/).
 
 ## Script Agents
 
@@ -243,6 +237,17 @@ commands.
 | `commands` | User-facing slash commands. | Global namespace; names start with `/`. |
 | `safe` | Command safety hint. | Documentation/UI hint, not a sandbox. |
 | `config_schema` | Local CapabilityConfig fields. | Settings stores values by capability id. |
+
+### Command Fields
+
+| field | meaning | notes |
+| --- | --- | --- |
+| `name` | Global slash command name. | Must start with `/`. |
+| `method` | Capability method to call. | Must reference a declared method. |
+| `description` | Short command help text. | Used by UI and generated registry. |
+| `safe` | Command safety hint. | Does not enforce sandbox behavior. |
+| `confirm` | Optional confirmation text. | UI/runtime may use it before execution. |
+| `argument_suggestions` | Static first-argument UI hints. | Optional list of `{ value, label?, description? }`; `value` must be non-empty. This is not backend argument validation and is not passed to runtime methods. |
 
 For a minimal manifest example, see [CAPABILITY_DEVELOPMENT.md](CAPABILITY_DEVELOPMENT.md).
 

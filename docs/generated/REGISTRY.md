@@ -16,17 +16,17 @@ Do not edit manually.
 
 ## Capabilities
 
-| id | name | methods | commands | output parts | config keys |
-| --- | --- | --- | --- | --- | --- |
-| codec | Codec Capability | encode, decode | /encode, /decode | parts, parts | max_text_input_chars, max_decoded_bytes_mb, max_attachment_encode_mb, enable_attachment_encode, max_qr_text_chars, qr_scale |
-| comfyui | ComfyUI Capability | test_connection, get_queue, get_history, submit_workflow, wait_for_prompt, get_prompt_status, extract_outputs, fetch_image, collect_images_for_prompt, free_memory, interrupt, upload_image, get_object_info, scan_workflow_library, list_workflows, list_presets, validate_preset, load_preset |  | json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json | base_url, timeout_seconds, poll_interval_seconds, max_wait_seconds, verify_ssl, default_image_response_mode, enable_upload, workflows_dir, presets_dir, auto_create_missing_presets, allow_workflow_file_write, allow_preset_file_write |
-| file | File Capability | read_file, read_text, read_image, read_audio | /read-file | parts, file, image, audio | allowed_directories, max_local_text_read_size_mb, max_local_image_read_size_mb, max_local_audio_read_size_mb, max_local_video_read_size_mb, allowed_text_extensions, enable_read_file_command |
-| http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url | parts, text, text, image | enable_fetch_url_command, allowed_schemes, timeout_seconds, max_text_response_size_mb, max_image_response_size_mb, allow_redirects, max_redirects |
-| knowledge | Knowledge | search, list_bases, stats | /kb-search | json, json, json |  |
-| llm | LLM Capability | generate, chat, unload |  | text, text, json | base_url, api_key, model, default_profile, timeout |
-| pet | Pet | command, get_settings, update_settings, list_pets, scan_pets, validate_pet, delete_pet, import_pet | /pet | text, json, json, json, json, json, json, json | pet_enabled, default_pet_id, pet_scale, show_status_bubble, bubble_offset_x, bubble_offset_y, jump_on_hover, running_prefix, position, bubble_texts, command_texts |
-| runtime | Runtime Control | free_memory | /free-memory | text |  |
-| storage | Storage | get, set |  |  |  |
+| id | name | methods | commands | command argument suggestions | output parts | config keys |
+| --- | --- | --- | --- | --- | --- | --- |
+| codec | Codec Capability | encode, decode | /encode, /decode | /encode: base64, base64url, url, unicode, hex, qr; /decode: base64, base64url, url, unicode, hex | parts, parts | max_text_input_chars, max_decoded_bytes_mb, max_attachment_encode_mb, enable_attachment_encode, max_qr_text_chars, qr_scale |
+| comfyui | ComfyUI Capability | test_connection, get_queue, get_history, submit_workflow, wait_for_prompt, get_prompt_status, extract_outputs, fetch_image, collect_images_for_prompt, free_memory, interrupt, upload_image, get_object_info, scan_workflow_library, list_workflows, list_presets, validate_preset, load_preset |  |  | json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json | base_url, timeout_seconds, poll_interval_seconds, max_wait_seconds, verify_ssl, default_image_response_mode, enable_upload, workflows_dir, presets_dir, auto_create_missing_presets, allow_workflow_file_write, allow_preset_file_write |
+| file | File Capability | read_file, read_text, read_image, read_audio | /read-file |  | parts, file, image, audio | allowed_directories, max_local_text_read_size_mb, max_local_image_read_size_mb, max_local_audio_read_size_mb, max_local_video_read_size_mb, allowed_text_extensions, enable_read_file_command |
+| http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url |  | parts, text, text, image | enable_fetch_url_command, allowed_schemes, timeout_seconds, max_text_response_size_mb, max_image_response_size_mb, allow_redirects, max_redirects |
+| knowledge | Knowledge | search, list_bases, stats | /kb-search |  | json, json, json |  |
+| llm | LLM Capability | generate, chat, unload |  |  | text, text, json | base_url, api_key, model, default_profile, timeout |
+| pet | Pet | command, get_settings, update_settings, list_pets, scan_pets, validate_pet, delete_pet, import_pet | /pet | /pet: status, wake, tuck, reload, select | text, json, json, json, json, json, json, json | pet_enabled, default_pet_id, pet_scale, show_status_bubble, bubble_offset_x, bubble_offset_y, jump_on_hover, running_prefix, position, bubble_texts, command_texts |
+| runtime | Runtime Control | free_memory | /free-memory |  | text |  |
+| storage | Storage | get, set |  |  |  |  |
 
 ## Notes
 

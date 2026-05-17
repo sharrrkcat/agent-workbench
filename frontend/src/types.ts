@@ -63,8 +63,15 @@ export type Command = {
   description: string;
   safe: boolean;
   confirm?: string | null;
+  argument_suggestions?: CommandArgumentSuggestion[];
   enabled: boolean;
   capability_enabled: boolean;
+};
+
+export type CommandArgumentSuggestion = {
+  value: string;
+  label?: string | null;
+  description?: string | null;
 };
 
 export type ManifestSummary = {

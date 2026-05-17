@@ -7,6 +7,7 @@
   "attachFiles": "添加附件",
   "mentionAgent": "提及 Agent",
   "useCommand": "使用命令",
+  "argumentSuggestions": "参数",
   "attachedImage": "已附加图片",
   "file": "文件",
   "removeAttachment": "移除 {{name}}",

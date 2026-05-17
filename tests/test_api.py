@@ -612,6 +612,15 @@ def test_list_commands_returns_codec_commands() -> None:
     assert {"/encode", "/decode"}.issubset(names)
     assert {"/base64", "/base64-decode", "/base64-image", "/base64-to-image", "/image-base64", "/base64-encode-image"}.isdisjoint(names)
     assert all("capability_enabled" in command for command in response.json())
+    encode = next(command for command in response.json() if command["name"] == "/encode")
+    decode = next(command for command in response.json() if command["name"] == "/decode")
+    pet = next(command for command in response.json() if command["name"] == "/pet")
+    read_file = next(command for command in response.json() if command["name"] == "/read-file")
+    assert [item["value"] for item in encode["argument_suggestions"]] == ["base64", "base64url", "url", "unicode", "hex", "qr"]
+    assert [item["value"] for item in decode["argument_suggestions"]] == ["base64", "base64url", "url", "unicode", "hex"]
+    assert "qr" not in [item["value"] for item in decode["argument_suggestions"]]
+    assert [item["value"] for item in pet["argument_suggestions"]] == ["status", "wake", "tuck", "reload", "select"]
+    assert read_file["argument_suggestions"] == []
 
 
 def test_unknown_command_returns_structured_api_error_without_run() -> None:
