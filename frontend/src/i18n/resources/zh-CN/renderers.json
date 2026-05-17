@@ -48,5 +48,8 @@
     "previewFrontendApp": "附件预览返回了前端应用，而不是文件内容。",
     "copyFileContent": "复制文件内容失败",
     "copyNotification": "复制通知失败"
+  },
+  "video": {
+    "loadFailed": "视频无法加载。"
   }
 }

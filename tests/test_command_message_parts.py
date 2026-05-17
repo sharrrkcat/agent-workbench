@@ -30,6 +30,9 @@ class OutputRuntime:
     def audio(self, args: str) -> dict[str, Any]:
         return {"source": "attachment", "attachment_id": "att-1", "url": "/api/attachments/att-1.wav", "mime_type": "audio/wav"}
 
+    def video(self, args: str) -> dict[str, Any]:
+        return {"source": "attachment", "attachment_id": "vid-1", "url": "/api/attachments/vid-1.mp4", "mime_type": "video/mp4"}
+
     def image_gallery(self, args: str) -> dict[str, Any]:
         return {"images": [{"url": "/api/attachments/a.png", "alt": "A"}]}
 
@@ -49,6 +52,9 @@ class OutputRuntime:
 
     def auto_detected_audio(self, args: str) -> list[dict[str, Any]]:
         return [{"type": "audio", "source": "attachment", "attachment_id": "att-1", "url": "/api/attachments/att-1.wav", "mime_type": "audio/wav"}]
+
+    def auto_detected_video(self, args: str) -> list[dict[str, Any]]:
+        return [{"type": "video", "source": "attachment", "attachment_id": "vid-1", "url": "/api/attachments/vid-1.mp4", "mime_type": "video/mp4"}]
 
     def inferred_json(self, args: str) -> dict[str, Any]:
         return {"inferred": True}
@@ -70,10 +76,12 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"id": "file_content", "output": {"part_type": "file", "mode": "inline_text"}},
                 {"id": "image", "output": {"part_type": "image"}},
                 {"id": "audio", "output": {"part_type": "audio"}},
+                {"id": "video", "output": {"part_type": "video"}},
                 {"id": "image_gallery", "output": {"part_type": "media_group", "layout": "gallery"}},
                 {"id": "rich_form", "output": {"part_type": "parts"}},
                 {"id": "rich_buttons", "output": {"part_type": "parts"}},
                 {"id": "auto_detected_audio", "output": {"part_type": "parts"}},
+                {"id": "auto_detected_video", "output": {"part_type": "parts"}},
                 {"id": "inferred_json"},
             ],
             "commands": [
@@ -83,10 +91,12 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"name": "/out-file", "method": "file_content"},
                 {"name": "/out-image", "method": "image"},
                 {"name": "/out-audio", "method": "audio"},
+                {"name": "/out-video", "method": "video"},
                 {"name": "/out-gallery", "method": "image_gallery"},
                 {"name": "/out-form", "method": "rich_form"},
                 {"name": "/out-buttons", "method": "rich_buttons"},
                 {"name": "/out-auto-audio", "method": "auto_detected_audio"},
+                {"name": "/out-auto-video", "method": "auto_detected_video"},
                 {"name": "/out-inferred", "method": "inferred_json"},
             ],
         }
@@ -180,6 +190,22 @@ def test_capability_command_audio_output_writes_audio_part() -> None:
     assert not hasattr(message, "output_type")
 
 
+def test_capability_command_video_output_writes_video_part() -> None:
+    _, message, _ = command_message("/out-video")
+
+    assert message.parts == [
+        {
+            "id": "part_1",
+            "type": "video",
+            "source": "attachment",
+            "attachment_id": "vid-1",
+            "url": "/api/attachments/vid-1.mp4",
+            "mime_type": "video/mp4",
+        }
+    ]
+    assert not hasattr(message, "output_type")
+
+
 def test_capability_command_image_gallery_output_writes_media_group_part() -> None:
     _, message, _ = command_message("/out-gallery")
 
@@ -223,6 +249,23 @@ def test_parts_output_keeps_audio_part_instead_of_json() -> None:
             "attachment_id": "att-1",
             "url": "/api/attachments/att-1.wav",
             "mime_type": "audio/wav",
+        }
+    ]
+    assert message.metadata["output_part_type"] == "parts"
+    assert not hasattr(message, "output_type")
+
+
+def test_parts_output_keeps_video_part_instead_of_json() -> None:
+    _, message, _ = command_message("/out-auto-video")
+
+    assert message.parts == [
+        {
+            "id": "part_1",
+            "type": "video",
+            "source": "attachment",
+            "attachment_id": "vid-1",
+            "url": "/api/attachments/vid-1.mp4",
+            "mime_type": "video/mp4",
         }
     ]
     assert message.metadata["output_part_type"] == "parts"

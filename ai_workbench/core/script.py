@@ -18,6 +18,7 @@ from ai_workbench.core.attachments import (
     read_attachment_text,
     save_generated_attachment_base64,
     save_generated_attachment_bytes,
+    save_generated_attachment_file,
 )
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
@@ -31,6 +32,7 @@ from ai_workbench.core.message_parts import (
     make_file_part,
     make_error_part,
     make_audio_part,
+    make_video_part,
     make_image_part,
     make_json_part,
     make_media_group_part,
@@ -966,6 +968,40 @@ class AgentContext:
             )
         return await self.reply_parts([part], actions=actions, metadata=metadata)
 
+    async def reply_video(
+        self,
+        video_attachment_or_part: dict[str, Any],
+        title: str = None,
+        actions=None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        payload = dict(video_attachment_or_part or {})
+        if payload.get("type") == "video" and payload.get("source") == "attachment":
+            part = make_video_part(
+                attachment_id=str(payload.get("attachment_id") or ""),
+                url=str(payload.get("url") or ""),
+                mime_type=str(payload.get("mime_type") or ""),
+                filename=payload.get("filename"),
+                title=title if title is not None else payload.get("title"),
+                size_bytes=payload.get("size_bytes"),
+                duration_ms=payload.get("duration_ms"),
+                width=payload.get("width"),
+                height=payload.get("height"),
+                poster_url=payload.get("poster_url"),
+            )
+        else:
+            if payload.get("type") not in {"video", None}:
+                raise ValueError("reply_video requires a video attachment or VideoPart.")
+            part = make_video_part(
+                attachment_id=str(payload.get("id") or payload.get("attachment_id") or ""),
+                url=str(payload.get("url") or ""),
+                mime_type=str(payload.get("mime_type") or ""),
+                filename=payload.get("name") or payload.get("filename"),
+                title=title,
+                size_bytes=payload.get("size") if isinstance(payload.get("size"), int) else payload.get("size_bytes"),
+            )
+        return await self.reply_parts([part], actions=actions, metadata=metadata)
+
     async def reply_images(self, images: list, actions=None, metadata: Optional[Dict[str, Any]] = None):
         items = [{"type": "image", **dict(image)} for image in images]
         return await self.reply_parts([make_media_group_part(items)], actions=actions, metadata=metadata)
@@ -1041,6 +1077,24 @@ class AgentContext:
     ) -> dict[str, Any]:
         attachment = save_generated_attachment_base64(
             data_base64=data_base64,
+            filename=filename,
+            mime_type=mime_type,
+            kind=kind,
+            metadata=metadata,
+        )
+        self._link_generated_attachment(attachment)
+        return attachment
+
+    async def save_attachment_file(
+        self,
+        source_path: str | Path,
+        filename: str = None,
+        mime_type: str = None,
+        kind: str = "file",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        attachment = save_generated_attachment_file(
+            source_path=source_path,
             filename=filename,
             mime_type=mime_type,
             kind=kind,

@@ -41,6 +41,14 @@ config_schema:
     maximum: 100
     description: Maximum local audio file size for /read-file audio results.
 
+  - name: max_local_video_read_size_mb
+    type: float
+    label: Max local video read size
+    default: 5120
+    minimum: 0.1
+    maximum: 5120
+    description: Maximum local video file size for /read-file video outputs.
+
   - name: allowed_text_extensions
     type: json
     label: Allowed text extensions

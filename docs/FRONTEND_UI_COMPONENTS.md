@@ -24,3 +24,8 @@ Current expected reuse points:
   `frontend/src/components/messages/parts/AudioPartRenderer.tsx` with a custom
   project-styled player backed by a hidden `<audio>` element without native
   controls. It only accepts local attachment-backed URLs.
+- Video message parts render through
+  `frontend/src/components/messages/parts/VideoPartRenderer.tsx` with native
+  `<video controls preload="metadata">`. It only accepts local
+  attachment-backed URLs, does not autoplay, and does not implement custom
+  playback controls.

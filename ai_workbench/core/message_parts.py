@@ -16,6 +16,7 @@ MessagePartType = Literal[
     "file",
     "image",
     "audio",
+    "video",
     "media_group",
     "form",
     "command_buttons",
@@ -124,6 +125,42 @@ class AudioPart(_PartBase):
         return cleaned
 
 
+class VideoPart(_PartBase):
+    type: Literal["video"]
+    source: Literal["attachment"] = "attachment"
+    attachment_id: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    mime_type: str = Field(min_length=1)
+    filename: str | None = None
+    title: str | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    duration_ms: int | None = Field(default=None, ge=0)
+    width: int | None = Field(default=None, ge=1)
+    height: int | None = Field(default=None, ge=1)
+    poster_url: str | None = None
+
+    @field_validator("url", "poster_url")
+    @classmethod
+    def validate_local_attachment_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        lowered = cleaned.lower()
+        if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:")):
+            raise ValueError("video url must be a local attachment URL")
+        if not _LOCAL_ATTACHMENT_URL_RE.match(cleaned):
+            raise ValueError("video url must use /api/attachments/<id>.<ext>")
+        return cleaned
+
+    @field_validator("mime_type")
+    @classmethod
+    def validate_video_mime_type(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if not cleaned.startswith("video/"):
+            raise ValueError("video mime_type must be video/*")
+        return cleaned
+
+
 class MediaGroupImageItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -197,6 +234,7 @@ _PART_ADAPTERS = {
     "file": TypeAdapter(FilePart),
     "image": TypeAdapter(ImagePart),
     "audio": TypeAdapter(AudioPart),
+    "video": TypeAdapter(VideoPart),
     "media_group": TypeAdapter(MediaGroupPart),
     "form": TypeAdapter(FormPart),
     "command_buttons": TypeAdapter(CommandButtonsPart),
@@ -284,6 +322,41 @@ def make_audio_part(
     )
 
 
+def make_video_part(
+    *,
+    attachment_id: str,
+    url: str,
+    mime_type: str,
+    filename: str | None = None,
+    title: str | None = None,
+    size_bytes: int | None = None,
+    duration_ms: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    poster_url: str | None = None,
+    part_id: str | None = None,
+) -> dict[str, Any]:
+    return validate_message_part(
+        _drop_none(
+            {
+                "id": part_id or "part_1",
+                "type": "video",
+                "source": "attachment",
+                "attachment_id": attachment_id,
+                "url": url,
+                "mime_type": mime_type,
+                "filename": filename,
+                "title": title,
+                "size_bytes": size_bytes,
+                "duration_ms": duration_ms,
+                "width": width,
+                "height": height,
+                "poster_url": poster_url,
+            }
+        )
+    )
+
+
 def make_media_group_part(items: Sequence[Mapping[str, Any]], *, layout: Literal["gallery"] = "gallery", part_id: str | None = None) -> dict[str, Any]:
     return validate_message_part({"id": part_id or "part_1", "type": "media_group", "layout": layout, "items": [dict(item) for item in items]})
 
@@ -365,6 +438,10 @@ def capability_output_to_parts(output: Mapping[str, Any] | None, content: Any) -
         if not isinstance(content, Mapping):
             raise MessagePartValidationError("audio output must be an object")
         return validate_message_parts([{"type": "audio", **dict(content)}])
+    if kind == "video":
+        if not isinstance(content, Mapping):
+            raise MessagePartValidationError("video output must be an object")
+        return validate_message_parts([{"type": "video", **dict(content)}])
     if kind == "media_group":
         if not isinstance(content, Mapping):
             raise MessagePartValidationError("media_group output must be an object")

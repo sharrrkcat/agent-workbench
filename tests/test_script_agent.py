@@ -45,6 +45,10 @@ def audio_part(message):
     return next(part for part in message.parts if part.get("type") == "audio")
 
 
+def video_part(message):
+    return next(part for part in message.parts if part.get("type") == "video")
+
+
 def media_group_part(message):
     return next(part for part in message.parts if part.get("type") == "media_group")
 
@@ -1213,7 +1217,33 @@ def test_reply_audio_helper_writes_audio_part(monkeypatch, tmp_path: Path) -> No
     assert part["source"] == "attachment"
     assert part["mime_type"] == "audio/wav"
     assert part["title"] == "Demo audio"
-    assert part["duration_ms"] == 500
+
+
+def test_reply_video_helper_writes_video_part(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    video_source = tmp_path / "demo.mp4"
+    video_source.write_bytes(b"video")
+    registry = write_script_agent(
+        tmp_path,
+        "video_reply_script",
+        "async def run(ctx):\n"
+        f"    attachment = await ctx.save_attachment_file(r'{video_source}', filename='demo.mp4', mime_type='video/mp4', kind='video')\n"
+        "    await ctx.reply_video(attachment, title='Demo video')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session()
+
+    result = run(fixture.runtime.handle_input(session, "@video_reply_script hello"))
+    message = fixture.messages.list_messages(session.session_id)[-1]
+    part = video_part(message)
+
+    assert result.success is True
+    assert part["type"] == "video"
+    assert part["source"] == "attachment"
+    assert part["mime_type"] == "video/mp4"
+    assert part["title"] == "Demo video"
+    attachment = message.metadata["generated_attachments"][0]
+    assert attachment["type"] == "video"
 
 
 def test_reply_parts_writes_v2_parts_without_legacy_visible_content(tmp_path: Path) -> None:

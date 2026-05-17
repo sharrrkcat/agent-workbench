@@ -11,9 +11,9 @@ attachment ids, type, MIME type, name, size, URI/URL, timestamps, dimensions, an
 compact source details where relevant. It must not store full base64 payloads
 for normal local attachments.
 
-Generated files, audio, and images should be saved as local attachments and returned by
-local URLs such as `/api/attachments/<id>.png`. Do not put large base64 data URLs
-in durable message content.
+Generated files, audio, video, and images should be saved as local attachments
+and returned by local URLs such as `/api/attachments/<id>.png`. Do not put large
+base64 data URLs in durable message content.
 
 Generated attachment metadata may record compact integration details such as
 ComfyUI prompt id, preset id, workflow file name, and image type. ComfyUI final
@@ -25,12 +25,12 @@ vision compatibility, but new generated outputs should use attachment storage.
 
 Message Parts v2 keeps the same storage rule. `image` parts should point at a
 local attachment URL such as `/api/attachments/<id>.png` or carry an
-`attachment_id` ref. `audio` parts are implemented as local attachment refs only:
-`source` must be `attachment`, `url` must be a local `/api/attachments/...`
-route, and `mime_type` must be `audio/*`. `media_group` parts use image items
-with the same URL/ref shape. `file` parts may carry small inline raw text with
-`mode="inline_text"`; long files and binary files should be saved as
-attachments in later rounds.
+`attachment_id` ref. `audio` and `video` parts are implemented as local
+attachment refs only: `source` must be `attachment`, `url` must be a local
+`/api/attachments/...` route, and `mime_type` must be `audio/*` or `video/*`.
+`media_group` parts use image items with the same URL/ref shape. `file` parts
+may carry small inline raw text with `mode="inline_text"`; long files and binary
+files should be saved as attachments in later rounds.
 Durable message parts must not introduce a new large base64 storage path.
 
 ## Prompt Agent File Context
@@ -72,6 +72,8 @@ attachments through:
 - `await ctx.save_attachment_bytes(data, filename, mime_type, kind="file", metadata=None)`
 - `await ctx.save_attachment_base64(data_base64, filename, mime_type, kind="file", metadata=None)`
 - `await ctx.reply_audio(audio_attachment_or_part, title=None, duration_ms=None, metadata=None)`
+- `await ctx.save_attachment_file(source_path, filename=None, mime_type=None, kind="file", metadata=None)`
+- `await ctx.reply_video(video_attachment_or_part, title=None, metadata=None)`
 
 Image attachments can be read by scripts regardless of Prompt Agent vision
 support. Text/code/config files can be read by scripts through helpers; Prompt
@@ -94,21 +96,30 @@ Generated attachment helpers return local attachment metadata shaped like:
 ```
 
 The file Capability exposes one local read command, `/read-file <path>`. It
-auto-detects supported text, image, and audio files by extension/MIME policy.
+auto-detects supported text, image, audio, and video files by extension/MIME policy.
 Text returns a raw inline `file` part, image returns a local attachment-backed
-`image` part, and audio returns a local attachment-backed `audio` part. The
-single `enable_read_file_command` toggle gates all three kinds, while
-`max_local_text_read_size_mb`, `max_local_image_read_size_mb`, and
-`max_local_audio_read_size_mb` remain independent size limits.
+`image` part, audio returns a local attachment-backed `audio` part, and video
+returns a local attachment-backed `video` part. The single
+`enable_read_file_command` toggle gates all four kinds, while
+`max_local_text_read_size_mb`, `max_local_image_read_size_mb`,
+`max_local_audio_read_size_mb`, and `max_local_video_read_size_mb` remain
+independent size limits. The default video read limit is 5120 MB.
 
 Generated audio attachments use `type: "audio"` and are stored under the local
 attachment root's `audios` subdirectory, for example
 `data/attachments/audios/<id>.wav`. Supported v1 formats include WAV, MP3, and
 OGG, with M4A, FLAC, and WebM accepted by MIME/extension policy.
 
+Generated video attachments use `type: "video"` and are stored under the local
+attachment root's `videos` subdirectory, for example
+`data/attachments/videos/<id>.mp4`. Supported v1 formats are MP4, WebM, and
+OGV. Video saving from `/read-file` uses file copy and does not read the whole
+video into Python memory.
+
 The file Capability does not perform OCR, ASR/transcription, TTS, PDF parsing,
-video reading, diff rendering, binary preview, network URL reads, or web page
-fetching.
+diff rendering, binary preview, network URL reads, web page fetching, video
+metadata parsing, thumbnail generation, transcoding, streaming protocol
+handling, or video input to LLMs.
 
 ## Route And Store Safety
 
@@ -132,6 +143,8 @@ Message Parts v2 selects the frontend renderer for new messages:
   attachment ids.
 - `audio` parts render local attachment audio with the project custom player,
   not native browser controls.
+- `video` parts render local attachment video with native browser controls and
+  `preload="metadata"`.
 - `form` and `command_buttons` parts are the interactive block path.
 
 Renderer changes that alter payload shapes update

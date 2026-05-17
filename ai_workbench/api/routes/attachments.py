@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from starlette.datastructures import UploadFile
 
 from ai_workbench.api.deps import RuntimeState, get_state
@@ -45,8 +45,8 @@ def get_attachment(attachment_id: str, request: Request) -> Response:
     file_size = path.stat().st_size
     range_header = request.headers.get("range")
     if not range_header:
-        return Response(
-            content=path.read_bytes(),
+        return FileResponse(
+            path,
             media_type=mime_type,
             headers={
                 "Accept-Ranges": "bytes",

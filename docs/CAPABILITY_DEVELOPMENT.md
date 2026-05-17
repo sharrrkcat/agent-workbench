@@ -80,6 +80,7 @@ authority. Manifest methods declare `output.part_type`:
 - `part_type: file` with `mode: inline_text`.
 - `part_type: image`.
 - `part_type: audio`.
+- `part_type: video`.
 - `part_type: media_group` with `layout: gallery`.
 - `part_type: parts` for a validated list of message parts.
 
@@ -89,7 +90,10 @@ current parts contract, normally JSON unless the payload is shaped like an image
 or media group. Use `file` parts for source files, config files, logs, and other
 raw text that must not be interpreted as Markdown. Use `audio` parts only for
 local attachment-backed audio payloads with `source: attachment`; remote audio
-URLs, TTS, ASR, and transcription are not implemented.
+URLs, TTS, ASR, and transcription are not implemented. Use `video` parts only
+for local attachment-backed video payloads with `source: attachment`; remote
+video URLs, HLS/DASH/livestream sources, metadata parsing, thumbnails,
+transcoding, and video input to LLMs are not implemented.
 
 For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, non-blocking prompt status, fetch, interrupt, upload, object info, and `free_memory` for ComfyUI `POST /free`; helper methods normalize outputs and collect images for a prompt. It also owns local workflow and preset library directories, scanning API-format workflow files, rejecting unsupported GUI-format files, hash de-duplication, preset loading, preset validation, per-workflow draft skip reasons, and draft preset creation. The preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results. `free_memory` is a protocol method only: it requests unload/free behavior from the connected ComfyUI service and does not decide whether a user workflow should call it. ComfyUI is an external service and local asset capability, not a user-facing workflow Agent by itself.
 
@@ -117,16 +121,20 @@ uv run python scripts/run_command.py "/base64-decode aGVsbG8="
 uv run python scripts/run_command.py "/base64-image data:image/svg+xml;base64,..."
 uv run python scripts/run_command.py "/image-base64" --image path/to/cat.png
 uv run python scripts/run_command.py "/read-file path/to/demo.wav"
+uv run python scripts/run_command.py "/read-file path/to/demo.mp4"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
 
 The built-in `file` Capability exposes only `/read-file <path>` for user-facing
-local reads. It auto-detects supported text, image, and audio files and returns
-the matching Message Part: raw inline `file` for text, `image` for images, and
-attachment-backed `audio` for audio. It keeps separate text/image/audio size
-limits behind one `enable_read_file_command` toggle. It does not support OCR,
-ASR/transcription, TTS, PDF parsing, video reading, diff rendering, binary
-preview, network URL reads, or web page fetching.
+local reads. It auto-detects supported text, image, audio, and video files and
+returns the matching Message Part: raw inline `file` for text, `image` for
+images, attachment-backed `audio` for audio, and attachment-backed `video` for
+video. It keeps separate text/image/audio/video size limits behind one
+`enable_read_file_command` toggle; `max_local_video_read_size_mb` defaults to
+5120. Video v1 supports `.mp4`, `.webm`, and `.ogv`. It does not support OCR,
+ASR/transcription, TTS, PDF parsing, diff rendering, binary preview, network URL
+reads, web page fetching, HLS/DASH/livestream sources, video metadata parsing,
+thumbnail generation, transcoding, or video input to LLMs.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 

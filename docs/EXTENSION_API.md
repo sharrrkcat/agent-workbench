@@ -192,12 +192,8 @@ Depending on runtime settings and Agent overrides, Core Memory, Worldbook, and
 Knowledge may be appended to eligible `ctx.llm.*` calls. Script defaults are
 disabled unless opted in.
 
-Runtime details:
-
-- [contracts/runtime-llm-resolution.md](contracts/runtime-llm-resolution.md)
-- [contracts/runtime-streaming.md](contracts/runtime-streaming.md)
-- [contracts/memory-worldbook.md](contracts/memory-worldbook.md)
-- [contracts/knowledge.md](contracts/knowledge.md)
+Runtime details live in the focused contracts for LLM resolution, streaming,
+Memory/Worldbook, and Knowledge.
 
 Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 
@@ -209,8 +205,8 @@ Development examples live in [AGENT_DEVELOPMENT.md](AGENT_DEVELOPMENT.md).
 - `reply_json`: send a JSON object or array.
 - `reply_image`: send one image payload with `url`.
 - `reply_images`: send an ordered image gallery.
-- `reply_audio`: send one attachment-backed AudioPart from a saved audio
-  attachment or validated AudioPart dict.
+- `reply_audio` / `reply_video`: send one attachment-backed AudioPart or
+  VideoPart from a saved attachment or validated part dict.
 - `reply_blocks`: convenience helper that immediately converts block-like input
   to Message Parts. Prefer `reply_parts` and typed helpers.
 - `reply_form` / `reply_action_form`: validate and send one `form` part.
@@ -230,9 +226,10 @@ Script attachment helpers:
 - `ctx.attachment_as_data_url(attachment_or_id)`
 - `ctx.save_attachment_bytes(...)`
 - `ctx.save_attachment_base64(...)`
+- `ctx.save_attachment_file(...)`
 
-Generated files and images should be saved as attachments and returned through
-local attachment URLs. Full contract:
+Generated files, images, audio, and video should be saved as attachments and
+returned through local attachment URLs. Full contract:
 [contracts/attachments-vision.md](contracts/attachments-vision.md).
 
 ## Capabilities
@@ -288,10 +285,11 @@ core-owned services, not Capability backends; see `contracts/utility-llm.md`,
 `contracts/intent-routing.md`, and `contracts/settings-general.md`.
 
 The built-in `file` Capability exposes only `/read-file <path>`, auto-detects
-supported text/image/audio, and returns raw `file`, `image`, or
-attachment-backed `audio` parts under one `enable_read_file_command` toggle with
-separate per-kind size limits. It does not support OCR, ASR, TTS,
-PDF/video/diff/binary preview, or network reads.
+supported text/image/audio/video, and returns raw `file`, `image`, local
+`audio`, or local `video` parts under one toggle with per-kind limits. Video v1
+supports `.mp4`, `.webm`, and `.ogv`; `max_local_video_read_size_mb` defaults to
+5120. It does not support network reads, streaming video protocols, thumbnails,
+metadata parsing, transcoding, or video input to LLMs.
 
 ## Capability Config
 
@@ -310,13 +308,15 @@ in [contracts/message-parts.md](contracts/message-parts.md). The frontend render
 normal messages only from `parts`.
 
 Capability commands declare `output.part_type`: `text`, `json`, `file`,
-`image`, `audio`, `media_group`, or `parts`. Text declarations may set
+`image`, `audio`, `video`, `media_group`, or `parts`. Text declarations may set
 `format: plain|markdown`; file declarations may set `mode: inline_text`; media
 groups may set `layout: gallery`. `output.type` is invalid.
 
-`audio` output is local-attachment only: `source: attachment`, `attachment_id`,
-local `/api/attachments/...` URL, and `audio/*` MIME type. Remote audio URLs,
-TTS, ASR, transcription, and audio input to LLMs are not part of this API.
+`audio` and `video` outputs are local-attachment only: `source: attachment`,
+`attachment_id`, local `/api/attachments/...` URL, and matching `audio/*` or
+`video/*` MIME type. Remote media URLs, TTS, ASR/transcription, HLS/DASH,
+livestreams, runtime thumbnails/posters, metadata parsing, transcoding, and
+media input to LLMs are not part of this API.
 
 Markdown `text` parts keep render-time Knowledge citation enhancement.
 

@@ -30,6 +30,9 @@
     "seek": "Audio progress",
     "loadFailed": "Audio could not be loaded."
   },
+  "video": {
+    "loadFailed": "Video could not be loaded."
+  },
   "modals": {
     "filePreview": "File preview",
     "closeFilePreview": "Close file preview",

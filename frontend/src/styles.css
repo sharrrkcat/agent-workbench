@@ -2083,6 +2083,53 @@ input:disabled {
   font-size: 12px;
 }
 
+.video-part {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  overflow: hidden;
+}
+
+.video-part video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 6px;
+  background: #000;
+}
+
+.video-part-header {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.video-part-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.video-part-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+}
+
+.video-part-error {
+  color: #fca5a5;
+  font-size: 12px;
+}
+
 .message-attachments {
   display: flex;
   flex-wrap: wrap;

@@ -159,7 +159,7 @@ function CapabilityConfigTab({
         <ConfigSection title={t('capabilities:sections.permissions')} fieldNames={['allowed_directories']} fields={fields} values={values} onChange={onChange} />
         <ConfigSection
           title={t('capabilities:sections.readLimits')}
-          fieldNames={['max_local_text_read_size_mb', 'max_local_image_read_size_mb', 'max_local_audio_read_size_mb', 'allowed_text_extensions']}
+          fieldNames={['max_local_text_read_size_mb', 'max_local_image_read_size_mb', 'max_local_audio_read_size_mb', 'max_local_video_read_size_mb', 'allowed_text_extensions']}
           fields={fields}
           values={values}
           onChange={onChange}

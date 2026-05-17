@@ -11,6 +11,7 @@ from ai_workbench.core.attachments import (
     resolve_attachment_uri,
     save_attachment_from_data_url,
     save_attachment_from_upload,
+    save_generated_attachment_file,
     validate_attachments,
     validate_image_attachments,
 )
@@ -201,6 +202,30 @@ def test_audio_attachment_api_supports_byte_ranges(monkeypatch, tmp_path: Path) 
     assert unsatisfiable.content == b""
 
     assert escaped.status_code == 404
+
+
+def test_video_attachment_api_supports_byte_ranges(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    source = tmp_path / "demo.mp4"
+    data = bytes(range(256))
+    source.write_bytes(data)
+    stored = save_generated_attachment_file(source, filename="demo.mp4", mime_type="video/mp4", kind="video", max_size_bytes=len(data))
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+
+    full = client.get(stored["url"])
+    first_100 = client.get(stored["url"], headers={"Range": "bytes=0-99"})
+
+    assert stored["type"] == "video"
+    assert resolve_attachment_uri(stored["uri"]).parent.name == "videos"
+    assert full.status_code == 200
+    assert full.headers["content-type"].startswith("video/mp4")
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["content-length"] == str(len(data))
+    assert full.content == data
+    assert first_100.status_code == 206
+    assert first_100.headers["content-type"].startswith("video/mp4")
+    assert first_100.headers["content-range"] == f"bytes 0-99/{len(data)}"
+    assert first_100.content == data[:100]
 
 
 def test_attachment_api_returns_text_file_bytes(monkeypatch, tmp_path: Path) -> None:
@@ -550,6 +575,95 @@ def test_file_capability_read_file_auto_detects_audio(monkeypatch, tmp_path: Pat
     assert parts[0]["mime_type"] == "audio/wav"
 
 
+def test_file_capability_read_file_auto_detects_mp4_video(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    video = allowed / "demo.mp4"
+    video.write_bytes(b"video")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(video))
+
+    assert parts[0]["type"] == "video"
+    assert parts[0]["source"] == "attachment"
+    assert parts[0]["mime_type"] == "video/mp4"
+    assert parts[0]["size_bytes"] == 5
+    assert resolve_attachment_uri(f"local://attachments/{Path(parts[0]['url']).name}").parent.name == "videos"
+
+
+def test_file_capability_read_file_auto_detects_webm_video(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    video = allowed / "demo.webm"
+    video.write_bytes(b"video")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(video))
+
+    assert parts[0]["type"] == "video"
+    assert parts[0]["mime_type"] == "video/webm"
+
+
+def test_file_capability_video_obeys_path_and_size_limits(monkeypatch, tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    denied = tmp_path / "denied"
+    allowed.mkdir()
+    denied.mkdir()
+    video = allowed / "demo.mp4"
+    large_video = allowed / "large.mp4"
+    denied_video = denied / "secret.mp4"
+    video.write_bytes(b"video")
+    large_video.write_bytes(b"x" * 20)
+    denied_video.write_bytes(b"secret")
+    config = {
+        "allowed_directories": [str(allowed)],
+        "max_local_video_read_size_mb": 0.00001,
+        "enable_read_file_command": True,
+    }
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(video), context={"capability_config": config})
+    assert parts[0]["mime_type"] == "video/mp4"
+    try:
+        runtime.read_file(str(large_video), context={"capability_config": config})
+    except ValueError as exc:
+        assert "File too large" in str(exc)
+        assert "/read-file video result" in str(exc)
+        assert "1e-05 MB" in str(exc)
+    else:
+        raise AssertionError("expected video size rejection")
+    try:
+        runtime.read_file(str(denied_video), context={"capability_config": config})
+    except ValueError as exc:
+        assert "File access denied" in str(exc)
+    else:
+        raise AssertionError("expected video path rejection")
+
+
+def test_file_capability_video_copy_does_not_read_full_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    video = allowed / "demo.ogv"
+    video.write_bytes(b"video")
+    monkeypatch.setenv("AGENT_WORKBENCH_FILE_ALLOWED_DIRS", str(allowed))
+
+    def fail_read_bytes(self):
+        raise AssertionError("read_bytes should not be used for video attachments")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+    runtime = FileRuntime()
+
+    parts = runtime.read_file(str(video))
+
+    assert parts[0]["type"] == "video"
+    assert parts[0]["mime_type"] == "video/ogg"
+
+
 def test_file_capability_audio_obeys_path_and_size_limits(monkeypatch, tmp_path: Path) -> None:
     allowed = tmp_path / "allowed"
     denied = tmp_path / "denied"
@@ -674,6 +788,7 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
     assert resolved["max_local_text_read_size_mb"] == 2.0
     assert resolved["max_local_image_read_size_mb"] == 10.0
     assert resolved["max_local_audio_read_size_mb"] == 10.0
+    assert resolved["max_local_video_read_size_mb"] == 5120.0
 
     patched = client.patch(
         "/api/capability-configs/file",
@@ -683,6 +798,7 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
                 "max_local_text_read_size_mb": 0.5,
                 "max_local_image_read_size_mb": 0.5,
                 "max_local_audio_read_size_mb": 0.5,
+                "max_local_video_read_size_mb": 0.5,
             }
         },
     )
@@ -691,6 +807,7 @@ def test_file_capability_config_defaults_and_patch(tmp_path: Path) -> None:
     assert patched.json()["resolved_config"]["max_local_text_read_size_mb"] == 0.5
     assert patched.json()["resolved_config"]["max_local_image_read_size_mb"] == 0.5
     assert patched.json()["resolved_config"]["max_local_audio_read_size_mb"] == 0.5
+    assert patched.json()["resolved_config"]["max_local_video_read_size_mb"] == 0.5
 
     assert client.patch("/api/capability-configs/file", json={"user_config": {"unknown": True}}).status_code == 400
     assert client.patch("/api/capability-configs/file", json={"user_config": {"enable_read_file": "yes"}}).status_code == 400
@@ -723,6 +840,10 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     audio.write_bytes(b"RIFF----WAVEfmt ")
     large_audio = allowed / "large.wav"
     large_audio.write_bytes(b"x" * (200 * 1024))
+    video = allowed / "demo.mp4"
+    video.write_bytes(b"video")
+    large_video = allowed / "large.mp4"
+    large_video.write_bytes(b"x" * (200 * 1024))
 
     client.patch(
         "/api/capability-configs/file",
@@ -732,6 +853,7 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
                 "max_local_text_read_size_mb": 0.1,
                 "max_local_image_read_size_mb": 0.1,
                 "max_local_audio_read_size_mb": 0.1,
+                "max_local_video_read_size_mb": 0.1,
                 "allowed_text_extensions": [".txt"],
                 "enable_read_file_command": True,
             }
@@ -746,6 +868,8 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     image_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large_image}"})
     audio_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {audio}"})
     audio_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large_audio}"})
+    video_ok = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {video}"})
+    video_large = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {large_video}"})
     removed_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-image {image}"})
     removed_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-audio {audio}"})
 
@@ -763,6 +887,10 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     assert audio_ok.json()["messages"][-1]["parts"][0]["type"] == "audio"
     assert audio_ok.json()["messages"][-1]["parts"][0]["source"] == "attachment"
     assert "File too large" in audio_large.json()["run"]["error"]
+    assert video_ok.json()["run"]["status"] == "DONE"
+    assert video_ok.json()["messages"][-1]["parts"][0]["type"] == "video"
+    assert video_ok.json()["messages"][-1]["parts"][0]["source"] == "attachment"
+    assert "File too large" in video_large.json()["run"]["error"]
     assert removed_image.status_code == 400
     assert "Unknown command: /read-image" in removed_image.text
     assert removed_audio.status_code == 400
@@ -772,9 +900,11 @@ def test_file_capability_config_runtime_enforcement(tmp_path: Path) -> None:
     disabled_file = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {note}"})
     disabled_image = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {image}"})
     disabled_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {audio}"})
+    disabled_video = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/read-file {video}"})
     assert "Command disabled" in disabled_file.json()["run"]["error"]
     assert "Command disabled" in disabled_image.json()["run"]["error"]
     assert "Command disabled" in disabled_audio.json()["run"]["error"]
+    assert "Command disabled" in disabled_video.json()["run"]["error"]
 
     legacy_audio = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": f"/file-audio {audio}"})
     assert legacy_audio.status_code == 400

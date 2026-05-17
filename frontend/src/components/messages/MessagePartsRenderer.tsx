@@ -10,6 +10,7 @@ import { JsonPartRenderer } from './parts/JsonPartRenderer';
 import { MediaGroupPartRenderer } from './parts/MediaGroupPartRenderer';
 import { NoticePartRenderer } from './parts/NoticePartRenderer';
 import { TextPartRenderer } from './parts/TextPartRenderer';
+import { VideoPartRenderer } from './parts/VideoPartRenderer';
 
 export function MessagePartsRenderer({
   parts,
@@ -54,6 +55,8 @@ export function MessagePartsRenderer({
               return <ImagePartRenderer key={key} part={part} renderImage={renderImage} renderPlainText={renderPlainText} />;
             case 'audio':
               return <AudioPartRenderer key={key} part={part} />;
+            case 'video':
+              return <VideoPartRenderer key={key} part={part} />;
             case 'media_group':
               return <MediaGroupPartRenderer key={key} part={part} renderImageGallery={renderImageGallery} renderPlainText={renderPlainText} />;
             case 'form':
@@ -88,7 +91,7 @@ function stablePartKey(part: MessagePart, index: number): string {
 }
 
 function isWideMessagePart(part: MessagePart): boolean {
-  return part.type === 'audio' || part.type === 'media_group';
+  return part.type === 'audio' || part.type === 'video' || part.type === 'media_group';
 }
 
 function isRenderableMessagePart(part: MessagePart): boolean {
@@ -98,6 +101,7 @@ function isRenderableMessagePart(part: MessagePart): boolean {
   if (part.type === 'file') return part.mode === 'inline_text' ? typeof part.content === 'string' : Boolean(part.attachment_id || part.url || part.filename);
   if (part.type === 'image') return Boolean(part.url || part.attachment_id || part.alt);
   if (part.type === 'audio') return part.source === 'attachment' && Boolean(part.url && part.attachment_id && part.mime_type);
+  if (part.type === 'video') return part.source === 'attachment' && Boolean(part.url && part.attachment_id && part.mime_type);
   if (part.type === 'media_group') return Array.isArray(part.items) && part.items.length > 0;
   if (part.type === 'form') return Boolean(part.form_id && Array.isArray(part.fields) && part.submit);
   if (part.type === 'command_buttons') return Array.isArray(part.buttons) && part.buttons.some((button) => button.label.trim() && button.message.trim());

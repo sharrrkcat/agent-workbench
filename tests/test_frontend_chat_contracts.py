@@ -111,6 +111,8 @@ def test_message_type_exposes_message_parts_contract() -> None:
     assert "export type ImageMessagePart" in source
     assert "export type AudioMessagePart" in source
     assert "type: 'audio'" in source
+    assert "export type VideoMessagePart" in source
+    assert "type: 'video'" in source
     assert "source: 'attachment'" in source
     assert "export type MediaGroupMessagePart" in source
     assert "layout: 'gallery'" in source
@@ -146,6 +148,7 @@ def test_audio_message_parts_use_wide_layout_contract() -> None:
     assert "isRenderableMessagePart(part) && isWideMessagePart(part)" in renderer
     assert "function isWideMessagePart(part: MessagePart)" in renderer
     assert "part.type === 'audio'" in renderer
+    assert "part.type === 'video'" in renderer
     assert "message-content-wide" in renderer
 
     wide_stack_styles = styles[styles.index(".message-row.agent.message-has-wide-part .message-stack") : styles.index(".message {")]
@@ -174,6 +177,8 @@ def test_message_parts_renderer_routes_first_batch_part_types() -> None:
     assert "ImagePartRenderer" in renderer
     assert "case 'audio'" in renderer
     assert "AudioPartRenderer" in renderer
+    assert "case 'video'" in renderer
+    assert "VideoPartRenderer" in renderer
     assert "case 'media_group'" in renderer
     assert "MediaGroupPartRenderer" in renderer
     assert "case 'form'" in renderer
@@ -348,6 +353,30 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert ".audio-part-progress-thumb" in styles
 
 
+def test_video_part_renderer_uses_native_video_for_local_attachments() -> None:
+    source = read_frontend("components/messages/parts/VideoPartRenderer.tsx")
+    renderer = read_frontend("components/messages/MessagePartsRenderer.tsx")
+    styles = read_frontend("styles.css")
+
+    assert "export function VideoPartRenderer" in source
+    assert "part.source === 'attachment'" in source
+    assert "^\\/api\\/attachments\\/" in source
+    assert '<video controls preload="metadata"' in source
+    assert "autoplay" not in source.lower()
+    assert "loop" not in source
+    assert "muted" not in source
+    assert "dangerouslySetInnerHTML" not in source
+    assert "case 'video'" in renderer
+    assert "part.type === 'video'" in renderer
+    assert "VideoPartRenderer" in renderer
+    video_part_styles = styles[styles.index(".video-part {") : styles.index(".video-part video")]
+    video_tag_styles = styles[styles.index(".video-part video") : styles.index(".video-part-header")]
+    assert "width: 100%" in video_part_styles
+    assert "max-width: 100%" in video_part_styles
+    assert "width: 100%" in video_tag_styles
+    assert "max-height: 70vh" in video_tag_styles
+
+
 def test_script_lifecycle_audio_demo_duration_contract() -> None:
     source = read_repo("tests/test_script_agent.py")
 
@@ -359,8 +388,10 @@ def test_generated_registry_lists_single_file_read_command() -> None:
     registry = read_repo("docs/generated/REGISTRY.md")
 
     assert "| file | File Capability | read_file, read_text, read_image, read_audio | /read-file | parts, file, image, audio |" in registry
+    assert "max_local_video_read_size_mb" in registry
     assert "/read-image" not in registry
     assert "/read-audio" not in registry
+    assert "/read-video" not in registry
     assert "/file-audio" not in registry
 
 

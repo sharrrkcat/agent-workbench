@@ -43,7 +43,11 @@
     },
     "enable_read_file_command": {
       "label": "启用 /read-file",
-      "description": "启用 /read-file 读取文本、图片和音频文件。"
+      "description": "启用 /read-file 读取文本、图片、音频和视频文件。"
+    },
+    "max_local_video_read_size_mb": {
+      "label": "最大本地视频读取大小",
+      "description": "/read-file 视频输出允许读取的最大本地视频文件大小。"
     }
   },
   "runtime": {

@@ -3,17 +3,19 @@ import mimetypes
 import os
 from pathlib import Path
 
-from ai_workbench.core.attachments import ALLOWED_AUDIO_MIME_TYPES, ALLOWED_IMAGE_MIME_TYPES, save_generated_attachment_bytes
+from ai_workbench.core.attachments import ALLOWED_AUDIO_MIME_TYPES, ALLOWED_IMAGE_MIME_TYPES, ALLOWED_VIDEO_MIME_TYPES, save_generated_attachment_bytes, save_generated_attachment_file
 
 
 MAX_TEXT_BYTES = 1 * 1024 * 1024
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
+MAX_VIDEO_BYTES = 5120 * 1024 * 1024
 CONFIG_DEFAULTS = {
     "allowed_directories": ["./data", "./examples", "./agents", "./capabilities"],
     "max_local_text_read_size_mb": 2,
     "max_local_image_read_size_mb": 10,
     "max_local_audio_read_size_mb": 10,
+    "max_local_video_read_size_mb": 5120,
     "allowed_text_extensions": [
         ".txt",
         ".md",
@@ -56,6 +58,11 @@ _AUDIO_MIME_BY_EXT = {
     ".m4a": "audio/mp4",
     ".flac": "audio/flac",
     ".webm": "audio/webm",
+}
+_VIDEO_MIME_BY_EXT = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".ogv": "video/ogg",
 }
 _LANGUAGE_BY_EXT = {
     ".py": "python",
@@ -117,7 +124,9 @@ class CapabilityRuntime:
             return [{"type": "image", **self._read_image_path(path, config)}]
         if kind == "audio":
             return [{"type": "audio", **self._read_audio_path(path, config)}]
-        raise ValueError("Unsupported file type for /read-file. Supported local file types are text, image, and audio.")
+        if kind == "video":
+            return [{"type": "video", **self._read_video_path(path, config)}]
+        raise ValueError("Unsupported file type for /read-file. Supported local file types are text, image, audio, and video.")
 
     def read_text(self, text: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
@@ -203,6 +212,31 @@ class CapabilityRuntime:
             "title": attachment["name"],
         }
 
+    def _read_video_path(self, path: Path, config: dict) -> dict:
+        mime_type = _video_mime_type(path)
+        size = path.stat().st_size
+        limit = _mb_to_bytes(config["max_local_video_read_size_mb"])
+        if size > limit:
+            raise ValueError(f"File too large for /read-file video result. Maximum size is {_format_mb(config['max_local_video_read_size_mb'])}.")
+        attachment = save_generated_attachment_file(
+            source_path=path,
+            filename=path.name,
+            mime_type=mime_type,
+            kind="video",
+            metadata={"source": "file_capability"},
+            max_size_bytes=limit,
+            max_size_label=_format_mb(config["max_local_video_read_size_mb"]),
+        )
+        return {
+            "source": "attachment",
+            "attachment_id": attachment["id"],
+            "url": attachment["url"],
+            "mime_type": attachment["mime_type"],
+            "filename": attachment["name"],
+            "title": attachment["name"],
+            "size_bytes": attachment["size"],
+        }
+
 
 def _runtime_config(context: dict | None) -> dict:
     config = dict(CONFIG_DEFAULTS)
@@ -217,6 +251,7 @@ def _runtime_config(context: dict | None) -> dict:
     if context is None:
         config["max_local_text_read_size_mb"] = MAX_TEXT_BYTES / (1024 * 1024)
         config["max_local_audio_read_size_mb"] = MAX_AUDIO_BYTES / (1024 * 1024)
+        config["max_local_video_read_size_mb"] = MAX_VIDEO_BYTES / (1024 * 1024)
     return config
 
 
@@ -275,6 +310,13 @@ def _audio_mime_type(path: Path) -> str:
     return mime_type
 
 
+def _video_mime_type(path: Path) -> str:
+    mime_type = _VIDEO_MIME_BY_EXT.get(path.suffix.lower(), "") or _guess_mime_type(path)
+    if mime_type not in ALLOWED_VIDEO_MIME_TYPES:
+        raise ValueError("Only MP4, WebM, and OGV video files are supported by /read-file.")
+    return mime_type
+
+
 def _file_kind(path: Path, config: dict) -> str:
     extension = _text_extension_for_policy(path)
     allowed_text = config.get("allowed_text_extensions", [])
@@ -284,6 +326,8 @@ def _file_kind(path: Path, config: dict) -> str:
     suffix = path.suffix.lower()
     if suffix in _IMAGE_MIME_BY_EXT or mime_type in ALLOWED_IMAGE_MIME_TYPES:
         return "image"
+    if suffix in _VIDEO_MIME_BY_EXT or mime_type in ALLOWED_VIDEO_MIME_TYPES:
+        return "video"
     if suffix in _AUDIO_MIME_BY_EXT or mime_type in ALLOWED_AUDIO_MIME_TYPES:
         return "audio"
     return "unsupported"

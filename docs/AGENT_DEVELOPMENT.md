@@ -158,6 +158,8 @@ await ctx.reply_json({"ok": True})
 await ctx.reply_image("https://example.test/image.png", alt="Example")
 audio = await ctx.save_attachment_bytes(b"...wav bytes...", filename="demo.wav", mime_type="audio/wav", kind="audio")
 await ctx.reply_audio(audio, title="Demo audio", duration_ms=500)
+video = await ctx.save_attachment_file("demo.mp4", filename="demo.mp4", mime_type="video/mp4", kind="video")
+await ctx.reply_video(video, title="Demo video")
 await ctx.reply_blocks([
     {"type": "markdown", "text": "## Result"},
     {"type": "text", "text": "Plain text block"},
@@ -287,6 +289,7 @@ Supported visible message parts are:
 - `file`: raw inline text or attachment references.
 - `image`: one renderable image payload.
 - `audio`: one local attachment-backed audio payload.
+- `video`: one local attachment-backed video payload.
 - `media_group`: a gallery of image items.
 - `form`: validated interactive forms.
 - `command_buttons`: send-message shortcut buttons.
@@ -295,6 +298,10 @@ Supported visible message parts are:
 Match the helper to the intended output. For example, use `reply_json` for structured data instead of a Markdown code block when downstream tools should inspect it.
 Use `reply_audio` only with local audio attachments; Script Agents should not
 implement TTS, ASR, remote audio playback, or transcription through this helper.
+Use `reply_video` only with local video attachments; Script Agents should not
+implement remote video playback, HLS/DASH/livestream handling, metadata parsing,
+thumbnail generation, transcoding, OCR, ASR/transcription, or video input to
+LLMs through this helper.
 
 Message Parts v2 is the backend storage path and visible content authority for
 Agent and Script Agent assistant replies. New messages render from `parts[]`.

@@ -6,6 +6,7 @@ from ai_workbench.core.message_parts import (
     capability_output_to_parts,
     make_file_part,
     make_audio_part,
+    make_video_part,
     make_text_part,
     validate_message_parts,
 )
@@ -28,10 +29,10 @@ def test_text_and_json_parts_validate() -> None:
 
 def test_invalid_part_type_fails_clearly() -> None:
     with pytest.raises(MessagePartValidationError, match="unsupported message part type"):
-        validate_message_parts([{"type": "video", "url": "x"}])
+        validate_message_parts([{"type": "diff", "url": "x"}])
 
 
-@pytest.mark.parametrize("part_type", ["video", "diff"])
+@pytest.mark.parametrize("part_type", ["diff", "chart"])
 def test_future_part_types_are_rejected(part_type: str) -> None:
     with pytest.raises(MessagePartValidationError, match="unsupported message part type"):
         validate_message_parts([{"type": part_type, "url": "x"}])
@@ -89,6 +90,60 @@ def test_audio_part_rejects_non_local_urls(url: str) -> None:
         validate_message_parts([{"type": "audio", "source": "attachment", "attachment_id": "a", "url": url, "mime_type": "audio/wav"}])
 
 
+def test_video_part_accepts_attachment_source() -> None:
+    part = make_video_part(
+        attachment_id="att-1",
+        url="/api/attachments/att-1.mp4",
+        mime_type="video/mp4",
+        filename="demo.mp4",
+        title="Demo video",
+        size_bytes=123,
+        duration_ms=500,
+        width=1920,
+        height=1080,
+    )
+
+    assert part == {
+        "id": "part_1",
+        "type": "video",
+        "source": "attachment",
+        "attachment_id": "att-1",
+        "url": "/api/attachments/att-1.mp4",
+        "mime_type": "video/mp4",
+        "filename": "demo.mp4",
+        "title": "Demo video",
+        "size_bytes": 123,
+        "duration_ms": 500,
+        "width": 1920,
+        "height": 1080,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload,error",
+    [
+        ({"type": "video", "source": "url", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4"}, "literal_error"),
+        ({"type": "video", "source": "attachment", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4"}, "attachment_id"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "mime_type": "video/mp4"}, "url"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "text/plain"}, "video/\\*"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4", "size_bytes": -1}, "greater than or equal"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4", "duration_ms": -1}, "greater than or equal"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4", "width": 0}, "greater than or equal"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4", "height": 0}, "greater than or equal"),
+        ({"type": "video", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.mp4", "mime_type": "video/mp4", "poster_url": "https://example.test/poster.png"}, "local attachment URL"),
+    ],
+)
+def test_video_part_rejects_invalid_payloads(payload: dict, error: str) -> None:
+    with pytest.raises(MessagePartValidationError, match=error):
+        validate_message_parts([payload])
+
+
+@pytest.mark.parametrize("url", ["http://example.test/a.mp4", "https://example.test/a.mp4", "file:///tmp/a.mp4", "data:video/mp4;base64,AAAA", "javascript:alert(1)"])
+def test_video_part_rejects_non_local_urls(url: str) -> None:
+    with pytest.raises(MessagePartValidationError, match="local attachment URL|/api/attachments"):
+        validate_message_parts([{"type": "video", "source": "attachment", "attachment_id": "a", "url": url, "mime_type": "video/mp4"}])
+
+
 def test_capability_media_group_output_converts_to_parts() -> None:
     parts = capability_output_to_parts(
         {"part_type": "media_group", "layout": "gallery"},
@@ -112,6 +167,16 @@ def test_capability_audio_output_converts_to_audio_part() -> None:
     )
 
     assert parts[0]["type"] == "audio"
+    assert parts[0]["source"] == "attachment"
+
+
+def test_capability_video_output_converts_to_video_part() -> None:
+    parts = capability_output_to_parts(
+        {"part_type": "video"},
+        {"source": "attachment", "attachment_id": "att-1", "url": "/api/attachments/att-1.mp4", "mime_type": "video/mp4"},
+    )
+
+    assert parts[0]["type"] == "video"
     assert parts[0]["source"] == "attachment"
 
 
@@ -141,3 +206,15 @@ def test_manifest_output_type_is_rejected() -> None:
                 "methods": [{"id": "run", "output": {"type": "json"}}],
             }
         )
+
+
+def test_manifest_output_part_type_accepts_video() -> None:
+    capability = CapabilitySchema.model_validate(
+        {
+            "id": "video_cap",
+            "name": "Video Cap",
+            "methods": [{"id": "run", "output": {"part_type": "video"}}],
+        }
+    )
+
+    assert capability.methods[0].output["part_type"] == "video"

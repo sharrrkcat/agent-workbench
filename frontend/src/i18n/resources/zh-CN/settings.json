@@ -438,7 +438,8 @@
     "noErrorMessage": "没有错误消息。",
     "noRecentFailures": "没有最近失败的运行。",
     "warnings": "警告",
-    "noWarnings": "没有警告。"
+    "noWarnings": "没有警告。",
+    "maxVideoRead": "最大视频读取"
   },
   "appearance": {
     "pet": "宠物",

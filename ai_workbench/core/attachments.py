@@ -3,6 +3,7 @@ import binascii
 import mimetypes
 import os
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -30,6 +31,12 @@ ALLOWED_AUDIO_MIME_TYPES = {
     "audio/webm",
 }
 ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".m4a", ".flac", ".webm"}
+ALLOWED_VIDEO_MIME_TYPES = {
+    "video/mp4",
+    "video/webm",
+    "video/ogg",
+}
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".ogv"}
 MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_FILE_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_CONFIGURABLE_ATTACHMENT_BYTES = 100 * 1024 * 1024
@@ -79,6 +86,9 @@ _MIME_EXTENSIONS = {
     "audio/mp4": ".m4a",
     "audio/flac": ".flac",
     "audio/webm": ".webm",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/ogg": ".ogv",
     "application/octet-stream": ".bin",
 }
 _EXTENSION_MIME_TYPES = {
@@ -94,6 +104,8 @@ _EXTENSION_MIME_TYPES = {
     ".m4a": "audio/mp4",
     ".flac": "audio/flac",
     ".webm": "audio/webm",
+    ".mp4": "video/mp4",
+    ".ogv": "video/ogg",
     ".txt": "text/plain",
     ".md": "text/markdown",
     ".py": "text/x-python",
@@ -128,7 +140,7 @@ class ImageAttachment(BaseModel):
     type: str = "image"
     mime_type: str
     name: str = ""
-    size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
+    size: int = Field(ge=0)
     data_url: str | None = Field(default=None, min_length=1)
     uri: str | None = Field(default=None, min_length=1)
     url: str | None = Field(default=None, min_length=1)
@@ -178,7 +190,7 @@ class Attachment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1)
-    type: Literal["image", "file", "audio"]
+    type: Literal["image", "file", "audio", "video"]
     mime_type: str
     name: str = ""
     size: int = Field(ge=0, le=MAX_CONFIGURABLE_ATTACHMENT_BYTES)
@@ -321,7 +333,7 @@ def save_generated_attachment_bytes(
     data: bytes,
     filename: str,
     mime_type: str,
-    kind: Literal["image", "file", "audio"] = "file",
+    kind: Literal["image", "file", "audio", "video"] = "file",
     metadata: dict[str, Any] | None = None,
     settings: Any = None,
     max_size_bytes: int | None = None,
@@ -355,7 +367,7 @@ def save_generated_attachment_base64(
     data_base64: str,
     filename: str,
     mime_type: str,
-    kind: Literal["image", "file", "audio"] = "file",
+    kind: Literal["image", "file", "audio", "video"] = "file",
     metadata: dict[str, Any] | None = None,
     settings: Any = None,
     max_size_bytes: int | None = None,
@@ -375,6 +387,40 @@ def save_generated_attachment_base64(
         max_size_bytes=max_size_bytes,
         max_size_label=max_size_label,
     )
+
+
+def save_generated_attachment_file(
+    source_path: str | Path,
+    filename: str | None = None,
+    mime_type: str | None = None,
+    kind: Literal["image", "file", "audio", "video"] = "file",
+    metadata: dict[str, Any] | None = None,
+    settings: Any = None,
+    max_size_bytes: int | None = None,
+    max_size_label: str | None = None,
+) -> dict[str, Any]:
+    source = Path(source_path).resolve()
+    if not source.is_file():
+        raise FileNotFoundError("Generated attachment source file not found.")
+    safe_name = sanitize_attachment_filename(filename or source.name)
+    cleaned_mime = (mime_type or mimetypes.guess_type(safe_name)[0] or _mime_type_for_extension(Path(safe_name).suffix)).strip().lower()
+    if not cleaned_mime:
+        raise ValueError("Generated attachment MIME type is required.")
+    attachment_type = _normalize_attachment_kind(kind)
+    size = source.stat().st_size
+    _validate_generated_attachment_file(
+        safe_name,
+        cleaned_mime,
+        size,
+        attachment_type,
+        settings=settings,
+        max_size_bytes=max_size_bytes,
+        max_size_label=max_size_label,
+    )
+    stored = _store_attachment_file(source, safe_name, cleaned_mime, attachment_type, size)
+    if metadata:
+        stored["metadata"] = dict(metadata)
+    return stored
 
 
 def _store_attachment_bytes(name: str, mime_type: str, data: bytes, attachment_type: str) -> dict[str, Any]:
@@ -398,6 +444,32 @@ def _store_attachment_bytes(name: str, mime_type: str, data: bytes, attachment_t
     }
 
 
+def _store_attachment_file(source: Path, name: str, mime_type: str, attachment_type: str, size: int) -> dict[str, Any]:
+    attachment_id = str(uuid4())
+    extension = _extension_for_attachment(name, mime_type)
+    filename = f"{attachment_id}{extension}"
+    target_dir = attachments_root() / _attachment_subdir(attachment_type)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = (target_dir / filename).resolve()
+    try:
+        target.relative_to(target_dir.resolve())
+    except ValueError as exc:
+        raise ValueError("Attachment path is outside the attachment directory.") from exc
+    with source.open("rb") as src, target.open("xb") as dst:
+        shutil.copyfileobj(src, dst, length=1024 * 1024)
+    uri = f"local://attachments/{filename}"
+    return {
+        "id": attachment_id,
+        "type": attachment_type,
+        "mime_type": mime_type,
+        "name": name or filename,
+        "size": size,
+        "uri": uri,
+        "url": f"/api/attachments/{filename}",
+        "created_at": isoformat_utc(utc_now()),
+    }
+
+
 def resolve_attachment_uri(uri_or_id: str) -> Path:
     value = str(uri_or_id or "").strip()
     if value.startswith("local://attachments/"):
@@ -411,8 +483,16 @@ def resolve_attachment_uri(uri_or_id: str) -> Path:
             raise ValueError("Invalid attachment id.")
 
     suffix = Path(filename).suffix.lower()
-    subdir = _attachment_subdir("image" if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"} else "audio" if suffix in ALLOWED_AUDIO_EXTENSIONS else "file")
-    root = (attachments_root() / subdir).resolve()
+    for subdir in _attachment_subdirs_for_suffix(suffix):
+        root = (attachments_root() / subdir).resolve()
+        path = (root / filename).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Attachment path is outside the attachment directory.") from exc
+        if path.is_file():
+            return path
+    root = (attachments_root() / _attachment_subdirs_for_suffix(suffix)[0]).resolve()
     path = (root / filename).resolve()
     try:
         path.relative_to(root)
@@ -477,12 +557,16 @@ def read_attachment_text(attachment: dict[str, Any], limit: int = TEXT_READ_LIMI
     raise ValueError("Unsupported file encoding. Only UTF-8 text files are readable.")
 
 
-def infer_attachment_type(name: str | None, mime_type: str | None) -> Literal["image", "file", "audio"]:
+def infer_attachment_type(name: str | None, mime_type: str | None) -> Literal["image", "file", "audio", "video"]:
     cleaned_mime = (mime_type or "").strip().lower()
     suffix = Path(name or "").suffix.lower()
     if cleaned_mime in ALLOWED_IMAGE_MIME_TYPES or suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}:
         return "image"
-    if cleaned_mime in ALLOWED_AUDIO_MIME_TYPES or suffix in ALLOWED_AUDIO_EXTENSIONS:
+    if cleaned_mime in ALLOWED_AUDIO_MIME_TYPES:
+        return "audio"
+    if cleaned_mime in ALLOWED_VIDEO_MIME_TYPES or suffix in ALLOWED_VIDEO_EXTENSIONS:
+        return "video"
+    if suffix in ALLOWED_AUDIO_EXTENSIONS:
         return "audio"
     return "file"
 
@@ -558,7 +642,7 @@ def attachment_filename_from_id(attachment_id: str) -> str:
 
 
 def attachment_mime_type(attachment_id: str) -> str:
-    return _mime_type_for_attachment_path(Path(attachment_filename_from_id(attachment_id)))
+    return _mime_type_for_attachment_path(resolve_attachment_uri(attachment_id))
 
 
 def _decode_data_url(data_url: str) -> tuple[bytes, str]:
@@ -588,9 +672,9 @@ def _decode_base64_payload(data_base64: str) -> tuple[bytes, str | None]:
     return data, None
 
 
-def _normalize_attachment_kind(kind: str) -> Literal["image", "file", "audio"]:
-    if kind not in {"image", "file", "audio"}:
-        raise ValueError("Generated attachment kind must be 'image', 'file', or 'audio'.")
+def _normalize_attachment_kind(kind: str) -> Literal["image", "file", "audio", "video"]:
+    if kind not in {"image", "file", "audio", "video"}:
+        raise ValueError("Generated attachment kind must be 'image', 'file', 'audio', or 'video'.")
     return kind  # type: ignore[return-value]
 
 
@@ -599,10 +683,35 @@ def _attachment_subdir(attachment_type: str) -> str:
         return "images"
     if attachment_type == "audio":
         return "audios"
+    if attachment_type == "video":
+        return "videos"
     return "files"
 
 
+def _attachment_subdirs_for_suffix(suffix: str) -> list[str]:
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}:
+        return ["images"]
+    if suffix in ALLOWED_VIDEO_EXTENSIONS:
+        subdirs = ["videos"]
+        if suffix in ALLOWED_AUDIO_EXTENSIONS:
+            subdirs.append("audios")
+        return subdirs
+    if suffix in ALLOWED_AUDIO_EXTENSIONS:
+        return ["audios"]
+    return ["files"]
+
+
 def _mime_type_for_attachment_path(path: Path) -> str:
+    if path.parent.name == "videos":
+        video_mime = {
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+            ".ogv": "video/ogg",
+        }.get(path.suffix.lower())
+        if video_mime:
+            return video_mime
+    if path.parent.name == "audios" and path.suffix.lower() == ".webm":
+        return "audio/webm"
     mime_type = _EXTENSION_MIME_TYPES.get(path.suffix.lower(), "")
     if not mime_type:
         raise ValueError("Unsupported attachment MIME type.")
@@ -644,6 +753,13 @@ def _validate_attachment_payload(name: str | None, mime_type: str, data: bytes, 
             raise ValueError("Unsupported audio file type.")
         _validate_attachment_size(len(data), attachment_type, settings=settings)
         return
+    if attachment_type == "video":
+        if mime_type not in ALLOWED_VIDEO_MIME_TYPES:
+            raise ValueError("Unsupported video MIME type.")
+        if Path(name or "").suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+            raise ValueError("Unsupported video file type.")
+        _validate_attachment_size(len(data), attachment_type, settings=settings)
+        return
     suffix = Path(name or "").suffix.lower()
     if suffix not in ALLOWED_TEXT_EXTENSIONS:
         raise ValueError("Unsupported file type.")
@@ -668,8 +784,15 @@ def _validate_generated_attachment_payload(
             raise ValueError("Unsupported audio MIME type.")
         if Path(name).suffix.lower() not in ALLOWED_AUDIO_EXTENSIONS:
             raise ValueError("Unsupported audio file type.")
+    if attachment_type == "video":
+        if mime_type not in ALLOWED_VIDEO_MIME_TYPES:
+            raise ValueError("Unsupported video MIME type.")
+        if Path(name).suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+            raise ValueError("Unsupported video file type.")
     if attachment_type == "file" and infer_attachment_type(name, mime_type) == "audio":
         raise ValueError("Generated audio attachments must use kind='audio'.")
+    if attachment_type == "file" and infer_attachment_type(name, mime_type) == "video":
+        raise ValueError("Generated video attachments must use kind='video'.")
     _extension_for_attachment(name, mime_type)
     if max_size_bytes is not None and len(data) > max_size_bytes:
         label = max_size_label or f"{max_size_bytes} bytes"
@@ -677,6 +800,42 @@ def _validate_generated_attachment_payload(
     if max_size_bytes is not None:
         return
     _validate_attachment_size(len(data), attachment_type, settings=settings)
+
+
+def _validate_generated_attachment_file(
+    name: str,
+    mime_type: str,
+    size: int,
+    attachment_type: str,
+    settings: Any = None,
+    max_size_bytes: int | None = None,
+    max_size_label: str | None = None,
+) -> None:
+    if size <= 0:
+        raise ValueError("Generated attachment is empty.")
+    if attachment_type == "image" and mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+        raise ValueError("Unsupported image MIME type.")
+    if attachment_type == "audio":
+        if mime_type not in ALLOWED_AUDIO_MIME_TYPES:
+            raise ValueError("Unsupported audio MIME type.")
+        if Path(name).suffix.lower() not in ALLOWED_AUDIO_EXTENSIONS:
+            raise ValueError("Unsupported audio file type.")
+    if attachment_type == "video":
+        if mime_type not in ALLOWED_VIDEO_MIME_TYPES:
+            raise ValueError("Unsupported video MIME type.")
+        if Path(name).suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+            raise ValueError("Unsupported video file type.")
+    if attachment_type == "file" and infer_attachment_type(name, mime_type) == "audio":
+        raise ValueError("Generated audio attachments must use kind='audio'.")
+    if attachment_type == "file" and infer_attachment_type(name, mime_type) == "video":
+        raise ValueError("Generated video attachments must use kind='video'.")
+    _extension_for_attachment(name, mime_type)
+    if max_size_bytes is not None and size > max_size_bytes:
+        label = max_size_label or f"{max_size_bytes} bytes"
+        raise ValueError(f"Generated attachment is too large. Maximum size is {label}.")
+    if max_size_bytes is not None:
+        return
+    _validate_attachment_size(size, attachment_type, settings=settings)
 
 
 def _validate_attachment_size(size: int, attachment_type: str, settings: Any = None) -> None:

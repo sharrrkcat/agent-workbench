@@ -940,7 +940,18 @@ export type AudioAttachment = {
   created_at?: string;
 };
 
-export type Attachment = ImageAttachment | FileAttachment | AudioAttachment;
+export type VideoAttachment = {
+  id: string;
+  type: 'video';
+  mime_type: string;
+  name: string;
+  size: number;
+  uri?: string;
+  url?: string;
+  created_at?: string;
+};
+
+export type Attachment = ImageAttachment | FileAttachment | AudioAttachment | VideoAttachment;
 
 export type FileContentPayload = {
   filename?: string | null;
@@ -1003,6 +1014,22 @@ export type AudioMessagePart = {
   duration_ms?: number | null;
 };
 
+export type VideoMessagePart = {
+  id: string;
+  type: 'video';
+  source: 'attachment';
+  attachment_id: string;
+  url: string;
+  mime_type: string;
+  filename?: string | null;
+  title?: string | null;
+  size_bytes?: number | null;
+  duration_ms?: number | null;
+  width?: number | null;
+  height?: number | null;
+  poster_url?: string | null;
+};
+
 export type MediaGroupMessagePart = {
   id: string;
   type: 'media_group';
@@ -1041,6 +1068,7 @@ export type MessagePart =
   | FileMessagePart
   | ImageMessagePart
   | AudioMessagePart
+  | VideoMessagePart
   | MediaGroupMessagePart
   | FormMessagePart
   | CommandButtonsMessagePart
@@ -1551,6 +1579,7 @@ export type Diagnostics = {
       max_local_text_read_size_mb?: number;
       max_local_image_read_size_mb?: number;
       max_local_audio_read_size_mb?: number;
+      max_local_video_read_size_mb?: number;
       read_file_enabled?: boolean;
     };
     http: {

@@ -438,7 +438,8 @@
     "noErrorMessage": "No error message.",
     "noRecentFailures": "No recent failed runs.",
     "warnings": "Warnings",
-    "noWarnings": "No warnings."
+    "noWarnings": "No warnings.",
+    "maxVideoRead": "Max video read"
   },
   "appearance": {
     "pet": "Pet",

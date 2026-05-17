@@ -2193,6 +2193,8 @@ class CommandRunner:
         if isinstance(data, dict):
             if data.get("source") == "attachment" and str(data.get("mime_type") or "").startswith("audio/"):
                 return {"part_type": "audio"}
+            if data.get("source") == "attachment" and str(data.get("mime_type") or "").startswith("video/"):
+                return {"part_type": "video"}
             if "url" in data:
                 return {"part_type": "image"}
             if "images" in data:
@@ -2223,7 +2225,7 @@ def _attachments_from_command_output(data: Any) -> list[dict[str, Any]]:
         return attachments
     if not isinstance(data, dict):
         return []
-    if data.get("type") == "audio":
+    if data.get("type") in {"audio", "video"}:
         payload = {key: value for key, value in data.items() if key != "type"}
         return _attachments_from_command_output(payload)
     if data.get("type") == "image":
@@ -2249,7 +2251,8 @@ def _attachments_from_command_output(data: Any) -> list[dict[str, Any]]:
     mime_type = data.get("mime_type")
     if not attachment_id or not url or not mime_type:
         return []
-    attachment_type = "audio" if str(mime_type).lower().startswith("audio/") else "file"
+    lowered_mime = str(mime_type).lower()
+    attachment_type = "audio" if lowered_mime.startswith("audio/") else "video" if lowered_mime.startswith("video/") else "file"
     return [
         {
             "id": str(attachment_id),
