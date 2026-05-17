@@ -446,7 +446,7 @@ def test_script_lifecycle_lab_audio_demo_returns_audio_part(monkeypatch, tmp_pat
     assert part["url"] == attachment["url"]
     assert part["mime_type"] == "audio/wav"
     assert part["filename"] == "demo.wav"
-    assert part["duration_ms"] == 500
+    assert part["duration_ms"] == 5000
     assert attachment["type"] == "audio"
     assert resolve_attachment_uri(attachment["uri"]).read_bytes().startswith(b"RIFF")
 

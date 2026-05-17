@@ -131,7 +131,7 @@ async def run_public_stream(ctx) -> None:
 
 
 async def run_audio_demo(ctx) -> None:
-    duration_ms = 500
+    duration_ms = 5000
     wav_data = _silent_wav(duration_ms=duration_ms)
     attachment = await ctx.save_attachment_bytes(
         wav_data,

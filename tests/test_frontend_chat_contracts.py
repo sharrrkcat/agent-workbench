@@ -196,20 +196,109 @@ def test_json_file_image_and_gallery_parts_delegate_to_legacy_renderers() -> Non
 
 def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> None:
     source = read_frontend("components/messages/parts/AudioPartRenderer.tsx")
+    update_metadata_body = source[source.index("function updateMetadata") : source.index("function updateTime")]
+    update_time_body = source[source.index("function updateTime") : source.index("async function togglePlayback")]
+    pointer_time_body = source[source.index("function timeFromPointerEvent") : source.index("function handleProgressPointerDown")]
+    pointer_down_body = source[source.index("function handleProgressPointerDown") : source.index("function handleProgressPointerMove")]
+    pointer_move_body = source[source.index("function handleProgressPointerMove") : source.index("function handleProgressPointerUp")]
+    pointer_up_body = source[source.index("function handleProgressPointerUp") : source.index("function cancelProgressScrub")]
+    keydown_body = source[source.index("function handleProgressKeyDown") : source.index("function commitSeek")]
+    commit_seek_body = source[source.index("function commitSeek") : source.index("function completeSeek")]
+    audio_tag = source[source.index("<audio") : source.index("/>", source.index("<audio"))]
+    controls_markup = source[source.index('<div className="audio-part-controls">') : source.index('{failed ?')]
 
     assert "export function AudioPartRenderer" in source
     assert " controls" not in source
     assert "controls=" not in source
+    assert "type=\"range\"" not in source
+    assert "type='range'" not in source
+    assert "<input" not in source
+    assert "onInput" not in source
+    assert "onChange" not in controls_markup
+    assert "event.currentTarget.value" not in source
     assert "audioRef" in source
+    assert "progressTrackRef" in source
     assert "togglePlayback" in source
+    assert "isScrubbingRef" in source
+    assert "isSeekingRef" in source
+    assert "pendingSeekTimeRef" in source
+    assert "beginScrub" not in source
+    assert "finishScrub" not in source
+    assert "if (isScrubbingRef.current) return" in update_time_body
+    assert "if (isSeekingRef.current) return" in update_time_body
+    assert "const displayedTime = isScrubbing ? scrubTime : currentTime" in source
+    assert "const progressPercent = effectiveDuration > 0 ? clamp(displayedTime / effectiveDuration, 0, 1) * 100 : 0" in source
+    assert "setScrubTime(nextTime)" in update_time_body
+    assert "scrubTimeRef.current = nextTime" in update_time_body
+    assert "getBoundingClientRect" in pointer_time_body
+    assert "event.clientX" in pointer_time_body
+    assert "rect.left" in pointer_time_body
+    assert "rect.width" in pointer_time_body
+    assert "clamp(ratio * effectiveDuration, 0, effectiveDuration)" in pointer_time_body
+    assert "setPointerCapture?.(event.pointerId)" in pointer_down_body
+    assert "setIsScrubbing(true)" in pointer_down_body
+    assert source.count("setIsScrubbing(true)") == 1
+    assert "if (!isScrubbingRef.current) return" in pointer_move_body
+    assert "if (!isScrubbingRef.current) return" in pointer_up_body
+    assert "commitSeek(nextTime)" in pointer_up_body
+    assert "releasePointerCapture?.(event.pointerId)" in pointer_up_body
+    assert "onPointerDown={handleProgressPointerDown}" in source
+    assert "onPointerMove={handleProgressPointerMove}" in source
+    assert "onPointerUp={handleProgressPointerUp}" in source
+    assert "onPointerCancel={cancelProgressScrub}" in source
+    assert "onLostPointerCapture={cancelProgressScrub}" in source
+    assert "role=\"slider\"" in source
+    assert "aria-label={t('audio.seek')}" in source
+    assert "aria-valuemin={0}" in source
+    assert "aria-valuemax={Math.round(effectiveDuration)}" in source
+    assert "aria-valuenow={Math.round(displayedTime)}" in source
+    assert "onKeyDown={handleProgressKeyDown}" in source
+    assert "ArrowLeft" in keydown_body
+    assert "ArrowDown" in keydown_body
+    assert "ArrowRight" in keydown_body
+    assert "ArrowUp" in keydown_body
+    assert "Home" in keydown_body
+    assert "End" in keydown_body
+    assert "Math.min(5, effectiveDuration * 0.05)" in keydown_body
+    assert "function finitePositiveNumber" in source
+    assert "function getAudioDuration" in source
+    assert "const fallbackDuration = durationSeconds(part.duration_ms)" in source
+    assert "const effectiveDuration = duration > 0 ? duration : fallbackDuration" in source
+    assert "function commitSeek(targetSeconds: number)" in source
+    assert "const targetTime = clamp(targetSeconds, 0, effectiveDuration)" in commit_seek_body
+    assert "isSeekingRef.current = true" in commit_seek_body
+    assert "pendingSeekTimeRef.current = targetTime" in commit_seek_body
+    assert "setCurrentTime(targetTime)" in commit_seek_body
+    assert "setScrubTime(targetTime)" in commit_seek_body
+    assert "audio.currentTime = targetTime" in commit_seek_body
+    assert "onSeeked={completeSeek}" in source
+    assert "onPointerDown={beginScrub}" not in source
+    assert "setCurrentTime(0)" not in update_metadata_body
+    assert "setScrubTime(0)" not in update_metadata_body
+    assert "scrubTimeRef.current = 0" not in update_metadata_body
+    assert "key={currentTime}" not in audio_tag
+    assert "key={scrubTime}" not in audio_tag
+    assert "key={duration}" not in audio_tag
+    assert "key={isPlaying}" not in audio_tag
     assert "audio-part-play" in source
-    assert "audio-part-progress" in source
-    assert "type=\"range\"" in source
+    assert "audio-part-progress-track" in source
+    assert "audio-part-progress-fill" in source
+    assert "audio-part-progress-thumb" in source
     assert "part.source === 'attachment'" in source
     assert "^\\/api\\/attachments\\/" in source
     styles = read_frontend("styles.css")
     assert "width: min(100%, 720px)" in styles
     assert "grid-template-columns: auto minmax(0, 1fr) auto" in styles
+    assert ".audio-part-progress-track" in styles
+    assert ".audio-part-progress-fill" in styles
+    assert ".audio-part-progress-thumb" in styles
+
+
+def test_script_lifecycle_audio_demo_duration_contract() -> None:
+    source = read_repo("tests/test_script_agent.py")
+
+    assert "test_script_lifecycle_lab_audio_demo_returns_audio_part" in source
+    assert 'assert part["duration_ms"] == 5000' in source
 
 
 def test_generated_registry_lists_file_audio_output() -> None:
