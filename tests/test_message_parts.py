@@ -69,10 +69,40 @@ def test_audio_part_accepts_attachment_source() -> None:
     }
 
 
+def test_audio_part_accepts_url_source() -> None:
+    parts = validate_message_parts(
+        [
+            {
+                "type": "audio",
+                "source": "url",
+                "url": "https://example.test/demo.mp3",
+                "mime_type": "audio/mpeg",
+                "filename": "demo.mp3",
+                "title": "demo.mp3",
+                "duration_ms": 0,
+                "size_bytes": 123,
+            }
+        ]
+    )
+
+    assert parts == [
+        {
+            "id": "part_1",
+            "type": "audio",
+            "source": "url",
+            "url": "https://example.test/demo.mp3",
+            "mime_type": "audio/mpeg",
+            "filename": "demo.mp3",
+            "title": "demo.mp3",
+            "duration_ms": 0,
+            "size_bytes": 123,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     "payload,error",
     [
-        ({"type": "audio", "source": "url", "attachment_id": "a", "url": "/api/attachments/a.wav", "mime_type": "audio/wav"}, "literal_error"),
         ({"type": "audio", "source": "attachment", "url": "/api/attachments/a.wav", "mime_type": "audio/wav"}, "attachment_id"),
         ({"type": "audio", "source": "attachment", "attachment_id": "a", "mime_type": "audio/wav"}, "url"),
         ({"type": "audio", "source": "attachment", "attachment_id": "a", "url": "/api/attachments/a.txt", "mime_type": "text/plain"}, "audio/\\*"),
@@ -88,6 +118,28 @@ def test_audio_part_rejects_invalid_payloads(payload: dict, error: str) -> None:
 def test_audio_part_rejects_non_local_urls(url: str) -> None:
     with pytest.raises(MessagePartValidationError, match="local attachment URL|/api/attachments"):
         validate_message_parts([{"type": "audio", "source": "attachment", "attachment_id": "a", "url": url, "mime_type": "audio/wav"}])
+
+
+@pytest.mark.parametrize("url", ["file:///tmp/a.wav", "data:audio/wav;base64,AAAA", "javascript:alert(1)", "blob:https://example.test/id", "/api/attachments/a.wav"])
+def test_audio_part_url_source_rejects_non_http_urls(url: str) -> None:
+    with pytest.raises(MessagePartValidationError, match="http:// or https://"):
+        validate_message_parts([{"type": "audio", "source": "url", "url": url, "mime_type": "audio/wav"}])
+
+
+def test_audio_part_url_source_rejects_non_audio_mime() -> None:
+    with pytest.raises(MessagePartValidationError, match="audio/\\*"):
+        validate_message_parts([{"type": "audio", "source": "url", "url": "https://example.test/a.wav", "mime_type": "text/plain"}])
+
+
+def test_audio_part_url_source_rejects_attachment_id() -> None:
+    with pytest.raises(MessagePartValidationError, match="must not include attachment_id"):
+        validate_message_parts([{"type": "audio", "source": "url", "attachment_id": "a", "url": "https://example.test/a.wav", "mime_type": "audio/wav"}])
+
+
+@pytest.mark.parametrize("source", ["stream", "hls", "dash", "rss"])
+def test_audio_part_rejects_unsupported_sources(source: str) -> None:
+    with pytest.raises(MessagePartValidationError, match="literal_error"):
+        validate_message_parts([{"type": "audio", "source": source, "url": "https://example.test/a.wav", "mime_type": "audio/wav"}])
 
 
 def test_video_part_accepts_attachment_source() -> None:

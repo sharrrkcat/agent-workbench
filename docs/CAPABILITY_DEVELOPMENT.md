@@ -88,12 +88,15 @@ authority. Manifest methods declare `output.part_type`:
 returns a dict and the method has no declared output, the runner infers the
 current parts contract, normally JSON unless the payload is shaped like an image
 or media group. Use `file` parts for source files, config files, logs, and other
-raw text that must not be interpreted as Markdown. Use `audio` parts only for
-local attachment-backed audio payloads with `source: attachment`; remote audio
-URLs, TTS, ASR, and transcription are not implemented. Use `video` parts only
-for local attachment-backed video payloads with `source: attachment`; remote
-video URLs, HLS/DASH/livestream sources, metadata parsing, thumbnails,
-transcoding, and video input to LLMs are not implemented.
+raw text that must not be interpreted as Markdown. Use `audio` parts for local
+attachment-backed audio payloads with `source: attachment` or safe HTTP/HTTPS
+direct audio payloads with `source: url`. Remote audio URLs are not downloaded,
+cached, saved as local attachments, or proxied; HLS/DASH, `.m3u8`, `.mpd`,
+`.pls`, livestreams, radio, podcast RSS, TTS, ASR, transcription, and audio
+understanding are not implemented. Use `video` parts only for local
+attachment-backed video payloads with `source: attachment`; remote video URLs,
+HLS/DASH/livestream sources, metadata parsing, thumbnails, transcoding, and
+video input to LLMs are not implemented.
 
 For external service Capabilities, prefer stable JSON contracts over user-facing prose. The `comfyui` Capability is the reference shape for a REST + polling integration: low-level methods cover connection, queue, history, submit, non-blocking prompt status, fetch, interrupt, upload, object info, and `free_memory` for ComfyUI `POST /free`; helper methods normalize outputs and collect images for a prompt. It also owns local workflow and preset library directories, scanning API-format workflow files, rejecting unsupported GUI-format files, hash de-duplication, preset loading, preset validation, per-workflow draft skip reasons, and draft preset creation. The preset YAML schema is documented in [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). It deliberately returns image references or base64 metadata rather than saving attachments, so a Script Agent can choose how to present or persist results. `free_memory` is a protocol method only: it requests unload/free behavior from the connected ComfyUI service and does not decide whether a user workflow should call it. ComfyUI is an external service and local asset capability, not a user-facing workflow Agent by itself.
 
@@ -138,15 +141,19 @@ reads, web page fetching, HLS/DASH/livestream sources, video metadata parsing,
 thumbnail generation, transcoding, or video input to LLMs.
 
 The built-in `http` Capability exposes only `/fetch-url <url>` for user-facing
-HTTP reads. It auto-detects supported text, HTML, JSON, and image responses:
-text returns a plain text part, HTML returns lightweight extracted page text,
-JSON returns a JSON part, and images return an image part using the existing
-HTTP image payload behavior. The single `enable_fetch_url_command` toggle gates
-all supported response types. Text, HTML, and JSON use
-`max_text_response_size_mb`; images use `max_image_response_size_mb`. The HTTP
-Capability does not expose `/http-get`, `/fetch-page`, or `/fetch-image`, does
-not support audio/video, and does not download, cache, proxy, or extract remote
-streaming media such as HLS, DASH, livestreams, radio, podcasts, or video pages.
+HTTP reads. It auto-detects supported text, HTML, JSON, image, and direct audio
+responses: text returns a plain text part, HTML returns lightweight extracted
+page text, JSON returns a JSON part, images return an image part using the
+existing HTTP image payload behavior, and direct audio returns an AudioPart with
+`source: url`. The single `enable_fetch_url_command` toggle gates all supported
+response types. Text, HTML, and JSON use `max_text_response_size_mb`; images use
+`max_image_response_size_mb`; direct audio is detected from response headers or
+URL extension and is not downloaded, cached, saved as a local attachment, or
+proxied. The HTTP Capability does not expose `/http-get`, `/fetch-page`, or
+`/fetch-image`, does not support HTTP video, and does not extract remote
+streaming media such as HLS, DASH, `.m3u8`, `.mpd`, `.pls`, livestreams, radio,
+podcast RSS, or video pages. It does not do ASR, transcription, TTS, or audio
+content understanding.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 

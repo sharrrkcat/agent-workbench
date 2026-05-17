@@ -2195,7 +2195,7 @@ class CommandRunner:
         if declared:
             return declared
         if isinstance(data, dict):
-            if data.get("source") == "attachment" and str(data.get("mime_type") or "").startswith("audio/"):
+            if data.get("source") in {"attachment", "url"} and str(data.get("mime_type") or "").startswith("audio/"):
                 return {"part_type": "audio"}
             if data.get("source") == "attachment" and str(data.get("mime_type") or "").startswith("video/"):
                 return {"part_type": "video"}

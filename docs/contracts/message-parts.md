@@ -23,9 +23,10 @@ must not duplicate full parts.
 - `json`: structured object or array data.
 - `file`: inline raw text (`mode: inline_text`) or an attachment reference.
 - `image`: one image by `url` or `attachment_id`.
-- `audio`: one local attachment-backed audio file. v1 supports only
-  `source: attachment` with `attachment_id`, `/api/attachments/<id>.<ext>` URL,
-  and `audio/*` MIME type.
+- `audio`: one audio file. It supports local attachment-backed audio with
+  `source: attachment`, `attachment_id`, `/api/attachments/<id>.<ext>` URL, and
+  `audio/*` MIME type. It also supports direct remote audio with `source: url`,
+  an `http://` or `https://` URL, and `audio/*` MIME type.
 - `video`: one local attachment-backed video file. v1 supports only
   `source: attachment` with `attachment_id`, `/api/attachments/<id>.<ext>` URL,
   and `video/*` MIME type. Supported v1 extensions are `.mp4`, `.webm`, and
@@ -39,10 +40,14 @@ must not duplicate full parts.
 Unknown part types fail validation. `diff`, `chart`, `table`, and `artifact`
 are future work and are not accepted.
 
-AudioPart v1 does not support remote URL sources, network downloads, TTS, ASR,
-transcription, livestreams, playlists, or audio content understanding.
-The built-in file Capability creates AudioParts through `/read-file <path>` when
-the local file is detected as supported audio.
+AudioPart `source: url` is only for safe HTTP/HTTPS direct audio links. It does
+not allow `file:`, `data:`, `javascript:`, or `blob:` URLs and must not include
+`attachment_id`. AudioPart does not support network downloads, remote
+attachment caching, HTTP media proxying, HLS/DASH manifests, `.m3u8`, `.mpd`,
+`.pls`, livestreams, radio, podcast RSS, TTS, ASR, transcription, audio input
+to LLMs, or audio content understanding. The built-in file Capability creates
+attachment-backed AudioParts through `/read-file <path>` when the local file is
+detected as supported audio.
 VideoPart v1 does not support remote URL sources, HTTP/HTTPS playback URLs,
 `file:` URLs, data URLs, HLS/DASH manifests, livestreams, video metadata
 parsing, thumbnails/posters, transcoding, OCR, ASR, transcription, or video
@@ -77,11 +82,14 @@ return a raw `file` part with `mode: inline_text`; image files return an
 return an attachment-backed `video` part.
 
 The built-in `http` Capability declares `/fetch-url` as `part_type: parts`
-because it auto-detects supported remote text, HTML, JSON, and image responses.
-Plain text returns a plain `text` part, HTML returns lightweight extracted page
-text, JSON returns a `json` part, and images return an `image` part. HTTP audio,
-video, remote media download/cache/proxy, HLS/DASH, livestream/radio/podcast
-extraction, OCR, ASR, TTS, and PDF parsing are not implemented.
+because it auto-detects supported remote text, HTML, JSON, image, and direct
+audio responses. Plain text returns a plain `text` part, HTML returns
+lightweight extracted page text, JSON returns a `json` part, images return an
+`image` part, and direct audio returns an AudioPart with `source: url`. HTTP
+audio is not downloaded, cached, saved as a local attachment, or proxied. HTTP
+video, HLS/DASH, `.m3u8`, `.mpd`, `.pls`, livestream/radio/podcast extraction,
+OCR, ASR, TTS, transcription, audio understanding, and PDF parsing are not
+implemented.
 
 `output.type` is invalid. If a method omits `output`, the runtime infers the
 current parts contract from the returned value: lists are validated as parts,
@@ -94,7 +102,9 @@ The frontend renders normal messages only through `MessagePartsRenderer`.
 Missing or invalid parts produce a safe empty/error state, not a legacy fallback.
 Copyable content and renderability checks are derived from parts and status.
 Audio parts render with the project custom audio player, backed by a hidden
-`<audio>` element without native browser controls.
+`<audio>` element without native browser controls. Remote `source: url` playback
+depends on browser support and the remote server's Content-Type, Range, CORS,
+and hotlink behavior; the workbench does not proxy or repair remote media.
 Video parts render with a native `<video controls preload="metadata">` element
 and only use local attachment URLs.
 

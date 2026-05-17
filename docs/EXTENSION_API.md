@@ -186,8 +186,7 @@ trigger the internal title pre-hook. Agent authors should not call title
 generation manually.
 
 Depending on runtime settings and Agent overrides, Core Memory, Worldbook, and
-Knowledge may be appended to eligible `ctx.llm.*` calls. Script defaults are
-disabled unless opted in.
+Knowledge may be appended to eligible `ctx.llm.*` calls. Script defaults are disabled unless opted in.
 
 Runtime details live in the focused contracts for LLM resolution, streaming,
 Memory/Worldbook, and Knowledge.
@@ -245,8 +244,7 @@ commands.
 | `safe` | Command safety hint. | Documentation/UI hint, not a sandbox. |
 | `config_schema` | Local CapabilityConfig fields. | Settings stores values by capability id. |
 
-For a minimal manifest example, see
-[CAPABILITY_DEVELOPMENT.md](CAPABILITY_DEVELOPMENT.md).
+For a minimal manifest example, see [CAPABILITY_DEVELOPMENT.md](CAPABILITY_DEVELOPMENT.md).
 
 Runtime call rules:
 
@@ -277,18 +275,17 @@ release, and workflow/preset library operations. Preset YAML is documented in
 [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). User-facing generation
 workflow belongs to the Script Agent.
 
-Utility LLM, Intent Routing, General settings, and Knowledge settings are
-core-owned services, not Capability backends; see `contracts/utility-llm.md`,
-`contracts/intent-routing.md`, and `contracts/settings-general.md`.
+Utility LLM, Intent Routing, General settings, and Knowledge settings are core-owned services; see `contracts/utility-llm.md`, `contracts/intent-routing.md`, and `contracts/settings-general.md`.
 
 The built-in `file` Capability exposes only `/read-file <path>`, auto-detects
 text/image/audio/video into matching Message Parts, keeps one command toggle
 with per-kind limits, and does not support network reads or media analysis.
 
 The built-in `http` Capability exposes only `/fetch-url <url>`, auto-detects
-text/HTML/JSON/image into matching Message Parts, keeps one command toggle with
-separate text/image limits, and does not support audio/video, remote media
-caching/proxying, streaming media, OCR, ASR, TTS, or PDF parsing.
+text/HTML/JSON/image/direct audio into Message Parts, and keeps one command
+toggle with separate text/image limits. Direct audio uses `source: url` and is
+not downloaded, cached, proxied, or saved locally. HTTP video, streaming media,
+OCR, ASR, TTS, transcription, and PDF parsing are not supported.
 
 ## Capability Config
 
@@ -311,11 +308,14 @@ Capability commands declare `output.part_type`: `text`, `json`, `file`,
 `format: plain|markdown`; file declarations may set `mode: inline_text`; media
 groups may set `layout: gallery`. `output.type` is invalid.
 
-`audio` and `video` outputs are local-attachment only: `source: attachment`,
-`attachment_id`, local `/api/attachments/...` URL, and matching `audio/*` or
-`video/*` MIME type. Remote media URLs, TTS, ASR/transcription, HLS/DASH,
-livestreams, runtime thumbnails/posters, metadata parsing, transcoding, and
-media input to LLMs are not part of this API.
+`audio` outputs support local attachments and safe HTTP/HTTPS direct audio URLs:
+`source: attachment` requires `attachment_id` plus local `/api/attachments/...`;
+`source: url` requires HTTP/HTTPS and is not downloaded, cached, proxied, or
+saved locally. Both require `audio/*` MIME type. `video` outputs remain local
+attachment only with `video/*` MIME type. HLS/DASH, `.m3u8`, `.mpd`, `.pls`,
+livestreams, radio, podcast RSS, TTS, ASR/transcription, audio understanding,
+thumbnails/posters, transcoding, and media input to LLMs are not part of this
+API.
 
 Markdown `text` parts keep render-time Knowledge citation enhancement.
 

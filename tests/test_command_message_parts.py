@@ -53,6 +53,9 @@ class OutputRuntime:
     def auto_detected_audio(self, args: str) -> list[dict[str, Any]]:
         return [{"type": "audio", "source": "attachment", "attachment_id": "att-1", "url": "/api/attachments/att-1.wav", "mime_type": "audio/wav"}]
 
+    def auto_detected_remote_audio(self, args: str) -> list[dict[str, Any]]:
+        return [{"type": "audio", "source": "url", "url": "https://example.test/audio.mp3", "mime_type": "audio/mpeg"}]
+
     def auto_detected_video(self, args: str) -> list[dict[str, Any]]:
         return [{"type": "video", "source": "attachment", "attachment_id": "vid-1", "url": "/api/attachments/vid-1.mp4", "mime_type": "video/mp4"}]
 
@@ -81,6 +84,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"id": "rich_form", "output": {"part_type": "parts"}},
                 {"id": "rich_buttons", "output": {"part_type": "parts"}},
                 {"id": "auto_detected_audio", "output": {"part_type": "parts"}},
+                {"id": "auto_detected_remote_audio", "output": {"part_type": "parts"}},
                 {"id": "auto_detected_video", "output": {"part_type": "parts"}},
                 {"id": "inferred_json"},
             ],
@@ -96,6 +100,7 @@ def make_runner() -> tuple[CommandRunner, SessionStore, MessageStore, EventBus]:
                 {"name": "/out-form", "method": "rich_form"},
                 {"name": "/out-buttons", "method": "rich_buttons"},
                 {"name": "/out-auto-audio", "method": "auto_detected_audio"},
+                {"name": "/out-auto-remote-audio", "method": "auto_detected_remote_audio"},
                 {"name": "/out-auto-video", "method": "auto_detected_video"},
                 {"name": "/out-inferred", "method": "inferred_json"},
             ],
@@ -249,6 +254,22 @@ def test_parts_output_keeps_audio_part_instead_of_json() -> None:
             "attachment_id": "att-1",
             "url": "/api/attachments/att-1.wav",
             "mime_type": "audio/wav",
+        }
+    ]
+    assert message.metadata["output_part_type"] == "parts"
+    assert not hasattr(message, "output_type")
+
+
+def test_parts_output_keeps_remote_audio_part_instead_of_json() -> None:
+    _, message, _ = command_message("/out-auto-remote-audio")
+
+    assert message.parts == [
+        {
+            "id": "part_1",
+            "type": "audio",
+            "source": "url",
+            "url": "https://example.test/audio.mp3",
+            "mime_type": "audio/mpeg",
         }
     ]
     assert message.metadata["output_part_type"] == "parts"

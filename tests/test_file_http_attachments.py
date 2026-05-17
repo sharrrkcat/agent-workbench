@@ -25,6 +25,16 @@ from tests.test_prompt_agent_execution import FakeLLMRuntime
 PNG_DATA_URL = "data:image/png;base64,aGVsbG8="
 
 
+class CountingByteStream(httpx.SyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+        self.iterated = False
+
+    def __iter__(self):
+        self.iterated = True
+        yield from self.chunks
+
+
 def test_data_url_attachment_is_saved_as_local_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
 
@@ -738,6 +748,12 @@ def test_http_capability_fetch_url_auto_detects_supported_parts() -> None:
             return httpx.Response(200, headers={"content-type": "application/json"}, json={"ok": True}, request=request)
         if request.url.path == "/html":
             return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html><body><h1>Title</h1><script>x()</script><p>Hello page</p></body></html>", request=request)
+        if request.url.path == "/audio.mp3":
+            return httpx.Response(200, headers={"content-type": "audio/mpeg", "content-length": "123456"}, content=b"", request=request)
+        if request.url.path == "/audio.ogg":
+            return httpx.Response(200, headers={"content-type": "audio/ogg"}, content=b"", request=request)
+        if request.url.path == "/audio.m4a":
+            return httpx.Response(200, headers={"content-type": "application/octet-stream"}, content=b"", request=request)
         return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"hello text", request=request)
 
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://example.test")
@@ -755,12 +771,82 @@ def test_http_capability_fetch_url_auto_detects_supported_parts() -> None:
     assert "x()" not in html[0]["text"]
     assert runtime.fetch_url("https://example.test/image")[0]["type"] == "image"
     assert runtime.fetch_url("https://example.test/image")[0]["url"] == PNG_DATA_URL
+    assert runtime.fetch_url("https://example.test/audio.mp3") == [
+        {
+            "type": "audio",
+            "source": "url",
+            "url": "https://example.test/audio.mp3",
+            "mime_type": "audio/mpeg",
+            "filename": "audio.mp3",
+            "title": "audio.mp3",
+            "size_bytes": 123456,
+        }
+    ]
+    assert runtime.fetch_url("https://example.test/audio.ogg")[0]["source"] == "url"
+    assert runtime.fetch_url("https://example.test/audio.ogg")[0]["mime_type"] == "audio/ogg"
+    assert runtime.fetch_url("https://example.test/audio.m4a")[0]["mime_type"] == "audio/mp4"
     try:
         runtime.fetch_image("https://example.test/text")
     except ValueError as exc:
         assert "not an image" in str(exc)
     else:
         raise AssertionError("expected non-image rejection")
+
+
+def test_http_capability_fetch_url_does_not_download_audio_body() -> None:
+    stream = CountingByteStream([b"x" * 1024, b"y" * 1024])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "audio/mpeg", "content-length": "2048"},
+            stream=stream,
+            request=request,
+        )
+
+    runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    part = runtime.fetch_url("https://example.test/audio.mp3")[0]
+
+    assert part["type"] == "audio"
+    assert part["source"] == "url"
+    assert part["url"] == "https://example.test/audio.mp3"
+    assert stream.iterated is False
+
+
+def test_http_capability_fetch_url_rejects_streaming_and_playlist_sources() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        content_types = {
+            "/playlist.m3u8": "application/vnd.apple.mpegurl",
+            "/stream.mpd": "application/dash+xml",
+            "/radio.pls": "audio/x-scpls",
+            "/feed": "application/rss+xml",
+        }
+        return httpx.Response(200, headers={"content-type": content_types[request.url.path]}, content=b"", request=request)
+
+    runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    for path in ["/playlist.m3u8", "/stream.mpd", "/radio.pls", "/feed"]:
+        try:
+            runtime.fetch_url(f"https://example.test{path}")
+        except ValueError as exc:
+            assert "Unsupported remote media source" in str(exc)
+        else:
+            raise AssertionError(f"expected remote media rejection for {path}")
+
+
+def test_http_capability_fetch_url_audio_is_not_json_text_or_file() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "audio/mp4"}, content=b"", request=request)
+
+    runtime = HttpRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    parts = runtime.fetch_url("https://example.test/audio.m4a")
+
+    assert [part["type"] for part in parts] == ["audio"]
+    assert "data" not in parts[0]
+    assert "text" not in parts[0]
+    assert parts[0]["source"] == "url"
 
 
 def test_http_capability_size_limit() -> None:

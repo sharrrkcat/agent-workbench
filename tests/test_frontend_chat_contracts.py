@@ -110,7 +110,10 @@ def test_message_type_exposes_message_parts_contract() -> None:
     assert "mode: 'inline_text' | 'attachment_ref'" in source
     assert "export type ImageMessagePart" in source
     assert "export type AudioMessagePart" in source
+    assert "export type AttachmentAudioMessagePart" in source
+    assert "export type UrlAudioMessagePart" in source
     assert "type: 'audio'" in source
+    assert "source: 'url'" in source
     assert "export type VideoMessagePart" in source
     assert "type: 'video'" in source
     assert "source: 'attachment'" in source
@@ -337,7 +340,14 @@ def test_audio_part_renderer_uses_custom_controls_for_local_attachments() -> Non
     assert "audio-part-progress-fill" in source
     assert "audio-part-progress-thumb" in source
     assert "part.source === 'attachment'" in source
+    assert "part.source === 'url'" in source
+    assert "function isRemoteHttpUrl" in source
+    assert "^https?:\\/\\/" in source
+    assert "function audioSourceUrl" in source
+    assert "return isRemoteHttpUrl(part.url) ? part.url : ''" in source
     assert "^\\/api\\/attachments\\/" in source
+    assert "part.source === 'attachment' ? part.attachment_id : part.url" in source
+    assert "part.source, part.source === 'attachment' ? part.attachment_id : '', part.url" in source
     styles = read_frontend("styles.css")
     audio_part_styles = styles[styles.index(".audio-part {") : styles.index(".audio-part audio")]
     progress_track_styles = styles[styles.index(".audio-part-progress-track {") : styles.index(".audio-part-progress-track::before")]

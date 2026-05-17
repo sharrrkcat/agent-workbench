@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import count
 import re
 from typing import Any, Literal, Mapping, Sequence
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
@@ -97,23 +98,21 @@ class ImagePart(_PartBase):
 
 class AudioPart(_PartBase):
     type: Literal["audio"]
-    source: Literal["attachment"] = "attachment"
-    attachment_id: str = Field(min_length=1)
+    source: Literal["attachment", "url"] = "attachment"
+    attachment_id: str | None = None
     url: str = Field(min_length=1)
     mime_type: str = Field(min_length=1)
     filename: str | None = None
     title: str | None = None
     duration_ms: int | None = Field(default=None, ge=0)
+    size_bytes: int | None = Field(default=None, ge=0)
 
     @field_validator("url")
     @classmethod
-    def validate_local_attachment_url(cls, value: str) -> str:
+    def clean_url(cls, value: str) -> str:
         cleaned = value.strip()
-        lowered = cleaned.lower()
-        if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:")):
-            raise ValueError("audio url must be a local attachment URL")
-        if not _LOCAL_ATTACHMENT_URL_RE.match(cleaned):
-            raise ValueError("audio url must use /api/attachments/<id>.<ext>")
+        if not cleaned:
+            raise ValueError("audio url is required")
         return cleaned
 
     @field_validator("mime_type")
@@ -123,6 +122,24 @@ class AudioPart(_PartBase):
         if not cleaned.startswith("audio/"):
             raise ValueError("audio mime_type must be audio/*")
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_source_contract(self) -> "AudioPart":
+        if self.source == "attachment":
+            if not self.attachment_id:
+                raise ValueError("audio attachment source requires attachment_id")
+            lowered = self.url.lower()
+            if lowered.startswith(("http://", "https://", "file:", "data:", "javascript:", "blob:")):
+                raise ValueError("audio attachment url must be a local attachment URL")
+            if not _LOCAL_ATTACHMENT_URL_RE.match(self.url):
+                raise ValueError("audio attachment url must use /api/attachments/<id>.<ext>")
+            return self
+        if self.attachment_id:
+            raise ValueError("audio url source must not include attachment_id")
+        parsed = urlparse(self.url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("audio url source must use http:// or https://")
+        return self
 
 
 class VideoPart(_PartBase):

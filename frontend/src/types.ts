@@ -1002,7 +1002,7 @@ export type ImageMessagePart = {
   mime_type?: string | null;
 };
 
-export type AudioMessagePart = {
+export type AttachmentAudioMessagePart = {
   id: string;
   type: 'audio';
   source: 'attachment';
@@ -1012,7 +1012,22 @@ export type AudioMessagePart = {
   filename?: string | null;
   title?: string | null;
   duration_ms?: number | null;
+  size_bytes?: number | null;
 };
+
+export type UrlAudioMessagePart = {
+  id: string;
+  type: 'audio';
+  source: 'url';
+  url: string;
+  mime_type: string;
+  filename?: string | null;
+  title?: string | null;
+  duration_ms?: number | null;
+  size_bytes?: number | null;
+};
+
+export type AudioMessagePart = AttachmentAudioMessagePart | UrlAudioMessagePart;
 
 export type VideoMessagePart = {
   id: string;
