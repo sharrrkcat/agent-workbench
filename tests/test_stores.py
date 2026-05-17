@@ -18,7 +18,7 @@ def test_session_store_creates_session_and_changes_default_agent() -> None:
 def test_run_store_creates_and_updates_run() -> None:
     store = RunStore()
 
-    run = store.create_run(kind="command", target_id="/base64", session_id="session-1")
+    run = store.create_run(kind="command", target_id="/encode", session_id="session-1")
     running = store.update_status(run.run_id, RunStatus.RUNNING, current_step="started")
     done = store.update_status(run.run_id, RunStatus.DONE, current_step="done")
 

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 import yaml
@@ -6,6 +7,7 @@ import yaml
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.forms import FormValidationError, validate_action_form_block, validate_action_form_values
 from ai_workbench.core.message_parts import make_form_part
+from ai_workbench.core.schema.agent import AgentSchema
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from tests.test_api import create_session, make_client, post_message
 
@@ -70,6 +72,78 @@ def demo_form(**overrides):
 
 def form_part(**overrides):
     return [make_form_part(demo_form(**overrides))]
+
+
+def register_form_test_agent(client, tmp_path: Path) -> str:
+    agent_id = "form_test_agent"
+    agent_dir = tmp_path / agent_id
+    agent_dir.mkdir(exist_ok=True)
+    (agent_dir / "agent.py").write_text(
+        """
+async def run(ctx):
+    if ctx.action_id == "form_submit":
+        if ctx.input.prefill.get("prompt") == "fail":
+            raise ValueError("Form submit failed on request.")
+        if ctx.input.is_silent_submission:
+            ctx.state.set(
+                "last_silent_form_submission",
+                {
+                    "prefill": ctx.input.prefill,
+                    "source_message_id": ctx.input.source_message_id,
+                    "form_id": ctx.input.form_id,
+                    "is_silent_submission": ctx.input.is_silent_submission,
+                },
+            )
+        await ctx.reply_json(
+            {
+                "received_prefill": ctx.input.prefill,
+                "source_message_id": ctx.input.source_message_id,
+                "form_id": ctx.input.form_id,
+                "is_silent_submission": ctx.input.is_silent_submission,
+            }
+        )
+        return
+    if ctx.action_id == "form":
+        await ctx.reply_blocks(
+            [
+                {
+                    "type": "action_form",
+                    "form_id": "demo",
+                    "title": "Demo Form",
+                    "fields": [
+                        {"name": "prompt", "type": "textarea", "required": True, "value": "hello"},
+                        {"name": "count", "type": "integer", "minimum": 1, "maximum": 10, "value": 2},
+                        {"name": "mode", "type": "enum", "options": [{"value": "fast", "label": "Fast"}, {"value": "quality", "label": "Quality"}], "value": "fast"},
+                        {"name": "enabled", "type": "boolean", "value": True},
+                        {"name": "config_json", "type": "json", "value": {"size": "small"}},
+                    ],
+                    "submit": {"label": "Run", "action_id": "form_submit", "message": "Submitted form: Demo Form"},
+                }
+            ]
+        )
+        return
+    await ctx.reply_text(ctx.input.text)
+""".strip(),
+        encoding="utf-8",
+    )
+    agent = AgentSchema.model_validate(
+        {
+            "id": agent_id,
+            "name": "Form Test Agent",
+            "type": "script",
+            "description": "Temporary test agent for form submission contracts.",
+            "entry": "agent.py",
+            "actions": [
+                {"id": "default", "description": "Echo input."},
+                {"id": "form", "description": "Show demo form."},
+                {"id": "form_submit", "description": "Echo submitted form values."},
+            ],
+            "context_policy": {"mode": "current_message"},
+            "model_lifecycle": {"load": "on_demand", "unload": "manual", "unload_failure": "warn"},
+        }
+    )
+    client.app.state.runtime_state.agents.register(agent, agent_dir=agent_dir)
+    return agent_id
 
 
 def test_action_form_payload_shape_validation_success() -> None:
@@ -221,10 +295,11 @@ def test_action_form_missing_optional_uses_value_default_none() -> None:
     assert validate_action_form_values(form, {}) == {"with_value": "value", "with_default": 2, "empty": None}
 
 
-def test_form_submit_uses_original_form_target_and_prefill() -> None:
+def test_form_submit_uses_original_form_target_and_prefill(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
-    payload = post_message(client, session["session_id"], "@render_test:form")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
+    payload = post_message(client, session["session_id"], "@form_test_agent:form")
     form_message = next(message for message in payload["messages"] if any(part.get("type") == "form" and part.get("form_id") == "demo" for part in message.get("parts", [])))
 
     response = client.post(
@@ -267,7 +342,7 @@ def test_form_submit_uses_original_form_target_and_prefill() -> None:
     assert user_message["metadata"]["origin"] == "form_submission"
     assert user_message["metadata"]["source_message_id"] == form_message["message_id"]
     assert user_message["metadata"]["form_id"] == "demo"
-    assert user_message["metadata"]["target_agent_id"] == "render_test"
+    assert user_message["metadata"]["target_agent_id"] == "form_test_agent"
     assert user_message["metadata"]["target_action_id"] == "form_submit"
     assert user_message["metadata"]["prefill"]["prompt"] == "submitted"
     assert user_message["parts"] == [{"id": "part_1", "type": "text", "format": "plain", "text": "Submitted form: Demo Form"}]
@@ -279,9 +354,10 @@ def test_form_submit_uses_original_form_target_and_prefill() -> None:
     assert assistant["role"] == "assistant"
 
 
-def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_state() -> None:
+def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_state(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
@@ -291,13 +367,13 @@ def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_stat
             title="Silent Demo",
             fields=[{"name": "prompt", "type": "text", "required": True}],
             submit={
-                "agent_id": "render_test",
+                "agent_id": "form_test_agent",
                 "action_id": "form_submit",
                 "visibility": "silent",
                 "success_message": "Recipe saved",
             },
         ),
-        agent_id="render_test",
+        agent_id="form_test_agent",
     )
 
     response = client.post(
@@ -323,7 +399,7 @@ def test_silent_form_submit_invokes_target_without_chat_messages_and_writes_stat
     assert all(message.origin != "form_submission" for message in messages)
     assert all(message.role != "tool" for message in messages)
     state = client.app.state.runtime_state.session_agent_states.get_state(
-        session["session_id"], "render_test", "last_silent_form_submission"
+        session["session_id"], "form_test_agent", "last_silent_form_submission"
     )
     assert state["prefill"]["prompt"] == "submitted"
     assert state["source_message_id"] == source.message_id
@@ -395,9 +471,10 @@ def test_comfyui_silent_recipe_save_preset_switch_returns_new_form_fields(tmp_pa
     assert fields["preset_id"]["value"] == "other"
 
 
-def test_silent_form_submit_validation_failure_does_not_invoke_target() -> None:
+def test_silent_form_submit_validation_failure_does_not_invoke_target(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
@@ -406,9 +483,9 @@ def test_silent_form_submit_validation_failure_does_not_invoke_target() -> None:
             form_id="silent_invalid",
             title="Silent Invalid",
             fields=[{"name": "prompt", "type": "text", "required": True}],
-            submit={"agent_id": "render_test", "action_id": "form_submit", "visibility": "silent"},
+            submit={"agent_id": "form_test_agent", "action_id": "form_submit", "visibility": "silent"},
         ),
-        agent_id="render_test",
+        agent_id="form_test_agent",
     )
 
     response = client.post(
@@ -419,14 +496,15 @@ def test_silent_form_submit_validation_failure_does_not_invoke_target() -> None:
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "FORM_VALIDATION_FAILED"
     assert client.app.state.runtime_state.session_agent_states.get_state(
-        session["session_id"], "render_test", "last_silent_form_submission"
+        session["session_id"], "form_test_agent", "last_silent_form_submission"
     ) is None
 
 
-def test_silent_form_submit_ignores_request_visibility_and_target_overrides() -> None:
+def test_silent_form_submit_ignores_request_visibility_and_target_overrides(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
-    payload = post_message(client, session["session_id"], "@render_test:form")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
+    payload = post_message(client, session["session_id"], "@form_test_agent:form")
     form_message = next(message for message in payload["messages"] if any(part.get("type") == "form" and part.get("form_id") == "demo" for part in message.get("parts", [])))
 
     response = client.post(
@@ -448,9 +526,10 @@ def test_silent_form_submit_ignores_request_visibility_and_target_overrides() ->
     assert response.status_code == 422
 
 
-def test_silent_form_submit_target_failure_returns_structured_error_without_chat_messages() -> None:
+def test_silent_form_submit_target_failure_returns_structured_error_without_chat_messages(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
@@ -460,13 +539,13 @@ def test_silent_form_submit_target_failure_returns_structured_error_without_chat
             title="Silent Fail",
             fields=[{"name": "prompt", "type": "text", "required": True}],
             submit={
-                "agent_id": "render_test",
+                "agent_id": "form_test_agent",
                 "action_id": "form_submit",
                 "visibility": "silent",
                 "failure_message": "Save failed",
             },
         ),
-        agent_id="render_test",
+        agent_id="form_test_agent",
     )
 
     response = client.post(
@@ -483,15 +562,16 @@ def test_silent_form_submit_target_failure_returns_structured_error_without_chat
     assert payload["messages"] == []
 
 
-def test_form_submit_invalid_target_action_returns_structured_error() -> None:
+def test_form_submit_invalid_target_action_returns_structured_error(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
         content="",
         parts=form_part(form_id="bad", title="Bad", fields=[{"name": "prompt", "type": "text"}], submit={"action_id": "missing"}),
-        agent_id="render_test",
+        agent_id="form_test_agent",
     )
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -501,15 +581,16 @@ def test_form_submit_invalid_target_action_returns_structured_error() -> None:
     assert response.json()["error"]["code"] == "FORM_TARGET_INVALID"
 
 
-def test_form_submit_missing_target_agent_returns_structured_error() -> None:
+def test_form_submit_missing_target_agent_returns_structured_error(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
         content="",
         parts=form_part(form_id="bad_agent", title="Bad Agent", fields=[{"name": "prompt", "type": "text"}], submit={"agent_id": "missing_agent", "action_id": "default"}),
-        agent_id="render_test",
+        agent_id="form_test_agent",
     )
     response = client.post(
         f"/api/sessions/{session['session_id']}/forms/submit",
@@ -519,15 +600,16 @@ def test_form_submit_missing_target_agent_returns_structured_error() -> None:
     assert response.json()["error"]["code"] == "FORM_TARGET_INVALID"
 
 
-def test_form_submit_disabled_target_agent_returns_structured_error() -> None:
+def test_form_submit_disabled_target_agent_returns_structured_error(tmp_path) -> None:
     client = make_client()
+    register_form_test_agent(client, tmp_path)
     session = create_session(client, default_agent_id="chat")
-    client.patch("/api/agent-configs/render_test", json={"enabled": False})
+    client.patch("/api/agent-configs/form_test_agent", json={"enabled": False})
     source = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="assistant",
         content="",
-        parts=form_part(form_id="disabled_agent", title="Disabled Agent", fields=[{"name": "prompt", "type": "text"}], submit={"agent_id": "render_test", "action_id": "form_submit"}),
+        parts=form_part(form_id="disabled_agent", title="Disabled Agent", fields=[{"name": "prompt", "type": "text"}], submit={"agent_id": "form_test_agent", "action_id": "form_submit"}),
         agent_id="chat",
     )
     response = client.post(
@@ -538,9 +620,10 @@ def test_form_submit_disabled_target_agent_returns_structured_error() -> None:
     assert response.json()["error"]["code"] == "FORM_TARGET_INVALID"
 
 
-def test_form_submission_context_uses_summary_not_prefill_json() -> None:
+def test_form_submission_context_uses_summary_not_prefill_json(tmp_path) -> None:
     client = make_client()
-    session = create_session(client, default_agent_id="render_test")
+    register_form_test_agent(client, tmp_path)
+    session = create_session(client, default_agent_id="form_test_agent")
     message = client.app.state.runtime_state.messages.add_message(
         session_id=session["session_id"],
         role="user",

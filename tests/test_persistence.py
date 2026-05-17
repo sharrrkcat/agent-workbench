@@ -145,7 +145,7 @@ def test_sql_message_store_add_list_get(tmp_path: Path) -> None:
     loaded = messages.get_message(message.message_id)
     listed = messages.list_messages(session.session_id)
 
-    assert loaded.content == {"text": "hello"}
+    assert loaded.parts[0]["text"] == "{'text': 'hello'}"
     assert loaded.available_actions == [{"action_id": "retry"}]
     assert loaded.metadata == {"ok": True}
     assert [item.message_id for item in listed] == [message.message_id]
@@ -170,7 +170,7 @@ def test_sql_run_store_create_update_list_get(tmp_path: Path) -> None:
     runs = SqlRunStore(engine)
     session = sessions.create_session()
 
-    run = runs.create_run(kind="command", target_id="/base64", session_id=session.session_id)
+    run = runs.create_run(kind="command", target_id="/encode", session_id=session.session_id)
     done = runs.update_status(run.run_id, RunStatus.DONE, current_step="done")
 
     assert done.status == RunStatus.DONE
@@ -184,7 +184,7 @@ def test_sql_run_event_store_add_list(tmp_path: Path) -> None:
     runs = SqlRunStore(engine)
     events = SqlRunEventStore(engine)
     session = sessions.create_session()
-    run = runs.create_run(kind="command", target_id="/base64", session_id=session.session_id)
+    run = runs.create_run(kind="command", target_id="/encode", session_id=session.session_id)
 
     event = events.add_event(run.run_id, session.session_id, "run_started", "Run started.", {"ok": True})
 
@@ -199,18 +199,18 @@ def test_sql_config_stores_save_and_read(tmp_path: Path) -> None:
     capabilities = SqlCapabilityConfigStore(engine)
 
     agents.set_config("chat", enabled=False, user_config={"temperature": 0.2})
-    capabilities.set_config("base64", enabled=True, user_config={"safe": True})
+    capabilities.set_config("codec", enabled=True, user_config={"max_text_input_chars": 100})
 
     agent_config = agents.get_config("chat")
-    capability_config = capabilities.get_config("base64")
+    capability_config = capabilities.get_config("codec")
 
     assert agent_config["agent_id"] == "chat"
     assert agent_config["enabled"] is False
     assert agent_config["user_config"] == {"temperature": 0.2}
     assert agent_config["created_at"] <= agent_config["updated_at"]
-    assert capability_config["capability_id"] == "base64"
+    assert capability_config["capability_id"] == "codec"
     assert capability_config["enabled"] is True
-    assert capability_config["user_config"] == {"safe": True}
+    assert capability_config["user_config"] == {"max_text_input_chars": 100}
     assert capability_config["created_at"] <= capability_config["updated_at"]
 
 
@@ -255,16 +255,16 @@ def test_configs_persist_across_app_instances(tmp_path: Path) -> None:
     first = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
 
     first.patch("/api/agent-configs/chat", json={"enabled": False, "user_config": {"temperature": 0.1}})
-    first.patch("/api/capability-configs/base64", json={"enabled": False, "user_config": {"mode": "off"}})
+    first.patch("/api/capability-configs/codec", json={"enabled": False, "user_config": {"max_text_input_chars": 100}})
 
     second = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
     agent_config = second.get("/api/agent-configs/chat").json()
-    capability_config = second.get("/api/capability-configs/base64").json()
+    capability_config = second.get("/api/capability-configs/codec").json()
 
     assert agent_config["enabled"] is False
     assert agent_config["user_config"] == {"temperature": 0.1}
     assert capability_config["enabled"] is False
-    assert capability_config["user_config"] == {"mode": "off"}
+    assert capability_config["user_config"] == {"max_text_input_chars": 100}
 
 
 def test_command_messages_persist_across_app_instances(tmp_path: Path) -> None:
@@ -272,7 +272,7 @@ def test_command_messages_persist_across_app_instances(tmp_path: Path) -> None:
     first = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
     session = first.post("/api/sessions", json={"title": "Commands", "default_agent_id": "chat"}).json()
 
-    response = first.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 hello"})
+    response = first.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/encode base64 hello"})
     assert response.status_code == 200
 
     second = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
@@ -280,10 +280,10 @@ def test_command_messages_persist_across_app_instances(tmp_path: Path) -> None:
     runs = second.get(f"/api/sessions/{session['session_id']}/runs").json()
 
     assert [message["role"] for message in messages] == ["user", "assistant"]
-    assert messages[-1]["content"] == "aGVsbG8="
+    assert messages[-1]["parts"][0]["content"] == "aGVsbG8="
     assert messages[-1]["metadata"]["kind"] == "command_result"
     assert messages[-1]["metadata"]["producer"] == "capability"
-    assert runs[-1]["target_id"] == "/base64"
+    assert runs[-1]["target_id"] == "/encode"
     assert runs[-1]["status"] == "DONE"
 
 
@@ -291,7 +291,7 @@ def test_deleted_session_stays_deleted_across_app_instances(tmp_path: Path) -> N
     url = sqlite_url(tmp_path)
     first = TestClient(create_app(database_url=url, llm_runtime=FakeLLMRuntime()))
     session = first.post("/api/sessions", json={"title": "Delete me", "default_agent_id": "chat"}).json()
-    response = first.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 hello"})
+    response = first.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/encode base64 hello"})
     assert response.status_code == 200
 
     delete_response = first.delete(f"/api/sessions/{session['session_id']}")
@@ -328,7 +328,7 @@ def test_recovery_interrupts_waiting_runs_and_clears_session_waiting_run(tmp_pat
     sessions = SqlSessionStore(engine)
     runs = SqlRunStore(engine)
     session = sessions.create_session()
-    run = runs.create_run(kind="agent", target_id="echo_script", session_id=session.session_id)
+    run = runs.create_run(kind="agent", target_id="script_lifecycle_lab", session_id=session.session_id)
     runs.update_status(run.run_id, RunStatus.WAITING_FOR_USER, current_step="waiting_for_user")
     sessions.set_waiting_run(session.session_id, run.run_id)
 

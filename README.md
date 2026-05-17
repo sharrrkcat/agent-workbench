@@ -7,7 +7,7 @@ The app looks like a small chat client, but messages can route to callable Agent
 - Plain text goes to the current session default Agent.
 - `@translate 你好` invokes a specific Agent.
 - `@translate:formal` invokes a specific Agent action.
-- `/base64 hello` invokes a global Command exposed by a Capability.
+- `/encode base64 hello` invokes a global Command exposed by a Capability.
 
 The current alpha focuses on local-first chat routing, schema-aware settings, LLM diagnostics, run timelines, health checks, SQLite persistence, and basic operator scripts.
 
@@ -77,7 +77,7 @@ Create a session, then try:
 hello
 @translate 你好
 @translate:formal
-/base64 hello
+/encode base64 hello
 /free-memory all
 ```
 
@@ -289,16 +289,6 @@ and save generated files through trusted ctx helpers. Full attachment, file
 context, vision, and generated-file rules live in
 [docs/contracts/attachments-vision.md](docs/contracts/attachments-vision.md).
 
-The `echo_attachments` Script Agent is a small test agent for this API. Examples:
-
-```text
-@echo_attachments hello
-@echo_attachments + image attachment
-@echo_attachments + yaml file attachment
-```
-
-It echoes text, returns attached images as image outputs, and returns supported text/code/config attachments as `file_content`. It does not call an LLM.
-
 Delete a message to remove any local attachment files that are no longer referenced by another message in that session. To scan SQLite metadata and remove orphan files, use:
 
 ```powershell
@@ -308,9 +298,11 @@ uv run python scripts/cleanup_attachments.py --apply
 
 ## File, HTTP, And ComfyUI Capabilities
 
-Settings -> General controls chat attachment uploads: maximum image upload size, maximum file upload size, maximum attachments per message, whether uploaded text files enter LLM context, and per-file/per-message LLM file context limits. Those settings apply to composer upload, drag-and-drop, paste, attachment serving, Prompt Agent file context, vision input, `file_content`, and the Echo Attachment Agent.
+Settings -> General controls chat attachment uploads: maximum image upload size, maximum file upload size, maximum attachments per message, whether uploaded text files enter LLM context, and per-file/per-message LLM file context limits. Those settings apply to composer upload, drag-and-drop, paste, attachment serving, Prompt Agent file context, vision input, and `file_content`.
 
-Settings -> Capabilities -> File Capability controls only active local path reads through `/read-file <path>` and `/read-image <path>`. It does not reuse or synchronize General upload limits. File Capability settings include allowed directories, maximum local text read size, maximum local image read size, allowed text extensions, and command toggles for `/read-file` and `/read-image`. Relative allowed directories resolve from the project root. Empty allowed directories can be saved and cause file read commands to reject every path. `/read-file` returns `file_content`, which preserves raw file text instead of rendering it as Markdown. `/read-image` returns normal image output with a data URL.
+Settings -> Capabilities -> File Capability controls only active local path reads through `/read-file <path>`. It does not reuse or synchronize General upload limits. File Capability settings include allowed directories, maximum local text/image/audio/video read sizes, allowed text extensions, and the command toggle for `/read-file`. Relative allowed directories resolve from the project root. Empty allowed directories can be saved and cause file read commands to reject every path. `/read-file` returns Message Parts for supported text, image, audio, and video files.
+
+Settings -> Capabilities -> Codec Capability exposes `/encode` and `/decode`. Round 1 supports Base64 text, Base64 data URLs, and image attachment encoding. It does not fetch URLs, read local paths, parse or generate QR codes, transcode media, or inspect arbitrary binary files.
 
 Settings -> Capabilities -> HTTP Capability controls only the active network GET command `/fetch-url <url>`. It does not affect chat uploads. `/fetch-url` auto-detects supported `text/*`, HTML, JSON, and `image/*` responses and returns the matching Message Part. HTTP settings include one command toggle, allowed URL schemes, timeout seconds, separate text and image response size limits, redirect enablement, and maximum redirects. No HTTP POST, PUT, DELETE, audio/video, remote media download/cache/proxy, HLS/DASH, livestream/radio/podcast extraction, OCR, ASR, TTS, or PDF parsing support is provided.
 

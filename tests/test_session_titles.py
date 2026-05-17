@@ -152,7 +152,7 @@ def test_script_agent_without_llm_does_not_generate_title() -> None:
     enable_auto_titles(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
 
-    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    result = run(fixture.runtime.handle_input(session, "@script_lifecycle_lab:steps hello"))
 
     assert result.success is True
     assert fixture.sessions.get_session(session.session_id).title == "Session 1"
@@ -220,7 +220,7 @@ def test_no_available_llm_skips_title_generation_without_failing_command(monkeyp
     state.agents._agents["chat"] = chat.model_copy(update={"model": None, "llm": None})
     session = client.post("/api/sessions", json={"title": "Session 1", "default_agent_id": "chat"}).json()
 
-    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 hello"})
+    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/encode base64 hello"})
 
     assert response.status_code == 200
     assert response.json()["success"] is True
@@ -295,7 +295,7 @@ def test_manual_rename_sets_title_generation_state_manual() -> None:
 
 
 def test_command_does_not_trigger_title_generation_and_next_llm_uses_next_message() -> None:
-    llm = SequenceLLMRuntime(["普通问题", "assistant reply"])
+    llm = SequenceLLMRuntime(["普通问�?, "assistant reply"])
     app = create_app(llm_runtime=llm, use_memory=True)
     client = TestClient(app)
     state = app.state.runtime_state
@@ -308,15 +308,15 @@ def test_command_does_not_trigger_title_generation_and_next_llm_uses_next_messag
     state.agent_configs.set_config("chat", runtime={"llm_profile_id": profile.id})
     session = client.post("/api/sessions", json={"title": "Session 1", "default_agent_id": "chat"}).json()
 
-    command = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 secret"})
-    reply = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "普通问题"})
+    command = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/encode base64 secret"})
+    reply = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "普通问�?})
 
     assert command.status_code == 200
     assert reply.status_code == 200
-    assert reply.json()["session"]["title"] == "普通问题"
+    assert reply.json()["session"]["title"] == "普通问�?
     assert len(llm.calls) == 2
-    assert "/base64 secret" not in llm.calls[0]["messages"][0]["content"]
-    assert "普通问题" in llm.calls[0]["messages"][0]["content"]
+    assert "/encode base64 secret" not in llm.calls[0]["messages"][0]["content"]
+    assert "普通问�? in llm.calls[0]["messages"][0]["content"]
 
 
 def test_title_truncation_and_cleanup_helpers() -> None:
@@ -329,5 +329,5 @@ def test_title_truncation_and_cleanup_helpers() -> None:
     assert long_truncated is True
     assert len(long) <= 100
     assert normalize_generated_title('"Title: Hello world."') == "Hello world"
-    assert normalize_generated_title("标题：测试标题。") == "测试标题"
+    assert normalize_generated_title("标题：测试标题�?) == "测试标题"
     assert normalize_generated_title("```text\nFenced title\n```") == "Fenced title"

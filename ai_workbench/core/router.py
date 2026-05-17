@@ -77,7 +77,7 @@ class Router:
     def _route_command(self, session: Session, raw_input: str) -> RouteTarget:
         parsed = parse_command_input(raw_input)
         if parsed is None:
-            return self._error(session, raw_input, "invalid_command", "Command must start with a slash command name, for example /base64 text.")
+            return self._error(session, raw_input, "invalid_command", "Command must start with a slash command name, for example /encode base64 text.")
 
         command_name, args = parsed
         if not COMMAND_NAME_RE.match(command_name):

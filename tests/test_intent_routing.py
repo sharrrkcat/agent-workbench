@@ -1,4 +1,4 @@
-from fastapi.testclient import TestClient
+﻿from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
@@ -62,7 +62,7 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     if "knowledge_base:" in value:
         value = value.split("knowledge_base:", 1)[1]
-    if any(token in value for token in ["image", "picture", "draw", "concept art", "生成", "鐢熸垚"]):
+    if any(token in value for token in ["image", "picture", "draw", "concept art"]):
         return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     if any(token in value for token in ["knowledge", "documentation", "docs", "lore", "kb", "project", "stormtrooper", "say about", "star wars", "sw"]):
         return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
@@ -74,7 +74,7 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     if "tuck" in value:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
-    if any(token in value for token in ["宠物", "pet", "jedi cal", "bd-1", "bd1", "唤醒", "隐藏", "重新加载", "刷新", "叫出来", "换成"]):
+    if any(token in value for token in ["pet", "jedi cal", "bd-1", "bd1"]):
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     return [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
 
@@ -93,7 +93,7 @@ def test_intent_routing_shadow_records_prediction_without_changing_route() -> No
     fixture.agent_configs.set_config("chat", runtime={"intent_routing_mode": "enabled"})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "帮我生成一张图片"))
+    result = run(fixture.runtime.handle_input(session, "please draw an image"))
 
     assert result.success is True
     run_metadata = fixture.runs.get_run(result.run_id).metadata
@@ -214,7 +214,7 @@ def test_route_test_api_reports_pet_command_without_executing(tmp_path) -> None:
         },
     )
 
-    response = client.post("/api/intent/test-route", json={"text": "把宠物换成 BD-1", "include_utility": False})
+    response = client.post("/api/intent/test-route", json={"text": "鎶婂疇鐗╂崲鎴?BD-1", "include_utility": False})
 
     assert response.status_code == 200
     decision = response.json()["decision"]
@@ -279,7 +279,7 @@ def test_intent_routing_explicit_syntax_bypasses() -> None:
     fixture.app_settings.patch({"intent_routing_enabled": True, "intent_routing_default_for_prompt_agents": True})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    command = run(fixture.runtime.handle_input(session, "/base64 hello"))
+    command = run(fixture.runtime.handle_input(session, "/encode base64 hello"))
     explicit_agent = run(fixture.runtime.handle_input(session, "@translate hello"))
     explicit_action = run(fixture.runtime.handle_input(session, "@translate:formal hello"))
     shortcut = run(fixture.runtime.handle_input(session, ":default hello"))
@@ -293,7 +293,7 @@ def test_intent_routing_explicit_syntax_bypasses() -> None:
 def test_intent_routing_script_default_and_group_transcript_bypass() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     fixture.app_settings.patch({"intent_routing_enabled": True, "intent_routing_default_for_prompt_agents": True})
-    script_session = fixture.sessions.create_session(default_agent_id="echo_script")
+    script_session = fixture.sessions.create_session(default_agent_id="script_lifecycle_lab")
     group_session = fixture.sessions.create_session(default_agent_id="chat", context_mode="group_transcript")
 
     script_result = run(fixture.runtime.handle_input(script_session, "make an image"))

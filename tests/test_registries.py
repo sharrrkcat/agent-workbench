@@ -12,27 +12,24 @@ from ai_workbench.core.schema.capability import CapabilitySchema
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_command_registry_exposes_base64_commands() -> None:
+def test_command_registry_exposes_codec_commands() -> None:
     capabilities = CapabilityRegistry()
     capabilities.load_from_directory(ROOT / "capabilities")
 
     commands = CommandRegistry.from_capability_registry(capabilities)
 
-    assert {
-        "/base64",
-        "/base64-decode",
-        "/base64-image",
-        "/base64-to-image",
-        "/image-base64",
-        "/base64-encode-image",
-    }.issubset({command.name for command in commands.list()})
-    assert commands.get("/base64").capability_id == "base64"
-    assert commands.get("/base64").method == "encode"
-    assert commands.get("/base64-decode").method == "decode"
-    assert commands.get("/base64-image").method == "decode_image"
-    assert commands.get("/base64-to-image").method == "decode_image"
-    assert commands.get("/image-base64").method == "encode_image"
-    assert commands.get("/base64-encode-image").method == "encode_image"
+    names = {command.name for command in commands.list()}
+    assert {"/encode", "/decode"}.issubset(names)
+    assert "/base64" not in names
+    assert "/base64-decode" not in names
+    assert "/base64-image" not in names
+    assert "/base64-to-image" not in names
+    assert "/image-base64" not in names
+    assert "/base64-encode-image" not in names
+    assert commands.get("/encode").capability_id == "codec"
+    assert commands.get("/encode").method == "encode"
+    assert commands.get("/decode").capability_id == "codec"
+    assert commands.get("/decode").method == "decode"
 
 
 def test_command_registry_exposes_pet_command() -> None:

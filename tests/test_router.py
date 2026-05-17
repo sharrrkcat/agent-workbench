@@ -36,11 +36,11 @@ def test_plain_text_routes_to_session_default_agent() -> None:
 
 
 def test_base64_command_routes_to_command_target() -> None:
-    route = make_router().route(make_session(), "/base64 hello")
+    route = make_router().route(make_session(), "/encode base64 hello")
 
     assert route.kind == RouteKind.COMMAND
-    assert route.target_id == "/base64"
-    assert route.args == "hello"
+    assert route.target_id == "/encode"
+    assert route.args == "base64 hello"
 
 
 def test_agent_invocation_routes_to_default_action() -> None:
@@ -109,11 +109,11 @@ def test_current_agent_action_shortcut_preserves_args() -> None:
 
 
 def test_current_agent_action_shortcut_tracks_changed_default_agent() -> None:
-    route = make_router().route(make_session(default_agent_id="render_test"), ":form")
+    route = make_router().route(make_session(default_agent_id="translate"), ":formal")
 
     assert route.kind == RouteKind.AGENT
-    assert route.target_id == "render_test"
-    assert route.action_id == "form"
+    assert route.target_id == "translate"
+    assert route.action_id == "formal"
 
 
 def test_explicit_agent_routes_are_not_changed_by_shortcut_support() -> None:

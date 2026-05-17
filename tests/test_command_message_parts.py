@@ -326,13 +326,24 @@ def test_session_load_api_response_returns_command_result_parts() -> None:
     client = make_client()
     session = create_session(client)
 
-    payload = post_message(client, session["session_id"], "/base64 hello")
+    payload = post_message(client, session["session_id"], "/encode base64 hello")
     loaded = client.get(f"/api/sessions/{session['session_id']}/messages").json()
 
     command_result = payload["messages"][-1]
     loaded_result = loaded[-1]
     assert command_result["content_version"] == 2
-    assert command_result["parts"] == [{"id": "part_1", "type": "text", "format": "plain", "text": "aGVsbG8="}]
+    assert command_result["parts"] == [
+        {
+            "id": "part_1",
+            "type": "file",
+            "mode": "inline_text",
+            "content": "aGVsbG8=",
+            "filename": "base64.txt",
+            "mime_type": "text/plain",
+            "size": 8,
+            "truncated": False,
+        }
+    ]
     assert "content" not in command_result
     assert "output_type" not in command_result
     assert loaded_result["parts"] == command_result["parts"]

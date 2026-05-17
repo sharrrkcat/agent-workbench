@@ -64,8 +64,8 @@ Commands are user-facing wrappers declared in Capability manifests. They are glo
 
 ```text
 /demo_tool hello
-/base64 hello
-/base64-decode aGVsbG8=
+/encode base64 hello
+/decode base64 aGVsbG8=
 ```
 
 Agents do not declare slash commands. Keep the `@agent` and `/command` namespaces separate.
@@ -119,15 +119,20 @@ uv run python scripts/run_command.py "/demo_tool hello"
 Test built-in commands:
 
 ```powershell
-uv run python scripts/run_command.py "/base64 hello"
-uv run python scripts/run_command.py "/base64-decode aGVsbG8="
-uv run python scripts/run_command.py "/base64-image data:image/svg+xml;base64,..."
-uv run python scripts/run_command.py "/image-base64" --image path/to/cat.png
+uv run python scripts/run_command.py "/encode base64 hello"
+uv run python scripts/run_command.py "/decode base64 aGVsbG8="
+uv run python scripts/run_command.py "/decode base64 data:image/svg+xml;base64,..."
+uv run python scripts/run_command.py "/encode base64" --image path/to/cat.png
 uv run python scripts/run_command.py "/read-file path/to/demo.wav"
 uv run python scripts/run_command.py "/read-file path/to/demo.mp4"
 uv run python scripts/run_command.py "/fetch-url https://example.test/data.json"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
+
+The built-in `codec` Capability exposes `/encode <codec> <payload>` and
+`/decode <codec> <payload>`. Round 1 supports Base64 text, Base64 data URLs,
+and image attachment encoding. It does not fetch URLs, read local paths, parse
+or generate QR codes, transcode media, or inspect arbitrary binary files.
 
 The built-in `file` Capability exposes only `/read-file <path>` for user-facing
 local reads. It auto-detects supported text, image, audio, and video files and
@@ -162,7 +167,7 @@ Use JSON output for automation:
 
 ```powershell
 uv run python scripts/check_agents.py --strict --json
-uv run python scripts/run_command.py "/base64 hello" --json
+uv run python scripts/run_command.py "/encode base64 hello" --json
 ```
 
 ## Strict Checks

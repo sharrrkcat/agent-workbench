@@ -55,7 +55,7 @@ def check_capabilities() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     registry.load_from_directory(ROOT / "capabilities")
     registry.get("llm")
-    registry.get("base64")
+    registry.get("codec")
     return registry
 
 

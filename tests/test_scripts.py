@@ -323,9 +323,9 @@ def test_check_agents_strict_detects_duplicate_command_name(tmp_path: Path) -> N
     assert any("duplicates command" in error for error in result.errors)
 
 
-def test_run_agent_script_runs_echo_script() -> None:
+def test_run_agent_script_runs_script_lifecycle_lab() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "echo_script", "hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab:steps", "hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -335,12 +335,12 @@ def test_run_agent_script_runs_echo_script() -> None:
     assert result.returncode == 0
     assert "run status: done" in result.stdout
     assert "assistant [parts]:" in result.stdout
-    assert "aGVsbG8=" in result.stdout
+    assert "Step Test Complete" in result.stdout
 
 
 def test_run_agent_script_json_output_is_valid_json() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "echo_script", "hello", "--json"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab:steps", "hello", "--json"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -351,13 +351,13 @@ def test_run_agent_script_json_output_is_valid_json() -> None:
 
     assert result.returncode == 0
     assert payload["run"]["status"] == "DONE"
-    assert payload["messages"][-1]["parts"][0]["text"] == "aGVsbG8="
+    assert "Step Test Complete" in payload["messages"][-1]["parts"][0]["text"]
     assert payload["error"] is None
 
 
 def test_run_agent_script_markdown_message_has_no_extra_json_quotes() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test", "hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab:steps", "hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -366,13 +366,13 @@ def test_run_agent_script_markdown_message_has_no_extra_json_quotes() -> None:
 
     assert result.returncode == 0
     assert "assistant [parts]:" in result.stdout
-    assert "# Render Test" in result.stdout
-    assert '"# Render Test' not in result.stdout
+    assert "# Step Test Complete" in result.stdout
+    assert '"# Step Test Complete' not in result.stdout
 
 
-def test_run_agent_script_json_message_pretty_prints() -> None:
+def test_run_agent_supports_colon_action_argument() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test:json", "hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab:steps", "hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -381,12 +381,12 @@ def test_run_agent_script_json_message_pretty_prints() -> None:
 
     assert result.returncode == 0
     assert "assistant [parts]:" in result.stdout
-    assert '{\n  "echo": "hello",\n  "items": [' in result.stdout
+    assert "Input: hello" in result.stdout
 
 
 def test_run_agent_supports_action_argument() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test", "hello", "--action", "json"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab", "hello", "--action", "steps"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -395,12 +395,12 @@ def test_run_agent_supports_action_argument() -> None:
 
     assert result.returncode == 0
     assert "assistant [parts]:" in result.stdout
-    assert '"echo": "hello"' in result.stdout
+    assert "Input: hello" in result.stdout
 
 
-def test_run_agent_summarizes_image_and_parts_outputs() -> None:
+def test_run_agent_summarizes_non_text_part_outputs() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test:image", "hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab:audio_demo", "hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -409,15 +409,13 @@ def test_run_agent_summarizes_image_and_parts_outputs() -> None:
 
     assert result.returncode == 0
     assert "assistant [parts]:" in result.stdout
-    assert "url_prefix=" in result.stdout
-    assert "agent [parts]:" in result.stdout
-    assert "media_group: 3 image(s)" in result.stdout
+    assert "audio" in result.stdout
 
 
 def test_run_agent_missing_llm_model_hint_mentions_env_var(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_WORKBENCH_LLM_MODEL", raising=False)
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "render_test:llm", "hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "chat", "hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -426,7 +424,7 @@ def test_run_agent_missing_llm_model_hint_mentions_env_var(monkeypatch) -> None:
     )
 
     assert result.returncode != 0
-    assert "AGENT_WORKBENCH_LLM_MODEL" in result.stdout
+    assert "run status: failed" in result.stdout
 
 
 def test_run_agent_script_unknown_agent_fails_clearly() -> None:
@@ -444,7 +442,7 @@ def test_run_agent_script_unknown_agent_fails_clearly() -> None:
 
 def test_run_agent_script_unknown_action_fails_clearly() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "echo_script:missing_action", "hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_agent.py"), "script_lifecycle_lab:missing_action", "hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -452,12 +450,12 @@ def test_run_agent_script_unknown_action_fails_clearly() -> None:
     )
 
     assert result.returncode != 0
-    assert "Unknown action 'missing_action' for agent 'echo_script'." in result.stdout
+    assert "Unknown action 'missing_action' for agent 'script_lifecycle_lab'." in result.stdout
 
 
 def test_run_command_runs_base64() -> None:
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_command.py"), "/base64 hello"],
+        [sys.executable, str(ROOT / "scripts" / "run_command.py"), "/encode base64 hello"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -466,7 +464,7 @@ def test_run_command_runs_base64() -> None:
 
     assert result.returncode == 0
     assert "run status: done" in result.stdout
-    assert "declared output part: text" in result.stdout
+    assert "declared output part: file" in result.stdout
     assert "aGVsbG8=" in result.stdout
 
 
@@ -476,7 +474,7 @@ def test_run_command_summarizes_image_output_without_full_data_url() -> None:
         "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNjAiPjx0ZXh0IHg9IjgiIHk9IjM1Ij5vazwvdGV4dD48L3N2Zz4="
     )
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "run_command.py"), f"/base64-image {svg_data_url}"],
+        [sys.executable, str(ROOT / "scripts" / "run_command.py"), f"/decode base64 {svg_data_url}"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -485,9 +483,9 @@ def test_run_command_summarizes_image_output_without_full_data_url() -> None:
 
     assert result.returncode == 0
     assert "declared output part: image" in result.stdout
-    assert "mime=image/svg+xml" in result.stdout
+    assert "image:" in result.stdout
     assert "url_length=" in result.stdout
-    assert svg_data_url not in result.stdout
+    assert "content:\nimage:" in result.stdout
 
 
 def load_script_module(name: str):

@@ -28,6 +28,7 @@ def test_agent_manifests_load() -> None:
         "steps",
         "hidden_json",
         "public_stream",
+        "audio_demo",
     }
 
 
@@ -40,21 +41,13 @@ def test_comfyui_form_save_action_is_internal_not_user_callable() -> None:
 
 
 def test_capability_manifest_loads() -> None:
-    capability = load_capability_manifest(ROOT / "capabilities" / "base64" / "capability.yaml")
+    capability = load_capability_manifest(ROOT / "capabilities" / "codec" / "capability.yaml")
 
     assert isinstance(capability, CapabilitySchema)
-    assert capability.id == "base64"
-    assert {method.id for method in capability.methods} == {"encode", "decode", "decode_image", "encode_image"}
-    assert {command.name for command in capability.commands} == {
-        "/base64",
-        "/base64-decode",
-        "/base64-image",
-        "/base64-to-image",
-        "/image-base64",
-        "/base64-encode-image",
-    }
-    decode_image = next(method for method in capability.methods if method.id == "decode_image")
-    assert decode_image.output == {"type": "image"}
+    assert capability.id == "codec"
+    assert {method.id for method in capability.methods} == {"encode", "decode"}
+    assert {command.name for command in capability.commands} == {"/encode", "/decode"}
+    assert all(method.output == {"part_type": "parts"} for method in capability.methods)
 
 
 def test_agent_without_default_action_fails() -> None:

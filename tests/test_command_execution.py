@@ -94,10 +94,11 @@ def test_base64_encode_executes_end_to_end() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64 hello"))
+    result = run(fixture.runtime.handle_input(session, "/encode base64 hello"))
 
     assert result.success is True
-    assert result.data == "aGVsbG8="
+    assert result.data[0]["type"] == "file"
+    assert result.data[0]["content"] == "aGVsbG8="
     assert not hasattr(result, "output_type")
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
 
@@ -106,10 +107,11 @@ def test_base64_decode_executes_end_to_end() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64-decode aGVsbG8="))
+    result = run(fixture.runtime.handle_input(session, "/decode base64 aGVsbG8="))
 
     assert result.success is True
-    assert result.data == "hello"
+    assert result.data[0]["type"] == "file"
+    assert result.data[0]["content"] == "hello"
     assert not hasattr(result, "output_type")
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
 
@@ -118,26 +120,26 @@ def test_base64_image_command_returns_image_output() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, f"/base64-image {SVG_DATA_URL}"))
+    result = run(fixture.runtime.handle_input(session, f"/decode base64 {SVG_DATA_URL}"))
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
     assert not hasattr(result, "output_type")
-    assert result.data["url"].startswith("data:image/svg+xml;base64,")
-    assert set(result.data) == {"url", "alt", "title", "caption"}
+    assert result.data[0]["url"].startswith("/api/attachments/")
+    assert set(result.data[0]) == {"type", "attachment_id", "url", "alt", "title", "caption"}
     assert messages[-1].role == "assistant"
-    assert messages[-1].command_name == "/base64-image"
+    assert messages[-1].command_name == "/decode"
     assert messages[-1].parts[0]["type"] == "image"
-    assert messages[-1].parts[0]["url"] == result.data["url"]
+    assert messages[-1].parts[0]["url"] == result.data[0]["url"]
     assert messages[-1].metadata["kind"] == "command_result"
     assert messages[-1].metadata["producer"] == "capability"
 
 
-def test_base64_to_image_alias_returns_image_output() -> None:
+def test_raw_base64_image_returns_image_output() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, f"/base64-to-image {SVG_DATA_URL}"))
+    result = run(fixture.runtime.handle_input(session, f"/decode base64 {SVG_DATA_URL.split(',', 1)[1]}"))
     message = fixture.messages.list_messages(session.session_id)[-1]
 
     assert result.success is True
@@ -151,14 +153,14 @@ def test_image_base64_without_attachment_fails() -> None:
     user = fixture.messages.add_message(
         session_id=session.session_id,
         role="user",
-        content="/image-base64",
+        content="/encode base64",
         metadata={"attachments": []},
     )
 
-    result = run(fixture.command_runner.run("/image-base64", "", session.session_id, input_message_id=user.message_id))
+    result = run(fixture.command_runner.run("/encode", "base64", session.session_id, input_message_id=user.message_id))
 
     assert result.success is False
-    assert result.error == "No image attachment found."
+    assert result.error == "Usage: /encode base64 <text>"
 
 
 def test_image_base64_returns_first_attachment_data() -> None:
@@ -167,60 +169,58 @@ def test_image_base64_returns_first_attachment_data() -> None:
     user = fixture.messages.add_message(
         session_id=session.session_id,
         role="user",
-        content="/image-base64",
+        content="/encode base64",
         metadata={"attachments": [sample_attachment("one.svg", SVG_DATA_URL)]},
     )
 
-    result = run(fixture.command_runner.run("/image-base64", "", session.session_id, input_message_id=user.message_id))
+    result = run(fixture.command_runner.run("/encode", "base64", session.session_id, input_message_id=user.message_id))
 
     assert result.success is True
     assert not hasattr(result, "output_type")
-    assert result.data["name"] == "one.svg"
-    assert result.data["data_url"] == SVG_DATA_URL
-    assert result.data["base64"] == SVG_DATA_URL.split(",", 1)[1]
+    assert result.data[0]["filename"] == "image-data-url.txt"
+    assert result.data[0]["content"] == SVG_DATA_URL
 
 
-def test_image_base64_can_select_second_attachment() -> None:
+def test_image_base64_rejects_multiple_attachments() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
     second = SVG_DATA_URL.replace("b2s", "b2s")
     user = fixture.messages.add_message(
         session_id=session.session_id,
         role="user",
-        content="/image-base64 2",
+        content="/encode base64",
         metadata={"attachments": [sample_attachment("one.svg", SVG_DATA_URL), sample_attachment("two.svg", second)]},
     )
 
-    result = run(fixture.command_runner.run("/image-base64", "2", session.session_id, input_message_id=user.message_id))
+    result = run(fixture.command_runner.run("/encode", "base64", session.session_id, input_message_id=user.message_id))
 
-    assert result.success is True
-    assert result.data["index"] == 2
-    assert result.data["name"] == "two.svg"
+    assert result.success is False
+    assert result.error == "Multiple image attachments found. Attach exactly one image for /encode base64."
 
 
 def test_base64_decode_invalid_input_returns_failed_result_and_run() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64-decode invalid!!!"))
+    result = run(fixture.runtime.handle_input(session, "/decode base64 invalid!!!"))
     failed_run = fixture.runs.get_run(result.run_id)
 
     assert result.success is False
-    assert result.error == "Invalid base64 input."
+    assert result.error == "Invalid Base64 input."
     assert failed_run.status == RunStatus.FAILED
-    assert failed_run.error == "Invalid base64 input."
+    assert failed_run.error == "Invalid Base64 input."
 
 
 def test_successful_command_creates_done_run() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64 hello"))
+    result = run(fixture.runtime.handle_input(session, "/encode base64 hello"))
     runs = fixture.runs.list_runs(session.session_id)
 
     assert len(runs) == 1
     assert runs[0].run_id == result.run_id
-    assert runs[0].target_id == "/base64"
+    assert runs[0].target_id == "/encode"
     assert runs[0].status == RunStatus.DONE
 
 
@@ -228,12 +228,12 @@ def test_failed_command_creates_failed_run() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64-decode invalid!!!"))
+    result = run(fixture.runtime.handle_input(session, "/decode base64 invalid!!!"))
     runs = fixture.runs.list_runs(session.session_id)
 
     assert len(runs) == 1
     assert runs[0].run_id == result.run_id
-    assert runs[0].target_id == "/base64-decode"
+    assert runs[0].target_id == "/decode"
     assert runs[0].status == RunStatus.FAILED
 
 
@@ -241,18 +241,18 @@ def test_successful_command_writes_message_store() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64 hello"))
+    result = run(fixture.runtime.handle_input(session, "/encode base64 hello"))
     messages = fixture.messages.list_messages(session.session_id)
 
     assert len(messages) == 1
     assert messages[0].role == "assistant"
-    assert messages[0].command_name == "/base64"
+    assert messages[0].command_name == "/encode"
     assert messages[0].run_id == result.run_id
-    assert messages[0].parts[0]["text"] == "aGVsbG8="
-    assert messages[0].metadata["output_part_type"] == "text"
+    assert messages[0].parts[0]["content"] == "aGVsbG8="
+    assert messages[0].metadata["output_part_type"] == "parts"
     assert messages[0].metadata["kind"] == "command_result"
     assert messages[0].metadata["producer"] == "capability"
-    assert messages[0].metadata["command"] == "/base64"
+    assert messages[0].metadata["command"] == "/encode"
 
 
 def test_declared_image_output_validation_failure_fails_run() -> None:
@@ -345,7 +345,7 @@ def test_read_file_command_returns_file_part_for_source_yaml_env_and_markdown(mo
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    py_result = run(fixture.runtime.handle_input(session, "/read-file agents/echo_script/agent.py"))
+    py_result = run(fixture.runtime.handle_input(session, "/read-file agents/script_lifecycle_lab/agent.py"))
     yaml_result = run(fixture.runtime.handle_input(session, "/read-file agents/chat/agent.yaml"))
     env_result = run(fixture.runtime.handle_input(session, "/read-file .env.example"))
     md_result = run(fixture.runtime.handle_input(session, "/read-file README.md"))
@@ -368,7 +368,7 @@ def test_success_event_bus_records_started_and_done() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64 hello"))
+    result = run(fixture.runtime.handle_input(session, "/encode base64 hello"))
     events = fixture.events.list_events()
 
     assert "run_started" in [event.type for event in events]
@@ -383,7 +383,7 @@ def test_failure_event_bus_records_started_and_failed() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64-decode invalid!!!"))
+    result = run(fixture.runtime.handle_input(session, "/decode base64 invalid!!!"))
     events = fixture.events.list_events()
 
     assert "run_started" in [event.type for event in events]
@@ -392,7 +392,7 @@ def test_failure_event_bus_records_started_and_failed() -> None:
     assert events[0].run_id == result.run_id
     failed_event = next(event for event in events if event.type == "run_failed")
     assert failed_event.run_id == result.run_id
-    assert failed_event.payload["error"] == "Invalid base64 input."
+    assert failed_event.payload["error"] == "Invalid Base64 input."
 
 
 def test_command_uses_current_args_not_session_history() -> None:
@@ -404,21 +404,21 @@ def test_command_uses_current_args_not_session_history() -> None:
         content="this previous message should not be encoded",
     )
 
-    result = run(fixture.runtime.handle_input(session, "/base64 hello"))
+    result = run(fixture.runtime.handle_input(session, "/encode base64 hello"))
 
-    assert result.data == "aGVsbG8="
+    assert result.data[0]["content"] == "aGVsbG8="
 
 
 def test_command_parser_preserves_multiline_args() -> None:
     fixture = RuntimeFixture()
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "/base64 hello\n\nworld"))
+    result = run(fixture.runtime.handle_input(session, "/encode base64 hello\n\nworld"))
     run_record = fixture.runs.get_run(result.run_id)
 
     assert result.success is True
-    assert result.data == "aGVsbG8KCndvcmxk"
-    assert run_record.metadata["args"] == "hello\n\nworld"
+    assert result.data[0]["content"] == "aGVsbG8KCndvcmxk"
+    assert run_record.metadata["args"] == "base64 hello\n\nworld"
 
 
 def test_failed_command_persists_capability_error_message_and_steps() -> None:

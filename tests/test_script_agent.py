@@ -168,7 +168,7 @@ def test_script_agent_manifest_loads() -> None:
     agents = AgentRegistry()
     agents.load_from_directory(ROOT / "agents")
 
-    agent = agents.get("echo_script")
+    agent = agents.get("script_lifecycle_lab")
 
     assert agent.type == "script"
     assert agent.entry == "agent.py"
@@ -543,39 +543,49 @@ def test_script_lifecycle_lab_public_stream_writes_public_deltas_without_duplica
     assert len([item for item in messages if item.role == "assistant" and item.run_id == result.run_id]) == 1
 
 
-def test_echo_script_executes_through_runtime() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_executes_through_runtime(tmp_path: Path) -> None:
+    registry = write_script_agent(tmp_path, "simple_script", "async def run(ctx):\n    return ctx.input.text\n")
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    result = run(fixture.runtime.handle_input(session, "@simple_script hello"))
 
     assert result.success is True
     assert fixture.runs.get_run(result.run_id).status == RunStatus.DONE
 
 
-def test_script_agent_reply_writes_agent_message() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_reply_writes_agent_message(tmp_path: Path) -> None:
+    registry = write_script_agent(tmp_path, "simple_script", "async def run(ctx):\n    return ctx.input.text\n")
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    result = run(fixture.runtime.handle_input(session, "@simple_script hello"))
     messages = fixture.messages.list_messages(session.session_id)
 
     assert messages[-1].role == "assistant"
-    assert text_part(messages[-1])["text"] == "aGVsbG8="
-    assert messages[-1].agent_id == "echo_script"
+    assert text_part(messages[-1])["text"] == "hello"
+    assert messages[-1].agent_id == "simple_script"
     assert messages[-1].action_id == "default"
     assert messages[-1].run_id == result.run_id
     assert messages[-1].speaker_type == "agent"
-    assert messages[-1].speaker_id == "echo_script"
-    assert messages[-1].speaker_name == "Echo Script Agent"
+    assert messages[-1].speaker_id == "simple_script"
+    assert messages[-1].speaker_name == "simple_script"
     assert messages[-1].origin == "agent_reply"
 
 
-def test_script_agent_step_emits_run_step_event() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_step_emits_run_step_event(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "stepped_script",
+        "async def run(ctx):\n"
+        "    async with ctx.step('encoding'):\n"
+        "        text = ctx.input.text\n"
+        "    return text\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    run(fixture.runtime.handle_input(session, "@stepped_script hello"))
 
     step_events = [event for event in fixture.events.list_events() if event.type == "run_step_created"]
     assert [event.payload["step"]["label"] for event in step_events] == [
@@ -595,11 +605,12 @@ def test_script_agent_step_emits_run_step_event() -> None:
     assert cleanup_step["parent_step_id"] is None
 
 
-def test_script_agent_emits_placeholder_before_steps_and_binds_run_id() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_emits_placeholder_before_steps_and_binds_run_id(tmp_path: Path) -> None:
+    registry = write_script_agent(tmp_path, "simple_script", "async def run(ctx):\n    return ctx.input.text\n")
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    result = run(fixture.runtime.handle_input(session, "@simple_script hello"))
     events = fixture.events.list_events()
     started = next(event for event in events if event.type == "message_started")
     first_step_index = next(index for index, event in enumerate(events) if event.type == "run_step_created")
@@ -639,13 +650,23 @@ def test_script_agent_failure_reuses_placeholder_and_preserves_steps(tmp_path: P
     assert any(event.type == "run_step_updated" for event in fixture.events.list_events())
 
 
-def test_script_agent_can_call_base64_capability() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_can_call_codec_capability(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "codec_script",
+        "async def run(ctx):\n"
+        "    result = await ctx.capability('codec').encode(codec='base64', text=ctx.input.text)\n"
+        "    if not result.success:\n"
+        "        raise RuntimeError(result.error or 'codec encode failed')\n"
+        "    await ctx.reply_parts(result.data)\n",
+        capabilities=["codec"],
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    run(fixture.runtime.handle_input(session, "@codec_script hello"))
 
-    assert text_part(fixture.messages.list_messages(session.session_id)[-1])["text"] == "aGVsbG8="
+    assert fixture.messages.list_messages(session.session_id)[-1].parts[0]["content"] == "aGVsbG8="
 
 
 def test_script_agent_exception_marks_run_failed(tmp_path: Path) -> None:
@@ -665,11 +686,19 @@ def test_script_agent_exception_marks_run_failed(tmp_path: Path) -> None:
     assert failed_run.status == RunStatus.FAILED
 
 
-def test_script_agent_success_creates_default_run_steps() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_success_creates_default_run_steps(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "stepped_script",
+        "async def run(ctx):\n"
+        "    async with ctx.step('encoding'):\n"
+        "        text = ctx.input.text\n"
+        "    return text\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@echo_script hello"))
+    result = run(fixture.runtime.handle_input(session, "@stepped_script hello"))
     steps = fixture.runs.list_steps(result.run_id)
 
     assert "Starting script" in [step.label for step in steps]
@@ -1481,9 +1510,21 @@ def test_generated_attachment_is_linked_for_cleanup(monkeypatch, tmp_path: Path)
     assert scan_orphan_attachments(fixture.messages)["orphan_count"] == 0
 
 
-def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path: Path) -> None:
+def test_script_agent_echoes_text_image_and_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
-    fixture = ScriptRuntimeFixture(llm=FakeLLMRuntime(response="should not be called"))
+    registry = write_script_agent(
+        tmp_path,
+        "attachment_echo_script",
+        "async def run(ctx):\n"
+        "    if ctx.input.text.strip():\n"
+        "        await ctx.reply_text(ctx.input.text)\n"
+        "    for attachment in ctx.input.attachments:\n"
+        "        if attachment.get('type') == 'image':\n"
+        "            await ctx.reply_image(ctx.attachment_as_data_url(attachment), alt=attachment.get('name'), title=attachment.get('name'))\n"
+        "        elif attachment.get('type') == 'file':\n"
+        "            await ctx.reply_file_content(**ctx.read_attachment_text(attachment))\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry, llm=FakeLLMRuntime(response="should not be called"))
     session = fixture.sessions.create_session(title="Echo attachment test")
     image = {
         "id": "client-image",
@@ -1495,7 +1536,7 @@ def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path
     }
     file_attachment = save_attachment_from_upload("tool.py", "text/x-python", b"def main():\n    return 'ok'\n")
 
-    result = run(fixture.runtime.handle_input(session, "@echo_attachments hello", attachments=[image, file_attachment]))
+    result = run(fixture.runtime.handle_input(session, "@attachment_echo_script hello", attachments=[image, file_attachment]))
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
@@ -1509,42 +1550,52 @@ def test_echo_attachments_agent_echoes_text_image_and_file(monkeypatch, tmp_path
     assert fixture.llm.calls == []
 
 
-def test_script_agent_action_text_route_stores_raw_input_but_passes_args() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_agent_action_text_route_stores_raw_input_but_passes_args(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "action_text_script",
+        "async def run(ctx):\n    await ctx.reply_text(ctx.input.text)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@render_test:text hello"))
+    result = run(fixture.runtime.handle_input(session, "@action_text_script:default hello"))
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
     assert messages[0].role == "user"
-    assert text_part(messages[0])["text"] == "@render_test:text hello"
-    assert messages[0].metadata["invocation"]["raw_text"] == "@render_test:text hello"
+    assert text_part(messages[0])["text"] == "@action_text_script:default hello"
+    assert messages[0].metadata["invocation"]["raw_text"] == "@action_text_script:default hello"
     assert messages[0].metadata["invocation"]["args"] == "hello"
     assert messages[-1].role == "assistant"
     assert text_part(messages[-1])["text"] == "hello"
 
 
-def test_current_agent_action_shortcut_stores_raw_input_and_route_metadata() -> None:
-    fixture = ScriptRuntimeFixture()
-    session = fixture.sessions.create_session(default_agent_id="render_test")
+def test_current_agent_action_shortcut_stores_raw_input_and_route_metadata(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "action_text_script",
+        "async def run(ctx):\n    await ctx.reply_text(ctx.input.text)\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
+    session = fixture.sessions.create_session(default_agent_id="action_text_script")
 
-    result = run(fixture.runtime.handle_input(session, ":text hello"))
+    result = run(fixture.runtime.handle_input(session, ":default hello"))
     messages = fixture.messages.list_messages(session.session_id)
     run_record = fixture.runs.get_run(result.run_id)
 
     assert result.success is True
     assert messages[0].role == "user"
-    assert text_part(messages[0])["text"] == ":text hello"
+    assert text_part(messages[0])["text"] == ":default hello"
     assert messages[0].metadata["invocation"]["route_kind"] == "current_agent_action_shortcut"
-    assert messages[0].metadata["invocation"]["resolved_agent_id"] == "render_test"
-    assert messages[0].metadata["invocation"]["resolved_action_id"] == "text"
+    assert messages[0].metadata["invocation"]["resolved_agent_id"] == "action_text_script"
+    assert messages[0].metadata["invocation"]["resolved_action_id"] == "default"
     assert messages[0].metadata["invocation"]["args"] == "hello"
-    assert run_record.target_id == "render_test"
-    assert run_record.action_id == "text"
+    assert run_record.target_id == "action_text_script"
+    assert run_record.action_id == "default"
     assert run_record.metadata["route_kind"] == "current_agent_action_shortcut"
-    assert run_record.metadata["resolved_agent_id"] == "render_test"
-    assert run_record.metadata["resolved_action_id"] == "text"
+    assert run_record.metadata["resolved_agent_id"] == "action_text_script"
+    assert run_record.metadata["resolved_action_id"] == "default"
     assert text_part(messages[-1])["text"] == "hello"
     assert {message.role for message in messages} <= {"user", "assistant"}
 
@@ -1561,16 +1612,22 @@ def test_current_agent_action_shortcut_unknown_action_does_not_fallback_to_defau
     assert fixture.messages.list_messages(session.session_id) == []
 
 
-def test_render_test_image_action_returns_three_non_llm_messages() -> None:
-    fixture = ScriptRuntimeFixture()
+def test_script_image_action_returns_non_llm_message(tmp_path: Path) -> None:
+    registry = write_script_agent(
+        tmp_path,
+        "image_script",
+        "async def run(ctx):\n"
+        "    await ctx.reply_image('https://example.test/image.png', alt='Demo')\n",
+    )
+    fixture = ScriptRuntimeFixture(agents=registry)
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@render_test:image 1"))
+    result = run(fixture.runtime.handle_input(session, "@image_script 1"))
     messages = fixture.messages.list_messages(session.session_id)
 
     assert result.success is True
     assert all(not hasattr(message, "output_type") for message in messages[1:])
-    assert [message.parts[0]["type"] for message in messages[1:]] == ["image", "text", "media_group"]
+    assert [message.parts[0]["type"] for message in messages[1:]] == ["image"]
     assert all("llm_resolution" not in message.metadata for message in messages[1:])
 
 

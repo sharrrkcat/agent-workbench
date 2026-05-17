@@ -248,10 +248,11 @@ def test_reset_overrides_keeps_user_config() -> None:
     assert payload["user_config"]["temperature"] == 0.2
 
 
-def test_non_llm_agent_does_not_expose_llm_section() -> None:
+def test_non_llm_agent_does_not_expose_llm_section(tmp_path: Path) -> None:
     client = make_client()
+    register_temp_agent(client, tmp_path, "non_llm_test")
 
-    response = client.get("/api/agent-configs/echo_script")
+    response = client.get("/api/agent-configs/non_llm_test")
 
     assert response.status_code == 200
     section_ids = [section["id"] for section in response.json()["resolved"]["sections"]]
@@ -481,7 +482,9 @@ def test_list_agents_returns_builtin_agents() -> None:
     response = make_client().get("/api/agents")
 
     assert response.status_code == 200
-    assert {"chat", "translate", "echo_script"}.issubset({agent["id"] for agent in response.json()})
+    agent_ids = {agent["id"] for agent in response.json()}
+    assert {"chat", "translate", "script_lifecycle_lab"}.issubset(agent_ids)
+    assert {"echo_attachments", "echo_script", "render_test"}.isdisjoint(agent_ids)
     assert all("enabled" in agent for agent in response.json())
     assert all("avatar_type" in agent for agent in response.json())
 
@@ -601,11 +604,13 @@ def test_agent_avatar_endpoint_returns_404_without_local_avatar(tmp_path: Path) 
     assert response.json()["error"]["code"] == "AGENT_AVATAR_NOT_FOUND"
 
 
-def test_list_commands_returns_base64_commands() -> None:
+def test_list_commands_returns_codec_commands() -> None:
     response = make_client().get("/api/commands")
 
     assert response.status_code == 200
-    assert {"/base64", "/base64-decode"}.issubset({command["name"] for command in response.json()})
+    names = {command["name"] for command in response.json()}
+    assert {"/encode", "/decode"}.issubset(names)
+    assert {"/base64", "/base64-decode", "/base64-image", "/base64-to-image", "/image-base64", "/base64-encode-image"}.isdisjoint(names)
     assert all("capability_enabled" in command for command in response.json())
 
 
@@ -626,11 +631,11 @@ def test_multiline_command_args_route_and_preserve_args() -> None:
     client = make_client()
     session = create_session(client)
 
-    payload = post_message(client, session["session_id"], "/base64 hello\n\nworld")
+    payload = post_message(client, session["session_id"], "/encode base64 hello\n\nworld")
 
     assert payload["success"] is True
-    assert payload["data"] == "aGVsbG8KCndvcmxk"
-    assert payload["run"]["metadata"]["args"] == "hello\n\nworld"
+    assert payload["data"][0]["content"] == "aGVsbG8KCndvcmxk"
+    assert payload["run"]["metadata"]["args"] == "base64 hello\n\nworld"
 
 
 def test_create_session() -> None:
@@ -740,7 +745,9 @@ def test_agent_config_api_lists_builtin_agents() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert {"chat", "translate", "echo_script"}.issubset({item["agent_id"] for item in payload})
+    agent_ids = {item["agent_id"] for item in payload}
+    assert {"chat", "translate", "script_lifecycle_lab"}.issubset(agent_ids)
+    assert {"echo_attachments", "echo_script", "render_test"}.isdisjoint(agent_ids)
     assert all(item["enabled"] is True for item in payload)
     assert all("manifest_summary" in item for item in payload)
 
@@ -813,25 +820,27 @@ def test_capability_config_api_lists_builtin_capabilities() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert {"base64", "llm", "storage"}.issubset({item["capability_id"] for item in payload})
+    capability_ids = {item["capability_id"] for item in payload}
+    assert {"codec", "llm", "storage"}.issubset(capability_ids)
+    assert "base64" not in capability_ids
     assert all(item["enabled"] is True for item in payload)
 
 
-def test_patch_capability_config_can_disable_base64() -> None:
+def test_patch_capability_config_can_disable_codec() -> None:
     client = make_client()
 
-    response = client.patch("/api/capability-configs/base64", json={"enabled": False})
+    response = client.patch("/api/capability-configs/codec", json={"enabled": False})
 
     assert response.status_code == 200
     assert response.json()["enabled"] is False
 
 
-def test_disabled_base64_command_returns_structured_error() -> None:
+def test_disabled_codec_command_returns_structured_error() -> None:
     client = make_client()
     session = create_session(client)
-    client.patch("/api/capability-configs/base64", json={"enabled": False})
+    client.patch("/api/capability-configs/codec", json={"enabled": False})
 
-    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64 hello"})
+    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/encode base64 hello"})
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "CAPABILITY_DISABLED"
@@ -845,17 +854,17 @@ def test_patch_unknown_capability_config_returns_404() -> None:
 
 
 def test_patch_capability_config_rejects_unknown_user_config_field() -> None:
-    response = make_client().patch("/api/capability-configs/base64", json={"user_config": {"unknown": True}})
+    response = make_client().patch("/api/capability-configs/codec", json={"user_config": {"unknown": True}})
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "UNKNOWN_CONFIG_FIELD"
 
 
-def test_patch_capability_config_rejects_invalid_enum_option() -> None:
-    response = make_client().patch("/api/capability-configs/base64", json={"user_config": {"mode": "bad"}})
+def test_patch_capability_config_rejects_invalid_codec_config_type() -> None:
+    response = make_client().patch("/api/capability-configs/codec", json={"user_config": {"max_text_input_chars": "bad"}})
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "INVALID_CONFIG_OPTION"
+    assert response.json()["error"]["code"] == "INVALID_CONFIG_TYPE"
 
 
 def test_patch_comfyui_agent_config_rejects_unset_enum_business_value() -> None:
@@ -1044,18 +1053,27 @@ def test_post_message_base64_executes_command() -> None:
     client = make_client()
     session = create_session(client)
 
-    payload = post_message(client, session["session_id"], "/base64 hello")
+    payload = post_message(client, session["session_id"], "/encode base64 hello")
 
     assert payload["success"] is True
-    assert payload["data"] == "aGVsbG8="
+    assert payload["data"][0]["content"] == "aGVsbG8="
     assert "content" not in payload["messages"][-1]
-    assert payload["messages"][-1]["parts"][0] == {"id": "part_1", "type": "text", "format": "plain", "text": "aGVsbG8="}
+    assert payload["messages"][-1]["parts"][0] == {
+        "id": "part_1",
+        "type": "file",
+        "mode": "inline_text",
+        "content": "aGVsbG8=",
+        "filename": "base64.txt",
+        "mime_type": "text/plain",
+        "size": 8,
+        "truncated": False,
+    }
 
 
 def test_command_run_events_include_started_and_done() -> None:
     client = make_client()
     session = create_session(client)
-    payload = post_message(client, session["session_id"], "/base64 hello")
+    payload = post_message(client, session["session_id"], "/encode base64 hello")
 
     response = client.get(f"/api/runs/{payload['run']['run_id']}/events")
 
@@ -1396,16 +1414,16 @@ def test_image_base64_api_reads_current_user_message_attachment() -> None:
 
     response = client.post(
         f"/api/sessions/{session['session_id']}/messages",
-        json={"content": "/image-base64", "attachments": [image_attachment()]},
+        json={"content": "/encode base64", "attachments": [image_attachment()]},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
     assert payload["messages"][0]["metadata"]["attachments"][0]["uri"].startswith("local://attachments/")
-    assert payload["messages"][-1]["command_name"] == "/image-base64"
-    assert payload["messages"][-1]["parts"][0]["type"] == "json"
-    assert payload["messages"][-1]["parts"][0]["data"]["data_url"] == SVG_DATA_URL
+    assert payload["messages"][-1]["command_name"] == "/encode"
+    assert payload["messages"][-1]["parts"][0]["type"] == "file"
+    assert payload["messages"][-1]["parts"][0]["content"] == SVG_DATA_URL
 
 
 def test_list_messages_returns_markdown_content_as_plain_string() -> None:
@@ -1417,7 +1435,7 @@ def test_list_messages_returns_markdown_content_as_plain_string() -> None:
         role="agent",
         content="",
         parts=[make_text_part("# Title\n\n## Summary", format="markdown")],
-        agent_id="render_test",
+        agent_id="chat",
     )
 
     response = client.get(f"/api/sessions/{session['session_id']}/messages")
@@ -1438,7 +1456,7 @@ def test_list_messages_returns_json_content_as_structured_object() -> None:
         role="agent",
         content="",
         parts=[make_json_part({"ok": True, "items": [1, 2]})],
-        agent_id="render_test",
+        agent_id="chat",
     )
 
     response = client.get(f"/api/sessions/{session['session_id']}/messages")
@@ -1459,7 +1477,7 @@ def test_list_messages_returns_image_content_as_structured_object() -> None:
         role="agent",
         content="",
         parts=[make_image_part("https://example.test/image.png", alt="Example")],
-        agent_id="render_test",
+        agent_id="chat",
     )
 
     response = client.get(f"/api/sessions/{session['session_id']}/messages")
@@ -1509,7 +1527,7 @@ def test_delete_agent_message_removes_only_selected_message() -> None:
 def test_delete_command_message_removes_only_selected_message() -> None:
     client = make_client()
     session = create_session(client)
-    first = post_message(client, session["session_id"], "/base64 hello")
+    first = post_message(client, session["session_id"], "/encode base64 hello")
     second = post_message(client, session["session_id"], "later")
     command_message = first["messages"][-1]
 
@@ -1676,18 +1694,18 @@ def test_agent_action_text_route_preserves_raw_user_message_and_parsed_args() ->
     client = make_client()
     session = create_session(client, default_agent_id="chat")
 
-    payload = post_message(client, session["session_id"], "@render_test:image 1")
+    payload = post_message(client, session["session_id"], "@translate:formal 1")
 
     messages = payload["messages"]
     user_message = messages[0]
     assert user_message["role"] == "user"
-    assert user_message["parts"][0]["text"] == "@render_test:image 1"
-    assert user_message["metadata"]["invocation"]["raw_text"] == "@render_test:image 1"
+    assert user_message["parts"][0]["text"] == "@translate:formal 1"
+    assert user_message["metadata"]["invocation"]["raw_text"] == "@translate:formal 1"
     assert user_message["metadata"]["invocation"]["args"] == "1"
     assert payload["run"]["metadata"]["args"] == "1"
     assert all("output_type" not in message for message in messages[1:])
-    assert [message["parts"][0]["type"] for message in messages[1:]] == ["image", "text", "media_group"]
-    assert all("llm_resolution" not in message["metadata"] for message in messages[1:])
+    assert messages[-1]["parts"][0]["type"] == "text"
+    assert "llm_resolution" in messages[-1]["metadata"]
 
 
 def test_action_api_missing_source_returns_structured_error() -> None:
@@ -1706,18 +1724,18 @@ def test_action_api_missing_source_returns_structured_error() -> None:
 def test_list_session_runs() -> None:
     client = make_client()
     session = create_session(client)
-    post_message(client, session["session_id"], "/base64 hello")
+    post_message(client, session["session_id"], "/encode base64 hello")
 
     response = client.get(f"/api/sessions/{session['session_id']}/runs")
 
     assert response.status_code == 200
-    assert response.json()[0]["target_id"] == "/base64"
+    assert response.json()[0]["target_id"] == "/encode"
 
 
 def test_delete_session_removes_session_messages_and_runs() -> None:
     client = make_client()
     session = create_session(client)
-    post_message(client, session["session_id"], "/base64 hello")
+    post_message(client, session["session_id"], "/encode base64 hello")
 
     response = client.delete(f"/api/sessions/{session['session_id']}")
 
@@ -1754,8 +1772,8 @@ def test_delete_session_does_not_affect_other_sessions() -> None:
     client = make_client()
     first = create_session(client)
     second = create_session(client)
-    post_message(client, first["session_id"], "/base64 one")
-    post_message(client, second["session_id"], "/base64 two")
+    post_message(client, first["session_id"], "/encode base64 one")
+    post_message(client, second["session_id"], "/encode base64 two")
 
     response = client.delete(f"/api/sessions/{first['session_id']}")
 
@@ -1764,7 +1782,7 @@ def test_delete_session_does_not_affect_other_sessions() -> None:
     assert client.get(f"/api/sessions/{second['session_id']}").status_code == 200
     messages = client.get(f"/api/sessions/{second['session_id']}/messages").json()
     assert "content" not in messages[-1]
-    assert messages[-1]["parts"][0]["text"] == "dHdv"
+    assert messages[-1]["parts"][0]["content"] == "dHdv"
 
 
 def test_cancel_running_run_marks_cancelled() -> None:

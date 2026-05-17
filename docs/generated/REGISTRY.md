@@ -11,9 +11,6 @@ Do not edit manually.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | chat | Chat Agent | prompt | default | llm | You are a concise, reliable assistant. |  | temperature |
 | comfyui_agent | ComfyUI Agent | script | default, form, save_recipe_from_form, switch, raw, llm, fresh, refine, run, presets, scan_workflows, status | comfyui, llm | agent.py |  | default_preset_id, default_input_mode, llm_operation_default, llm_refine_system_prompt, llm_refine_user_template, llm_fresh_system_prompt, llm_fresh_user_template, auto_run_after_llm_prompt, default_seed_policy, unload_llm_before_generation, free_comfyui_memory_after_generation |
-| echo_attachments | Echo Attachment Agent | script | default |  | agent.py |  |  |
-| echo_script | Echo Script Agent | script | default | base64 | agent.py |  |  |
-| render_test | Render Test Agent | script | default, json, text, llm, image, form, form_submit |  | agent.py |  |  |
 | script_lifecycle_lab | Script Lifecycle Lab | script | default, steps, hidden_json, public_stream, audio_demo | llm | agent.py |  |  |
 | translate | Translate Agent | prompt | default, formal, casual, retry | llm | Translate the user input into natural, accurate English. ... |  |  |
 
@@ -21,7 +18,7 @@ Do not edit manually.
 
 | id | name | methods | commands | output parts | config keys |
 | --- | --- | --- | --- | --- | --- |
-| base64 | Base64 Capability | encode, decode, decode_image, encode_image | /base64, /base64-decode, /base64-image, /base64-to-image, /image-base64, /base64-encode-image | text, text, image, json | mode |
+| codec | Codec Capability | encode, decode | /encode, /decode | parts, parts | max_text_input_chars, max_decoded_bytes_mb, max_attachment_encode_mb, enable_attachment_encode |
 | comfyui | ComfyUI Capability | test_connection, get_queue, get_history, submit_workflow, wait_for_prompt, get_prompt_status, extract_outputs, fetch_image, collect_images_for_prompt, free_memory, interrupt, upload_image, get_object_info, scan_workflow_library, list_workflows, list_presets, validate_preset, load_preset |  | json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json, json | base_url, timeout_seconds, poll_interval_seconds, max_wait_seconds, verify_ssl, default_image_response_mode, enable_upload, workflows_dir, presets_dir, auto_create_missing_presets, allow_workflow_file_write, allow_preset_file_write |
 | file | File Capability | read_file, read_text, read_image, read_audio | /read-file | parts, file, image, audio | allowed_directories, max_local_text_read_size_mb, max_local_image_read_size_mb, max_local_audio_read_size_mb, max_local_video_read_size_mb, allowed_text_extensions, enable_read_file_command |
 | http | HTTP Capability | fetch_url, get_text, fetch_page, fetch_image | /fetch-url | parts, text, text, image | enable_fetch_url_command, allowed_schemes, timeout_seconds, max_text_response_size_mb, max_image_response_size_mb, allow_redirects, max_redirects |

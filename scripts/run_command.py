@@ -64,7 +64,7 @@ async def run_command(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a slash Command from the command line.")
-    parser.add_argument("command", help='full command text, for example "/base64 hello"')
+    parser.add_argument("command", help='full command text, for example "/encode base64 hello"')
     parser.add_argument("--image", help="attach a local image to the current user message")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument("--use-memory", action="store_true", default=True, help="use an in-memory runtime")

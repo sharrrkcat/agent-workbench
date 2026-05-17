@@ -1,0 +1,60 @@
+id: codec
+name: Codec Capability
+description: Encode and decode Base64 text, data URLs, and image attachments.
+
+config_schema:
+  - name: max_text_input_chars
+    type: integer
+    default: 200000
+    minimum: 1
+    description: Maximum text payload characters accepted by Codec commands.
+  - name: max_decoded_bytes_mb
+    type: integer
+    default: 25
+    minimum: 1
+    description: Maximum decoded byte size for Base64 decode.
+  - name: max_attachment_encode_mb
+    type: integer
+    default: 10
+    minimum: 1
+    description: Maximum image attachment size allowed for Base64 encoding.
+  - name: enable_attachment_encode
+    type: boolean
+    default: true
+    description: Allow encoding the current message image attachment as Base64.
+
+methods:
+  - id: encode
+    description: Encode text or the current image attachment with a named codec.
+    input_schema:
+      codec:
+        type: string
+        required: true
+      text:
+        type: string
+        required: false
+    output:
+      part_type: parts
+
+  - id: decode
+    description: Decode text with a named codec.
+    input_schema:
+      codec:
+        type: string
+        required: true
+      text:
+        type: string
+        required: true
+    output:
+      part_type: parts
+
+commands:
+  - name: /encode
+    method: encode
+    description: Encode text or the current image attachment.
+    safe: true
+
+  - name: /decode
+    method: decode
+    description: Decode text.
+    safe: true

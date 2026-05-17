@@ -276,8 +276,8 @@ Buttons, saved shortcuts, and cross-Agent links should continue to use the full 
 CLI action calls:
 
 ```powershell
-uv run python scripts/run_agent.py render_test:image "1"
-uv run python scripts/run_agent.py render_test "1" --action image
+uv run python scripts/run_agent.py script_lifecycle_lab "1"
+uv run python scripts/run_agent.py script_lifecycle_lab "1" --action steps
 ```
 
 ## Message Parts Output

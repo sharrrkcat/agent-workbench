@@ -67,7 +67,7 @@ export function ChatView({ onPreviewImage, onPreviewFile }: { onPreviewImage: (i
           <h1>Agent Workbench</h1>
           <p>{t('chat:emptySessionDescription')}</p>
           <div className="prompt-chips" aria-label={t('chat:examplePrompts')}>
-            {['hello', '@translate 你好', '/base64 hello'].map((prompt) => (
+            {['hello', '@translate 你好', '/encode base64 hello'].map((prompt) => (
               <button key={prompt} type="button" onClick={() => void sendMessage(prompt)} disabled={sending}>
                 {prompt}
               </button>
