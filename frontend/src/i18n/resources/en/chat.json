@@ -14,6 +14,21 @@
   "defaultModel": "Default",
   "defaultModelTitle": "Default uses the current agent model profile",
   "missingModelProfile": "Missing model profile",
+  "modelCapabilities": "Model capabilities",
+  "intentRouting": {
+    "label": "Intent Routing",
+    "enable": "Enable Intent Routing",
+    "disable": "Disable Intent Routing",
+    "enabled": "Intent Routing enabled",
+    "disabled": "Intent Routing disabled",
+    "description": "Analyze ordinary messages before routing."
+  },
+  "capabilities": {
+    "vision": "Vision",
+    "imageUnderstanding": "Image understanding",
+    "reasoning": "Reasoning",
+    "streaming": "Streaming"
+  },
   "confirmDelete": "Delete this message?\nThis only removes the selected message.",
   "appSubtitle": "Local AI console",
   "sidebarFooter": "Agents, commands, and local runs",

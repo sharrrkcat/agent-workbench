@@ -1,11 +1,11 @@
 import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Send, Slash, X } from 'lucide-react';
+import { AtSign, Brain, Check, ChevronDown, Eye, FileText, Image as ImageIcon, Octagon, Paperclip, Radio, Route, Send, Slash, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
 import { CommandPalette, commandArgumentAutocompleteMode, type CommandPaletteItem } from './CommandPalette';
-import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
+import { capabilitiesFromProfile, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
 import { usePopoverPresence } from '../hooks/usePopoverPresence';
@@ -22,13 +22,14 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [composerHeight, setComposerHeight] = useState(38);
   const [suggestionItems, setSuggestionItems] = useState<CommandPaletteItem[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [intentRoutingSaving, setIntentRoutingSaving] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [modelMenuStyle, setModelMenuStyle] = useState<CSSProperties>({});
-  const { agents, commands, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, setError, setComposerDraftText } = useWorkbenchStore();
+  const { agents, commands, capabilityConfigs, currentSession, generalSettings, llmProfiles, llmProviderStatuses, sendMessage, sending, cancelActiveRun, updateSessionLlmProfile, refreshProviderStatuses, updateGeneralSettings, setError, setComposerDraftText } = useWorkbenchStore();
   const llmDefaults = useWorkbenchStore((state) => state.llmDefaults);
   const modelMenuRendered = usePopoverPresence(modelMenuOpen);
 
@@ -108,7 +109,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     function updateModelMenuPosition() {
       const anchor = modelSelectorRef.current?.getBoundingClientRect();
       if (!anchor) return;
-      const width = Math.max(anchor.width, 210);
+      const width = Math.max(anchor.width, 250);
       const right = Math.max(12, window.innerWidth - anchor.right);
       const maxHeight = Math.max(160, Math.min(260, anchor.top - 20));
       setModelMenuStyle({
@@ -298,18 +299,24 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     });
   }
 
+  async function toggleIntentRouting() {
+    if (!generalSettings || intentRoutingSaving) return;
+    setIntentRoutingSaving(true);
+    try {
+      await updateGeneralSettings({ intent_routing_enabled: !generalSettings.intent_routing_enabled });
+    } finally {
+      setIntentRoutingSaving(false);
+    }
+  }
+
   const currentAgent = agents.find((agent) => agent.id === currentSession?.default_agent_id);
   const agentDefaultProfile = resolveAgentDefaultLlmProfile({ agents, capabilityConfigs, currentSession, llmDefaults, llmProfiles });
   const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles, currentAgent, agentDefaultProfile);
+  const selectedStatusProfile = currentSession?.llm_profile_id ? findEnabledProfile(llmProfiles, currentSession.llm_profile_id) : agentDefaultProfile;
   const enabledProfiles = llmProfiles.filter((profile) => profile.enabled);
-  const capabilities = getCurrentComposerCapabilities({
-    session: currentSession,
-    agents,
-    capabilityConfigs,
-    llmProfiles,
-    defaultModelProfileId: llmDefaults?.default_model_profile_id,
-    selectedAgentId: currentSession?.default_agent_id,
-  });
+  const intentRoutingEnabled = generalSettings?.intent_routing_enabled ?? false;
+  const intentRoutingReady = Boolean(generalSettings);
+  const intentRoutingTitle = `${intentRoutingEnabled ? t('intentRouting.enabled') : t('intentRouting.disabled')}\n${t('intentRouting.description')}`;
   const composerStyle = {
     '--composer-textarea-height': `${composerHeight}px`,
   } as CSSProperties;
@@ -367,7 +374,18 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
             </button>
           </div>
           <div className="composer-actions">
-            <ModelCapabilityIcons capabilities={capabilities} />
+            <button
+              className={`composer-intent-toggle ${intentRoutingEnabled ? 'enabled' : ''}`}
+              type="button"
+              disabled={!intentRoutingReady || intentRoutingSaving}
+              aria-pressed={intentRoutingEnabled}
+              aria-label={intentRoutingEnabled ? t('intentRouting.disable') : t('intentRouting.enable')}
+              title={intentRoutingTitle}
+              onClick={() => void toggleIntentRouting()}
+            >
+              <Route size={15} aria-hidden="true" />
+              <span className="sr-only">{intentRoutingEnabled ? t('intentRouting.enabled') : t('intentRouting.disabled')}</span>
+            </button>
             <div ref={modelSelectorRef} className="model-selector-wrap">
               <button
                 className="model-selector-pill"
@@ -381,6 +399,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
                 aria-expanded={modelMenuOpen}
                 onClick={() => setModelMenuOpen((open) => !open)}
               >
+                <span className={`model-status-dot ${statusDotClass(selectedStatusProfile, llmProviderStatuses)}`} aria-hidden="true" />
                 <strong>{selectedModelLabel}</strong>
                 <ChevronDown size={13} aria-hidden="true" />
               </button>
@@ -483,9 +502,12 @@ const ModelSelectorMenu = forwardRef<HTMLDivElement, {
           onClick={() => onSelect(null)}
           title={defaultModelTitle(agentDefaultProfile, llmProviderStatuses, t('defaultModel'))}
         >
-          <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
-          <span>{t('defaultModel')}</span>
-          {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
+          <span className="model-selector-menu-item-main">
+            <span className={`model-status-dot ${statusDotClass(agentDefaultProfile, llmProviderStatuses)}`} aria-hidden="true" />
+            <span className="model-selector-menu-name">{t('defaultModel')}</span>
+            {!currentSession?.llm_profile_id ? <Check size={14} /> : null}
+          </span>
+          <ModelCapabilityBadges profile={agentDefaultProfile} />
         </button>
         {enabledProfiles.map((profile) => {
           const selected = currentSession?.llm_profile_id === profile.id;
@@ -499,9 +521,12 @@ const ModelSelectorMenu = forwardRef<HTMLDivElement, {
               onClick={() => onSelect(profile.id)}
               title={statusDotTitle(profile, llmProviderStatuses)}
             >
-              <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
-              <span>{profile.name || profile.alias}</span>
-              {selected ? <Check size={14} /> : null}
+              <span className="model-selector-menu-item-main">
+                <span className={`model-status-dot ${statusDotClass(profile, llmProviderStatuses)}`} aria-hidden="true" />
+                <span className="model-selector-menu-name">{profile.name || profile.alias}</span>
+                {selected ? <Check size={14} /> : null}
+              </span>
+              <ModelCapabilityBadges profile={profile} />
             </button>
           );
         })}
@@ -511,6 +536,35 @@ const ModelSelectorMenu = forwardRef<HTMLDivElement, {
 );
 
 ModelSelectorMenu.displayName = 'ModelSelectorMenu';
+
+function ModelCapabilityBadges({ profile }: { profile?: LlmProfile }) {
+  const { t } = useTranslation('chat');
+  if (!profile) return null;
+  const capabilities = modelMenuCapabilities(profile, t);
+  if (!capabilities.length) return null;
+  return (
+    <span className="model-selector-menu-capabilities" aria-label={t('modelCapabilities')}>
+      {capabilities.map((capability) => {
+        const Icon = capability.icon;
+        return (
+          <span key={capability.id} className={`capability-icon ${capability.id}`} title={capability.label} aria-label={capability.label}>
+            <Icon size={12} aria-hidden="true" />
+            <span>{capability.label}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function modelMenuCapabilities(profile: LlmProfile, t: ReturnType<typeof useTranslation>['t']) {
+  return [
+    profile.supports_vision ? { id: 'vision', label: t('capabilities.vision'), icon: Eye } : null,
+    profile.supports_vision ? { id: 'image-understanding', label: t('capabilities.imageUnderstanding'), icon: ImageIcon } : null,
+    profile.supports_reasoning ? { id: 'reasoning', label: t('capabilities.reasoning'), icon: Brain } : null,
+    profile.supports_streaming ? { id: 'streaming', label: t('capabilities.streaming'), icon: Radio } : null,
+  ].filter((item): item is { id: string; label: string; icon: typeof Eye } => Boolean(item)).slice(0, 4);
+}
 
 function fileKindLabel(mimeType: string, name: string): string {
   const extension = fileExtension(name).replace('.', '').toUpperCase();

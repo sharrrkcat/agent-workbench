@@ -4019,6 +4019,12 @@ input:disabled {
   color: #fcd34d;
 }
 
+.capability-icon.image-understanding {
+  border-color: rgba(20, 184, 166, 0.26);
+  background: rgba(20, 184, 166, 0.11);
+  color: #5eead4;
+}
+
 .capability-icon.tools {
   border-color: rgba(59, 130, 246, 0.28);
   background: rgba(59, 130, 246, 0.11);
@@ -4063,6 +4069,35 @@ input:disabled {
   cursor: pointer;
 }
 
+.composer-intent-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.composer-intent-toggle:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.09);
+  color: #f5f5f5;
+}
+
+.composer-intent-toggle.enabled {
+  border-color: rgba(20, 184, 166, 0.34);
+  background: rgba(20, 184, 166, 0.14);
+  color: #5eead4;
+}
+
+.composer-intent-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .model-selector-pill:hover:not(:disabled),
 .model-selector-pill[aria-expanded="true"] {
   border-color: rgba(255, 255, 255, 0.16);
@@ -4072,6 +4107,11 @@ input:disabled {
 
 .model-selector-pill span {
   flex: 0 0 auto;
+}
+
+.model-selector-pill .model-status-dot {
+  width: 7px;
+  height: 7px;
 }
 
 .model-selector-pill strong {
@@ -4108,12 +4148,12 @@ input:disabled {
 }
 
 .model-selector-menu button {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) 16px;
-  align-items: center;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
   min-height: 34px;
-  padding: 0 9px;
+  padding: 8px 9px;
   border: 0;
   border-radius: 9px;
   background: transparent;
@@ -4121,6 +4161,14 @@ input:disabled {
   font-size: 12px;
   font-weight: 650;
   text-align: left;
+}
+
+.model-selector-menu-item-main {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .model-status-dot {
@@ -4142,10 +4190,25 @@ input:disabled {
   background: #ef4444;
 }
 
-.model-selector-menu button span {
+.model-selector-menu-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-selector-menu-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 18px;
+}
+
+.model-selector-menu-capabilities .capability-icon {
+  min-height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .model-selector-menu button:hover,

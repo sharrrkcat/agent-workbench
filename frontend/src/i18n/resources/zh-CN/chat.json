@@ -14,6 +14,21 @@
   "defaultModel": "默认",
   "defaultModelTitle": "默认使用当前 Agent 的模型配置",
   "missingModelProfile": "缺失模型配置",
+  "modelCapabilities": "模型能力",
+  "intentRouting": {
+    "label": "意图识别",
+    "enable": "启用意图识别",
+    "disable": "停用意图识别",
+    "enabled": "意图识别已启用",
+    "disabled": "意图识别已停用",
+    "description": "发送前分析普通消息并决定路由。"
+  },
+  "capabilities": {
+    "vision": "视觉",
+    "imageUnderstanding": "识图",
+    "reasoning": "推理",
+    "streaming": "流式"
+  },
   "confirmDelete": "删除这条消息？\n这只会移除所选消息。",
   "appSubtitle": "本地 AI 控制台",
   "sidebarFooter": "Agents、命令与本地运行",

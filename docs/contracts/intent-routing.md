@@ -359,6 +359,9 @@ Common codes include:
 
 - General -> Intent Routing owns route behavior, examples, Route Test, semantic
   router profile selection/status, candidate counts, and safe-auto controls.
+- The Chat composer Intent Routing toggle controls the global General
+  `intent_routing_enabled` setting. It does not create session-specific routing
+  state.
 - General -> Utility LLM owns Utility backend/model/device/options. The Intent
   Routing page shows only a compact Utility LLM status summary.
 - Agent detail -> Intent Routing owns Prompt Agent overrides and Agent target
