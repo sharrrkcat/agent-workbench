@@ -68,6 +68,37 @@ def test_web_context_plan_auto_skips_selected_knowledge_and_pet() -> None:
     assert pet.skipped_reason == "pet_command_selected"
 
 
+def test_web_context_plan_blocks_unexecuted_knowledge_query_candidate_without_resolver() -> None:
+    settings = AppSettings(web_context_enabled=True, intent_routing_enabled=True, intent_routing_mode="auto")
+    utility = FakeWebPlanUtility({"should_search": True, "query": "Star Wars Cal Kestis", "reason": "external_fact_question", "confidence": "high"})
+
+    plan = asyncio.run(
+        async_resolve(
+            settings=settings,
+            text="根据现有的 Star Wars 知识库回答 Cal Kestis 的经历",
+            intent={
+                "enabled": True,
+                "mode": "auto",
+                "predicted_intent": "knowledge_query",
+                "utility_ok": True,
+                "slots": {"intent": "knowledge_query", "query": "Cal Kestis 的经历"},
+                "not_executed_reason": "semantic_confidence_too_low",
+                "warnings": ["semantic_confidence_too_low"],
+                "auto_executable": False,
+                "executed": False,
+                "would_execute": False,
+            },
+            utility=utility,
+        )
+    )
+
+    assert plan.should_search is False
+    assert plan.skipped_reason == "knowledge_query_candidate_blocked"
+    assert plan.warnings == ["knowledge_query_below_threshold"]
+    assert plan.intent_influence == "knowledge_query:semantic_confidence_too_low"
+    assert utility.calls == []
+
+
 def test_web_context_plan_auto_uses_web_query_slots_and_original_text() -> None:
     settings = AppSettings(web_context_enabled=True, intent_routing_enabled=True, intent_routing_mode="auto")
 
@@ -118,6 +149,47 @@ def test_web_context_plan_auto_chat_uses_resolver_true_and_false_examples() -> N
     assert search.query_source == "web_context_plan_resolver"
     assert skip.should_search is False
     assert skip.skipped_reason == "incidental_mentions_only"
+
+
+def test_web_context_plan_time_sensitive_fact_question_searches() -> None:
+    settings = AppSettings(web_context_enabled=True, intent_routing_enabled=True, intent_routing_mode="auto")
+
+    plan = asyncio.run(
+        async_resolve(
+            settings=settings,
+            text="你知道昨天晚上的流星雨吗",
+            utility=FakeWebPlanUtility({"should_search": True, "query": "昨天晚上 流星雨", "reason": "time_sensitive_fact_question", "confidence": "high"}),
+        )
+    )
+
+    assert plan.should_search is True
+    assert plan.resolver_used is True
+    assert plan.resolver_reason == "time_sensitive_fact_question"
+    assert "流星雨" in (plan.query or "")
+
+
+def test_web_context_plan_personal_preference_and_continuation_skip() -> None:
+    settings = AppSettings(web_context_enabled=True, intent_routing_enabled=True, intent_routing_mode="auto")
+
+    food = asyncio.run(
+        async_resolve(
+            settings=settings,
+            text="我不是很喜欢吃西湖醋鱼",
+            utility=FakeWebPlanUtility({"should_search": False, "query": "", "reason": "personal_preference_or_emotion", "confidence": "high"}),
+        )
+    )
+    continuation = asyncio.run(
+        async_resolve(
+            settings=settings,
+            text="我没想到，原来你是这样的人啊！",
+            utility=FakeWebPlanUtility({"should_search": False, "query": "", "reason": "conversation_continuation", "confidence": "high"}),
+        )
+    )
+
+    assert food.should_search is False
+    assert food.skipped_reason == "personal_preference_or_emotion"
+    assert continuation.should_search is False
+    assert continuation.skipped_reason == "conversation_continuation"
 
 
 @pytest.mark.parametrize(

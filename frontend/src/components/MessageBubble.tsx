@@ -313,8 +313,12 @@ type WebContextSummary = {
   provider?: string;
   resultCount?: number;
   query?: string;
+  querySource?: string;
   skippedReason?: string;
   truncated?: boolean;
+  resolverUsed?: boolean;
+  resolverReason?: string;
+  resolverConfidence?: string;
   warnings: string[];
 };
 
@@ -721,6 +725,7 @@ function mergeWorldbookContexts(contexts: Record<string, unknown>[]): WorldbookC
 function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummary | undefined {
   if (!contexts.length) return undefined;
   const last = contexts[contexts.length - 1];
+  const resolver = firstPlainRecord(contexts.map((context) => context.resolver).reverse());
   return {
     enabled: booleanValue(last.enabled),
     attempted: contexts.some((context) => context.attempted === true),
@@ -728,8 +733,12 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
     provider: textValue(last.provider),
     resultCount: maxNumber(contexts.map((context) => numberValue(context.result_count))),
     query: textValue(last.query),
+    querySource: textValue(last.query_source),
     skippedReason: textValue(last.skipped_reason),
     truncated: contexts.some((context) => context.truncated === true),
+    resolverUsed: booleanValue(resolver?.used),
+    resolverReason: textValue(resolver?.reason),
+    resolverConfidence: textValue(resolver?.confidence),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
   };
 }
@@ -2223,6 +2232,10 @@ function contextSummaryForStep(step: RunStep, runKnowledge?: KnowledgeRetrievalS
     summary.worldbook?.injected ||
     summary.knowledge?.injected ||
     summary.web?.injected ||
+    summary.web?.attempted ||
+    summary.web?.resolverUsed ||
+    Boolean(summary.web?.querySource) ||
+    Boolean(summary.web?.skippedReason && summary.web.enabled === true) ||
     summary.memory?.warnings.length ||
     summary.worldbook?.warnings.length ||
     summary.knowledge?.warnings.length ||
@@ -2361,9 +2374,27 @@ function webSummaryLabel(summary: WebContextSummary, t: ReturnType<typeof useTra
     const resultLabel = t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider });
     return summary.query ? `${resultLabel} · ${t('runs:contextSummary.searchQuery', { query: summary.query })}` : resultLabel;
   }
-  if (summary.skippedReason) return t('runs:contextSummary.skippedWithReason', { reason: webSkipReasonLabel(summary.skippedReason, t) });
+  if (summary.skippedReason) {
+    const reason = webSkipReasonLabel(summary.skippedReason, t);
+    const plan = webPlanSummaryParts(summary, t).join(' · ');
+    return plan ? `${t('runs:contextSummary.skippedWithReason', { reason })} · ${plan}` : t('runs:contextSummary.skippedWithReason', { reason });
+  }
   if (summary.attempted) return t('runs:contextSummary.noResults');
   return summary.enabled === false ? t('runs:contextSummary.skipped') : t('runs:contextSummary.notUsed');
+}
+
+function webPlanSummaryParts(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string[] {
+  const parts: string[] = [];
+  if (summary.querySource) parts.push(t('runs:contextSummary.webQuerySource', { source: webQuerySourceLabel(summary.querySource, t) }));
+  if (summary.resolverReason) parts.push(webSkipReasonLabel(summary.resolverReason, t));
+  if (summary.resolverConfidence) parts.push(t('runs:contextSummary.webResolverConfidence', { confidence: summary.resolverConfidence }));
+  return parts;
+}
+
+function webQuerySourceLabel(source: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = `runs:contextSummary.webQuerySources.${source}`;
+  const label = t(key);
+  return label === key ? source : label;
 }
 
 function webSkipReasonLabel(reason: string, t: ReturnType<typeof useTranslation>['t']): string {

@@ -70,6 +70,7 @@ function normalizedRunStepKey(label: string): string {
   const normalized = label.trim().toLowerCase().replace(/[_-]+/g, ' ');
   if (normalized === 'building context') return 'buildingContext';
   if (normalized === 'intent semantic routing') return 'intentSemanticRouting';
+  if (normalized === 'web context plan') return 'webContextPlan';
   if (normalized === 'calling llm' || normalized === 'llm') return 'callingLlm';
   if (normalized === 'running script') return 'runningScript';
   if (normalized === 'running command') return 'runningCommand';

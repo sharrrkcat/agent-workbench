@@ -356,6 +356,50 @@ def test_auto_knowledge_query_without_kb_candidate_or_active_kbs_falls_back() ->
     assert "no_kb_candidate_or_active_kbs" in intent["warnings"]
 
 
+def test_blocked_knowledge_query_candidate_skips_web_context(monkeypatch) -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_auto(fixture)
+    fixture.app_settings.patch({"web_context_enabled": True})
+    enable_utility(fixture, {"intent": "knowledge_query", "confidence": 0.9, "query": "Cal Kestis 的经历", "kb_hint": "Star Wars"})
+    fixture.agent_runner.semantic_router = type(
+        "LowScoreKnowledgeRouter",
+        (),
+        {
+            "decide": lambda self, *args, **kwargs: {
+                "predicted_intent": "knowledge_query",
+                "confidence": 0.42,
+                "semantic_score": 0.42,
+                "semantic_margin": 0.2,
+                "semantic_thresholds_used": {"intent_min_score": 0.5, "intent_min_margin": 0.03},
+                "route_action": "metadata_only",
+                "auto_executable": True,
+                "warnings": [],
+            }
+        },
+    )()
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    def fail_web_search(runtime_registry):
+        raise AssertionError("blocked knowledge query candidates must not call Web Search")
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fail_web_search)
+
+    result = run(fixture.runtime.handle_input(session, "根据现有的 Star Wars 知识库回答 Cal Kestis 的经历"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    web = prompt_run.metadata["web_context"]
+    web_plan_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Web context plan")
+    assert result.success is True
+    assert intent["predicted_intent"] == "knowledge_query"
+    assert intent["not_executed_reason"] == "semantic_confidence_too_low"
+    assert web["attempted"] is False
+    assert web["skipped_reason"] == "knowledge_query_candidate_blocked"
+    assert web["intent_influence"] == "knowledge_query:semantic_confidence_too_low"
+    assert web["warnings"] == ["knowledge_query_below_threshold"]
+    assert web_plan_step.message == "skipped: knowledge_query_candidate_blocked"
+
+
 def test_auto_knowledge_query_requires_utility_slots(monkeypatch) -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)

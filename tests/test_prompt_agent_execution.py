@@ -382,6 +382,7 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     sent = sent_messages[0]["content"]
     metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
     context_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Building context")
+    web_plan_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Web context plan")
     assistant_message = next(message for message in reversed(fixture.messages.list_messages(session.session_id)) if message.role == "assistant" and message.metadata.get("success"))
     message_metadata = assistant_message.metadata["web_context"]
 
@@ -413,6 +414,9 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert "Retrieved Web" not in str(metadata)
     assert context_step.metadata["web_context"]["result_count"] == 1
     assert "source_refs" not in context_step.metadata["web_context"]
+    assert web_plan_step.parent_step_id == context_step.step_id
+    assert web_plan_step.message == "source: raw_user_text_forced"
+    assert web_plan_step.metadata["web_context"]["query_source"] == "raw_user_text_forced"
     assert message_metadata["source_refs"][0]["ref_id"] == "W1"
 
 

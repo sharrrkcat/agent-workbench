@@ -53,6 +53,13 @@ Script custom steps created with `ctx.step` default under `Running script`.
 Long-running scripts may update step messages while polling external jobs.
 Steps should represent user-meaningful phases, not every helper function.
 
+When Prompt Agent Web Context is enabled and the web plan is evaluated, runtime
+may add a compact `Web context plan` child step under `Building context`. The
+child step records only the plan source, resolver reason/confidence when used,
+skip reason, warnings, and compact query metadata. It must not include raw
+Utility output, prompts, full user text duplicates, rendered web context, raw
+search payloads, or retrieved content.
+
 Intent Routing semantic decisions happen before `Building context`. The step
 records compact outcomes only. Full routing behavior is owned by
 [intent-routing.md](intent-routing.md).
@@ -115,6 +122,11 @@ The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, KB
 snippets, Core Memory, Worldbook content, or secrets.
+
+Known Web Context skip reasons include `knowledge_query_selected`,
+`knowledge_query_candidate_blocked`, `pet_command_selected`, resolver reasons
+such as `time_sensitive_fact_question` or `incidental_mentions_only`, and
+provider/runtime reasons such as `search_failed` or `no_results`.
 
 ## Failure And Cancellation
 

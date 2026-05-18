@@ -203,6 +203,15 @@ short Utility LLM call to decide whether the current user message asks for an
 external fact search. The call returns strict JSON with only
 `should_search`, `query`, `reason`, and `confidence`.
 
+Resolver guidance must distinguish explicit information requests from incidental
+mentions. "Do you know / have you heard / did you see" plus
+yesterday/today/recently and a real-world event is treated as a likely
+`time_sensitive_fact_question`. Explicit search/check/latest/current-status
+requests should produce a compact query. Personal preference, emotion,
+roleplay, conversation continuation, and long messages that only incidentally
+mention prices, news, entities, or real-world keywords should not search.
+Keywords alone are not sufficient.
+
 This planning call is internal. It does not create a message or run, does not
 trigger Intent Routing or title generation, does not inject Knowledge, Core
 Memory, Worldbook, attachments, assistant replies, or full history, and does

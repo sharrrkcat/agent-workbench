@@ -11,6 +11,7 @@
   "steps": {
     "buildingContext": "Building context",
     "intentSemanticRouting": "Intent semantic routing",
+    "webContextPlan": "Web context plan",
     "callingLlm": "Calling LLM",
     "runningScript": "Running script",
     "runningCommand": "Running command",
@@ -54,7 +55,17 @@
     "snippetCount": "{{count}} snippets",
     "webResultCount": "{{count}} results · {{provider}}",
     "searchQuery": "query: {{query}}",
+    "webQuerySource": "source: {{source}}",
+    "webResolverConfidence": "confidence: {{confidence}}",
     "noResults": "no results",
+    "webQuerySources": {
+      "resolver": "resolver",
+      "web_context_plan_resolver": "resolver",
+      "intent_web_query_slots": "Intent web query slots",
+      "intent_web_query_original_text": "Intent web query original text",
+      "raw_user_text_forced": "raw user text",
+      "raw_user_text_forced_shadow_mode": "raw user text"
+    },
     "rerankerValue": "reranker {{value}}",
     "skippedWithReason": "skipped · {{reason}}",
     "webSkipReasons": {
@@ -62,6 +73,7 @@
       "ineligible_route": "explicit route",
       "empty_query": "empty query",
       "knowledge_query_selected": "knowledge query selected",
+      "knowledge_query_candidate_blocked": "knowledge query candidate blocked",
       "pet_command_selected": "pet command selected",
       "explicit_search_request": "explicit search request",
       "external_fact_question": "external fact question",

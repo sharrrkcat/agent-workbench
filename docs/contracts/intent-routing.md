@@ -190,6 +190,13 @@ compact reasons (`knowledge_query_selected` or `pet_command_selected`). A
 validated `web_query` may provide the Web Context search query through compact
 slots, while failed, diagnostic-only, uncertain, or chat outcomes fall through
 to the Web Context Plan Resolver instead of becoming Intent Routing execution.
+If the semantic top intent is `knowledge_query`, Utility LLM slots successfully
+confirm `knowledge_query` with a non-empty query or `use_original_query=true`,
+but safe auto execution is blocked by semantic score/margin or Knowledge
+validation gates, Prompt Agent Web Context must skip with
+`knowledge_query_candidate_blocked` instead of invoking the Web Context Plan
+Resolver. This protects explicit Knowledge/KB requests from Web Search fallback
+without letting Utility slots bypass semantic routing.
 
 ## Knowledge Query Rules
 
@@ -347,6 +354,8 @@ Common codes include:
 - `utility_semantic_action_conflict`
 - `validation_failed`
 - `knowledge_query_missing_query`
+- `knowledge_query_candidate_blocked`
+- `knowledge_query_below_threshold`
 - `web_query_diagnostic_only`
 - `web_query_missing_query`
 - `kb_hint_semantic_conflict`

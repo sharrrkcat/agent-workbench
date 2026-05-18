@@ -22,6 +22,14 @@ PLAN_REASONS = {
     "insufficient_external_fact_request",
 }
 PLAN_CONFIDENCES = {"low", "medium", "high"}
+KNOWLEDGE_QUERY_BLOCKED_REASONS = {
+    "semantic_confidence_too_low",
+    "semantic_margin_too_low",
+    "validation_failed",
+    "no_kb_candidate_or_active_kbs",
+    "kb_hint_semantic_conflict",
+    "ambiguous_kb_candidate",
+}
 
 
 @dataclass
@@ -97,6 +105,15 @@ class WebContextPlanResolver:
             or bool(intent.get("knowledge_query_override"))
         ):
             return WebContextPlan(False, skipped_reason="knowledge_query_selected", intent_influence="knowledge_query")
+        if _knowledge_query_candidate_blocked(intent):
+            reason = str(intent.get("not_executed_reason") or intent.get("diagnostic_reason") or "")
+            warnings = ["knowledge_query_below_threshold"] if reason in {"semantic_confidence_too_low", "semantic_margin_too_low"} else []
+            return WebContextPlan(
+                False,
+                skipped_reason="knowledge_query_candidate_blocked",
+                warnings=warnings,
+                intent_influence=_intent_summary(intent),
+            )
         if intent_id == "web_query" and bool(intent.get("validation_ok")):
             slots = intent.get("slots") if isinstance(intent.get("slots"), dict) else {}
             slot_query = _valid_query_or_none(slots.get("query"))
@@ -359,8 +376,52 @@ def append_web_context_to_system(messages: list[dict[str, Any]], rendered_text: 
 
 
 def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver"}
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
+
+
+def web_context_plan_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence"}
+    return {key: value for key, value in (web_context or {}).items() if key in allowed}
+
+
+def should_show_web_context_plan_step(web_context: dict[str, Any]) -> bool:
+    if not isinstance(web_context, dict):
+        return False
+    if web_context.get("enabled") is not True:
+        return False
+    resolver = web_context.get("resolver") if isinstance(web_context.get("resolver"), dict) else {}
+    return bool(
+        web_context.get("attempted")
+        or web_context.get("query_source")
+        or web_context.get("skipped_reason") in {"knowledge_query_selected", "knowledge_query_candidate_blocked", "pet_command_selected"}
+        or resolver.get("used")
+    )
+
+
+def web_context_plan_step_message(web_context: dict[str, Any]) -> str:
+    if not isinstance(web_context, dict):
+        return "skipped"
+    source = str(web_context.get("query_source") or "")
+    skipped = str(web_context.get("skipped_reason") or "")
+    resolver = web_context.get("resolver") if isinstance(web_context.get("resolver"), dict) else {}
+    resolver_reason = str(resolver.get("reason") or "")
+    resolver_confidence = str(resolver.get("confidence") or "")
+    if web_context.get("injected") or web_context.get("attempted"):
+        parts = [f"source: {source or 'resolver'}"]
+        if resolver_reason:
+            parts.append(f"reason: {resolver_reason}")
+        if resolver_confidence:
+            parts.append(f"confidence: {resolver_confidence}")
+        return " / ".join(parts)
+    parts = [f"skipped: {skipped or 'not_used'}"]
+    if source:
+        parts.append(f"source: {source}")
+    if resolver_reason:
+        parts.append(f"reason: {resolver_reason}")
+    if resolver_confidence:
+        parts.append(f"confidence: {resolver_confidence}")
+    return " / ".join(parts)
 
 
 def _web_search_config(*, capability_registry: Any, capability_config_store: Any) -> dict[str, Any]:
@@ -485,6 +546,23 @@ def _intent_selected(intent: dict[str, Any]) -> bool:
     return bool(intent.get("executed") or intent.get("would_execute") or intent.get("auto_executable"))
 
 
+def _knowledge_query_candidate_blocked(intent: dict[str, Any]) -> bool:
+    if str(intent.get("predicted_intent") or "") != "knowledge_query":
+        return False
+    if _intent_selected(intent):
+        return False
+    if not bool(intent.get("utility_ok")):
+        return False
+    slots = intent.get("slots") if isinstance(intent.get("slots"), dict) else {}
+    if slots.get("intent") != "knowledge_query":
+        return False
+    has_query = bool(str(slots.get("query") or "").strip()) or slots.get("use_original_query") is True
+    if not has_query:
+        return False
+    reason = str(intent.get("not_executed_reason") or intent.get("diagnostic_reason") or "")
+    return reason in KNOWLEDGE_QUERY_BLOCKED_REASONS
+
+
 def _intent_summary(intent: dict[str, Any]) -> str | None:
     if not intent:
         return None
@@ -508,8 +586,20 @@ def _web_context_plan_prompt(user_text: str) -> str:
             "json": {"should_search": True, "query": "堡垒之夜 最新 联动 内容", "reason": "explicit_search_request", "confidence": "high"},
         },
         {
+            "user": "你知道昨天晚上的流星雨吗",
+            "json": {"should_search": True, "query": "昨天晚上 流星雨", "reason": "time_sensitive_fact_question", "confidence": "high"},
+        },
+        {
             "user": "我最近有点不想搞这个了，昨天刚出门买了一点花，昨天晚上又买了一点猫粮，准备喂给家里的小猫吃。不过今天早上的金价波动也太大了，金价的最新消息一出来我就绷不住了。不过还是小猫好，小猫会一直呆在我身边",
             "json": {"should_search": False, "query": "", "reason": "incidental_mentions_only", "confidence": "high"},
+        },
+        {
+            "user": "我不是很喜欢吃西湖醋鱼",
+            "json": {"should_search": False, "query": "", "reason": "personal_preference_or_emotion", "confidence": "high"},
+        },
+        {
+            "user": "我没想到，原来你是这样的人啊！",
+            "json": {"should_search": False, "query": "", "reason": "conversation_continuation", "confidence": "high"},
         },
     ]
     return (
@@ -517,8 +607,11 @@ def _web_context_plan_prompt(user_text: str) -> str:
         "Return strict JSON only. Do not explain.\n"
         f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
         "Search only when the user requests external facts, current/recent information, news, prices, releases, official information, current status, real-world events, or verification that needs the web.\n"
+        "Treat 'do you know / have you heard / did you see' plus yesterday/today/recently and a real-world event as a likely time-sensitive external fact question.\n"
+        "When the user explicitly asks to search/check/look up, asks for latest/current status, or asks about a recent collaboration/release, extract a compact query.\n"
         "Do not search when the user is only expressing emotions/preferences, roleplaying, continuing conversation, acknowledging, or incidentally mentioning real entities without asking for information.\n"
-        "Keywords alone are not enough. If should_search=true, query must be the smallest useful search query, not the whole message, and at most 160 characters.\n"
+        "Long messages can contain either explicit search requests or incidental mentions. Keywords alone are not enough; decide whether the user is asking for information.\n"
+        "If should_search=true, query must be the smallest useful search query, not the whole message, and at most 160 characters.\n"
         f"Examples: {json.dumps(examples, ensure_ascii=False)}\n\n"
         f"User message:\n{user_text}"
     )

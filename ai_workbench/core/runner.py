@@ -24,7 +24,7 @@ from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRe
 from ai_workbench.core.message_parts import command_result_to_parts, make_error_part, make_text_part
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
-from ai_workbench.core.web_context import append_web_context_to_system, build_web_context, web_context_step_metadata
+from ai_workbench.core.web_context import append_web_context_to_system, build_web_context, should_show_web_context_plan_step, web_context_plan_step_message, web_context_plan_step_metadata, web_context_step_metadata
 from ai_workbench.core.provider_status import (
     MODEL_MISMATCH,
     MODEL_NOT_AVAILABLE,
@@ -558,6 +558,17 @@ class AgentRunner:
             capability_config_store=self.capability_config_store,
         )
         self._record_context_metadata(run.run_id, "web_context", web_context.metadata)
+        if should_show_web_context_plan_step(web_context.metadata):
+            web_plan_step = self.run_lifecycle.start_step(
+                run.run_id,
+                "Web context plan",
+                parent_step_id=context_step.step_id,
+            )
+            self.run_lifecycle.complete_step(
+                web_plan_step.step_id,
+                message=web_context_plan_step_message(web_context.metadata),
+                metadata={"web_context": web_context_plan_step_metadata(web_context.metadata)},
+            )
         if web_context.rendered_text:
             messages = append_web_context_to_system(messages, web_context.rendered_text)
         self.run_lifecycle.complete_step(

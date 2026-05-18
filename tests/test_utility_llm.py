@@ -375,6 +375,31 @@ def test_json_extractor_accepts_web_query_slots() -> None:
     assert data["language_hint"] == "en"
 
 
+def test_web_context_plan_prompt_includes_time_sensitive_and_incidental_guidance() -> None:
+    captured = {}
+    service = UtilityLLMService()
+
+    async def generate(prompt, settings, max_new_tokens=128):
+        captured["prompt"] = prompt
+        return UtilityGeneration(
+            text='{"should_search":true,"query":"昨天晚上 流星雨","reason":"time_sensitive_fact_question","confidence":"high"}',
+            model_path="utility_llms/test",
+            device="cpu",
+            backend="transformers",
+        )
+
+    service.generate = generate
+
+    result = run(service.extract_web_context_plan_json("你知道昨天晚上的流星雨吗", AppSettings(intent_routing_utility_llm_model_path="utility_llms/test")))
+
+    prompt = captured["prompt"]
+    assert result["reason"] == "time_sensitive_fact_question"
+    assert "你知道昨天晚上的流星雨吗" in prompt
+    assert "time_sensitive_fact_question" in prompt
+    assert "Long messages can contain either explicit search requests or incidental mentions" in prompt
+    assert "我不是很喜欢吃西湖醋鱼" in prompt
+
+
 def test_json_extractor_accepts_fenced_and_balanced_json_with_extra_fields() -> None:
     fenced = extract_json_object('Here:\n```json\n{"intent":"pet_command","domain":"workbench_pet","action":"wake","extra":{"nested":true}}\n```\nDone')
     prefixed = extract_json_object('Utility says {"intent":"pet_command","domain":"workbench_pet","action":"wake"} trailing {ignored}')
