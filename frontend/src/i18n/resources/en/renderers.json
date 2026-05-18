@@ -24,6 +24,23 @@
     "thought": "Thought",
     "thinking": "Thinking..."
   },
+  "knowledgeSearch": {
+    "title": "Knowledge search",
+    "failed": "Knowledge search failed",
+    "noResults": "No matching knowledge snippets found.",
+    "untitledSource": "Untitled source",
+    "knowledgeBase": "Knowledge base"
+  },
+  "webSearch": {
+    "title": "Web search",
+    "noResults": "No web results.",
+    "provider": "Provider",
+    "domain": "Domain",
+    "published": "Published",
+    "warnings": "Warnings",
+    "openResult": "Open result",
+    "untitledResult": "Untitled result"
+  },
   "audio": {
     "play": "Play audio",
     "pause": "Pause audio",

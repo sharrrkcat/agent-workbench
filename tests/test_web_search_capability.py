@@ -95,11 +95,13 @@ def test_web_search_success_response_normalization() -> None:
         },
     )
 
-    assert [part["type"] for part in parts] == ["text", "json"]
+    assert [part["type"] for part in parts] == ["json"]
     assert "q=qwen+latest+release" in str(seen["url"])
     assert "language=en" in str(seen["url"])
     assert "safesearch=2" in str(seen["url"])
-    data = parts[1]["data"]
+    data = parts[0]["data"]
+    assert data["kind"] == "web_search_results"
+    assert data["schema"] == "web_search.results.v1"
     assert data["query"] == "qwen latest release"
     assert data["provider"] == "searxng"
     assert data["warnings"] == []
@@ -123,8 +125,7 @@ def test_web_search_success_response_normalization() -> None:
             "source": "bing",
         },
     ]
-    assert "Result One" in parts[0]["text"]
-    assert "https://Example.test/page" in parts[0]["text"]
+    assert all(part["type"] != "text" for part in parts)
 
 
 def test_web_search_empty_results() -> None:
@@ -135,8 +136,10 @@ def test_web_search_empty_results() -> None:
 
     parts = runtime.search("nothing", context={"capability_config": {"searxng_base_url": "https://searxng.test"}})
 
-    assert parts[1]["data"]["results"] == []
-    assert "No results." in parts[0]["text"]
+    data = parts[0]["data"]
+    assert data["kind"] == "web_search_results"
+    assert data["results"] == []
+    assert all(part["type"] != "text" for part in parts)
 
 
 def test_web_search_invalid_response() -> None:
@@ -196,7 +199,7 @@ def test_web_search_max_results_and_invalid_url_warning() -> None:
         context={"capability_config": {"searxng_base_url": "https://searxng.test", "max_results": 2}},
     )
 
-    data = parts[1]["data"]
+    data = parts[0]["data"]
     assert [result["title"] for result in data["results"]] == ["One", "Two"]
     assert data["warnings"] == ["skipped 1 result(s) with invalid URL"]
 
@@ -234,8 +237,10 @@ def test_web_search_config_defaults_patch_and_runtime_enforcement() -> None:
     result = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/web-search qwen"})
     assert result.json()["run"]["status"] == "DONE"
     parts = result.json()["messages"][-1]["parts"]
-    assert [part["type"] for part in parts] == ["text", "json"]
-    assert parts[1]["data"]["results"][0]["domain"] == "result.test"
+    assert [part["type"] for part in parts] == ["json"]
+    assert parts[0]["data"]["kind"] == "web_search_results"
+    assert parts[0]["data"]["schema"] == "web_search.results.v1"
+    assert parts[0]["data"]["results"][0]["domain"] == "result.test"
 
     required = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/web-search   "})
     assert "query required" in required.json()["run"]["error"]

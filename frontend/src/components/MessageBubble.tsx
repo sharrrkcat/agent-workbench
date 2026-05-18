@@ -1,7 +1,7 @@
 import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
+import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, ExternalLink, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ActionFormBlock, ActionFormField, Agent, Attachment, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, MessagePart, Run, RunStep, WorldbookEntry } from '../types';
 import { api } from '../api/client';
@@ -240,6 +240,26 @@ type KbSearchResponse = {
   results: KbSearchResult[];
   debug?: KbSearchDebug;
   error?: { code?: string; message?: string };
+};
+
+type WebSearchResult = {
+  rank?: number;
+  title?: string;
+  url?: string;
+  domain?: string;
+  snippet?: string;
+  published_at?: string | null;
+  source?: string;
+};
+
+type WebSearchResponse = {
+  kind?: string;
+  schema?: string;
+  query?: string;
+  provider?: string;
+  searched_at?: string;
+  results: WebSearchResult[];
+  warnings: string[];
 };
 
 type CoreMemoryContextSummary = {
@@ -1355,6 +1375,10 @@ export function MarkdownRenderer({
 
 export function JsonRenderer({ content }: { content: unknown }) {
   const parsed = normalizeJsonContent(content);
+  const webSearch = normalizeWebSearchResponse(parsed);
+  if (webSearch) {
+    return <WebSearchRenderer response={webSearch} />;
+  }
   const kbSearch = normalizeKbSearchResponse(parsed);
   if (kbSearch) {
     return <KbSearchRenderer response={kbSearch} />;
@@ -1365,7 +1389,72 @@ export function JsonRenderer({ content }: { content: unknown }) {
   return <pre className="message-content json-content">{JSON.stringify(parsed, null, 2)}</pre>;
 }
 
+function WebSearchRenderer({ response }: { response: WebSearchResponse }) {
+  const { t } = useTranslation(['renderers']);
+  const provider = response.provider || 'searxng';
+  const warnings = response.warnings.filter((warning) => warning.trim().length > 0);
+
+  return (
+    <section className="message-content web-search-card">
+      <header>
+        <Search size={15} />
+        <div>
+          <strong>{t('renderers:webSearch.title')}</strong>
+          <span>
+            {response.query ? response.query : null}
+            {response.query && provider ? ' / ' : null}
+            {provider ? `${t('renderers:webSearch.provider')}: ${provider}` : null}
+          </span>
+        </div>
+      </header>
+      {!response.results.length ? (
+        <div className="web-search-empty">{t('renderers:webSearch.noResults')}</div>
+      ) : (
+        <ol className="web-search-results">
+          {response.results.map((result, index) => {
+            const url = safeHttpUrl(result.url);
+            const title = result.title || result.url || t('renderers:webSearch.untitledResult');
+            return (
+              <li key={`${result.rank || index}:${result.url || title}`}>
+                <div className="web-search-rank">{result.rank || index + 1}</div>
+                <div className="web-search-result-body">
+                  <div className="web-search-result-heading">
+                    <strong>{title}</strong>
+                    {result.domain ? <span title={t('renderers:webSearch.domain')}>{result.domain}</span> : null}
+                  </div>
+                  {url ? (
+                    <a className="web-search-url" href={url} target="_blank" rel="noreferrer" title={t('renderers:webSearch.openResult')}>
+                      <ExternalLink size={12} />
+                      <span>{url}</span>
+                    </a>
+                  ) : result.url ? (
+                    <small className="web-search-url">{result.url}</small>
+                  ) : null}
+                  {result.snippet ? <p>{result.snippet}</p> : null}
+                  <div className="web-search-meta-row">
+                    {result.source ? <span>{result.source}</span> : null}
+                    {result.published_at ? <span>{t('renderers:webSearch.published')}: {result.published_at}</span> : null}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {warnings.length ? (
+        <div className="web-search-warnings">
+          <strong>{t('renderers:webSearch.warnings')}</strong>
+          {warnings.map((warning, index) => (
+            <span key={`${warning}-${index}`}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function KbSearchRenderer({ response }: { response: KbSearchResponse }) {
+  const { t } = useTranslation(['renderers']);
   const [debugOpen, setDebugOpen] = useState(false);
   const errorMessage = response.error?.message;
 
@@ -1374,7 +1463,7 @@ function KbSearchRenderer({ response }: { response: KbSearchResponse }) {
       <section className="message-content kb-search-card error">
         <header>
           <CircleAlert size={15} />
-          <strong>Knowledge search failed</strong>
+          <strong>{t('renderers:knowledgeSearch.failed')}</strong>
         </header>
         <p>{errorMessage}</p>
       </section>
@@ -1386,12 +1475,12 @@ function KbSearchRenderer({ response }: { response: KbSearchResponse }) {
       <header>
         <Search size={15} />
         <div>
-          <strong>Knowledge search</strong>
+          <strong>{t('renderers:knowledgeSearch.title')}</strong>
           {response.query ? <span>{response.query}</span> : null}
         </div>
       </header>
       {!response.results.length ? (
-        <div className="kb-search-empty">No matching knowledge snippets found.</div>
+        <div className="kb-search-empty">{t('renderers:knowledgeSearch.noResults')}</div>
       ) : (
         <ol className="kb-search-results">
           {response.results.map((result, index) => (
@@ -1399,8 +1488,8 @@ function KbSearchRenderer({ response }: { response: KbSearchResponse }) {
               <div className="kb-search-rank">{result.rank || index + 1}</div>
               <div className="kb-search-result-body">
                 <div className="kb-search-result-heading">
-                  <strong>{result.title || result.source_id || 'Untitled source'}</strong>
-                  <span>{result.knowledge_base_name || result.knowledge_base_id || 'Knowledge base'}</span>
+                  <strong>{result.title || result.source_id || t('renderers:knowledgeSearch.untitledSource')}</strong>
+                  <span>{result.knowledge_base_name || result.knowledge_base_id || t('renderers:knowledgeSearch.knowledgeBase')}</span>
                 </div>
                 {result.heading_path ? <small>{result.heading_path}</small> : null}
                 <p>{result.content || ''}</p>
@@ -1990,7 +2079,21 @@ export function normalizeJsonContent(content: unknown): unknown {
 function normalizeKbSearchResponse(value: unknown): KbSearchResponse | null {
   if (!isPlainRecord(value)) return null;
   const rawResults = value.results;
-  const hasKbSearchShape = Array.isArray(rawResults) && (typeof value.query === 'string' || isPlainRecord(value.debug) || rawResults.some(isPlainRecord));
+  const isWebSearchShape = value.kind === 'web_search_results' || value.schema === 'web_search.results.v1' || (Array.isArray(rawResults) && rawResults.some(isWebSearchResultRecord));
+  if (isWebSearchShape) return null;
+  const hasKbSearchShape = Array.isArray(rawResults) && (
+    isPlainRecord(value.debug) ||
+    rawResults.some((item) => isPlainRecord(item) && (
+      'knowledge_base_id' in item ||
+      'knowledge_base_name' in item ||
+      'source_id' in item ||
+      'heading_path' in item ||
+      'vector_score' in item ||
+      'keyword_score' in item ||
+      'rrf_score' in item ||
+      'rerank_score' in item
+    ))
+  );
   if (!hasKbSearchShape) return null;
   const results = rawResults
     .filter(isPlainRecord)
@@ -2032,6 +2135,45 @@ function normalizeKbSearchResponse(value: unknown): KbSearchResponse | null {
         }
       : undefined,
   };
+}
+
+function normalizeWebSearchResponse(value: unknown): WebSearchResponse | null {
+  if (!isPlainRecord(value)) return null;
+  if (value.kind !== 'web_search_results' && value.schema !== 'web_search.results.v1') return null;
+  const rawResults = Array.isArray(value.results) ? value.results : [];
+  return {
+    kind: textValue(value.kind),
+    schema: textValue(value.schema),
+    query: textValue(value.query),
+    provider: textValue(value.provider),
+    searched_at: textValue(value.searched_at),
+    results: rawResults
+      .filter(isPlainRecord)
+      .map((item): WebSearchResult => ({
+        rank: numberValue(item.rank),
+        title: textValue(item.title),
+        url: textValue(item.url),
+        domain: textValue(item.domain),
+        snippet: textValue(item.snippet) || '',
+        published_at: textValue(item.published_at) || null,
+        source: textValue(item.source),
+      })),
+    warnings: Array.isArray(value.warnings) ? value.warnings.map(String) : [],
+  };
+}
+
+function isWebSearchResultRecord(value: unknown): boolean {
+  return isPlainRecord(value) && (typeof value.url === 'string' || typeof value.domain === 'string');
+}
+
+function safeHttpUrl(value: string | undefined): string {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function contextSummaryForStep(step: RunStep, runKnowledge?: KnowledgeRetrievalSummary | null): NormalizedContextMetadata | null {

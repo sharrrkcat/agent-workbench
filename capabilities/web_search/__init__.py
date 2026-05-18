@@ -145,6 +145,8 @@ def _normalize_response(query: str, payload: dict, max_results: int) -> dict:
     if skipped_invalid_urls:
         warnings.append(f"skipped {skipped_invalid_urls} result(s) with invalid URL")
     return {
+        "kind": "web_search_results",
+        "schema": "web_search.results.v1",
         "query": query,
         "provider": "searxng",
         "searched_at": datetime.now(timezone.utc).isoformat(),
@@ -173,7 +175,6 @@ def _clean_text(value: object) -> str:
 
 def _parts_for_results(normalized: dict) -> list[dict]:
     return [
-        {"type": "text", "format": "markdown", "text": _markdown_results(normalized)},
         {"type": "json", "data": normalized},
     ]
 

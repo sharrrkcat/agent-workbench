@@ -24,6 +24,23 @@
     "thought": "思考",
     "thinking": "思考中..."
   },
+  "knowledgeSearch": {
+    "title": "知识搜索",
+    "failed": "知识搜索失败",
+    "noResults": "未找到匹配的知识片段。",
+    "untitledSource": "未命名来源",
+    "knowledgeBase": "知识库"
+  },
+  "webSearch": {
+    "title": "网页搜索",
+    "noResults": "没有网页搜索结果。",
+    "provider": "提供方",
+    "domain": "域名",
+    "published": "发布时间",
+    "warnings": "警告",
+    "openResult": "打开结果",
+    "untitledResult": "未命名结果"
+  },
   "audio": {
     "play": "播放音频",
     "pause": "暂停音频",

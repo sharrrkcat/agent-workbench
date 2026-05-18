@@ -288,9 +288,11 @@ The built-in `http` Capability exposes only `/fetch-url <url>`, auto-detects tex
 Streaming media, OCR, ASR, TTS, transcription, and PDF parsing are unsupported.
 
 The built-in `web_search` Capability exposes `/web-search <query>` for SearXNG
-search result discovery. It returns standardized search results through a
-markdown summary plus JSON Message Part and does not fetch result page bodies,
-cache results, save to Knowledge, or inject Web Context into Prompt Agents.
+search result discovery. It returns one standardized JSON Message Part with
+`kind: "web_search_results"` and `schema: "web_search.results.v1"` containing
+query, provider, timestamp, normalized results, and warnings. It does not fetch
+result page bodies, cache results, save to Knowledge, or inject Web Context into
+Prompt Agents.
 
 ## Capability Config
 

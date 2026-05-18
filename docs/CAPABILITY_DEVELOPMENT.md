@@ -237,10 +237,12 @@ understanding, video metadata parsing, thumbnail generation, or transcoding.
 The built-in `web_search` Capability exposes `/web-search <query>` for
 SearXNG-backed result discovery. It calls the configured SearXNG JSON search
 endpoint, normalizes result title, URL, domain, snippet, published date, source,
-and rank, then returns ordered Message Parts: a markdown summary and a JSON part
-with the normalized structure. It does not fetch result pages, execute
-JavaScript, cache results, save to Knowledge, vectorize, rerank, or inject web
-context into Prompt Agents.
+and rank, then returns one JSON Message Part with `kind: "web_search_results"`
+and `schema: "web_search.results.v1"`. The payload
+contains `query`, `provider`, `searched_at`, `results`, and `warnings`; it does
+not include the raw SearXNG response or a duplicate markdown result list. It
+does not fetch result pages, execute JavaScript, cache results, save to
+Knowledge, vectorize, rerank, or inject web context into Prompt Agents.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 
