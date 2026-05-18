@@ -1019,13 +1019,14 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
   const { t } = useTranslation(['runs']);
   const duration = stepDurationLabel(step);
   const contextSummary = contextSummaryForStep(step, runKnowledge);
+  const message = stepMessage(step, t);
   return (
     <li className={`run-step-item ${step.status} depth-${Math.min(depth, 4)}`}>
       <div className="run-step-row">
         <RunStepIcon status={step.status} />
         <span>
           <strong>{getRunStepLabel(step.label, t)}{duration ? ` / ${duration}` : ''}</strong>
-          {stepMessage(step) ? <small>{stepMessage(step)}</small> : null}
+          {message ? <small>{message}</small> : null}
         </span>
       </div>
       {contextSummary ? (
@@ -1085,8 +1086,14 @@ function messageRunSteps(message: Message): RunStep[] {
   return sortRunSteps([...(message.run_steps || message.run?.steps || [])]);
 }
 
-function stepMessage(step: RunStep): string {
+function stepMessage(step: RunStep, t: ReturnType<typeof useTranslation>['t']): string {
   if (step.status === 'failed') return step.error_message || step.message || 'failed';
+  const intent = isPlainRecord(step.metadata?.intent_routing) ? step.metadata.intent_routing : undefined;
+  if (intent?.web_context_usage === 'used_for_web_context') {
+    return t('runs:stepMessages.intentUsedForWebContext', { intent: textValue(intent.predicted_intent) || 'web_query' });
+  }
+  const webPlan = isPlainRecord(step.metadata?.web_context_plan) ? step.metadata.web_context_plan : undefined;
+  if (webPlan) return webContextPlanStepMessage(webPlan, t);
   return step.message || '';
 }
 
@@ -2389,6 +2396,22 @@ function webPlanSummaryParts(summary: WebContextSummary, t: ReturnType<typeof us
   if (summary.resolverReason) parts.push(webSkipReasonLabel(summary.resolverReason, t));
   if (summary.resolverConfidence) parts.push(t('runs:contextSummary.webResolverConfidence', { confidence: summary.resolverConfidence }));
   return parts;
+}
+
+function webContextPlanStepMessage(plan: Record<string, unknown>, t: ReturnType<typeof useTranslation>['t']): string {
+  const parts: string[] = [];
+  const querySource = textValue(plan.query_source);
+  const skippedReason = textValue(plan.skipped_reason);
+  const resolver = isPlainRecord(plan.resolver) ? plan.resolver : {};
+  const resolverReason = textValue(resolver.reason);
+  const resolverConfidence = textValue(resolver.confidence);
+  const warnings = stringArray(plan.warnings);
+  if (querySource) parts.push(t('runs:contextSummary.webQuerySource', { source: webQuerySourceLabel(querySource, t) }));
+  if (skippedReason) parts.push(t('runs:contextSummary.skippedWithReason', { reason: webSkipReasonLabel(skippedReason, t) }));
+  if (resolverReason && resolverReason !== skippedReason) parts.push(webSkipReasonLabel(resolverReason, t));
+  if (resolverConfidence) parts.push(t('runs:contextSummary.webResolverConfidence', { confidence: resolverConfidence }));
+  if (warnings.length) parts.push(t('runs:contextSummary.warningsCount', { count: warnings.length }));
+  return parts.join(' · ');
 }
 
 function webQuerySourceLabel(source: string, t: ReturnType<typeof useTranslation>['t']): string {

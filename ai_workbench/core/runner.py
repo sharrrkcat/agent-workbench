@@ -48,6 +48,8 @@ def _intent_routing_step_message(intent: dict[str, Any]) -> str:
         reason = str(intent.get("skip_reason") or intent.get("bypass_reason") or "skipped")
         return f"skipped: {_intent_reason_label(reason)}"
     predicted = str(intent.get("predicted_intent") or "chat")
+    if intent.get("web_context_usage") == "used_for_web_context":
+        return f"{predicted} - used for Web context"
     if intent.get("executed") or intent.get("would_execute"):
         return f"{predicted} - executed"
     reason = _intent_reason_label(str(intent.get("not_executed_reason") or intent.get("diagnostic_reason") or "not executed"))
@@ -70,6 +72,7 @@ def _intent_routing_step_metadata(intent: dict[str, Any]) -> dict[str, Any]:
         "utility_ok": intent.get("utility_ok"),
         "utility_error_code": intent.get("utility_error_code"),
         "validation_ok": intent.get("validation_ok"),
+        "web_context_usage": intent.get("web_context_usage"),
     }
 
 
@@ -460,6 +463,7 @@ class AgentRunner:
         self.run_store.update_metadata(run.run_id, run_metadata)
         self.run_lifecycle.complete_step(resolving_agent_step.step_id)
         intent_routing = run_metadata.get("intent_routing")
+        intent_step = None
         if isinstance(intent_routing, dict):
             intent_step = self.run_lifecycle.start_step(run.run_id, "Intent semantic routing")
             self.run_lifecycle.complete_step(
@@ -558,6 +562,16 @@ class AgentRunner:
             capability_config_store=self.capability_config_store,
         )
         self._record_context_metadata(run.run_id, "web_context", web_context.metadata)
+        if isinstance(intent_routing, dict) and intent_step is not None and _web_query_used_for_web_context(web_context.metadata):
+            intent_routing = {**intent_routing, "web_context_usage": "used_for_web_context"}
+            refreshed_metadata = dict(self.run_store.get_run(run.run_id).metadata)
+            refreshed_metadata["intent_routing"] = intent_routing
+            self.run_store.update_metadata(run.run_id, refreshed_metadata)
+            self.run_lifecycle.complete_step(
+                intent_step.step_id,
+                message=_intent_routing_step_message(intent_routing),
+                metadata={"intent_routing": _intent_routing_step_metadata(intent_routing)},
+            )
         if should_show_web_context_plan_step(web_context.metadata):
             web_plan_step = self.run_lifecycle.start_step(
                 run.run_id,
@@ -567,7 +581,7 @@ class AgentRunner:
             self.run_lifecycle.complete_step(
                 web_plan_step.step_id,
                 message=web_context_plan_step_message(web_context.metadata),
-                metadata={"web_context": web_context_plan_step_metadata(web_context.metadata)},
+                metadata={"web_context_plan": web_context_plan_step_metadata(web_context.metadata)},
             )
         if web_context.rendered_text:
             messages = append_web_context_to_system(messages, web_context.rendered_text)
@@ -2334,6 +2348,15 @@ def _is_web_context_eligible_prompt_call(*, action_id: str, route_kind: str, dis
     if not raw_input:
         return False
     return raw_input[0] not in {"/", "@", ":"}
+
+
+def _web_query_used_for_web_context(web_context: dict[str, Any]) -> bool:
+    if not isinstance(web_context, dict):
+        return False
+    if web_context.get("query_source") not in {"intent_web_query_slots", "intent_web_query_original_text"}:
+        return False
+    plan = web_context.get("plan") if isinstance(web_context.get("plan"), dict) else {}
+    return bool(web_context.get("attempted") or web_context.get("injected") or plan.get("should_search") is True)
 
 
 def _mime_type_from_attachment_url(url: str) -> str:

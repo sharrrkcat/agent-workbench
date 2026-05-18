@@ -1049,10 +1049,14 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "runs:contextSummary.searchQuery" in source
     assert "runs:contextSummary.webQuerySource" in source
     assert "runs:contextSummary.webResolverConfidence" in source
+    assert "runs:stepMessages.intentUsedForWebContext" in source
+    assert "metadata?.web_context_plan" in source
     assert "webSkipReasonLabel" in source
     assert "webQuerySourceLabel" in source
+    assert "webContextPlanStepMessage" in source
     assert '"web": "Web"' in runs_en
     assert '"webContextPlan": "Web context plan"' in runs_en
+    assert '"intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context"' in runs_en
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
     assert '"knowledge_query_candidate_blocked": "knowledge query candidate blocked"' in runs_en
     assert '"webSkipReasons"' in runs_en

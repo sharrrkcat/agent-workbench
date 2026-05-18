@@ -59,6 +59,10 @@ child step records only the plan source, resolver reason/confidence when used,
 skip reason, warnings, and compact query metadata. It must not include raw
 Utility output, prompts, full user text duplicates, rendered web context, raw
 search payloads, or retrieved content.
+The child step uses plan-only metadata and should not be rendered as a second
+full `Context injected` summary. The parent `Building context` step remains the
+single place for the combined Memory, Worldbook, Knowledge, and Web injection
+summary.
 
 Intent Routing semantic decisions happen before `Building context`. The step
 records compact outcomes only. Full routing behavior is owned by
@@ -122,6 +126,11 @@ The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, KB
 snippets, Core Memory, Worldbook content, or secrets.
+
+For real Prompt Agent runs only, `intent_routing.web_context_usage` may be
+`used_for_web_context` when diagnostic `web_query` slots/original query were
+used by Prompt Agent Web Context. This is a display hint and does not mean the
+Intent Routing executor ran a route.
 
 Known Web Context skip reasons include `knowledge_query_selected`,
 `knowledge_query_candidate_blocked`, `pet_command_selected`, resolver reasons

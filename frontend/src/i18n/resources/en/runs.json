@@ -31,6 +31,10 @@
     "estimatedOutputTokens": "output ~{{count}} tokens",
     "tokensPerSecond": "{{rate}} tok/s"
   },
+  "stepMessages": {
+    "intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context",
+    "notExecutedAsRoute": "not executed as route"
+  },
   "contextSummary": {
     "title": "Context injected",
     "memory": "Memory",
@@ -44,6 +48,7 @@
     "merged": "Merged",
     "reranker": "Reranker",
     "warnings": "Warnings",
+    "warningsCount": "{{count}} warnings",
     "injected": "injected",
     "skipped": "skipped",
     "notUsed": "not used",

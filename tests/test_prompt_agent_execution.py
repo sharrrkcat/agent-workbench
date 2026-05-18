@@ -416,7 +416,10 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert "source_refs" not in context_step.metadata["web_context"]
     assert web_plan_step.parent_step_id == context_step.step_id
     assert web_plan_step.message == "source: raw_user_text_forced"
-    assert web_plan_step.metadata["web_context"]["query_source"] == "raw_user_text_forced"
+    assert "web_context" not in web_plan_step.metadata
+    assert web_plan_step.metadata["web_context_plan"]["query_source"] == "raw_user_text_forced"
+    assert "result_count" not in web_plan_step.metadata["web_context_plan"]
+    assert "provider" not in web_plan_step.metadata["web_context_plan"]
     assert message_metadata["source_refs"][0]["ref_id"] == "W1"
 
 

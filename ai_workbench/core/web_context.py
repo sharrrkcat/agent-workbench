@@ -381,7 +381,7 @@ def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
 
 
 def web_context_plan_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence"}
+    allowed = {"enabled", "warnings", "skipped_reason", "query", "query_source", "resolver", "intent_influence"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
 
 

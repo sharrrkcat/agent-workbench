@@ -31,6 +31,10 @@
     "estimatedOutputTokens": "输出 ~{{count}} tokens",
     "tokensPerSecond": "{{rate}} tok/s"
   },
+  "stepMessages": {
+    "intentUsedForWebContext": "{{intent}} - 未作为路由执行 · 已用于联网上下文",
+    "notExecutedAsRoute": "未作为路由执行"
+  },
   "contextSummary": {
     "title": "已注入上下文",
     "memory": "记忆",
@@ -43,6 +47,7 @@
     "merged": "合并",
     "reranker": "Reranker",
     "warnings": "警告",
+    "warningsCount": "{{count}} 条警告",
     "injected": "已注入",
     "skipped": "已跳过",
     "notUsed": "未使用",

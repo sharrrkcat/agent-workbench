@@ -190,6 +190,12 @@ compact reasons (`knowledge_query_selected` or `pet_command_selected`). A
 validated `web_query` may provide the Web Context search query through compact
 slots, while failed, diagnostic-only, uncertain, or chat outcomes fall through
 to the Web Context Plan Resolver instead of becoming Intent Routing execution.
+In real Prompt Agent runs, the runtime may add compact
+`web_context_usage=used_for_web_context` metadata when those diagnostic
+`web_query` slots/original query are consumed by Prompt Agent Web Context. This
+is a display hint only: `web_query` remains `executed=false`,
+`would_execute=false`, and `not_executed_reason=web_query_diagnostic_only`.
+Route Test remains diagnostic-only and does not enter Web Context planning.
 If the semantic top intent is `knowledge_query`, Utility LLM slots successfully
 confirm `knowledge_query` with a non-empty query or `use_original_query=true`,
 but safe auto execution is blocked by semantic score/margin or Knowledge
@@ -357,6 +363,7 @@ Common codes include:
 - `knowledge_query_candidate_blocked`
 - `knowledge_query_below_threshold`
 - `web_query_diagnostic_only`
+- `used_for_web_context`
 - `web_query_missing_query`
 - `kb_hint_semantic_conflict`
 - `ambiguous_kb_candidate`

@@ -461,9 +461,10 @@ def test_auto_command_like_intent_is_not_executed() -> None:
     assert "command_like_auto_route_disabled" in intent["warnings"]
 
 
-def test_auto_web_query_is_diagnostic_only_and_keeps_prompt_agent() -> None:
+def test_auto_web_query_is_diagnostic_only_and_can_feed_web_context(monkeypatch) -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)
+    fixture.app_settings.patch({"web_context_enabled": True})
     service = enable_utility(
         fixture,
         {
@@ -476,11 +477,35 @@ def test_auto_web_query_is_diagnostic_only_and_keeps_prompt_agent() -> None:
         },
     )
     session = fixture.sessions.create_session(default_agent_id="chat")
+    search_calls = []
+
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            search_calls.append((query, context))
+            return {
+                "provider": "searxng",
+                "results": [
+                    {
+                        "rank": 1,
+                        "title": "Qwen release",
+                        "url": "https://example.com/qwen",
+                        "domain": "example.com",
+                        "snippet": "Qwen release news.",
+                    }
+                ],
+            }
+
+        return search
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
 
     result = run(fixture.runtime.handle_input(session, "find recent news about Qwen"))
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
+    web_context = prompt_run.metadata["web_context"]
+    intent_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Intent semantic routing")
+    web_plan_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Web context plan")
     assert result.success is True
     assert prompt_run.kind == "agent"
     assert prompt_run.target_id == "chat"
@@ -490,8 +515,17 @@ def test_auto_web_query_is_diagnostic_only_and_keeps_prompt_agent() -> None:
     assert intent["would_execute"] is False
     assert intent["executed"] is False
     assert intent["not_executed_reason"] == "web_query_diagnostic_only"
+    assert intent["web_context_usage"] == "used_for_web_context"
     assert intent["slots"]["query"] == "Qwen recent releases"
     assert intent["slots"]["domain_hints"] == ["qwenlm.github.io"]
+    assert web_context["query_source"] == "intent_web_query_slots"
+    assert web_context["attempted"] is True
+    assert web_context["injected"] is True
+    assert search_calls[0][0] == "Qwen recent releases"
+    assert intent_step.message == "web_query - used for Web context"
+    assert "web_query_diagnostic_only" not in intent_step.message
+    assert web_plan_step.metadata["web_context_plan"]["query_source"] == "intent_web_query_slots"
+    assert "web_context" not in web_plan_step.metadata
     assert service.calls == ["find recent news about Qwen"]
 
 
