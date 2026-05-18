@@ -1044,6 +1044,26 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "labelKey: 'sections.webSearch'" not in nav
 
 
+def test_web_search_capability_settings_render_filtering_fields() -> None:
+    detail = read_frontend("components/settings/CapabilityDetail.tsx")
+    types = read_frontend("types.ts")
+    en_capabilities = read_frontend("i18n/resources/en/capabilities.json")
+    zh_capabilities = read_frontend("i18n/resources/zh-CN/capabilities.json")
+
+    assert "capabilities:sections.resultQuality" in detail
+    assert "result_filter_enabled" in detail
+    assert "domain_blocklist" in detail
+    assert "domain_allowlist" in detail
+    assert "dedupe_results" in detail
+    assert "dedupe_same_domain_title" in detail
+    assert "filteredResults" in detail
+    assert "deduplicatedResults" in detail
+    assert "filtersApplied" in detail
+    assert "export type WebSearchDiagnostics" in types
+    assert '"resultQuality": "Result quality"' in en_capabilities
+    assert '"resultQuality": "结果质量"' in zh_capabilities
+
+
 def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     runs_en = read_frontend("i18n/resources/en/runs.json")
@@ -1066,11 +1086,15 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "webSkipReasonLabel" in source
     assert "webQuerySourceLabel" in source
     assert "webContextPlanStepMessage" in source
+    assert "searchDiagnostics" in source
+    assert "filteredResults" in source
+    assert "deduplicatedResults" in source
     assert '"web": "Web"' in runs_en
     assert '"webContextPlan": "Web context plan"' in runs_en
     assert '"intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context"' in runs_en
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
     assert '"knowledge_query_candidate_blocked": "knowledge query candidate blocked"' in runs_en
+    assert '"web_results_filtered_empty": "all web results were filtered"' in runs_en
     assert '"webSkipReasons"' in runs_en
 
 

@@ -332,6 +332,14 @@ type WebContextSummary = {
   resolverUsed?: boolean;
   resolverReason?: string;
   resolverConfidence?: string;
+  searchDiagnostics?: WebSearchContextDiagnostics;
+  warnings: string[];
+};
+
+type WebSearchContextDiagnostics = {
+  filteredCount?: number;
+  dedupedCount?: number;
+  filtersApplied?: Record<string, boolean>;
   warnings: string[];
 };
 
@@ -821,7 +829,24 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
     resolverUsed: booleanValue(resolver?.used),
     resolverReason: textValue(resolver?.reason),
     resolverConfidence: textValue(resolver?.confidence),
+    searchDiagnostics: mergeWebSearchDiagnostics(contexts.map((context) => context.search_diagnostics)),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
+  };
+}
+
+function mergeWebSearchDiagnostics(values: unknown[]): WebSearchContextDiagnostics | undefined {
+  const records = values.filter(isPlainRecord);
+  if (!records.length) return undefined;
+  const filtersApplied = Object.assign({}, ...records.map((record) => isPlainRecord(record.filters_applied) ? record.filters_applied : {}));
+  const filteredCount = sumNumbers(records.map((record) => numberValue(record.filtered_count)));
+  const dedupedCount = sumNumbers(records.map((record) => numberValue(record.deduped_count)));
+  const warnings = uniqueStrings(records.flatMap((record) => stringArray(record.warnings)));
+  if (!filteredCount && !dedupedCount && !Object.values(filtersApplied).some(Boolean) && !warnings.length) return undefined;
+  return {
+    filteredCount,
+    dedupedCount,
+    filtersApplied: filtersApplied as Record<string, boolean>,
+    warnings,
   };
 }
 
@@ -2613,7 +2638,7 @@ function knowledgeSummaryLabel(summary: KnowledgeContextSummary | undefined, t: 
 function webSummaryLabel(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string {
   if (summary.injected) {
     const provider = summary.provider || t('runs:contextSummary.unknown');
-    const resultLabel = t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider });
+    const resultLabel = [t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider }), ...webDiagnosticsSummaryParts(summary, t)].join(' · ');
     return summary.query ? `${resultLabel} · ${t('runs:contextSummary.searchQuery', { query: summary.query })}` : resultLabel;
   }
   if (summary.skippedReason) {
@@ -2630,6 +2655,15 @@ function webPlanSummaryParts(summary: WebContextSummary, t: ReturnType<typeof us
   if (summary.querySource) parts.push(t('runs:contextSummary.webQuerySource', { source: webQuerySourceLabel(summary.querySource, t) }));
   if (summary.resolverReason) parts.push(webSkipReasonLabel(summary.resolverReason, t));
   if (summary.resolverConfidence) parts.push(t('runs:contextSummary.webResolverConfidence', { confidence: summary.resolverConfidence }));
+  return parts;
+}
+
+function webDiagnosticsSummaryParts(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string[] {
+  const diagnostics = summary.searchDiagnostics;
+  if (!diagnostics) return [];
+  const parts: string[] = [];
+  if (diagnostics.filteredCount) parts.push(t('runs:contextSummary.filteredResults', { count: diagnostics.filteredCount }));
+  if (diagnostics.dedupedCount) parts.push(t('runs:contextSummary.deduplicatedResults', { count: diagnostics.dedupedCount }));
   return parts;
 }
 

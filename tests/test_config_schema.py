@@ -158,3 +158,16 @@ def test_llm_capability_declares_config_schema() -> None:
     names = {field.name for field in capability.config_schema}
     assert {"base_url", "api_key", "model", "timeout"}.issubset(names)
     assert next(field for field in capability.config_schema if field.name == "api_key").secret is True
+
+
+def test_web_search_capability_declares_result_quality_config_schema() -> None:
+    capability = load_capability_manifest(ROOT / "capabilities" / "web_search" / "capability.yaml")
+
+    fields = {field.name: field for field in capability.config_schema}
+    assert fields["result_filter_enabled"].type == "boolean"
+    assert fields["result_filter_enabled"].default is True
+    assert fields["domain_blocklist"].type == "text"
+    assert fields["domain_allowlist"].type == "text"
+    assert fields["dedupe_results"].default is True
+    assert fields["dedupe_same_domain_title"].default is True
+    assert all(not fields[name].secret for name in ["domain_blocklist", "domain_allowlist"])

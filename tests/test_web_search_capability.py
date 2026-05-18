@@ -8,6 +8,15 @@ from tests.test_api import create_session
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
 
+def search_data(results: list[dict], config: dict | None = None) -> dict:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": results}, request=request)
+
+    runtime = WebSearchRuntime(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    parts = runtime.search("query", context={"capability_config": {"searxng_base_url": "https://searxng.test", **(config or {})}})
+    return parts[0]["data"]
+
+
 def test_web_search_manifest_is_registered() -> None:
     registry = CapabilityRegistry()
     registry.load_from_directory("capabilities")
@@ -202,6 +211,107 @@ def test_web_search_max_results_and_invalid_url_warning() -> None:
     data = parts[0]["data"]
     assert [result["title"] for result in data["results"]] == ["One", "Two"]
     assert data["warnings"] == ["skipped 1 result(s) with invalid URL"]
+    assert data["diagnostics"]["raw_result_count"] == 4
+    assert data["diagnostics"]["normalized_count"] == 3
+    assert data["diagnostics"]["final_count"] == 2
+
+
+def test_web_search_domain_blocklist_filters_root_and_subdomain() -> None:
+    data = search_data(
+        [
+            {"title": "Root", "url": "https://example.com/root"},
+            {"title": "Sub", "url": "https://news.example.com/story"},
+            {"title": "Keep", "url": "https://keep.test/story"},
+        ],
+        {"domain_blocklist": "example.com"},
+    )
+
+    assert [result["domain"] for result in data["results"]] == ["keep.test"]
+    assert data["diagnostics"]["blocked_count"] == 2
+    assert data["diagnostics"]["filtered_count"] == 2
+
+
+def test_web_search_wildcard_pattern_and_url_pattern_normalization() -> None:
+    data = search_data(
+        [
+            {"title": "Root", "url": "https://example.com/root"},
+            {"title": "Sub", "url": "https://news.example.com/story"},
+            {"title": "Keep", "url": "https://keep.test/story"},
+        ],
+        {"domain_blocklist": "https://*.example.com/path"},
+    )
+
+    assert [result["domain"] for result in data["results"]] == ["keep.test"]
+    assert data["diagnostics"]["blocked_count"] == 2
+
+
+def test_web_search_allowlist_keeps_matching_domains_only() -> None:
+    data = search_data(
+        [
+            {"title": "One", "url": "https://one.test/page"},
+            {"title": "Two", "url": "https://two.test/page"},
+            {"title": "Sub", "url": "https://news.two.test/page"},
+        ],
+        {"domain_allowlist": ".two.test"},
+    )
+
+    assert [result["domain"] for result in data["results"]] == ["two.test", "news.two.test"]
+    assert data["diagnostics"]["allowlist_excluded_count"] == 1
+
+
+def test_web_search_allowlist_then_blocklist_order() -> None:
+    data = search_data(
+        [
+            {"title": "Root", "url": "https://example.com/page"},
+            {"title": "Blocked Sub", "url": "https://news.example.com/page"},
+            {"title": "Other", "url": "https://other.test/page"},
+        ],
+        {"domain_allowlist": "example.com", "domain_blocklist": "news.example.com"},
+    )
+
+    assert [result["domain"] for result in data["results"]] == ["example.com"]
+    assert data["diagnostics"]["allowlist_excluded_count"] == 1
+    assert data["diagnostics"]["blocked_count"] == 1
+
+
+def test_web_search_invalid_pattern_warns_without_failing() -> None:
+    data = search_data(
+        [{"title": "One", "url": "https://one.test/page"}],
+        {"domain_blocklist": "bad pattern\none.test"},
+    )
+
+    assert data["results"] == []
+    assert "invalid_domain_filter_pattern" in data["warnings"]
+    assert "invalid_domain_filter_pattern" in data["diagnostics"]["warnings"]
+
+
+def test_web_search_dedupes_canonical_url_and_same_domain_title() -> None:
+    data = search_data(
+        [
+            {"title": "Same", "url": "https://Example.test/path/#fragment"},
+            {"title": "Other", "url": "https://example.test/path"},
+            {"title": "Repeated Title", "url": "https://example.test/a"},
+            {"title": "  repeated   title  ", "url": "https://example.test/b"},
+        ],
+    )
+
+    assert [result["url"] for result in data["results"]] == ["https://Example.test/path/#fragment", "https://example.test/a"]
+    assert data["diagnostics"]["deduped_count"] == 2
+
+
+def test_web_search_dedupe_can_be_disabled() -> None:
+    data = search_data(
+        [
+            {"title": "Same", "url": "https://example.test/path#one"},
+            {"title": "Other", "url": "https://example.test/path#two"},
+            {"title": "Repeated", "url": "https://example.test/a"},
+            {"title": "Repeated", "url": "https://example.test/b"},
+        ],
+        {"dedupe_results": False, "dedupe_same_domain_title": False},
+    )
+
+    assert len(data["results"]) == 4
+    assert data["diagnostics"]["deduped_count"] == 0
 
 
 def test_web_search_config_defaults_patch_and_runtime_enforcement() -> None:
@@ -226,6 +336,11 @@ def test_web_search_config_defaults_patch_and_runtime_enforcement() -> None:
     assert resolved["max_results"] == 8
     assert resolved["language"] == "auto"
     assert resolved["safe_search"] == "default"
+    assert resolved["result_filter_enabled"] is True
+    assert resolved["domain_blocklist"] == ""
+    assert resolved["domain_allowlist"] == ""
+    assert resolved["dedupe_results"] is True
+    assert resolved["dedupe_same_domain_title"] is True
 
     patched = client.patch(
         "/api/capability-configs/web_search",
@@ -241,6 +356,7 @@ def test_web_search_config_defaults_patch_and_runtime_enforcement() -> None:
     assert parts[0]["data"]["kind"] == "web_search_results"
     assert parts[0]["data"]["schema"] == "web_search.results.v1"
     assert parts[0]["data"]["results"][0]["domain"] == "result.test"
+    assert parts[0]["data"]["diagnostics"]["final_count"] == 1
 
     required = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/web-search   "})
     assert "query required" in required.json()["run"]["error"]
@@ -286,6 +402,7 @@ def test_web_search_test_search_success_uses_draft_config_without_messages_or_ru
                 "language": "en",
                 "safe_search": "moderate",
                 "max_results": 4,
+                "domain_blocklist": "two.test",
             },
         },
     )
@@ -296,7 +413,7 @@ def test_web_search_test_search_success_uses_draft_config_without_messages_or_ru
     assert data["provider"] == "searxng"
     assert data["base_url"] == "https://draft-searxng.test"
     assert data["query"] == "agent workbench"
-    assert data["result_count"] == 4
+    assert data["result_count"] == 3
     assert data["first_result"] == {
         "rank": 1,
         "title": "One",
@@ -306,7 +423,9 @@ def test_web_search_test_search_success_uses_draft_config_without_messages_or_ru
         "published_at": None,
         "source": "duckduckgo",
     }
-    assert [result["title"] for result in data["sample_results"]] == ["One", "Two", "Three"]
+    assert [result["title"] for result in data["sample_results"]] == ["One", "Three", "Four"]
+    assert data["diagnostics"]["filtered_count"] == 1
+    assert data["diagnostics"]["blocked_count"] == 1
     assert "untrusted_raw" not in data
     assert "language=en" in str(seen["url"])
     assert "safesearch=1" in str(seen["url"])
@@ -332,6 +451,7 @@ def test_web_search_test_search_empty_results() -> None:
     assert data["result_count"] == 0
     assert data["first_result"] is None
     assert data["sample_results"] == []
+    assert data["diagnostics"]["final_count"] == 0
 
 
 def test_web_search_test_search_structured_failures() -> None:
@@ -366,3 +486,38 @@ def test_web_search_test_search_structured_failures() -> None:
         assert data["result_count"] == 0
         assert data["first_result"] is None
         assert data["sample_results"] == []
+        assert "diagnostics" in data
+
+
+def test_prompt_agent_web_context_uses_web_search_filtering_config() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"title": "Blocked", "url": "https://blocked.test/page", "content": "blocked"},
+                    {"title": "Kept", "url": "https://kept.test/page", "content": "kept"},
+                ]
+            },
+            request=request,
+        )
+
+    app = create_app(llm_runtime=FakeLLMRuntime(response="answer [W1]"), use_memory=True)
+    app.state.runtime_state.runtimes.replace("web_search", WebSearchRuntime(client=httpx.Client(transport=httpx.MockTransport(handler))))
+    client = TestClient(app)
+    session = create_session(client)
+    client.patch("/api/settings/general", json={"web_context_enabled": True})
+    client.patch(
+        "/api/capability-configs/web_search",
+        json={"user_config": {"searxng_base_url": "https://searxng.test", "domain_blocklist": "blocked.test"}},
+    )
+
+    response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "latest kept news"})
+    assistant = response.json()["messages"][-1]
+    web_context = assistant["metadata"]["web_context"]
+
+    assert response.json()["run"]["status"] == "DONE"
+    assert web_context["result_count"] == 1
+    assert [ref["domain"] for ref in web_context["source_refs"]] == ["kept.test"]
+    assert web_context["search_diagnostics"]["filtered_count"] == 1
+    assert "blocked.test" not in str(web_context["source_refs"])

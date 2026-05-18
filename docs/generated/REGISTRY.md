@@ -27,7 +27,7 @@ Do not edit manually.
 | pet | Pet | command, get_settings, update_settings, list_pets, scan_pets, validate_pet, delete_pet, import_pet | /pet | /pet: status, wake, tuck, reload, select | text, json, json, json, json, json, json, json | pet_enabled, default_pet_id, pet_scale, show_status_bubble, bubble_offset_x, bubble_offset_y, jump_on_hover, running_prefix, position, bubble_texts, command_texts |
 | runtime | Runtime Control | free_memory | /free-memory |  | text |  |
 | storage | Storage | get, set |  |  |  |  |
-| web_search | Web Search | search | /web-search |  | parts | enable_web_search_command, searxng_base_url, timeout_seconds, max_results, language, safe_search |
+| web_search | Web Search | search | /web-search |  | parts | enable_web_search_command, searxng_base_url, timeout_seconds, max_results, language, safe_search, result_filter_enabled, domain_blocklist, domain_allowlist, dedupe_results, dedupe_same_domain_title |
 
 ## Notes
 

@@ -212,6 +212,13 @@ function CapabilityConfigTab({
           values={values}
           onChange={onChange}
         />
+        <ConfigSection
+          title={t('capabilities:sections.resultQuality')}
+          fieldNames={['result_filter_enabled', 'domain_blocklist', 'domain_allowlist', 'dedupe_results', 'dedupe_same_domain_title']}
+          fields={fields}
+          values={values}
+          onChange={onChange}
+        />
         <WebSearchDiagnostics config={config} values={values} />
       </div>
     );
@@ -254,6 +261,12 @@ function WebSearchDiagnostics({ config, values }: { config: CapabilityConfig; va
         first_result: null,
         sample_results: [],
         warnings: [],
+        diagnostics: {
+          filtered_count: 0,
+          deduped_count: 0,
+          filters_applied: {},
+          warnings: [],
+        },
         error_code: 'search_failed',
         error_message: message,
       });
@@ -302,8 +315,20 @@ function WebSearchDiagnostics({ config, values }: { config: CapabilityConfig; va
               <div className="settings-detail-grid compact">
                 <InfoRow label={t('capabilities:diagnostics.provider')} value={result.provider} />
                 <InfoRow label={t('capabilities:diagnostics.resultCount')} value={result.result_count} />
+                <InfoRow label={t('capabilities:diagnostics.filteredResults')} value={result.diagnostics?.filtered_count ?? 0} />
+                <InfoRow label={t('capabilities:diagnostics.deduplicatedResults')} value={result.diagnostics?.deduped_count ?? 0} />
                 <InfoRow label={t('capabilities:diagnostics.elapsedTime')} value={t('capabilities:diagnostics.elapsedMs', { count: result.elapsed_ms })} />
               </div>
+              {result.diagnostics?.filters_applied && Object.values(result.diagnostics.filters_applied).some(Boolean) ? (
+                <div className="settings-diagnostics-warnings">
+                  <span>{t('capabilities:diagnostics.filtersApplied')}</span>
+                  {Object.entries(result.diagnostics.filters_applied)
+                    .filter(([, applied]) => applied)
+                    .map(([filter]) => (
+                      <code key={filter}>{filter}</code>
+                    ))}
+                </div>
+              ) : null}
               {firstResult ? (
                 <div className="settings-diagnostics-first-result">
                   <span>{t('capabilities:diagnostics.firstResult')}</span>

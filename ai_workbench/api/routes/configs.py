@@ -220,6 +220,7 @@ def test_web_search(payload: WebSearchTestRequest, state: RuntimeState = Depends
             "first_result": None,
             "sample_results": [],
             "warnings": [],
+            "diagnostics": {},
             "error_code": "invalid_base_url" if exc.field == "searxng_base_url" else "search_failed",
             "error_message": exc.message,
         }

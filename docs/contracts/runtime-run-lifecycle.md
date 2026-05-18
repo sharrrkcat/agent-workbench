@@ -121,10 +121,15 @@ metadata stores refs/counts/warnings, not snapshots of full user-owned content.
 `web_context` metadata stores the Web Context plan and outcome compactly. Allowed
 fields include enablement, attempted/injected booleans, truncated query,
 `query_source`, provider, result count, compact source refs, `skipped_reason`,
-warnings, and a compact resolver object with `used`, `reason`, and `confidence`.
+warnings, compact search filtering diagnostics, and a compact resolver object
+with `used`, `reason`, and `confidence`.
 Each `source_refs` item may include only compact citation UI fields:
 `ref_id` such as `W1`, `rank`, `title`, validated HTTP/HTTPS `url`, `domain`,
 `published_at`, `source`, and a capped `snippet_preview` or short `snippet`.
+`search_diagnostics` may include only compact filtering facts such as
+`filtered_count`, `deduped_count`, `filters_applied`, and warning codes. It must
+not include raw provider payloads, full filtered result lists, or fetched page
+bodies.
 The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web
@@ -138,7 +143,8 @@ Intent Routing executor ran a route.
 Known Web Context skip reasons include `knowledge_query_selected`,
 `knowledge_query_candidate_blocked`, `pet_command_selected`, resolver reasons
 such as `time_sensitive_fact_question` or `incidental_mentions_only`, and
-provider/runtime reasons such as `search_failed` or `no_results`.
+provider/runtime reasons such as `search_failed`, `no_results`, or
+`web_results_filtered_empty`.
 
 ## Failure And Cancellation
 

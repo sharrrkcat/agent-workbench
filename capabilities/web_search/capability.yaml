@@ -52,6 +52,36 @@ config_schema:
       - "strict"
     description: SearXNG safe search level. Default leaves the provider setting unchanged.
 
+  - name: result_filter_enabled
+    type: boolean
+    label: Enable result filtering
+    default: true
+    description: Apply domain filters and result de-duplication after SearXNG normalization.
+
+  - name: domain_blocklist
+    type: text
+    label: Domain blocklist
+    default: ""
+    description: One domain pattern per line. Matching domains are excluded. Supports example.com, *.example.com, and .example.com.
+
+  - name: domain_allowlist
+    type: text
+    label: Domain allowlist
+    default: ""
+    description: One domain pattern per line. When set, only matching domains are kept. Supports example.com, *.example.com, and .example.com.
+
+  - name: dedupe_results
+    type: boolean
+    label: Deduplicate results
+    default: true
+    description: Remove duplicate normalized URLs while preserving provider order.
+
+  - name: dedupe_same_domain_title
+    type: boolean
+    label: Deduplicate same-domain titles
+    default: true
+    description: Remove later results with the same normalized title on the same domain.
+
 methods:
   - id: search
     description: Search SearXNG and render normalized results as Message Parts.

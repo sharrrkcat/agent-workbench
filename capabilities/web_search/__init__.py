@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from time import perf_counter
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -14,6 +15,11 @@ CONFIG_DEFAULTS = {
     "max_results": 8,
     "language": "auto",
     "safe_search": "default",
+    "result_filter_enabled": True,
+    "domain_blocklist": "",
+    "domain_allowlist": "",
+    "dedupe_results": True,
+    "dedupe_same_domain_title": True,
 }
 SAFE_SEARCH_VALUES = {
     "default": None,
@@ -44,7 +50,7 @@ class CapabilityRuntime:
         params = _search_params(cleaned_query, config)
         response = _request_search(base_url, params=params, timeout=timeout, client=self._client)
         payload = _json_payload(response)
-        return _normalize_response(cleaned_query, payload, max_results=max_results)
+        return _normalize_response(cleaned_query, payload, max_results=max_results, config=config)
 
     def test_search(self, query: str, context: dict | None = None) -> dict:
         config = _runtime_config(context)
@@ -64,6 +70,7 @@ class CapabilityRuntime:
                 "first_result": None,
                 "sample_results": [],
                 "warnings": [],
+                "diagnostics": _empty_diagnostics(),
                 "error_code": _diagnostic_error_code(str(exc)),
                 "error_message": _diagnostic_error_message(str(exc)),
             }
@@ -79,6 +86,7 @@ class CapabilityRuntime:
             "first_result": sample_results[0] if sample_results else None,
             "sample_results": sample_results,
             "warnings": normalized.get("warnings") if isinstance(normalized.get("warnings"), list) else [],
+            "diagnostics": normalized.get("diagnostics") if isinstance(normalized.get("diagnostics"), dict) else _empty_diagnostics(),
         }
 
 
@@ -153,33 +161,37 @@ def _json_payload(response: httpx.Response) -> dict:
     return payload
 
 
-def _normalize_response(query: str, payload: dict, max_results: int) -> dict:
+def _normalize_response(query: str, payload: dict, max_results: int, config: dict | None = None) -> dict:
+    config = config or {}
     warnings: list[str] = []
-    results: list[dict] = []
+    candidates: list[dict] = []
     skipped_invalid_urls = 0
-    for raw_result in payload.get("results") or []:
+    raw_results = payload.get("results") or []
+    for raw_result in raw_results:
         if not isinstance(raw_result, dict):
             continue
         raw_url = str(raw_result.get("url") or "").strip()
         parsed = urlparse(raw_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        host = _result_host(parsed)
+        if parsed.scheme not in {"http", "https"} or not host:
             skipped_invalid_urls += 1
             continue
-        results.append(
+        candidates.append(
             {
-                "rank": len(results) + 1,
+                "rank": len(candidates) + 1,
                 "title": _clean_text(raw_result.get("title")),
                 "url": raw_url,
-                "domain": parsed.netloc.lower(),
+                "domain": host,
                 "snippet": _snippet(raw_result),
                 "published_at": _published_at(raw_result),
                 "source": _clean_text(raw_result.get("engine") or raw_result.get("source") or raw_result.get("category")),
             }
         )
-        if len(results) >= max_results:
-            break
     if skipped_invalid_urls:
         warnings.append(f"skipped {skipped_invalid_urls} result(s) with invalid URL")
+    quality = _apply_result_quality(candidates, config=config, max_results=max_results, warnings=warnings)
+    results = quality["results"]
+    diagnostics = quality["diagnostics"]
     return {
         "kind": "web_search_results",
         "schema": "web_search.results.v1",
@@ -188,7 +200,157 @@ def _normalize_response(query: str, payload: dict, max_results: int) -> dict:
         "searched_at": datetime.now(timezone.utc).isoformat(),
         "results": results,
         "warnings": warnings,
+        "diagnostics": {
+            **diagnostics,
+            "raw_result_count": len(raw_results),
+            "normalized_count": len(candidates),
+            "final_count": len(results),
+        },
     }
+
+
+def _apply_result_quality(candidates: list[dict], *, config: dict, max_results: int, warnings: list[str]) -> dict:
+    filter_enabled = bool(config.get("result_filter_enabled", True))
+    allow_patterns = _domain_patterns(config.get("domain_allowlist"), warnings)
+    block_patterns = _domain_patterns(config.get("domain_blocklist"), warnings)
+    dedupe_urls = bool(config.get("dedupe_results", True))
+    dedupe_titles = bool(config.get("dedupe_same_domain_title", True))
+    diagnostics = _empty_diagnostics()
+    diagnostics["filters_applied"] = {
+        "result_filter_enabled": filter_enabled,
+        "domain_allowlist": filter_enabled and bool(allow_patterns),
+        "domain_blocklist": filter_enabled and bool(block_patterns),
+        "dedupe_results": dedupe_urls,
+        "dedupe_same_domain_title": dedupe_titles,
+    }
+    diagnostics["warnings"] = warnings
+    seen_urls: set[str] = set()
+    seen_domain_titles: set[tuple[str, str]] = set()
+    results: list[dict] = []
+    for candidate in candidates:
+        domain = str(candidate.get("domain") or "").lower()
+        if filter_enabled and allow_patterns and not _matches_domain_patterns(domain, allow_patterns):
+            diagnostics["allowlist_excluded_count"] += 1
+            continue
+        if filter_enabled and block_patterns and _matches_domain_patterns(domain, block_patterns):
+            diagnostics["blocked_count"] += 1
+            continue
+        if dedupe_urls:
+            canonical_url = _canonical_url(candidate.get("url"))
+            if canonical_url and canonical_url in seen_urls:
+                diagnostics["deduped_count"] += 1
+                continue
+            if canonical_url:
+                seen_urls.add(canonical_url)
+        if dedupe_titles:
+            title_key = _normalized_title(candidate.get("title"))
+            if title_key:
+                domain_title_key = (domain, title_key)
+                if domain_title_key in seen_domain_titles:
+                    diagnostics["deduped_count"] += 1
+                    continue
+                seen_domain_titles.add(domain_title_key)
+        result = dict(candidate)
+        result["rank"] = len(results) + 1
+        results.append(result)
+        if len(results) >= max_results:
+            break
+    diagnostics["filtered_count"] = diagnostics["allowlist_excluded_count"] + diagnostics["blocked_count"]
+    return {"results": results, "diagnostics": diagnostics}
+
+
+def _empty_diagnostics() -> dict:
+    return {
+        "raw_result_count": 0,
+        "normalized_count": 0,
+        "filtered_count": 0,
+        "blocked_count": 0,
+        "allowlist_excluded_count": 0,
+        "deduped_count": 0,
+        "final_count": 0,
+        "filters_applied": {},
+        "warnings": [],
+    }
+
+
+def _domain_patterns(value: object, warnings: list[str]) -> list[str]:
+    if isinstance(value, list):
+        lines = [str(item) for item in value]
+    else:
+        lines = str(value or "").splitlines()
+    patterns: list[str] = []
+    for line in lines:
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        pattern = _normalize_domain_pattern(raw)
+        if not pattern:
+            if "invalid_domain_filter_pattern" not in warnings:
+                warnings.append("invalid_domain_filter_pattern")
+            continue
+        patterns.append(pattern)
+    return patterns
+
+
+def _normalize_domain_pattern(value: str) -> str | None:
+    raw = value.strip().lower()
+    if not raw:
+        return None
+    if "://" in raw:
+        parsed = urlparse(raw)
+        raw = parsed.hostname or ""
+    else:
+        raw = raw.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if raw.startswith("["):
+            return None
+        raw = raw.rsplit(":", 1)[0]
+    raw = raw.strip().rstrip(".")
+    if raw.startswith("*."):
+        raw = raw[2:]
+    elif raw.startswith("."):
+        raw = raw[1:]
+    if not raw or "*" in raw:
+        return None
+    if not re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", raw):
+        return None
+    return raw
+
+
+def _matches_domain_patterns(domain: str, patterns: list[str]) -> bool:
+    host = domain.strip().lower().rstrip(".")
+    if not host:
+        return False
+    return any(host == pattern or host.endswith(f".{pattern}") for pattern in patterns)
+
+
+def _result_host(parsed) -> str:
+    host = (parsed.hostname or "").strip().lower().rstrip(".")
+    return host
+
+
+def _canonical_url(value: object) -> str:
+    raw_url = str(value or "").strip()
+    parsed = urlparse(raw_url)
+    host = _result_host(parsed)
+    if parsed.scheme not in {"http", "https"} or not host:
+        return ""
+    netloc = host
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port:
+        netloc = f"{host}:{port}"
+    path = parsed.path or ""
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
+    elif path == "/":
+        path = ""
+    return urlunparse((parsed.scheme.lower(), netloc, path, "", parsed.query, ""))
+
+
+def _normalized_title(value: object) -> str:
+    return " ".join(str(value or "").lower().split())
 
 
 def _snippet(raw_result: dict) -> str:

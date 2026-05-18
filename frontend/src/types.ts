@@ -238,8 +238,21 @@ export type WebSearchTestResult = {
   first_result: WebSearchDiagnosticResultItem | null;
   sample_results: WebSearchDiagnosticResultItem[];
   warnings: string[];
+  diagnostics?: WebSearchDiagnostics;
   error_code?: string;
   error_message?: string;
+};
+
+export type WebSearchDiagnostics = {
+  raw_result_count?: number;
+  normalized_count?: number;
+  filtered_count?: number;
+  blocked_count?: number;
+  allowlist_excluded_count?: number;
+  deduped_count?: number;
+  final_count?: number;
+  filters_applied?: Record<string, boolean>;
+  warnings?: string[];
 };
 
 export type LlmProfile = {

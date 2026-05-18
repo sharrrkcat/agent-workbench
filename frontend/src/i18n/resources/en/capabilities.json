@@ -26,7 +26,8 @@
     "networkAccess": "Network access",
     "responseLimits": "Response limits",
     "searchProvider": "Search provider",
-    "searchResults": "Search results"
+    "searchResults": "Search results",
+    "resultQuality": "Result quality"
   },
   "empty": {
     "noConfigurableFields": "This capability has no configurable fields.",
@@ -49,6 +50,9 @@
     "connectionSuccessful": "Connection successful",
     "noResults": "No results",
     "resultCount": "Result count",
+    "filteredResults": "Filtered results",
+    "deduplicatedResults": "Deduplicated results",
+    "filtersApplied": "Filters applied",
     "firstResult": "First result",
     "elapsedTime": "Elapsed time",
     "elapsedMs": "{{count}} ms",
@@ -100,6 +104,26 @@
     "safe_search": {
       "label": "Safe search",
       "description": "SearXNG safe search level. Default leaves the provider setting unchanged."
+    },
+    "result_filter_enabled": {
+      "label": "Enable result filtering",
+      "description": "Apply domain filters and result de-duplication after SearXNG normalization."
+    },
+    "domain_blocklist": {
+      "label": "Domain blocklist",
+      "description": "One domain pattern per line. Matching domains are excluded. Examples: sougou.com, *.example.com."
+    },
+    "domain_allowlist": {
+      "label": "Domain allowlist",
+      "description": "One domain pattern per line. When set, only matching domains are kept. Examples: starwars.com, *.example.com."
+    },
+    "dedupe_results": {
+      "label": "Deduplicate results",
+      "description": "Remove duplicate normalized URLs while preserving provider order."
+    },
+    "dedupe_same_domain_title": {
+      "label": "Deduplicate same-domain titles",
+      "description": "Remove later results with the same normalized title on the same domain."
     }
   },
   "runtime": {

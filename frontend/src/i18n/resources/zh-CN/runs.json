@@ -61,6 +61,8 @@
     "skippedWithReason": "已跳过 · {{reason}}",
     "web": "联网",
     "webResultCount": "{{count}} 条结果 · {{provider}}",
+    "filteredResults": "已过滤 {{count}}",
+    "deduplicatedResults": "已去重 {{count}}",
     "searchQuery": "搜索词：{{query}}",
     "webQuerySource": "来源：{{source}}",
     "webResolverConfidence": "置信度：{{confidence}}",
@@ -94,6 +96,7 @@
       "web_context_plan_query_too_long": "联网计划不可用",
       "search_failed": "搜索失败",
       "no_results": "无结果",
+      "web_results_filtered_empty": "所有联网结果都已被过滤",
       "context_budget_exhausted": "上下文预算不足",
       "settings_error": "设置不可用",
       "web_context_plan_unavailable": "联网计划不可用"

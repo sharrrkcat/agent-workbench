@@ -59,6 +59,8 @@
     "worldbookCounts": "{{injected}} injected / {{matched}} matched · recursion {{recursion}}",
     "snippetCount": "{{count}} snippets",
     "webResultCount": "{{count}} results · {{provider}}",
+    "filteredResults": "filtered {{count}}",
+    "deduplicatedResults": "deduped {{count}}",
     "searchQuery": "query: {{query}}",
     "webQuerySource": "source: {{source}}",
     "webResolverConfidence": "confidence: {{confidence}}",
@@ -94,6 +96,7 @@
       "web_context_plan_query_too_long": "web plan unavailable",
       "search_failed": "search failed",
       "no_results": "no results",
+      "web_results_filtered_empty": "all web results were filtered",
       "context_budget_exhausted": "context budget exhausted",
       "settings_error": "settings unavailable",
       "web_context_plan_unavailable": "web plan unavailable"

@@ -290,14 +290,23 @@ Streaming media, OCR, ASR, TTS, transcription, and PDF parsing are unsupported.
 The built-in `web_search` Capability exposes `/web-search <query>` for SearXNG
 search result discovery. It returns one standardized JSON Message Part with
 `kind: "web_search_results"` and `schema: "web_search.results.v1"` containing
-query, provider, timestamp, normalized results, and warnings. It does not fetch
-result page bodies, cache results, or save to Knowledge. The `/web-search`
-command enable setting controls only that explicit command. Runtime Web Context
-may call the same core search helper for eligible Prompt Agent context injection
-when General Web Search is enabled, without using the command path. Settings
-exposes `POST /api/capability-configs/web_search/test-search`
-for SearXNG search diagnostics using saved or draft CapabilityConfig values; it
-does not create chat messages, runs, command results, or persist config changes.
+query, provider, timestamp, filtered normalized results, warnings, and compact
+diagnostics. CapabilityConfig owns SearXNG connection fields plus result quality
+fields: `result_filter_enabled`, `domain_blocklist`, `domain_allowlist`,
+`dedupe_results`, and `dedupe_same_domain_title`. Domain filters accept one
+pattern per line (`example.com`, `.example.com`, or `*.example.com`), apply
+allowlist before blocklist, and match only parsed result URL hosts. Invalid
+patterns warn with `invalid_domain_filter_pattern` and do not fail the search.
+The shared helper also de-duplicates canonical URLs and, when enabled, repeated
+same-domain normalized titles while preserving provider order. It does not fetch
+result page bodies, cache results, rerank, vectorize, or save to Knowledge. The
+`/web-search` command enable setting controls only that explicit command.
+Runtime Web Context may call the same core search helper for eligible Prompt
+Agent context injection when General Web Search is enabled, without using the
+command path. Settings exposes
+`POST /api/capability-configs/web_search/test-search` for SearXNG search
+diagnostics using saved or draft CapabilityConfig values; it does not create
+chat messages, runs, command results, or persist config changes.
 
 ## Capability Config
 

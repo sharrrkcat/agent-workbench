@@ -220,13 +220,14 @@ may provide the query, and uncertain/chat/diagnostic outcomes use a strict
 Utility LLM JSON planning call to decide whether an external fact search is
 actually requested.
 
-Provider connection settings remain CapabilityConfig for the `web_search`
-Capability. Settings -> Capabilities -> Web Search owns SearXNG base URL,
-timeout, language, safe-search, Capability max results, command enablement,
-diagnostics, and test search. General Web Search must not duplicate those
-provider controls. Disabling the `/web-search` command disables only that
-explicit command; it does not block internal Web Context search when General Web
-Search is enabled.
+Provider connection and result quality settings remain CapabilityConfig for the
+`web_search` Capability. Settings -> Capabilities -> Web Search owns SearXNG
+base URL, timeout, language, safe-search, Capability max results, command
+enablement, domain blocklist/allowlist, URL and same-domain-title
+de-duplication, diagnostics, and test search. General Web Search must not
+duplicate those provider/result-quality controls. Disabling the `/web-search`
+command disables only that explicit command; it does not block internal Web
+Context search when General Web Search is enabled.
 
 ## Utility LLM
 

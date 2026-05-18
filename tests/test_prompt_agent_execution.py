@@ -384,6 +384,13 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
                         "source": "searxng",
                     }
                 ],
+                "warnings": [],
+                "diagnostics": {
+                    "filtered_count": 1,
+                    "deduped_count": 2,
+                    "filters_applied": {"domain_blocklist": True, "dedupe_results": True},
+                    "warnings": [],
+                },
             }
 
         return search
@@ -440,6 +447,8 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert "Retrieved Web" not in str(metadata)
     assert "Use these web results as evidence" not in str(metadata)
     assert context_step.metadata["web_context"]["result_count"] == 2
+    assert context_step.metadata["web_context"]["search_diagnostics"]["filtered_count"] == 1
+    assert context_step.metadata["web_context"]["search_diagnostics"]["deduped_count"] == 2
     assert "source_refs" not in context_step.metadata["web_context"]
     assert web_plan_step.parent_step_id == context_step.step_id
     assert web_plan_step.message == "source: raw_user_text_forced"
@@ -449,6 +458,7 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert "provider" not in web_plan_step.metadata["web_context_plan"]
     assert message_metadata["source_refs"][0]["ref_id"] == "W1"
     assert message_metadata["source_refs"][1]["ref_id"] == "W2"
+    assert message_metadata["search_diagnostics"]["filters_applied"]["domain_blocklist"] is True
     assert len(message_metadata["source_refs"][1]["snippet_preview"]) == 700
 
 
@@ -497,6 +507,41 @@ def test_prompt_agent_web_context_empty_results_do_not_inject(monkeypatch) -> No
     assert result.success is True
     assert metadata["skipped_reason"] == "no_results"
     assert metadata["warnings"] == ["No web results."]
+    assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
+
+
+def test_prompt_agent_web_context_all_filtered_does_not_inject(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.app_settings.patch({"web_context_enabled": True})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            return {
+                "provider": "searxng",
+                "results": [],
+                "warnings": [],
+                "diagnostics": {
+                    "filtered_count": 3,
+                    "deduped_count": 0,
+                    "filters_applied": {"domain_blocklist": True},
+                    "warnings": [],
+                },
+            }
+
+        return search
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
+
+    result = run(fixture.runtime.handle_input(session, "filtered query"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert metadata["skipped_reason"] == "web_results_filtered_empty"
+    assert metadata["warnings"] == ["web_results_filtered_empty"]
+    assert metadata["search_diagnostics"]["filtered_count"] == 3
+    assert metadata["source_refs"] == []
     assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
 
 

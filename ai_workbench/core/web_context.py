@@ -328,11 +328,13 @@ async def build_web_context(
     results = [item for item in (response.get("results") if isinstance(response, dict) else []) or [] if isinstance(item, dict)]
     provider = str(response.get("provider") or "searxng") if isinstance(response, dict) else "searxng"
     warnings = [str(item) for item in response.get("warnings", [])] if isinstance(response, dict) and isinstance(response.get("warnings"), list) else []
+    search_diagnostics = _compact_search_diagnostics(response.get("diagnostics") if isinstance(response, dict) else None)
     source_refs = [_source_ref(item, index) for index, item in enumerate(results, start=1)]
     if not results:
-        no_results_warning = "No web results."
+        no_results_warning = "web_results_filtered_empty" if _diagnostics_filtered_any(search_diagnostics) else "No web results."
+        skipped_reason = "web_results_filtered_empty" if no_results_warning == "web_results_filtered_empty" else "no_results"
         return WebContextResult(
-            metadata={**metadata_base, "provider": provider, "result_count": 0, "source_refs": [], "warnings": [*warnings, no_results_warning], "skipped_reason": "no_results"},
+            metadata={**metadata_base, "provider": provider, "result_count": 0, "source_refs": [], "warnings": [*warnings, no_results_warning], "skipped_reason": skipped_reason, "search_diagnostics": search_diagnostics},
             warnings=[*warnings, no_results_warning],
         )
 
@@ -360,6 +362,7 @@ async def build_web_context(
             "injected": True,
             "truncated": truncated,
             "warnings": warnings,
+            "search_diagnostics": search_diagnostics,
         },
         warnings=warnings,
     )
@@ -378,7 +381,7 @@ def append_web_context_to_system(messages: list[dict[str, Any]], rendered_text: 
 
 
 def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence"}
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
 
 
@@ -495,6 +498,39 @@ def _source_ref(result: dict[str, Any], index: int) -> dict[str, Any]:
     if snippet_preview:
         ref["snippet_preview"] = snippet_preview
     return ref
+
+
+def _compact_search_diagnostics(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    diagnostics: dict[str, Any] = {}
+    for key in ("filtered_count", "deduped_count"):
+        item = value.get(key)
+        if isinstance(item, int) and item > 0:
+            diagnostics[key] = item
+    filters = value.get("filters_applied")
+    if isinstance(filters, dict):
+        compact_filters = {
+            key: bool(filters.get(key))
+            for key in ("domain_allowlist", "domain_blocklist", "dedupe_results", "dedupe_same_domain_title")
+            if bool(filters.get(key))
+        }
+        if compact_filters:
+            diagnostics["filters_applied"] = compact_filters
+    warnings = [str(item) for item in value.get("warnings", [])] if isinstance(value.get("warnings"), list) else []
+    if warnings:
+        diagnostics["warnings"] = warnings
+    return diagnostics
+
+
+def _diagnostics_filtered_any(value: dict[str, Any]) -> bool:
+    return bool(
+        isinstance(value, dict)
+        and (
+            int(value.get("filtered_count") or 0) > 0
+            or int(value.get("deduped_count") or 0) > 0
+        )
+    )
 
 
 def _short_snippet(value: Any) -> str:

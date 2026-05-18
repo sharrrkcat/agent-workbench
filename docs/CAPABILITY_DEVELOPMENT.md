@@ -237,10 +237,17 @@ understanding, video metadata parsing, thumbnail generation, or transcoding.
 The built-in `web_search` Capability exposes `/web-search <query>` for
 SearXNG-backed result discovery. It calls the configured SearXNG JSON search
 endpoint, normalizes result title, URL, domain, snippet, published date, source,
-and rank, then returns one JSON Message Part with `kind: "web_search_results"`
-and `schema: "web_search.results.v1"`. The payload
-contains `query`, `provider`, `searched_at`, `results`, and `warnings`; it does
-not include the raw SearXNG response or a duplicate markdown result list. It
+and rank, applies CapabilityConfig-owned domain filters and de-duplication, then
+returns one JSON Message Part with `kind: "web_search_results"` and
+`schema: "web_search.results.v1"`. The payload contains `query`, `provider`,
+`searched_at`, final `results`, `warnings`, and compact `diagnostics` such as
+raw/normalized/final counts, filtered and deduped counts, applied filters, and
+warnings. Domain blocklist and allowlist patterns support `example.com`,
+`.example.com`, and `*.example.com`; allowlist is applied before blocklist.
+Invalid patterns add `invalid_domain_filter_pattern` without failing the search.
+URL de-duplication uses lightweight canonical URLs, and same-domain title
+de-duplication uses exact normalized title matches. It does not include the raw
+SearXNG response, filtered result lists, or a duplicate markdown result list. It
 also supports Settings diagnostics through
 `POST /api/capability-configs/web_search/test-search`, which uses saved or draft
 CapabilityConfig values without creating chat messages, runs, command results,
