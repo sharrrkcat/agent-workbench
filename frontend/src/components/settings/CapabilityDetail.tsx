@@ -191,6 +191,29 @@ function CapabilityConfigTab({
       </div>
     );
   }
+  if (config.capability_id === 'web_search') {
+    return (
+      <div className="settings-config-sections">
+        <p className="settings-helper-text">
+          {t('capabilities:help.webSearchSettings')}
+        </p>
+        <ConfigSection
+          title={t('capabilities:sections.searchProvider')}
+          fieldNames={['enable_web_search_command', 'searxng_base_url', 'timeout_seconds']}
+          fields={fields}
+          values={values}
+          onChange={onChange}
+        />
+        <ConfigSection
+          title={t('capabilities:sections.searchResults')}
+          fieldNames={['max_results', 'language', 'safe_search']}
+          fields={fields}
+          values={values}
+          onChange={onChange}
+        />
+      </div>
+    );
+  }
   return (
     <ConfigForm
       fields={fields}

@@ -1,0 +1,69 @@
+id: web_search
+name: Web Search
+description: Search SearXNG and return normalized search results without fetching result pages.
+
+permissions:
+  network:
+    http: true
+
+config_schema:
+  - name: enable_web_search_command
+    type: boolean
+    label: Enable /web-search
+    default: true
+    description: Enable /web-search for SearXNG query searches.
+
+  - name: searxng_base_url
+    type: string
+    label: SearXNG Base URL
+    default: http://localhost:8888
+    description: Base URL for the SearXNG service.
+
+  - name: timeout_seconds
+    type: float
+    label: Timeout seconds
+    default: 10
+    minimum: 1
+    maximum: 60
+    description: Search request timeout in seconds.
+
+  - name: max_results
+    type: integer
+    label: Max results
+    default: 8
+    minimum: 1
+    maximum: 20
+    description: Maximum number of normalized search results to return.
+
+  - name: language
+    type: string
+    label: Language
+    default: auto
+    description: SearXNG language parameter. Use auto to keep the provider default.
+
+  - name: safe_search
+    type: enum
+    label: Safe search
+    default: default
+    options:
+      - "default"
+      - "off"
+      - "moderate"
+      - "strict"
+    description: SearXNG safe search level. Default leaves the provider setting unchanged.
+
+methods:
+  - id: search
+    description: Search SearXNG and render normalized results as Message Parts.
+    input_schema:
+      query:
+        type: string
+        required: true
+    output:
+      part_type: parts
+
+commands:
+  - name: /web-search
+    method: search
+    description: Search SearXNG and return normalized search results.
+    safe: true

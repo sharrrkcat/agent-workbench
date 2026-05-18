@@ -194,6 +194,7 @@ uv run python scripts/run_command.py "/encode qr https://example.com"
 uv run python scripts/run_command.py "/read-file path/to/demo.wav"
 uv run python scripts/run_command.py "/read-file path/to/demo.mp4"
 uv run python scripts/run_command.py "/fetch-url https://example.test/data.json"
+uv run python scripts/run_command.py "/web-search qwen latest release"
 uv run python scripts/run_command.py "/kb-search project notes"
 ```
 
@@ -232,6 +233,14 @@ attachments, or proxied. The HTTP Capability does not expose `/http-get`,
 such as HLS, DASH, `.m3u8`, `.mpd`, `.pls`, livestreams, radio, podcast RSS, or
 video pages. It does not do ASR, transcription, TTS, audio/video content
 understanding, video metadata parsing, thumbnail generation, or transcoding.
+
+The built-in `web_search` Capability exposes `/web-search <query>` for
+SearXNG-backed result discovery. It calls the configured SearXNG JSON search
+endpoint, normalizes result title, URL, domain, snippet, published date, source,
+and rank, then returns ordered Message Parts: a markdown summary and a JSON part
+with the normalized structure. It does not fetch result pages, execute
+JavaScript, cache results, save to Knowledge, vectorize, rerank, or inject web
+context into Prompt Agents.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 

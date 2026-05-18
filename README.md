@@ -297,7 +297,7 @@ uv run python scripts/cleanup_attachments.py
 uv run python scripts/cleanup_attachments.py --apply
 ```
 
-## File, HTTP, And ComfyUI Capabilities
+## File, HTTP, Web Search, And ComfyUI Capabilities
 
 Settings -> General controls chat attachment uploads: maximum image upload size, maximum file upload size, maximum attachments per message, whether uploaded text files enter LLM context, and per-file/per-message LLM file context limits. Those settings apply to composer upload, drag-and-drop, paste, attachment serving, Prompt Agent file context, vision input, and `file_content`.
 
@@ -306,6 +306,8 @@ Settings -> Capabilities -> File Capability controls only active local path read
 Settings -> Capabilities -> Codec Capability exposes `/encode` and `/decode`. It supports Base64 text, Base64URL tokens, URL component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs, image attachment encoding, and QR generation with `/encode qr <text>`. QR generation returns an attachment-backed PNG image part. QR decoding is not implemented. It does not fetch URLs, read local paths, transcode media, inspect JWTs, hash content, or inspect arbitrary binary files.
 
 Settings -> Capabilities -> HTTP Capability controls only the active network GET command `/fetch-url <url>`. It does not affect chat uploads. `/fetch-url` auto-detects supported `text/*`, HTML, JSON, and `image/*` responses and returns the matching Message Part. HTTP settings include one command toggle, allowed URL schemes, timeout seconds, separate text and image response size limits, redirect enablement, and maximum redirects. No HTTP POST, PUT, DELETE, audio/video, remote media download/cache/proxy, HLS/DASH, livestream/radio/podcast extraction, OCR, ASR, TTS, or PDF parsing support is provided.
+
+Settings -> Capabilities -> Web Search controls `/web-search <query>` for a user-running SearXNG service, defaulting to `http://localhost:8888`. It returns a markdown result list plus normalized JSON with query, provider, timestamp, results, and warnings. It does not fetch result page bodies, cache results, save to Knowledge, or inject web context into Prompt Agents.
 
 Settings -> Capabilities -> ComfyUI Capability stores local ComfyUI connection, polling, workflow, and preset-library settings. Preset YAML is documented in [docs/COMFYUI_PRESET_SCHEMA.md](docs/COMFYUI_PRESET_SCHEMA.md). It does not provide slash commands, a workflow editor, prompt enhancement, WebSocket progress, or real-service setup scripts. Automated tests use mocks; real generation requires a user-running ComfyUI service and API-format workflow JSON files.
 
@@ -328,7 +330,7 @@ Permission hints and CapabilityConfig settings are local alpha safety controls a
 
 ## Security Notes
 
-This is a local trusted-user alpha. File and HTTP capabilities are powerful: they can read allowed local files and make network GET requests. Script Agents are trusted local Python code and can call capabilities. There is no sandbox, no per-run approval, and no per-agent permission UI yet. Only install agents and capabilities you trust.
+This is a local trusted-user alpha. File, HTTP, and Web Search capabilities are powerful: they can read allowed local files and make network GET requests. Script Agents are trusted local Python code and can call capabilities. There is no sandbox, no per-run approval, and no per-agent permission UI yet. Only install agents and capabilities you trust.
 
 ## Current Limitations
 

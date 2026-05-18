@@ -24,7 +24,9 @@
     "readLimits": "读取限制",
     "commands": "命令",
     "networkAccess": "网络访问",
-    "responseLimits": "响应限制"
+    "responseLimits": "响应限制",
+    "searchProvider": "搜索提供方",
+    "searchResults": "搜索结果"
   },
   "empty": {
     "noConfigurableFields": "此 Capability 没有可配置字段。",
@@ -34,7 +36,8 @@
   },
   "help": {
     "fileSettings": "File Capability 设置仅适用于 /read-file。通用上传限制在 General 中配置。",
-    "httpSettings": "HTTP 设置只应用于 /fetch-url。它会自动检测支持的文本、HTML、JSON、图片和音频/视频直链响应，不会影响聊天上传。"
+    "httpSettings": "HTTP 设置只应用于 /fetch-url。它会自动检测支持的文本、HTML、JSON、图片和音频/视频直链响应，不会影响聊天上传。",
+    "webSearchSettings": "Web Search 设置仅适用于 /web-search。它查询 SearXNG 并返回标准化搜索结果，不抓取结果页面正文。"
   },
   "configFields": {
     "max_local_audio_read_size_mb": {
@@ -48,6 +51,30 @@
     "max_local_video_read_size_mb": {
       "label": "最大本地视频读取大小",
       "description": "/read-file 视频输出允许读取的最大本地视频文件大小。"
+    },
+    "enable_web_search_command": {
+      "label": "启用 /web-search",
+      "description": "启用 /web-search 进行 SearXNG query 搜索。"
+    },
+    "searxng_base_url": {
+      "label": "SearXNG Base URL",
+      "description": "SearXNG 服务的基础 URL。"
+    },
+    "timeout_seconds": {
+      "label": "超时秒数",
+      "description": "请求超时时间，单位为秒。"
+    },
+    "max_results": {
+      "label": "最大结果数",
+      "description": "返回的标准化搜索结果最大数量。"
+    },
+    "language": {
+      "label": "语言",
+      "description": "SearXNG language 参数。使用 auto 保持提供方默认值。"
+    },
+    "safe_search": {
+      "label": "安全搜索",
+      "description": "SearXNG 安全搜索等级。Default 会保持提供方设置。"
     }
   },
   "runtime": {

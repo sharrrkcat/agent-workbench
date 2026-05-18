@@ -24,7 +24,9 @@
     "readLimits": "Read limits",
     "commands": "Commands",
     "networkAccess": "Network access",
-    "responseLimits": "Response limits"
+    "responseLimits": "Response limits",
+    "searchProvider": "Search provider",
+    "searchResults": "Search results"
   },
   "empty": {
     "noConfigurableFields": "This capability has no configurable fields.",
@@ -34,7 +36,8 @@
   },
   "help": {
     "fileSettings": "File Capability settings apply only to /read-file. General upload limits are configured in General.",
-    "httpSettings": "HTTP settings apply only to /fetch-url. It auto-detects supported text, HTML, JSON, image, and direct audio/video responses and does not affect chat uploads."
+    "httpSettings": "HTTP settings apply only to /fetch-url. It auto-detects supported text, HTML, JSON, image, and direct audio/video responses and does not affect chat uploads.",
+    "webSearchSettings": "Web Search settings apply only to /web-search. It queries SearXNG and returns normalized search results without fetching result pages."
   },
   "configFields": {
     "max_local_audio_read_size_mb": {
@@ -48,6 +51,30 @@
     "enable_read_file_command": {
       "label": "Enable /read-file",
       "description": "Enable /read-file for text, image, audio, and video files."
+    },
+    "enable_web_search_command": {
+      "label": "Enable /web-search",
+      "description": "Enable /web-search for SearXNG query searches."
+    },
+    "searxng_base_url": {
+      "label": "SearXNG Base URL",
+      "description": "Base URL for the SearXNG service."
+    },
+    "timeout_seconds": {
+      "label": "Timeout seconds",
+      "description": "Request timeout in seconds."
+    },
+    "max_results": {
+      "label": "Max results",
+      "description": "Maximum number of normalized search results to return."
+    },
+    "language": {
+      "label": "Language",
+      "description": "SearXNG language parameter. Use auto to keep the provider default."
+    },
+    "safe_search": {
+      "label": "Safe search",
+      "description": "SearXNG safe search level. Default leaves the provider setting unchanged."
     }
   },
   "runtime": {
