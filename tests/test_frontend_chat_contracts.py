@@ -1062,6 +1062,23 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert '"webSkipReasons"' in runs_en
 
 
+def test_running_run_steps_default_to_active_only_until_manually_expanded() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    styles = read_frontend("styles.css")
+
+    assert "const compactActive = active && !expanded && !hasManualExpanded && !forceExpanded" in source
+    assert "activeRunStep(stepTree)" in source
+    assert "run-step-active-list" in source
+    assert "compact" in source
+    assert "function activeRunStep" in source
+    assert "step.status === 'running'" in source
+    assert "step.status === 'pending'" in source
+    assert "function mostSpecificRecentStep" in source
+    assert "function defaultRunStepsExpanded" in source
+    assert "return ['FAILED', 'CANCELLED'].includes(run.status)" in source
+    assert ".run-step-active-list" in styles
+
+
 def test_chat_input_web_search_toggle_patches_general_settings_and_reuses_intent_motion() -> None:
     input_source = read_frontend("components/ChatInput.tsx")
     styles = read_frontend("styles.css")

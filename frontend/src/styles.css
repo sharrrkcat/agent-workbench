@@ -3425,6 +3425,10 @@ input:disabled {
   list-style: none;
 }
 
+.run-step-active-list {
+  padding-top: 1px;
+}
+
 .run-step-item {
   min-width: 0;
   color: rgba(255, 255, 255, 0.58);

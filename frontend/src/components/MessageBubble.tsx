@@ -962,6 +962,7 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
   const runId = run?.run_id || steps[0]?.run_id || '';
   const hasManualExpanded = Boolean(runId && Object.prototype.hasOwnProperty.call(expandedByRunId, runId));
   const expanded = hasManualExpanded ? expandedByRunId[runId] : forceExpanded || defaultRunStepsExpanded(run);
+  const compactActive = active && !expanded && !hasManualExpanded && !forceExpanded;
   const hasRunningStep = steps.some((step) => step.status === 'running' && step.started_at);
 
   useEffect(() => {
@@ -977,9 +978,10 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
   const displaySummary = duration ? t('runs:panel.withDuration', { summary: stepSummary, duration }) : stepSummary;
   const canCancel = Boolean(run?.run_id && (activeRunId === run.run_id || active) && !run.cancel_requested && run.status !== 'CANCELLING');
   const stepTree = buildRunStepTree(steps);
+  const activeStep = compactActive ? activeRunStep(stepTree) : null;
 
   return (
-    <section className={`run-steps-panel ${expanded ? 'expanded' : 'collapsed'} ${failed ? 'failed' : ''}`}>
+    <section className={`run-steps-panel ${expanded ? 'expanded' : compactActive ? 'compact-active' : 'collapsed'} ${failed ? 'failed' : ''}`}>
       <div className="run-steps-header">
         <button type="button" onClick={() => (runId ? setRunStepsExpanded(runId, !expanded) : undefined)} aria-expanded={expanded}>
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -1000,6 +1002,10 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
             </ol>
           ) : null}
         </>
+      ) : compactActive && activeStep ? (
+        <ol className="run-step-list run-step-active-list">
+          <RunStepTreeItem step={activeStep} key={activeStep.step_id} depth={0} runKnowledge={runKnowledge} compact />
+        </ol>
       ) : null}
     </section>
   );
@@ -1015,7 +1021,7 @@ function DebugRow({ label, value, wide = false }: { label: string; value: ReactN
   );
 }
 
-function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; depth: number; runKnowledge?: KnowledgeRetrievalSummary | null }) {
+function RunStepTreeItem({ step, depth, runKnowledge, compact = false }: { step: RunStepNode; depth: number; runKnowledge?: KnowledgeRetrievalSummary | null; compact?: boolean }) {
   const { t } = useTranslation(['runs']);
   const duration = stepDurationLabel(step);
   const contextSummary = contextSummaryForStep(step, runKnowledge);
@@ -1034,9 +1040,9 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
           <ContextInjectedBlock summary={contextSummary} />
         </div>
       ) : null}
-      {step.children.length ? (
+      {!compact && step.children.length ? (
         <ol className="run-step-children">
-          {step.children.map((child) => <RunStepTreeItem step={child} key={child.step_id} depth={depth + 1} />)}
+          {step.children.map((child) => <RunStepTreeItem step={child} key={child.step_id} depth={depth + 1} runKnowledge={runKnowledge} />)}
         </ol>
       ) : null}
     </li>
@@ -1103,7 +1109,7 @@ function isActiveRunStatus(status: string): boolean {
 
 function defaultRunStepsExpanded(run?: Run): boolean {
   if (!run) return false;
-  return ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER', 'FAILED', 'CANCELLED'].includes(run.status);
+  return ['FAILED', 'CANCELLED'].includes(run.status);
 }
 
 function runDurationLabel(run: Run | undefined, steps: RunStep[]): string {
@@ -1157,6 +1163,36 @@ function buildRunStepTree(steps: RunStep[]): RunStepNode[] {
     }
   }
   return roots;
+}
+
+function activeRunStep(roots: RunStepNode[]): RunStepNode | null {
+  const nodes = flattenRunStepTree(roots);
+  const running = nodes.filter((item) => item.step.status === 'running');
+  if (running.length) return mostSpecificRecentStep(running);
+  const pending = nodes.filter((item) => item.step.status === 'pending');
+  if (pending.length) return mostRecentStep(pending);
+  const latest = mostRecentStep(nodes);
+  return latest;
+}
+
+function flattenRunStepTree(roots: RunStepNode[], depth = 0): { step: RunStepNode; depth: number }[] {
+  return roots.flatMap((step) => [{ step, depth }, ...flattenRunStepTree(step.children, depth + 1)]);
+}
+
+function mostSpecificRecentStep(items: { step: RunStepNode; depth: number }[]): RunStepNode {
+  return [...items].sort((a, b) => b.depth - a.depth || compareRunStepRecency(b.step, a.step))[0].step;
+}
+
+function mostRecentStep(items: { step: RunStepNode; depth: number }[]): RunStepNode | null {
+  return [...items].sort((a, b) => compareRunStepRecency(b.step, a.step) || b.depth - a.depth)[0]?.step || null;
+}
+
+function compareRunStepRecency(a: RunStep, b: RunStep): number {
+  const aTime = parseDateMs(a.updated_at || a.finished_at || a.started_at || a.created_at);
+  const bTime = parseDateMs(b.updated_at || b.finished_at || b.started_at || b.created_at);
+  const safeATime = Number.isFinite(aTime) ? aTime : 0;
+  const safeBTime = Number.isFinite(bTime) ? bTime : 0;
+  return safeATime - safeBTime || (a.order ?? 0) - (b.order ?? 0);
 }
 
 function MessageHeader({
