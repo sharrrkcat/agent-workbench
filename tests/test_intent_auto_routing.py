@@ -261,7 +261,7 @@ def test_auto_knowledge_query_uses_utility_llm_model_profile_slots(monkeypatch) 
 def test_auto_knowledge_query_uses_semantic_threshold_not_legacy_high_threshold(monkeypatch) -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)
-    fixture.app_settings.patch({"intent_routing_high_confidence_threshold": 0.99})
+    # Legacy high-confidence settings are no longer accepted by the settings patch API.
     enable_utility(fixture, {"intent": "knowledge_query", "confidence": 0.9, "query": "stormtrooper ranks"})
     fixture.agent_runner.knowledge_model_backend = LowSemanticKnowledgeBackend()
     session = fixture.sessions.create_session(default_agent_id="chat")
@@ -495,7 +495,7 @@ def test_auto_pet_command_routes_only_to_pet_command() -> None:
     enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "wake", "target_pet_hint": "Jedi Cal"})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "把 Jedi Cal 叫出来"))
+    result = run(fixture.runtime.handle_input(session, "bring out Jedi Cal"))
 
     command_run = fixture.runs.get_run(result.run_id)
     intent = command_run.metadata["intent_routing"]
@@ -550,12 +550,12 @@ def test_auto_pet_command_persists_original_user_message_before_result() -> None
     enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "status"})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "看看宠物状态"))
+    result = run(fixture.runtime.handle_input(session, "show pet status"))
 
     assert result.success is True
     messages = fixture.messages.list_messages(session.session_id)
     assert [message.role for message in messages] == ["user", "assistant"]
-    assert messages[0].content == "看看宠物状态"
+    assert messages[0].parts[0]["text"] == "show pet status"
     assert messages[0].metadata["intent_routing"]["predicted_intent"] == "pet_command"
     assert messages[0].metadata["intent_routing"]["generated_command"] == "/pet status"
     assert "original_user_text" not in messages[0].metadata["intent_routing"]
@@ -595,7 +595,7 @@ def test_auto_pet_command_wake_accepts_summon_phrasing() -> None:
     enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "wake", "target_pet_hint": "cal"})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "召唤宠物cal"))
+    result = run(fixture.runtime.handle_input(session, "summon pet cal"))
 
     command_run = fixture.runs.get_run(result.run_id)
     intent = command_run.metadata["intent_routing"]
@@ -615,7 +615,7 @@ def test_auto_pet_command_wake_accepts_bring_out_phrasing() -> None:
     enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "wake", "target_pet_hint": "cal"})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "把宠物cal叫出来"))
+    result = run(fixture.runtime.handle_input(session, "bring out pet cal"))
 
     command_run = fixture.runs.get_run(result.run_id)
     intent = command_run.metadata["intent_routing"]
@@ -676,7 +676,7 @@ def test_reality_pet_question_stays_chat() -> None:
     enable_auto(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "我家的猫今天不吃饭怎么办"))
+    result = run(fixture.runtime.handle_input(session, "my real cat will not eat today"))
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
@@ -691,7 +691,7 @@ def test_reality_pet_status_question_stays_chat() -> None:
     enable_auto(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "我家的猫状态怎么样"))
+    result = run(fixture.runtime.handle_input(session, "how is my real cat doing"))
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
@@ -706,7 +706,7 @@ def test_pet_names_without_pet_operation_do_not_execute() -> None:
     enable_auto(fixture)
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "Cal 和 Yoda 的关系是什么"))
+    result = run(fixture.runtime.handle_input(session, "what is the relationship between Cal and Yoda?"))
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
@@ -723,7 +723,7 @@ def test_pet_wake_target_not_current_selects_target_pet() -> None:
     enable_utility(fixture, {"intent": "pet_command", "domain": "workbench_pet", "action": "wake", "target_pet_hint": "Cal"})
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "唤醒 Cal"))
+    result = run(fixture.runtime.handle_input(session, "wake pet Cal"))
 
     command_run = fixture.runs.get_run(result.run_id)
     intent = command_run.metadata["intent_routing"]

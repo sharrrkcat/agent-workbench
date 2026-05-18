@@ -295,7 +295,8 @@ def test_manual_rename_sets_title_generation_state_manual() -> None:
 
 
 def test_command_does_not_trigger_title_generation_and_next_llm_uses_next_message() -> None:
-    llm = SequenceLLMRuntime(["普通问�?, "assistant reply"])
+    next_message = "ordinary question"
+    llm = SequenceLLMRuntime([next_message, "assistant reply"])
     app = create_app(llm_runtime=llm, use_memory=True)
     client = TestClient(app)
     state = app.state.runtime_state
@@ -309,14 +310,14 @@ def test_command_does_not_trigger_title_generation_and_next_llm_uses_next_messag
     session = client.post("/api/sessions", json={"title": "Session 1", "default_agent_id": "chat"}).json()
 
     command = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/encode base64 secret"})
-    reply = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "普通问�?})
+    reply = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": next_message})
 
     assert command.status_code == 200
     assert reply.status_code == 200
-    assert reply.json()["session"]["title"] == "普通问�?
+    assert reply.json()["session"]["title"] == next_message
     assert len(llm.calls) == 2
     assert "/encode base64 secret" not in llm.calls[0]["messages"][0]["content"]
-    assert "普通问�? in llm.calls[0]["messages"][0]["content"]
+    assert next_message in llm.calls[0]["messages"][0]["content"]
 
 
 def test_title_truncation_and_cleanup_helpers() -> None:
@@ -329,5 +330,5 @@ def test_title_truncation_and_cleanup_helpers() -> None:
     assert long_truncated is True
     assert len(long) <= 100
     assert normalize_generated_title('"Title: Hello world."') == "Hello world"
-    assert normalize_generated_title("标题：测试标题�?) == "测试标题"
+    assert normalize_generated_title("Title: Test Title.") == "Test Title"
     assert normalize_generated_title("```text\nFenced title\n```") == "Fenced title"
