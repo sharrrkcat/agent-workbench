@@ -39,6 +39,31 @@
     "httpSettings": "HTTP 设置只应用于 /fetch-url。它会自动检测支持的文本、HTML、JSON、图片和音频/视频直链响应，不会影响聊天上传。",
     "webSearchSettings": "Web Search 设置仅适用于 /web-search。它查询 SearXNG 并返回标准化搜索结果，不抓取结果页面正文。"
   },
+  "diagnostics": {
+    "title": "诊断",
+    "query": "搜索查询",
+    "queryPlaceholder": "输入查询以测试 SearXNG 搜索",
+    "defaultQuery": "agent workbench",
+    "testSearch": "测试搜索",
+    "testing": "测试中...",
+    "connectionSuccessful": "连接成功",
+    "noResults": "没有结果",
+    "resultCount": "结果数量",
+    "firstResult": "首条结果",
+    "elapsedTime": "耗时",
+    "elapsedMs": "{{count}} 毫秒",
+    "provider": "提供方",
+    "warnings": "警告",
+    "saveBeforeTesting": "请先保存更改再测试。",
+    "errors": {
+      "query_required": "请输入搜索查询。",
+      "invalid_base_url": "Web Search 尚未配置或 Base URL 无效。",
+      "searxng_unreachable": "无法连接 SearXNG。",
+      "timeout": "SearXNG 请求超时。",
+      "invalid_response": "SearXNG 返回了无效响应。",
+      "search_failed": "搜索失败。"
+    }
+  },
   "configFields": {
     "max_local_audio_read_size_mb": {
       "label": "最大本地音频读取大小",

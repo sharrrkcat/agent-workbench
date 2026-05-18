@@ -1,8 +1,9 @@
-import { Boxes, Save } from 'lucide-react';
+import { Boxes, Save, Search } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { CapabilityConfig, Command } from '../../types';
+import type { CapabilityConfig, Command, WebSearchTestResult } from '../../types';
 import { ConfigForm } from './ConfigForm';
 import { DetailTabs } from './DetailTabs';
 import { LlmSettingsPanel } from './LlmSettingsPanel';
@@ -211,6 +212,7 @@ function CapabilityConfigTab({
           values={values}
           onChange={onChange}
         />
+        <WebSearchDiagnostics config={config} values={values} />
       </div>
     );
   }
@@ -222,6 +224,119 @@ function CapabilityConfigTab({
       emptyMessage={t('capabilities:empty.noConfigurableFields')}
     />
   );
+}
+
+function WebSearchDiagnostics({ config, values }: { config: CapabilityConfig; values: ConfigValues }) {
+  const { t } = useTranslation(['capabilities']);
+  const [query, setQuery] = useState(() => t('capabilities:diagnostics.defaultQuery'));
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<WebSearchTestResult | null>(null);
+
+  async function runTest() {
+    if (testing) return;
+    setTesting(true);
+    setResult(null);
+    try {
+      const response = await api.testWebSearch({
+        query,
+        config: buildUserConfig(config.config_schema || [], values),
+      });
+      setResult(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('capabilities:diagnostics.errors.search_failed');
+      setResult({
+        ok: false,
+        provider: 'searxng',
+        base_url: '',
+        query,
+        elapsed_ms: 0,
+        result_count: 0,
+        first_result: null,
+        sample_results: [],
+        warnings: [],
+        error_code: 'search_failed',
+        error_message: message,
+      });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const firstResult = result?.first_result || null;
+  return (
+    <section className="settings-config-section web-search-diagnostics">
+      <div className="settings-section-heading-row">
+        <h3>{t('capabilities:diagnostics.title')}</h3>
+      </div>
+      <label className="config-field settings-config-field" htmlFor="web-search-diagnostics-query">
+        <span>{t('capabilities:diagnostics.query')}</span>
+        <input
+          id="web-search-diagnostics-query"
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void runTest();
+            }
+          }}
+          placeholder={t('capabilities:diagnostics.queryPlaceholder')}
+        />
+      </label>
+      <div className="settings-diagnostics-actions">
+        <button className="settings-secondary-button" type="button" onClick={runTest} disabled={testing}>
+          <Search size={14} />
+          {testing ? t('capabilities:diagnostics.testing') : t('capabilities:diagnostics.testSearch')}
+        </button>
+      </div>
+      {result ? (
+        <div className={`settings-diagnostics-result ${result.ok ? 'success' : 'error'}`}>
+          <div className="settings-diagnostics-status">
+            <span className={`settings-badge ${result.ok ? 'success' : 'warning'}`}>
+              {result.ok ? t('capabilities:diagnostics.connectionSuccessful') : webSearchErrorText(result, t)}
+            </span>
+          </div>
+          {result.ok ? (
+            <>
+              <div className="settings-detail-grid compact">
+                <InfoRow label={t('capabilities:diagnostics.provider')} value={result.provider} />
+                <InfoRow label={t('capabilities:diagnostics.resultCount')} value={result.result_count} />
+                <InfoRow label={t('capabilities:diagnostics.elapsedTime')} value={t('capabilities:diagnostics.elapsedMs', { count: result.elapsed_ms })} />
+              </div>
+              {firstResult ? (
+                <div className="settings-diagnostics-first-result">
+                  <span>{t('capabilities:diagnostics.firstResult')}</span>
+                  <strong>{firstResult.title || firstResult.url}</strong>
+                  <a href={firstResult.url} target="_blank" rel="noreferrer">
+                    {firstResult.domain || firstResult.url}
+                  </a>
+                  {firstResult.snippet ? <p>{firstResult.snippet}</p> : null}
+                </div>
+              ) : (
+                <div className="settings-empty-state compact">{t('capabilities:diagnostics.noResults')}</div>
+              )}
+            </>
+          ) : null}
+          {result.warnings.length ? (
+            <div className="settings-diagnostics-warnings">
+              <span>{t('capabilities:diagnostics.warnings')}</span>
+              {result.warnings.map((warning) => (
+                <code key={warning}>{warning}</code>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function webSearchErrorText(result: WebSearchTestResult, t: ReturnType<typeof useTranslation>['t']): string {
+  const code = result.error_code || 'search_failed';
+  const key = `capabilities:diagnostics.errors.${code}`;
+  const translated = t(key);
+  return translated === key ? result.error_message || t('capabilities:diagnostics.errors.search_failed') : translated;
 }
 
 function ConfigSection({

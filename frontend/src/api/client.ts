@@ -19,6 +19,7 @@ import type {
   LlmProviderProfileInput,
   LlmProviderStatusRefreshResponse,
   LlmTestResult,
+  WebSearchTestResult,
   Message,
   Run,
   RunEvent,
@@ -160,6 +161,11 @@ export const api = {
   getResolvedLlmConfig: () => request<LlmResolvedConfig>('/api/capability-configs/llm/resolved'),
   listLlmModels: () => request<{ success: boolean; models: { id: string }[] }>('/api/capability-configs/llm/models'),
   testLlmConnection: () => request<LlmTestResult>('/api/capability-configs/llm/test', { method: 'POST' }),
+  testWebSearch: (payload: { query: string; config?: Record<string, unknown> }) =>
+    request<WebSearchTestResult>('/api/capability-configs/web_search/test-search', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listLlmProfiles: () => request<LlmProfile[]>('/api/llm-profiles'),
   listLlmProviderProfiles: () => request<LlmProviderProfile[]>('/api/llm-provider-profiles'),
   createLlmProviderProfile: (profile: LlmProviderProfileInput) =>

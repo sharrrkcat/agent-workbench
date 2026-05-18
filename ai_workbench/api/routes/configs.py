@@ -45,6 +45,22 @@ class UpdateConfigRequest(BaseModel):
         return value
 
 
+class WebSearchTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(default="")
+    config: Optional[Dict[str, Any]] = Field(default=None)
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def config_must_be_object(cls, value):
+        if value is None:
+            return value
+        if not isinstance(value, dict):
+            raise ValueError("config must be a JSON object")
+        return value
+
+
 @router.get("/api/agent-configs")
 def list_agent_configs(state: RuntimeState = Depends(get_state)) -> list:
     return [_serialize_agent_config(state, agent.id) for agent in state.agents.list()]
@@ -188,6 +204,31 @@ def test_llm_connection(state: RuntimeState = Depends(get_state)) -> dict:
         }
 
 
+@router.post("/api/capability-configs/web_search/test-search")
+def test_web_search(payload: WebSearchTestRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    capability = _get_capability_or_404(state, "web_search")
+    try:
+        config = _resolve_web_search_test_config(state, capability, payload.config)
+    except ConfigValidationError as exc:
+        return {
+            "ok": False,
+            "provider": "searxng",
+            "base_url": "",
+            "query": str(payload.query or "").strip(),
+            "elapsed_ms": 0,
+            "result_count": 0,
+            "first_result": None,
+            "sample_results": [],
+            "warnings": [],
+            "error_code": "invalid_base_url" if exc.field == "searxng_base_url" else "search_failed",
+            "error_message": exc.message,
+        }
+    runtime = state.runtimes.get_runtime("web_search")
+    if not hasattr(runtime, "test_search") or not callable(runtime.test_search):
+        raise_error(500, "WEB_SEARCH_TEST_UNSUPPORTED", "Web Search runtime does not support diagnostics.")
+    return runtime.test_search(payload.query, context={"capability_config": config})
+
+
 def _get_agent_or_404(state: RuntimeState, agent_id: str):
     try:
         return state.agents.get(agent_id)
@@ -293,6 +334,15 @@ def _validate_config_patch(schema, existing_config: Dict[str, Any], incoming_con
     except ConfigValidationError as exc:
         raise_error(400, exc.code, exc.message, {"field": exc.field})
     return merged
+
+
+def _resolve_web_search_test_config(state: RuntimeState, capability, draft_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    stored = _clean_capability_user_config("web_search", state.capability_configs.get_config("web_search")["user_config"])
+    if draft_config is None:
+        return resolve_config(capability.config_schema, stored)
+    merged = clear_empty_enum_overrides(capability.config_schema, {**stored, **draft_config})
+    validate_user_config(capability.config_schema, merged)
+    return resolve_config(capability.config_schema, merged)
 
 
 def _resolve_for_response(schema, user_config: Dict[str, Any]) -> Dict[str, Any]:

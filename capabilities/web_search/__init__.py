@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import perf_counter
 from urllib.parse import urlparse
 
 import httpx
@@ -44,6 +45,41 @@ class CapabilityRuntime:
         response = _request_search(base_url, params=params, timeout=timeout, client=self._client)
         payload = _json_payload(response)
         return _normalize_response(cleaned_query, payload, max_results=max_results)
+
+    def test_search(self, query: str, context: dict | None = None) -> dict:
+        config = _runtime_config(context)
+        cleaned_query = str(query or "").strip()
+        started = perf_counter()
+        base_url = str(config.get("searxng_base_url") or "").strip().rstrip("/")
+        try:
+            normalized = self.search_results(cleaned_query, context={"capability_config": config})
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "provider": "searxng",
+                "base_url": base_url,
+                "query": cleaned_query,
+                "elapsed_ms": _elapsed_ms(started),
+                "result_count": 0,
+                "first_result": None,
+                "sample_results": [],
+                "warnings": [],
+                "error_code": _diagnostic_error_code(str(exc)),
+                "error_message": _diagnostic_error_message(str(exc)),
+            }
+        results = normalized.get("results") if isinstance(normalized.get("results"), list) else []
+        sample_results = results[:3]
+        return {
+            "ok": True,
+            "provider": normalized.get("provider") or "searxng",
+            "base_url": _validate_base_url(config.get("searxng_base_url")),
+            "query": normalized.get("query") or cleaned_query,
+            "elapsed_ms": _elapsed_ms(started),
+            "result_count": len(results),
+            "first_result": sample_results[0] if sample_results else None,
+            "sample_results": sample_results,
+            "warnings": normalized.get("warnings") if isinstance(normalized.get("warnings"), list) else [],
+        }
 
 
 def get_runtime() -> CapabilityRuntime:
@@ -177,6 +213,36 @@ def _parts_for_results(normalized: dict) -> list[dict]:
     return [
         {"type": "json", "data": normalized},
     ]
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int(round((perf_counter() - started) * 1000)))
+
+
+def _diagnostic_error_code(message: str) -> str:
+    if message == "query required":
+        return "query_required"
+    if message == "invalid base url":
+        return "invalid_base_url"
+    if message == "searxng unreachable":
+        return "searxng_unreachable"
+    if message == "timeout":
+        return "timeout"
+    if message == "invalid response":
+        return "invalid_response"
+    return "search_failed"
+
+
+def _diagnostic_error_message(message: str) -> str:
+    if message.startswith("search failed:"):
+        return message
+    return {
+        "query required": "query required",
+        "invalid base url": "invalid base url",
+        "searxng unreachable": "searxng unreachable",
+        "timeout": "timeout",
+        "invalid response": "invalid response",
+    }.get(message, "search failed")
 
 
 def _markdown_results(normalized: dict) -> str:

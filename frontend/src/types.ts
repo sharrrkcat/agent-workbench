@@ -218,6 +218,30 @@ export type LlmTestResult = {
   error_code?: string;
 };
 
+export type WebSearchDiagnosticResultItem = {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  rank?: number;
+  published_at?: string | null;
+  source?: string;
+};
+
+export type WebSearchTestResult = {
+  ok: boolean;
+  provider: string;
+  base_url: string;
+  query: string;
+  elapsed_ms: number;
+  result_count: number;
+  first_result: WebSearchDiagnosticResultItem | null;
+  sample_results: WebSearchDiagnosticResultItem[];
+  warnings: string[];
+  error_code?: string;
+  error_message?: string;
+};
+
 export type LlmProfile = {
   id: string;
   alias: string;

@@ -248,3 +248,121 @@ def test_web_search_config_defaults_patch_and_runtime_enforcement() -> None:
     client.patch("/api/capability-configs/web_search", json={"user_config": {"enable_web_search_command": False}})
     disabled = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/web-search qwen"})
     assert "command disabled" in disabled.json()["run"]["error"]
+
+
+def test_web_search_test_search_success_uses_draft_config_without_messages_or_runs() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"title": "One", "url": "https://one.test/page", "content": "first", "engine": "duckduckgo"},
+                    {"title": "Two", "url": "https://two.test/page", "content": "second"},
+                    {"title": "Three", "url": "https://three.test/page", "content": "third"},
+                    {"title": "Four", "url": "https://four.test/page", "content": "fourth"},
+                ],
+                "untrusted_raw": {"secret": "do not return"},
+            },
+            request=request,
+        )
+
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    app.state.runtime_state.runtimes.replace("web_search", WebSearchRuntime(client=httpx.Client(transport=httpx.MockTransport(handler))))
+    client = TestClient(app)
+    session = create_session(client)
+
+    before_messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    before_runs = client.get(f"/api/sessions/{session['session_id']}/runs").json()
+    response = client.post(
+        "/api/capability-configs/web_search/test-search",
+        json={
+            "query": "agent workbench",
+            "config": {
+                "enable_web_search_command": False,
+                "searxng_base_url": "https://draft-searxng.test",
+                "language": "en",
+                "safe_search": "moderate",
+                "max_results": 4,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["provider"] == "searxng"
+    assert data["base_url"] == "https://draft-searxng.test"
+    assert data["query"] == "agent workbench"
+    assert data["result_count"] == 4
+    assert data["first_result"] == {
+        "rank": 1,
+        "title": "One",
+        "url": "https://one.test/page",
+        "domain": "one.test",
+        "snippet": "first",
+        "published_at": None,
+        "source": "duckduckgo",
+    }
+    assert [result["title"] for result in data["sample_results"]] == ["One", "Two", "Three"]
+    assert "untrusted_raw" not in data
+    assert "language=en" in str(seen["url"])
+    assert "safesearch=1" in str(seen["url"])
+    assert client.get(f"/api/sessions/{session['session_id']}/messages").json() == before_messages
+    assert client.get(f"/api/sessions/{session['session_id']}/runs").json() == before_runs
+
+
+def test_web_search_test_search_empty_results() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": []}, request=request)
+
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    app.state.runtime_state.runtimes.replace("web_search", WebSearchRuntime(client=httpx.Client(transport=httpx.MockTransport(handler))))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/capability-configs/web_search/test-search",
+        json={"query": "nothing", "config": {"searxng_base_url": "https://searxng.test"}},
+    )
+
+    data = response.json()
+    assert data["ok"] is True
+    assert data["result_count"] == 0
+    assert data["first_result"] is None
+    assert data["sample_results"] == []
+
+
+def test_web_search_test_search_structured_failures() -> None:
+    def timeout(request: httpx.Request) -> httpx.Response:
+        raise httpx.TimeoutException("slow", request=request)
+
+    def unreachable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no service", request=request)
+
+    def invalid_json(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not json", request=request)
+
+    cases = [
+        (None, {"query": "openai", "config": {"searxng_base_url": "ftp://bad.test"}}, "invalid_base_url"),
+        (timeout, {"query": "openai", "config": {"searxng_base_url": "https://searxng.test"}}, "timeout"),
+        (unreachable, {"query": "openai", "config": {"searxng_base_url": "https://searxng.test"}}, "searxng_unreachable"),
+        (invalid_json, {"query": "openai", "config": {"searxng_base_url": "https://searxng.test"}}, "invalid_response"),
+        (None, {"query": "   ", "config": {"searxng_base_url": "https://searxng.test"}}, "query_required"),
+    ]
+    for handler, payload, expected_code in cases:
+        app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+        if handler is not None:
+            app.state.runtime_state.runtimes.replace("web_search", WebSearchRuntime(client=httpx.Client(transport=httpx.MockTransport(handler))))
+        client = TestClient(app)
+
+        response = client.post("/api/capability-configs/web_search/test-search", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is False
+        assert data["error_code"] == expected_code
+        assert data["result_count"] == 0
+        assert data["first_result"] is None
+        assert data["sample_results"] == []

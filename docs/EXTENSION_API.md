@@ -292,7 +292,9 @@ search result discovery. It returns one standardized JSON Message Part with
 `kind: "web_search_results"` and `schema: "web_search.results.v1"` containing
 query, provider, timestamp, normalized results, and warnings. It does not fetch
 result page bodies, cache results, save to Knowledge, or inject Web Context into
-Prompt Agents.
+Prompt Agents. Settings exposes `POST /api/capability-configs/web_search/test-search`
+for SearXNG search diagnostics using saved or draft CapabilityConfig values; it
+does not create chat messages, runs, command results, or persist config changes.
 
 ## Capability Config
 

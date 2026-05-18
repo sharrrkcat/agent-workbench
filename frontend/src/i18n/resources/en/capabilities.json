@@ -39,6 +39,31 @@
     "httpSettings": "HTTP settings apply only to /fetch-url. It auto-detects supported text, HTML, JSON, image, and direct audio/video responses and does not affect chat uploads.",
     "webSearchSettings": "Web Search settings apply only to /web-search. It queries SearXNG and returns normalized search results without fetching result pages."
   },
+  "diagnostics": {
+    "title": "Diagnostics",
+    "query": "Search query",
+    "queryPlaceholder": "Enter a query to test SearXNG search",
+    "defaultQuery": "agent workbench",
+    "testSearch": "Test search",
+    "testing": "Testing...",
+    "connectionSuccessful": "Connection successful",
+    "noResults": "No results",
+    "resultCount": "Result count",
+    "firstResult": "First result",
+    "elapsedTime": "Elapsed time",
+    "elapsedMs": "{{count}} ms",
+    "provider": "Provider",
+    "warnings": "Warnings",
+    "saveBeforeTesting": "Save changes before testing.",
+    "errors": {
+      "query_required": "Enter a search query.",
+      "invalid_base_url": "Web Search is not configured or the base URL is invalid.",
+      "searxng_unreachable": "SearXNG is unreachable.",
+      "timeout": "SearXNG request timed out.",
+      "invalid_response": "SearXNG returned an invalid response.",
+      "search_failed": "Search failed."
+    }
+  },
   "configFields": {
     "max_local_audio_read_size_mb": {
       "label": "Max local audio read size",

@@ -241,8 +241,12 @@ and rank, then returns one JSON Message Part with `kind: "web_search_results"`
 and `schema: "web_search.results.v1"`. The payload
 contains `query`, `provider`, `searched_at`, `results`, and `warnings`; it does
 not include the raw SearXNG response or a duplicate markdown result list. It
-does not fetch result pages, execute JavaScript, cache results, save to
-Knowledge, vectorize, rerank, or inject web context into Prompt Agents.
+also supports Settings diagnostics through
+`POST /api/capability-configs/web_search/test-search`, which uses saved or draft
+CapabilityConfig values without creating chat messages, runs, command results,
+or saving config changes. It does not fetch result pages, execute JavaScript,
+cache results, save to Knowledge, vectorize, rerank, or inject web context into
+Prompt Agents.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 
