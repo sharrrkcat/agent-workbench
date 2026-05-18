@@ -72,6 +72,8 @@
     "webSearchContextHelp": "Add live web results to eligible Prompt Agent responses.",
     "maxWebResults": "Max web results",
     "webContextBudget": "Web context budget",
+    "webContextPrompt": "Web Context Prompt",
+    "webContextPromptHelp": "Instruction text injected with Web Search results for Prompt Agents. Keep [W1] style citations enabled so answers can link back to sources.",
     "searchProvider": "Search provider",
     "configureProviderInCapabilities": "Configure provider in Capabilities",
     "webSearchProviderSummary": "{{provider}} at {{baseUrl}} / max {{maxResults}} results",

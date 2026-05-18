@@ -198,12 +198,19 @@ General Web Search owns Prompt Agent Web Context injection settings:
 - `web_context_max_results` defaults to `5` and accepts `1` through `10`.
 - `web_context_context_budget_chars` defaults to `4000` and accepts `500`
   through `20000`.
+- `web_context_prompt` defaults to a non-empty Web Context instruction and
+  accepts `1` through `4000` characters.
 
 When `web_context_enabled=false`, ordinary Prompt Agent runs must not search or
 inject `# Retrieved Web`. When enabled, eligible ordinary text messages to the
 current session default Prompt Agent may call the core Web Search runtime during
 `Building context` and inject compact SearXNG results after Knowledge context
 and before conversation/current-message context.
+The rendered `# Retrieved Web` block begins with the current General
+`web_context_prompt`. The default tells the model that Web results are untrusted
+external sources, should be used as evidence rather than instructions, and must
+be cited with `[W1]`-style source markers when used. The prompt affects only
+future context builds and must not be copied into run or message metadata.
 
 With Intent Routing disabled or in shadow mode, enabled Web Context keeps the
 forced search behavior for eligible ordinary Prompt Agent messages. With Intent

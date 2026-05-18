@@ -1,7 +1,7 @@
 import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, ExternalLink, FileText, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
+import { BookOpen, BookOpenText, Check, ChevronDown, ChevronRight, Circle, CircleAlert, Clock3, Copy, ExternalLink, FileText, Globe, Loader2, Minus, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ActionFormBlock, ActionFormField, Agent, Attachment, CommandButtonsBlock, FileAttachment, FileContentPayload, GeneralSettings, ImageAttachment, ImagePayload, KnowledgeChunk, Message, MessagePart, Run, RunStep, WorldbookEntry } from '../types';
 import { api } from '../api/client';
@@ -40,6 +40,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(copyableMessageContent(message));
   const [contextModalOpen, setContextModalOpen] = useState(false);
+  const [contextModalInitial, setContextModalInitial] = useState<{ tab?: ContextTab; targetRef?: string } | null>(null);
   const [citationModal, setCitationModal] = useState<KnowledgeCitationSelection | null>(null);
 
   if (message.metadata?.event_type) {
@@ -64,7 +65,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
   const messageRun = storeRun || message.run;
   const contextMetadata = isAgentMessage ? normalizeContextMetadata({ message_metadata: message.metadata, run_metadata: messageRun?.metadata, steps: runSteps }) : {};
   const runKnowledge = contextMetadata.knowledge ? knowledgeRetrievalSummaryFromNormalized(contextMetadata.knowledge) : null;
-  const canViewContext = Boolean(contextMetadata.memory?.injected || contextMetadata.knowledge?.canViewSnippets || (contextMetadata.worldbook?.injected && contextMetadata.worldbook.entryRefs.length));
+  const canViewContext = Boolean(contextMetadata.memory?.injected || contextMetadata.knowledge?.canViewSnippets || (contextMetadata.worldbook?.injected && contextMetadata.worldbook.entryRefs.length) || contextMetadata.web?.sourceRefs.length);
   if (!editing && !message.client_status && !hasVisibleRun(messageRun) && !hasRenderableMessage(message, reasoningContent)) {
     return null;
   }
@@ -121,7 +122,18 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
           ) : (
             <>
               {reasoningContent ? <ThoughtBlock content={reasoningContent} streaming={message.client_status === 'streaming'} /> : null}
-              <MessageContent message={message} kind={kind} contextMetadata={contextMetadata} onOpenKnowledgeCitation={setCitationModal} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />
+              <MessageContent
+                message={message}
+                kind={kind}
+                contextMetadata={contextMetadata}
+                onOpenKnowledgeCitation={setCitationModal}
+                onOpenWebCitation={(refId) => {
+                  setContextModalInitial({ tab: 'web', targetRef: refId });
+                  setContextModalOpen(true);
+                }}
+                onPreviewImage={onPreviewImage}
+                onPreviewFile={onPreviewFile}
+              />
               <RunStepsPanel run={messageRun} steps={runSteps} runKnowledge={runKnowledge} />
             </>
           )}
@@ -161,7 +173,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
               </button>
             ) : null}
             {canViewContext ? (
-              <button type="button" onClick={() => setContextModalOpen(true)} disabled={operationPending} title={t('chat:actions.viewInjectedContext')}>
+              <button type="button" onClick={() => { setContextModalInitial(null); setContextModalOpen(true); }} disabled={operationPending} title={t('chat:actions.viewInjectedContext')}>
                 <BookOpen size={13} />
               </button>
             ) : null}
@@ -169,7 +181,7 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
           </div>
         ) : null}
       </div>
-      {contextModalOpen ? <InjectedContextModal context={contextMetadata} onClose={() => setContextModalOpen(false)} /> : null}
+      {contextModalOpen ? <InjectedContextModal context={contextMetadata} initialTab={contextModalInitial?.tab} targetRef={contextModalInitial?.targetRef} onClose={() => setContextModalOpen(false)} /> : null}
       {citationModal ? <KnowledgeCitationModal selection={citationModal} onClose={() => setCitationModal(null)} /> : null}
     </article>
   );
@@ -312,6 +324,7 @@ type WebContextSummary = {
   injected?: boolean;
   provider?: string;
   resultCount?: number;
+  sourceRefs: WebSourceRef[];
   query?: string;
   querySource?: string;
   skippedReason?: string;
@@ -322,6 +335,18 @@ type WebContextSummary = {
   warnings: string[];
 };
 
+type WebSourceRef = {
+  ref_id: string;
+  rank?: number;
+  title?: string;
+  url?: string;
+  domain?: string;
+  published_at?: string | null;
+  source?: string;
+  snippet?: string;
+  snippet_preview?: string;
+};
+
 type NormalizedContextMetadata = {
   memory?: CoreMemoryContextSummary;
   knowledge?: KnowledgeContextSummary;
@@ -329,7 +354,7 @@ type NormalizedContextMetadata = {
   web?: WebContextSummary;
 };
 
-type ContextTab = 'knowledge' | 'worldbook' | 'memory';
+type ContextTab = 'knowledge' | 'worldbook' | 'memory' | 'web';
 
 type KnowledgeCitationSelection = {
   token: string;
@@ -346,10 +371,10 @@ type WorldbookEntryState = {
   missing?: boolean;
 };
 
-function InjectedContextModal({ context, onClose }: { context: NormalizedContextMetadata; onClose: () => void }) {
+function InjectedContextModal({ context, initialTab, targetRef, onClose }: { context: NormalizedContextMetadata; initialTab?: ContextTab; targetRef?: string; onClose: () => void }) {
   const { t } = useTranslation(['chat', 'common']);
   const tabs = contextModalTabs(context);
-  const [activeTab, setActiveTab] = useState<ContextTab>(() => tabs[0] || 'knowledge');
+  const [activeTab, setActiveTab] = useState<ContextTab>(() => (initialTab && tabs.includes(initialTab) ? initialTab : tabs[0] || 'knowledge'));
   const title = tabs.length > 1 ? t('chat:contextModal.title') : tabLabel(tabs[0] || 'knowledge', t);
   const subtitle = contextModalSubtitle(context, t);
 
@@ -372,7 +397,7 @@ function InjectedContextModal({ context, onClose }: { context: NormalizedContext
         <div className="context-sources-tabs context-modal-tabs" role="tablist">
           {tabs.map((tab) => (
             <button key={tab} type="button" role="tab" className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
-              {tab === 'worldbook' ? <BookOpenText size={14} /> : <BookOpen size={14} />}
+              {tab === 'worldbook' ? <BookOpenText size={14} /> : tab === 'web' ? <Globe size={14} /> : <BookOpen size={14} />}
               {tabLabel(tab, t)}
             </button>
           ))}
@@ -383,6 +408,7 @@ function InjectedContextModal({ context, onClose }: { context: NormalizedContext
         {activeTab === 'memory' && context.memory ? <MemoryContextTab summary={context.memory} /> : null}
         {activeTab === 'knowledge' && context.knowledge ? <KnowledgeSnippetsTab refs={context.knowledge.snippetRefs} /> : null}
         {activeTab === 'worldbook' && context.worldbook ? <WorldbookEntriesTab refs={context.worldbook.entryRefs} /> : null}
+        {activeTab === 'web' && context.web ? <WebSourcesTab refs={context.web.sourceRefs} targetRef={targetRef} /> : null}
       </div>
     </AppModal>
   );
@@ -579,6 +605,57 @@ function WorldbookEntriesTab({ refs }: { refs: WorldbookEntryRef[] }) {
   );
 }
 
+function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: string }) {
+  const { t } = useTranslation(['chat']);
+  const targetRefElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!targetRefElement.current) return;
+    targetRefElement.current.scrollIntoView({ block: 'nearest' });
+  }, [targetRef]);
+
+  if (!refs.length) return <p className="knowledge-snippets-state">{t('chat:contextModal.noWebSources')}</p>;
+
+  return (
+    <>
+      {refs.map((ref) => {
+        const highlighted = Boolean(targetRef && ref.ref_id === targetRef);
+        return (
+          <article
+            className={`knowledge-snippet-card web-source-card ${highlighted ? 'targeted' : ''}`}
+            key={ref.ref_id}
+            ref={(element) => {
+              if (highlighted) targetRefElement.current = element;
+            }}
+          >
+            <div className="knowledge-snippet-heading web-source-heading">
+              <span>{ref.ref_id}</span>
+              <div>
+                <strong>{ref.title || ref.url || ref.ref_id}</strong>
+                <small>{ref.domain || t('chat:contextModal.domain')}</small>
+                {ref.url ? <small>{t('chat:contextModal.sourceUrl')}: {ref.url}</small> : null}
+              </div>
+            </div>
+            {ref.snippet_preview || ref.snippet ? <pre className="knowledge-snippet-content">{ref.snippet_preview || ref.snippet}</pre> : null}
+            <div className="knowledge-snippet-scores">
+              {scoreLabel(t('chat:contextModal.rank'), ref.rank)}
+              {ref.source ? <span>{t('chat:contextModal.source')}: {ref.source}</span> : null}
+              {ref.domain ? <span>{t('chat:contextModal.domain')}: {ref.domain}</span> : null}
+              {ref.published_at ? <span>{t('chat:contextModal.published')}: {ref.published_at}</span> : null}
+              {ref.url ? (
+                <a href={ref.url} target="_blank" rel="noreferrer noopener">
+                  <ExternalLink size={12} />
+                  {t('chat:contextModal.openSource')}
+                </a>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
+    </>
+  );
+}
+
 function WarningList({ warnings }: { warnings: string[] }) {
   return (
     <div className="run-step-knowledge-warnings">
@@ -593,6 +670,7 @@ function contextModalTabs(context: NormalizedContextMetadata): ContextTab[] {
   const tabs: ContextTab[] = [];
   if (context.knowledge?.canViewSnippets) tabs.push('knowledge');
   if (context.worldbook?.injected && context.worldbook.entryRefs.length) tabs.push('worldbook');
+  if (context.web?.sourceRefs.length) tabs.push('web');
   if (context.memory?.injected) tabs.push('memory');
   return tabs;
 }
@@ -600,6 +678,7 @@ function contextModalTabs(context: NormalizedContextMetadata): ContextTab[] {
 function tabLabel(tab: ContextTab, t: ReturnType<typeof useTranslation>['t']): string {
   if (tab === 'memory') return t('chat:contextModal.memory');
   if (tab === 'worldbook') return t('chat:contextModal.worldbookEntries');
+  if (tab === 'web') return t('chat:contextModal.webSources');
   return t('chat:contextModal.knowledgeSnippets');
 }
 
@@ -608,6 +687,7 @@ function contextModalSubtitle(context: NormalizedContextMetadata, t: ReturnType<
   if (context.memory?.injected) parts.push(t('chat:contextModal.memory'));
   if (context.knowledge?.canViewSnippets) parts.push(t('chat:contextModal.snippetsUsed', { count: context.knowledge.snippetRefs.length }));
   if (context.worldbook?.injected && context.worldbook.entryRefs.length) parts.push(t('chat:contextModal.entriesUsed', { count: context.worldbook.entryRefs.length }));
+  if (context.web?.sourceRefs.length) parts.push(t('chat:contextModal.webResultsUsed', { count: context.web.sourceRefs.length }));
   return parts.join(' / ');
 }
 
@@ -726,12 +806,14 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
   if (!contexts.length) return undefined;
   const last = contexts[contexts.length - 1];
   const resolver = firstPlainRecord(contexts.map((context) => context.resolver).reverse());
+  const sourceRefs = dedupeWebSourceRefs(contexts.flatMap((context) => webSourceRefs(context)));
   return {
     enabled: booleanValue(last.enabled),
     attempted: contexts.some((context) => context.attempted === true),
     injected: contexts.some((context) => context.injected === true),
     provider: textValue(last.provider),
-    resultCount: maxNumber(contexts.map((context) => numberValue(context.result_count))),
+    resultCount: sourceRefs.length || maxNumber(contexts.map((context) => numberValue(context.result_count))),
+    sourceRefs,
     query: textValue(last.query),
     querySource: textValue(last.query_source),
     skippedReason: textValue(last.skipped_reason),
@@ -741,6 +823,28 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
     resolverConfidence: textValue(resolver?.confidence),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
   };
+}
+
+function webSourceRefs(context: Record<string, unknown> | undefined): WebSourceRef[] {
+  if (!isPlainRecord(context) || !Array.isArray(context.source_refs)) return [];
+  const refs: WebSourceRef[] = [];
+  context.source_refs.forEach((item, index) => {
+    if (!isPlainRecord(item)) return;
+    const refId = textValue(item.ref_id) || `W${index + 1}`;
+    if (!/^W\d+$/.test(refId)) return;
+    refs.push({
+      ref_id: refId,
+      rank: numberValue(item.rank),
+      title: textValue(item.title),
+      url: textValue(item.url),
+      domain: textValue(item.domain),
+      published_at: textValue(item.published_at) || null,
+      source: textValue(item.source),
+      snippet: textValue(item.snippet),
+      snippet_preview: textValue(item.snippet_preview),
+    });
+  });
+  return refs;
 }
 
 function knowledgeSnippetRefs(context: Record<string, unknown> | undefined): KnowledgeSnippetRef[] {
@@ -808,6 +912,16 @@ function dedupeWorldbookRefs(refs: WorldbookEntryRef[]): WorldbookEntryRef[] {
   }).map((ref, index) => ({ ...ref, index: ref.index || `W${index + 1}` }));
 }
 
+function dedupeWebSourceRefs(refs: WebSourceRef[]): WebSourceRef[] {
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = ref.ref_id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function scoreLabel(label: string, value: number | undefined): ReactNode {
   if (value === undefined) return null;
   const display = Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
@@ -823,30 +937,48 @@ function knowledgeCitationRefMap(refs: KnowledgeSnippetRef[] | undefined): Map<s
   return result;
 }
 
+function webCitationRefMap(refs: WebSourceRef[] | undefined): Map<string, WebSourceRef> {
+  const result = new Map<string, WebSourceRef>();
+  (refs || []).forEach((ref, index) => {
+    const label = /^W\d+$/.test(ref.ref_id || '') ? ref.ref_id : `W${index + 1}`;
+    if (!result.has(label)) result.set(label, { ...ref, ref_id: label });
+  });
+  return result;
+}
+
 function renderKnowledgeCitationChildren({
   children,
   refsByLabel,
+  webRefsByLabel,
   onOpen,
+  onOpenWeb,
   openLabel,
   openRangeLabel,
+  openWebLabel,
 }: {
   children: ReactNode;
   refsByLabel: Map<string, KnowledgeSnippetRef>;
+  webRefsByLabel?: Map<string, WebSourceRef>;
   onOpen: (selection: KnowledgeCitationSelection) => void;
+  onOpenWeb?: (refId: string) => void;
   openLabel: (label: string) => string;
   openRangeLabel: (labels: string) => string;
+  openWebLabel?: (label: string) => string;
 }): ReactNode {
-  return Children.map(children, (child) => renderKnowledgeCitationNode(child, refsByLabel, onOpen, openLabel, openRangeLabel));
+  return Children.map(children, (child) => renderKnowledgeCitationNode(child, refsByLabel, webRefsByLabel, onOpen, onOpenWeb, openLabel, openRangeLabel, openWebLabel));
 }
 
 function renderKnowledgeCitationNode(
   node: ReactNode,
   refsByLabel: Map<string, KnowledgeSnippetRef>,
+  webRefsByLabel: Map<string, WebSourceRef> | undefined,
   onOpen: (selection: KnowledgeCitationSelection) => void,
+  onOpenWeb: ((refId: string) => void) | undefined,
   openLabel: (label: string) => string,
   openRangeLabel: (labels: string) => string,
+  openWebLabel: ((label: string) => string) | undefined,
 ): ReactNode {
-  if (typeof node === 'string') return splitKnowledgeCitationText(node, refsByLabel, onOpen, openLabel, openRangeLabel);
+  if (typeof node === 'string') return splitKnowledgeCitationText(node, refsByLabel, webRefsByLabel, onOpen, onOpenWeb, openLabel, openRangeLabel, openWebLabel);
   if (!isValidElement(node)) return node;
   if (typeof node.type === 'string' && ['a', 'code', 'pre'].includes(node.type)) return node;
   const props = node.props as { children?: ReactNode };
@@ -854,29 +986,48 @@ function renderKnowledgeCitationNode(
   return cloneElement(
     node as ReactElement<{ children?: ReactNode }>,
     undefined,
-    renderKnowledgeCitationChildren({ children: props.children, refsByLabel, onOpen, openLabel, openRangeLabel }),
+    renderKnowledgeCitationChildren({ children: props.children, refsByLabel, webRefsByLabel, onOpen, onOpenWeb, openLabel, openRangeLabel, openWebLabel }),
   );
 }
 
 function splitKnowledgeCitationText(
   text: string,
   refsByLabel: Map<string, KnowledgeSnippetRef>,
+  webRefsByLabel: Map<string, WebSourceRef> | undefined,
   onOpen: (selection: KnowledgeCitationSelection) => void,
+  onOpenWeb: ((refId: string) => void) | undefined,
   openLabel: (label: string) => string,
   openRangeLabel: (labels: string) => string,
+  openWebLabel: ((label: string) => string) | undefined,
 ): ReactNode {
-  const tokenPattern = /\[K\d+(?:\s*(?:,|-|–)\s*K\d+)*\]/g;
+  const tokenPattern = /\[(?:K\d+(?:\s*(?:,|-|–)\s*K\d+)*|W\d+)\]/g;
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = tokenPattern.exec(text))) {
     const token = match[0];
-    const parsed = parseKnowledgeCitationToken(token);
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    if (!parsed) {
-      parts.push(token);
+    const webLabel = token.match(/^\[(W\d+)\]$/)?.[1];
+    if (webLabel && webRefsByLabel?.has(webLabel) && onOpenWeb) {
+      const ariaLabel = openWebLabel?.(webLabel) || webLabel;
+      parts.push(
+        <button
+          key={`${token}:${match.index}`}
+          type="button"
+          className="knowledge-citation-badge web-citation-badge"
+          aria-label={ariaLabel}
+          title={ariaLabel}
+          onClick={() => onOpenWeb(webLabel)}
+        >
+          {token}
+        </button>,
+      );
     } else {
+      const parsed = parseKnowledgeCitationToken(token);
+      if (!parsed) {
+        parts.push(token);
+      } else {
       const refs = parsed.labels.map((label) => refsByLabel.get(label)).filter((ref): ref is KnowledgeSnippetRef => Boolean(ref));
       const missingLabels = parsed.labels.filter((label) => !refsByLabel.has(label));
       if (!refs.length) {
@@ -895,6 +1046,7 @@ function splitKnowledgeCitationText(
             {token}
           </button>,
         );
+      }
       }
     }
     lastIndex = match.index + token.length;
@@ -1322,6 +1474,7 @@ function MessageContent({
   kind,
   contextMetadata,
   onOpenKnowledgeCitation,
+  onOpenWebCitation,
   onPreviewImage,
   onPreviewFile,
 }: {
@@ -1329,6 +1482,7 @@ function MessageContent({
   kind: 'user' | 'agent' | 'command';
   contextMetadata: NormalizedContextMetadata;
   onOpenKnowledgeCitation: (selection: KnowledgeCitationSelection) => void;
+  onOpenWebCitation: (refId: string) => void;
   onPreviewImage: (image: ImagePreview) => void;
   onPreviewFile: (file: FilePreview) => void;
 }) {
@@ -1339,11 +1493,12 @@ function MessageContent({
     return <UserMessageRenderer content={copyableMessageContent(message)} attachments={messageAttachments(message)} onPreviewImage={onPreviewImage} onPreviewFile={onPreviewFile} />;
   }
   const citationRefs = kind === 'agent' ? contextMetadata.knowledge?.snippetRefs : undefined;
+  const webCitationRefs = kind === 'agent' ? contextMetadata.web?.sourceRefs : undefined;
   return (
     <MessagePartsRenderer
       parts={message.parts}
       message={message}
-      renderMarkdown={(text) => <MarkdownRenderer content={text} knowledgeSnippetRefs={citationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} />}
+      renderMarkdown={(text) => <MarkdownRenderer content={text} knowledgeSnippetRefs={citationRefs} webSourceRefs={webCitationRefs} onOpenKnowledgeCitation={onOpenKnowledgeCitation} onOpenWebCitation={onOpenWebCitation} />}
       renderPlainText={(text) => <PlainTextRenderer content={text} />}
       renderJson={(data) => <JsonRenderer content={data} />}
       renderFile={(payload) => <FileContentRenderer payload={payload} />}
@@ -1444,25 +1599,36 @@ function AttachmentGallery({ attachments, onPreviewImage, onPreviewFile }: { att
 export function MarkdownRenderer({
   content,
   knowledgeSnippetRefs,
+  webSourceRefs,
   onOpenKnowledgeCitation,
+  onOpenWebCitation,
 }: {
   content: unknown;
   knowledgeSnippetRefs?: KnowledgeSnippetRef[];
+  webSourceRefs?: WebSourceRef[];
   onOpenKnowledgeCitation?: (selection: KnowledgeCitationSelection) => void;
+  onOpenWebCitation?: (refId: string) => void;
 }) {
   const { t } = useTranslation(['chat']);
   const markdown = contentToText(content);
-  const refsByLabel = knowledgeSnippetRefs?.length ? knowledgeCitationRefMap(knowledgeSnippetRefs) : undefined;
-  const renderCitationText = refsByLabel && onOpenKnowledgeCitation
+  const refsByLabel = knowledgeSnippetRefs?.length ? knowledgeCitationRefMap(knowledgeSnippetRefs) : new Map<string, KnowledgeSnippetRef>();
+  const webRefsByLabel = webSourceRefs?.length ? webCitationRefMap(webSourceRefs) : undefined;
+  const hasKnowledgeCitations = refsByLabel.size > 0 && Boolean(onOpenKnowledgeCitation);
+  const hasWebCitations = Boolean(webRefsByLabel?.size && onOpenWebCitation);
+  const hasCitations = hasKnowledgeCitations || hasWebCitations;
+  const renderCitationText = hasCitations
     ? (children: ReactNode) => renderKnowledgeCitationChildren({
         children,
         refsByLabel,
-        onOpen: onOpenKnowledgeCitation,
+        webRefsByLabel,
+        onOpen: onOpenKnowledgeCitation || (() => undefined),
+        onOpenWeb: onOpenWebCitation,
         openLabel: (label) => t('chat:citations.openSnippet', { label }),
         openRangeLabel: (labels) => t('chat:citations.openSnippets', { labels }),
+        openWebLabel: (label) => t('chat:citations.openWebSource', { label }),
       })
     : undefined;
-  const citationComponents = refsByLabel && onOpenKnowledgeCitation
+  const citationComponents = hasCitations && renderCitationText
     ? {
         p: ({ children, ...props }: { children?: ReactNode }) => (
           <p {...props}>{renderCitationText?.(children)}</p>

@@ -7,7 +7,7 @@ from sqlmodel import Session as DbSession, create_engine
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.attachments import save_attachment_from_upload
-from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION, DEFAULT_SESSION_TITLE_PROMPT
+from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION, DEFAULT_SESSION_TITLE_PROMPT, DEFAULT_WEB_CONTEXT_PROMPT
 from ai_workbench.core.settings import DEFAULT_CODE_FONT_FAMILY, DEFAULT_MESSAGE_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.db.models import AppMetadataRecord
@@ -60,6 +60,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["web_context_enabled"] is False
     assert response.json()["web_context_max_results"] == 5
     assert response.json()["web_context_context_budget_chars"] == 4000
+    assert response.json()["web_context_prompt"] == DEFAULT_WEB_CONTEXT_PROMPT
+    assert response.json()["web_context_prompt_default"] == DEFAULT_WEB_CONTEXT_PROMPT
     assert response.json()["intent_routing_enabled"] is False
     assert response.json()["intent_routing_default_for_prompt_agents"] is False
     assert response.json()["intent_routing_mode"] == "shadow"
@@ -129,6 +131,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "web_context_enabled": True,
             "web_context_max_results": 7,
             "web_context_context_budget_chars": 6000,
+            "web_context_prompt": "Use web citations like [W1].",
             "intent_routing_enabled": True,
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
@@ -190,6 +193,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["web_context_enabled"] is True
     assert patched.json()["web_context_max_results"] == 7
     assert patched.json()["web_context_context_budget_chars"] == 6000
+    assert patched.json()["web_context_prompt"] == "Use web citations like [W1]."
     assert patched.json()["intent_routing_enabled"] is True
     assert patched.json()["intent_routing_default_for_prompt_agents"] is True
     assert patched.json()["intent_routing_mode"] == "auto"
@@ -279,6 +283,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"web_context_max_results": 11}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 499}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 20001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_prompt": "   "}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_prompt": "x" * 4001}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
@@ -298,6 +304,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["web_context_enabled"] is True
     assert restarted.patch("/api/settings/general", json={"web_context_max_results": 3}).json()["web_context_max_results"] == 3
     assert restarted.get("/api/settings/general").json()["web_context_context_budget_chars"] == 6000
+    assert restarted.get("/api/settings/general").json()["web_context_prompt"] == "Use web citations like [W1]."
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
     assert restarted.get("/api/settings/general").json()["intent_routing_semantic_intent_min_score"] == 0.6

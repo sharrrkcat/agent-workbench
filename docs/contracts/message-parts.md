@@ -19,7 +19,10 @@ must not duplicate full parts.
 
 - `text`: `format` is `plain` or `markdown`. Prompt Agent final output is a
   markdown text part. Knowledge citations stay as inline `[K1]` tokens with
-  compact `metadata.snippet_refs`; chunk text is fetched at render time.
+  compact `metadata.snippet_refs`; chunk text is fetched at render time. Web
+  citations stay as inline `[W1]` tokens with compact
+  `metadata.web_context.source_refs`; source details are read from that compact
+  metadata at render time.
 - `json`: structured object or array data.
 - `file`: inline raw text (`mode: inline_text`) or an attachment reference.
 - `image`: one image by `url` or `attachment_id`.
@@ -112,6 +115,11 @@ plain text.
 The frontend renders normal messages only through `MessagePartsRenderer`.
 Missing or invalid parts produce a safe empty/error state, not a legacy fallback.
 Copyable content and renderability checks are derived from parts and status.
+Markdown text rendering may enhance known `[K#]` and `[W#]` tokens into
+clickable citation badges. This is render-time only: persisted message parts and
+copy behavior keep the original markdown text. Citation enhancement must avoid
+code blocks, inline code, and links, and unknown labels such as `[W99]` must not
+throw or trigger network calls.
 Audio parts render with the project custom audio player, backed by a hidden
 `<audio>` element without native browser controls. Remote `source: url` playback
 depends on browser support and the remote server's Content-Type, Range, CORS,

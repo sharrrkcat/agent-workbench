@@ -242,8 +242,13 @@ def test_text_part_renderer_uses_markdown_or_plain_paths() -> None:
     assert "renderMarkdown(text)" in source
     assert "renderPlainText(text)" in source
     assert "knowledgeSnippetRefs={citationRefs}" in bubble
+    assert "webSourceRefs={webCitationRefs}" in bubble
     assert "onOpenKnowledgeCitation={onOpenKnowledgeCitation}" in bubble
+    assert "onOpenWebCitation={onOpenWebCitation}" in bubble
     assert "renderKnowledgeCitationChildren" in bubble
+    assert "webCitationRefMap" in bubble
+    assert "W\\d+" in bubble
+    assert "['a', 'code', 'pre'].includes(node.type)" in bubble
 
 
 def test_json_file_image_and_gallery_parts_delegate_to_legacy_renderers() -> None:
@@ -1020,6 +1025,8 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_enabled: boolean" in types
     assert "web_context_max_results: number" in types
     assert "web_context_context_budget_chars: number" in types
+    assert "web_context_prompt: string" in types
+    assert "web_context_prompt_default: string" in types
     assert "'web_search'" in object_list
     assert "settings:general.webSearch" in object_list
     assert "settings:general.webSearchDescription" in object_list
@@ -1029,9 +1036,11 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.enableWebSearchContext" in panel
     assert "settings:general.maxWebResults" in panel
     assert "settings:general.webContextBudget" in panel
+    assert "settings:general.webContextPrompt" in panel
     assert "settings:general.searchProvider" in panel
     assert "capability_id === 'web_search'" in panel
     assert "web_context_enabled: values.web_context_enabled" in panel
+    assert "web_context_prompt: values.web_context_prompt" in panel
     assert "labelKey: 'sections.webSearch'" not in nav
 
 
@@ -1041,6 +1050,9 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
 
     assert "type WebContextSummary" in source
     assert "record.web_context" in source
+    assert "source_refs" in source
+    assert "WebSourcesTab" in source
+    assert "web-citation-badge" in source
     assert "function mergeWebContexts" in source
     assert "summary.web" in source
     assert "webSummaryLabel" in source

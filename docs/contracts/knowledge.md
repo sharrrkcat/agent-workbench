@@ -261,6 +261,11 @@ current run and does not persist bindings or ranking changes.
 Knowledge results render as a `# Retrieved Knowledge` system-context block using
 Knowledge Defaults instruction/template settings. If the Agent has no system
 message, runtime creates one.
+Knowledge citation UI uses the compact `snippet_refs` metadata and may coexist
+with Web citation UI from Prompt Agent Web Context. `[K#]` citations continue to
+resolve through Knowledge chunk APIs, while `[W#]` citations resolve only from
+compact `web_context.source_refs` metadata. Web citations do not change
+Knowledge retrieval, indexing, or snippet contracts.
 
 Script Agents with `llm` default to session Knowledge disabled. If settings or
 Agent overrides enable it, `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.stream`,

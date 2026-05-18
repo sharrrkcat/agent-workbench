@@ -1532,6 +1532,8 @@ export type GeneralSettings = {
   web_context_enabled: boolean;
   web_context_max_results: number;
   web_context_context_budget_chars: number;
+  web_context_prompt: string;
+  web_context_prompt_default: string;
   intent_routing_enabled: boolean;
   intent_routing_default_for_prompt_agents: boolean;
   intent_routing_mode: 'shadow' | 'auto';

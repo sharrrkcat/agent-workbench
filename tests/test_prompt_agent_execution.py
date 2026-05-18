@@ -329,7 +329,12 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     fixture = PromptRuntimeFixture(llm=llm)
     session = fixture.sessions.create_session(default_agent_id="chat")
     kb = bind_test_kb(fixture, session.session_id)
-    fixture.app_settings.patch({"web_context_enabled": True, "web_context_max_results": 5, "web_context_context_budget_chars": 4000})
+    fixture.app_settings.patch({
+        "web_context_enabled": True,
+        "web_context_max_results": 5,
+        "web_context_context_budget_chars": 4000,
+        "web_context_prompt": "Use these web results as evidence and cite [W1] style markers.",
+    })
     search_queries = []
 
     def fake_knowledge_search(**kwargs):
@@ -368,6 +373,15 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
                         "snippet": "Alpha shipped today.",
                         "published_at": "2026-05-18",
                         "source": "searxng",
+                    },
+                    {
+                        "rank": 2,
+                        "title": "Alpha status follow-up",
+                        "url": "https://status.example.com/alpha",
+                        "domain": "status.example.com",
+                        "snippet": "B" * 900,
+                        "published_at": None,
+                        "source": "searxng",
                     }
                 ],
             }
@@ -390,6 +404,7 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert search_queries[0][0] == "latest alpha status"
     assert "# Retrieved Knowledge" in sent
     assert "# Retrieved Web" in sent
+    assert "Use these web results as evidence and cite [W1] style markers." in sent
     assert sent.index("# Retrieved Knowledge") < sent.index("# Retrieved Web")
     assert sent_messages[-1]["content"] == "latest alpha status"
     assert "[W1] Alpha launch" in sent
@@ -398,7 +413,7 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert metadata["attempted"] is True
     assert metadata["injected"] is True
     assert metadata["provider"] == "searxng"
-    assert metadata["result_count"] == 1
+    assert metadata["result_count"] == 2
     assert metadata["source_refs"] == [
         {
             "ref_id": "W1",
@@ -408,11 +423,23 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
             "domain": "example.com",
             "published_at": "2026-05-18",
             "source": "searxng",
-        }
+            "snippet_preview": "Alpha shipped today.",
+        },
+        {
+            "ref_id": "W2",
+            "rank": 2,
+            "title": "Alpha status follow-up",
+            "url": "https://status.example.com/alpha",
+            "domain": "status.example.com",
+            "published_at": None,
+            "source": "searxng",
+            "snippet_preview": "B" * 697 + "...",
+        },
     ]
-    assert "Alpha shipped today." not in str(metadata)
+    assert "Alpha shipped today." in str(metadata)
     assert "Retrieved Web" not in str(metadata)
-    assert context_step.metadata["web_context"]["result_count"] == 1
+    assert "Use these web results as evidence" not in str(metadata)
+    assert context_step.metadata["web_context"]["result_count"] == 2
     assert "source_refs" not in context_step.metadata["web_context"]
     assert web_plan_step.parent_step_id == context_step.step_id
     assert web_plan_step.message == "source: raw_user_text_forced"
@@ -421,6 +448,8 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert "result_count" not in web_plan_step.metadata["web_context_plan"]
     assert "provider" not in web_plan_step.metadata["web_context_plan"]
     assert message_metadata["source_refs"][0]["ref_id"] == "W1"
+    assert message_metadata["source_refs"][1]["ref_id"] == "W2"
+    assert len(message_metadata["source_refs"][1]["snippet_preview"]) == 700
 
 
 def test_prompt_agent_web_context_failure_warns_and_continues(monkeypatch) -> None:

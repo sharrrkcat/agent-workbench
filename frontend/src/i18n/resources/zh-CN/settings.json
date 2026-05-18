@@ -391,6 +391,8 @@
     "webSearchContextHelp": "为符合条件的 Prompt Agent 回复加入实时联网结果。",
     "maxWebResults": "最大结果数",
     "webContextBudget": "上下文字数预算",
+    "webContextPrompt": "Web Context Prompt",
+    "webContextPromptHelp": "随 Web Search 结果一起注入 Prompt Agent 的 instruction。请保留 [W1] 格式引用，以便回答可以链接回来源。",
     "searchProvider": "搜索提供方",
     "configureProviderInCapabilities": "在 Capabilities 中配置提供方",
     "webSearchProviderSummary": "{{provider}} 位于 {{baseUrl}} / 最多 {{maxResults}} 条结果",

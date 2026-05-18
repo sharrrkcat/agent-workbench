@@ -1089,6 +1089,11 @@ function GeneralWebSearchSettings({
           <NumberField label={t('settings:general.maxWebResults')} value={values.web_context_max_results} min={1} max={10} onChange={(value) => setNumber('web_context_max_results', value)} />
           <NumberField label={t('settings:general.webContextBudget')} value={values.web_context_context_budget_chars} min={500} max={20000} step={500} onChange={(value) => setNumber('web_context_context_budget_chars', value)} />
         </div>
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.webContextPrompt')}</span>
+          <textarea rows={7} maxLength={4000} value={values.web_context_prompt} onChange={(event) => setValues({ ...values, web_context_prompt: event.currentTarget.value })} />
+          <small>{t('settings:general.webContextPromptHelp')}</small>
+        </label>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -1687,6 +1692,7 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     web_context_enabled: values.web_context_enabled,
     web_context_max_results: values.web_context_max_results,
     web_context_context_budget_chars: values.web_context_context_budget_chars,
+    web_context_prompt: values.web_context_prompt,
     intent_routing_enabled: values.intent_routing_enabled,
     intent_routing_default_for_prompt_agents: values.intent_routing_default_for_prompt_agents,
     intent_routing_mode: values.intent_routing_mode,

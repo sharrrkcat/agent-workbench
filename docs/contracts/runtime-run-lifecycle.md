@@ -122,10 +122,13 @@ metadata stores refs/counts/warnings, not snapshots of full user-owned content.
 fields include enablement, attempted/injected booleans, truncated query,
 `query_source`, provider, result count, compact source refs, `skipped_reason`,
 warnings, and a compact resolver object with `used`, `reason`, and `confidence`.
+Each `source_refs` item may include only compact citation UI fields:
+`ref_id` such as `W1`, `rank`, `title`, validated HTTP/HTTPS `url`, `domain`,
+`published_at`, `source`, and a capped `snippet_preview` or short `snippet`.
 The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
-rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, KB
-snippets, Core Memory, Worldbook content, or secrets.
+rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web
+Context prompt text, KB snippets, Core Memory, Worldbook content, or secrets.
 
 For real Prompt Agent runs only, `intent_routing.web_context_usage` may be
 `used_for_web_context` when diagnostic `web_query` slots/original query were

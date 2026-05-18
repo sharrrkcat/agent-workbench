@@ -1595,6 +1595,19 @@ input:disabled {
   color: #dcfce7;
 }
 
+.web-citation-badge {
+  border-color: rgba(125, 211, 252, 0.28);
+  background: rgba(14, 116, 144, 0.18);
+  color: #bae6fd;
+}
+
+.web-citation-badge:hover,
+.web-citation-badge:focus-visible {
+  border-color: rgba(125, 211, 252, 0.56);
+  background: rgba(14, 116, 144, 0.28);
+  color: #e0f2fe;
+}
+
 .plain-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -3136,6 +3149,16 @@ input:disabled {
   font-weight: 800;
 }
 
+.web-source-heading > span {
+  background: rgba(14, 116, 144, 0.18);
+  color: #7dd3fc;
+}
+
+.web-source-card.targeted {
+  border-color: rgba(125, 211, 252, 0.48);
+  box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.16);
+}
+
 .knowledge-snippet-heading > div {
   display: grid;
   gap: 3px;
@@ -3184,6 +3207,23 @@ input:disabled {
   padding: 3px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
+}
+
+.knowledge-snippet-scores a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.1);
+  color: #bae6fd;
+  text-decoration: none;
+}
+
+.knowledge-snippet-scores a:hover,
+.knowledge-snippet-scores a:focus-visible {
+  background: rgba(125, 211, 252, 0.18);
+  color: #e0f2fe;
 }
 
 .file-preview-header {
