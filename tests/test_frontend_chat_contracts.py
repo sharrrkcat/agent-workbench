@@ -76,6 +76,7 @@ def test_composer_draft_text_drives_pet_waiting_state() -> None:
 def test_chat_input_supports_static_command_argument_suggestions() -> None:
     input_source = read_frontend("components/ChatInput.tsx")
     palette_source = read_frontend("components/CommandPalette.tsx")
+    client_source = read_frontend("api/client.ts")
     types_source = read_frontend("types.ts")
     en_chat = read_frontend("i18n/resources/en/chat.json")
     zh_chat = read_frontend("i18n/resources/zh-CN/chat.json")
@@ -85,9 +86,26 @@ def test_chat_input_supports_static_command_argument_suggestions() -> None:
     assert "parseCommandArgumentToken" in palette_source
     assert "suggestion.value.toLowerCase().startsWith(argumentContext.prefix.toLowerCase())" in palette_source
     assert "value: `${argumentContext.command.name} ${suggestion.value} `" in palette_source
+    assert "firstSuggestion?.next_suggestions" in palette_source
+    assert "commandArgumentSuggestions" in palette_source
+    assert "AbortController" in palette_source
+    assert "requestSeqRef.current !== requestSeq" in palette_source
+    assert "value: `${argumentContext.command.name} ${argumentContext.args[0]} ${suggestion.value} `" in palette_source
+    assert "/api/commands/argument-suggestions" in client_source
     assert "argument_suggestions?: CommandArgumentSuggestion[]" in types_source
+    assert "next_suggestions?: CommandArgumentNextSuggestions | null" in types_source
+    assert "provider: 'pet_ids'" in types_source
     assert '"argumentSuggestions": "Arguments"' in en_chat
     assert '"argumentSuggestions": "参数"' in zh_chat
+
+
+def test_command_palette_keeps_keyboard_selection_visible() -> None:
+    palette_source = read_frontend("components/CommandPalette.tsx")
+
+    assert "listRef" in palette_source
+    assert "data-active" in palette_source
+    assert "scrollIntoView({ block: 'nearest' })" in palette_source
+    assert "[data-active=\"true\"]" in palette_source
 
 
 def test_message_knowledge_snippets_modal_contract() -> None:
@@ -554,7 +572,7 @@ def test_settings_config_enum_does_not_render_unset_option() -> None:
 def test_composer_colon_autocomplete_does_not_replace_existing_namespaces() -> None:
     source = read_frontend("components/ChatInput.tsx")
 
-    assert "activeToken.token.startsWith('/')) return 'commands'" in source
+    assert "activeToken.token.startsWith('/')) return commandArgumentAutocompleteMode(activeToken.token, commands) ? 'command-arguments' : 'commands'" in source
     assert "activeToken.token.startsWith('@') && activeToken.token.includes(':')) return 'actions'" in source
     assert "activeToken.token.startsWith('@')) return 'agents'" in source
     assert source.index("activeToken.token.startsWith('@') && activeToken.token.includes(':')") < source.index("activeToken.token.startsWith(':')")

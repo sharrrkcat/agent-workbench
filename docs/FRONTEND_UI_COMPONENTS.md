@@ -21,9 +21,15 @@ Current expected reuse points:
   legacy visible message fallback; copy, renderability, forms, and command
   buttons all read `Message.parts[]`.
 - Chat composer slash command autocomplete uses the shared command palette for
-  command names and static first-argument suggestions from Capability command
-  `argument_suggestions`. It does not implement dynamic path, URL history, or
-  pet id completion.
+  command names, static first-argument suggestions from Capability command
+  `argument_suggestions`, and allowlisted dynamic next-argument suggestions.
+  Dynamic suggestions are currently limited to `/pet select <pet_id>` through
+  the core `pet_ids` provider. It does not implement path completion, URL
+  history/completion, arbitrary provider callbacks, or command argument schemas.
+- Command palette keyboard navigation must keep the active item visible inside
+  the palette scroll container for command names, static argument suggestions,
+  and dynamic argument suggestions without scrolling the page, chat transcript,
+  or moving focus out of the composer.
 - Audio message parts render through
   `frontend/src/components/messages/parts/AudioPartRenderer.tsx` with a custom
   project-styled player backed by a hidden `<audio>` element without native

@@ -72,6 +72,28 @@ export type CommandArgumentSuggestion = {
   value: string;
   label?: string | null;
   description?: string | null;
+  next_suggestions?: CommandArgumentNextSuggestions | null;
+};
+
+export type CommandArgumentNextSuggestions = {
+  provider: 'pet_ids';
+};
+
+export type CommandArgumentSuggestionsRequest = {
+  command: string;
+  args: string[];
+  prefix: string;
+  session_id?: string | null;
+};
+
+export type CommandArgumentSuggestionsResponse = {
+  suggestions: CommandArgumentDynamicSuggestion[];
+};
+
+export type CommandArgumentDynamicSuggestion = {
+  value: string;
+  label?: string | null;
+  description?: string | null;
 };
 
 export type ManifestSummary = {

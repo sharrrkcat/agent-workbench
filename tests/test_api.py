@@ -46,6 +46,16 @@ def image_attachment(name: str = "image.svg", data_url: str = SVG_DATA_URL, size
     }
 
 
+def write_test_pet(root: Path, pet_id: str, display_name: str = "Test Pet", description: str = "A test pet.") -> None:
+    pet_dir = root / "data" / "pet" / pet_id
+    pet_dir.mkdir(parents=True)
+    pet_dir.joinpath("pet.json").write_text(
+        f'{{"displayName": "{display_name}", "description": "{description}"}}',
+        encoding="utf-8",
+    )
+    pet_dir.joinpath("spritesheet.webp").write_bytes(b"RIFF\x10\x00\x00\x00WEBPVP8 fake")
+
+
 def create_llm_profile(client: TestClient, alias: str = "myqwen3", enabled: bool = True) -> dict:
     provider = create_provider_profile(client, name=f"{alias} Provider")
     response = client.post(
@@ -620,7 +630,85 @@ def test_list_commands_returns_codec_commands() -> None:
     assert [item["value"] for item in decode["argument_suggestions"]] == ["base64", "base64url", "url", "unicode", "hex"]
     assert "qr" not in [item["value"] for item in decode["argument_suggestions"]]
     assert [item["value"] for item in pet["argument_suggestions"]] == ["status", "wake", "tuck", "reload", "select"]
+    pet_select = next(item for item in pet["argument_suggestions"] if item["value"] == "select")
+    assert pet_select["next_suggestions"] == {"provider": "pet_ids"}
     assert read_file["argument_suggestions"] == []
+
+
+def test_command_argument_suggestions_pet_select_returns_pet_ids(tmp_path: Path) -> None:
+    client = make_client()
+    client.app.state.runtime_state.repo_root = tmp_path
+    write_test_pet(tmp_path, "cal", display_name="Cal")
+    write_test_pet(tmp_path, "mira", display_name="Mira")
+
+    response = client.post(
+        "/api/commands/argument-suggestions",
+        json={"command": "/pet", "args": ["select"], "prefix": ""},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == [
+        {"value": "cal", "label": "Cal", "description": "Select and wake Cal"},
+        {"value": "mira", "label": "Mira", "description": "Select and wake Mira"},
+    ]
+
+
+def test_command_argument_suggestions_pet_select_filters_prefix(tmp_path: Path) -> None:
+    client = make_client()
+    client.app.state.runtime_state.repo_root = tmp_path
+    write_test_pet(tmp_path, "cal", display_name="Cal")
+    write_test_pet(tmp_path, "mira", display_name="Mira")
+
+    response = client.post(
+        "/api/commands/argument-suggestions",
+        json={"command": "/pet", "args": ["select"], "prefix": "c"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == [
+        {"value": "cal", "label": "Cal", "description": "Select and wake Cal"},
+    ]
+
+
+def test_command_argument_suggestions_returns_empty_for_non_dynamic_paths(tmp_path: Path) -> None:
+    client = make_client()
+    client.app.state.runtime_state.repo_root = tmp_path
+    write_test_pet(tmp_path, "cal", display_name="Cal")
+
+    cases = [
+        {"command": "/missing", "args": ["select"], "prefix": ""},
+        {"command": "/pet", "args": ["wake"], "prefix": ""},
+        {"command": "/pet", "args": ["select", "cal"], "prefix": ""},
+        {"command": "/encode", "args": ["base64"], "prefix": ""},
+        {"command": "/read-file", "args": [], "prefix": ""},
+        {"command": "/fetch-url", "args": [], "prefix": ""},
+    ]
+
+    for payload in cases:
+        response = client.post("/api/commands/argument-suggestions", json=payload)
+        assert response.status_code == 200
+        assert response.json() == {"suggestions": []}
+
+
+def test_command_argument_suggestions_does_not_execute_or_mutate_pet_settings(tmp_path: Path) -> None:
+    client = make_client()
+    client.app.state.runtime_state.repo_root = tmp_path
+    write_test_pet(tmp_path, "cal", display_name="Cal")
+    session = create_session(client)
+    before_settings = client.get("/api/pets/settings").json()
+    before_messages = client.get(f"/api/sessions/{session['session_id']}/messages").json()
+    before_runs = client.get(f"/api/sessions/{session['session_id']}/runs").json()
+
+    response = client.post(
+        "/api/commands/argument-suggestions",
+        json={"command": "/pet", "args": ["select"], "prefix": "c", "session_id": session["session_id"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["suggestions"][0]["value"] == "cal"
+    assert client.get("/api/pets/settings").json() == before_settings
+    assert client.get(f"/api/sessions/{session['session_id']}/messages").json() == before_messages
+    assert client.get(f"/api/sessions/{session['session_id']}/runs").json() == before_runs
 
 
 def test_unknown_command_returns_structured_api_error_without_run() -> None:

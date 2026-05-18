@@ -4,6 +4,8 @@ import type {
   Attachment,
   CapabilityConfig,
   Command,
+  CommandArgumentSuggestionsRequest,
+  CommandArgumentSuggestionsResponse,
   DeleteMessageResponse,
   DismissNotificationResponse,
   DeleteSessionResponse,
@@ -123,6 +125,12 @@ async function requestForm<T>(path: string, body: FormData): Promise<T> {
 export const api = {
   listAgents: () => request<Agent[]>('/api/agents'),
   listCommands: () => request<Command[]>('/api/commands'),
+  commandArgumentSuggestions: (payload: CommandArgumentSuggestionsRequest, signal?: AbortSignal) =>
+    request<CommandArgumentSuggestionsResponse>('/api/commands/argument-suggestions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    }),
   listAgentConfigs: () => request<AgentConfig[]>('/api/agent-configs'),
   getAgentConfig: (agentId: string) => request<AgentConfig>(`/api/agent-configs/${agentId}`),
   updateAgentConfig: (agentId: string, patch: Partial<Pick<AgentConfig, 'enabled' | 'user_config' | 'display' | 'runtime'>>) =>

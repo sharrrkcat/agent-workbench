@@ -108,6 +108,28 @@ commands:
         description: URL component percent decoding
 ```
 
+A static suggestion may declare a core allowlisted dynamic provider for the next
+argument. This is intentionally narrow; do not use dynamic suggestions for path
+scanning, URL history, arbitrary Capability runtime callbacks, Python imports,
+shell commands, or command argument schemas.
+
+```yaml
+commands:
+  - name: /pet
+    method: command
+    description: Control the Workbench Pet overlay.
+    safe: true
+    argument_suggestions:
+      - value: select
+        description: Select and wake a pet
+        next_suggestions:
+          provider: pet_ids
+```
+
+`pet_ids` reads the existing Pet asset list and suggests selectable `pet_id`
+values for `/pet select <pet_id>`. It does not execute `/pet`, change Pet
+settings, load spritesheet bytes, or skip runtime validation.
+
 ## Output Parts
 
 Capability command result messages use Message Parts v2 as the visible content

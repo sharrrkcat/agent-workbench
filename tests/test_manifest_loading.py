@@ -63,7 +63,12 @@ def test_command_argument_suggestions_load() -> None:
                     "method": "encode",
                     "argument_suggestions": [
                         {"value": "base64", "description": "Standard Base64"},
-                        {"value": "url", "label": "URL", "description": "URL component percent encoding"},
+                        {
+                            "value": "url",
+                            "label": "URL",
+                            "description": "URL component percent encoding",
+                            "next_suggestions": {"provider": "pet_ids"},
+                        },
                     ],
                 }
             ],
@@ -73,6 +78,8 @@ def test_command_argument_suggestions_load() -> None:
     command = capability.commands[0]
     assert command.argument_suggestions[0].value == "base64"
     assert command.argument_suggestions[1].label == "URL"
+    assert command.argument_suggestions[1].next_suggestions
+    assert command.argument_suggestions[1].next_suggestions.provider == "pet_ids"
 
 
 def test_command_without_argument_suggestions_loads() -> None:
@@ -100,6 +107,9 @@ def test_builtin_command_argument_suggestions_load() -> None:
     assert [item.value for item in decode.argument_suggestions] == ["base64", "base64url", "url", "unicode", "hex"]
     assert "qr" not in [item.value for item in decode.argument_suggestions]
     assert [item.value for item in pet_command.argument_suggestions] == ["status", "wake", "tuck", "reload", "select"]
+    select = next(item for item in pet_command.argument_suggestions if item.value == "select")
+    assert select.next_suggestions
+    assert select.next_suggestions.provider == "pet_ids"
 
 
 @pytest.mark.parametrize(
@@ -109,6 +119,10 @@ def test_builtin_command_argument_suggestions_load() -> None:
         ([{"description": "Missing value"}], "field 'argument_suggestions[0].value' is required"),
         ([{"value": ""}], "field 'argument_suggestions[0].value' must be a non-empty string"),
         ([{"value": "base64", "description": 123}], "field 'argument_suggestions[0].description' must be a string"),
+        ([{"value": "base64", "next_suggestions": "bad"}], "suggestion value 'base64' field 'argument_suggestions[0].next_suggestions' must be an object"),
+        ([{"value": "base64", "next_suggestions": {}}], "suggestion value 'base64' field 'argument_suggestions[0].next_suggestions.provider' is required"),
+        ([{"value": "base64", "next_suggestions": {"provider": ""}}], "suggestion value 'base64' field 'argument_suggestions[0].next_suggestions.provider' must be a non-empty string"),
+        ([{"value": "base64", "next_suggestions": {"provider": "paths"}}], "suggestion value 'base64' field 'argument_suggestions[0].next_suggestions.provider' has unsupported provider 'paths'"),
     ],
 )
 def test_strict_check_reports_invalid_argument_suggestions_shape(tmp_path: Path, argument_suggestions, expected: str) -> None:

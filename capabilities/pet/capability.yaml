@@ -174,3 +174,5 @@ commands:
         description: Reload pet assets
       - value: select
         description: Select and wake a pet
+        next_suggestions:
+          provider: pet_ids

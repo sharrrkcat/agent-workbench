@@ -608,7 +608,7 @@ function getActiveToken(value: string, cursorPosition: number): { token: string;
     return { token: value, start: 0, end: cursor };
   }
   const beforeCursor = value.slice(0, cursor);
-  const slashCommandArgument = beforeCursor.match(/^(\/[a-zA-Z][a-zA-Z0-9_-]*)(?:\s+([^\s]*))?$/);
+  const slashCommandArgument = beforeCursor.match(/^(\/[a-zA-Z][a-zA-Z0-9_-]*)(?:\s+[^\s]*(?:\s+[^\s]*)?)?$/);
   if (slashCommandArgument) {
     return { token: beforeCursor, start: 0, end: cursor };
   }

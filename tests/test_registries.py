@@ -62,6 +62,9 @@ def test_command_registry_exposes_pet_command() -> None:
         "reload",
         "select",
     ]
+    select = next(item for item in commands.get("/pet").argument_suggestions if item.value == "select")
+    assert select.next_suggestions
+    assert select.next_suggestions.provider == "pet_ids"
 
 
 def test_command_registry_exposes_single_read_file_command() -> None:

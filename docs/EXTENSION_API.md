@@ -247,7 +247,7 @@ commands.
 | `description` | Short command help text. | Used by UI and generated registry. |
 | `safe` | Command safety hint. | Does not enforce sandbox behavior. |
 | `confirm` | Optional confirmation text. | UI/runtime may use it before execution. |
-| `argument_suggestions` | Static first-argument UI hints. | Optional list of `{ value, label?, description? }`; `value` must be non-empty. This is not backend argument validation and is not passed to runtime methods. |
+| `argument_suggestions` | UI argument hints. | Optional list of `{ value, label?, description?, next_suggestions? }`; `value` must be non-empty. `next_suggestions.provider` is a core allowlist for second-argument UI hints; v1 supports only `pet_ids` for `/pet select <pet_id>`. It is not validation, a URL/import/runtime callback/shell hook, or passed to runtime methods. |
 
 For a minimal manifest example, see [CAPABILITY_DEVELOPMENT.md](CAPABILITY_DEVELOPMENT.md).
 

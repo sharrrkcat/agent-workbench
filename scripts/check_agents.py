@@ -22,6 +22,7 @@ ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 PROFILE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_\-]*$")
 ALLOWED_AGENT_TYPES = {"prompt", "script"}
 ALLOWED_OUTPUT_PART_TYPES = {"text", "json", "file", "image", "audio", "video", "media_group", "parts"}
+ALLOWED_COMMAND_ARGUMENT_SUGGESTION_PROVIDERS = {"pet_ids"}
 
 
 @dataclass
@@ -285,6 +286,30 @@ def _check_argument_suggestions(
                 result.errors.append(
                     f"{manifest_path}: capability '{capability_id}' command '{command_name}' field '{item_field}.{optional_field}' must be a string"
                 )
+        next_field = f"{item_field}.next_suggestions"
+        next_suggestions = suggestion.get("next_suggestions")
+        suggestion_value = value if isinstance(value, str) and value.strip() else "<missing>"
+        if next_suggestions is None:
+            continue
+        if not isinstance(next_suggestions, dict):
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' suggestion value '{suggestion_value}' field '{next_field}' must be an object"
+            )
+            continue
+        provider = next_suggestions.get("provider")
+        provider_field = f"{next_field}.provider"
+        if "provider" not in next_suggestions:
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' suggestion value '{suggestion_value}' field '{provider_field}' is required"
+            )
+        elif not isinstance(provider, str) or not provider.strip():
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' suggestion value '{suggestion_value}' field '{provider_field}' must be a non-empty string"
+            )
+        elif provider not in ALLOWED_COMMAND_ARGUMENT_SUGGESTION_PROVIDERS:
+            result.errors.append(
+                f"{manifest_path}: capability '{capability_id}' command '{command_name}' suggestion value '{suggestion_value}' field '{provider_field}' has unsupported provider '{provider}'"
+            )
 
 
 def _check_actions(manifest_path: Path, agent_id: str, actions: list[Any], result: CheckResult) -> None:
