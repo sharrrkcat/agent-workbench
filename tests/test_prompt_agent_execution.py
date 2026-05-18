@@ -304,6 +304,193 @@ def test_prompt_agent_knowledge_failure_warns_and_continues(monkeypatch) -> None
     assert "Retrieved Knowledge" not in str(llm.calls[0]["messages"])
 
 
+def test_prompt_agent_web_context_disabled_does_not_search(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    def fail_runtime(runtime_registry):
+        raise AssertionError("web search should not be resolved when disabled")
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fail_runtime)
+
+    result = run(fixture.runtime.handle_input(session, "latest project news"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert metadata["enabled"] is False
+    assert metadata["attempted"] is False
+    assert metadata["skipped_reason"] == "disabled"
+    assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
+
+
+def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    kb = bind_test_kb(fixture, session.session_id)
+    fixture.app_settings.patch({"web_context_enabled": True, "web_context_max_results": 5, "web_context_context_budget_chars": 4000})
+    search_queries = []
+
+    def fake_knowledge_search(**kwargs):
+        return {
+            "query": kwargs["query"],
+            "results": [
+                {
+                    "rank": 1,
+                    "chunk_id": "chunk-1",
+                    "knowledge_base_id": kb.id,
+                    "source_id": "source-1",
+                    "title": "Spec",
+                    "heading_path": "Intro",
+                    "content": "Alpha knowledge.",
+                    "truncated": False,
+                    "vector_score": 0.72,
+                    "keyword_score": -3.1,
+                    "rrf_score": 1.0,
+                    "rerank_score": 0.91,
+                }
+            ],
+            "debug": {"warnings": []},
+        }
+
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            search_queries.append((query, context))
+            return {
+                "provider": "searxng",
+                "results": [
+                    {
+                        "rank": 1,
+                        "title": "Alpha launch",
+                        "url": "https://example.com/alpha",
+                        "domain": "example.com",
+                        "snippet": "Alpha shipped today.",
+                        "published_at": "2026-05-18",
+                        "source": "searxng",
+                    }
+                ],
+            }
+
+        return search
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fake_knowledge_search)
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
+
+    result = run(fixture.runtime.handle_input(session, "latest alpha status"))
+    sent_messages = llm.calls[0]["messages"]
+    sent = sent_messages[0]["content"]
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+    context_step = next(step for step in fixture.runs.list_steps(result.run_id) if step.label == "Building context")
+    assistant_message = next(message for message in reversed(fixture.messages.list_messages(session.session_id)) if message.role == "assistant" and message.metadata.get("success"))
+    message_metadata = assistant_message.metadata["web_context"]
+
+    assert result.success is True
+    assert search_queries[0][0] == "latest alpha status"
+    assert "# Retrieved Knowledge" in sent
+    assert "# Retrieved Web" in sent
+    assert sent.index("# Retrieved Knowledge") < sent.index("# Retrieved Web")
+    assert sent_messages[-1]["content"] == "latest alpha status"
+    assert "[W1] Alpha launch" in sent
+    assert "Snippet: Alpha shipped today." in sent
+    assert metadata["enabled"] is True
+    assert metadata["attempted"] is True
+    assert metadata["injected"] is True
+    assert metadata["provider"] == "searxng"
+    assert metadata["result_count"] == 1
+    assert metadata["source_refs"] == [
+        {
+            "ref_id": "W1",
+            "rank": 1,
+            "title": "Alpha launch",
+            "url": "https://example.com/alpha",
+            "domain": "example.com",
+            "published_at": "2026-05-18",
+            "source": "searxng",
+        }
+    ]
+    assert "Alpha shipped today." not in str(metadata)
+    assert "Retrieved Web" not in str(metadata)
+    assert context_step.metadata["web_context"]["result_count"] == 1
+    assert "source_refs" not in context_step.metadata["web_context"]
+    assert message_metadata["source_refs"][0]["ref_id"] == "W1"
+
+
+def test_prompt_agent_web_context_failure_warns_and_continues(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.app_settings.patch({"web_context_enabled": True})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            raise RuntimeError("searxng unavailable")
+
+        return search
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
+
+    result = run(fixture.runtime.handle_input(session, "latest alpha status"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert metadata["attempted"] is True
+    assert metadata["injected"] is False
+    assert metadata["skipped_reason"] == "search_failed"
+    assert metadata["warnings"] == ["Web search failed: searxng unavailable"]
+    assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
+
+
+def test_prompt_agent_web_context_empty_results_do_not_inject(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.app_settings.patch({"web_context_enabled": True})
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            return {"provider": "searxng", "results": []}
+
+        return search
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
+
+    result = run(fixture.runtime.handle_input(session, "no match query"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert metadata["skipped_reason"] == "no_results"
+    assert metadata["warnings"] == ["No web results."]
+    assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
+
+
+def test_web_context_skips_explicit_agent_action_command_and_script_routes(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.app_settings.patch({"web_context_enabled": True})
+    chat_session = fixture.sessions.create_session(default_agent_id="chat")
+    script_session = fixture.sessions.create_session(default_agent_id="script_lifecycle_lab")
+
+    def fail_runtime(runtime_registry):
+        raise AssertionError("web search should not run for explicit routes")
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fail_runtime)
+
+    explicit_default = run(fixture.runtime.handle_input(chat_session, "@chat hello"))
+    explicit_action = run(fixture.runtime.handle_input(chat_session, ":default hello"))
+    command = run(fixture.runtime.handle_input(chat_session, "/encode base64 hello"))
+    script = run(fixture.runtime.handle_input(script_session, "hello script"))
+
+    assert explicit_default.success is True
+    assert fixture.runs.get_run(explicit_default.run_id).metadata["web_context"]["skipped_reason"] == "ineligible_route"
+    assert explicit_action.success is True
+    assert fixture.runs.get_run(explicit_action.run_id).metadata["web_context"]["skipped_reason"] == "ineligible_route"
+    assert command.success is True
+    assert "web_context" not in fixture.runs.get_run(command.run_id).metadata
+    assert script.success is True
+    assert "web_context" not in fixture.runs.get_run(script.run_id).metadata
+
+
 def test_prompt_agent_injects_core_memory_by_default_and_respects_toggle() -> None:
     llm = FakeLLMRuntime(response="chat reply")
     fixture = PromptRuntimeFixture(llm=llm)

@@ -57,6 +57,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["core_memory_content"] == ""
     assert response.json()["core_memory_enabled_for_prompt_agents"] is True
     assert response.json()["core_memory_enabled_for_script_agents"] is False
+    assert response.json()["web_context_enabled"] is False
+    assert response.json()["web_context_max_results"] == 5
+    assert response.json()["web_context_context_budget_chars"] == 4000
     assert response.json()["intent_routing_enabled"] is False
     assert response.json()["intent_routing_default_for_prompt_agents"] is False
     assert response.json()["intent_routing_mode"] == "shadow"
@@ -123,6 +126,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "core_memory_content": "Remember local preferences.",
             "core_memory_enabled_for_prompt_agents": False,
             "core_memory_enabled_for_script_agents": True,
+            "web_context_enabled": True,
+            "web_context_max_results": 7,
+            "web_context_context_budget_chars": 6000,
             "intent_routing_enabled": True,
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
@@ -181,6 +187,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["core_memory_content"] == "Remember local preferences."
     assert patched.json()["core_memory_enabled_for_prompt_agents"] is False
     assert patched.json()["core_memory_enabled_for_script_agents"] is True
+    assert patched.json()["web_context_enabled"] is True
+    assert patched.json()["web_context_max_results"] == 7
+    assert patched.json()["web_context_context_budget_chars"] == 6000
     assert patched.json()["intent_routing_enabled"] is True
     assert patched.json()["intent_routing_default_for_prompt_agents"] is True
     assert patched.json()["intent_routing_mode"] == "auto"
@@ -265,6 +274,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "llama_cpp", "intent_routing_utility_llm_model_path": "utility_llms/model.gguf"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_utility_llm_backend": "transformers", "intent_routing_utility_llm_model_path": "utility_llms/qwen3/model.gguf"}).status_code == 422
     assert client.patch("/api/settings/general", json={"intent_routing_low_confidence_threshold": 0.95}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_enabled": "yes"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_max_results": 0}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_max_results": 11}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 499}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 20001}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
@@ -281,6 +295,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.patch("/api/settings/general", json={"appearance_font_ui_custom_id": None}).json()["appearance_font_ui_custom_id"] is None
     assert restarted.patch("/api/settings/general", json={"appearance_font_message_custom_family_id": None}).json()["appearance_font_message_custom_family_id"] is None
     assert restarted.get("/api/settings/general").json()["core_memory_content"] == "Remember local preferences."
+    assert restarted.get("/api/settings/general").json()["web_context_enabled"] is True
+    assert restarted.patch("/api/settings/general", json={"web_context_max_results": 3}).json()["web_context_max_results"] == 3
+    assert restarted.get("/api/settings/general").json()["web_context_context_budget_chars"] == 6000
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
     assert restarted.get("/api/settings/general").json()["intent_routing_semantic_intent_min_score"] == 0.6

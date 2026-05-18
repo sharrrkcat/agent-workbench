@@ -306,10 +306,22 @@ type WorldbookContextSummary = {
   warnings: string[];
 };
 
+type WebContextSummary = {
+  enabled?: boolean;
+  attempted?: boolean;
+  injected?: boolean;
+  provider?: string;
+  resultCount?: number;
+  skippedReason?: string;
+  truncated?: boolean;
+  warnings: string[];
+};
+
 type NormalizedContextMetadata = {
   memory?: CoreMemoryContextSummary;
   knowledge?: KnowledgeContextSummary;
   worldbook?: WorldbookContextSummary;
+  web?: WebContextSummary;
 };
 
 type ContextTab = 'knowledge' | 'worldbook' | 'memory';
@@ -618,14 +630,20 @@ function normalizeContextMetadata(input: unknown): NormalizedContextMetadata {
     ...plainRecordArray(record.worldbook_contexts),
     ...(isPlainRecord(record.worldbook_context) ? [record.worldbook_context] : []),
   ]);
+  const webContexts = records.flatMap((record) => [
+    ...plainRecordArray(record.web_contexts),
+    ...(isPlainRecord(record.web_context) ? [record.web_context] : []),
+  ]);
 
   const result: NormalizedContextMetadata = {};
   const memory = mergeMemoryContexts(memoryContexts);
   const knowledge = mergeKnowledgeContexts(knowledgeContexts);
   const worldbook = mergeWorldbookContexts(worldbookContexts);
+  const web = mergeWebContexts(webContexts);
   if (memory) result.memory = memory;
   if (knowledge) result.knowledge = knowledge;
   if (worldbook) result.worldbook = worldbook;
+  if (web) result.web = web;
   return result;
 }
 
@@ -695,6 +713,21 @@ function mergeWorldbookContexts(contexts: Record<string, unknown>[]): WorldbookC
     recursionDepth: maxNumber(contexts.map((context) => numberValue(context.recursion_depth))),
     recursionRoundsUsed: maxNumber(contexts.map((context) => numberValue(context.recursion_rounds_used))),
     entryRefs,
+    warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
+  };
+}
+
+function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummary | undefined {
+  if (!contexts.length) return undefined;
+  const last = contexts[contexts.length - 1];
+  return {
+    enabled: booleanValue(last.enabled),
+    attempted: contexts.some((context) => context.attempted === true),
+    injected: contexts.some((context) => context.injected === true),
+    provider: textValue(last.provider),
+    resultCount: maxNumber(contexts.map((context) => numberValue(context.result_count))),
+    skippedReason: textValue(last.skipped_reason),
+    truncated: contexts.some((context) => context.truncated === true),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
   };
 }
@@ -1001,7 +1034,7 @@ function RunStepTreeItem({ step, depth, runKnowledge }: { step: RunStepNode; dep
 function ContextInjectedBlock({ summary }: { summary: NormalizedContextMetadata }) {
   const { t } = useTranslation(['runs']);
   const knowledge = summary.knowledge?.retrieval;
-  const warningCount = (summary.memory?.warnings.length || 0) + (summary.worldbook?.warnings.length || 0) + (summary.knowledge?.warnings.length || 0);
+  const warningCount = (summary.memory?.warnings.length || 0) + (summary.worldbook?.warnings.length || 0) + (summary.knowledge?.warnings.length || 0) + (summary.web?.warnings.length || 0);
   return (
     <div className="run-step-knowledge" aria-label={t('runs:contextSummary.title')}>
       <strong>{t('runs:contextSummary.title')}</strong>
@@ -1009,6 +1042,7 @@ function ContextInjectedBlock({ summary }: { summary: NormalizedContextMetadata 
         {summary.memory ? <DebugRow label={t('runs:contextSummary.memory')} value={memorySummaryLabel(summary.memory, t)} wide /> : null}
         {summary.worldbook ? <DebugRow label={t('runs:contextSummary.worldbook')} value={worldbookSummaryLabel(summary.worldbook, t)} wide /> : null}
         {knowledge || summary.knowledge ? <DebugRow label={t('runs:contextSummary.knowledge')} value={knowledgeSummaryLabel(summary.knowledge, t)} wide /> : null}
+        {summary.web ? <DebugRow label={t('runs:contextSummary.web')} value={webSummaryLabel(summary.web, t)} wide /> : null}
         {knowledge?.kbLabels.length ? <DebugRow label={t('runs:contextSummary.kb')} value={knowledge.kbLabels.join(', ')} wide /> : null}
         {knowledge ? <DebugRow label={t('runs:contextSummary.embedding')} value={embeddingSummaryLabel(knowledge)} /> : null}
         {knowledge ? <DebugRow label={t('runs:contextSummary.vector')} value={knowledge.vectorCandidateCount} /> : null}
@@ -1019,7 +1053,7 @@ function ContextInjectedBlock({ summary }: { summary: NormalizedContextMetadata 
       </div>
       {warningCount ? (
         <div className="run-step-knowledge-warnings">
-          {[...(summary.memory?.warnings || []), ...(summary.worldbook?.warnings || []), ...(summary.knowledge?.warnings || [])].map((warning, index) => (
+          {[...(summary.memory?.warnings || []), ...(summary.worldbook?.warnings || []), ...(summary.knowledge?.warnings || []), ...(summary.web?.warnings || [])].map((warning, index) => (
             <span key={`${warning}-${index}`}>{warning}</span>
           ))}
         </div>
@@ -2181,14 +2215,16 @@ function contextSummaryForStep(step: RunStep, runKnowledge?: KnowledgeRetrievalS
   if (!summary.knowledge && runKnowledge && fallbackKnowledgeStepLabel(step.label, runKnowledge)) {
     summary.knowledge = knowledgeContextFromRetrieval(runKnowledge);
   }
-  if (!summary.memory && !summary.knowledge && !summary.worldbook) return null;
+  if (!summary.memory && !summary.knowledge && !summary.worldbook && !summary.web) return null;
   const hasUsedContext = Boolean(
     summary.memory?.injected ||
     summary.worldbook?.injected ||
     summary.knowledge?.injected ||
+    summary.web?.injected ||
     summary.memory?.warnings.length ||
     summary.worldbook?.warnings.length ||
-    summary.knowledge?.warnings.length,
+    summary.knowledge?.warnings.length ||
+    summary.web?.warnings.length,
   );
   return hasUsedContext ? summary : null;
 }
@@ -2315,6 +2351,16 @@ function knowledgeSummaryLabel(summary: KnowledgeContextSummary | undefined, t: 
   if (summary.kbNames.length) parts.push(summary.kbNames.join(', '));
   if (summary.retrieval) parts.push(t('runs:contextSummary.rerankerValue', { value: rerankerLabel(summary.retrieval, t) }));
   return parts.join(' / ') || (summary.injected ? t('runs:contextSummary.injected') : t('runs:contextSummary.skipped'));
+}
+
+function webSummaryLabel(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string {
+  if (summary.injected) {
+    const provider = summary.provider || t('runs:contextSummary.unknown');
+    return t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider });
+  }
+  if (summary.skippedReason) return t('runs:contextSummary.skippedWithReason', { reason: summary.skippedReason });
+  if (summary.attempted) return t('runs:contextSummary.noResults');
+  return summary.enabled === false ? t('runs:contextSummary.skipped') : t('runs:contextSummary.notUsed');
 }
 
 function rerankerLabel(summary: KnowledgeRetrievalSummary, t?: ReturnType<typeof useTranslation>['t']): string {

@@ -26,6 +26,7 @@ Settings -> General owns local app settings for:
 - Appearance
 - LLM & Prompts
 - Memory
+- Web Search
 - Utility LLM
 - Intent Routing
 
@@ -188,6 +189,29 @@ Worldbook defaults, Worldbooks, entries, bindings, match-test, and runtime
 matching/injection behavior are owned by
 [memory-worldbook.md](memory-worldbook.md). General settings may link that
 contract but do not own Worldbook storage or APIs.
+
+## Web Search
+
+General Web Search owns Prompt Agent Web Context injection settings:
+
+- `web_context_enabled` defaults to `false`.
+- `web_context_max_results` defaults to `5` and accepts `1` through `10`.
+- `web_context_context_budget_chars` defaults to `4000` and accepts `500`
+  through `20000`.
+
+When `web_context_enabled=false`, ordinary Prompt Agent runs must not search or
+inject `# Retrieved Web`. When enabled, eligible ordinary text messages to the
+current session default Prompt Agent may call the core Web Search runtime during
+`Building context` and inject compact SearXNG results after Knowledge context
+and before conversation/current-message context.
+
+Provider connection settings remain CapabilityConfig for the `web_search`
+Capability. Settings -> Capabilities -> Web Search owns SearXNG base URL,
+timeout, language, safe-search, Capability max results, command enablement,
+diagnostics, and test search. General Web Search must not duplicate those
+provider controls. Disabling the `/web-search` command disables only that
+explicit command; it does not block internal Web Context search when General Web
+Search is enabled.
 
 ## Utility LLM
 

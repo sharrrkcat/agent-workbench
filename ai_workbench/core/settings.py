@@ -111,6 +111,9 @@ class AppSettings(BaseModel):
     core_memory_content: str = ""
     core_memory_enabled_for_prompt_agents: StrictBool = True
     core_memory_enabled_for_script_agents: StrictBool = False
+    web_context_enabled: StrictBool = False
+    web_context_max_results: int = Field(default=5, ge=1, le=10)
+    web_context_context_budget_chars: int = Field(default=4000, ge=500, le=20000)
     intent_routing_enabled: StrictBool = False
     intent_routing_default_for_prompt_agents: StrictBool = False
     intent_routing_mode: str = "shadow"
@@ -354,6 +357,9 @@ class AppSettingsPatch(BaseModel):
     core_memory_content: str | None = None
     core_memory_enabled_for_prompt_agents: StrictBool | None = None
     core_memory_enabled_for_script_agents: StrictBool | None = None
+    web_context_enabled: StrictBool | None = None
+    web_context_max_results: int | None = Field(default=None, ge=1, le=10)
+    web_context_context_budget_chars: int | None = Field(default=None, ge=500, le=20000)
     intent_routing_enabled: StrictBool | None = None
     intent_routing_default_for_prompt_agents: StrictBool | None = None
     intent_routing_mode: str | None = None

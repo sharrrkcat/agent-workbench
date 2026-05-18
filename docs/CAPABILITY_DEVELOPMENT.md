@@ -245,8 +245,10 @@ also supports Settings diagnostics through
 `POST /api/capability-configs/web_search/test-search`, which uses saved or draft
 CapabilityConfig values without creating chat messages, runs, command results,
 or saving config changes. It does not fetch result pages, execute JavaScript,
-cache results, save to Knowledge, vectorize, rerank, or inject web context into
-Prompt Agents.
+cache results, save to Knowledge, vectorize, or rerank. The command enable
+setting controls only `/web-search`; the Prompt Agent runtime may reuse the
+core search helper for General Web Search context injection without executing
+the command.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 

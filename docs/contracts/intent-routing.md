@@ -362,6 +362,10 @@ Common codes include:
 - The Chat composer Intent Routing toggle controls the global General
   `intent_routing_enabled` setting. It does not create session-specific routing
   state.
+- The Chat composer Web Search toggle controls the global General
+  `web_context_enabled` setting. It forces Web Context only for eligible
+  ordinary Prompt Agent messages and is not driven by Intent Routing
+  `web_query`; `web_query` remains diagnostic-only.
 - General -> Utility LLM owns Utility backend/model/device/options. The Intent
   Routing page shows only a compact Utility LLM status summary.
 - Agent detail -> Intent Routing owns Prompt Agent overrides and Agent target

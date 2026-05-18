@@ -1,4 +1,4 @@
-import { Activity, Database, Play, RefreshCw, Save, Search, Settings, Trash2, Type } from 'lucide-react';
+import { Activity, Database, Globe, Play, RefreshCw, Save, Search, Settings, Trash2, Type } from 'lucide-react';
 import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
@@ -284,8 +284,8 @@ function GeneralDetail({
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
-  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'utility_llm' ? t('settings:general.utilityLlm') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
-  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'utility_llm' ? t('settings:general.utilityLlmDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
+  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'web_search' ? t('settings:general.webSearch') : category === 'utility_llm' ? t('settings:general.utilityLlm') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
+  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'web_search' ? t('settings:general.webSearchDescription') : category === 'utility_llm' ? t('settings:general.utilityLlmDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -352,7 +352,7 @@ function GeneralDetail({
       <header className="settings-detail-header">
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">
-            <Settings size={18} />
+            {category === 'web_search' ? <Globe size={18} /> : <Settings size={18} />}
           </div>
           <div>
             <h2>{title}</h2>
@@ -375,6 +375,8 @@ function GeneralDetail({
           <GeneralFilesSettings values={values} setValues={setValues} setNumber={setNumber} />
         ) : category === 'memory' ? (
           <GeneralMemorySettings values={values} setValues={setValues} />
+        ) : category === 'web_search' ? (
+          <GeneralWebSearchSettings values={values} setValues={setValues} setNumber={setNumber} />
         ) : category === 'utility_llm' ? (
           <GeneralUtilityLlmSettings values={values} llmProfiles={llmProfiles} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : category === 'intent_routing' ? (
@@ -1052,6 +1054,55 @@ function GeneralMemorySettings({ values, setValues }: { values: GeneralSettings;
   );
 }
 
+function GeneralWebSearchSettings({
+  values,
+  setValues,
+  setNumber,
+}: {
+  values: GeneralSettings;
+  setValues: (values: GeneralSettings) => void;
+  setNumber: (key: keyof GeneralSettings, value: string) => void;
+}) {
+  const { t } = useTranslation(['settings', 'common', 'status']);
+  const capabilityConfigs = useWorkbenchStore((state) => state.capabilityConfigs);
+  const config = capabilityConfigs.find((item) => item.capability_id === 'web_search');
+  const resolved = config?.resolved_config || {};
+  const providerSummary = config
+    ? t('settings:general.webSearchProviderSummary', {
+        provider: 'SearXNG',
+        baseUrl: String(resolved.searxng_base_url || t('status:common.unavailable')),
+        maxResults: String(resolved.max_results || t('status:common.unknown')),
+      })
+    : t('settings:general.webSearchProviderUnavailable');
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.webSearchContext')}</h3>
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.enableWebSearchContext')}</span>
+          <ToggleSwitch checked={values.web_context_enabled} onChange={(checked) => setValues({ ...values, web_context_enabled: checked })} />
+          <small>{t('settings:general.webSearchContextHelp')}</small>
+        </label>
+        <div className="settings-detail-grid">
+          <NumberField label={t('settings:general.maxWebResults')} value={values.web_context_max_results} min={1} max={10} onChange={(value) => setNumber('web_context_max_results', value)} />
+          <NumberField label={t('settings:general.webContextBudget')} value={values.web_context_context_budget_chars} min={500} max={20000} step={500} onChange={(value) => setNumber('web_context_context_budget_chars', value)} />
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.searchProvider')}</h3>
+        </div>
+        <dl className="settings-definition-grid">
+          <Metric label={t('settings:general.searchProvider')} value={providerSummary} wide />
+          <Metric label={t('settings:general.configureProviderInCapabilities')} value={t('settings:general.webSearchProviderConfigHelp')} wide />
+        </dl>
+      </div>
+    </>
+  );
+}
+
 function titleModelProfileOptionLabel(profile: LlmProfile): string {
   const pieces = [profile.name || profile.alias || profile.id, profile.alias, profile.provider].filter(Boolean);
   return pieces.join(' / ');
@@ -1633,6 +1684,9 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     core_memory_content: values.core_memory_content,
     core_memory_enabled_for_prompt_agents: values.core_memory_enabled_for_prompt_agents,
     core_memory_enabled_for_script_agents: values.core_memory_enabled_for_script_agents,
+    web_context_enabled: values.web_context_enabled,
+    web_context_max_results: values.web_context_max_results,
+    web_context_context_budget_chars: values.web_context_context_budget_chars,
     intent_routing_enabled: values.intent_routing_enabled,
     intent_routing_default_for_prompt_agents: values.intent_routing_default_for_prompt_agents,
     intent_routing_mode: values.intent_routing_mode,

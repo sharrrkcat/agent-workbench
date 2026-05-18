@@ -1,6 +1,6 @@
 import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Route, Send, Slash, X } from 'lucide-react';
+import { AtSign, Check, ChevronDown, FileText, Globe, Octagon, Paperclip, Route, Send, Slash, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
@@ -24,6 +24,8 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [intentRoutingSaving, setIntentRoutingSaving] = useState(false);
   const [intentRoutingPendingValue, setIntentRoutingPendingValue] = useState<boolean | null>(null);
+  const [webSearchSaving, setWebSearchSaving] = useState(false);
+  const [webSearchPendingValue, setWebSearchPendingValue] = useState<boolean | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
@@ -313,6 +315,19 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
     }
   }
 
+  async function toggleWebSearch() {
+    if (!generalSettings || webSearchSaving) return;
+    const nextEnabled = !generalSettings.web_context_enabled;
+    setWebSearchSaving(true);
+    setWebSearchPendingValue(nextEnabled);
+    try {
+      await updateGeneralSettings({ web_context_enabled: nextEnabled });
+    } finally {
+      setWebSearchSaving(false);
+      setWebSearchPendingValue(null);
+    }
+  }
+
   const currentAgent = agents.find((agent) => agent.id === currentSession?.default_agent_id);
   const agentDefaultProfile = resolveAgentDefaultLlmProfile({ agents, capabilityConfigs, currentSession, llmDefaults, llmProfiles });
   const selectedModelLabel = modelSelectorLabel(currentSession?.llm_profile_id || null, llmProfiles, currentAgent, agentDefaultProfile);
@@ -322,6 +337,10 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const intentRoutingVisualEnabled = intentRoutingPendingValue ?? intentRoutingEnabled;
   const intentRoutingReady = Boolean(generalSettings);
   const intentRoutingTitle = `${intentRoutingEnabled ? t('intentRouting.enabled') : t('intentRouting.disabled')}\n${t('intentRouting.description')}`;
+  const webSearchEnabled = generalSettings?.web_context_enabled ?? false;
+  const webSearchVisualEnabled = webSearchPendingValue ?? webSearchEnabled;
+  const webSearchReady = Boolean(generalSettings);
+  const webSearchTitle = `${webSearchEnabled ? t('webSearch.enabled') : t('webSearch.disabled')}\n${t('webSearch.description')}`;
   const composerStyle = {
     '--composer-textarea-height': `${composerHeight}px`,
   } as CSSProperties;
@@ -396,6 +415,25 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
             >
               <Route size={15} aria-hidden="true" />
               <span className="sr-only">{intentRoutingEnabled ? t('intentRouting.enabled') : t('intentRouting.disabled')}</span>
+            </button>
+            <button
+              className={[
+                'composer-intent-toggle',
+                'composer-web-search-toggle',
+                webSearchVisualEnabled ? 'enabled' : '',
+                webSearchSaving ? 'pending' : '',
+                !webSearchReady ? 'unavailable' : '',
+              ].filter(Boolean).join(' ')}
+              type="button"
+              disabled={!webSearchReady}
+              aria-busy={webSearchSaving}
+              aria-pressed={webSearchEnabled}
+              aria-label={webSearchEnabled ? t('webSearch.disable') : t('webSearch.enable')}
+              title={webSearchTitle}
+              onClick={() => void toggleWebSearch()}
+            >
+              <Globe size={15} aria-hidden="true" />
+              <span className="sr-only">{webSearchEnabled ? t('webSearch.enabled') : t('webSearch.disabled')}</span>
             </button>
             <div ref={modelSelectorRef} className="model-selector-wrap">
               <button

@@ -291,8 +291,11 @@ The built-in `web_search` Capability exposes `/web-search <query>` for SearXNG
 search result discovery. It returns one standardized JSON Message Part with
 `kind: "web_search_results"` and `schema: "web_search.results.v1"` containing
 query, provider, timestamp, normalized results, and warnings. It does not fetch
-result page bodies, cache results, save to Knowledge, or inject Web Context into
-Prompt Agents. Settings exposes `POST /api/capability-configs/web_search/test-search`
+result page bodies, cache results, or save to Knowledge. The `/web-search`
+command enable setting controls only that explicit command. Runtime Web Context
+may call the same core search helper for eligible Prompt Agent context injection
+when General Web Search is enabled, without using the command path. Settings
+exposes `POST /api/capability-configs/web_search/test-search`
 for SearXNG search diagnostics using saved or draft CapabilityConfig values; it
 does not create chat messages, runs, command results, or persist config changes.
 

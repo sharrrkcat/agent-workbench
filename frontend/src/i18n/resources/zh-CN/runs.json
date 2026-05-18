@@ -52,6 +52,9 @@
     "worldbookCounts": "{{injected}} 已注入 / {{matched}} 已匹配 · 递归 {{recursion}}",
     "snippetCount": "{{count}} 个片段",
     "rerankerValue": "reranker {{value}}",
-    "skippedWithReason": "已跳过 · {{reason}}"
+    "skippedWithReason": "已跳过 · {{reason}}",
+    "web": "??",
+    "webResultCount": "{{count}} ??? ? {{provider}}",
+    "noResults": "???"
   }
 }

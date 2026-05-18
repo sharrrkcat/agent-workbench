@@ -383,7 +383,23 @@
       "group_transcript_not_supported": "已跳过：群组 transcript 模式"
     },
     "scoreBelowThresholdDetail": "分数 {{score}} < 语义最低分 {{threshold}}",
-    "marginBelowThresholdDetail": "边距 {{margin}} < 语义最小边距 {{threshold}}"
+    "marginBelowThresholdDetail": "边距 {{margin}} < 语义最小边距 {{threshold}}",
+    "webSearch": "联网搜索",
+    "webSearchDescription": "控制 Prompt Agent 是否注入联网搜索结果。",
+    "webSearchContext": "联网搜索上下文",
+    "enableWebSearchContext": "启用联网搜索上下文",
+    "webSearchContextHelp": "为符合条件的 Prompt Agent 回复加入实时联网结果。",
+    "maxWebResults": "最大结果数",
+    "webContextBudget": "上下文字数预算",
+    "searchProvider": "搜索提供方",
+    "configureProviderInCapabilities": "在 Capabilities 中配置提供方",
+    "webSearchProviderSummary": "{{provider}} 位于 {{baseUrl}} / 最多 {{maxResults}} 条结果",
+    "webSearchProviderUnavailable": "Web Search Capability 配置不可用。",
+    "webSearchProviderConfigHelp": "在 Settings -> Capabilities -> Web Search 中配置 SearXNG 连接。",
+    "retrievedWeb": "检索到的网页",
+    "noWebResults": "无联网搜索结果",
+    "webSearchWarning": "联网搜索警告",
+    "webSearchSkipped": "联网搜索已跳过"
   },
   "data": {
     "title": "数据",

@@ -81,6 +81,7 @@ warnings, status, and metrics. Common compact keys include:
 - `core_memory_context`
 - `worldbook_context`
 - `knowledge_context`
+- `web_context`
 - generated image recipe metadata, such as `comfyui_generation`
 - cleanup warnings, such as `llm_unload` or `comfyui_memory_release`
 
@@ -90,6 +91,8 @@ Metadata must not store:
 - full Worldbook entry content.
 - rendered context blocks.
 - full Knowledge snippets or source originals.
+- full Web Search results, raw provider payloads, rendered `# Retrieved Web`
+  blocks, or fetched page bodies.
 - vectors or vector blobs.
 - full workflow JSON.
 - large binary data or image bytes.

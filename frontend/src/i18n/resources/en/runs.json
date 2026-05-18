@@ -35,6 +35,7 @@
     "memory": "Memory",
     "worldbook": "Worldbook",
     "knowledge": "Knowledge",
+    "web": "Web",
     "kb": "KB",
     "embedding": "Embedding",
     "vector": "Vector",
@@ -51,6 +52,8 @@
     "memoryInjected": "injected · {{count}} chars",
     "worldbookCounts": "{{injected}} injected / {{matched}} matched · recursion {{recursion}}",
     "snippetCount": "{{count}} snippets",
+    "webResultCount": "{{count}} results · {{provider}}",
+    "noResults": "no results",
     "rerankerValue": "reranker {{value}}",
     "skippedWithReason": "skipped · {{reason}}"
   }

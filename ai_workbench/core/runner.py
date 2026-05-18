@@ -24,6 +24,7 @@ from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRe
 from ai_workbench.core.message_parts import command_result_to_parts, make_error_part, make_text_part
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
+from ai_workbench.core.web_context import append_web_context_to_system, build_web_context, skipped_web_context, web_context_step_metadata
 from ai_workbench.core.provider_status import (
     MODEL_MISMATCH,
     MODEL_NOT_AVAILABLE,
@@ -353,6 +354,7 @@ class AgentRunner:
         kind = "agent" if action_id == "default" else "action"
         run_metadata = {
             "args": args,
+            "display_input": display_input or None,
             "input_message_id": current_user_message_id or None,
             "parent_message_id": parent_id or None,
             "source_message_id": source_message_id or None,
@@ -416,6 +418,7 @@ class AgentRunner:
                 suppress_output=suppress_output,
                 temporary_knowledge_base_ids=temporary_knowledge_base_ids,
                 knowledge_query_override=knowledge_query_override,
+                display_input=display_input,
             )
         except asyncio.CancelledError:
             try:
@@ -443,6 +446,7 @@ class AgentRunner:
         suppress_output: bool = False,
         temporary_knowledge_base_ids: list[str] | None = None,
         knowledge_query_override: str | None = None,
+        display_input: str = "",
     ) -> RunResult:
         resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
@@ -531,12 +535,31 @@ class AgentRunner:
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
+        if _is_web_context_eligible_prompt_call(action_id=action_id, route_kind=str(run_metadata.get("route_kind") or ""), display_input=display_input, args=args):
+            web_context = build_web_context(
+                app_settings_store=self.app_settings_store,
+                settings=app_settings,
+                query=args,
+                runtime_registry=self.runtime_registry,
+                capability_registry=self.capability_registry,
+                capability_config_store=self.capability_config_store,
+            )
+        else:
+            web_context = skipped_web_context(
+                settings=app_settings,
+                query=args,
+                reason="ineligible_route",
+            )
+        self._record_context_metadata(run.run_id, "web_context", web_context.metadata)
+        if web_context.rendered_text:
+            messages = append_web_context_to_system(messages, web_context.rendered_text)
         self.run_lifecycle.complete_step(
             context_step.step_id,
             metadata={
                 "core_memory_context": context_metadata_for_step(core_memory_context.metadata),
                 "worldbook_context": worldbook_step_metadata(worldbook_context.metadata),
                 "knowledge_context": knowledge_step_metadata(knowledge_context.metadata),
+                "web_context": web_context_step_metadata(web_context.metadata),
             },
         )
 
@@ -570,6 +593,7 @@ class AgentRunner:
                 *core_memory_context.warnings,
                 *worldbook_context.warnings,
                 *knowledge_context.warnings,
+                *web_context.warnings,
                 *file_context["warnings"],
                 *vision_input["warnings"],
             ]
@@ -623,6 +647,7 @@ class AgentRunner:
                         llm_config=llm_config,
                         vision_input=vision_input["metadata"],
                         file_context=file_context["metadata"],
+                        web_context_metadata=web_context.metadata,
                         lifecycle=lifecycle,
                         llm_use_key=llm_use_key,
                         calling_llm_step_id=calling_llm_step.step_id,
@@ -700,6 +725,9 @@ class AgentRunner:
         knowledge_context = self.run_store.get_run(run.run_id).metadata.get("knowledge_context")
         if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
             metadata["knowledge_context"] = knowledge_context
+        web_context_metadata = self.run_store.get_run(run.run_id).metadata.get("web_context")
+        if isinstance(web_context_metadata, dict) and (web_context_metadata.get("source_refs") or web_context_metadata.get("warnings") or web_context_metadata.get("attempted")):
+            metadata["web_context"] = web_context_metadata
         intent_routing = self.run_store.get_run(run.run_id).metadata.get("intent_routing")
         if isinstance(intent_routing, dict):
             metadata["intent_routing"] = intent_routing
@@ -804,6 +832,7 @@ class AgentRunner:
         llm_config,
         vision_input: dict,
         file_context: dict,
+        web_context_metadata: dict | None,
         lifecycle,
         llm_use_key: tuple[str, str] | None,
         calling_llm_step_id: str,
@@ -872,6 +901,7 @@ class AgentRunner:
                     llm_metrics=llm_metrics,
                     vision_input=vision_input,
                     file_context=file_context,
+                    web_context_metadata=web_context_metadata,
                     reasoning_content="".join(reasoning_parts),
                     interrupted=True,
                     llm_raw=actual_raw,
@@ -931,6 +961,7 @@ class AgentRunner:
             llm_metrics=llm_metrics,
             vision_input=vision_input,
             file_context=file_context,
+            web_context_metadata=web_context_metadata,
             reasoning_content="".join(reasoning_parts),
             llm_raw=actual_raw,
         )
@@ -981,6 +1012,7 @@ class AgentRunner:
         llm_metrics: dict,
         vision_input: dict,
         file_context: dict,
+        web_context_metadata: dict | None = None,
         reasoning_content: str = "",
         interrupted: bool = False,
         llm_raw: dict | None = None,
@@ -1003,6 +1035,11 @@ class AgentRunner:
         knowledge_context = self.run_store.get_run(run_id).metadata.get("knowledge_context")
         if isinstance(knowledge_context, dict) and knowledge_context.get("snippet_refs"):
             metadata["knowledge_context"] = knowledge_context
+        web_context = self.run_store.get_run(run_id).metadata.get("web_context")
+        if isinstance(web_context, dict) and (web_context.get("source_refs") or web_context.get("warnings") or web_context.get("attempted")):
+            metadata["web_context"] = web_context
+        elif isinstance(web_context_metadata, dict) and (web_context_metadata.get("source_refs") or web_context_metadata.get("warnings") or web_context_metadata.get("attempted")):
+            metadata["web_context"] = web_context_metadata
         intent_routing = self.run_store.get_run(run_id).metadata.get("intent_routing")
         if isinstance(intent_routing, dict):
             metadata["intent_routing"] = intent_routing
@@ -2268,6 +2305,17 @@ def _attachments_from_command_output(data: Any) -> list[dict[str, Any]]:
             "url": str(url),
         }
     ]
+
+
+def _is_web_context_eligible_prompt_call(*, action_id: str, route_kind: str, display_input: str, args: str) -> bool:
+    if action_id != "default":
+        return False
+    if route_kind != "agent":
+        return False
+    raw_input = (display_input or args or "").lstrip()
+    if not raw_input:
+        return False
+    return raw_input[0] not in {"/", "@", ":"}
 
 
 def _mime_type_from_attachment_url(url: str) -> str:

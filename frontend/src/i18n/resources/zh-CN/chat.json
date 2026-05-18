@@ -221,5 +221,13 @@
     "llmMissingProviderProfile": "LLM - 缺失 Provider 配置",
     "llmNoModelId": "无模型 ID",
     "llmProviderModel": "LLM - {{provider}} - {{model}}"
+  },
+  "webSearch": {
+    "label": "联网搜索",
+    "enable": "启用联网搜索",
+    "disable": "停用联网搜索",
+    "enabled": "联网搜索已启用",
+    "disabled": "联网搜索已停用",
+    "description": "为符合条件的 Prompt Agent 回复加入实时联网结果"
   }
 }

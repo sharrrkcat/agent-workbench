@@ -1529,6 +1529,9 @@ export type GeneralSettings = {
   core_memory_content: string;
   core_memory_enabled_for_prompt_agents: boolean;
   core_memory_enabled_for_script_agents: boolean;
+  web_context_enabled: boolean;
+  web_context_max_results: number;
+  web_context_context_budget_chars: number;
   intent_routing_enabled: boolean;
   intent_routing_default_for_prompt_agents: boolean;
   intent_routing_mode: 'shadow' | 'auto';

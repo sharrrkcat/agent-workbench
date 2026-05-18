@@ -22,6 +22,14 @@
     "disabled": "Intent Routing disabled",
     "description": "Analyze ordinary messages before routing."
   },
+  "webSearch": {
+    "label": "Web Search",
+    "enable": "Enable Web Search",
+    "disable": "Disable Web Search",
+    "enabled": "Web Search enabled",
+    "disabled": "Web Search disabled",
+    "description": "Add live web results to eligible Prompt Agent responses"
+  },
   "confirmDelete": "Delete this message?\nThis only removes the selected message.",
   "appSubtitle": "Local AI console",
   "sidebarFooter": "Agents, commands, and local runs",

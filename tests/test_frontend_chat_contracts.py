@@ -1011,6 +1011,69 @@ def test_general_settings_context_rendering_fields_are_exposed() -> None:
     assert "group_transcript_system_instruction_default" not in panel[panel.index("function generalSettingsPatch") :]
 
 
+def test_general_web_search_category_and_fields_are_exposed() -> None:
+    types = read_frontend("types.ts")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    nav = read_frontend("components/settings/SettingsNav.tsx")
+
+    assert "web_context_enabled: boolean" in types
+    assert "web_context_max_results: number" in types
+    assert "web_context_context_budget_chars: number" in types
+    assert "'web_search'" in object_list
+    assert "settings:general.webSearch" in object_list
+    assert "settings:general.webSearchDescription" in object_list
+    assert "icon: Globe" in object_list
+    assert "category === 'web_search'" in panel
+    assert "function GeneralWebSearchSettings" in panel
+    assert "settings:general.enableWebSearchContext" in panel
+    assert "settings:general.maxWebResults" in panel
+    assert "settings:general.webContextBudget" in panel
+    assert "settings:general.searchProvider" in panel
+    assert "capability_id === 'web_search'" in panel
+    assert "web_context_enabled: values.web_context_enabled" in panel
+    assert "labelKey: 'sections.webSearch'" not in nav
+
+
+def test_run_context_summary_includes_web_context_compact_metadata() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    runs_en = read_frontend("i18n/resources/en/runs.json")
+
+    assert "type WebContextSummary" in source
+    assert "record.web_context" in source
+    assert "function mergeWebContexts" in source
+    assert "summary.web" in source
+    assert "webSummaryLabel" in source
+    assert "runs:contextSummary.web" in source
+    assert "runs:contextSummary.webResultCount" in source
+    assert '"web": "Web"' in runs_en
+    assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
+
+
+def test_chat_input_web_search_toggle_patches_general_settings_and_reuses_intent_motion() -> None:
+    input_source = read_frontend("components/ChatInput.tsx")
+    styles = read_frontend("styles.css")
+
+    assert "const [webSearchSaving, setWebSearchSaving]" in input_source
+    assert "const [webSearchPendingValue, setWebSearchPendingValue]" in input_source
+    assert "async function toggleWebSearch()" in input_source
+    assert "await updateGeneralSettings({ web_context_enabled: nextEnabled })" in input_source
+    assert "'composer-intent-toggle'" in input_source
+    assert "'composer-web-search-toggle'" in input_source
+    assert "webSearchSaving ? 'pending' : ''" in input_source
+    assert "disabled={!webSearchReady}" in input_source
+    assert "disabled={webSearchSaving}" not in input_source
+    assert "aria-label={webSearchEnabled ? t('webSearch.disable') : t('webSearch.enable')}" in input_source
+    assert "<Globe size={15}" in input_source
+    controls = input_source[input_source.index("composer-actions") : input_source.index("<div ref={modelSelectorRef}")]
+    assert controls.index("intentRoutingVisualEnabled") < controls.index("webSearchVisualEnabled")
+    assert ".composer-intent-toggle.pending {\n  border-color: rgba(255, 255, 255, 0.18);" in styles
+    pending_start = styles.index(".composer-intent-toggle.pending {")
+    pending_block = styles[pending_start : styles.index("}", pending_start)]
+    assert "cursor: wait" in pending_block
+    assert "not-allowed" not in pending_block
+
+
 def test_general_intent_routing_auto_mode_contract() -> None:
     types = read_frontend("types.ts")
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
@@ -1034,8 +1097,8 @@ def test_general_settings_uses_middle_category_list() -> None:
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
 
     assert "type GeneralSettingsCategory = 'files' | 'llm_prompts'" in object_list
-    assert "{ id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription') }" in object_list
-    assert "{ id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription') }" in object_list
+    assert "{ id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription'), icon: SlidersHorizontal }" in object_list
+    assert "{ id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription'), icon: SlidersHorizontal }" in object_list
     assert "if (section === 'general')" in object_list
     general_branch = object_list[object_list.index("if (section === 'general')") : object_list.index("if (section === 'agents')")]
     assert "<ObjectListHeader title={t('settings:objectList.category')} count={generalCategories.length} />" in general_branch
