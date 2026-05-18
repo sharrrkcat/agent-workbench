@@ -963,6 +963,7 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
   const hasManualExpanded = Boolean(runId && Object.prototype.hasOwnProperty.call(expandedByRunId, runId));
   const expanded = hasManualExpanded ? expandedByRunId[runId] : forceExpanded || defaultRunStepsExpanded(run);
   const compactActive = active && !expanded && !hasManualExpanded && !forceExpanded;
+  const compactFailed = failed && !expanded && !hasManualExpanded && !forceExpanded;
   const hasRunningStep = steps.some((step) => step.status === 'running' && step.started_at);
 
   useEffect(() => {
@@ -979,9 +980,10 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
   const canCancel = Boolean(run?.run_id && (activeRunId === run.run_id || active) && !run.cancel_requested && run.status !== 'CANCELLING');
   const stepTree = buildRunStepTree(steps);
   const activeStep = compactActive ? activeRunStep(stepTree) : null;
+  const failedStep = compactFailed ? failedRunStep(stepTree, run, getRunStatusLabel(run?.status, t)) : null;
 
   return (
-    <section className={`run-steps-panel ${expanded ? 'expanded' : compactActive ? 'compact-active' : 'collapsed'} ${failed ? 'failed' : ''}`}>
+    <section className={`run-steps-panel ${expanded ? 'expanded' : compactActive || compactFailed ? 'compact-active' : 'collapsed'} ${failed ? 'failed' : ''}`}>
       <div className="run-steps-header">
         <button type="button" onClick={() => (runId ? setRunStepsExpanded(runId, !expanded) : undefined)} aria-expanded={expanded}>
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -1005,6 +1007,10 @@ function RunStepsPanel({ run, steps, runKnowledge, forceExpanded = false }: { ru
       ) : compactActive && activeStep ? (
         <ol className="run-step-list run-step-active-list">
           <RunStepTreeItem step={activeStep} key={activeStep.step_id} depth={0} runKnowledge={runKnowledge} compact />
+        </ol>
+      ) : compactFailed && failedStep ? (
+        <ol className="run-step-list run-step-active-list">
+          <RunStepTreeItem step={failedStep} key={failedStep.step_id} depth={0} runKnowledge={runKnowledge} compact />
         </ol>
       ) : null}
     </section>
@@ -1109,7 +1115,7 @@ function isActiveRunStatus(status: string): boolean {
 
 function defaultRunStepsExpanded(run?: Run): boolean {
   if (!run) return false;
-  return ['FAILED', 'CANCELLED'].includes(run.status);
+  return false;
 }
 
 function runDurationLabel(run: Run | undefined, steps: RunStep[]): string {
@@ -1173,6 +1179,33 @@ function activeRunStep(roots: RunStepNode[]): RunStepNode | null {
   if (pending.length) return mostRecentStep(pending);
   const latest = mostRecentStep(nodes);
   return latest;
+}
+
+function failedRunStep(roots: RunStepNode[], run: Run | undefined, fallbackLabel: string): RunStepNode | null {
+  const nodes = flattenRunStepTree(roots);
+  const failed = nodes.filter((item) => item.step.status === 'failed');
+  if (failed.length) return mostSpecificRecentStep(failed);
+  const message = run?.error_message || run?.error || '';
+  const label = run?.current_step || run?.stage || fallbackLabel || run?.status || '';
+  if (run && (message || label)) {
+    return {
+      step_id: `${run.run_id}:failed-summary`,
+      run_id: run.run_id,
+      label,
+      status: 'failed',
+      message,
+      order: Number.MAX_SAFE_INTEGER,
+      error_code: run.error_code || undefined,
+      error_message: message || undefined,
+      created_at: run.created_at,
+      updated_at: run.updated_at,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      metadata: {},
+      children: [],
+    };
+  }
+  return mostRecentStep(nodes);
 }
 
 function flattenRunStepTree(roots: RunStepNode[], depth = 0): { step: RunStepNode; depth: number }[] {

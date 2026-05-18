@@ -752,7 +752,7 @@ def test_run_steps_expansion_is_scoped_by_run_id() -> None:
     assert "setRunStepsExpanded" in store
     assert "Object.prototype.hasOwnProperty.call(expandedByRunId, runId)" in source
     assert "defaultRunStepsExpanded" in source
-    assert "'FAILED', 'CANCELLED'" in source
+    assert "const compactFailed = failed && !expanded && !hasManualExpanded && !forceExpanded" in source
 
 
 def test_run_steps_duration_and_running_tick_are_rendered() -> None:
@@ -1067,15 +1067,20 @@ def test_running_run_steps_default_to_active_only_until_manually_expanded() -> N
     styles = read_frontend("styles.css")
 
     assert "const compactActive = active && !expanded && !hasManualExpanded && !forceExpanded" in source
+    assert "const compactFailed = failed && !expanded && !hasManualExpanded && !forceExpanded" in source
     assert "activeRunStep(stepTree)" in source
+    assert "failedRunStep(stepTree, run, getRunStatusLabel(run?.status, t))" in source
     assert "run-step-active-list" in source
     assert "compact" in source
     assert "function activeRunStep" in source
+    assert "function failedRunStep" in source
     assert "step.status === 'running'" in source
     assert "step.status === 'pending'" in source
+    assert "step.status === 'failed'" in source
+    assert "`${run.run_id}:failed-summary`" in source
     assert "function mostSpecificRecentStep" in source
     assert "function defaultRunStepsExpanded" in source
-    assert "return ['FAILED', 'CANCELLED'].includes(run.status)" in source
+    assert "return false" in source
     assert ".run-step-active-list" in styles
 
 
