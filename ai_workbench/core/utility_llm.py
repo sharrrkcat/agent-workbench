@@ -625,6 +625,27 @@ class UtilityLLMService:
             result["_requested_model_id"] = raw.requested_model_id
         return result
 
+    async def extract_web_context_plan_json(self, text: str, settings: Any) -> dict[str, Any]:
+        prompt = (
+            "Decide whether this single user message should trigger internal Web Context search.\n"
+            "Return strict JSON only with keys: should_search, query, reason, confidence.\n"
+            "Allowed reason values: explicit_search_request, external_fact_question, time_sensitive_fact_question, incidental_mentions_only, personal_preference_or_emotion, conversation_continuation, insufficient_external_fact_request.\n"
+            "Allowed confidence values: low, medium, high.\n"
+            "Search only when the user requests external facts, current/recent information, news, prices, releases, official information, current status, real-world events, or verification that needs the web.\n"
+            "Do not search when the user is only expressing emotions/preferences, roleplaying, continuing conversation, acknowledging, or incidentally mentioning real entities without asking for information.\n"
+            "Keywords alone are not enough. If should_search=true, query must be the smallest useful search query, not the whole message, and at most 160 characters.\n"
+            "Positive example input: 帮我搜一下堡垒之夜最新的联动内容，我现在特别想知道，我好久没有玩堡垒之夜了，堡垒之夜确实是一个很好玩的游戏，不过我很久没有打了，还是有一点想玩\n"
+            "Positive example JSON: {\"should_search\":true,\"query\":\"堡垒之夜 最新 联动 内容\",\"reason\":\"explicit_search_request\",\"confidence\":\"high\"}\n"
+            "Negative example input: 我最近有点不想搞这个了，昨天刚出门买了一点花，昨天晚上又买了一点猫粮，准备喂给家里的小猫吃。不过今天早上的金价波动也太大了，金价的最新消息一出来我就绷不住了。不过还是小猫好，小猫会一直呆在我身边\n"
+            "Negative example JSON: {\"should_search\":false,\"query\":\"\",\"reason\":\"incidental_mentions_only\",\"confidence\":\"high\"}\n\n"
+            f"User message:\n{text}"
+        )
+        raw = await self.generate(prompt, settings, max_new_tokens=192)
+        try:
+            return extract_json_object(raw.text)
+        except Exception as exc:
+            raise UtilityLLMError(UTILITY_INVALID_JSON, "Utility LLM returned invalid JSON.") from exc
+
     def unload(self, settings: Any | None = None) -> dict[str, Any]:
         if settings is not None:
             try:

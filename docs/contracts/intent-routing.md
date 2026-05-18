@@ -178,6 +178,19 @@ This round must not call `/web-search`, Web Search Capability diagnostics, a
 SearXNG provider, Knowledge retrieval, Prompt Agent Web Context, vectorization,
 rerank, or search-result summarization for `web_query`.
 
+Prompt Agent Web Context owns a separate Web Context Plan Resolver. That
+resolver may use compact Intent Routing outcome metadata as one input, but it
+does not change the Intent Routing pipeline, does not write back an intent, and
+does not execute commands or Agent actions. Route Test remains diagnostic-only
+and never enters Web Context planning.
+
+When General Web Search and Intent Routing auto mode are both enabled, selected
+Knowledge overrides and selected Pet commands skip Prompt Agent Web Context with
+compact reasons (`knowledge_query_selected` or `pet_command_selected`). A
+validated `web_query` may provide the Web Context search query through compact
+slots, while failed, diagnostic-only, uncertain, or chat outcomes fall through
+to the Web Context Plan Resolver instead of becoming Intent Routing execution.
+
 ## Knowledge Query Rules
 
 `knowledge_query` auto execution requires:
@@ -363,9 +376,10 @@ Common codes include:
   `intent_routing_enabled` setting. It does not create session-specific routing
   state.
 - The Chat composer Web Search toggle controls the global General
-  `web_context_enabled` setting. It forces Web Context only for eligible
-  ordinary Prompt Agent messages and is not driven by Intent Routing
-  `web_query`; `web_query` remains diagnostic-only.
+  `web_context_enabled` setting. Intent Routing disabled and shadow mode keep
+  the forced Web Context behavior for eligible ordinary Prompt Agent messages.
+  Intent Routing auto mode uses the separate Web Context Plan Resolver described
+  above; `web_query` itself remains diagnostic-only.
 - General -> Utility LLM owns Utility backend/model/device/options. The Intent
   Routing page shows only a compact Utility LLM status summary.
 - Agent detail -> Intent Routing owns Prompt Agent overrides and Agent target

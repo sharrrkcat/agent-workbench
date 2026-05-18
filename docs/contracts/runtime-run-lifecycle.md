@@ -107,6 +107,15 @@ must not be mislabeled as `refine` or `fresh`.
 Chat context inspection fetches current content by refs where possible. Runtime
 metadata stores refs/counts/warnings, not snapshots of full user-owned content.
 
+`web_context` metadata stores the Web Context plan and outcome compactly. Allowed
+fields include enablement, attempted/injected booleans, truncated query,
+`query_source`, provider, result count, compact source refs, `skipped_reason`,
+warnings, and a compact resolver object with `used`, `reason`, and `confidence`.
+The plan may record whether Intent Routing influenced the decision, but it must
+not store raw Utility output, Utility prompts, full user text duplicates,
+rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, KB
+snippets, Core Memory, Worldbook content, or secrets.
+
 ## Failure And Cancellation
 
 Failures set both terminal run status and user-visible error metadata when

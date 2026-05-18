@@ -53,8 +53,33 @@
     "snippetCount": "{{count}} 个片段",
     "rerankerValue": "reranker {{value}}",
     "skippedWithReason": "已跳过 · {{reason}}",
-    "web": "??",
-    "webResultCount": "{{count}} ??? ? {{provider}}",
-    "noResults": "???"
+    "web": "联网",
+    "webResultCount": "{{count}} 条结果 · {{provider}}",
+    "searchQuery": "搜索词：{{query}}",
+    "noResults": "无结果",
+    "webSkipReasons": {
+      "web_context_disabled": "联网搜索关闭",
+      "ineligible_route": "显式路由",
+      "empty_query": "空查询",
+      "knowledge_query_selected": "已选择知识库查询",
+      "pet_command_selected": "已选择宠物命令",
+      "explicit_search_request": "显式搜索请求",
+      "external_fact_question": "外部事实问题",
+      "time_sensitive_fact_question": "时效事实问题",
+      "incidental_mentions_only": "仅偶然提及",
+      "personal_preference_or_emotion": "个人偏好或情绪",
+      "conversation_continuation": "对话承接",
+      "insufficient_external_fact_request": "无外部事实请求",
+      "web_context_plan_utility_unavailable": "联网计划不可用",
+      "web_context_plan_invalid_json": "联网计划不可用",
+      "web_context_plan_slots_failed": "联网计划不可用",
+      "web_context_plan_low_confidence": "无外部事实请求",
+      "web_context_plan_query_too_long": "联网计划不可用",
+      "search_failed": "搜索失败",
+      "no_results": "无结果",
+      "context_budget_exhausted": "上下文预算不足",
+      "settings_error": "设置不可用",
+      "web_context_plan_unavailable": "联网计划不可用"
+    }
   }
 }

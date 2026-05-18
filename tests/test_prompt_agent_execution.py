@@ -320,7 +320,7 @@ def test_prompt_agent_web_context_disabled_does_not_search(monkeypatch) -> None:
     assert result.success is True
     assert metadata["enabled"] is False
     assert metadata["attempted"] is False
-    assert metadata["skipped_reason"] == "disabled"
+    assert metadata["skipped_reason"] == "web_context_disabled"
     assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
 
 
@@ -489,6 +489,162 @@ def test_web_context_skips_explicit_agent_action_command_and_script_routes(monke
     assert "web_context" not in fixture.runs.get_run(command.run_id).metadata
     assert script.success is True
     assert "web_context" not in fixture.runs.get_run(script.run_id).metadata
+
+
+class StaticIntentSemanticRouter:
+    def __init__(self, intent: str, *, score: float = 0.9, margin: float = 0.4) -> None:
+        self.intent = intent
+        self.score = score
+        self.margin = margin
+
+    def decide(self, text: str, **kwargs):
+        return {
+            "predicted_intent": self.intent,
+            "confidence": self.score,
+            "semantic_score": self.score,
+            "semantic_margin": self.margin,
+            "semantic_thresholds_used": {"intent_min_score": 0.5, "intent_min_margin": 0.03, "kb_min_score": 0.45, "agent_min_score": 0.45, "command_min_score": 0.45},
+            "route_action": "metadata_only",
+            "auto_executable": self.intent == "chat",
+            "source": "test_semantic_router",
+            "warnings": [],
+        }
+
+
+class CombinedUtilityService:
+    def __init__(self, *, intent_payload=None, web_plan_payload=None) -> None:
+        self.intent_payload = intent_payload or {}
+        self.web_plan_payload = web_plan_payload or {"should_search": False, "query": "", "reason": "conversation_continuation", "confidence": "high"}
+        self.intent_calls: list[str] = []
+        self.web_plan_calls: list[str] = []
+
+    def status(self, settings):
+        return {"available": True}
+
+    async def extract_intent_json(self, text: str, settings, context=None):
+        self.intent_calls.append(text)
+        return self.intent_payload
+
+    async def extract_web_context_plan_json(self, text: str, settings):
+        self.web_plan_calls.append(text)
+        return self.web_plan_payload
+
+
+def enable_auto_intent_for_web_tests(fixture: PromptRuntimeFixture, intent: str, utility: CombinedUtilityService | None = None) -> None:
+    fixture.app_settings.patch(
+        {
+            "web_context_enabled": True,
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
+            "intent_routing_auto_route_safe_intents": True,
+            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+        }
+    )
+    fixture.agent_runner.semantic_router = StaticIntentSemanticRouter(intent)
+    if utility is not None:
+        fixture.agent_runner.utility_llm_service = utility
+
+
+def fake_web_search(monkeypatch, search_queries: list[str]) -> None:
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            search_queries.append(query)
+            return {
+                "provider": "searxng",
+                "results": [
+                    {"rank": 1, "title": "Found", "url": "https://example.test/found", "domain": "example.test", "snippet": "Web snippet."}
+                ],
+            }
+
+        return search
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
+
+
+def test_prompt_agent_web_context_auto_knowledge_query_skips_web(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    kb = bind_test_kb(fixture, session.session_id)
+    utility = CombinedUtilityService(intent_payload={"intent": "knowledge_query", "confidence": 0.91, "kb_hint": "Project KB", "query": "stormtrooper ranks"})
+    enable_auto_intent_for_web_tests(fixture, "knowledge_query", utility)
+    search_queries: list[str] = []
+    fake_web_search(monkeypatch, search_queries)
+
+    def fake_knowledge_search(**kwargs):
+        return {
+            "query": kwargs["query"],
+            "results": [{"rank": 1, "chunk_id": "chunk-1", "knowledge_base_id": kb.id, "source_id": "source-1", "title": "Spec", "content": "Knowledge only.", "rrf_score": 1.0}],
+            "debug": {"warnings": []},
+        }
+
+    monkeypatch.setattr("ai_workbench.core.knowledge_context.search_knowledge", fake_knowledge_search)
+
+    result = run(fixture.runtime.handle_input(session, "What does my Project KB say about stormtrooper ranks?"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert search_queries == []
+    assert metadata["skipped_reason"] == "knowledge_query_selected"
+    assert "# Retrieved Knowledge" in str(llm.calls[0]["messages"])
+    assert "# Retrieved Web" not in str(llm.calls[0]["messages"])
+
+
+def test_prompt_agent_web_context_auto_web_query_slots_searches_extracted_query(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    utility = CombinedUtilityService(intent_payload={"intent": "web_query", "confidence": 0.91, "query": "OpenAI API latest changes"})
+    enable_auto_intent_for_web_tests(fixture, "web_query", utility)
+    search_queries: list[str] = []
+    fake_web_search(monkeypatch, search_queries)
+
+    result = run(fixture.runtime.handle_input(session, "search the latest OpenAI API changes"))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert search_queries == ["OpenAI API latest changes"]
+    assert metadata["query"] == "OpenAI API latest changes"
+    assert metadata["query_source"] == "intent_web_query_slots"
+    assert metadata["injected"] is True
+
+
+def test_prompt_agent_web_context_auto_chat_resolver_true_and_false(monkeypatch) -> None:
+    llm = FakeLLMRuntime(response="chat reply")
+    fixture = PromptRuntimeFixture(llm=llm)
+    search_text = "帮我搜一下堡垒之夜最新的联动内容，我现在特别想知道，我好久没有玩堡垒之夜了，堡垒之夜确实是一个很好玩的游戏，不过我很久没有打了，还是有一点想玩"
+    utility = CombinedUtilityService(web_plan_payload={"should_search": True, "query": "堡垒之夜 最新 联动 内容", "reason": "explicit_search_request", "confidence": "high"})
+    enable_auto_intent_for_web_tests(fixture, "chat", utility)
+    search_queries: list[str] = []
+    fake_web_search(monkeypatch, search_queries)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, search_text))
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+
+    assert result.success is True
+    assert search_queries == ["堡垒之夜 最新 联动 内容"]
+    assert metadata["query"] == "堡垒之夜 最新 联动 内容"
+    assert metadata["query_source"] == "web_context_plan_resolver"
+    assert metadata["resolver"] == {"used": True, "reason": "explicit_search_request", "confidence": "high"}
+
+    llm2 = FakeLLMRuntime(response="chat reply")
+    fixture2 = PromptRuntimeFixture(llm=llm2)
+    utility2 = CombinedUtilityService(web_plan_payload={"should_search": False, "query": "", "reason": "incidental_mentions_only", "confidence": "high"})
+    enable_auto_intent_for_web_tests(fixture2, "chat", utility2)
+    skipped_queries: list[str] = []
+    fake_web_search(monkeypatch, skipped_queries)
+    session2 = fixture2.sessions.create_session(default_agent_id="chat")
+    gold_text = "我最近有点不想搞这个了，昨天刚出门买了一点花，昨天晚上又买了一点猫粮，准备喂给家里的小猫吃。不过今天早上的金价波动也太大了，金价的最新消息一出来我就绷不住了。不过还是小猫好，小猫会一直呆在我身边"
+
+    skipped = run(fixture2.runtime.handle_input(session2, gold_text))
+    skipped_metadata = fixture2.runs.get_run(skipped.run_id).metadata["web_context"]
+
+    assert skipped.success is True
+    assert skipped_queries == []
+    assert skipped_metadata["skipped_reason"] == "incidental_mentions_only"
+    assert "# Retrieved Web" not in str(llm2.calls[0]["messages"])
 
 
 def test_prompt_agent_injects_core_memory_by_default_and_respects_toggle() -> None:

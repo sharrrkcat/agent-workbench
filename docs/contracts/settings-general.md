@@ -205,6 +205,14 @@ current session default Prompt Agent may call the core Web Search runtime during
 `Building context` and inject compact SearXNG results after Knowledge context
 and before conversation/current-message context.
 
+With Intent Routing disabled or in shadow mode, enabled Web Context keeps the
+forced search behavior for eligible ordinary Prompt Agent messages. With Intent
+Routing in auto mode, a Web Context Plan Resolver first decides the search plan:
+selected Knowledge and Pet routes skip Web Context, validated `web_query` slots
+may provide the query, and uncertain/chat/diagnostic outcomes use a strict
+Utility LLM JSON planning call to decide whether an external fact search is
+actually requested.
+
 Provider connection settings remain CapabilityConfig for the `web_search`
 Capability. Settings -> Capabilities -> Web Search owns SearXNG base URL,
 timeout, language, safe-search, Capability max results, command enablement,

@@ -1,8 +1,8 @@
 # Utility LLM Contract
 
 Utility LLM is a core internal service for short deterministic tasks. Current
-uses are automatic session title generation and Intent Routing strict JSON slot
-extraction.
+uses are automatic session title generation, Intent Routing strict JSON slot
+extraction, and Web Context Plan Resolver strict JSON planning.
 
 ## Identity
 
@@ -194,6 +194,22 @@ For Intent Routing `web_query`, the Utility LLM may return only compact slots:
 `language_hint`. These slots are diagnostic-only in this round; they must not
 cause Web Search Capability calls, provider-bound web prompts, web context
 injection, or search result storage.
+
+## Web Context Plan Resolver Interaction
+
+When General Web Search is enabled and Intent Routing auto mode does not already
+select Knowledge, Pet, or validated `web_query` slots, Web Context may use one
+short Utility LLM call to decide whether the current user message asks for an
+external fact search. The call returns strict JSON with only
+`should_search`, `query`, `reason`, and `confidence`.
+
+This planning call is internal. It does not create a message or run, does not
+trigger Intent Routing or title generation, does not inject Knowledge, Core
+Memory, Worldbook, attachments, assistant replies, or full history, and does
+not change main model resolution. It must receive only the current user text,
+compact task rules, a strict schema, and small examples. Runtime metadata may
+store only validated compact slots and warnings, never raw Utility output or the
+prompt.
 
 ## Metadata And Raw Output
 

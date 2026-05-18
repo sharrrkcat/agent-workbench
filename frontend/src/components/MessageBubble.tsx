@@ -312,6 +312,7 @@ type WebContextSummary = {
   injected?: boolean;
   provider?: string;
   resultCount?: number;
+  query?: string;
   skippedReason?: string;
   truncated?: boolean;
   warnings: string[];
@@ -726,6 +727,7 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
     injected: contexts.some((context) => context.injected === true),
     provider: textValue(last.provider),
     resultCount: maxNumber(contexts.map((context) => numberValue(context.result_count))),
+    query: textValue(last.query),
     skippedReason: textValue(last.skipped_reason),
     truncated: contexts.some((context) => context.truncated === true),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
@@ -2356,11 +2358,18 @@ function knowledgeSummaryLabel(summary: KnowledgeContextSummary | undefined, t: 
 function webSummaryLabel(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string {
   if (summary.injected) {
     const provider = summary.provider || t('runs:contextSummary.unknown');
-    return t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider });
+    const resultLabel = t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider });
+    return summary.query ? `${resultLabel} · ${t('runs:contextSummary.searchQuery', { query: summary.query })}` : resultLabel;
   }
-  if (summary.skippedReason) return t('runs:contextSummary.skippedWithReason', { reason: summary.skippedReason });
+  if (summary.skippedReason) return t('runs:contextSummary.skippedWithReason', { reason: webSkipReasonLabel(summary.skippedReason, t) });
   if (summary.attempted) return t('runs:contextSummary.noResults');
   return summary.enabled === false ? t('runs:contextSummary.skipped') : t('runs:contextSummary.notUsed');
+}
+
+function webSkipReasonLabel(reason: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = `runs:contextSummary.webSkipReasons.${reason}`;
+  const label = t(key);
+  return label === key ? t('runs:contextSummary.webSkipReasons.web_context_plan_unavailable') : label;
 }
 
 function rerankerLabel(summary: KnowledgeRetrievalSummary, t?: ReturnType<typeof useTranslation>['t']): string {

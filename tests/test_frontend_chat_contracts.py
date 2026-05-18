@@ -1046,8 +1046,11 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "webSummaryLabel" in source
     assert "runs:contextSummary.web" in source
     assert "runs:contextSummary.webResultCount" in source
+    assert "runs:contextSummary.searchQuery" in source
+    assert "webSkipReasonLabel" in source
     assert '"web": "Web"' in runs_en
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
+    assert '"webSkipReasons"' in runs_en
 
 
 def test_chat_input_web_search_toggle_patches_general_settings_and_reuses_intent_motion() -> None:

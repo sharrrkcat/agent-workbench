@@ -24,7 +24,7 @@ from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRe
 from ai_workbench.core.message_parts import command_result_to_parts, make_error_part, make_text_part
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context, knowledge_step_metadata
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context, context_metadata_for_step
-from ai_workbench.core.web_context import append_web_context_to_system, build_web_context, skipped_web_context, web_context_step_metadata
+from ai_workbench.core.web_context import append_web_context_to_system, build_web_context, web_context_step_metadata
 from ai_workbench.core.provider_status import (
     MODEL_MISMATCH,
     MODEL_NOT_AVAILABLE,
@@ -419,6 +419,8 @@ class AgentRunner:
                 temporary_knowledge_base_ids=temporary_knowledge_base_ids,
                 knowledge_query_override=knowledge_query_override,
                 display_input=display_input,
+                form_id=form_id or "",
+                is_silent_submission=is_silent_submission,
             )
         except asyncio.CancelledError:
             try:
@@ -447,6 +449,8 @@ class AgentRunner:
         temporary_knowledge_base_ids: list[str] | None = None,
         knowledge_query_override: str | None = None,
         display_input: str = "",
+        form_id: str = "",
+        is_silent_submission: bool = False,
     ) -> RunResult:
         resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
@@ -535,21 +539,24 @@ class AgentRunner:
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
-        if _is_web_context_eligible_prompt_call(action_id=action_id, route_kind=str(run_metadata.get("route_kind") or ""), display_input=display_input, args=args):
-            web_context = build_web_context(
-                app_settings_store=self.app_settings_store,
-                settings=app_settings,
-                query=args,
-                runtime_registry=self.runtime_registry,
-                capability_registry=self.capability_registry,
-                capability_config_store=self.capability_config_store,
+        web_context = await build_web_context(
+            app_settings_store=self.app_settings_store,
+            settings=app_settings,
+            query=args,
+            eligible=_is_web_context_eligible_prompt_call(
+                action_id=action_id,
+                route_kind=str(run_metadata.get("route_kind") or ""),
+                display_input=display_input,
+                args=args,
             )
-        else:
-            web_context = skipped_web_context(
-                settings=app_settings,
-                query=args,
-                reason="ineligible_route",
-            )
+            and not form_id
+            and not is_silent_submission,
+            intent_routing=intent_routing if isinstance(intent_routing, dict) else None,
+            utility_llm_service=self.utility_llm_service,
+            runtime_registry=self.runtime_registry,
+            capability_registry=self.capability_registry,
+            capability_config_store=self.capability_config_store,
+        )
         self._record_context_metadata(run.run_id, "web_context", web_context.metadata)
         if web_context.rendered_text:
             messages = append_web_context_to_system(messages, web_context.rendered_text)

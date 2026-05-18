@@ -53,8 +53,33 @@
     "worldbookCounts": "{{injected}} injected / {{matched}} matched · recursion {{recursion}}",
     "snippetCount": "{{count}} snippets",
     "webResultCount": "{{count}} results · {{provider}}",
+    "searchQuery": "query: {{query}}",
     "noResults": "no results",
     "rerankerValue": "reranker {{value}}",
-    "skippedWithReason": "skipped · {{reason}}"
+    "skippedWithReason": "skipped · {{reason}}",
+    "webSkipReasons": {
+      "web_context_disabled": "web search off",
+      "ineligible_route": "explicit route",
+      "empty_query": "empty query",
+      "knowledge_query_selected": "knowledge query selected",
+      "pet_command_selected": "pet command selected",
+      "explicit_search_request": "explicit search request",
+      "external_fact_question": "external fact question",
+      "time_sensitive_fact_question": "time-sensitive fact question",
+      "incidental_mentions_only": "incidental mentions only",
+      "personal_preference_or_emotion": "personal preference or emotion",
+      "conversation_continuation": "conversation continuation",
+      "insufficient_external_fact_request": "no external fact request",
+      "web_context_plan_utility_unavailable": "web plan unavailable",
+      "web_context_plan_invalid_json": "web plan unavailable",
+      "web_context_plan_slots_failed": "web plan unavailable",
+      "web_context_plan_low_confidence": "no external fact request",
+      "web_context_plan_query_too_long": "web plan unavailable",
+      "search_failed": "search failed",
+      "no_results": "no results",
+      "context_budget_exhausted": "context budget exhausted",
+      "settings_error": "settings unavailable",
+      "web_context_plan_unavailable": "web plan unavailable"
+    }
   }
 }
