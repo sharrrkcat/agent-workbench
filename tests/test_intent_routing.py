@@ -52,6 +52,8 @@ def _fake_vector(text: str) -> list[float]:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
     if "pet_command:" in value:
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    if "web_query:" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if "command_like:" in value:
         return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     if "action_route:" in value:
@@ -64,6 +66,8 @@ def _fake_vector(text: str) -> list[float]:
         value = value.split("knowledge_base:", 1)[1]
     if any(token in value for token in ["image", "picture", "draw", "concept art"]):
         return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if any(token in value for token in ["latest", "recent news", "current exchange rate", "联网", "搜索网页", "搜一下", "查一下", "最新", "今天日元"]):
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if any(token in value for token in ["knowledge", "documentation", "docs", "lore", "kb", "project", "stormtrooper", "say about", "star wars", "sw"]):
         return [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
     if any(token in value for token in ["translator", "translate agent"]):
@@ -228,6 +232,84 @@ def test_route_test_api_reports_pet_command_without_executing(tmp_path) -> None:
     assert decision["not_executed_reason"] in {"utility_llm_required", "utility_llm_unavailable"}
     assert decision["would_execute"] is False
     assert decision["executed"] is False
+    assert state.runs.list_all_runs() == []
+    assert state.messages.list_all_messages() == []
+
+
+def test_route_test_api_reports_web_query_diagnostic_only_without_search(tmp_path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test-web.db'}"))
+    state = client.app.state.runtime_state
+    profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
+    state.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
+    state.knowledge_model_backend = FakeEmbeddingBackend()
+    state.utility_llm = ContextAwareUtilityIntentService(
+        {
+            "intent": "web_query",
+            "confidence": 0.91,
+            "query": "OpenAI API latest changes",
+            "freshness": "recent",
+            "domain_hints": ["openai.com"],
+            "language_hint": "en",
+        }
+    )
+    client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
+            "intent_routing_auto_route_safe_intents": True,
+            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+        },
+    )
+
+    response = client.post("/api/intent/test-route", json={"text": "search the latest OpenAI API changes", "include_utility": True})
+
+    assert response.status_code == 200
+    decision = response.json()["decision"]
+    assert decision["predicted_intent"] == "web_query"
+    assert decision["route_spec_id"] == "web_query"
+    assert decision["slot_schema_id"] == "web_query_slots"
+    assert decision["validator_id"] == "web_query"
+    assert decision["executor_id"] == "web_query_diagnostic"
+    assert decision["validation_ok"] is True
+    assert decision["would_execute"] is False
+    assert decision["executed"] is False
+    assert decision["not_executed_reason"] == "web_query_diagnostic_only"
+    assert decision["executor_plan"]["route_action"] == "metadata_only"
+    assert decision["slots"]["query"] == "OpenAI API latest changes"
+    assert decision["slots"]["freshness"] == "recent"
+    assert decision["slots"]["domain_hints"] == ["openai.com"]
+    assert state.runs.list_all_runs() == []
+    assert state.messages.list_all_messages() == []
+
+
+def test_route_test_web_query_missing_query_reports_validator_reason(tmp_path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test-web-missing.db'}"))
+    state = client.app.state.runtime_state
+    profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
+    state.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
+    state.knowledge_model_backend = FakeEmbeddingBackend()
+    state.utility_llm = ContextAwareUtilityIntentService({"intent": "web_query", "confidence": 0.91, "query": "", "use_original_query": False})
+    client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
+            "intent_routing_auto_route_safe_intents": True,
+            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+        },
+    )
+
+    response = client.post("/api/intent/test-route", json={"text": "search the latest OpenAI API changes", "include_utility": True})
+
+    assert response.status_code == 200
+    decision = response.json()["decision"]
+    assert decision["predicted_intent"] == "web_query"
+    assert decision["validation_ok"] is False
+    assert decision["would_execute"] is False
+    assert decision["not_executed_reason"] == "web_query_missing_query"
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
 

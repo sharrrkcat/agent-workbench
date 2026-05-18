@@ -10,7 +10,7 @@ from ai_workbench.core.schema.route import RouteKind, RouteTarget
 
 SAFE_AUTO_ROUTE_INTENTS = {"chat", "knowledge_query", "pet_command"}
 PIPELINE_VERSION = "semantic_utility_validator_v1"
-UTILITY_REQUIRED_INTENTS = {"knowledge_query", "pet_command"}
+UTILITY_REQUIRED_INTENTS = {"knowledge_query", "pet_command", "web_query"}
 COMMAND_LIKE_WARNING = "command_like_auto_route_disabled"
 SEMANTIC_AUTO_MIN_MARGIN = 0.03
 DIAGNOSTIC_ONLY_WARNINGS = {
@@ -42,6 +42,7 @@ BLOCKING_AUTO_WARNINGS = {
     "validation_failed",
     "not_workbench_pet_context",
     "knowledge_query_missing_query",
+    "web_query_missing_query",
     "kb_hint_semantic_conflict",
     "ambiguous_kb_candidate",
     "no_kb_candidate_or_active_kbs",
@@ -93,6 +94,7 @@ def compact_utility_context(
             "image_generation_target": "comfyui_agent",
             "knowledge_query_override_only": True,
             "non_chat_auto_requires_utility_slots": True,
+            "web_query_diagnostic_only": True,
         },
     }
     if pet_candidates:
@@ -360,6 +362,18 @@ def _decision_metadata(
             metadata["warnings"] = _ensure_warning(warnings, metadata["not_executed_reason"])
             metadata["executor_plan"] = {"route_action": "metadata_only", "auto_executable": False}
         return metadata
+    if intent_id == "web_query" and metadata.get("utility_ok"):
+        return _with_pipeline_result(
+            metadata,
+            session=session,
+            route=route,
+            agent=agent,
+            settings=settings,
+            knowledge_store=knowledge_store,
+            runtime_registry=runtime_registry,
+            capability_config_store=capability_config_store,
+            auto_mode=False,
+        )
     if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
         metadata["route_action"] = "metadata_only"
         metadata["auto_executable"] = False
@@ -461,6 +475,18 @@ def _decision_metadata(
             capability_config_store=capability_config_store,
             auto_mode=True,
         )
+    if intent_id == "web_query":
+        return _with_pipeline_result(
+            metadata,
+            session=session,
+            route=route,
+            agent=agent,
+            settings=settings,
+            knowledge_store=knowledge_store,
+            runtime_registry=runtime_registry,
+            capability_config_store=capability_config_store,
+            auto_mode=False,
+        )
     return metadata
 
 
@@ -558,6 +584,18 @@ def _with_pipeline_result(
         result["target_command"] = "/pet"
         result["action_match_source"] = normalized.get("action_match_source") or result.get("action_match_source")
         result["target_ignored_for_action"] = bool(normalized.get("target_ignored_for_action"))
+    if metadata.get("predicted_intent") == "web_query":
+        result["web_query"] = _short_text(str(normalized.get("query") or ""))
+        result["web_query_freshness"] = normalized.get("freshness") or "any"
+        result["web_query_domain_hints"] = list(normalized.get("domain_hints") or [])
+        result["web_query_language_hint"] = normalized.get("language_hint")
+        result["not_executed_reason"] = validation.not_executed_reason or "web_query_diagnostic_only"
+        result["diagnostic_reason"] = result["not_executed_reason"]
+        result["warnings"] = _ensure_warning(result["warnings"], str(result["not_executed_reason"]))
+        result["route_action"] = "metadata_only"
+        result["auto_executable"] = False
+        result["would_execute"] = False
+        result["executed"] = False
     return result
 
 
@@ -785,7 +823,7 @@ def _active_session_kb_ids(knowledge_store: Any, session_id: str) -> list[str]:
 
 def _compact_slots(slots: dict[str, Any]) -> dict[str, Any]:
     compact: dict[str, Any] = {}
-    for key in ("intent", "target_agent_hint", "kb_hint", "query", "command_hint", "domain", "action", "target_pet_hint", "source_pet_hint"):
+    for key in ("intent", "target_agent_hint", "kb_hint", "query", "command_hint", "domain", "action", "target_pet_hint", "source_pet_hint", "freshness", "language_hint"):
         value = slots.get(key)
         if isinstance(value, str) and value.strip():
             compact[key] = _short_text(value.strip())
@@ -794,6 +832,8 @@ def _compact_slots(slots: dict[str, Any]) -> dict[str, Any]:
             compact[key] = bool(slots.get(key))
     if slots.get("use_original_query") is not None:
         compact["use_original_query"] = bool(slots.get("use_original_query"))
+    if isinstance(slots.get("domain_hints"), list):
+        compact["domain_hints"] = [_short_text(str(item).strip(), 80) for item in slots["domain_hints"][:5] if str(item or "").strip()]
     return compact
 
 
@@ -883,6 +923,10 @@ async def _maybe_apply_utility_slots(
             prediction = {**prediction, "kb_id": extracted.get("kb_id")}
     elif predicted_intent == "pet_command":
         for key in ("domain", "action", "target_pet_hint", "source_pet_hint", "target_pet_explicit", "source_pet_explicit"):
+            if extracted.get(key) is not None:
+                slots[key] = extracted.get(key)
+    elif predicted_intent == "web_query":
+        for key in ("query", "use_original_query", "freshness", "domain_hints", "language_hint"):
             if extracted.get(key) is not None:
                 slots[key] = extracted.get(key)
     return {

@@ -105,7 +105,7 @@ When a session still has a default title such as `Session 1`, the core runtime c
 
 ## Intent Routing Alpha
 
-Settings -> General -> Intent Routing adds an optional natural-language pre-route layer for ordinary messages. Explicit `/command`, `@agent`, `@agent:action`, and `:action` syntax always bypasses it. Shadow mode records compact predictions only; safe auto mode can execute only the documented `chat`, high-confidence Knowledge query override, and narrow Workbench Pet command paths.
+Settings -> General -> Intent Routing adds an optional natural-language pre-route layer for ordinary messages. Explicit `/command`, `@agent`, `@agent:action`, and `:action` syntax always bypasses it. Shadow mode records compact predictions only; safe auto mode can execute only the documented `chat`, high-confidence Knowledge query override, and narrow Workbench Pet command paths. `web_query` can identify current/web-search requests and extract compact diagnostics, but it does not execute search or inject web context yet.
 
 The semantic router uses an existing Knowledge Embedding Model Profile, and Utility LLM may provide strict JSON slots for executable non-chat intents. Route Test is diagnostic-only and does not create messages/runs or mutate sessions.
 

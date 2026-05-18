@@ -188,6 +188,18 @@ PET_COMMAND_SLOT_SCHEMA = SlotSchema(
     ),
 )
 
+WEB_QUERY_SLOT_SCHEMA = SlotSchema(
+    schema_id="web_query_slots",
+    fields=(
+        SlotField("intent", required=True, enum_values=("web_query", "unknown"), description="Predicted intent id."),
+        SlotField("query", required=False, max_chars=240, description="Short web search query."),
+        SlotField("use_original_query", type="boolean", required=False, max_chars=None, description="Use the original user text when query is empty."),
+        SlotField("freshness", required=False, enum_values=("any", "recent", "today"), max_chars=20, description="Freshness requirement for the diagnostic web query."),
+        SlotField("domain_hints", type="string[]", required=False, max_chars=None, description="Optional compact domain hints."),
+        SlotField("language_hint", required=False, max_chars=40, description="Optional language hint."),
+    ),
+)
+
 
 def get_builtin_route_specs() -> tuple[RouteSpec, ...]:
     return (
@@ -233,6 +245,30 @@ def get_builtin_route_specs() -> tuple[RouteSpec, ...]:
             slot_schema=PET_COMMAND_SLOT_SCHEMA,
             safety_notes=("Workbench desktop pet only.", "Real pet, fictional character, or unclear domain must not execute."),
             metadata_kind="pet_command",
+        ),
+        RouteSpec(
+            id="web_query",
+            intent="web_query",
+            label="Web query",
+            description="Requests that ask for current, recent, latest, official, or web-searched information.",
+            examples=(
+                "搜一下 OpenAI API 最新变化",
+                "联网查一下 Qwen 最近发布了什么",
+                "今天日元汇率",
+                "星球大战最新消息",
+                "搜索网页上的官网最新信息",
+                "search the latest OpenAI API changes",
+                "find recent news about Qwen",
+                "current exchange rate JPY USD",
+            ),
+            execution_mode="utility_required",
+            auto_executable=False,
+            utility_required=True,
+            validator_id="web_query",
+            executor_id="web_query_diagnostic",
+            slot_schema=WEB_QUERY_SLOT_SCHEMA,
+            safety_notes=("Diagnostic-only in this version.", "Do not call Web Search Capability or inject Prompt Agent web context."),
+            metadata_kind="web_query",
         ),
         RouteSpec(
             id="image_generation",

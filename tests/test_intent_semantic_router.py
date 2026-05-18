@@ -86,3 +86,28 @@ def test_semantic_router_uses_pet_action_specs_as_candidates() -> None:
 
     assert decision["predicted_intent"] == "pet_command"
     assert any(candidate.get("action_spec_id") == "pet.tuck" for candidate in decision["top_candidates"])
+
+
+def test_semantic_router_recognizes_web_query_without_stealing_writing() -> None:
+    knowledge = MemoryKnowledgeStore()
+    profile = knowledge.create_embedding_profile(EmbeddingModelProfile(name="Semantic", alias="semantic", model_path="embeddings/test"))
+    settings = AppSettings(intent_routing_embedding_model_profile_id=profile.id)
+    backend = FakeEmbeddingBackend()
+    router = SemanticRouter()
+
+    web = router.decide(
+        "search the latest OpenAI API changes",
+        settings=settings,
+        knowledge_store=knowledge,
+        model_backend=backend,
+    )
+    writing = router.decide(
+        "write a Star Wars style short story",
+        settings=settings,
+        knowledge_store=knowledge,
+        model_backend=backend,
+    )
+
+    assert web["predicted_intent"] == "web_query"
+    assert web["intent_group_scores"][0]["intent"] == "web_query"
+    assert writing["predicted_intent"] != "web_query"

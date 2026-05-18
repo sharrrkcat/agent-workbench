@@ -1676,7 +1676,7 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
     <>
       <h4 className="settings-compact-subheading">{t('settings:general.summary')}</h4>
       <dl className="settings-definition-grid">
-        <Metric label={t('settings:general.predictedIntent')} value={String(decision.predicted_intent || decision.bypass_reason || t('settings:general.none'))} />
+        <Metric label={t('settings:general.predictedIntent')} value={routeIntentLabel(String(decision.predicted_intent || decision.bypass_reason || ''), t) || t('settings:general.none')} />
         <Metric label={t('settings:general.routeSpec')} value={String(decision.route_spec_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.actionSpec')} value={String(decision.action_spec_id || t('settings:general.none'))} />
         <Metric label={t('settings:general.wouldExecute')} value={decision.would_execute ? t('settings:general.yes') : t('settings:general.no')} />
@@ -1711,6 +1711,10 @@ function RouteTestResult({ decision }: { decision: Record<string, unknown> }) {
           <Metric label={t('settings:general.sourcePet')} value={petSummary(decision, 'source', t)} />
           <Metric label={t('settings:general.targetIgnoredForAction')} value={decision.target_ignored_for_action ? t('settings:general.yes') : t('settings:general.no')} />
           <Metric label={t('settings:general.generatedPetCommand')} value={String(decision.generated_command || t('settings:general.none'))} />
+          <Metric label={t('settings:general.webSearchQuery')} value={String(decision.web_query || (slots as Record<string, unknown>).query || t('settings:general.none'))} />
+          <Metric label={t('settings:general.freshness')} value={String(decision.web_query_freshness || (slots as Record<string, unknown>).freshness || t('settings:general.none'))} />
+          <Metric label={t('settings:general.domainHints')} value={Array.isArray(decision.web_query_domain_hints) ? decision.web_query_domain_hints.join(', ') || t('settings:general.none') : Array.isArray((slots as Record<string, unknown>).domain_hints) ? ((slots as Record<string, unknown>).domain_hints as unknown[]).join(', ') || t('settings:general.none') : t('settings:general.none')} />
+          <Metric label={t('settings:general.languageHint')} value={String(decision.web_query_language_hint || (slots as Record<string, unknown>).language_hint || t('settings:general.none'))} />
           <Metric label={t('settings:general.temporaryKnowledgeBaseOverride')} value={Array.isArray(decision.temporary_knowledge_base_ids) ? decision.temporary_knowledge_base_ids.join(', ') || t('settings:general.none') : t('settings:general.none')} />
           <Metric label={t('settings:general.knowledgeQueryOverride')} value={String(decision.knowledge_query_override || t('settings:general.none'))} />
           <Metric label={t('settings:general.validatorId')} value={String(decision.validator_id || t('settings:general.none'))} />
@@ -1759,10 +1763,18 @@ function routeMainTarget(decision: Record<string, unknown>, t: ReturnType<typeof
   if (decision.predicted_intent === 'pet_command') {
     return String(decision.generated_command || t('settings:general.none'));
   }
+  if (decision.predicted_intent === 'web_query') {
+    return String(decision.web_query || t('settings:general.webQueryDiagnosticOnly'));
+  }
   if (decision.predicted_intent === 'chat') {
     return String(decision.target_agent_id || t('settings:general.currentPromptAgent'));
   }
   return String(decision.target_agent_id || decision.target_command || decision.target_action_id || t('settings:general.none'));
+}
+
+function routeIntentLabel(intent: string, t: ReturnType<typeof useTranslation>['t']): string {
+  if (!intent) return '';
+  return t(`settings:general.intentLabel.${intent}`, { defaultValue: intent });
 }
 
 function compactJson(value: unknown): string {

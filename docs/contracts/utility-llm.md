@@ -189,6 +189,12 @@ Malformed JSON records `utility_invalid_json`; missing required slots or invalid
 enum values record `utility_slots_failed`. Extra fields are ignored. Semantic or
 slot conflicts are validator failures, not execution instructions.
 
+For Intent Routing `web_query`, the Utility LLM may return only compact slots:
+`intent`, `query`, `use_original_query`, `freshness`, `domain_hints`, and
+`language_hint`. These slots are diagnostic-only in this round; they must not
+cause Web Search Capability calls, provider-bound web prompts, web context
+injection, or search result storage.
+
 ## Metadata And Raw Output
 
 Utility LLM metadata may store compact public backend/profile/provider/model

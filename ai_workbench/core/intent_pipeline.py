@@ -57,6 +57,8 @@ def validate_intent(decision: dict[str, Any], slots: dict[str, Any], context: In
         return KnowledgeQueryValidator().validate_intent(decision, slots, context)
     if spec.id == "pet_command":
         return PetCommandValidator().validate_intent(decision, slots, context)
+    if spec.id == "web_query":
+        return WebQueryValidator().validate_intent(decision, slots, context)
     return ValidatorResult(ok=True, normalized_slots=slots)
 
 
@@ -234,6 +236,44 @@ class PetCommandValidator:
             },
         )
         return ValidatorResult(ok=True, warnings=warnings, normalized_slots=normalized, executor_plan=plan)
+
+
+class WebQueryValidator:
+    def validate_intent(self, decision: dict[str, Any], slots: dict[str, Any], context: IntentPipelineContext) -> ValidatorResult:
+        warnings = list(decision.get("warnings") or [])
+        route_spec_id = str(decision.get("route_spec_id") or decision.get("predicted_intent") or "")
+        if decision.get("predicted_intent") != "web_query" or route_spec_id != "web_query":
+            return _failed("utility_semantic_intent_conflict", slots, warnings)
+        if slots.get("intent") != "web_query":
+            return _failed("utility_semantic_intent_conflict", slots, warnings)
+
+        query = str(slots.get("query") or "").strip()
+        if not query and slots.get("use_original_query") is True:
+            query = str(getattr(context.route, "args", "") or "").strip()
+        if not query:
+            return _failed("web_query_missing_query", slots, warnings)
+
+        domain_hints = slots.get("domain_hints") if isinstance(slots.get("domain_hints"), list) else []
+        normalized = {
+            **slots,
+            "query": _short_text(query),
+            "freshness": slots.get("freshness") or "any",
+            "domain_hints": [str(item)[:120] for item in domain_hints[:5] if str(item or "").strip()],
+            "language_hint": _short_text(str(slots.get("language_hint") or "").strip(), 40) or None,
+        }
+        reason = "web_query_diagnostic_only"
+        plan = ExecutorPlan(
+            route_action="metadata_only",
+            auto_executable=False,
+            would_execute=False,
+            metadata={
+                "not_executed_reason": reason,
+                "executed": False,
+                "would_execute": False,
+                "web_search_capability_called": False,
+            },
+        )
+        return ValidatorResult(ok=True, not_executed_reason=reason, warnings=_ensure_warning(warnings, reason), normalized_slots=normalized, executor_plan=plan)
 
 
 def _failed(reason: str, slots: dict[str, Any], warnings: list[str]) -> ValidatorResult:

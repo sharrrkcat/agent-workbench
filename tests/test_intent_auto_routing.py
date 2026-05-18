@@ -417,6 +417,40 @@ def test_auto_command_like_intent_is_not_executed() -> None:
     assert "command_like_auto_route_disabled" in intent["warnings"]
 
 
+def test_auto_web_query_is_diagnostic_only_and_keeps_prompt_agent() -> None:
+    fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_auto(fixture)
+    service = enable_utility(
+        fixture,
+        {
+            "intent": "web_query",
+            "confidence": 0.9,
+            "query": "Qwen recent releases",
+            "freshness": "recent",
+            "domain_hints": ["qwenlm.github.io"],
+            "language_hint": "en",
+        },
+    )
+    session = fixture.sessions.create_session(default_agent_id="chat")
+
+    result = run(fixture.runtime.handle_input(session, "find recent news about Qwen"))
+
+    prompt_run = fixture.runs.get_run(result.run_id)
+    intent = prompt_run.metadata["intent_routing"]
+    assert result.success is True
+    assert prompt_run.kind == "agent"
+    assert prompt_run.target_id == "chat"
+    assert intent["predicted_intent"] == "web_query"
+    assert intent["route_action"] == "metadata_only"
+    assert intent["auto_executable"] is False
+    assert intent["would_execute"] is False
+    assert intent["executed"] is False
+    assert intent["not_executed_reason"] == "web_query_diagnostic_only"
+    assert intent["slots"]["query"] == "Qwen recent releases"
+    assert intent["slots"]["domain_hints"] == ["qwenlm.github.io"]
+    assert service.calls == ["find recent news about Qwen"]
+
+
 def test_auto_pet_command_requires_utility_slots() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     pet_runtime = FakePetRuntime()

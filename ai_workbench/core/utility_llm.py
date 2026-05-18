@@ -27,7 +27,7 @@ UTILITY_MODEL_PATH_INVALID = "model_path_invalid"
 UTILITY_MODEL_PATH_MISMATCH = "backend_model_path_mismatch"
 UTILITY_LLAMA_CPP_UNAVAILABLE = "llama_cpp_unavailable"
 UTILITY_GENERATION_FAILED = "utility_generation_failed"
-UTILITY_INTENTS = {"chat", "image_generation", "knowledge_query", "pet_command", "agent_route", "command_like", "unknown"}
+UTILITY_INTENTS = {"chat", "image_generation", "knowledge_query", "pet_command", "web_query", "agent_route", "command_like", "unknown"}
 PET_DOMAINS = {"workbench_pet", "real_pet", "fictional_character", "unclear"}
 PET_ACTIONS = {"status", "wake", "tuck", "select", "reload", "unknown"}
 UTILITY_BACKENDS = {"transformers", "llama_cpp", "model_profile"}
@@ -602,10 +602,10 @@ class UtilityLLMService:
         compact_context = json.dumps(context or {}, ensure_ascii=False)[:6000]
         prompt = (
             "Classify the user's message for internal shadow diagnostics only.\n"
-            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, use_original_query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint, target_pet_explicit, source_pet_explicit.\n"
-            "Allowed intent values: chat, image_generation, knowledge_query, pet_command, agent_route, command_like, unknown.\n"
+            "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, use_original_query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint, target_pet_explicit, source_pet_explicit, freshness, domain_hints, language_hint.\n"
+            "Allowed intent values: chat, image_generation, knowledge_query, pet_command, web_query, agent_route, command_like, unknown.\n"
             "Use compact top RouteSpec/ActionSpec candidates and slot schemas only; do not invent agent ids or knowledge base ids outside the candidates.\n"
-            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query must provide query and may provide kb_hint; only set use_original_query=true when the original message is the best retrieval query. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
+            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query must provide query and may provide kb_hint; only set use_original_query=true when the original message is the best retrieval query. web_query must provide query or use_original_query=true, may set freshness to any/recent/today, and is diagnostic-only without web search execution. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
             "Use null for unknown slots. Do not explain.\n\n"
             f"Compact candidates:\n{compact_context}\n\n"
             f"User message:\n{text}"
@@ -712,6 +712,9 @@ def validate_intent_prediction(data: dict[str, Any]) -> dict[str, Any]:
         "source_pet_hint": _slot(data.get("source_pet_hint")),
         "target_pet_explicit": _optional_bool(data.get("target_pet_explicit")),
         "source_pet_explicit": _optional_bool(data.get("source_pet_explicit")),
+        "freshness": _freshness(data.get("freshness")),
+        "domain_hints": _slot_list(data.get("domain_hints")),
+        "language_hint": _slot(data.get("language_hint")),
     }
 
 
@@ -733,6 +736,8 @@ def _validate_extracted_slots(result: dict[str, Any], context: dict[str, Any] | 
             raise UtilityLLMError("utility_slots_failed", "Utility LLM pet domain slot is invalid.")
         if result.get("action") not in PET_ACTIONS:
             raise UtilityLLMError("utility_slots_failed", "Utility LLM pet action slot is invalid.")
+    if intent == "web_query" and result.get("freshness") not in (None, "any", "recent", "today"):
+        raise UtilityLLMError("utility_slots_failed", "Utility LLM web freshness slot is invalid.")
 
 
 def _slot(value: Any) -> str | None:
@@ -740,6 +745,20 @@ def _slot(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text[:200] if text else None
+
+
+def _slot_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    raw_items = value if isinstance(value, list) else [value]
+    items: list[str] = []
+    for item in raw_items:
+        text = str(item or "").strip()
+        if text:
+            items.append(text[:120])
+        if len(items) >= 5:
+            break
+    return items
 
 
 def _optional_bool(value: Any) -> bool | None:
@@ -763,6 +782,11 @@ def _pet_domain(value: Any) -> str | None:
 def _pet_action(value: Any) -> str | None:
     text = str(value or "").strip()
     return text if text in PET_ACTIONS else None
+
+
+def _freshness(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text if text in {"any", "recent", "today"} else None
 
 
 def _render_chat_prompt(tokenizer: Any, prompt: str) -> str:

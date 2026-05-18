@@ -363,6 +363,18 @@ def test_json_extractor_validation_clamps_and_filters_slots() -> None:
     assert data["query"] == "Q"
 
 
+def test_json_extractor_accepts_web_query_slots() -> None:
+    data = validate_intent_prediction(
+        extract_json_object('{"intent":"web_query","query":"OpenAI API latest changes","freshness":"recent","domain_hints":["openai.com"],"language_hint":"en"}')
+    )
+
+    assert data["intent"] == "web_query"
+    assert data["query"] == "OpenAI API latest changes"
+    assert data["freshness"] == "recent"
+    assert data["domain_hints"] == ["openai.com"]
+    assert data["language_hint"] == "en"
+
+
 def test_json_extractor_accepts_fenced_and_balanced_json_with_extra_fields() -> None:
     fenced = extract_json_object('Here:\n```json\n{"intent":"pet_command","domain":"workbench_pet","action":"wake","extra":{"nested":true}}\n```\nDone')
     prefixed = extract_json_object('Utility says {"intent":"pet_command","domain":"workbench_pet","action":"wake"} trailing {ignored}')

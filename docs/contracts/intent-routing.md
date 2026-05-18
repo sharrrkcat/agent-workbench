@@ -123,6 +123,11 @@ settings and must not affect route decisions.
   slots, and Knowledge validation pass.
 - `pet_command`: may execute only the narrow existing `/pet` Capability command
   path described below.
+- `web_query`: diagnostic-only. It identifies requests for current, recent,
+  latest, official, or web-searched information and may extract compact query
+  slots, but it does not call Web Search Capability, does not execute SearXNG,
+  does not inject Prompt Agent web context, and does not create command or Agent
+  runs.
 - `image_generation`: diagnostic-only until action routing is designed. It does
   not auto-route to ComfyUI.
 - `command_like`: diagnostic-only. It must not execute slash commands such as
@@ -140,8 +145,38 @@ The safe auto-route allowlist is deliberately narrow:
 - narrow `pet_command` for `/pet status`, `/pet wake`, `/pet tuck`,
   `/pet reload`, and `/pet select <pet_id>`
 
-General command-like requests, generic Agent routes, Agent actions, image
-generation, and compound/multi-intent matches are metadata only in this version.
+Web queries, general command-like requests, generic Agent routes, Agent actions,
+image generation, and compound/multi-intent matches are metadata only in this
+version.
+
+## Web Query Rules
+
+`web_query` is recognized by the semantic router and may use Utility LLM strict
+JSON slots:
+
+- `intent`: must be `web_query`.
+- `query`: compact search query string; may be empty only when
+  `use_original_query=true`.
+- `use_original_query`: optional boolean.
+- `freshness`: optional `any`, `recent`, or `today`.
+- `domain_hints`: optional compact string array for diagnostics only.
+- `language_hint`: optional compact language hint.
+
+The validator requires semantic predicted intent `web_query`, Utility
+`slots.intent=web_query`, and a non-empty effective query. If `query` is empty
+and `use_original_query` is not true, validation records
+`web_query_missing_query`.
+
+The executor plan is always diagnostic-only:
+
+- `would_execute=false`
+- `executed=false`
+- `not_executed_reason=web_query_diagnostic_only`
+- `route_action=metadata_only`
+
+This round must not call `/web-search`, Web Search Capability diagnostics, a
+SearXNG provider, Knowledge retrieval, Prompt Agent Web Context, vectorization,
+rerank, or search-result summarization for `web_query`.
 
 ## Knowledge Query Rules
 
@@ -253,6 +288,7 @@ Route Test must not:
 - execute `/pet` or any other command.
 - execute an Agent or Agent action.
 - run Knowledge retrieval.
+- call Web Search Capability or its diagnostics endpoint.
 - call ComfyUI.
 - mutate session settings, Context Sources, session KB bindings, or Pet settings.
 
@@ -273,6 +309,7 @@ slot values, warnings, and execution-plan summaries. It must not store:
 - Agent prompts.
 - KB, Worldbook, or Core Memory content.
 - full chat history.
+- Web Search provider raw payloads or search results.
 - Pet manifests, spritesheet content, or image bytes.
 - duplicate full `original_user_text` when the message body already stores it.
 
@@ -297,6 +334,8 @@ Common codes include:
 - `utility_semantic_action_conflict`
 - `validation_failed`
 - `knowledge_query_missing_query`
+- `web_query_diagnostic_only`
+- `web_query_missing_query`
 - `kb_hint_semantic_conflict`
 - `ambiguous_kb_candidate`
 - `no_kb_candidate_or_active_kbs`

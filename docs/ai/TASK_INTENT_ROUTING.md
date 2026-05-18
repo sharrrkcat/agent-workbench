@@ -59,6 +59,9 @@ map, not a requirement to read every file in full.
   context, Knowledge, Core Memory, or Worldbook behavior.
 - Do not expand safe auto-route execution beyond the documented `chat`,
   `knowledge_query`, and narrow `/pet` allowlist without a contract update.
+- `web_query` is currently diagnostic-only: it may identify current/web search
+  requests and extract compact Utility slots, but it must not call Web Search,
+  SearXNG, Knowledge retrieval, or Prompt Agent web context.
 - Do not use broad regex or keyword parsers as the primary natural-language router.
 - Do not modify Agent or Capability manifests for route candidate work.
 - Do not store raw Utility LLM output, prompts, embeddings, full examples,
