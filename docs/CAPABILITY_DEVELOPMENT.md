@@ -252,10 +252,13 @@ also supports Settings diagnostics through
 `POST /api/capability-configs/web_search/test-search`, which uses saved or draft
 CapabilityConfig values without creating chat messages, runs, command results,
 or saving config changes. It does not fetch result pages, execute JavaScript,
-cache results, save to Knowledge, vectorize, or rerank. The command enable
-setting controls only `/web-search`; the Prompt Agent runtime may reuse the
-core search helper for General Web Search context injection without executing
-the command.
+cache results, save to Knowledge, vectorize, or rerank. Prompt Agent Web Context
+may separately fetch compact page excerpts from top filtered results when the
+General Web Search page-fetching setting is enabled, but that is an internal
+runtime helper path, not `/web-search`, not Settings test search, and not a
+Capability command run. The command enable setting controls only `/web-search`;
+the Prompt Agent runtime may reuse the core search helper for General Web Search
+context injection without executing the command.
 
 For image output, CLI summaries show MIME type, approximate decoded size, URL prefix, and URL length instead of printing the full data URL.
 

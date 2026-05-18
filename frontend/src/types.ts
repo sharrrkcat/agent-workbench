@@ -1547,6 +1547,12 @@ export type GeneralSettings = {
   web_context_context_budget_chars: number;
   web_context_prompt: string;
   web_context_prompt_default: string;
+  web_context_fetch_pages_enabled: boolean;
+  web_context_fetch_max_pages: number;
+  web_context_fetch_timeout_seconds: number;
+  web_context_fetch_max_bytes: number;
+  web_context_page_excerpt_chars: number;
+  web_context_total_page_excerpt_chars: number;
   intent_routing_enabled: boolean;
   intent_routing_default_for_prompt_agents: boolean;
   intent_routing_mode: 'shadow' | 'auto';

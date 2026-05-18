@@ -303,7 +303,10 @@ result page bodies, cache results, rerank, vectorize, or save to Knowledge. The
 `/web-search` command enable setting controls only that explicit command.
 Runtime Web Context may call the same core search helper for eligible Prompt
 Agent context injection when General Web Search is enabled, without using the
-command path. Settings exposes
+command path. When General Web Search page fetching is enabled, Prompt Agent Web
+Context may separately fetch compact HTML excerpts from top filtered results
+through an internal runtime helper; this is not `/web-search`, not Settings test
+search, and not a Capability command run. Settings exposes
 `POST /api/capability-configs/web_search/test-search` for SearXNG search
 diagnostics using saved or draft CapabilityConfig values; it does not create
 chat messages, runs, command results, or persist config changes.

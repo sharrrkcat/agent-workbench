@@ -121,15 +121,21 @@ metadata stores refs/counts/warnings, not snapshots of full user-owned content.
 `web_context` metadata stores the Web Context plan and outcome compactly. Allowed
 fields include enablement, attempted/injected booleans, truncated query,
 `query_source`, provider, result count, compact source refs, `skipped_reason`,
-warnings, compact search filtering diagnostics, and a compact resolver object
-with `used`, `reason`, and `confidence`.
+warnings, compact search filtering diagnostics, compact page fetch diagnostics,
+and a compact resolver object with `used`, `reason`, and `confidence`.
 Each `source_refs` item may include only compact citation UI fields:
 `ref_id` such as `W1`, `rank`, `title`, validated HTTP/HTTPS `url`, `domain`,
-`published_at`, `source`, and a capped `snippet_preview` or short `snippet`.
+`published_at`, `source`, a capped `snippet_preview` or short `snippet`, and
+compact page fetch fields such as `page_fetch_status`, `page_title`,
+`page_excerpt_preview`, `page_excerpt_chars`, and `page_fetch_warning`.
+`page_excerpt_preview` must be capped for UI inspection and must not contain the
+full fetched page excerpt.
 `search_diagnostics` may include only compact filtering facts such as
 `filtered_count`, `deduped_count`, `filters_applied`, and warning codes. It must
 not include raw provider payloads, full filtered result lists, or fetched page
 bodies.
+Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
+`pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
 The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web

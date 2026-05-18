@@ -489,6 +489,31 @@ def test_web_search_test_search_structured_failures() -> None:
         assert "diagnostics" in data
 
 
+def test_web_search_command_and_test_search_do_not_fetch_result_pages(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [{"title": "Kept", "url": "https://kept.test/page", "content": "kept"}]}, request=request)
+
+    def fail_fetch(**kwargs):
+        raise AssertionError("Web Search command and test search must not fetch result pages")
+
+    monkeypatch.setattr("ai_workbench.core.web_context.fetch_web_context_page", fail_fetch)
+
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    app.state.runtime_state.runtimes.replace("web_search", WebSearchRuntime(client=httpx.Client(transport=httpx.MockTransport(handler))))
+    client = TestClient(app)
+    session = create_session(client)
+    client.patch("/api/settings/general", json={"web_context_enabled": True, "web_context_fetch_pages_enabled": True})
+    client.patch("/api/capability-configs/web_search", json={"user_config": {"searxng_base_url": "https://searxng.test"}})
+
+    command = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/web-search kept"})
+    test_search = client.post("/api/capability-configs/web_search/test-search", json={"query": "kept"})
+
+    assert command.status_code == 200
+    assert command.json()["run"]["kind"] == "command"
+    assert test_search.status_code == 200
+    assert test_search.json()["ok"] is True
+
+
 def test_prompt_agent_web_context_uses_web_search_filtering_config() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

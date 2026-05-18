@@ -333,6 +333,11 @@ type WebContextSummary = {
   resolverReason?: string;
   resolverConfidence?: string;
   searchDiagnostics?: WebSearchContextDiagnostics;
+  pageFetchEnabled?: boolean;
+  pagesAttempted?: number;
+  pagesFetched?: number;
+  pagesFailed?: number;
+  pageFetchWarnings: string[];
   warnings: string[];
 };
 
@@ -353,6 +358,11 @@ type WebSourceRef = {
   source?: string;
   snippet?: string;
   snippet_preview?: string;
+  page_fetch_status?: string;
+  page_title?: string;
+  page_excerpt_preview?: string;
+  page_excerpt_chars?: number;
+  page_fetch_warning?: string;
 };
 
 type NormalizedContextMetadata = {
@@ -645,11 +655,18 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               </div>
             </div>
             {ref.snippet_preview || ref.snippet ? <pre className="knowledge-snippet-content">{ref.snippet_preview || ref.snippet}</pre> : null}
+            {ref.page_excerpt_preview ? (
+              <pre className="knowledge-snippet-content context-content-block">{ref.page_excerpt_preview}</pre>
+            ) : null}
             <div className="knowledge-snippet-scores">
               {scoreLabel(t('chat:contextModal.rank'), ref.rank)}
+              {ref.page_fetch_status ? <Chip tone={pageFetchStatusTone(ref.page_fetch_status)}>{pageFetchStatusLabel(ref.page_fetch_status, t)}</Chip> : null}
               {ref.source ? <span>{t('chat:contextModal.source')}: {ref.source}</span> : null}
               {ref.domain ? <span>{t('chat:contextModal.domain')}: {ref.domain}</span> : null}
               {ref.published_at ? <span>{t('chat:contextModal.published')}: {ref.published_at}</span> : null}
+              {ref.page_title ? <span>{t('chat:contextModal.pageTitle')}: {ref.page_title}</span> : null}
+              {ref.page_excerpt_chars !== undefined ? <span>{t('chat:contextModal.pageExcerptChars', { count: ref.page_excerpt_chars })}</span> : null}
+              {ref.page_fetch_warning ? <span>{pageFetchWarningLabel(ref.page_fetch_warning, t)}</span> : null}
               {ref.url ? (
                 <a href={ref.url} target="_blank" rel="noreferrer noopener">
                   <ExternalLink size={12} />
@@ -662,6 +679,25 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
       })}
     </>
   );
+}
+
+function pageFetchStatusTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
+  if (status === 'fetched') return 'active';
+  if (status === 'skipped') return 'neutral';
+  if (status === 'timeout' || status === 'unsupported' || status === 'blocked') return 'warning';
+  return 'danger';
+}
+
+function pageFetchStatusLabel(status: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = `chat:contextModal.pageFetchStatus.${status}`;
+  const label = t(key);
+  return label === key ? status : label;
+}
+
+function pageFetchWarningLabel(warning: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = `chat:contextModal.pageFetchWarnings.${warning}`;
+  const label = t(key);
+  return label === key ? warning : label;
 }
 
 function WarningList({ warnings }: { warnings: string[] }) {
@@ -830,6 +866,11 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
     resolverReason: textValue(resolver?.reason),
     resolverConfidence: textValue(resolver?.confidence),
     searchDiagnostics: mergeWebSearchDiagnostics(contexts.map((context) => context.search_diagnostics)),
+    pageFetchEnabled: booleanValue(last.page_fetch_enabled),
+    pagesAttempted: maxNumber(contexts.map((context) => numberValue(context.pages_attempted))),
+    pagesFetched: maxNumber(contexts.map((context) => numberValue(context.pages_fetched))),
+    pagesFailed: maxNumber(contexts.map((context) => numberValue(context.pages_failed))),
+    pageFetchWarnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.page_fetch_warnings))),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
   };
 }
@@ -867,6 +908,11 @@ function webSourceRefs(context: Record<string, unknown> | undefined): WebSourceR
       source: textValue(item.source),
       snippet: textValue(item.snippet),
       snippet_preview: textValue(item.snippet_preview),
+      page_fetch_status: textValue(item.page_fetch_status),
+      page_title: textValue(item.page_title),
+      page_excerpt_preview: textValue(item.page_excerpt_preview),
+      page_excerpt_chars: numberValue(item.page_excerpt_chars),
+      page_fetch_warning: textValue(item.page_fetch_warning),
     });
   });
   return refs;
@@ -2664,6 +2710,10 @@ function webDiagnosticsSummaryParts(summary: WebContextSummary, t: ReturnType<ty
   const parts: string[] = [];
   if (diagnostics.filteredCount) parts.push(t('runs:contextSummary.filteredResults', { count: diagnostics.filteredCount }));
   if (diagnostics.dedupedCount) parts.push(t('runs:contextSummary.deduplicatedResults', { count: diagnostics.dedupedCount }));
+  if (summary.pageFetchEnabled) {
+    if (summary.pagesFetched !== undefined) parts.push(t('runs:contextSummary.pagesFetched', { count: summary.pagesFetched }));
+    if (summary.pagesFailed) parts.push(t('runs:contextSummary.pagesFailed', { count: summary.pagesFailed }));
+  }
   return parts;
 }
 

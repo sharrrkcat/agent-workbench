@@ -193,6 +193,8 @@
     "published": "Published",
     "domain": "Domain",
     "snippet": "Snippet",
+    "pageTitle": "Page title",
+    "pageExcerptChars": "{{count}} page excerpt chars",
     "openSource": "Open source",
     "injected": "Injected",
     "skipped": "Skipped",
@@ -209,7 +211,28 @@
     "keyword": "keyword",
     "rrf": "rrf",
     "rerank": "rerank",
-    "chunk": "chunk"
+    "chunk": "chunk",
+    "pageFetchStatus": {
+      "fetched": "page fetched",
+      "skipped": "not fetched",
+      "failed": "fetch failed",
+      "unsupported": "unsupported",
+      "timeout": "timed out",
+      "blocked": "blocked"
+    },
+    "pageFetchWarnings": {
+      "page_fetch_blocked_scheme": "Blocked: only HTTP and HTTPS are supported.",
+      "page_fetch_blocked_empty_host": "Blocked: URL host is empty.",
+      "page_fetch_blocked_localhost": "Blocked: local host.",
+      "page_fetch_blocked_private_ip": "Blocked: private or local IP.",
+      "page_fetch_unsupported_content_type": "Unsupported: not an HTML page.",
+      "page_fetch_timeout": "Fetch timed out.",
+      "page_fetch_failed": "Fetch failed.",
+      "page_extract_failed": "Page text extraction failed.",
+      "page_text_too_short": "Page text was too short.",
+      "page_fetch_http_403": "Fetch failed: HTTP 403.",
+      "page_fetch_http_500": "Fetch failed: HTTP 500."
+    }
   },
   "citations": {
     "modalTitle": "Knowledge citation",

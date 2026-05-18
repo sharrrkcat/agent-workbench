@@ -22,7 +22,10 @@ must not duplicate full parts.
   compact `metadata.snippet_refs`; chunk text is fetched at render time. Web
   citations stay as inline `[W1]` tokens with compact
   `metadata.web_context.source_refs`; source details are read from that compact
-  metadata at render time.
+  metadata at render time. Optional Web Context page excerpts are rendered into
+  Prompt Agent context before the model call and may be previewed from compact
+  metadata, but they do not change Message Parts schema or citation token
+  semantics.
 - `json`: structured object or array data.
 - `file`: inline raw text (`mode: inline_text`) or an attachment reference.
 - `image`: one image by `url` or `attachment_id`.
@@ -120,6 +123,8 @@ clickable citation badges. This is render-time only: persisted message parts and
 copy behavior keep the original markdown text. Citation enhancement must avoid
 code blocks, inline code, and links, and unknown labels such as `[W99]` must not
 throw or trigger network calls.
+Fetched Web Context page excerpts do not create new citation ids; `[W#]`
+continues to point at the matching compact Web source ref.
 Audio parts render with the project custom audio player, backed by a hidden
 `<audio>` element without native browser controls. Remote `source: url` playback
 depends on browser support and the remote server's Content-Type, Range, CORS,

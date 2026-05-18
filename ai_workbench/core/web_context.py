@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import json
+import ipaddress
+import re
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from typing import Any, Callable
+from urllib.parse import urlparse
+
+import httpx
 
 from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.settings import AppSettings, DEFAULT_WEB_CONTEXT_PROMPT
@@ -12,7 +18,10 @@ from ai_workbench.core.utility_llm import UtilityLLMError, extract_json_object
 MAX_METADATA_QUERY_CHARS = 240
 MAX_PLAN_QUERY_CHARS = 160
 MAX_SOURCE_SNIPPET_PREVIEW_CHARS = 700
+MAX_PAGE_EXCERPT_PREVIEW_CHARS = 700
+MIN_USEFUL_PAGE_TEXT_CHARS = 80
 WEB_SEARCH_CAPABILITY_ID = "web_search"
+HTML_MIME_TYPES = {"text/html", "application/xhtml+xml"}
 PLAN_REASONS = {
     "explicit_search_request",
     "external_fact_question",
@@ -38,6 +47,14 @@ class WebContextResult:
     rendered_text: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PageFetchResult:
+    status: str
+    title: str = ""
+    excerpt: str = ""
+    warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -269,6 +286,7 @@ async def build_web_context(
     capability_registry: Any = None,
     capability_config_store: Any = None,
     search_fn: Callable[..., dict[str, Any]] | None = None,
+    page_fetch_fn: Callable[..., PageFetchResult] | None = None,
 ) -> WebContextResult:
     try:
         resolved_settings = settings or (app_settings_store.get() if app_settings_store is not None else AppSettings())
@@ -338,6 +356,17 @@ async def build_web_context(
             warnings=[*warnings, no_results_warning],
         )
 
+    page_fetch_summary: dict[str, Any] = {}
+    if bool(getattr(resolved_settings, "web_context_fetch_pages_enabled", False)):
+        results, source_refs, page_fetch_summary = _fetch_pages_for_results(
+            results=results,
+            source_refs=source_refs,
+            settings=resolved_settings,
+            page_fetch_fn=page_fetch_fn,
+        )
+        if page_fetch_summary.get("page_fetch_warnings"):
+            warnings = [*warnings, *page_fetch_summary["page_fetch_warnings"]]
+
     rendered_text, injected_refs, truncated = _render_web_block(
         results=results,
         source_refs=source_refs,
@@ -363,6 +392,7 @@ async def build_web_context(
             "truncated": truncated,
             "warnings": warnings,
             "search_diagnostics": search_diagnostics,
+            **page_fetch_summary,
         },
         warnings=warnings,
     )
@@ -381,7 +411,7 @@ def append_web_context_to_system(messages: list[dict[str, Any]], rendered_text: 
 
 
 def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics"}
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
 
 
@@ -481,6 +511,13 @@ def _render_result(result: dict[str, Any], ref_id: str) -> str:
     snippet = str(result.get("snippet") or "").strip()
     if snippet:
         lines.append(f"Snippet: {snippet}")
+    page_title = str(result.get("page_title") or "").strip()
+    result_title = str(result.get("title") or "").strip()
+    if page_title and page_title != result_title:
+        lines.append(f"Page title: {page_title}")
+    page_excerpt = str(result.get("page_excerpt") or "").strip()
+    if page_excerpt:
+        lines.append(f"Page excerpt: {page_excerpt}")
     return "\n".join(lines)
 
 
@@ -498,6 +535,224 @@ def _source_ref(result: dict[str, Any], index: int) -> dict[str, Any]:
     if snippet_preview:
         ref["snippet_preview"] = snippet_preview
     return ref
+
+
+def _fetch_pages_for_results(
+    *,
+    results: list[dict[str, Any]],
+    source_refs: list[dict[str, Any]],
+    settings: AppSettings,
+    page_fetch_fn: Callable[..., PageFetchResult] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    max_pages = max(1, min(int(getattr(settings, "web_context_fetch_max_pages", 2) or 2), 5))
+    timeout = max(1.0, min(float(getattr(settings, "web_context_fetch_timeout_seconds", 5) or 5), 20.0))
+    max_bytes = max(100000, min(int(getattr(settings, "web_context_fetch_max_bytes", 1048576) or 1048576), 5000000))
+    per_page_chars = max(500, min(int(getattr(settings, "web_context_page_excerpt_chars", 2000) or 2000), 8000))
+    total_chars = max(1000, min(int(getattr(settings, "web_context_total_page_excerpt_chars", 6000) or 6000), 20000))
+    fetcher = page_fetch_fn or fetch_web_context_page
+    next_results = [dict(item) for item in results]
+    next_refs = [dict(item) for item in source_refs]
+    warnings: list[str] = []
+    attempted = 0
+    fetched = 0
+    failed = 0
+    remaining_excerpt_chars = total_chars
+    for index, (result, ref) in enumerate(zip(next_results, next_refs)):
+        if index >= max_pages:
+            ref["page_fetch_status"] = "skipped"
+            continue
+        url = str(result.get("url") or "")
+        attempted += 1
+        try:
+            page = fetcher(url=url, timeout_seconds=timeout, max_bytes=max_bytes, excerpt_chars=min(per_page_chars, remaining_excerpt_chars))
+        except Exception:
+            page = PageFetchResult(status="failed", warning="page_fetch_failed")
+        status = page.status
+        ref["page_fetch_status"] = status
+        if page.title:
+            ref["page_title"] = page.title
+        if page.excerpt:
+            excerpt = page.excerpt[: max(0, remaining_excerpt_chars)].strip()
+            if excerpt:
+                result["page_excerpt"] = excerpt
+                ref["page_excerpt_preview"] = _short_page_preview(excerpt)
+                ref["page_excerpt_chars"] = len(excerpt)
+                remaining_excerpt_chars = max(0, remaining_excerpt_chars - len(excerpt))
+        if page.title:
+            result["page_title"] = page.title
+        if page.warning:
+            ref["page_fetch_warning"] = page.warning
+            if page.warning not in warnings:
+                warnings.append(page.warning)
+        if status == "fetched":
+            fetched += 1
+        elif status != "skipped":
+            failed += 1
+        if remaining_excerpt_chars <= 0:
+            for rest in next_refs[index + 1 :]:
+                rest["page_fetch_status"] = "skipped"
+            break
+    return next_results, next_refs, {
+        "page_fetch_enabled": True,
+        "pages_attempted": attempted,
+        "pages_fetched": fetched,
+        "pages_failed": failed,
+        "page_fetch_warnings": warnings,
+    }
+
+
+def fetch_web_context_page(*, url: str, timeout_seconds: float, max_bytes: int, excerpt_chars: int, client: httpx.Client | None = None) -> PageFetchResult:
+    block_reason = _blocked_page_fetch_reason(url)
+    if block_reason:
+        return PageFetchResult(status="blocked", warning=block_reason)
+    try:
+        owns_client = client is None
+        active_client = client or httpx.Client(
+            timeout=timeout_seconds,
+            follow_redirects=True,
+            max_redirects=3,
+            headers={"User-Agent": "agent-workbench/0.1"},
+        )
+        try:
+            with active_client.stream("GET", url, timeout=timeout_seconds, follow_redirects=True) as response:
+                if response.status_code >= 400:
+                    return PageFetchResult(status="failed", warning=f"page_fetch_http_{response.status_code}")
+                redirected_block = _blocked_page_fetch_reason(str(response.url))
+                if redirected_block:
+                    return PageFetchResult(status="blocked", warning=redirected_block)
+                mime_type = _content_type(response)
+                if mime_type not in HTML_MIME_TYPES:
+                    return PageFetchResult(status="unsupported", warning="page_fetch_unsupported_content_type")
+                content = _read_limited_response(response, max_bytes)
+        finally:
+            if owns_client:
+                active_client.close()
+    except httpx.TimeoutException:
+        return PageFetchResult(status="timeout", warning="page_fetch_timeout")
+    except httpx.HTTPError:
+        return PageFetchResult(status="failed", warning="page_fetch_failed")
+    html = content.decode(_encoding_from_headers(response.headers), errors="replace")
+    extracted = extract_html_page_text(html, excerpt_chars=excerpt_chars)
+    warning = extracted.get("warning")
+    excerpt = str(extracted.get("excerpt") or "").strip()
+    if not excerpt:
+        return PageFetchResult(status="failed", title=str(extracted.get("title") or ""), warning=warning or "page_extract_failed")
+    return PageFetchResult(status="fetched", title=str(extracted.get("title") or ""), excerpt=excerpt, warning=warning)
+
+
+def extract_html_page_text(html: str, *, excerpt_chars: int) -> dict[str, str]:
+    parser = _HTMLPageTextExtractor()
+    parser.feed(str(html or ""))
+    title = _collapse_ws(parser.title)
+    description = _collapse_ws(parser.description)
+    body = _collapse_ws(" ".join(parser.body_parts))
+    text = " ".join(part for part in (description, body) if part).strip()
+    excerpt = text[:excerpt_chars].rstrip()
+    result = {"title": title, "excerpt": excerpt}
+    if len(body) < MIN_USEFUL_PAGE_TEXT_CHARS:
+        result["warning"] = "page_text_too_short"
+    return result
+
+
+class _HTMLPageTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.body_parts: list[str] = []
+        self.title_parts: list[str] = []
+        self.description = ""
+        self.skip_depth = 0
+        self.in_title = False
+        self.in_body = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag_name = tag.lower()
+        attrs_dict = {str(key).lower(): str(value or "") for key, value in attrs}
+        if tag_name in {"script", "style", "noscript", "svg", "canvas", "iframe", "template"}:
+            self.skip_depth += 1
+        if tag_name == "title":
+            self.in_title = True
+        if tag_name == "body":
+            self.in_body = True
+        if tag_name == "meta" and attrs_dict.get("name", "").lower() == "description":
+            self.description = attrs_dict.get("content", "")
+        if self.in_body and tag_name in {"p", "br", "div", "section", "article", "li", "h1", "h2", "h3", "h4", "tr"}:
+            self.body_parts.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_name = tag.lower()
+        if tag_name in {"script", "style", "noscript", "svg", "canvas", "iframe", "template"} and self.skip_depth:
+            self.skip_depth -= 1
+        if tag_name == "title":
+            self.in_title = False
+        if tag_name == "body":
+            self.in_body = False
+
+    def handle_data(self, data: str) -> None:
+        if self.skip_depth:
+            return
+        if self.in_title:
+            self.title_parts.append(data)
+        elif self.in_body:
+            self.body_parts.append(data)
+
+    @property
+    def title(self) -> str:
+        return " ".join(self.title_parts)
+
+
+def _blocked_page_fetch_reason(raw_url: str) -> str | None:
+    parsed = urlparse(str(raw_url or "").strip())
+    if parsed.scheme not in {"http", "https"}:
+        return "page_fetch_blocked_scheme"
+    host = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return "page_fetch_blocked_empty_host"
+    if host == "localhost" or host.endswith(".localhost"):
+        return "page_fetch_blocked_localhost"
+    try:
+        ip = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return None
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+        return "page_fetch_blocked_private_ip"
+    return None
+
+
+def _content_type(response: httpx.Response) -> str:
+    return response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+
+
+def _encoding_from_headers(headers: httpx.Headers) -> str:
+    content_type = headers.get("content-type", "")
+    match = re.search(r"charset=([^;\s]+)", content_type, flags=re.IGNORECASE)
+    return match.group(1).strip("\"'") if match else "utf-8"
+
+
+def _read_limited_response(response: httpx.Response, limit: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_bytes():
+        if not chunk:
+            continue
+        remaining = limit - total
+        if remaining <= 0:
+            break
+        chunks.append(chunk[:remaining])
+        total += min(len(chunk), remaining)
+        if total >= limit:
+            break
+    return b"".join(chunks)
+
+
+def _collapse_ws(value: str) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _short_page_preview(value: Any) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= MAX_PAGE_EXCERPT_PREVIEW_CHARS:
+        return text
+    return text[: MAX_PAGE_EXCERPT_PREVIEW_CHARS - 3].rstrip() + "..."
 
 
 def _compact_search_diagnostics(value: Any) -> dict[str, Any]:

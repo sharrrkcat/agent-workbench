@@ -1027,6 +1027,12 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_context_budget_chars: number" in types
     assert "web_context_prompt: string" in types
     assert "web_context_prompt_default: string" in types
+    assert "web_context_fetch_pages_enabled: boolean" in types
+    assert "web_context_fetch_max_pages: number" in types
+    assert "web_context_fetch_timeout_seconds: number" in types
+    assert "web_context_fetch_max_bytes: number" in types
+    assert "web_context_page_excerpt_chars: number" in types
+    assert "web_context_total_page_excerpt_chars: number" in types
     assert "'web_search'" in object_list
     assert "settings:general.webSearch" in object_list
     assert "settings:general.webSearchDescription" in object_list
@@ -1037,10 +1043,15 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.maxWebResults" in panel
     assert "settings:general.webContextBudget" in panel
     assert "settings:general.webContextPrompt" in panel
+    assert "settings:general.pageFetching" in panel
+    assert "settings:general.maxPagesToFetch" in panel
+    assert "settings:general.totalPageExcerptBudget" in panel
     assert "settings:general.searchProvider" in panel
     assert "capability_id === 'web_search'" in panel
     assert "web_context_enabled: values.web_context_enabled" in panel
     assert "web_context_prompt: values.web_context_prompt" in panel
+    assert "web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled" in panel
+    assert "web_context_total_page_excerpt_chars: values.web_context_total_page_excerpt_chars" in panel
     assert "labelKey: 'sections.webSearch'" not in nav
 
 
@@ -1087,12 +1098,18 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "webQuerySourceLabel" in source
     assert "webContextPlanStepMessage" in source
     assert "searchDiagnostics" in source
+    assert "pageFetchEnabled" in source
+    assert "page_fetch_status" in source
+    assert "page_excerpt_preview" in source
     assert "filteredResults" in source
     assert "deduplicatedResults" in source
+    assert "pagesFetched" in source
+    assert "pagesFailed" in source
     assert '"web": "Web"' in runs_en
     assert '"webContextPlan": "Web context plan"' in runs_en
     assert '"intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context"' in runs_en
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
+    assert '"pagesFetched": "{{count}} pages fetched"' in runs_en
     assert '"knowledge_query_candidate_blocked": "knowledge query candidate blocked"' in runs_en
     assert '"web_results_filtered_empty": "all web results were filtered"' in runs_en
     assert '"webSkipReasons"' in runs_en

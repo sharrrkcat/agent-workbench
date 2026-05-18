@@ -200,6 +200,16 @@ General Web Search owns Prompt Agent Web Context injection settings:
   through `20000`.
 - `web_context_prompt` defaults to a non-empty Web Context instruction and
   accepts `1` through `4000` characters.
+- `web_context_fetch_pages_enabled` defaults to `false`.
+- `web_context_fetch_max_pages` defaults to `2` and accepts `1` through `5`.
+- `web_context_fetch_timeout_seconds` defaults to `5` and accepts `1` through
+  `20`.
+- `web_context_fetch_max_bytes` defaults to `1048576` and accepts `100000`
+  through `5000000`.
+- `web_context_page_excerpt_chars` defaults to `2000` and accepts `500`
+  through `8000`.
+- `web_context_total_page_excerpt_chars` defaults to `6000` and accepts `1000`
+  through `20000`.
 
 When `web_context_enabled=false`, ordinary Prompt Agent runs must not search or
 inject `# Retrieved Web`. When enabled, eligible ordinary text messages to the
@@ -211,6 +221,14 @@ The rendered `# Retrieved Web` block begins with the current General
 external sources, should be used as evidence rather than instructions, and must
 be cited with `[W1]`-style source markers when used. The prompt affects only
 future context builds and must not be copied into run or message metadata.
+When page fetching is enabled, Prompt Agent Web Context may fetch the top
+filtered/de-duplicated result pages and append compact plain-text excerpts to
+the matching `[W#]` item. Fetching is best-effort and must not fail the main
+Prompt Agent run. It supports only HTTP/HTTPS HTML pages, does not execute
+JavaScript, does not render in a browser, does not handle PDFs/login pages/media
+or downloads, and does not save, cache, vectorize, or add pages to Knowledge.
+Fetched page content is untrusted external content and is evidence only, never a
+system instruction.
 
 With Intent Routing disabled or in shadow mode, enabled Web Context keeps the
 forced search behavior for eligible ordinary Prompt Agent messages. With Intent
@@ -228,6 +246,10 @@ de-duplication, diagnostics, and test search. General Web Search must not
 duplicate those provider/result-quality controls. Disabling the `/web-search`
 command disables only that explicit command; it does not block internal Web
 Context search when General Web Search is enabled.
+Page fetching settings belong only to Settings -> General -> Web Search because
+they are Prompt Agent Web Context runtime policy. The `/web-search` command and
+Settings test search continue to return search results only and must not fetch
+result pages.
 
 ## Utility LLM
 

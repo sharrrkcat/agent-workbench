@@ -897,6 +897,24 @@ function GeneralFilesSettings({
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
+          <h3>{t('settings:general.pageFetching')}</h3>
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.enablePageFetching')}</span>
+          <ToggleSwitch checked={values.web_context_fetch_pages_enabled} onChange={(checked) => setValues({ ...values, web_context_fetch_pages_enabled: checked })} />
+          <small>{t('settings:general.pageFetchingHelp')}</small>
+        </label>
+        <div className="settings-detail-grid">
+          <NumberField label={t('settings:general.maxPagesToFetch')} value={values.web_context_fetch_max_pages} min={1} max={5} onChange={(value) => setNumber('web_context_fetch_max_pages', value)} />
+          <NumberField label={t('settings:general.fetchTimeout')} value={values.web_context_fetch_timeout_seconds} min={1} max={20} step={0.5} onChange={(value) => setNumber('web_context_fetch_timeout_seconds', value)} />
+          <NumberField label={t('settings:general.maxBytesPerPage')} value={values.web_context_fetch_max_bytes} min={100000} max={5000000} step={100000} onChange={(value) => setNumber('web_context_fetch_max_bytes', value)} />
+          <NumberField label={t('settings:general.excerptCharsPerPage')} value={values.web_context_page_excerpt_chars} min={500} max={8000} step={500} onChange={(value) => setNumber('web_context_page_excerpt_chars', value)} />
+          <NumberField label={t('settings:general.totalPageExcerptBudget')} value={values.web_context_total_page_excerpt_chars} min={1000} max={20000} step={1000} onChange={(value) => setNumber('web_context_total_page_excerpt_chars', value)} />
+        </div>
+        <p className="settings-muted-text">{t('settings:general.pageFetchingSafety')}</p>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
           <h3>{t('general.llmFileContext')}</h3>
         </div>
         <label className="config-field settings-config-field boolean-field">
@@ -1693,6 +1711,12 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     web_context_max_results: values.web_context_max_results,
     web_context_context_budget_chars: values.web_context_context_budget_chars,
     web_context_prompt: values.web_context_prompt,
+    web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled,
+    web_context_fetch_max_pages: values.web_context_fetch_max_pages,
+    web_context_fetch_timeout_seconds: values.web_context_fetch_timeout_seconds,
+    web_context_fetch_max_bytes: values.web_context_fetch_max_bytes,
+    web_context_page_excerpt_chars: values.web_context_page_excerpt_chars,
+    web_context_total_page_excerpt_chars: values.web_context_total_page_excerpt_chars,
     intent_routing_enabled: values.intent_routing_enabled,
     intent_routing_default_for_prompt_agents: values.intent_routing_default_for_prompt_agents,
     intent_routing_mode: values.intent_routing_mode,

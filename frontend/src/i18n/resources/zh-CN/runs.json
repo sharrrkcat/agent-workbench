@@ -63,6 +63,8 @@
     "webResultCount": "{{count}} 条结果 · {{provider}}",
     "filteredResults": "已过滤 {{count}}",
     "deduplicatedResults": "已去重 {{count}}",
+    "pagesFetched": "已抓取 {{count}} 个页面",
+    "pagesFailed": "{{count}} 个页面失败",
     "searchQuery": "搜索词：{{query}}",
     "webQuerySource": "来源：{{source}}",
     "webResolverConfidence": "置信度：{{confidence}}",

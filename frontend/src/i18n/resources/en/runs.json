@@ -61,6 +61,8 @@
     "webResultCount": "{{count}} results · {{provider}}",
     "filteredResults": "filtered {{count}}",
     "deduplicatedResults": "deduped {{count}}",
+    "pagesFetched": "{{count}} pages fetched",
+    "pagesFailed": "{{count}} pages failed",
     "searchQuery": "query: {{query}}",
     "webQuerySource": "source: {{source}}",
     "webResolverConfidence": "confidence: {{confidence}}",

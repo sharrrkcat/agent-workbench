@@ -62,6 +62,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["web_context_context_budget_chars"] == 4000
     assert response.json()["web_context_prompt"] == DEFAULT_WEB_CONTEXT_PROMPT
     assert response.json()["web_context_prompt_default"] == DEFAULT_WEB_CONTEXT_PROMPT
+    assert response.json()["web_context_fetch_pages_enabled"] is False
+    assert response.json()["web_context_fetch_max_pages"] == 2
+    assert response.json()["web_context_fetch_timeout_seconds"] == 5
+    assert response.json()["web_context_fetch_max_bytes"] == 1048576
+    assert response.json()["web_context_page_excerpt_chars"] == 2000
+    assert response.json()["web_context_total_page_excerpt_chars"] == 6000
     assert response.json()["intent_routing_enabled"] is False
     assert response.json()["intent_routing_default_for_prompt_agents"] is False
     assert response.json()["intent_routing_mode"] == "shadow"
@@ -132,6 +138,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "web_context_max_results": 7,
             "web_context_context_budget_chars": 6000,
             "web_context_prompt": "Use web citations like [W1].",
+            "web_context_fetch_pages_enabled": True,
+            "web_context_fetch_max_pages": 4,
+            "web_context_fetch_timeout_seconds": 8,
+            "web_context_fetch_max_bytes": 2000000,
+            "web_context_page_excerpt_chars": 3000,
+            "web_context_total_page_excerpt_chars": 9000,
             "intent_routing_enabled": True,
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
@@ -194,6 +206,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["web_context_max_results"] == 7
     assert patched.json()["web_context_context_budget_chars"] == 6000
     assert patched.json()["web_context_prompt"] == "Use web citations like [W1]."
+    assert patched.json()["web_context_fetch_pages_enabled"] is True
+    assert patched.json()["web_context_fetch_max_pages"] == 4
+    assert patched.json()["web_context_fetch_timeout_seconds"] == 8
+    assert patched.json()["web_context_fetch_max_bytes"] == 2000000
+    assert patched.json()["web_context_page_excerpt_chars"] == 3000
+    assert patched.json()["web_context_total_page_excerpt_chars"] == 9000
     assert patched.json()["intent_routing_enabled"] is True
     assert patched.json()["intent_routing_default_for_prompt_agents"] is True
     assert patched.json()["intent_routing_mode"] == "auto"
@@ -281,6 +299,17 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"web_context_enabled": "yes"}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_max_results": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_max_results": 11}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_pages_enabled": "yes"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_max_pages": 0}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_max_pages": 6}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_timeout_seconds": 0}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_timeout_seconds": 21}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_max_bytes": 99999}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_fetch_max_bytes": 5000001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_chars": 499}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_chars": 8001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_total_page_excerpt_chars": 999}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_total_page_excerpt_chars": 20001}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 499}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 20001}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_prompt": "   "}).status_code == 422
@@ -305,6 +334,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.patch("/api/settings/general", json={"web_context_max_results": 3}).json()["web_context_max_results"] == 3
     assert restarted.get("/api/settings/general").json()["web_context_context_budget_chars"] == 6000
     assert restarted.get("/api/settings/general").json()["web_context_prompt"] == "Use web citations like [W1]."
+    assert restarted.get("/api/settings/general").json()["web_context_fetch_pages_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["web_context_fetch_max_pages"] == 4
+    assert restarted.get("/api/settings/general").json()["web_context_fetch_timeout_seconds"] == 8
+    assert restarted.get("/api/settings/general").json()["web_context_fetch_max_bytes"] == 2000000
+    assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_chars"] == 3000
+    assert restarted.get("/api/settings/general").json()["web_context_total_page_excerpt_chars"] == 9000
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
     assert restarted.get("/api/settings/general").json()["intent_routing_semantic_intent_min_score"] == 0.6

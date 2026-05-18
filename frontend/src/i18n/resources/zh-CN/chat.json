@@ -185,6 +185,8 @@
     "published": "发布时间",
     "domain": "域名",
     "snippet": "摘要",
+    "pageTitle": "网页标题",
+    "pageExcerptChars": "{{count}} 个网页摘录字符",
     "openSource": "打开来源",
     "injected": "已注入",
     "skipped": "已跳过",
@@ -201,7 +203,28 @@
     "keyword": "keyword",
     "rrf": "rrf",
     "rerank": "rerank",
-    "chunk": "chunk"
+    "chunk": "chunk",
+    "pageFetchStatus": {
+      "fetched": "已抓取页面",
+      "skipped": "未抓取",
+      "failed": "抓取失败",
+      "unsupported": "不支持",
+      "timeout": "已超时",
+      "blocked": "已阻止"
+    },
+    "pageFetchWarnings": {
+      "page_fetch_blocked_scheme": "已阻止：只支持 HTTP 和 HTTPS。",
+      "page_fetch_blocked_empty_host": "已阻止：URL host 为空。",
+      "page_fetch_blocked_localhost": "已阻止：本地主机。",
+      "page_fetch_blocked_private_ip": "已阻止：私有或本地 IP。",
+      "page_fetch_unsupported_content_type": "不支持：不是 HTML 页面。",
+      "page_fetch_timeout": "抓取超时。",
+      "page_fetch_failed": "抓取失败。",
+      "page_extract_failed": "网页正文抽取失败。",
+      "page_text_too_short": "网页正文过短。",
+      "page_fetch_http_403": "抓取失败：HTTP 403。",
+      "page_fetch_http_500": "抓取失败：HTTP 500。"
+    }
   },
   "citations": {
     "modalTitle": "知识引用",
