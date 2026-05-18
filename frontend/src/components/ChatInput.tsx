@@ -1,11 +1,11 @@
 import { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, ChangeEvent, forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { AtSign, Brain, Check, ChevronDown, Eye, FileText, Image as ImageIcon, Octagon, Paperclip, Radio, Route, Send, Slash, X } from 'lucide-react';
+import { AtSign, Check, ChevronDown, FileText, Octagon, Paperclip, Route, Send, Slash, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { resolveCurrentLlmProfile, useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Agent, Attachment, CapabilityConfig, ImageAttachment, LlmProfile, LlmProviderStatus, Session } from '../types';
 import { CommandPalette, commandArgumentAutocompleteMode, type CommandPaletteItem } from './CommandPalette';
-import { capabilitiesFromProfile, type ModelCapabilities } from './ModelCapabilityIcons';
+import { capabilitiesFromProfile, ModelCapabilityIcons, type ModelCapabilities } from './ModelCapabilityIcons';
 import { resolveAttachmentUrl, type ImagePreview } from '../utils/images';
 import { getModelProfileStatus, modelStatusClass, resolveAgentDefaultLlmProfile } from '../utils/modelStatus';
 import { usePopoverPresence } from '../hooks/usePopoverPresence';
@@ -23,6 +23,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const [suggestionItems, setSuggestionItems] = useState<CommandPaletteItem[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [intentRoutingSaving, setIntentRoutingSaving] = useState(false);
+  const [intentRoutingPendingValue, setIntentRoutingPendingValue] = useState<boolean | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelSelectorRef = useRef<HTMLDivElement | null>(null);
@@ -301,11 +302,14 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
 
   async function toggleIntentRouting() {
     if (!generalSettings || intentRoutingSaving) return;
+    const nextEnabled = !generalSettings.intent_routing_enabled;
     setIntentRoutingSaving(true);
+    setIntentRoutingPendingValue(nextEnabled);
     try {
-      await updateGeneralSettings({ intent_routing_enabled: !generalSettings.intent_routing_enabled });
+      await updateGeneralSettings({ intent_routing_enabled: nextEnabled });
     } finally {
       setIntentRoutingSaving(false);
+      setIntentRoutingPendingValue(null);
     }
   }
 
@@ -315,6 +319,7 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
   const selectedStatusProfile = currentSession?.llm_profile_id ? findEnabledProfile(llmProfiles, currentSession.llm_profile_id) : agentDefaultProfile;
   const enabledProfiles = llmProfiles.filter((profile) => profile.enabled);
   const intentRoutingEnabled = generalSettings?.intent_routing_enabled ?? false;
+  const intentRoutingVisualEnabled = intentRoutingPendingValue ?? intentRoutingEnabled;
   const intentRoutingReady = Boolean(generalSettings);
   const intentRoutingTitle = `${intentRoutingEnabled ? t('intentRouting.enabled') : t('intentRouting.disabled')}\n${t('intentRouting.description')}`;
   const composerStyle = {
@@ -375,9 +380,15 @@ export function ChatInput({ onPreviewImage }: { onPreviewImage: (image: ImagePre
           </div>
           <div className="composer-actions">
             <button
-              className={`composer-intent-toggle ${intentRoutingEnabled ? 'enabled' : ''}`}
+              className={[
+                'composer-intent-toggle',
+                intentRoutingVisualEnabled ? 'enabled' : '',
+                intentRoutingSaving ? 'pending' : '',
+                !intentRoutingReady ? 'unavailable' : '',
+              ].filter(Boolean).join(' ')}
               type="button"
-              disabled={!intentRoutingReady || intentRoutingSaving}
+              disabled={!intentRoutingReady}
+              aria-busy={intentRoutingSaving}
               aria-pressed={intentRoutingEnabled}
               aria-label={intentRoutingEnabled ? t('intentRouting.disable') : t('intentRouting.enable')}
               title={intentRoutingTitle}
@@ -538,32 +549,8 @@ const ModelSelectorMenu = forwardRef<HTMLDivElement, {
 ModelSelectorMenu.displayName = 'ModelSelectorMenu';
 
 function ModelCapabilityBadges({ profile }: { profile?: LlmProfile }) {
-  const { t } = useTranslation('chat');
   if (!profile) return null;
-  const capabilities = modelMenuCapabilities(profile, t);
-  if (!capabilities.length) return null;
-  return (
-    <span className="model-selector-menu-capabilities" aria-label={t('modelCapabilities')}>
-      {capabilities.map((capability) => {
-        const Icon = capability.icon;
-        return (
-          <span key={capability.id} className={`capability-icon ${capability.id}`} title={capability.label} aria-label={capability.label}>
-            <Icon size={12} aria-hidden="true" />
-            <span>{capability.label}</span>
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
-function modelMenuCapabilities(profile: LlmProfile, t: ReturnType<typeof useTranslation>['t']) {
-  return [
-    profile.supports_vision ? { id: 'vision', label: t('capabilities.vision'), icon: Eye } : null,
-    profile.supports_vision ? { id: 'image-understanding', label: t('capabilities.imageUnderstanding'), icon: ImageIcon } : null,
-    profile.supports_reasoning ? { id: 'reasoning', label: t('capabilities.reasoning'), icon: Brain } : null,
-    profile.supports_streaming ? { id: 'streaming', label: t('capabilities.streaming'), icon: Radio } : null,
-  ].filter((item): item is { id: string; label: string; icon: typeof Eye } => Boolean(item)).slice(0, 4);
+  return <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons model-selector-menu-capabilities" />;
 }
 
 function fileKindLabel(mimeType: string, name: string): string {

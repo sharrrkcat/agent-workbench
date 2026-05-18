@@ -4019,12 +4019,6 @@ input:disabled {
   color: #fcd34d;
 }
 
-.capability-icon.image-understanding {
-  border-color: rgba(20, 184, 166, 0.26);
-  background: rgba(20, 184, 166, 0.11);
-  color: #5eead4;
-}
-
 .capability-icon.tools {
   border-color: rgba(59, 130, 246, 0.28);
   background: rgba(59, 130, 246, 0.11);
@@ -4079,6 +4073,14 @@ input:disabled {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.045);
   color: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    transform 90ms ease;
+  will-change: transform;
 }
 
 .composer-intent-toggle:hover:not(:disabled) {
@@ -4087,13 +4089,36 @@ input:disabled {
   color: #f5f5f5;
 }
 
-.composer-intent-toggle.enabled {
+.composer-intent-toggle.enabled,
+.composer-intent-toggle.enabled:hover:not(:disabled),
+.composer-intent-toggle.enabled:focus-visible,
+.composer-intent-toggle.enabled.pending {
   border-color: rgba(20, 184, 166, 0.34);
   background: rgba(20, 184, 166, 0.14);
   color: #5eead4;
 }
 
-.composer-intent-toggle:disabled {
+.composer-intent-toggle:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.composer-intent-toggle:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+
+.composer-intent-toggle.pending {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.055);
+  cursor: wait;
+}
+
+.composer-intent-toggle.enabled.pending {
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.13);
+}
+
+.composer-intent-toggle.unavailable,
+.composer-intent-toggle.unavailable:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -4196,19 +4221,21 @@ input:disabled {
   white-space: nowrap;
 }
 
-.model-selector-menu-capabilities {
+.model-selector-menu .model-selector-menu-capabilities {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   min-width: 0;
+  min-height: 0;
   padding-left: 18px;
+  margin-top: 0;
 }
 
-.model-selector-menu-capabilities .capability-icon {
+.model-selector-menu .model-selector-menu-capabilities .capability-icon {
+  width: 24px;
   min-height: 22px;
-  padding: 0 6px;
-  font-size: 10px;
-  font-weight: 700;
+  padding: 0;
+  justify-content: center;
 }
 
 .model-selector-menu button:hover,
