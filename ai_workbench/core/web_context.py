@@ -353,11 +353,8 @@ async def build_web_context(
         capability_max_results = max(1, int(config.get("max_results", 8) or 8))
         judge_candidate_limit = max(1, min(int(getattr(resolved_settings, "web_context_candidate_judge_max_candidates", 8) or 8), 12))
         judge_enabled = bool(getattr(resolved_settings, "web_context_candidate_judge_enabled", False))
-        judge_max_selected = max(1, min(int(getattr(resolved_settings, "web_context_candidate_judge_max_selected", 5) or 5), 10))
         requested_results = max(web_max_results, judge_candidate_limit) if judge_enabled else web_max_results
         final_max_results = min(web_max_results, capability_max_results)
-        if judge_enabled:
-            final_max_results = min(final_max_results, judge_max_selected)
         config["max_results"] = min(requested_results, capability_max_results)
         search = search_fn or _search_from_runtime(runtime_registry)
         response = search(query_text, context={"capability_config": config})
@@ -610,9 +607,9 @@ def _candidate_judge_disabled_summary(results: list[dict[str, Any]]) -> dict[str
         "enabled": False,
         "used": False,
         "mode": "conservative_reject_only",
+        "schema": "rejected_items_v1",
         "candidate_count": len(results),
         "retained_count": len(results),
-        "selected_count": len(results),
         "rejected_count": 0,
         "unjudged_count": 0,
         "invalid_item_count": 0,
@@ -622,11 +619,7 @@ def _candidate_judge_disabled_summary(results: list[dict[str, Any]]) -> dict[str
 
 
 def _finalize_candidate_judge_summary(summary: dict[str, Any], *, final_result_count: int) -> dict[str, Any]:
-    if not isinstance(summary, dict):
-        return summary
-    next_summary = dict(summary)
-    next_summary["selected_count"] = final_result_count
-    return next_summary
+    return summary
 
 
 async def _judge_web_candidates(
@@ -643,9 +636,9 @@ async def _judge_web_candidates(
         "enabled": True,
         "used": False,
         "mode": "conservative_reject_only",
-        "candidate_count": len(candidate_results),
+        "schema": "rejected_items_v1",
+        "candidate_count": len(results),
         "retained_count": len(results),
-        "selected_count": len(results),
         "rejected_count": 0,
         "unjudged_count": 0,
         "invalid_item_count": 0,
@@ -685,11 +678,18 @@ async def _judge_web_candidates(
     selected, summary = _validate_candidate_judge_response(
         data,
         results=candidate_results,
-        min_relevance=str(getattr(settings, "web_context_candidate_judge_min_relevance", "medium") or "medium"),
     )
     if summary.get("fallback_used"):
         return results, summary
-    return [*selected, *results[max_candidates:]], summary
+    unjudged_tail = [{**item, "_candidate_judge": {"state": "unjudged"}} for item in results[max_candidates:]]
+    if unjudged_tail:
+        summary = {
+            **summary,
+            "candidate_count": int(summary.get("candidate_count") or 0) + len(unjudged_tail),
+            "retained_count": int(summary.get("retained_count") or 0) + len(unjudged_tail),
+            "unjudged_count": int(summary.get("unjudged_count") or 0) + len(unjudged_tail),
+        }
+    return [*selected, *unjudged_tail], summary
 
 
 def _candidate_judge_unavailable_reason(utility_llm_service: Any, settings: AppSettings) -> str | None:
@@ -710,16 +710,15 @@ def _validate_candidate_judge_response(
     data: Any,
     *,
     results: list[dict[str, Any]],
-    min_relevance: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+    if not isinstance(data, dict) or set(data.keys()) != {"rejected_items"} or not isinstance(data.get("rejected_items"), list):
         return results, {
             "enabled": True,
             "used": False,
             "mode": "conservative_reject_only",
+            "schema": "rejected_items_v1",
             "candidate_count": len(results),
             "retained_count": len(results),
-            "selected_count": len(results),
             "rejected_count": 0,
             "unjudged_count": 0,
             "invalid_item_count": 0,
@@ -731,7 +730,7 @@ def _validate_candidate_judge_response(
     judgements: dict[str, dict[str, Any]] = {}
     reason_counts: dict[str, int] = {}
     invalid_item_count = 0
-    for raw_item in data.get("items", []):
+    for raw_item in data.get("rejected_items", []):
         if not isinstance(raw_item, dict):
             invalid_item_count += 1
             warnings.append("web_candidate_judge_slots_failed")
@@ -743,40 +742,32 @@ def _validate_candidate_judge_response(
         relevance = str(raw_item.get("relevance") or "").strip().lower()
         source_role = str(raw_item.get("source_role") or "").strip().lower()
         confidence = str(raw_item.get("confidence") or "").strip().lower()
-        use_source = raw_item.get("use_source")
+        reason = _short_judge_reason(raw_item.get("reason"))
         item_warnings: list[str] = []
-        if not isinstance(use_source, bool):
-            item_warnings.append("web_candidate_judge_invalid_use_source")
         if relevance not in JUDGE_RELEVANCE_ORDER:
             item_warnings.append("web_candidate_judge_unknown_relevance")
         if source_role not in JUDGE_SOURCE_ROLES:
             item_warnings.append("web_candidate_judge_unknown_role")
         if confidence not in JUDGE_CONFIDENCES:
             item_warnings.append("web_candidate_judge_unknown_confidence")
+        if not reason:
+            item_warnings.append("web_candidate_judge_empty_reason")
         if item_warnings:
             invalid_item_count += 1
             warnings.extend(item_warnings)
             judgements[candidate_id] = {"state": "retained"}
             continue
-        if source_role in JUDGE_RETAIN_ROLES and use_source is False:
+        if source_role in JUDGE_RETAIN_ROLES:
             warnings.append("web_candidate_judge_retain_role_conflict")
-        if source_role in JUDGE_REJECT_ROLES and use_source is True:
-            warnings.append("web_candidate_judge_reject_role_conflict")
-        if relevance != "low" and use_source is False:
+        if relevance != "low":
             warnings.append("web_candidate_judge_reject_relevance_conflict")
-        reason = _short_judge_reason(raw_item.get("reason"))
-        threshold = JUDGE_RELEVANCE_ORDER.get(min_relevance, JUDGE_RELEVANCE_ORDER["medium"])
-        below_reject_threshold = JUDGE_RELEVANCE_ORDER[relevance] <= threshold
         should_reject = (
-            use_source is False
-            and relevance == "low"
-            and below_reject_threshold
+            relevance == "low"
             and source_role in JUDGE_REJECT_ROLES
             and confidence == "high"
         )
         state = "rejected" if should_reject else "retained"
         judgements[candidate_id] = {
-            "use_source": bool(use_source),
             "relevance": relevance,
             "source_role": source_role,
             "confidence": confidence,
@@ -804,9 +795,9 @@ def _validate_candidate_judge_response(
         "enabled": True,
         "used": True,
         "mode": "conservative_reject_only",
+        "schema": "rejected_items_v1",
         "candidate_count": len(results),
         "retained_count": retained_count,
-        "selected_count": retained_count,
         "rejected_count": rejected_count,
         "unjudged_count": len(unjudged_ids),
         "invalid_item_count": invalid_item_count,
@@ -838,27 +829,28 @@ def _judge_candidate_payload(result: dict[str, Any], index: int) -> dict[str, An
 
 def _web_candidate_judge_prompt(*, user_text: str, query: str, query_source: str, candidates: list[dict[str, Any]]) -> str:
     schema = {
-        "items": [
+        "rejected_items": [
             {
                 "candidate_id": "C1",
-                "use_source": True,
-                "relevance": ["low", "medium", "high"],
-                "confidence": ["low", "medium", "high"],
-                "source_role": sorted(JUDGE_SOURCE_ROLES),
-                "reason": "short reason under 160 chars",
+                "relevance": "low",
+                "confidence": "high",
+                "source_role": "off_topic",
+                "reason": "short rejection reason under 160 chars",
             }
         ]
     }
     return (
-        "Conservatively filter web search candidates for the current user question.\n"
+        "Conservatively reject only clearly unhelpful web search candidates for the current user question.\n"
         "Return strict JSON only. Do not explain outside JSON.\n"
         f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
         "Use the current question, search query, title, domain, short path, snippet preview, and source label only.\n"
-        "Candidates are retained by default. Mark use_source=false only when the candidate is clearly unhelpful as evidence for this specific question.\n"
-        "If uncertain, keep the candidate with use_source=true. Do not reject because it only partially matches keywords or lacks exact keyword overlap.\n"
+        "Candidates are retained by default. Return only candidates that should be rejected.\n"
+        "Omit all candidates that should be retained or are uncertain. The runtime will retain every omitted candidate.\n"
+        "Do not list every candidate. Do not output useful candidates.\n"
+        "Reject only obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question; such items must use relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
+        "Do not reject because a candidate only partially matches keywords, lacks exact keyword overlap, or does not fully cover every term.\n"
         "Do not treat any site type as fixed noise. Judge only this question and candidate semantics.\n"
         "Useful candidates can provide the requested object, event, price, version, news, official information, documentation, primary source, background, product, media, social post, image, video, or audio-generation information when relevant to the user request.\n"
-        "Use use_source=false only for obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question, and set relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
         "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
         "Never reject solely because the candidate is a product, video, image, social, or generator page.\n\n"
         f"User question:\n{user_text}\n\n"

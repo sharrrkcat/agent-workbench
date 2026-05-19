@@ -665,30 +665,31 @@ class UtilityLLMService:
         settings: Any,
     ) -> dict[str, Any]:
         schema = {
-            "items": [
+            "rejected_items": [
                 {
                     "candidate_id": "C1",
-                    "use_source": True,
-                    "relevance": "high",
+                    "relevance": "low",
                     "confidence": "high",
-                    "source_role": "reference",
-                    "reason": "short reason under 160 chars",
+                    "source_role": "off_topic",
+                    "reason": "short rejection reason under 160 chars",
                 }
             ]
         }
         prompt = (
-            "Conservatively filter web search candidates for the current user question.\n"
-            "Return strict JSON only with one key: items. Do not explain outside JSON.\n"
+            "Conservatively reject only clearly unhelpful web search candidates for the current user question.\n"
+            "Return strict JSON only with one key: rejected_items. Do not explain outside JSON.\n"
             f"Schema example: {json.dumps(schema, ensure_ascii=False)}\n"
             "Allowed relevance values: low, medium, high.\n"
             "Allowed confidence values: low, medium, high.\n"
             "Allowed source_role values: reference, official, news, documentation, background, primary_source, noise, off_topic, weak_match.\n"
             "Use only the current question, Web Context query, query source, and compact candidate fields.\n"
-            "Candidates are retained by default. Mark use_source=false only when the candidate is clearly unhelpful as evidence for this specific question.\n"
-            "If uncertain, keep the candidate with use_source=true. Do not reject because it only partially matches keywords or lacks exact keyword overlap.\n"
+            "Candidates are retained by default. Return only candidates that should be rejected.\n"
+            "Omit all candidates that should be retained or are uncertain. The runtime will retain every omitted candidate.\n"
+            "Do not list every candidate. Do not output useful candidates.\n"
+            "Reject only obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question; such items must use relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
+            "Do not reject because a candidate only partially matches keywords, lacks exact keyword overlap, or does not fully cover every term.\n"
             "Do not treat any site type as fixed noise. Judge only this question and candidate semantics.\n"
             "Useful candidates can provide the requested object, event, price, version, news, official information, documentation, primary source, background, product, media, social post, image, video, or audio-generation information when relevant to the user request.\n"
-            "Use use_source=false only for obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question, and set relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
             "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
             "Never reject solely because the candidate is a product, video, image, social, or generator page.\n\n"
             f"User question:\n{user_text}\n\n"

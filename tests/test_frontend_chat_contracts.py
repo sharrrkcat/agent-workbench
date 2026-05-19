@@ -1036,7 +1036,7 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_candidate_judge_enabled: boolean" in types
     assert "web_context_candidate_judge_max_candidates: number" in types
     assert "web_context_candidate_judge_min_relevance: 'low' | 'medium' | 'high'" in types
-    assert "web_context_candidate_judge_max_selected: number" in types
+    assert "web_context_candidate_judge_max_selected" not in types
     assert "'web_search'" in object_list
     assert "settings:general.webSearch" in object_list
     assert "settings:general.webSearchDescription" in object_list
@@ -1053,8 +1053,10 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.candidateRelevanceJudge" in panel
     assert "settings:general.maxCandidatesToJudge" in panel
     assert "settings:general.minimumRelevance" in panel
-    assert "settings:general.maxSelectedSources" in panel
-    assert "Candidate Judge uses the Utility LLM as a conservative noise filter" in read_frontend("i18n/resources/en/settings.json")
+    assert "settings:general.minimumRelevanceHelp" in panel
+    assert "settings:general.maxSelectedSources" not in panel
+    assert "conservative reject-only noise filter" in read_frontend("i18n/resources/en/settings.json")
+    assert "does not choose the final source count" in read_frontend("i18n/resources/en/settings.json")
     assert "settings:general.searchProvider" in panel
     assert "capability_id === 'web_search'" in panel
     assert "web_context_enabled: values.web_context_enabled" in panel
@@ -1122,6 +1124,7 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "candidate_judge_confidence" in source
     assert "candidate_judge_state" in source
     assert "candidate_judge_reason" in source
+    assert "selectedCount" not in source
     assert "filteredResults" in source
     assert "deduplicatedResults" in source
     assert "webCandidatesJudged" in source

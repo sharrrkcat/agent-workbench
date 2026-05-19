@@ -1113,8 +1113,8 @@ function GeneralWebSearchSettings({
               <option value="high">{t('settings:general.relevanceHigh')}</option>
               <option value="low">{t('settings:general.relevanceLow')}</option>
             </select>
+            <small>{t('settings:general.minimumRelevanceHelp')}</small>
           </label>
-          <NumberField label={t('settings:general.maxSelectedSources')} value={values.web_context_candidate_judge_max_selected} min={1} max={10} onChange={(value) => setNumber('web_context_candidate_judge_max_selected', value)} />
         </div>
         <p className="settings-muted-text">{t('settings:general.candidateRelevanceJudgeSafety')}</p>
       </div>
@@ -1743,7 +1743,6 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     web_context_candidate_judge_enabled: values.web_context_candidate_judge_enabled,
     web_context_candidate_judge_max_candidates: values.web_context_candidate_judge_max_candidates,
     web_context_candidate_judge_min_relevance: values.web_context_candidate_judge_min_relevance,
-    web_context_candidate_judge_max_selected: values.web_context_candidate_judge_max_selected,
     intent_routing_enabled: values.intent_routing_enabled,
     intent_routing_default_for_prompt_agents: values.intent_routing_default_for_prompt_agents,
     intent_routing_mode: values.intent_routing_mode,

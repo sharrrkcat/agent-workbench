@@ -408,7 +408,7 @@ def test_web_candidate_judge_prompt_uses_compact_candidates_only() -> None:
         captured["prompt"] = prompt
         captured["max_new_tokens"] = max_new_tokens
         return UtilityGeneration(
-            text='{"items":[{"candidate_id":"C1","use_source":true,"relevance":"high","confidence":"high","source_role":"reference","reason":"direct evidence"}]}',
+            text='{"rejected_items":[{"candidate_id":"C2","relevance":"low","confidence":"high","source_role":"off_topic","reason":"unrelated result"}]}',
             model_path="utility_llms/test",
             device="cpu",
             backend="transformers",
@@ -427,10 +427,14 @@ def test_web_candidate_judge_prompt_uses_compact_candidates_only() -> None:
     )
 
     prompt = captured["prompt"]
-    assert result["items"][0]["candidate_id"] == "C1"
+    assert result["rejected_items"][0]["candidate_id"] == "C2"
     assert "Who is Mark Grayson?" in prompt
     assert "confidence" in prompt
     assert "Candidates are retained by default" in prompt
+    assert "rejected_items" in prompt
+    assert "use_source" not in prompt
+    assert "selected" not in prompt.lower()
+    assert "best sources" not in prompt.lower()
     assert "Character background." in prompt
     assert "page body" not in prompt.lower()
     assert "chat history" not in prompt.lower()

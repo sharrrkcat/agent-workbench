@@ -143,12 +143,14 @@ Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
 `pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
 Candidate Judge summary fields may include `candidate_judge.enabled`,
 `candidate_judge.used`, `candidate_judge.mode =
-conservative_reject_only`, candidate/retained/rejected/unjudged counts,
-invalid item count, `fallback_used`, compact warning codes, and aggregate
-rejected reason counts. Missing Utility items, invalid items, unknown enum
-values, and low/medium confidence judgments retain the candidate. It must not
-include the raw Utility prompt, raw Utility output, raw SearXNG payload, page
-bodies, rendered Web context, or a full rejected source list.
+conservative_reject_only`, `candidate_judge.schema = rejected_items_v1`,
+candidate/retained/rejected/unjudged counts, invalid item count,
+`fallback_used`, compact warning codes, and aggregate rejected reason counts.
+Missing Utility items, invalid items, unknown enum values, non-reject source
+roles, medium/high relevance, and low/medium confidence judgments retain the
+candidate. It must not include the raw Utility prompt, raw Utility output, raw
+SearXNG payload, page bodies, rendered Web context, or a full rejected source
+list.
 The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web

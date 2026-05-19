@@ -132,7 +132,6 @@ class AppSettings(BaseModel):
     web_context_candidate_judge_enabled: StrictBool = False
     web_context_candidate_judge_max_candidates: int = Field(default=8, ge=1, le=12)
     web_context_candidate_judge_min_relevance: str = "medium"
-    web_context_candidate_judge_max_selected: int = Field(default=5, ge=1, le=10)
     intent_routing_enabled: StrictBool = False
     intent_routing_default_for_prompt_agents: StrictBool = False
     intent_routing_mode: str = "shadow"
@@ -405,7 +404,6 @@ class AppSettingsPatch(BaseModel):
     web_context_candidate_judge_enabled: StrictBool | None = None
     web_context_candidate_judge_max_candidates: int | None = Field(default=None, ge=1, le=12)
     web_context_candidate_judge_min_relevance: str | None = None
-    web_context_candidate_judge_max_selected: int | None = Field(default=None, ge=1, le=10)
     intent_routing_enabled: StrictBool | None = None
     intent_routing_default_for_prompt_agents: StrictBool | None = None
     intent_routing_mode: str | None = None

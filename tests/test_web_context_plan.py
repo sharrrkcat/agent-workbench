@@ -31,7 +31,7 @@ class FakeWebPlanUtility:
         self.judge_calls.append(kwargs)
         if self.judge_error:
             raise self.judge_error
-        return self.judge_payload or {"items": []}
+        return self.judge_payload or {"rejected_items": []}
 
 
 @pytest.mark.parametrize(
@@ -297,7 +297,7 @@ def test_web_context_page_fetching_fetches_top_final_results_only() -> None:
 
 
 def test_web_context_candidate_judge_disabled_keeps_round8_behavior() -> None:
-    utility = FakeWebPlanUtility(judge_payload={"items": []})
+    utility = FakeWebPlanUtility(judge_payload={"rejected_items": []})
 
     def search(query, context=None):
         return {"provider": "searxng", "results": [web_result("https://example.com/a"), web_result("https://example.com/b")]}
@@ -316,13 +316,11 @@ def test_web_context_candidate_judge_disabled_keeps_round8_behavior() -> None:
     assert result.metadata["candidate_judge"]["enabled"] is False
 
 
-def test_web_context_candidate_judge_receives_compact_candidates_and_selects_ordered_sources() -> None:
+def test_web_context_candidate_judge_receives_compact_candidates_and_rejects_only_noise() -> None:
     utility = FakeWebPlanUtility(
         judge_payload={
-            "items": [
-                {"candidate_id": "C3", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "news", "reason": "direct news"},
-                {"candidate_id": "C1", "use_source": True, "relevance": "medium", "confidence": "high", "source_role": "reference", "reason": "direct reference"},
-                {"candidate_id": "C2", "use_source": False, "relevance": "low", "confidence": "high", "source_role": "weak_match", "reason": "generic"},
+            "rejected_items": [
+                {"candidate_id": "C2", "relevance": "low", "confidence": "high", "source_role": "weak_match", "reason": "generic"},
             ]
         }
     )
@@ -352,19 +350,21 @@ def test_web_context_candidate_judge_receives_compact_candidates_and_selects_ord
     assert "page_excerpt" not in str(call["candidates"])
     assert "Agent prompt" not in str(call["candidates"])
     assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["ref.test", "news.test"]
-    assert result.metadata["source_refs"][0]["candidate_judge_relevance"] == "medium"
-    assert result.metadata["source_refs"][1]["candidate_judge_role"] == "news"
-    assert result.metadata["candidate_judge"]["selected_count"] == 2
+    assert result.metadata["source_refs"][0]["candidate_judge_state"] == "unjudged"
+    assert result.metadata["source_refs"][1]["candidate_judge_state"] == "unjudged"
+    assert result.metadata["candidate_judge"]["schema"] == "rejected_items_v1"
+    assert result.metadata["candidate_judge"]["mode"] == "conservative_reject_only"
+    assert result.metadata["candidate_judge"]["retained_count"] == 2
     assert result.metadata["candidate_judge"]["rejected_count"] == 1
 
 
 def test_web_context_candidate_judge_keeps_low_confidence_and_medium_relevance_rejects() -> None:
     utility = FakeWebPlanUtility(
         judge_payload={
-            "items": [
-                {"candidate_id": "C1", "use_source": False, "relevance": "low", "confidence": "medium", "source_role": "weak_match", "reason": "not confident enough"},
-                {"candidate_id": "C2", "use_source": False, "relevance": "medium", "confidence": "high", "source_role": "weak_match", "reason": "medium relevance"},
-                {"candidate_id": "C3", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "news", "reason": "also"},
+            "rejected_items": [
+                {"candidate_id": "C1", "relevance": "low", "confidence": "medium", "source_role": "weak_match", "reason": "not confident enough"},
+                {"candidate_id": "C2", "relevance": "medium", "confidence": "high", "source_role": "weak_match", "reason": "medium relevance"},
+                {"candidate_id": "C3", "relevance": "high", "confidence": "high", "source_role": "news", "reason": "also"},
             ]
         }
     )
@@ -378,7 +378,6 @@ def test_web_context_candidate_judge_keeps_low_confidence_and_medium_relevance_r
                 web_context_enabled=True,
                 web_context_candidate_judge_enabled=True,
                 web_context_candidate_judge_min_relevance="high",
-                web_context_candidate_judge_max_selected=3,
             ),
             query="buy product info",
             search_fn=search,
@@ -391,17 +390,9 @@ def test_web_context_candidate_judge_keeps_low_confidence_and_medium_relevance_r
     assert result.metadata["candidate_judge"]["rejected_count"] == 0
 
 
-def test_web_context_max_results_caps_final_judge_selected_sources() -> None:
+def test_web_context_max_results_caps_final_sources_without_candidate_judge_max_selected() -> None:
     seen_config: dict = {}
-    utility = FakeWebPlanUtility(
-        judge_payload={
-            "items": [
-                {"candidate_id": "C1", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "reference", "reason": "one"},
-                {"candidate_id": "C2", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "reference", "reason": "two"},
-                {"candidate_id": "C3", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "reference", "reason": "three"},
-            ]
-        }
-    )
+    utility = FakeWebPlanUtility(judge_payload={"rejected_items": []})
 
     def search(query, context=None):
         seen_config.update((context or {}).get("capability_config") or {})
@@ -409,7 +400,7 @@ def test_web_context_max_results_caps_final_judge_selected_sources() -> None:
 
     result = asyncio.run(
         build_web_context(
-            settings=AppSettings(web_context_enabled=True, web_context_max_results=2, web_context_candidate_judge_enabled=True, web_context_candidate_judge_max_candidates=3, web_context_candidate_judge_max_selected=3),
+            settings=AppSettings(web_context_enabled=True, web_context_max_results=2, web_context_candidate_judge_enabled=True, web_context_candidate_judge_max_candidates=3),
             query="latest news",
             search_fn=search,
             utility_llm_service=utility,
@@ -418,12 +409,12 @@ def test_web_context_max_results_caps_final_judge_selected_sources() -> None:
 
     assert seen_config["max_results"] == 3
     assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["one.test", "two.test"]
-    assert result.metadata["candidate_judge"]["selected_count"] == 2
+    assert result.metadata["candidate_judge"]["retained_count"] == 3
 
 
 def test_web_context_candidate_judge_all_rejected_skips_web_injection() -> None:
     utility = FakeWebPlanUtility(
-        judge_payload={"items": [{"candidate_id": "C1", "use_source": False, "relevance": "low", "confidence": "high", "source_role": "off_topic", "reason": "not evidence"}]}
+        judge_payload={"rejected_items": [{"candidate_id": "C1", "relevance": "low", "confidence": "high", "source_role": "off_topic", "reason": "not evidence"}]}
     )
 
     def search(query, context=None):
@@ -489,9 +480,8 @@ def test_web_context_candidate_judge_unavailable_falls_back() -> None:
 def test_web_context_candidate_judge_unknown_and_missing_candidates_are_compact_warnings() -> None:
     utility = FakeWebPlanUtility(
         judge_payload={
-            "items": [
-                {"candidate_id": "C99", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "reference", "reason": "unknown"},
-                {"candidate_id": "C1", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "reference", "reason": "kept"},
+            "rejected_items": [
+                {"candidate_id": "C99", "relevance": "low", "confidence": "high", "source_role": "off_topic", "reason": "unknown"},
             ]
         }
     )
@@ -509,8 +499,9 @@ def test_web_context_candidate_judge_unknown_and_missing_candidates_are_compact_
     )
 
     assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["kept.test", "missing.test"]
+    assert result.metadata["source_refs"][0]["candidate_judge_state"] == "unjudged"
     assert result.metadata["source_refs"][1]["candidate_judge_state"] == "unjudged"
-    assert result.metadata["candidate_judge"]["unjudged_count"] == 1
+    assert result.metadata["candidate_judge"]["unjudged_count"] == 2
     assert "web_candidate_judge_unknown_candidate_id" in result.metadata["candidate_judge"]["warnings"]
     assert "web_candidate_judge_missing_candidate" in result.metadata["candidate_judge"]["warnings"]
     assert "missing.test" not in str(result.metadata["candidate_judge"])
@@ -519,11 +510,11 @@ def test_web_context_candidate_judge_unknown_and_missing_candidates_are_compact_
 def test_web_context_candidate_judge_invalid_item_and_unknown_slots_retain_candidates() -> None:
     utility = FakeWebPlanUtility(
         judge_payload={
-            "items": [
+            "rejected_items": [
                 "not an object",
-                {"candidate_id": "C1", "use_source": False, "relevance": "unknown", "confidence": "high", "source_role": "weak_match", "reason": "bad relevance"},
-                {"candidate_id": "C2", "use_source": False, "relevance": "low", "confidence": "medium", "source_role": "unknown", "reason": "bad role"},
-                {"candidate_id": "C3", "use_source": False, "relevance": "low", "confidence": "unknown", "source_role": "weak_match", "reason": "bad confidence"},
+                {"candidate_id": "C1", "relevance": "unknown", "confidence": "high", "source_role": "weak_match", "reason": "bad relevance"},
+                {"candidate_id": "C2", "relevance": "low", "confidence": "medium", "source_role": "unknown", "reason": "bad role"},
+                {"candidate_id": "C3", "relevance": "low", "confidence": "unknown", "source_role": "weak_match", "reason": "bad confidence"},
             ]
         }
     )
@@ -558,13 +549,72 @@ def test_web_context_candidate_judge_invalid_item_and_unknown_slots_retain_candi
     assert "web_candidate_judge_unknown_confidence" in judge["warnings"]
 
 
-def test_web_context_page_fetching_fetches_only_judge_selected_candidates() -> None:
-    calls: list[str] = []
+def test_web_context_candidate_judge_empty_reason_and_reference_role_retain_candidates() -> None:
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "rejected_items": [
+                {"candidate_id": "C1", "relevance": "low", "confidence": "high", "source_role": "weak_match", "reason": ""},
+                {"candidate_id": "C2", "relevance": "low", "confidence": "high", "source_role": "official", "reason": "official source"},
+                {"candidate_id": "C3", "relevance": "low", "confidence": "high", "source_role": "noise", "reason": "x" * 220},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://empty.test"), web_result("https://official.test"), web_result("https://noise.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="latest official info",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["empty.test", "official.test"]
+    assert result.metadata["source_refs"][0]["candidate_judge_state"] == "retained"
+    assert result.metadata["source_refs"][1]["candidate_judge_state"] == "retained"
+    judge = result.metadata["candidate_judge"]
+    assert judge["rejected_count"] == 1
+    assert judge["invalid_item_count"] == 1
+    assert "web_candidate_judge_empty_reason" in judge["warnings"]
+    assert "web_candidate_judge_retain_role_conflict" in judge["warnings"]
+
+
+def test_web_context_candidate_judge_old_items_schema_falls_back_without_positive_selection() -> None:
     utility = FakeWebPlanUtility(
         judge_payload={
             "items": [
-                {"candidate_id": "C1", "use_source": False, "relevance": "low", "confidence": "high", "source_role": "weak_match", "reason": "weak"},
-                {"candidate_id": "C2", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "official", "reason": "direct"},
+                {"candidate_id": "C1", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "reference", "reason": "positive selection"},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://one.test"), web_result("https://two.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="latest news",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["one.test", "two.test"]
+    judge = result.metadata["candidate_judge"]
+    assert judge["fallback_used"] is True
+    assert "web_candidate_judge_slots_failed" in judge["warnings"]
+
+
+def test_web_context_page_fetching_fetches_retained_candidates_after_reject_only_judge() -> None:
+    calls: list[str] = []
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "rejected_items": [
+                {"candidate_id": "C1", "relevance": "low", "confidence": "high", "source_role": "weak_match", "reason": "weak"},
             ]
         }
     )
@@ -592,13 +642,7 @@ def test_web_context_page_fetching_fetches_only_judge_selected_candidates() -> N
 
 def test_web_context_page_fetching_fetches_unjudged_retained_candidates() -> None:
     calls: list[str] = []
-    utility = FakeWebPlanUtility(
-        judge_payload={
-            "items": [
-                {"candidate_id": "C1", "use_source": True, "relevance": "high", "confidence": "high", "source_role": "official", "reason": "direct"},
-            ]
-        }
-    )
+    utility = FakeWebPlanUtility(judge_payload={"rejected_items": []})
 
     def search(query, context=None):
         return {"provider": "searxng", "results": [web_result("https://judged.test"), web_result("https://unjudged.test")]}
@@ -618,8 +662,9 @@ def test_web_context_page_fetching_fetches_unjudged_retained_candidates() -> Non
     )
 
     assert calls == ["https://judged.test", "https://unjudged.test"]
+    assert result.metadata["source_refs"][0]["candidate_judge_state"] == "unjudged"
     assert result.metadata["source_refs"][1]["candidate_judge_state"] == "unjudged"
-    assert result.metadata["candidate_judge"]["unjudged_count"] == 1
+    assert result.metadata["candidate_judge"]["unjudged_count"] == 2
 
 
 def test_web_context_page_fetch_non_html_falls_back_to_snippet() -> None:

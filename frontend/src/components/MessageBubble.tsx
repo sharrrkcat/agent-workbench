@@ -353,9 +353,9 @@ type WebCandidateJudgeSummary = {
   enabled?: boolean;
   used?: boolean;
   mode?: string;
+  schema?: string;
   candidateCount?: number;
   retainedCount?: number;
-  selectedCount?: number;
   rejectedCount?: number;
   unjudgedCount?: number;
   invalidItemCount?: number;
@@ -915,9 +915,9 @@ function mergeWebCandidateJudge(values: unknown[]): WebCandidateJudgeSummary | u
     enabled: booleanValue(last.enabled),
     used: booleanValue(last.used),
     mode: textValue(last.mode),
+    schema: textValue(last.schema),
     candidateCount: numberValue(last.candidate_count),
     retainedCount: numberValue(last.retained_count),
-    selectedCount: numberValue(last.selected_count),
     rejectedCount: numberValue(last.rejected_count),
     unjudgedCount: numberValue(last.unjudged_count),
     invalidItemCount: numberValue(last.invalid_item_count),
@@ -2768,7 +2768,7 @@ function webDiagnosticsSummaryParts(summary: WebContextSummary, t: ReturnType<ty
   if (summary.candidateJudge?.used) {
     parts.push(t('runs:contextSummary.webCandidatesJudged', {
       judged: summary.candidateJudge.candidateCount ?? 0,
-      retained: summary.candidateJudge.retainedCount ?? summary.candidateJudge.selectedCount ?? 0,
+      retained: summary.candidateJudge.retainedCount ?? 0,
       rejected: summary.candidateJudge.rejectedCount ?? 0,
       unjudged: summary.candidateJudge.unjudgedCount ?? 0,
     }));

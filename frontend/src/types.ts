@@ -1556,7 +1556,6 @@ export type GeneralSettings = {
   web_context_candidate_judge_enabled: boolean;
   web_context_candidate_judge_max_candidates: number;
   web_context_candidate_judge_min_relevance: 'low' | 'medium' | 'high';
-  web_context_candidate_judge_max_selected: number;
   intent_routing_enabled: boolean;
   intent_routing_default_for_prompt_agents: boolean;
   intent_routing_mode: 'shadow' | 'auto';

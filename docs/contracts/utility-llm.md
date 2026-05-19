@@ -233,19 +233,39 @@ prompt.
 
 When General Web Search Candidate Judge is enabled, Prompt Agent Web Context may
 use one short Utility LLM call to judge filtered/de-duplicated search candidates
-before page fetching. The call returns strict JSON with an `items` array. Each
-item may include `candidate_id`, `use_source`, `relevance`, `confidence`,
-`source_role`, and a short `reason`.
+before page fetching. The call returns strict JSON using the
+`rejected_items_v1` schema:
+
+```json
+{
+  "rejected_items": [
+    {
+      "candidate_id": "C6",
+      "relevance": "low",
+      "confidence": "high",
+      "source_role": "off_topic",
+      "reason": "Box office statistics page does not answer the character list question."
+    }
+  ]
+}
+```
 
 The Candidate Judge runs in `conservative_reject_only` mode. Search candidates
-are retained by default. The Utility LLM may only remove clear noise: an item
-must be valid JSON, reference a known candidate id, set `use_source=false`,
-`relevance=low`, `confidence=high`, and use a reject role such as `noise`,
-`off_topic`, or `weak_match`. `use_source=true`, medium/high relevance,
-low/medium confidence, missing candidate ids, invalid items, unknown enum
-values, and candidates omitted from Utility output are retained. Omitted
-candidate ids are counted as unjudged. Unknown candidate ids are ignored with a
-compact warning.
+are retained by default. The Utility LLM must list only high-confidence
+candidates that should be rejected and must omit useful or uncertain candidates.
+Omitted candidates are retained by default. The Utility LLM is not a final
+evidence selector and does not decide the final source count.
+
+A rejected item removes a candidate only when it is valid JSON, references a
+known candidate id, has a non-empty short reason, sets `relevance=low`,
+`confidence=high`, and uses a reject role such as `noise`, `off_topic`, or
+`weak_match`. Medium/high relevance, low/medium confidence, missing candidate
+ids, invalid items, unknown enum values, reference/official/news/documentation/
+background/primary-source roles, and candidates omitted from Utility output are
+retained. Omitted candidate ids are counted as unjudged. Unknown candidate ids
+are ignored with a compact warning. Legacy positive-selector JSON such as
+`items` or `use_source` is a schema failure and falls back to the pre-judge
+results.
 
 The judge input is limited to:
 
@@ -263,8 +283,9 @@ modify session state, mutate Context Sources, change Agent selection, or affect
 main model resolution. Invalid JSON, unavailable Utility LLM, or whole-response
 schema failure falls back to the pre-judge search results with compact warning
 codes and must not fail the main Prompt Agent run. Runtime metadata may store
-only compact mode/counts, warning codes, aggregate rejected reason counts, and
-compact per-final source state/relevance/role/confidence/reason fields.
+only compact schema/mode/counts, warning codes, aggregate rejected reason
+counts, and compact per-final source state/relevance/role/confidence/reason
+fields.
 
 ## Metadata And Raw Output
 
