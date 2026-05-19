@@ -56,6 +56,24 @@ class FakeLLMRuntime:
         return self.unload_result
 
 
+class SequentialLLMRuntime(FakeLLMRuntime):
+    def __init__(self, responses) -> None:
+        super().__init__(response="")
+        self.responses = list(responses)
+
+    def chat(self, messages, model_config=None, stream=False):
+        self.calls.append({"messages": messages, "model_config": model_config or {}, "stream": stream})
+        if self.fail:
+            raise RuntimeError("LLM failed")
+        return self.responses.pop(0)
+
+    def generate(self, prompt, model_config=None, stream=False):
+        self.calls.append({"prompt": prompt, "model_config": model_config or {}, "stream": stream})
+        if self.fail:
+            raise RuntimeError("LLM failed")
+        return self.responses.pop(0)
+
+
 class FakeStreamingLLMRuntime(FakeLLMRuntime):
     def __init__(self, chunks=None, fail: bool = False) -> None:
         super().__init__(response="nonstream", fail=fail)
@@ -460,6 +478,69 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
     assert message_metadata["source_refs"][1]["ref_id"] == "W2"
     assert message_metadata["search_diagnostics"]["filters_applied"]["domain_blocklist"] is True
     assert len(message_metadata["source_refs"][1]["snippet_preview"]) == 700
+
+
+def test_prompt_agent_page_excerpt_gate_follow_agent_is_internal_non_streaming(monkeypatch) -> None:
+    llm = SequentialLLMRuntime([
+        '{"use_excerpt":true,"evidence_quality":"high","confidence":"high","coverage":"direct_answer","need_more":false,"reason":"direct evidence"}',
+        "visible answer",
+    ])
+    fixture = PromptRuntimeFixture(llm=llm)
+    session = fixture.sessions.create_session(default_agent_id="chat")
+    fixture.app_settings.patch({
+        "web_context_enabled": True,
+        "web_context_fetch_pages_enabled": True,
+        "web_context_page_excerpt_gate_enabled": True,
+        "web_context_page_excerpt_gate_backend": "follow_agent_model_profile",
+    })
+
+    def fake_search_from_runtime(runtime_registry):
+        def search(query, context=None):
+            return {
+                "provider": "searxng",
+                "results": [
+                    {
+                        "rank": 1,
+                        "title": "Alpha launch",
+                        "url": "https://example.com/alpha",
+                        "domain": "example.com",
+                        "snippet": "Snippet.",
+                        "published_at": None,
+                        "source": "searxng",
+                    }
+                ],
+            }
+        return search
+
+    def fake_page_fetch(**kwargs):
+        return PageFetchResult(status="fetched", title="Alpha page", excerpt="Alpha launched on May 18.")
+
+    from ai_workbench.core.web_context import PageFetchResult
+
+    monkeypatch.setattr("ai_workbench.core.web_context._search_from_runtime", fake_search_from_runtime)
+    monkeypatch.setattr("ai_workbench.core.web_context.fetch_web_context_page", fake_page_fetch)
+
+    before_messages = len(fixture.messages.list_messages(session.session_id))
+    before_runs = len(fixture.runs.list_runs(session.session_id))
+    result = run(fixture.runtime.handle_input(session, "latest alpha status"))
+    after_messages = fixture.messages.list_messages(session.session_id)
+    after_runs = fixture.runs.list_runs(session.session_id)
+
+    assert result.success is True
+    assert len(after_messages) == before_messages + 2
+    assert len(after_runs) == before_runs + 1
+    assert len(llm.calls) == 2
+    gate_call = llm.calls[0]
+    main_call = llm.calls[1]
+    assert gate_call["stream"] is False
+    assert gate_call["messages"][0]["role"] == "user"
+    assert "Judge whether this cleaned page excerpt" in gate_call["messages"][0]["content"]
+    assert "# Retrieved Web" not in gate_call["messages"][0]["content"]
+    assert "Alpha launched on May 18." in main_call["messages"][0]["content"]
+    metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
+    assert metadata["page_excerpt_gate"]["backend"] == "follow_agent_model_profile"
+    assert metadata["page_excerpt_gate"]["accepted"] == 1
+    assert "direct evidence" in metadata["source_refs"][0]["page_excerpt_gate_reason"]
 
 
 def test_prompt_agent_web_context_failure_warns_and_continues(monkeypatch) -> None:

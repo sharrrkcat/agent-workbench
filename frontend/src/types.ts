@@ -1553,6 +1553,11 @@ export type GeneralSettings = {
   web_context_fetch_max_bytes: number;
   web_context_page_excerpt_chars: number;
   web_context_total_page_excerpt_chars: number;
+  web_context_target_page_excerpts: number;
+  web_context_page_excerpt_gate_enabled: boolean;
+  web_context_page_excerpt_gate_backend: 'follow_agent_model_profile' | 'specific_model_profile' | 'utility_llm';
+  web_context_page_excerpt_gate_model_profile_id: string | null;
+  web_context_page_excerpt_gate_min_quality: 'low' | 'medium' | 'high';
   web_context_candidate_judge_enabled: boolean;
   web_context_candidate_judge_max_candidates: number;
   web_context_candidate_judge_min_relevance: 'low' | 'medium' | 'high';

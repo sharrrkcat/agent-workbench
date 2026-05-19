@@ -5,11 +5,21 @@ import pytest
 
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.utility_llm import UtilityLLMError
-from ai_workbench.core.web_context import PageFetchResult, build_web_context, fetch_web_context_page, resolve_web_context_plan, validate_web_context_plan_slots
+from ai_workbench.core.web_context import PageFetchResult, build_web_context, fetch_web_context_page, resolve_web_context_plan, validate_page_excerpt_gate_response, validate_web_context_plan_slots
 
 
 class FakeWebPlanUtility:
-    def __init__(self, payload=None, *, error: Exception | None = None, available: bool = True, judge_payload=None, judge_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        payload=None,
+        *,
+        error: Exception | None = None,
+        available: bool = True,
+        judge_payload=None,
+        judge_error: Exception | None = None,
+        gate_payloads=None,
+        gate_error: Exception | None = None,
+    ) -> None:
         self.payload = payload or {}
         self.error = error
         self.available = available
@@ -17,6 +27,9 @@ class FakeWebPlanUtility:
         self.judge_payload = judge_payload
         self.judge_error = judge_error
         self.judge_calls: list[dict] = []
+        self.gate_payloads = list(gate_payloads or [])
+        self.gate_error = gate_error
+        self.gate_prompts: list[str] = []
 
     def status(self, settings):
         return {"available": self.available}
@@ -32,6 +45,38 @@ class FakeWebPlanUtility:
         if self.judge_error:
             raise self.judge_error
         return self.judge_payload or {"rejected_items": []}
+
+    async def extract_page_excerpt_gate_json(self, *, prompt: str, settings):
+        self.gate_prompts.append(prompt)
+        if self.gate_error:
+            raise self.gate_error
+        return self.gate_payloads.pop(0) if self.gate_payloads else gate_payload(True, need_more=False)
+
+    async def generate_with_model_profile(self, prompt: str, *, profile_id: str, max_new_tokens: int = 256):
+        self.gate_prompts.append(f"profile={profile_id}\n{prompt}")
+        if self.gate_error:
+            raise self.gate_error
+        payload = self.gate_payloads.pop(0) if self.gate_payloads else gate_payload(True, need_more=False)
+        return type("Raw", (), {"text": __import__("json").dumps(payload)})()
+
+
+def gate_payload(
+    use_excerpt: bool,
+    *,
+    quality: str = "high",
+    confidence: str = "high",
+    coverage: str = "direct_answer",
+    need_more: bool = True,
+    reason: str = "useful evidence",
+) -> dict:
+    return {
+        "use_excerpt": use_excerpt,
+        "evidence_quality": quality,
+        "confidence": confidence,
+        "coverage": coverage,
+        "need_more": need_more,
+        "reason": reason,
+    }
 
 
 @pytest.mark.parametrize(
@@ -762,6 +807,213 @@ def test_web_context_metadata_keeps_page_fetch_compact() -> None:
     assert len(ref["page_excerpt_preview"]) == 700
     assert long_excerpt not in str(result.metadata)
     assert "<html" not in str(result.metadata).lower()
+    assert "# Retrieved Web" not in str(result.metadata)
+
+
+def test_page_excerpt_gate_rejects_first_and_progressively_accepts_until_enough() -> None:
+    calls: list[str] = []
+    utility = FakeWebPlanUtility(
+        gate_payloads=[
+            gate_payload(False, quality="low", confidence="high", coverage="boilerplate", reason="navigation only"),
+            gate_payload(True, quality="medium", confidence="high", coverage="partial", need_more=True, reason="partial facts"),
+            gate_payload(True, quality="high", confidence="high", coverage="direct_answer", need_more=False, reason="direct answer"),
+        ]
+    )
+
+    def search(query, context=None):
+        return {
+            "provider": "searxng",
+            "results": [
+                web_result("https://one.test", title="One"),
+                web_result("https://two.test", title="Two"),
+                web_result("https://three.test", title="Three"),
+                web_result("https://four.test", title="Four"),
+            ],
+        }
+
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return PageFetchResult(status="fetched", title=f"Page {len(calls)}", excerpt=f"Useful page excerpt {len(calls)}.")
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(
+                web_context_enabled=True,
+                web_context_fetch_pages_enabled=True,
+                web_context_page_excerpt_gate_enabled=True,
+                web_context_page_excerpt_gate_backend="utility_llm",
+                web_context_fetch_max_pages=5,
+                web_context_target_page_excerpts=3,
+            ),
+            query="release date",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+
+    refs = result.metadata["source_refs"]
+    assert calls == ["https://one.test", "https://two.test", "https://three.test"]
+    assert "Useful page excerpt 1." not in result.rendered_text
+    assert "Useful page excerpt 2." in result.rendered_text
+    assert "Useful page excerpt 3." in result.rendered_text
+    assert refs[0]["page_excerpt_gate_status"] == "rejected"
+    assert refs[0]["page_excerpt_injected"] is False
+    assert refs[1]["page_excerpt_gate_status"] == "accepted"
+    assert refs[2]["page_excerpt_gate_status"] == "accepted"
+    assert refs[3]["page_fetch_status"] == "skipped"
+    assert result.metadata["page_excerpt_gate"]["attempted"] == 3
+    assert result.metadata["page_excerpt_gate"]["accepted"] == 2
+    assert result.metadata["page_excerpt_gate"]["rejected"] == 1
+    assert result.metadata["page_excerpt_gate"]["stopped_reason"] == "enough_evidence"
+
+
+def test_page_excerpt_gate_stops_at_target_and_max_attempts() -> None:
+    calls: list[str] = []
+    utility = FakeWebPlanUtility(gate_payloads=[gate_payload(True, need_more=True), gate_payload(True, need_more=True)])
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://a.test"), web_result("https://b.test"), web_result("https://c.test")]}
+
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return PageFetchResult(status="fetched", excerpt=f"Accepted {url}.")
+
+    target = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm", web_context_target_page_excerpts=1, web_context_fetch_max_pages=3),
+            query="latest",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+    assert calls == ["https://a.test"]
+    assert target.metadata["page_excerpt_gate"]["stopped_reason"] == "target_accepted_excerpts"
+
+    calls.clear()
+    utility = FakeWebPlanUtility(gate_payloads=[gate_payload(False), gate_payload(False)])
+    maxed = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm", web_context_fetch_max_pages=2),
+            query="latest",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+    assert calls == ["https://a.test", "https://b.test"]
+    assert maxed.metadata["page_excerpt_gate"]["accepted"] == 0
+    assert maxed.metadata["page_excerpt_gate"]["stopped_reason"] == "max_pages_attempted"
+
+
+@pytest.mark.parametrize(
+    ("payload", "warning"),
+    [
+        ({"not": "valid"}, "page_excerpt_gate_schema_invalid"),
+        (gate_payload(True, confidence="low"), None),
+        (gate_payload(True, quality="low"), None),
+        (gate_payload(True, coverage="boilerplate"), None),
+        (gate_payload(True, coverage="off_topic"), None),
+        (gate_payload(True, coverage="insufficient"), None),
+        (gate_payload(True, quality="high", confidence="high", coverage="direct_answer"), None),
+    ],
+)
+def test_page_excerpt_gate_validation_acceptance_rules(payload, warning) -> None:
+    result, actual_warning = validate_page_excerpt_gate_response(payload, min_quality="medium")
+    if warning:
+        assert result is None
+        assert actual_warning == warning
+        return
+    assert result is not None
+    should_accept = payload["confidence"] != "low" and payload["evidence_quality"] != "low" and payload["coverage"] == "direct_answer"
+    assert (result.use_excerpt and result.confidence in {"medium", "high"} and result.evidence_quality in {"medium", "high"} and result.coverage == "direct_answer") is should_accept
+
+
+def test_page_excerpt_gate_invalid_or_unavailable_does_not_inject_and_continues() -> None:
+    calls: list[str] = []
+    utility = FakeWebPlanUtility(gate_payloads=[{"bad": "schema"}, gate_payload(True, coverage="direct_answer", need_more=False)])
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://bad.test"), web_result("https://good.test")]}
+
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return PageFetchResult(status="fetched", excerpt=f"Excerpt from {url}.")
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm"),
+            query="latest",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+    assert calls == ["https://bad.test", "https://good.test"]
+    assert "Excerpt from https://bad.test." not in result.rendered_text
+    assert "Excerpt from https://good.test." in result.rendered_text
+    assert result.metadata["source_refs"][0]["page_excerpt_gate_status"] == "failed"
+    assert "page_excerpt_gate_schema_invalid" in result.metadata["page_excerpt_gate"]["warnings"]
+
+
+def test_page_excerpt_gate_specific_profile_missing_is_warning_not_run_failure() -> None:
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://profile.test")]}
+
+    def fetch(url, **kwargs):
+        return PageFetchResult(status="fetched", excerpt="Useful excerpt that should not inject without profile.")
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(
+                web_context_enabled=True,
+                web_context_fetch_pages_enabled=True,
+                web_context_page_excerpt_gate_enabled=True,
+                web_context_page_excerpt_gate_backend="specific_model_profile",
+            ),
+            query="latest",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=FakeWebPlanUtility(),
+        )
+    )
+
+    assert result.metadata["injected"] is True
+    assert "Useful excerpt" not in result.rendered_text
+    assert result.metadata["source_refs"][0]["page_excerpt_gate_status"] == "failed"
+    assert "page_excerpt_gate_unavailable" in result.metadata["page_excerpt_gate"]["warnings"]
+
+
+def test_page_excerpt_gate_input_and_metadata_are_compact() -> None:
+    utility = FakeWebPlanUtility(gate_payloads=[gate_payload(True, need_more=False, reason="short reason")])
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://compact.test/path", snippet="Snippet")]}
+
+    def fetch(url, **kwargs):
+        return PageFetchResult(status="fetched", title="Page", excerpt="Clean excerpt " + ("E" * 1400))
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm"),
+            query="question with Agent prompt and KB secret",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+    prompt = utility.gate_prompts[0]
+    assert "Agent system prompt" not in prompt
+    assert "raw HTML" not in prompt
+    assert "# Retrieved Web" not in prompt
+    assert "assistant replies" not in prompt
+    assert "Clean excerpt " in prompt
+    ref = result.metadata["source_refs"][0]
+    assert ref["page_excerpt_gate_status"] == "accepted"
+    assert ref["page_excerpt_gate_reason"] == "short reason"
+    assert len(ref["page_excerpt_preview"]) == 700
+    assert "E" * 1000 not in str(result.metadata)
     assert "# Retrieved Web" not in str(result.metadata)
 
 

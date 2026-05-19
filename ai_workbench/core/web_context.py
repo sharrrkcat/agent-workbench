@@ -49,6 +49,12 @@ JUDGE_SOURCE_ROLES = {
 JUDGE_CONFIDENCES = {"low", "medium", "high"}
 JUDGE_REJECT_ROLES = {"noise", "off_topic", "weak_match"}
 JUDGE_RETAIN_ROLES = {"reference", "official", "news", "documentation", "background", "primary_source"}
+GATE_BACKENDS = {"follow_agent_model_profile", "specific_model_profile", "utility_llm"}
+GATE_QUALITY_ORDER = {"low": 1, "medium": 2, "high": 3}
+GATE_CONFIDENCES = {"low", "medium", "high"}
+GATE_COVERAGES = {"direct_answer", "supporting_background", "partial", "boilerplate", "off_topic", "insufficient"}
+GATE_ACCEPT_COVERAGES = {"direct_answer", "supporting_background", "partial"}
+GATE_REASON_CHARS = 200
 KNOWLEDGE_QUERY_BLOCKED_REASONS = {
     "semantic_confidence_too_low",
     "semantic_margin_too_low",
@@ -72,6 +78,16 @@ class PageFetchResult:
     title: str = ""
     excerpt: str = ""
     warning: str | None = None
+
+
+@dataclass(frozen=True)
+class PageExcerptGateResult:
+    use_excerpt: bool
+    evidence_quality: str
+    confidence: str
+    coverage: str
+    need_more: bool
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -302,6 +318,8 @@ async def build_web_context(
     runtime_registry: Any = None,
     capability_registry: Any = None,
     capability_config_store: Any = None,
+    llm_runtime: Any = None,
+    llm_model_config: dict[str, Any] | None = None,
     search_fn: Callable[..., dict[str, Any]] | None = None,
     page_fetch_fn: Callable[..., PageFetchResult] | None = None,
 ) -> WebContextResult:
@@ -410,14 +428,22 @@ async def build_web_context(
 
     page_fetch_summary: dict[str, Any] = {}
     if bool(getattr(resolved_settings, "web_context_fetch_pages_enabled", False)):
-        results, source_refs, page_fetch_summary = _fetch_pages_for_results(
+        results, source_refs, page_fetch_summary = await _fetch_pages_for_results(
             results=results,
             source_refs=source_refs,
             settings=resolved_settings,
+            original_user_text=query,
+            plan=plan,
             page_fetch_fn=page_fetch_fn,
+            utility_llm_service=utility_llm_service,
+            llm_runtime=llm_runtime,
+            llm_model_config=llm_model_config,
         )
         if page_fetch_summary.get("page_fetch_warnings"):
             warnings = [*warnings, *page_fetch_summary["page_fetch_warnings"]]
+        gate_summary = page_fetch_summary.get("page_excerpt_gate") if isinstance(page_fetch_summary.get("page_excerpt_gate"), dict) else {}
+        if gate_summary.get("warnings"):
+            warnings = [*warnings, *[str(item) for item in gate_summary["warnings"] if str(item)]]
 
     rendered_text, injected_refs, truncated = _render_web_block(
         results=results,
@@ -464,7 +490,7 @@ def append_web_context_to_system(messages: list[dict[str, Any]], rendered_text: 
 
 
 def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "candidate_judge", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings"}
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "candidate_judge", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings", "page_excerpt_gate"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
 
 
@@ -875,18 +901,26 @@ def _short_judge_reason(value: Any) -> str:
     return _short_judge_text(value, MAX_JUDGE_REASON_CHARS)
 
 
-def _fetch_pages_for_results(
+async def _fetch_pages_for_results(
     *,
     results: list[dict[str, Any]],
     source_refs: list[dict[str, Any]],
     settings: AppSettings,
+    original_user_text: str,
+    plan: WebContextPlan,
     page_fetch_fn: Callable[..., PageFetchResult] | None,
+    utility_llm_service: Any = None,
+    llm_runtime: Any = None,
+    llm_model_config: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     max_pages = max(1, min(int(getattr(settings, "web_context_fetch_max_pages", 2) or 2), 5))
+    target_excerpts = max(1, min(int(getattr(settings, "web_context_target_page_excerpts", 2) or 2), 5))
     timeout = max(1.0, min(float(getattr(settings, "web_context_fetch_timeout_seconds", 5) or 5), 20.0))
     max_bytes = max(100000, min(int(getattr(settings, "web_context_fetch_max_bytes", 1048576) or 1048576), 5000000))
     per_page_chars = max(500, min(int(getattr(settings, "web_context_page_excerpt_chars", 2000) or 2000), 8000))
     total_chars = max(1000, min(int(getattr(settings, "web_context_total_page_excerpt_chars", 6000) or 6000), 20000))
+    gate_enabled = bool(getattr(settings, "web_context_page_excerpt_gate_enabled", False))
+    gate_backend = str(getattr(settings, "web_context_page_excerpt_gate_backend", "follow_agent_model_profile") or "follow_agent_model_profile")
     fetcher = page_fetch_fn or fetch_web_context_page
     next_results = [dict(item) for item in results]
     next_refs = [dict(item) for item in source_refs]
@@ -894,10 +928,33 @@ def _fetch_pages_for_results(
     attempted = 0
     fetched = 0
     failed = 0
+    accepted = 0
+    rejected = 0
+    gate_failed = 0
+    stopped_reason = "candidates_exhausted"
     remaining_excerpt_chars = total_chars
+    gate_warnings: list[str] = []
+    accepted_evidence: list[dict[str, Any]] = []
     for index, (result, ref) in enumerate(zip(next_results, next_refs)):
-        if index >= max_pages:
+        if attempted >= max_pages:
             ref["page_fetch_status"] = "skipped"
+            if gate_enabled:
+                ref["page_excerpt_gate_status"] = "skipped"
+                ref["page_excerpt_injected"] = False
+            stopped_reason = "max_pages_attempted"
+            continue
+        if gate_enabled and accepted >= target_excerpts:
+            ref["page_fetch_status"] = "skipped"
+            ref["page_excerpt_gate_status"] = "skipped"
+            ref["page_excerpt_injected"] = False
+            stopped_reason = "target_accepted_excerpts"
+            continue
+        if remaining_excerpt_chars <= 0:
+            ref["page_fetch_status"] = "skipped"
+            if gate_enabled:
+                ref["page_excerpt_gate_status"] = "skipped"
+                ref["page_excerpt_injected"] = False
+            stopped_reason = "excerpt_budget_exhausted"
             continue
         url = str(result.get("url") or "")
         attempted += 1
@@ -912,10 +969,69 @@ def _fetch_pages_for_results(
         if page.excerpt:
             excerpt = page.excerpt[: max(0, remaining_excerpt_chars)].strip()
             if excerpt:
-                result["page_excerpt"] = excerpt
                 ref["page_excerpt_preview"] = _short_page_preview(excerpt)
                 ref["page_excerpt_chars"] = len(excerpt)
-                remaining_excerpt_chars = max(0, remaining_excerpt_chars - len(excerpt))
+                if not gate_enabled:
+                    result["page_excerpt"] = excerpt
+                    ref["page_excerpt_gate_status"] = "disabled"
+                    ref["page_excerpt_injected"] = True
+                    remaining_excerpt_chars = max(0, remaining_excerpt_chars - len(excerpt))
+                else:
+                    gate = await run_page_excerpt_gate(
+                        settings=settings,
+                        original_user_text=original_user_text,
+                        plan=plan,
+                        candidate=result,
+                        ref=ref,
+                        page_title=page.title,
+                        page_excerpt=excerpt,
+                        accepted_evidence=accepted_evidence,
+                        utility_llm_service=utility_llm_service,
+                        llm_runtime=llm_runtime,
+                        llm_model_config=llm_model_config,
+                    )
+                    if gate.get("accepted"):
+                        gate_result = gate["result"]
+                        result["page_excerpt"] = excerpt
+                        ref["page_excerpt_gate_status"] = "accepted"
+                        ref["page_excerpt_injected"] = True
+                        ref["page_excerpt_quality"] = gate_result.evidence_quality
+                        ref["page_excerpt_confidence"] = gate_result.confidence
+                        ref["page_excerpt_coverage"] = gate_result.coverage
+                        ref["page_excerpt_gate_reason"] = gate_result.reason
+                        remaining_excerpt_chars = max(0, remaining_excerpt_chars - len(excerpt))
+                        accepted += 1
+                        accepted_evidence.append(_accepted_gate_evidence(ref, excerpt))
+                        if not gate_result.need_more and accepted >= 1:
+                            stopped_reason = "enough_evidence"
+                            for rest in next_refs[index + 1 :]:
+                                rest["page_fetch_status"] = "skipped"
+                                rest["page_excerpt_gate_status"] = "skipped"
+                                rest["page_excerpt_injected"] = False
+                            break
+                    else:
+                        gate_status = str(gate.get("status") or "rejected")
+                        ref["page_excerpt_gate_status"] = gate_status
+                        ref["page_excerpt_injected"] = False
+                        gate_result = gate.get("result")
+                        if isinstance(gate_result, PageExcerptGateResult):
+                            ref["page_excerpt_quality"] = gate_result.evidence_quality
+                            ref["page_excerpt_confidence"] = gate_result.confidence
+                            ref["page_excerpt_coverage"] = gate_result.coverage
+                            ref["page_excerpt_gate_reason"] = gate_result.reason
+                        warning = str(gate.get("warning") or "")
+                        if warning:
+                            gate_warnings.append(warning)
+                        if gate_status == "failed":
+                            gate_failed += 1
+                        else:
+                            rejected += 1
+            elif gate_enabled:
+                ref["page_excerpt_gate_status"] = "skipped"
+                ref["page_excerpt_injected"] = False
+        elif gate_enabled:
+            ref["page_excerpt_gate_status"] = "skipped"
+            ref["page_excerpt_injected"] = False
         if page.title:
             result["page_title"] = page.title
         if page.warning:
@@ -929,14 +1045,241 @@ def _fetch_pages_for_results(
         if remaining_excerpt_chars <= 0:
             for rest in next_refs[index + 1 :]:
                 rest["page_fetch_status"] = "skipped"
+                if gate_enabled:
+                    rest["page_excerpt_gate_status"] = "skipped"
+                    rest["page_excerpt_injected"] = False
+            stopped_reason = "excerpt_budget_exhausted"
             break
+    if gate_enabled and accepted >= target_excerpts and stopped_reason == "candidates_exhausted":
+        stopped_reason = "target_accepted_excerpts"
+    if attempted >= max_pages and stopped_reason == "candidates_exhausted" and len(next_results) > attempted:
+        stopped_reason = "max_pages_attempted"
+    gate_summary = {
+        "enabled": gate_enabled,
+        "backend": gate_backend if gate_backend in GATE_BACKENDS else "follow_agent_model_profile",
+        "attempted": accepted + rejected + gate_failed,
+        "accepted": accepted,
+        "rejected": rejected,
+        "failed": gate_failed,
+        "stopped_reason": stopped_reason,
+        "warnings": sorted(set(gate_warnings)),
+    }
     return next_results, next_refs, {
         "page_fetch_enabled": True,
         "pages_attempted": attempted,
         "pages_fetched": fetched,
         "pages_failed": failed,
         "page_fetch_warnings": warnings,
+        "page_excerpt_gate": gate_summary,
     }
+
+
+async def run_page_excerpt_gate(
+    *,
+    settings: AppSettings,
+    original_user_text: str,
+    plan: WebContextPlan,
+    candidate: dict[str, Any],
+    ref: dict[str, Any],
+    page_title: str,
+    page_excerpt: str,
+    accepted_evidence: list[dict[str, Any]],
+    utility_llm_service: Any = None,
+    llm_runtime: Any = None,
+    llm_model_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    backend = str(getattr(settings, "web_context_page_excerpt_gate_backend", "follow_agent_model_profile") or "follow_agent_model_profile")
+    if backend not in GATE_BACKENDS:
+        backend = "follow_agent_model_profile"
+    prompt = _page_excerpt_gate_prompt(
+        settings=settings,
+        original_user_text=original_user_text,
+        plan=plan,
+        candidate=candidate,
+        ref=ref,
+        page_title=page_title,
+        page_excerpt=page_excerpt,
+        accepted_evidence=accepted_evidence,
+    )
+    try:
+        data = await _call_page_excerpt_gate_backend(
+            backend=backend,
+            prompt=prompt,
+            settings=settings,
+            utility_llm_service=utility_llm_service,
+            llm_runtime=llm_runtime,
+            llm_model_config=llm_model_config,
+        )
+    except UtilityLLMError as exc:
+        warning = "page_excerpt_gate_invalid_json" if exc.code == "utility_llm_invalid_json" else "page_excerpt_gate_unavailable"
+        return {"accepted": False, "status": "failed", "warning": warning}
+    except Exception:
+        return {"accepted": False, "status": "failed", "warning": "page_excerpt_gate_unavailable"}
+    result, warning = validate_page_excerpt_gate_response(data, min_quality=str(getattr(settings, "web_context_page_excerpt_gate_min_quality", "medium") or "medium"))
+    if result is None:
+        return {"accepted": False, "status": "failed", "warning": warning or "page_excerpt_gate_invalid_json"}
+    accepted = _page_excerpt_gate_accepts(result, min_quality=str(getattr(settings, "web_context_page_excerpt_gate_min_quality", "medium") or "medium"))
+    return {"accepted": accepted, "status": "accepted" if accepted else "rejected", "result": result}
+
+
+async def _call_page_excerpt_gate_backend(
+    *,
+    backend: str,
+    prompt: str,
+    settings: AppSettings,
+    utility_llm_service: Any,
+    llm_runtime: Any,
+    llm_model_config: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if backend == "utility_llm":
+        if utility_llm_service is None:
+            raise UtilityLLMError("page_excerpt_gate_unavailable", "Utility LLM is unavailable.")
+        if callable(getattr(utility_llm_service, "extract_page_excerpt_gate_json", None)):
+            return await utility_llm_service.extract_page_excerpt_gate_json(prompt=prompt, settings=settings)
+        raw = await utility_llm_service.generate(prompt, settings, max_new_tokens=320)
+        return extract_json_object(getattr(raw, "text", raw))
+    if backend == "specific_model_profile":
+        profile_id = str(getattr(settings, "web_context_page_excerpt_gate_model_profile_id", "") or "").strip()
+        if not profile_id:
+            raise UtilityLLMError("model_profile_not_configured", "Page Excerpt Gate Model Profile is not configured.")
+        if utility_llm_service is None or not callable(getattr(utility_llm_service, "generate_with_model_profile", None)):
+            raise UtilityLLMError("model_profile_generation_failed", "Model Profile gate backend is unavailable.")
+        raw = await utility_llm_service.generate_with_model_profile(prompt, profile_id=profile_id, max_new_tokens=320)
+        return extract_json_object(getattr(raw, "text", raw))
+    if llm_runtime is None or not isinstance(llm_model_config, dict):
+        raise UtilityLLMError("model_profile_generation_failed", "Follow-Agent gate backend is unavailable.")
+    model_config = dict(llm_model_config)
+    model_config.update({"stream": False, "temperature": 0, "top_p": 1, "max_tokens": min(int(model_config.get("max_tokens") or 320), 320)})
+    chat = getattr(llm_runtime, "chat", None)
+    if callable(chat):
+        raw = chat(messages=[{"role": "user", "content": prompt}], model_config=model_config, stream=False)
+    else:
+        generate = getattr(llm_runtime, "generate")
+        raw = generate(prompt=prompt, model_config=model_config, stream=False)
+    if hasattr(raw, "__await__"):
+        raw = await raw
+    return extract_json_object(_extract_gate_llm_text(raw))
+
+
+def validate_page_excerpt_gate_response(data: Any, *, min_quality: str) -> tuple[PageExcerptGateResult | None, str | None]:
+    if not isinstance(data, dict):
+        return None, "page_excerpt_gate_invalid_json"
+    if not isinstance(data.get("use_excerpt"), bool) or not isinstance(data.get("need_more"), bool):
+        return None, "page_excerpt_gate_schema_invalid"
+    quality = str(data.get("evidence_quality") or "").strip().lower()
+    confidence = str(data.get("confidence") or "").strip().lower()
+    coverage = str(data.get("coverage") or "").strip().lower()
+    reason = _short_judge_text(data.get("reason"), GATE_REASON_CHARS)
+    if quality not in GATE_QUALITY_ORDER:
+        return None, "page_excerpt_gate_unknown_quality"
+    if confidence not in GATE_CONFIDENCES:
+        return None, "page_excerpt_gate_unknown_confidence"
+    if coverage not in GATE_COVERAGES:
+        return None, "page_excerpt_gate_unknown_coverage"
+    if not reason:
+        return None, "page_excerpt_gate_empty_reason"
+    return PageExcerptGateResult(
+        use_excerpt=bool(data["use_excerpt"]),
+        evidence_quality=quality,
+        confidence=confidence,
+        coverage=coverage,
+        need_more=bool(data["need_more"]),
+        reason=reason,
+    ), None
+
+
+def _page_excerpt_gate_accepts(result: PageExcerptGateResult, *, min_quality: str) -> bool:
+    threshold = GATE_QUALITY_ORDER.get(min_quality, GATE_QUALITY_ORDER["medium"])
+    return (
+        result.use_excerpt
+        and GATE_QUALITY_ORDER.get(result.evidence_quality, 0) >= threshold
+        and result.confidence in {"medium", "high"}
+        and result.coverage in GATE_ACCEPT_COVERAGES
+    )
+
+
+def _page_excerpt_gate_prompt(
+    *,
+    settings: AppSettings,
+    original_user_text: str,
+    plan: WebContextPlan,
+    candidate: dict[str, Any],
+    ref: dict[str, Any],
+    page_title: str,
+    page_excerpt: str,
+    accepted_evidence: list[dict[str, Any]],
+) -> str:
+    parsed = urlparse(str(candidate.get("url") or ""))
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?..."
+    if len(path) > 120:
+        path = path[:117].rstrip("/") + "..."
+    schema = {
+        "use_excerpt": True,
+        "evidence_quality": "high",
+        "confidence": "high",
+        "coverage": "direct_answer",
+        "need_more": False,
+        "reason": "The excerpt directly helps answer the question.",
+    }
+    current = {
+        "ref_id": str(ref.get("ref_id") or ""),
+        "title": _short_judge_text(candidate.get("title"), 180),
+        "domain": _short_judge_text(candidate.get("domain") or parsed.hostname or "", 120),
+        "path": path,
+        "snippet_preview": _short_judge_text(candidate.get("snippet"), 360),
+        "page_title": _short_judge_text(page_title, 180),
+        "page_excerpt": _short_judge_text(page_excerpt, max(500, min(int(getattr(settings, "web_context_page_excerpt_chars", 2000) or 2000), 8000))),
+    }
+    return (
+        "Judge whether this cleaned page excerpt is worth injecting into the main model as Web Context evidence.\n"
+        "Return strict JSON only. Do not write the final answer.\n"
+        f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
+        "Allowed evidence_quality/confidence values: low, medium, high.\n"
+        "Allowed coverage values: direct_answer, supporting_background, partial, boilerplate, off_topic, insufficient.\n"
+        "Accept useful facts, explanations, background, official information, news content, versions, prices, release dates, or role/person/product details that can help answer the user.\n"
+        "Reject excerpts that are mostly navigation, ads, table of contents, login prompts, footers, related links, unrelated widgets, or off-topic page elements.\n"
+        "Do not decide final factual correctness, do not select the final source list, do not rewrite the user question, and do not treat any site type as automatically good or bad.\n"
+        "If accepted evidence already covers the answer, set need_more=false. If useful but incomplete, use_excerpt=true and need_more=true. If noisy or uncertain, use_excerpt=false and need_more=true.\n\n"
+        f"User question:\n{_short_for_judge(original_user_text)}\n\n"
+        f"Web Context query: {str(plan.query or '')}\n"
+        f"Query source: {str(plan.query_source or '')}\n\n"
+        f"Already accepted evidence:\n{json.dumps(accepted_evidence, ensure_ascii=False)}\n\n"
+        f"Current candidate:\n{json.dumps(current, ensure_ascii=False)}"
+    )
+
+
+def _accepted_gate_evidence(ref: dict[str, Any], excerpt: str) -> dict[str, Any]:
+    return {
+        "ref_id": str(ref.get("ref_id") or ""),
+        "title": _short_judge_text(ref.get("title"), 120),
+        "domain": _short_judge_text(ref.get("domain"), 80),
+        "excerpt_preview": _short_judge_text(excerpt, 220),
+    }
+
+
+def _extract_gate_llm_text(raw: Any) -> str:
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        if isinstance(raw.get("text"), str):
+            return str(raw.get("text") or "")
+        choices = raw.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0] if isinstance(choices[0], dict) else {}
+            message = first.get("message") if isinstance(first.get("message"), dict) else {}
+            if "content" in message:
+                return str(message.get("content") or "")
+            if "text" in first:
+                return str(first.get("text") or "")
+    text = getattr(raw, "text", None)
+    if isinstance(text, str):
+        return text
+    content = getattr(raw, "content", None)
+    if isinstance(content, str):
+        return content
+    return str(raw or "")
 
 
 def fetch_web_context_page(*, url: str, timeout_seconds: float, max_bytes: int, excerpt_chars: int, client: httpx.Client | None = None) -> PageFetchResult:

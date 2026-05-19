@@ -2,8 +2,9 @@
 
 Utility LLM is a lightweight core internal service for short deterministic tasks. Current
 uses are automatic session title generation, Intent Routing strict JSON slot
-extraction, Web Context Plan Resolver strict JSON planning, and optional Web
-Candidate Relevance Judge conservative JSON noise filtering.
+extraction, Web Context Plan Resolver strict JSON planning, optional Web
+Candidate Relevance Judge conservative JSON noise filtering, and optional Page
+Excerpt Gate JSON excerpt-quality judgment.
 
 ## Identity
 
@@ -286,6 +287,33 @@ codes and must not fail the main Prompt Agent run. Runtime metadata may store
 only compact schema/mode/counts, warning codes, aggregate rejected reason
 counts, and compact per-final source state/relevance/role/confidence/reason
 fields.
+
+## Page Excerpt Gate Interaction
+
+When General Web Search page fetching and Page Excerpt Gate are enabled, Utility
+LLM may be selected as the Page Excerpt Gate backend. This is a low-cost
+lightweight helper and may miss page quality problems; it is not a final
+evidence selector or fact judge.
+
+The gate call is internal and strict JSON. It creates no visible messages, Agent
+runs, or command runs, does not trigger Intent Routing, title generation, Web
+Context planning, Knowledge retrieval, Core Memory, Worldbook matching,
+attachments, history injection, or any recursive context builder path, and does
+not mutate the main LLM resolution or selected Model Profile.
+
+Follow-agent and specific-profile Page Excerpt Gate backends are internal
+non-streaming JSON model calls rather than Utility LLM local backends, but they
+share the same visibility and context isolation boundaries: no messages/runs,
+no injected context, no selected-model mutation, and no raw prompt/output in
+metadata.
+
+The gate input is limited to the current user question, Web Context query/query
+source, compact accepted evidence summaries, compact source fields, page title,
+and the capped cleaned page excerpt. It must not include Agent prompts, full
+chat history, assistant replies, Knowledge snippets, Core Memory, Worldbook
+content, attachments, raw SearXNG payloads, raw HTML, raw HTTP responses,
+rendered `# Retrieved Web`, secrets, or full page text beyond the configured
+excerpt cap.
 
 ## Metadata And Raw Output
 

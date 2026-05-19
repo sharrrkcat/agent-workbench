@@ -338,6 +338,7 @@ type WebContextSummary = {
   pagesFetched?: number;
   pagesFailed?: number;
   pageFetchWarnings: string[];
+  pageExcerptGate?: PageExcerptGateSummary;
   candidateJudge?: WebCandidateJudgeSummary;
   warnings: string[];
 };
@@ -363,6 +364,17 @@ type WebCandidateJudgeSummary = {
   warnings: string[];
 };
 
+type PageExcerptGateSummary = {
+  enabled?: boolean;
+  backend?: string;
+  attempted?: number;
+  accepted?: number;
+  rejected?: number;
+  failed?: number;
+  stoppedReason?: string;
+  warnings: string[];
+};
+
 type WebSourceRef = {
   ref_id: string;
   rank?: number;
@@ -378,6 +390,12 @@ type WebSourceRef = {
   page_excerpt_preview?: string;
   page_excerpt_chars?: number;
   page_fetch_warning?: string;
+  page_excerpt_gate_status?: string;
+  page_excerpt_quality?: string;
+  page_excerpt_confidence?: string;
+  page_excerpt_coverage?: string;
+  page_excerpt_gate_reason?: string;
+  page_excerpt_injected?: boolean;
   candidate_judge_state?: string;
   candidate_judge_relevance?: string;
   candidate_judge_role?: string;
@@ -675,7 +693,7 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               </div>
             </div>
             {ref.snippet_preview || ref.snippet ? <pre className="knowledge-snippet-content">{ref.snippet_preview || ref.snippet}</pre> : null}
-            {ref.page_excerpt_preview ? (
+            {ref.page_excerpt_preview && ref.page_excerpt_gate_status !== 'rejected' && ref.page_excerpt_gate_status !== 'failed' ? (
               <pre className="knowledge-snippet-content context-content-block">{ref.page_excerpt_preview}</pre>
             ) : null}
             <div className="knowledge-snippet-scores">
@@ -685,11 +703,16 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               {ref.candidate_judge_role ? <Chip tone="neutral">{t('chat:contextModal.role')}: {ref.candidate_judge_role}</Chip> : null}
               {ref.candidate_judge_confidence ? <Chip tone={ref.candidate_judge_confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {ref.candidate_judge_confidence}</Chip> : null}
               {ref.page_fetch_status ? <Chip tone={pageFetchStatusTone(ref.page_fetch_status)}>{pageFetchStatusLabel(ref.page_fetch_status, t)}</Chip> : null}
+              {ref.page_excerpt_gate_status ? <Chip tone={pageExcerptGateStatusTone(ref.page_excerpt_gate_status)}>{pageExcerptGateStatusLabel(ref.page_excerpt_gate_status, t)}</Chip> : null}
+              {ref.page_excerpt_quality ? <Chip tone={ref.page_excerpt_quality === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.quality')}: {ref.page_excerpt_quality}</Chip> : null}
+              {ref.page_excerpt_confidence ? <Chip tone={ref.page_excerpt_confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {ref.page_excerpt_confidence}</Chip> : null}
+              {ref.page_excerpt_coverage ? <Chip tone={ref.page_excerpt_coverage === 'direct_answer' ? 'active' : 'neutral'}>{t('chat:contextModal.coverage')}: {ref.page_excerpt_coverage}</Chip> : null}
               {ref.source ? <span>{t('chat:contextModal.source')}: {ref.source}</span> : null}
               {ref.domain ? <span>{t('chat:contextModal.domain')}: {ref.domain}</span> : null}
               {ref.published_at ? <span>{t('chat:contextModal.published')}: {ref.published_at}</span> : null}
               {ref.page_title ? <span>{t('chat:contextModal.pageTitle')}: {ref.page_title}</span> : null}
               {ref.page_excerpt_chars !== undefined ? <span>{t('chat:contextModal.pageExcerptChars', { count: ref.page_excerpt_chars })}</span> : null}
+              {ref.page_excerpt_gate_reason ? <span>{ref.page_excerpt_gate_reason}</span> : null}
               {ref.candidate_judge_reason ? <span>{ref.candidate_judge_reason}</span> : null}
               {ref.page_fetch_warning ? <span>{pageFetchWarningLabel(ref.page_fetch_warning, t)}</span> : null}
               {ref.url ? (
@@ -729,6 +752,19 @@ function pageFetchWarningLabel(warning: string, t: ReturnType<typeof useTranslat
   const key = `chat:contextModal.pageFetchWarnings.${warning}`;
   const label = t(key);
   return label === key ? warning : label;
+}
+
+function pageExcerptGateStatusTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
+  if (status === 'accepted') return 'active';
+  if (status === 'rejected') return 'warning';
+  if (status === 'failed') return 'danger';
+  return 'neutral';
+}
+
+function pageExcerptGateStatusLabel(status: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = `chat:contextModal.pageExcerptGateStatus.${status}`;
+  const label = t(key);
+  return label === key ? status : label;
 }
 
 function WarningList({ warnings }: { warnings: string[] }) {
@@ -902,6 +938,7 @@ function mergeWebContexts(contexts: Record<string, unknown>[]): WebContextSummar
     pagesFetched: maxNumber(contexts.map((context) => numberValue(context.pages_fetched))),
     pagesFailed: maxNumber(contexts.map((context) => numberValue(context.pages_failed))),
     pageFetchWarnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.page_fetch_warnings))),
+    pageExcerptGate: mergePageExcerptGate(contexts.map((context) => context.page_excerpt_gate)),
     candidateJudge: mergeWebCandidateJudge(contexts.map((context) => context.candidate_judge)),
     warnings: uniqueStrings(contexts.flatMap((context) => stringArray(context.warnings))),
   };
@@ -922,6 +959,22 @@ function mergeWebCandidateJudge(values: unknown[]): WebCandidateJudgeSummary | u
     unjudgedCount: numberValue(last.unjudged_count),
     invalidItemCount: numberValue(last.invalid_item_count),
     fallbackUsed: booleanValue(last.fallback_used),
+    warnings: uniqueStrings(records.flatMap((record) => stringArray(record.warnings))),
+  };
+}
+
+function mergePageExcerptGate(values: unknown[]): PageExcerptGateSummary | undefined {
+  const records = values.filter(isPlainRecord);
+  if (!records.length) return undefined;
+  const last = records[records.length - 1];
+  return {
+    enabled: booleanValue(last.enabled),
+    backend: textValue(last.backend),
+    attempted: numberValue(last.attempted),
+    accepted: numberValue(last.accepted),
+    rejected: numberValue(last.rejected),
+    failed: numberValue(last.failed),
+    stoppedReason: textValue(last.stopped_reason),
     warnings: uniqueStrings(records.flatMap((record) => stringArray(record.warnings))),
   };
 }
@@ -964,6 +1017,12 @@ function webSourceRefs(context: Record<string, unknown> | undefined): WebSourceR
       page_excerpt_preview: textValue(item.page_excerpt_preview),
       page_excerpt_chars: numberValue(item.page_excerpt_chars),
       page_fetch_warning: textValue(item.page_fetch_warning),
+      page_excerpt_gate_status: textValue(item.page_excerpt_gate_status),
+      page_excerpt_quality: textValue(item.page_excerpt_quality),
+      page_excerpt_confidence: textValue(item.page_excerpt_confidence),
+      page_excerpt_coverage: textValue(item.page_excerpt_coverage),
+      page_excerpt_gate_reason: textValue(item.page_excerpt_gate_reason),
+      page_excerpt_injected: booleanValue(item.page_excerpt_injected),
       candidate_judge_state: textValue(item.candidate_judge_state),
       candidate_judge_relevance: textValue(item.candidate_judge_relevance),
       candidate_judge_role: textValue(item.candidate_judge_role),
@@ -2777,6 +2836,14 @@ function webDiagnosticsSummaryParts(summary: WebContextSummary, t: ReturnType<ty
   if (summary.pageFetchEnabled) {
     if (summary.pagesFetched !== undefined) parts.push(t('runs:contextSummary.pagesFetched', { count: summary.pagesFetched }));
     if (summary.pagesFailed) parts.push(t('runs:contextSummary.pagesFailed', { count: summary.pagesFailed }));
+  }
+  if (summary.pageExcerptGate?.enabled) {
+    parts.push(t('runs:contextSummary.pageExcerptGate', {
+      attempted: summary.pageExcerptGate.attempted ?? 0,
+      accepted: summary.pageExcerptGate.accepted ?? 0,
+      rejected: summary.pageExcerptGate.rejected ?? 0,
+    }));
+    if (summary.pageExcerptGate.stoppedReason) parts.push(t('runs:contextSummary.pageExcerptGateStopped', { reason: summary.pageExcerptGate.stoppedReason }));
   }
   return parts;
 }

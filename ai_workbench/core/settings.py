@@ -69,6 +69,8 @@ LEGACY_IGNORED_APP_SETTINGS_KEYS = {
 }
 SESSION_TITLE_BACKENDS = {"utility_llm", "follow_agent_model_profile", "specified_model_profile"}
 WEB_CONTEXT_CANDIDATE_JUDGE_RELEVANCE = {"low", "medium", "high"}
+WEB_CONTEXT_PAGE_EXCERPT_GATE_BACKENDS = {"follow_agent_model_profile", "specific_model_profile", "utility_llm"}
+WEB_CONTEXT_PAGE_EXCERPT_GATE_QUALITY = {"low", "medium", "high"}
 
 
 def sanitize_app_settings_payload(values: dict[str, Any]) -> dict[str, Any]:
@@ -129,6 +131,11 @@ class AppSettings(BaseModel):
     web_context_fetch_max_bytes: int = Field(default=1048576, ge=100000, le=5000000)
     web_context_page_excerpt_chars: int = Field(default=2000, ge=500, le=8000)
     web_context_total_page_excerpt_chars: int = Field(default=6000, ge=1000, le=20000)
+    web_context_target_page_excerpts: int = Field(default=2, ge=1, le=5)
+    web_context_page_excerpt_gate_enabled: StrictBool = False
+    web_context_page_excerpt_gate_backend: str = "follow_agent_model_profile"
+    web_context_page_excerpt_gate_model_profile_id: str | None = None
+    web_context_page_excerpt_gate_min_quality: str = "medium"
     web_context_candidate_judge_enabled: StrictBool = False
     web_context_candidate_judge_max_candidates: int = Field(default=8, ge=1, le=12)
     web_context_candidate_judge_min_relevance: str = "medium"
@@ -222,6 +229,30 @@ class AppSettings(BaseModel):
         if relevance not in WEB_CONTEXT_CANDIDATE_JUDGE_RELEVANCE:
             raise ValueError("Web Context candidate judge minimum relevance must be low, medium, or high.")
         return relevance
+
+    @field_validator("web_context_page_excerpt_gate_backend")
+    @classmethod
+    def _validate_web_context_page_excerpt_gate_backend(cls, value: str) -> str:
+        backend = str(value or "follow_agent_model_profile").strip().lower() or "follow_agent_model_profile"
+        if backend not in WEB_CONTEXT_PAGE_EXCERPT_GATE_BACKENDS:
+            raise ValueError("Web Context page excerpt gate backend must be follow_agent_model_profile, specific_model_profile, or utility_llm.")
+        return backend
+
+    @field_validator("web_context_page_excerpt_gate_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_web_context_page_excerpt_gate_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("web_context_page_excerpt_gate_min_quality")
+    @classmethod
+    def _validate_web_context_page_excerpt_gate_min_quality(cls, value: str) -> str:
+        quality = str(value or "medium").strip().lower() or "medium"
+        if quality not in WEB_CONTEXT_PAGE_EXCERPT_GATE_QUALITY:
+            raise ValueError("Web Context page excerpt gate minimum quality must be low, medium, or high.")
+        return quality
 
     @field_validator("resource_status_ram_display_mode", "resource_status_vram_display_mode")
     @classmethod
@@ -401,6 +432,11 @@ class AppSettingsPatch(BaseModel):
     web_context_fetch_max_bytes: int | None = Field(default=None, ge=100000, le=5000000)
     web_context_page_excerpt_chars: int | None = Field(default=None, ge=500, le=8000)
     web_context_total_page_excerpt_chars: int | None = Field(default=None, ge=1000, le=20000)
+    web_context_target_page_excerpts: int | None = Field(default=None, ge=1, le=5)
+    web_context_page_excerpt_gate_enabled: StrictBool | None = None
+    web_context_page_excerpt_gate_backend: str | None = None
+    web_context_page_excerpt_gate_model_profile_id: str | None = None
+    web_context_page_excerpt_gate_min_quality: str | None = None
     web_context_candidate_judge_enabled: StrictBool | None = None
     web_context_candidate_judge_max_candidates: int | None = Field(default=None, ge=1, le=12)
     web_context_candidate_judge_min_relevance: str | None = None
@@ -480,6 +516,34 @@ class AppSettingsPatch(BaseModel):
         if relevance not in WEB_CONTEXT_CANDIDATE_JUDGE_RELEVANCE:
             raise ValueError("Web Context candidate judge minimum relevance must be low, medium, or high.")
         return relevance
+
+    @field_validator("web_context_page_excerpt_gate_backend")
+    @classmethod
+    def _validate_web_context_page_excerpt_gate_backend(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        backend = str(value or "").strip().lower()
+        if backend not in WEB_CONTEXT_PAGE_EXCERPT_GATE_BACKENDS:
+            raise ValueError("Web Context page excerpt gate backend must be follow_agent_model_profile, specific_model_profile, or utility_llm.")
+        return backend
+
+    @field_validator("web_context_page_excerpt_gate_model_profile_id", mode="before")
+    @classmethod
+    def _normalize_web_context_page_excerpt_gate_model_profile_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("web_context_page_excerpt_gate_min_quality")
+    @classmethod
+    def _validate_web_context_page_excerpt_gate_min_quality(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        quality = str(value or "").strip().lower()
+        if quality not in WEB_CONTEXT_PAGE_EXCERPT_GATE_QUALITY:
+            raise ValueError("Web Context page excerpt gate minimum quality must be low, medium, or high.")
+        return quality
 
     @field_validator("resource_status_ram_display_mode", "resource_status_vram_display_mode")
     @classmethod

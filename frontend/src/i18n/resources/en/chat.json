@@ -195,6 +195,8 @@
     "relevance": "relevance",
     "role": "role",
     "confidence": "confidence",
+    "quality": "quality",
+    "coverage": "coverage",
     "candidateJudgeState": {
       "retained": "retained",
       "unjudged": "unjudged"
@@ -226,6 +228,13 @@
       "unsupported": "unsupported",
       "timeout": "timed out",
       "blocked": "blocked"
+    },
+    "pageExcerptGateStatus": {
+      "accepted": "excerpt accepted",
+      "rejected": "excerpt rejected",
+      "failed": "gate failed",
+      "skipped": "gate skipped",
+      "disabled": "gate off"
     },
     "pageFetchWarnings": {
       "page_fetch_blocked_scheme": "Blocked: only HTTP and HTTPS are supported.",

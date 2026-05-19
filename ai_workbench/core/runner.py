@@ -560,6 +560,8 @@ class AgentRunner:
             runtime_registry=self.runtime_registry,
             capability_registry=self.capability_registry,
             capability_config_store=self.capability_config_store,
+            llm_runtime=self.llm_runtime,
+            llm_model_config=llm_config.values if llm_config is not None else None,
         )
         self._record_context_metadata(run.run_id, "web_context", web_context.metadata)
         if isinstance(intent_routing, dict) and intent_step is not None and _web_query_used_for_web_context(web_context.metadata):

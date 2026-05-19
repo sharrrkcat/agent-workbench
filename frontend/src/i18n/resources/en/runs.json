@@ -65,6 +65,8 @@
     "webCandidatesRejected": "rejected {{count}}",
     "pagesFetched": "{{count}} pages fetched",
     "pagesFailed": "{{count}} pages failed",
+    "pageExcerptGate": "pages attempted {{attempted}} · accepted {{accepted}} · rejected {{rejected}}",
+    "pageExcerptGateStopped": "stopped: {{reason}}",
     "searchQuery": "query: {{query}}",
     "webQuerySource": "source: {{source}}",
     "webResolverConfidence": "confidence: {{confidence}}",

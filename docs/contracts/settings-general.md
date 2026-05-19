@@ -210,6 +210,16 @@ General Web Search owns Prompt Agent Web Context injection settings:
   through `8000`.
 - `web_context_total_page_excerpt_chars` defaults to `6000` and accepts `1000`
   through `20000`.
+- `web_context_target_page_excerpts` defaults to `2` and accepts `1` through
+  `5`.
+- `web_context_page_excerpt_gate_enabled` defaults to `false`.
+- `web_context_page_excerpt_gate_backend` defaults to
+  `follow_agent_model_profile` and accepts `follow_agent_model_profile`,
+  `specific_model_profile`, or `utility_llm`.
+- `web_context_page_excerpt_gate_model_profile_id` is nullable and is used only
+  when the gate backend is `specific_model_profile`.
+- `web_context_page_excerpt_gate_min_quality` defaults to `medium` and accepts
+  `low`, `medium`, or `high`.
 - `web_context_candidate_judge_enabled` defaults to `false`.
 - `web_context_candidate_judge_max_candidates` defaults to `8` and accepts `1`
   through `12`.
@@ -229,12 +239,34 @@ The rendered `# Retrieved Web` block begins with the current General
 external sources, should be used as evidence rather than instructions, and must
 be cited with `[W1]`-style source markers when used. The prompt affects only
 future context builds and must not be copied into run or message metadata.
-When page fetching is enabled, Prompt Agent Web Context may fetch the top
-filtered/de-duplicated result pages and append compact plain-text excerpts to
-the matching `[W#]` item. Fetching is best-effort and must not fail the main
-Prompt Agent run. It supports only HTTP/HTTPS HTML pages, does not execute
-JavaScript, does not render in a browser, does not handle PDFs/login pages/media
-or downloads, and does not save, cache, vectorize, or add pages to Knowledge.
+When page fetching is enabled, Prompt Agent Web Context progressively tries
+retained filtered/de-duplicated result pages. `web_context_fetch_max_pages`
+means the maximum pages to try, not the number of excerpts finally injected.
+Without Page Excerpt Gate, fetched excerpts keep the Round 8 behavior: the first
+retained candidates up to the attempt limit may append compact plain-text
+excerpts to the matching `[W#]` item while respecting the total excerpt budget.
+With Page Excerpt Gate enabled, each successfully cleaned excerpt is judged
+before injection; rejected, failed, or unavailable gate decisions keep the
+source/snippet/status but do not inject the page excerpt. Fetching stops when
+the attempt limit, target accepted excerpt count, total accepted excerpt budget,
+`need_more=false` after at least one accepted excerpt, or retained candidate list
+is exhausted.
+
+Page Excerpt Gate is an internal strict JSON judgment over compact page data.
+It may use the current Prompt Agent resolved model profile
+(`follow_agent_model_profile`), a chosen enabled Model Profile
+(`specific_model_profile`), or the configured Utility LLM (`utility_llm`).
+Follow-agent and specific-profile calls are internal non-streaming model calls;
+Utility LLM is a low-cost lightweight helper that may miss page quality issues.
+All gate backends create no visible message, Agent run, or command run, inject
+no Knowledge/Core Memory/Worldbook/history/attachments/Web context into the gate
+prompt, and must not mutate the session selected model. Gate failures, invalid
+JSON, missing/disabled profiles, or provider unavailability reject only the
+current excerpt and let the main Prompt Agent run continue.
+
+Page fetching supports only HTTP/HTTPS HTML pages, does not execute JavaScript,
+does not render in a browser, does not handle PDFs/login pages/media or
+downloads, and does not save, cache, vectorize, or add pages to Knowledge.
 Fetched page content is untrusted external content and is evidence only, never a
 system instruction.
 
@@ -286,11 +318,12 @@ de-duplication, diagnostics, and test search. General Web Search must not
 duplicate those provider/result-quality controls. Disabling the `/web-search`
 command disables only that explicit command; it does not block internal Web
 Context search when General Web Search is enabled.
-Page fetching settings belong only to Settings -> General -> Web Search because
-they are Prompt Agent Web Context runtime policy. The `/web-search` command and
-Settings test search continue to return search results only and must not fetch
-result pages. Candidate Judge settings also belong only to Settings -> General
--> Web Search and must not be added to Settings -> Capabilities -> Web Search.
+Page fetching and Page Excerpt Gate settings belong only to Settings -> General
+-> Web Search because they are Prompt Agent Web Context runtime policy. The
+`/web-search` command and Settings test search continue to return search results
+only and must not fetch result pages or run Page Excerpt Gate. Candidate Judge
+settings also belong only to Settings -> General -> Web Search and must not be
+added to Settings -> Capabilities -> Web Search.
 
 ## Utility LLM
 

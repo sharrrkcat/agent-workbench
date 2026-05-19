@@ -129,6 +129,13 @@ Each `source_refs` item may include only compact citation UI fields:
 `published_at`, `source`, a capped `snippet_preview` or short `snippet`, and
 compact page fetch fields such as `page_fetch_status`, `page_title`,
 `page_excerpt_preview`, `page_excerpt_chars`, and `page_fetch_warning`.
+When Page Excerpt Gate is enabled, `source_refs` may also include compact
+per-source gate fields: `page_excerpt_gate_status` (`accepted`, `rejected`,
+`failed`, `skipped`, or `disabled`), `page_excerpt_quality`,
+`page_excerpt_confidence`, `page_excerpt_coverage`,
+`page_excerpt_gate_reason`, and `page_excerpt_injected`. Rejected or failed
+gate sources must not expose the full excerpt; only capped previews and compact
+status/reason fields are allowed.
 When the Candidate Judge annotates a final source, the source ref may also
 include compact `candidate_judge_state` (`retained` or `unjudged`),
 `candidate_judge_relevance`, `candidate_judge_role`,
@@ -141,6 +148,11 @@ not include raw provider payloads, full filtered result lists, or fetched page
 bodies.
 Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
 `pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
+Page Excerpt Gate summary may include `page_excerpt_gate.enabled`, backend,
+attempted/accepted/rejected/failed counts, `stopped_reason`, and compact warning
+codes. It must not store the raw gate prompt, raw gate model output, rendered
+Web context, full page excerpts, raw HTML, raw HTTP responses, raw provider
+payloads, secrets, or a full accepted evidence chain.
 Candidate Judge summary fields may include `candidate_judge.enabled`,
 `candidate_judge.used`, `candidate_judge.mode =
 conservative_reject_only`, `candidate_judge.schema = rejected_items_v1`,

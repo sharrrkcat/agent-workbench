@@ -1033,6 +1033,11 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_fetch_max_bytes: number" in types
     assert "web_context_page_excerpt_chars: number" in types
     assert "web_context_total_page_excerpt_chars: number" in types
+    assert "web_context_target_page_excerpts: number" in types
+    assert "web_context_page_excerpt_gate_enabled: boolean" in types
+    assert "web_context_page_excerpt_gate_backend: 'follow_agent_model_profile' | 'specific_model_profile' | 'utility_llm'" in types
+    assert "web_context_page_excerpt_gate_model_profile_id: string | null" in types
+    assert "web_context_page_excerpt_gate_min_quality: 'low' | 'medium' | 'high'" in types
     assert "web_context_candidate_judge_enabled: boolean" in types
     assert "web_context_candidate_judge_max_candidates: number" in types
     assert "web_context_candidate_judge_min_relevance: 'low' | 'medium' | 'high'" in types
@@ -1048,8 +1053,13 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.webContextBudget" in panel
     assert "settings:general.webContextPrompt" in panel
     assert "settings:general.pageFetching" in panel
-    assert "settings:general.maxPagesToFetch" in panel
+    assert "settings:general.maxPagesToTry" in panel
+    assert "settings:general.targetAcceptedPageExcerpts" in panel
     assert "settings:general.totalPageExcerptBudget" in panel
+    assert "settings:general.pageExcerptGate" in panel
+    assert "settings:general.pageExcerptGateBackend" in panel
+    assert "settings:general.pageExcerptGateModelProfile" in panel
+    assert "settings:general.minimumExcerptQuality" in panel
     assert "settings:general.candidateRelevanceJudge" in panel
     assert "settings:general.maxCandidatesToJudge" in panel
     assert "settings:general.minimumRelevance" in panel
@@ -1063,6 +1073,9 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_prompt: values.web_context_prompt" in panel
     assert "web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled" in panel
     assert "web_context_total_page_excerpt_chars: values.web_context_total_page_excerpt_chars" in panel
+    assert "web_context_target_page_excerpts: values.web_context_target_page_excerpts" in panel
+    assert "web_context_page_excerpt_gate_enabled: values.web_context_page_excerpt_gate_enabled" in panel
+    assert "web_context_page_excerpt_gate_backend: values.web_context_page_excerpt_gate_backend" in panel
     assert "web_context_candidate_judge_enabled: values.web_context_candidate_judge_enabled" in panel
     files_body = panel[panel.index("function GeneralFilesSettings"):panel.index("function GeneralMemorySettings")]
     web_search_body = panel[panel.index("function GeneralWebSearchSettings"):panel.index("function titleModelProfileOptionLabel")]
@@ -1118,6 +1131,12 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "pageFetchEnabled" in source
     assert "page_fetch_status" in source
     assert "page_excerpt_preview" in source
+    assert "pageExcerptGate" in source
+    assert "page_excerpt_gate_status" in source
+    assert "page_excerpt_quality" in source
+    assert "page_excerpt_confidence" in source
+    assert "page_excerpt_coverage" in source
+    assert "page_excerpt_gate_reason" in source
     assert "candidateJudge" in source
     assert "candidate_judge_relevance" in source
     assert "candidate_judge_role" in source
@@ -1130,12 +1149,14 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "webCandidatesJudged" in source
     assert "pagesFetched" in source
     assert "pagesFailed" in source
+    assert "pageExcerptGateStatus" in source
     assert '"web": "Web"' in runs_en
     assert '"webContextPlan": "Web context plan"' in runs_en
     assert '"intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context"' in runs_en
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
     assert '"webCandidatesJudged": "judged {{judged}} / retained {{retained}} / rejected {{rejected}} / unjudged {{unjudged}}"' in runs_en
     assert '"pagesFetched": "{{count}} pages fetched"' in runs_en
+    assert '"pageExcerptGate": "pages attempted {{attempted}} · accepted {{accepted}} · rejected {{rejected}}"' in runs_en
     assert '"knowledge_query_candidate_blocked": "knowledge query candidate blocked"' in runs_en
     assert '"web_results_filtered_empty": "all web results were filtered"' in runs_en
     assert '"webSkipReasons"' in runs_en

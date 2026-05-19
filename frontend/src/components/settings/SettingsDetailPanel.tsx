@@ -376,7 +376,7 @@ function GeneralDetail({
         ) : category === 'memory' ? (
           <GeneralMemorySettings values={values} setValues={setValues} />
         ) : category === 'web_search' ? (
-          <GeneralWebSearchSettings values={values} setValues={setValues} setNumber={setNumber} />
+          <GeneralWebSearchSettings values={values} llmProfiles={llmProfiles} setValues={setValues} setNumber={setNumber} />
         ) : category === 'utility_llm' ? (
           <GeneralUtilityLlmSettings values={values} llmProfiles={llmProfiles} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : category === 'intent_routing' ? (
@@ -1056,14 +1056,21 @@ function GeneralMemorySettings({ values, setValues }: { values: GeneralSettings;
 
 function GeneralWebSearchSettings({
   values,
+  llmProfiles,
   setValues,
   setNumber,
 }: {
   values: GeneralSettings;
+  llmProfiles: LlmProfile[];
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
 }) {
   const { t } = useTranslation(['settings', 'common', 'status']);
+  const selectedGateProfile = values.web_context_page_excerpt_gate_model_profile_id
+    ? llmProfiles.find((profile) => profile.id === values.web_context_page_excerpt_gate_model_profile_id)
+    : null;
+  const gateProfileMissing = Boolean(values.web_context_page_excerpt_gate_model_profile_id && !selectedGateProfile);
+  const gateProfileDisabled = Boolean(selectedGateProfile && !selectedGateProfile.enabled);
   const capabilityConfigs = useWorkbenchStore((state) => state.capabilityConfigs);
   const config = capabilityConfigs.find((item) => item.capability_id === 'web_search');
   const resolved = config?.resolved_config || {};
@@ -1128,13 +1135,77 @@ function GeneralWebSearchSettings({
           <small>{t('settings:general.pageFetchingHelp')}</small>
         </label>
         <div className="settings-detail-grid">
-          <NumberField label={t('settings:general.maxPagesToFetch')} value={values.web_context_fetch_max_pages} min={1} max={5} onChange={(value) => setNumber('web_context_fetch_max_pages', value)} />
+          <NumberField label={t('settings:general.maxPagesToTry')} value={values.web_context_fetch_max_pages} min={1} max={5} onChange={(value) => setNumber('web_context_fetch_max_pages', value)} />
+          <NumberField label={t('settings:general.targetAcceptedPageExcerpts')} value={values.web_context_target_page_excerpts} min={1} max={5} onChange={(value) => setNumber('web_context_target_page_excerpts', value)} />
           <NumberField label={t('settings:general.fetchTimeout')} value={values.web_context_fetch_timeout_seconds} min={1} max={20} step={0.5} onChange={(value) => setNumber('web_context_fetch_timeout_seconds', value)} />
           <NumberField label={t('settings:general.maxBytesPerPage')} value={values.web_context_fetch_max_bytes} min={100000} max={5000000} step={100000} onChange={(value) => setNumber('web_context_fetch_max_bytes', value)} />
           <NumberField label={t('settings:general.excerptCharsPerPage')} value={values.web_context_page_excerpt_chars} min={500} max={8000} step={500} onChange={(value) => setNumber('web_context_page_excerpt_chars', value)} />
           <NumberField label={t('settings:general.totalPageExcerptBudget')} value={values.web_context_total_page_excerpt_chars} min={1000} max={20000} step={1000} onChange={(value) => setNumber('web_context_total_page_excerpt_chars', value)} />
         </div>
         <p className="settings-muted-text">{t('settings:general.pageFetchingSafety')}</p>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('settings:general.pageExcerptGate')}</h3>
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.enablePageExcerptGate')}</span>
+          <ToggleSwitch checked={values.web_context_page_excerpt_gate_enabled} onChange={(checked) => setValues({ ...values, web_context_page_excerpt_gate_enabled: checked })} />
+          <small>{t('settings:general.pageExcerptGateHelp')}</small>
+        </label>
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.pageExcerptGateBackend')}</span>
+          <select
+            value={values.web_context_page_excerpt_gate_backend}
+            onChange={(event) =>
+              setValues({
+                ...values,
+                web_context_page_excerpt_gate_backend: event.currentTarget.value as GeneralSettings['web_context_page_excerpt_gate_backend'],
+              })
+            }
+          >
+            <option value="follow_agent_model_profile">{t('settings:general.pageExcerptGateBackendFollowAgent')}</option>
+            <option value="specific_model_profile">{t('settings:general.pageExcerptGateBackendSpecificProfile')}</option>
+            <option value="utility_llm">{t('settings:general.pageExcerptGateBackendUtilityLlm')}</option>
+          </select>
+          <small>
+            {values.web_context_page_excerpt_gate_backend === 'utility_llm'
+              ? t('settings:general.pageExcerptGateBackendUtilityHelp')
+              : values.web_context_page_excerpt_gate_backend === 'specific_model_profile'
+                ? t('settings:general.pageExcerptGateBackendSpecificHelp')
+                : t('settings:general.pageExcerptGateBackendFollowAgentHelp')}
+          </small>
+        </label>
+        {values.web_context_page_excerpt_gate_backend === 'specific_model_profile' ? (
+          <label className="config-field settings-config-field">
+            <span>{t('settings:general.pageExcerptGateModelProfile')}</span>
+            <select
+              value={values.web_context_page_excerpt_gate_model_profile_id || ''}
+              onChange={(event) => setValues({ ...values, web_context_page_excerpt_gate_model_profile_id: event.currentTarget.value || null })}
+            >
+              <option value="">{t('settings:general.noModelProfileSelected')}</option>
+              {llmProfiles
+                .filter((profile) => profile.enabled || profile.id === values.web_context_page_excerpt_gate_model_profile_id)
+                .map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {titleModelProfileOptionLabel(profile)}
+                  </option>
+                ))}
+            </select>
+            <small>{t('settings:general.pageExcerptGateModelProfileHelp')}</small>
+          </label>
+        ) : null}
+        {gateProfileMissing ? <p className="settings-warning-text">{t('settings:general.selectedModelProfileUnavailable')}</p> : null}
+        {gateProfileDisabled ? <p className="settings-warning-text">{t('settings:general.selectedModelProfileDisabled')}</p> : null}
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.minimumExcerptQuality')}</span>
+          <select value={values.web_context_page_excerpt_gate_min_quality} onChange={(event) => setValues({ ...values, web_context_page_excerpt_gate_min_quality: event.currentTarget.value as GeneralSettings['web_context_page_excerpt_gate_min_quality'] })}>
+            <option value="medium">{t('settings:general.relevanceMedium')}</option>
+            <option value="high">{t('settings:general.relevanceHigh')}</option>
+            <option value="low">{t('settings:general.relevanceLow')}</option>
+          </select>
+          <small>{t('settings:general.minimumExcerptQualityHelp')}</small>
+        </label>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -1740,6 +1811,11 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     web_context_fetch_max_bytes: values.web_context_fetch_max_bytes,
     web_context_page_excerpt_chars: values.web_context_page_excerpt_chars,
     web_context_total_page_excerpt_chars: values.web_context_total_page_excerpt_chars,
+    web_context_target_page_excerpts: values.web_context_target_page_excerpts,
+    web_context_page_excerpt_gate_enabled: values.web_context_page_excerpt_gate_enabled,
+    web_context_page_excerpt_gate_backend: values.web_context_page_excerpt_gate_backend,
+    web_context_page_excerpt_gate_model_profile_id: values.web_context_page_excerpt_gate_model_profile_id,
+    web_context_page_excerpt_gate_min_quality: values.web_context_page_excerpt_gate_min_quality,
     web_context_candidate_judge_enabled: values.web_context_candidate_judge_enabled,
     web_context_candidate_judge_max_candidates: values.web_context_candidate_judge_max_candidates,
     web_context_candidate_judge_min_relevance: values.web_context_candidate_judge_min_relevance,

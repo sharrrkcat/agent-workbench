@@ -485,6 +485,9 @@ class UtilityLLMService:
 
     async def _generate_model_profile(self, prompt: str, settings: Any, *, max_new_tokens: int) -> UtilityGeneration:
         profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
+        return await self.generate_with_model_profile(prompt, profile_id=profile_id, max_new_tokens=max_new_tokens)
+
+    async def generate_with_model_profile(self, prompt: str, *, profile_id: str, max_new_tokens: int = 256) -> UtilityGeneration:
         profile, provider, reason = self._lookup_model_profile(profile_id)
         if reason:
             raise UtilityLLMError(reason, f"Utility LLM Model Profile is unavailable: {reason}")

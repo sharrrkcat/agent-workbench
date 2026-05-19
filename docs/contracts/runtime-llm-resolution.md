@@ -97,6 +97,22 @@ General settings and may use `transformers`, `llama_cpp`, or a direct
 `model_profile` backend. It does not change the user's selected main model.
 Full behavior: [utility-llm.md](utility-llm.md).
 
+Page Excerpt Gate has two internal Model Profile resolution modes outside the
+visible Prompt Agent flow:
+
+- `follow_agent_model_profile` reuses the already resolved current Prompt Agent
+  response model config for a deterministic non-streaming JSON judgment.
+- `specific_model_profile` resolves only the General setting
+  `web_context_page_excerpt_gate_model_profile_id`; missing, disabled, invalid,
+  or provider-unavailable profiles fail that gate attempt without failing the
+  main Prompt Agent run.
+
+These internal gate calls do not change the session selected Model Profile, do
+not create assistant messages, do not create Agent or command runs, do not enter
+Prompt Agent context building, and do not trigger title generation, Intent
+Routing, Knowledge, Core Memory, Worldbook, attachments, history, or Web Context
+recursively.
+
 Session title generation has its own resolver:
 
 - `utility_llm` tries Utility LLM first, then falls back to the title

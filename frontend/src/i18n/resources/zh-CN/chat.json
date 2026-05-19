@@ -187,6 +187,8 @@
     "relevance": "相关性",
     "role": "角色",
     "confidence": "置信度",
+    "quality": "质量",
+    "coverage": "覆盖",
     "candidateJudgeState": {
       "retained": "已保留",
       "unjudged": "未判断"
@@ -218,6 +220,13 @@
       "unsupported": "不支持",
       "timeout": "已超时",
       "blocked": "已阻止"
+    },
+    "pageExcerptGateStatus": {
+      "accepted": "摘录已接受",
+      "rejected": "摘录已拒绝",
+      "failed": "门控失败",
+      "skipped": "门控已跳过",
+      "disabled": "门控关闭"
     },
     "pageFetchWarnings": {
       "page_fetch_blocked_scheme": "已阻止：只支持 HTTP 和 HTTPS。",

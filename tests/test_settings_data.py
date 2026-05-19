@@ -68,6 +68,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["web_context_fetch_max_bytes"] == 1048576
     assert response.json()["web_context_page_excerpt_chars"] == 2000
     assert response.json()["web_context_total_page_excerpt_chars"] == 6000
+    assert response.json()["web_context_target_page_excerpts"] == 2
+    assert response.json()["web_context_page_excerpt_gate_enabled"] is False
+    assert response.json()["web_context_page_excerpt_gate_backend"] == "follow_agent_model_profile"
+    assert response.json()["web_context_page_excerpt_gate_model_profile_id"] is None
+    assert response.json()["web_context_page_excerpt_gate_min_quality"] == "medium"
     assert response.json()["web_context_candidate_judge_enabled"] is False
     assert response.json()["web_context_candidate_judge_max_candidates"] == 8
     assert response.json()["web_context_candidate_judge_min_relevance"] == "medium"
@@ -148,6 +153,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "web_context_fetch_max_bytes": 2000000,
             "web_context_page_excerpt_chars": 3000,
             "web_context_total_page_excerpt_chars": 9000,
+            "web_context_target_page_excerpts": 3,
+            "web_context_page_excerpt_gate_enabled": True,
+            "web_context_page_excerpt_gate_backend": "specific_model_profile",
+            "web_context_page_excerpt_gate_model_profile_id": "profile-a",
+            "web_context_page_excerpt_gate_min_quality": "high",
             "web_context_candidate_judge_enabled": True,
             "web_context_candidate_judge_max_candidates": 10,
             "web_context_candidate_judge_min_relevance": "high",
@@ -223,6 +233,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert "web_context_candidate_judge_max_selected" not in patched.json()
     assert patched.json()["web_context_page_excerpt_chars"] == 3000
     assert patched.json()["web_context_total_page_excerpt_chars"] == 9000
+    assert patched.json()["web_context_target_page_excerpts"] == 3
+    assert patched.json()["web_context_page_excerpt_gate_enabled"] is True
+    assert patched.json()["web_context_page_excerpt_gate_backend"] == "specific_model_profile"
+    assert patched.json()["web_context_page_excerpt_gate_model_profile_id"] == "profile-a"
+    assert patched.json()["web_context_page_excerpt_gate_min_quality"] == "high"
     assert patched.json()["intent_routing_enabled"] is True
     assert patched.json()["intent_routing_default_for_prompt_agents"] is True
     assert patched.json()["intent_routing_mode"] == "auto"
@@ -321,6 +336,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"web_context_page_excerpt_chars": 8001}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_total_page_excerpt_chars": 999}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_total_page_excerpt_chars": 20001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_target_page_excerpts": 0}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_target_page_excerpts": 6}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_gate_enabled": "yes"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_gate_backend": "bad"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_gate_min_quality": "extreme"}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_candidate_judge_enabled": "yes"}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_candidate_judge_max_candidates": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_candidate_judge_max_candidates": 13}).status_code == 422
@@ -356,6 +376,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["web_context_fetch_max_bytes"] == 2000000
     assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_chars"] == 3000
     assert restarted.get("/api/settings/general").json()["web_context_total_page_excerpt_chars"] == 9000
+    assert restarted.get("/api/settings/general").json()["web_context_target_page_excerpts"] == 3
+    assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_gate_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_gate_backend"] == "specific_model_profile"
+    assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_gate_model_profile_id"] == "profile-a"
+    assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_gate_min_quality"] == "high"
     assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_enabled"] is True
     assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_max_candidates"] == 10
     assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_min_relevance"] == "high"
