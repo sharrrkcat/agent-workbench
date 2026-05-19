@@ -2,7 +2,8 @@
 
 Utility LLM is a core internal service for short deterministic tasks. Current
 uses are automatic session title generation, Intent Routing strict JSON slot
-extraction, and Web Context Plan Resolver strict JSON planning.
+extraction, Web Context Plan Resolver strict JSON planning, and optional Web
+Candidate Relevance Judge strict JSON selection.
 
 ## Identity
 
@@ -219,6 +220,33 @@ not change main model resolution. It must receive only the current user text,
 compact task rules, a strict schema, and small examples. Runtime metadata may
 store only validated compact slots and warnings, never raw Utility output or the
 prompt.
+
+## Web Candidate Relevance Judge Interaction
+
+When General Web Search Candidate Judge is enabled, Prompt Agent Web Context may
+use one short Utility LLM call to judge filtered/de-duplicated search candidates
+before page fetching. The call returns strict JSON with an `items` array. Each
+item may include `candidate_id`, `use_source`, `relevance`, `source_role`, and a
+short `reason`.
+
+The judge input is limited to:
+
+- current user text, truncated for the judge.
+- Web Context query and query source.
+- compact candidate fields: candidate id, rank, title, domain, short URL path,
+  snippet preview, and source label.
+- task rules and strict schema.
+
+It must not receive Agent prompts, full chat history, assistant output,
+Knowledge snippets, Core Memory, Worldbook entries, attachments, raw SearXNG
+payloads, page bodies, page excerpts, raw HTML, Web Context prompt text, or
+secrets. It must not create messages or runs, execute commands/Agents/actions,
+modify session state, mutate Context Sources, change Agent selection, or affect
+main model resolution. Invalid JSON, unavailable Utility LLM, or schema failure
+falls back to the pre-judge search results with compact warning codes and must
+not fail the main Prompt Agent run. Runtime metadata may store only compact
+counts, warning codes, aggregate rejected reason counts, and compact per-final
+source relevance/role/reason fields.
 
 ## Metadata And Raw Output
 

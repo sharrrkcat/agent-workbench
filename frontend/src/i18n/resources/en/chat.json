@@ -192,6 +192,8 @@
     "sourceUrl": "Source URL",
     "published": "Published",
     "domain": "Domain",
+    "relevance": "relevance",
+    "role": "role",
     "snippet": "Snippet",
     "pageTitle": "Page title",
     "pageExcerptChars": "{{count}} page excerpt chars",

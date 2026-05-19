@@ -655,6 +655,49 @@ class UtilityLLMService:
         except Exception as exc:
             raise UtilityLLMError(UTILITY_INVALID_JSON, "Utility LLM returned invalid JSON.") from exc
 
+    async def extract_web_candidate_judgements_json(
+        self,
+        *,
+        user_text: str,
+        query: str,
+        query_source: str,
+        candidates: list[dict[str, Any]],
+        settings: Any,
+    ) -> dict[str, Any]:
+        schema = {
+            "items": [
+                {
+                    "candidate_id": "C1",
+                    "use_source": True,
+                    "relevance": "high",
+                    "source_role": "reference",
+                    "reason": "short reason under 160 chars",
+                }
+            ]
+        }
+        prompt = (
+            "Judge whether each web search candidate can help answer the current user question as evidence.\n"
+            "Return strict JSON only with one key: items. Do not explain outside JSON.\n"
+            f"Schema example: {json.dumps(schema, ensure_ascii=False)}\n"
+            "Allowed relevance values: low, medium, high.\n"
+            "Allowed source_role values: reference, official, news, documentation, background, primary_source, noise, off_topic, weak_match.\n"
+            "Use only the current question, Web Context query, query source, and compact candidate fields.\n"
+            "Do not require exact keyword overlap. Decide semantic usefulness for answering this question.\n"
+            "Useful candidates directly provide the requested object, event, price, version, news, official information, documentation, primary source, or background.\n"
+            "Weak candidates are only broadly related, navigation/search/author pages, generic recommendations, promotional short-form items, image collections, unrelated product/generator pages, or otherwise poor evidence.\n"
+            "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
+            "Do not apply fixed site or path preferences. Judge only this question and candidate semantics.\n\n"
+            f"User question:\n{user_text}\n\n"
+            f"Web Context query: {query}\n"
+            f"Query source: {query_source}\n\n"
+            f"Candidates:\n{json.dumps(candidates, ensure_ascii=False)}"
+        )
+        raw = await self.generate(prompt, settings, max_new_tokens=768)
+        try:
+            return extract_json_object(raw.text)
+        except Exception as exc:
+            raise UtilityLLMError(UTILITY_INVALID_JSON, "Utility LLM returned invalid JSON.") from exc
+
     def unload(self, settings: Any | None = None) -> dict[str, Any]:
         if settings is not None:
             try:

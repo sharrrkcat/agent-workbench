@@ -68,6 +68,10 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["web_context_fetch_max_bytes"] == 1048576
     assert response.json()["web_context_page_excerpt_chars"] == 2000
     assert response.json()["web_context_total_page_excerpt_chars"] == 6000
+    assert response.json()["web_context_candidate_judge_enabled"] is False
+    assert response.json()["web_context_candidate_judge_max_candidates"] == 8
+    assert response.json()["web_context_candidate_judge_min_relevance"] == "medium"
+    assert response.json()["web_context_candidate_judge_max_selected"] == 5
     assert response.json()["intent_routing_enabled"] is False
     assert response.json()["intent_routing_default_for_prompt_agents"] is False
     assert response.json()["intent_routing_mode"] == "shadow"
@@ -144,6 +148,10 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "web_context_fetch_max_bytes": 2000000,
             "web_context_page_excerpt_chars": 3000,
             "web_context_total_page_excerpt_chars": 9000,
+            "web_context_candidate_judge_enabled": True,
+            "web_context_candidate_judge_max_candidates": 10,
+            "web_context_candidate_judge_min_relevance": "high",
+            "web_context_candidate_judge_max_selected": 4,
             "intent_routing_enabled": True,
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
@@ -210,6 +218,10 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["web_context_fetch_max_pages"] == 4
     assert patched.json()["web_context_fetch_timeout_seconds"] == 8
     assert patched.json()["web_context_fetch_max_bytes"] == 2000000
+    assert patched.json()["web_context_candidate_judge_enabled"] is True
+    assert patched.json()["web_context_candidate_judge_max_candidates"] == 10
+    assert patched.json()["web_context_candidate_judge_min_relevance"] == "high"
+    assert patched.json()["web_context_candidate_judge_max_selected"] == 4
     assert patched.json()["web_context_page_excerpt_chars"] == 3000
     assert patched.json()["web_context_total_page_excerpt_chars"] == 9000
     assert patched.json()["intent_routing_enabled"] is True
@@ -310,6 +322,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"web_context_page_excerpt_chars": 8001}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_total_page_excerpt_chars": 999}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_total_page_excerpt_chars": 20001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_enabled": "yes"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_max_candidates": 0}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_max_candidates": 13}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_min_relevance": "extreme"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_max_selected": 0}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_max_selected": 11}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 499}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 20001}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_prompt": "   "}).status_code == 422
@@ -340,6 +358,10 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["web_context_fetch_max_bytes"] == 2000000
     assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_chars"] == 3000
     assert restarted.get("/api/settings/general").json()["web_context_total_page_excerpt_chars"] == 9000
+    assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_max_candidates"] == 10
+    assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_min_relevance"] == "high"
+    assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_max_selected"] == 4
     assert restarted.get("/api/settings/general").json()["intent_routing_enabled"] is True
     assert restarted.get("/api/settings/general").json()["intent_routing_embedding_model_profile_id"] == "embedding-profile-1"
     assert restarted.get("/api/settings/general").json()["intent_routing_semantic_intent_min_score"] == 0.6

@@ -122,12 +122,16 @@ metadata stores refs/counts/warnings, not snapshots of full user-owned content.
 fields include enablement, attempted/injected booleans, truncated query,
 `query_source`, provider, result count, compact source refs, `skipped_reason`,
 warnings, compact search filtering diagnostics, compact page fetch diagnostics,
-and a compact resolver object with `used`, `reason`, and `confidence`.
+compact Web Candidate Relevance Judge diagnostics, and a compact resolver object
+with `used`, `reason`, and `confidence`.
 Each `source_refs` item may include only compact citation UI fields:
 `ref_id` such as `W1`, `rank`, `title`, validated HTTP/HTTPS `url`, `domain`,
 `published_at`, `source`, a capped `snippet_preview` or short `snippet`, and
 compact page fetch fields such as `page_fetch_status`, `page_title`,
 `page_excerpt_preview`, `page_excerpt_chars`, and `page_fetch_warning`.
+When the Candidate Judge selects a final source, the source ref may also include
+compact `candidate_judge_relevance`, `candidate_judge_role`, and a short
+`candidate_judge_reason`.
 `page_excerpt_preview` must be capped for UI inspection and must not contain the
 full fetched page excerpt.
 `search_diagnostics` may include only compact filtering facts such as
@@ -136,6 +140,11 @@ not include raw provider payloads, full filtered result lists, or fetched page
 bodies.
 Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
 `pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
+Candidate Judge summary fields may include `candidate_judge.enabled`,
+`candidate_judge.used`, candidate/selected/rejected counts, `fallback_used`,
+compact warning codes, and aggregate rejected reason counts. It must not include
+the raw Utility prompt, raw Utility output, raw SearXNG payload, page bodies,
+rendered Web context, or a full rejected source list.
 The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web
@@ -150,7 +159,8 @@ Known Web Context skip reasons include `knowledge_query_selected`,
 `knowledge_query_candidate_blocked`, `pet_command_selected`, resolver reasons
 such as `time_sensitive_fact_question` or `incidental_mentions_only`, and
 provider/runtime reasons such as `search_failed`, `no_results`, or
-`web_results_filtered_empty`.
+`web_results_filtered_empty`, and judge reasons such as
+`web_candidate_judge_rejected_all`.
 
 ## Failure And Cancellation
 

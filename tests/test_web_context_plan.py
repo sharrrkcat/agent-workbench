@@ -9,11 +9,14 @@ from ai_workbench.core.web_context import PageFetchResult, build_web_context, fe
 
 
 class FakeWebPlanUtility:
-    def __init__(self, payload=None, *, error: Exception | None = None, available: bool = True) -> None:
+    def __init__(self, payload=None, *, error: Exception | None = None, available: bool = True, judge_payload=None, judge_error: Exception | None = None) -> None:
         self.payload = payload or {}
         self.error = error
         self.available = available
         self.calls: list[str] = []
+        self.judge_payload = judge_payload
+        self.judge_error = judge_error
+        self.judge_calls: list[dict] = []
 
     def status(self, settings):
         return {"available": self.available}
@@ -23,6 +26,12 @@ class FakeWebPlanUtility:
         if self.error:
             raise self.error
         return self.payload
+
+    async def extract_web_candidate_judgements_json(self, **kwargs):
+        self.judge_calls.append(kwargs)
+        if self.judge_error:
+            raise self.judge_error
+        return self.judge_payload or {"items": []}
 
 
 @pytest.mark.parametrize(
@@ -285,6 +294,255 @@ def test_web_context_page_fetching_fetches_top_final_results_only() -> None:
     assert refs[2]["page_fetch_status"] == "skipped"
     assert result.metadata["pages_attempted"] == 2
     assert result.metadata["pages_fetched"] == 2
+
+
+def test_web_context_candidate_judge_disabled_keeps_round8_behavior() -> None:
+    utility = FakeWebPlanUtility(judge_payload={"items": []})
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://example.com/a"), web_result("https://example.com/b")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=False),
+            query="latest alpha",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert [ref["ref_id"] for ref in result.metadata["source_refs"]] == ["W1", "W2"]
+    assert utility.judge_calls == []
+    assert result.metadata["candidate_judge"]["enabled"] is False
+
+
+def test_web_context_candidate_judge_receives_compact_candidates_and_selects_ordered_sources() -> None:
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "items": [
+                {"candidate_id": "C3", "use_source": True, "relevance": "high", "source_role": "news", "reason": "direct news"},
+                {"candidate_id": "C1", "use_source": True, "relevance": "medium", "source_role": "reference", "reason": "direct reference"},
+                {"candidate_id": "C2", "use_source": False, "relevance": "low", "source_role": "weak_match", "reason": "generic"},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        return {
+            "provider": "searxng",
+            "results": [
+                web_result("https://ref.test/wiki", title="Reference result", snippet="Explains the character background."),
+                web_result("https://weak.test/list", title="Generic list", snippet="Broadly related links."),
+                web_result("https://news.test/story", title="News result", snippet="Reports the latest collaboration."),
+            ],
+        }
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="latest collaboration news",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    call = utility.judge_calls[0]
+    assert "latest collaboration news" in call["user_text"]
+    assert [item["candidate_id"] for item in call["candidates"]] == ["C1", "C2", "C3"]
+    assert "page_excerpt" not in str(call["candidates"])
+    assert "Agent prompt" not in str(call["candidates"])
+    assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["ref.test", "news.test"]
+    assert result.metadata["source_refs"][0]["candidate_judge_relevance"] == "medium"
+    assert result.metadata["source_refs"][1]["candidate_judge_role"] == "news"
+    assert result.metadata["candidate_judge"]["selected_count"] == 2
+    assert result.metadata["candidate_judge"]["rejected_count"] == 1
+
+
+def test_web_context_candidate_judge_threshold_and_max_selected() -> None:
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "items": [
+                {"candidate_id": "C1", "use_source": True, "relevance": "medium", "source_role": "reference", "reason": "ok"},
+                {"candidate_id": "C2", "use_source": True, "relevance": "high", "source_role": "official", "reason": "best"},
+                {"candidate_id": "C3", "use_source": True, "relevance": "high", "source_role": "news", "reason": "also"},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://a.test"), web_result("https://b.test"), web_result("https://c.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(
+                web_context_enabled=True,
+                web_context_candidate_judge_enabled=True,
+                web_context_candidate_judge_min_relevance="high",
+                web_context_candidate_judge_max_selected=1,
+            ),
+            query="buy product info",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["b.test"]
+    assert result.metadata["candidate_judge"]["selected_count"] == 1
+
+
+def test_web_context_max_results_caps_final_judge_selected_sources() -> None:
+    seen_config: dict = {}
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "items": [
+                {"candidate_id": "C1", "use_source": True, "relevance": "high", "source_role": "reference", "reason": "one"},
+                {"candidate_id": "C2", "use_source": True, "relevance": "high", "source_role": "reference", "reason": "two"},
+                {"candidate_id": "C3", "use_source": True, "relevance": "high", "source_role": "reference", "reason": "three"},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        seen_config.update((context or {}).get("capability_config") or {})
+        return {"provider": "searxng", "results": [web_result("https://one.test"), web_result("https://two.test"), web_result("https://three.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_max_results=2, web_context_candidate_judge_enabled=True, web_context_candidate_judge_max_candidates=3, web_context_candidate_judge_max_selected=3),
+            query="latest news",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert seen_config["max_results"] == 3
+    assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["one.test", "two.test"]
+    assert result.metadata["candidate_judge"]["selected_count"] == 2
+
+
+def test_web_context_candidate_judge_all_rejected_skips_web_injection() -> None:
+    utility = FakeWebPlanUtility(
+        judge_payload={"items": [{"candidate_id": "C1", "use_source": False, "relevance": "low", "source_role": "off_topic", "reason": "not evidence"}]}
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://noise.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="fictional character background",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert result.rendered_text == ""
+    assert result.metadata["injected"] is False
+    assert result.metadata["skipped_reason"] == "web_candidate_judge_rejected_all"
+    assert result.metadata["source_refs"] == []
+
+
+@pytest.mark.parametrize("error,warning", [(UtilityLLMError("utility_llm_invalid_json", "bad"), "web_candidate_judge_invalid_json"), (RuntimeError("offline"), "web_candidate_judge_unavailable")])
+def test_web_context_candidate_judge_failure_falls_back(error, warning) -> None:
+    utility = FakeWebPlanUtility(judge_error=error)
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://fallback.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="latest news",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert result.metadata["injected"] is True
+    assert result.metadata["source_refs"][0]["domain"] == "fallback.test"
+    assert result.metadata["candidate_judge"]["fallback_used"] is True
+    assert warning in result.metadata["candidate_judge"]["warnings"]
+
+
+def test_web_context_candidate_judge_unavailable_falls_back() -> None:
+    utility = FakeWebPlanUtility(available=False)
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://fallback.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="latest news",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert utility.judge_calls == []
+    assert result.metadata["source_refs"][0]["domain"] == "fallback.test"
+    assert "web_candidate_judge_unavailable" in result.metadata["candidate_judge"]["warnings"]
+
+
+def test_web_context_candidate_judge_unknown_and_missing_candidates_are_compact_warnings() -> None:
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "items": [
+                {"candidate_id": "C99", "use_source": True, "relevance": "high", "source_role": "reference", "reason": "unknown"},
+                {"candidate_id": "C1", "use_source": True, "relevance": "high", "source_role": "reference", "reason": "kept"},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://kept.test"), web_result("https://missing.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True),
+            query="who is Mark Grayson",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert [ref["domain"] for ref in result.metadata["source_refs"]] == ["kept.test"]
+    assert "web_candidate_judge_unknown_candidate_id" in result.metadata["candidate_judge"]["warnings"]
+    assert "web_candidate_judge_missing_candidate" in result.metadata["candidate_judge"]["warnings"]
+    assert "missing.test" not in str(result.metadata["candidate_judge"])
+
+
+def test_web_context_page_fetching_fetches_only_judge_selected_candidates() -> None:
+    calls: list[str] = []
+    utility = FakeWebPlanUtility(
+        judge_payload={
+            "items": [
+                {"candidate_id": "C1", "use_source": False, "relevance": "low", "source_role": "weak_match", "reason": "weak"},
+                {"candidate_id": "C2", "use_source": True, "relevance": "high", "source_role": "official", "reason": "direct"},
+            ]
+        }
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://skip.test"), web_result("https://fetch.test")]}
+
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return PageFetchResult(status="fetched", excerpt="Selected page text.")
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True, web_context_fetch_pages_enabled=True, web_context_fetch_max_pages=2),
+            query="latest official info",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+
+    assert calls == ["https://fetch.test"]
+    assert result.metadata["source_refs"][0]["domain"] == "fetch.test"
 
 
 def test_web_context_page_fetch_non_html_falls_back_to_snippet() -> None:

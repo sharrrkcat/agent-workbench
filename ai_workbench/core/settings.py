@@ -68,6 +68,7 @@ LEGACY_IGNORED_APP_SETTINGS_KEYS = {
     "intent_routing_low_confidence_threshold",
 }
 SESSION_TITLE_BACKENDS = {"utility_llm", "follow_agent_model_profile", "specified_model_profile"}
+WEB_CONTEXT_CANDIDATE_JUDGE_RELEVANCE = {"low", "medium", "high"}
 
 
 def sanitize_app_settings_payload(values: dict[str, Any]) -> dict[str, Any]:
@@ -128,6 +129,10 @@ class AppSettings(BaseModel):
     web_context_fetch_max_bytes: int = Field(default=1048576, ge=100000, le=5000000)
     web_context_page_excerpt_chars: int = Field(default=2000, ge=500, le=8000)
     web_context_total_page_excerpt_chars: int = Field(default=6000, ge=1000, le=20000)
+    web_context_candidate_judge_enabled: StrictBool = False
+    web_context_candidate_judge_max_candidates: int = Field(default=8, ge=1, le=12)
+    web_context_candidate_judge_min_relevance: str = "medium"
+    web_context_candidate_judge_max_selected: int = Field(default=5, ge=1, le=10)
     intent_routing_enabled: StrictBool = False
     intent_routing_default_for_prompt_agents: StrictBool = False
     intent_routing_mode: str = "shadow"
@@ -210,6 +215,14 @@ class AppSettings(BaseModel):
         if not text:
             raise ValueError("Web Context prompt must not be empty.")
         return text
+
+    @field_validator("web_context_candidate_judge_min_relevance")
+    @classmethod
+    def _validate_web_context_candidate_judge_min_relevance(cls, value: str) -> str:
+        relevance = str(value or "medium").strip().lower() or "medium"
+        if relevance not in WEB_CONTEXT_CANDIDATE_JUDGE_RELEVANCE:
+            raise ValueError("Web Context candidate judge minimum relevance must be low, medium, or high.")
+        return relevance
 
     @field_validator("resource_status_ram_display_mode", "resource_status_vram_display_mode")
     @classmethod
@@ -389,6 +402,10 @@ class AppSettingsPatch(BaseModel):
     web_context_fetch_max_bytes: int | None = Field(default=None, ge=100000, le=5000000)
     web_context_page_excerpt_chars: int | None = Field(default=None, ge=500, le=8000)
     web_context_total_page_excerpt_chars: int | None = Field(default=None, ge=1000, le=20000)
+    web_context_candidate_judge_enabled: StrictBool | None = None
+    web_context_candidate_judge_max_candidates: int | None = Field(default=None, ge=1, le=12)
+    web_context_candidate_judge_min_relevance: str | None = None
+    web_context_candidate_judge_max_selected: int | None = Field(default=None, ge=1, le=10)
     intent_routing_enabled: StrictBool | None = None
     intent_routing_default_for_prompt_agents: StrictBool | None = None
     intent_routing_mode: str | None = None
@@ -455,6 +472,16 @@ class AppSettingsPatch(BaseModel):
         if not text:
             raise ValueError("Web Context prompt must not be empty.")
         return text
+
+    @field_validator("web_context_candidate_judge_min_relevance")
+    @classmethod
+    def _validate_web_context_candidate_judge_min_relevance(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        relevance = str(value or "").strip().lower()
+        if relevance not in WEB_CONTEXT_CANDIDATE_JUDGE_RELEVANCE:
+            raise ValueError("Web Context candidate judge minimum relevance must be low, medium, or high.")
+        return relevance
 
     @field_validator("resource_status_ram_display_mode", "resource_status_vram_display_mode")
     @classmethod

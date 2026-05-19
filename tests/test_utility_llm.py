@@ -400,6 +400,41 @@ def test_web_context_plan_prompt_includes_time_sensitive_and_incidental_guidance
     assert "我不是很喜欢吃西湖醋鱼" in prompt
 
 
+def test_web_candidate_judge_prompt_uses_compact_candidates_only() -> None:
+    captured = {}
+    service = UtilityLLMService()
+
+    async def generate(prompt, settings, max_new_tokens=128):
+        captured["prompt"] = prompt
+        captured["max_new_tokens"] = max_new_tokens
+        return UtilityGeneration(
+            text='{"items":[{"candidate_id":"C1","use_source":true,"relevance":"high","source_role":"reference","reason":"direct evidence"}]}',
+            model_path="utility_llms/test",
+            device="cpu",
+            backend="transformers",
+        )
+
+    service.generate = generate
+
+    result = run(
+        service.extract_web_candidate_judgements_json(
+            user_text="Who is Mark Grayson?",
+            query="Mark Grayson Invincible",
+            query_source="raw_user_text_forced",
+            candidates=[{"candidate_id": "C1", "rank": 1, "title": "Mark Grayson", "domain": "example.test", "path": "/wiki", "snippet_preview": "Character background.", "source": "mock"}],
+            settings=AppSettings(intent_routing_utility_llm_model_path="utility_llms/test"),
+        )
+    )
+
+    prompt = captured["prompt"]
+    assert result["items"][0]["candidate_id"] == "C1"
+    assert "Who is Mark Grayson?" in prompt
+    assert "Character background." in prompt
+    assert "page body" not in prompt.lower()
+    assert "chat history" not in prompt.lower()
+    assert captured["max_new_tokens"] == 768
+
+
 def test_json_extractor_accepts_fenced_and_balanced_json_with_extra_fields() -> None:
     fenced = extract_json_object('Here:\n```json\n{"intent":"pet_command","domain":"workbench_pet","action":"wake","extra":{"nested":true}}\n```\nDone')
     prefixed = extract_json_object('Utility says {"intent":"pet_command","domain":"workbench_pet","action":"wake"} trailing {ignored}')

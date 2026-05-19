@@ -184,6 +184,8 @@
     "sourceUrl": "来源 URL",
     "published": "发布时间",
     "domain": "域名",
+    "relevance": "相关性",
+    "role": "角色",
     "snippet": "摘要",
     "pageTitle": "网页标题",
     "pageExcerptChars": "{{count}} 个网页摘录字符",

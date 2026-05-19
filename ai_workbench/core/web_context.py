@@ -19,6 +19,8 @@ MAX_METADATA_QUERY_CHARS = 240
 MAX_PLAN_QUERY_CHARS = 160
 MAX_SOURCE_SNIPPET_PREVIEW_CHARS = 700
 MAX_PAGE_EXCERPT_PREVIEW_CHARS = 700
+MAX_JUDGE_USER_TEXT_CHARS = 1200
+MAX_JUDGE_REASON_CHARS = 160
 MIN_USEFUL_PAGE_TEXT_CHARS = 80
 WEB_SEARCH_CAPABILITY_ID = "web_search"
 HTML_MIME_TYPES = {"text/html", "application/xhtml+xml"}
@@ -32,6 +34,18 @@ PLAN_REASONS = {
     "insufficient_external_fact_request",
 }
 PLAN_CONFIDENCES = {"low", "medium", "high"}
+JUDGE_RELEVANCE_ORDER = {"low": 1, "medium": 2, "high": 3}
+JUDGE_SOURCE_ROLES = {
+    "reference",
+    "official",
+    "news",
+    "documentation",
+    "background",
+    "primary_source",
+    "noise",
+    "off_topic",
+    "weak_match",
+}
 KNOWLEDGE_QUERY_BLOCKED_REASONS = {
     "semantic_confidence_too_low",
     "semantic_margin_too_low",
@@ -332,8 +346,12 @@ async def build_web_context(
             capability_registry=capability_registry,
             capability_config_store=capability_config_store,
         )
-        max_results = max(1, min(int(getattr(resolved_settings, "web_context_max_results", 5) or 5), int(config.get("max_results", 8) or 8)))
-        config["max_results"] = max_results
+        web_max_results = max(1, min(int(getattr(resolved_settings, "web_context_max_results", 5) or 5), 10))
+        capability_max_results = max(1, int(config.get("max_results", 8) or 8))
+        judge_candidate_limit = max(1, min(int(getattr(resolved_settings, "web_context_candidate_judge_max_candidates", 8) or 8), 12))
+        requested_results = max(web_max_results, judge_candidate_limit) if bool(getattr(resolved_settings, "web_context_candidate_judge_enabled", False)) else web_max_results
+        final_max_results = min(web_max_results, capability_max_results)
+        config["max_results"] = min(requested_results, capability_max_results)
         search = search_fn or _search_from_runtime(runtime_registry)
         response = search(query_text, context={"capability_config": config})
     except Exception as exc:
@@ -347,7 +365,6 @@ async def build_web_context(
     provider = str(response.get("provider") or "searxng") if isinstance(response, dict) else "searxng"
     warnings = [str(item) for item in response.get("warnings", [])] if isinstance(response, dict) and isinstance(response.get("warnings"), list) else []
     search_diagnostics = _compact_search_diagnostics(response.get("diagnostics") if isinstance(response, dict) else None)
-    source_refs = [_source_ref(item, index) for index, item in enumerate(results, start=1)]
     if not results:
         no_results_warning = "web_results_filtered_empty" if _diagnostics_filtered_any(search_diagnostics) else "No web results."
         skipped_reason = "web_results_filtered_empty" if no_results_warning == "web_results_filtered_empty" else "no_results"
@@ -355,6 +372,37 @@ async def build_web_context(
             metadata={**metadata_base, "provider": provider, "result_count": 0, "source_refs": [], "warnings": [*warnings, no_results_warning], "skipped_reason": skipped_reason, "search_diagnostics": search_diagnostics},
             warnings=[*warnings, no_results_warning],
         )
+
+    judge_summary: dict[str, Any] = _candidate_judge_disabled_summary(results)
+    if bool(getattr(resolved_settings, "web_context_candidate_judge_enabled", False)):
+        results, judge_summary = await _judge_web_candidates(
+            results=results,
+            settings=resolved_settings,
+            original_user_text=query,
+            plan=plan,
+            utility_llm_service=utility_llm_service,
+        )
+        judge_warnings = [str(item) for item in judge_summary.get("warnings", []) if str(item)]
+        if judge_warnings:
+            warnings = [*warnings, *judge_warnings]
+        if not results:
+            return WebContextResult(
+                metadata={
+                    **metadata_base,
+                    "provider": provider,
+                    "result_count": 0,
+                    "source_refs": [],
+                    "warnings": warnings,
+                    "skipped_reason": "web_candidate_judge_rejected_all",
+                    "search_diagnostics": search_diagnostics,
+                    "candidate_judge": judge_summary,
+                },
+                warnings=warnings,
+            )
+
+    results = results[:final_max_results]
+    judge_summary = _finalize_candidate_judge_summary(judge_summary, final_result_count=len(results))
+    source_refs = [_source_ref(item, index) for index, item in enumerate(results, start=1)]
 
     page_fetch_summary: dict[str, Any] = {}
     if bool(getattr(resolved_settings, "web_context_fetch_pages_enabled", False)):
@@ -392,6 +440,7 @@ async def build_web_context(
             "truncated": truncated,
             "warnings": warnings,
             "search_diagnostics": search_diagnostics,
+            "candidate_judge": judge_summary,
             **page_fetch_summary,
         },
         warnings=warnings,
@@ -411,7 +460,7 @@ def append_web_context_to_system(messages: list[dict[str, Any]], rendered_text: 
 
 
 def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings"}
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "candidate_judge", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
 
 
@@ -534,7 +583,248 @@ def _source_ref(result: dict[str, Any], index: int) -> dict[str, Any]:
     snippet_preview = _short_snippet(result.get("snippet"))
     if snippet_preview:
         ref["snippet_preview"] = snippet_preview
+    judge = result.get("_candidate_judge") if isinstance(result.get("_candidate_judge"), dict) else {}
+    if judge:
+        ref["candidate_judge_relevance"] = str(judge.get("relevance") or "")
+        ref["candidate_judge_role"] = str(judge.get("source_role") or "")
+        reason = str(judge.get("reason") or "").strip()
+        if reason:
+            ref["candidate_judge_reason"] = reason[:MAX_JUDGE_REASON_CHARS]
     return ref
+
+
+def _candidate_judge_disabled_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "used": False,
+        "candidate_count": len(results),
+        "selected_count": len(results),
+        "rejected_count": 0,
+        "fallback_used": False,
+        "warnings": [],
+    }
+
+
+def _finalize_candidate_judge_summary(summary: dict[str, Any], *, final_result_count: int) -> dict[str, Any]:
+    if not isinstance(summary, dict):
+        return summary
+    next_summary = dict(summary)
+    next_summary["selected_count"] = final_result_count
+    if next_summary.get("used") is True and next_summary.get("fallback_used") is not True:
+        next_summary["rejected_count"] = max(0, int(next_summary.get("candidate_count") or 0) - final_result_count)
+    return next_summary
+
+
+async def _judge_web_candidates(
+    *,
+    results: list[dict[str, Any]],
+    settings: AppSettings,
+    original_user_text: str,
+    plan: WebContextPlan,
+    utility_llm_service: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    max_candidates = max(1, min(int(getattr(settings, "web_context_candidate_judge_max_candidates", 8) or 8), 12))
+    candidate_results = results[:max_candidates]
+    base_summary = {
+        "enabled": True,
+        "used": False,
+        "candidate_count": len(candidate_results),
+        "selected_count": len(results),
+        "rejected_count": 0,
+        "fallback_used": True,
+        "warnings": [],
+    }
+    warning = _candidate_judge_unavailable_reason(utility_llm_service, settings)
+    if warning:
+        return results, {**base_summary, "warnings": [warning]}
+    candidates = [_judge_candidate_payload(item, index) for index, item in enumerate(candidate_results, start=1)]
+    try:
+        if callable(getattr(utility_llm_service, "extract_web_candidate_judgements_json", None)):
+            data = await utility_llm_service.extract_web_candidate_judgements_json(
+                user_text=_short_for_judge(original_user_text),
+                query=str(plan.query or ""),
+                query_source=str(plan.query_source or ""),
+                candidates=candidates,
+                settings=settings,
+            )
+        else:
+            raw = await utility_llm_service.generate(
+                _web_candidate_judge_prompt(
+                    user_text=_short_for_judge(original_user_text),
+                    query=str(plan.query or ""),
+                    query_source=str(plan.query_source or ""),
+                    candidates=candidates,
+                ),
+                settings,
+                max_new_tokens=768,
+            )
+            data = extract_json_object(getattr(raw, "text", raw))
+    except UtilityLLMError as exc:
+        code = "web_candidate_judge_invalid_json" if exc.code == "utility_llm_invalid_json" else "web_candidate_judge_unavailable"
+        return results, {**base_summary, "warnings": [code]}
+    except Exception:
+        return results, {**base_summary, "warnings": ["web_candidate_judge_unavailable"]}
+    selected, summary = _validate_candidate_judge_response(
+        data,
+        results=candidate_results,
+        min_relevance=str(getattr(settings, "web_context_candidate_judge_min_relevance", "medium") or "medium"),
+        max_selected=max(1, min(int(getattr(settings, "web_context_candidate_judge_max_selected", 5) or 5), 10)),
+    )
+    if summary.get("fallback_used"):
+        return results, summary
+    return selected, summary
+
+
+def _candidate_judge_unavailable_reason(utility_llm_service: Any, settings: AppSettings) -> str | None:
+    if utility_llm_service is None:
+        return "web_candidate_judge_unavailable"
+    status = getattr(utility_llm_service, "status", None)
+    if not callable(status):
+        return None
+    try:
+        if not bool(status(settings).get("available")):
+            return "web_candidate_judge_unavailable"
+    except Exception:
+        return "web_candidate_judge_unavailable"
+    return None
+
+
+def _validate_candidate_judge_response(
+    data: Any,
+    *,
+    results: list[dict[str, Any]],
+    min_relevance: str,
+    max_selected: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return results, {
+            "enabled": True,
+            "used": False,
+            "candidate_count": len(results),
+            "selected_count": len(results),
+            "rejected_count": 0,
+            "fallback_used": True,
+            "warnings": ["web_candidate_judge_slots_failed"],
+        }
+    by_id = {f"C{index}": item for index, item in enumerate(results, start=1)}
+    warnings: list[str] = []
+    valid_items: dict[str, dict[str, Any]] = {}
+    reason_counts: dict[str, int] = {}
+    for raw_item in data.get("items", []):
+        if not isinstance(raw_item, dict):
+            warnings.append("web_candidate_judge_slots_failed")
+            continue
+        candidate_id = str(raw_item.get("candidate_id") or "").strip()
+        if candidate_id not in by_id:
+            warnings.append("web_candidate_judge_unknown_candidate_id")
+            continue
+        relevance = str(raw_item.get("relevance") or "").strip().lower()
+        source_role = str(raw_item.get("source_role") or "").strip().lower()
+        if relevance not in JUDGE_RELEVANCE_ORDER or source_role not in JUDGE_SOURCE_ROLES or not isinstance(raw_item.get("use_source"), bool):
+            warnings.append("web_candidate_judge_slots_failed")
+            continue
+        reason = _short_judge_reason(raw_item.get("reason"))
+        valid_items[candidate_id] = {
+            "use_source": bool(raw_item.get("use_source")),
+            "relevance": relevance,
+            "source_role": source_role,
+            "reason": reason,
+        }
+        if not bool(raw_item.get("use_source")):
+            reason_counts[source_role] = reason_counts.get(source_role, 0) + 1
+    missing = [candidate_id for candidate_id in by_id if candidate_id not in valid_items]
+    if missing:
+        warnings.append("web_candidate_judge_missing_candidate")
+    threshold = JUDGE_RELEVANCE_ORDER.get(min_relevance, JUDGE_RELEVANCE_ORDER["medium"])
+    selected: list[dict[str, Any]] = []
+    for candidate_id, result in by_id.items():
+        judge = valid_items.get(candidate_id)
+        if not judge:
+            reason_counts["missing"] = reason_counts.get("missing", 0) + 1
+            continue
+        if judge["use_source"] and JUDGE_RELEVANCE_ORDER[judge["relevance"]] >= threshold:
+            selected.append({**result, "_candidate_judge": judge})
+        else:
+            reason_counts[judge["source_role"]] = reason_counts.get(judge["source_role"], 0) + 1
+        if len(selected) >= max_selected:
+            break
+    selected_count = len(selected)
+    rejected_count = max(0, len(results) - selected_count)
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "used": True,
+        "candidate_count": len(results),
+        "selected_count": selected_count,
+        "rejected_count": rejected_count,
+        "fallback_used": False,
+        "warnings": sorted(set(warnings)),
+    }
+    if reason_counts:
+        summary["rejected_reason_counts"] = reason_counts
+    return selected, summary
+
+
+def _judge_candidate_payload(result: dict[str, Any], index: int) -> dict[str, Any]:
+    parsed = urlparse(str(result.get("url") or ""))
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?..."
+    if len(path) > 96:
+        path = path[:93].rstrip("/") + "..."
+    return {
+        "candidate_id": f"C{index}",
+        "rank": int(result.get("rank") or index),
+        "title": _short_judge_text(result.get("title"), 180),
+        "domain": _short_judge_text(result.get("domain") or parsed.hostname or "", 120),
+        "path": path,
+        "snippet_preview": _short_judge_text(result.get("snippet"), 420),
+        "source": _short_judge_text(result.get("source"), 80),
+    }
+
+
+def _web_candidate_judge_prompt(*, user_text: str, query: str, query_source: str, candidates: list[dict[str, Any]]) -> str:
+    schema = {
+        "items": [
+            {
+                "candidate_id": "C1",
+                "use_source": True,
+                "relevance": ["low", "medium", "high"],
+                "source_role": sorted(JUDGE_SOURCE_ROLES),
+                "reason": "short reason under 160 chars",
+            }
+        ]
+    }
+    return (
+        "Judge whether each web search candidate can help answer the current user question as evidence.\n"
+        "Return strict JSON only. Do not explain outside JSON.\n"
+        f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
+        "Use the current question, search query, title, domain, short path, snippet preview, and source label only.\n"
+        "Do not require exact keyword overlap. Decide semantic usefulness for answering this question.\n"
+        "A candidate is useful when it directly provides the requested object, event, price, version, news, official information, documentation, primary source, or background needed by the user.\n"
+        "A candidate is weak when it is only broadly related, a navigation/search/author page, a generic recommendation, promotional short-form item, image collection, unrelated product/generator page, or otherwise poor evidence for this question.\n"
+        "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
+        "Do not apply fixed site or path preferences. Judge only this question and candidate semantics.\n"
+        "Use source_role noise, off_topic, or weak_match for rejected weak evidence.\n\n"
+        f"User question:\n{user_text}\n\n"
+        f"Web Context query: {query}\n"
+        f"Query source: {query_source}\n\n"
+        f"Candidates:\n{json.dumps(candidates, ensure_ascii=False)}"
+    )
+
+
+def _short_for_judge(value: Any) -> str:
+    return _short_judge_text(value, MAX_JUDGE_USER_TEXT_CHARS)
+
+
+def _short_judge_text(value: Any, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _short_judge_reason(value: Any) -> str:
+    return _short_judge_text(value, MAX_JUDGE_REASON_CHARS)
 
 
 def _fetch_pages_for_results(

@@ -210,6 +210,13 @@ General Web Search owns Prompt Agent Web Context injection settings:
   through `8000`.
 - `web_context_total_page_excerpt_chars` defaults to `6000` and accepts `1000`
   through `20000`.
+- `web_context_candidate_judge_enabled` defaults to `false`.
+- `web_context_candidate_judge_max_candidates` defaults to `8` and accepts `1`
+  through `12`.
+- `web_context_candidate_judge_min_relevance` defaults to `medium` and accepts
+  `low`, `medium`, or `high`.
+- `web_context_candidate_judge_max_selected` defaults to `5` and accepts `1`
+  through `10`.
 
 When `web_context_enabled=false`, ordinary Prompt Agent runs must not search or
 inject `# Retrieved Web`. When enabled, eligible ordinary text messages to the
@@ -230,6 +237,20 @@ or downloads, and does not save, cache, vectorize, or add pages to Knowledge.
 Fetched page content is untrusted external content and is evidence only, never a
 system instruction.
 
+When the Web Candidate Relevance Judge is enabled, Prompt Agent Web Context may
+use one strict JSON Utility LLM call after Web Search Capability filtering and
+de-duplication but before page fetching. The judge receives only the current
+user question, Web Context query/query source, and compact search candidate
+fields. It does not receive Agent prompts, chat history, KB/Core Memory/
+Worldbook content, attachments, page bodies, raw provider payloads, HTML,
+secrets, or Web Context prompt text. It selects sources that can help answer the
+current question as evidence. Invalid JSON, unavailable Utility LLM, or schema
+failure falls back to the pre-judge results with compact warnings; it must not
+fail the main Prompt Agent run. If a valid judge response rejects all
+candidates, Web Context injects nothing and the Prompt Agent run continues.
+Page fetching, when enabled, fetches only final selected candidates. The
+`web_context_max_results` setting still caps final injected sources.
+
 With Intent Routing disabled or in shadow mode, enabled Web Context keeps the
 forced search behavior for eligible ordinary Prompt Agent messages. With Intent
 Routing in auto mode, a Web Context Plan Resolver first decides the search plan:
@@ -249,7 +270,8 @@ Context search when General Web Search is enabled.
 Page fetching settings belong only to Settings -> General -> Web Search because
 they are Prompt Agent Web Context runtime policy. The `/web-search` command and
 Settings test search continue to return search results only and must not fetch
-result pages.
+result pages. Candidate Judge settings also belong only to Settings -> General
+-> Web Search and must not be added to Settings -> Capabilities -> Web Search.
 
 ## Utility LLM
 
