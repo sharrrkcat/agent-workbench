@@ -61,7 +61,7 @@
     "webResultCount": "{{count}} results · {{provider}}",
     "filteredResults": "filtered {{count}}",
     "deduplicatedResults": "deduped {{count}}",
-    "webCandidatesJudged": "judged {{judged}} / selected {{selected}}",
+    "webCandidatesJudged": "judged {{judged}} / retained {{retained}} / rejected {{rejected}} / unjudged {{unjudged}}",
     "webCandidatesRejected": "rejected {{count}}",
     "pagesFetched": "{{count}} pages fetched",
     "pagesFailed": "{{count}} pages failed",

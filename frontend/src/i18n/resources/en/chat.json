@@ -194,6 +194,11 @@
     "domain": "Domain",
     "relevance": "relevance",
     "role": "role",
+    "confidence": "confidence",
+    "candidateJudgeState": {
+      "retained": "retained",
+      "unjudged": "unjudged"
+    },
     "snippet": "Snippet",
     "pageTitle": "Page title",
     "pageExcerptChars": "{{count}} page excerpt chars",

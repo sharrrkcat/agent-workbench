@@ -1,9 +1,9 @@
 # Utility LLM Contract
 
-Utility LLM is a core internal service for short deterministic tasks. Current
+Utility LLM is a lightweight core internal service for short deterministic tasks. Current
 uses are automatic session title generation, Intent Routing strict JSON slot
 extraction, Web Context Plan Resolver strict JSON planning, and optional Web
-Candidate Relevance Judge strict JSON selection.
+Candidate Relevance Judge conservative JSON noise filtering.
 
 ## Identity
 
@@ -12,6 +12,8 @@ Utility LLM is:
 - a core runtime service.
 - an internal short-call helper.
 - optionally backed by local model files or an existing Model Profile.
+- suitable for simple JSON slots, query extraction, and low-risk auxiliary
+  judgments.
 
 Utility LLM is not:
 
@@ -23,6 +25,12 @@ Utility LLM is not:
 - an AgentConfig field.
 - a CapabilityConfig field.
 - an Agent or Capability manifest field.
+- the sole judge for complex evidence selection or factual correctness.
+
+Callers must assume small local Utility LLMs may miss useful context. Utility
+LLM output can assist deterministic core logic, but it must not be treated as a
+stable final authority for complex evidence evaluation, source selection, or
+fact judgment.
 
 It may reference a Model Profile as a backend, but that reference does not make
 Utility LLM an owner of provider/model configuration and does not mutate main
@@ -226,8 +234,18 @@ prompt.
 When General Web Search Candidate Judge is enabled, Prompt Agent Web Context may
 use one short Utility LLM call to judge filtered/de-duplicated search candidates
 before page fetching. The call returns strict JSON with an `items` array. Each
-item may include `candidate_id`, `use_source`, `relevance`, `source_role`, and a
-short `reason`.
+item may include `candidate_id`, `use_source`, `relevance`, `confidence`,
+`source_role`, and a short `reason`.
+
+The Candidate Judge runs in `conservative_reject_only` mode. Search candidates
+are retained by default. The Utility LLM may only remove clear noise: an item
+must be valid JSON, reference a known candidate id, set `use_source=false`,
+`relevance=low`, `confidence=high`, and use a reject role such as `noise`,
+`off_topic`, or `weak_match`. `use_source=true`, medium/high relevance,
+low/medium confidence, missing candidate ids, invalid items, unknown enum
+values, and candidates omitted from Utility output are retained. Omitted
+candidate ids are counted as unjudged. Unknown candidate ids are ignored with a
+compact warning.
 
 The judge input is limited to:
 
@@ -242,11 +260,11 @@ Knowledge snippets, Core Memory, Worldbook entries, attachments, raw SearXNG
 payloads, page bodies, page excerpts, raw HTML, Web Context prompt text, or
 secrets. It must not create messages or runs, execute commands/Agents/actions,
 modify session state, mutate Context Sources, change Agent selection, or affect
-main model resolution. Invalid JSON, unavailable Utility LLM, or schema failure
-falls back to the pre-judge search results with compact warning codes and must
-not fail the main Prompt Agent run. Runtime metadata may store only compact
-counts, warning codes, aggregate rejected reason counts, and compact per-final
-source relevance/role/reason fields.
+main model resolution. Invalid JSON, unavailable Utility LLM, or whole-response
+schema failure falls back to the pre-judge search results with compact warning
+codes and must not fail the main Prompt Agent run. Runtime metadata may store
+only compact mode/counts, warning codes, aggregate rejected reason counts, and
+compact per-final source state/relevance/role/confidence/reason fields.
 
 ## Metadata And Raw Output
 

@@ -1054,6 +1054,7 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.maxCandidatesToJudge" in panel
     assert "settings:general.minimumRelevance" in panel
     assert "settings:general.maxSelectedSources" in panel
+    assert "Candidate Judge uses the Utility LLM as a conservative noise filter" in read_frontend("i18n/resources/en/settings.json")
     assert "settings:general.searchProvider" in panel
     assert "capability_id === 'web_search'" in panel
     assert "web_context_enabled: values.web_context_enabled" in panel
@@ -1118,6 +1119,8 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "candidateJudge" in source
     assert "candidate_judge_relevance" in source
     assert "candidate_judge_role" in source
+    assert "candidate_judge_confidence" in source
+    assert "candidate_judge_state" in source
     assert "candidate_judge_reason" in source
     assert "filteredResults" in source
     assert "deduplicatedResults" in source
@@ -1128,6 +1131,7 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert '"webContextPlan": "Web context plan"' in runs_en
     assert '"intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context"' in runs_en
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
+    assert '"webCandidatesJudged": "judged {{judged}} / retained {{retained}} / rejected {{rejected}} / unjudged {{unjudged}}"' in runs_en
     assert '"pagesFetched": "{{count}} pages fetched"' in runs_en
     assert '"knowledge_query_candidate_blocked": "knowledge query candidate blocked"' in runs_en
     assert '"web_results_filtered_empty": "all web results were filtered"' in runs_en

@@ -214,9 +214,13 @@ General Web Search owns Prompt Agent Web Context injection settings:
 - `web_context_candidate_judge_max_candidates` defaults to `8` and accepts `1`
   through `12`.
 - `web_context_candidate_judge_min_relevance` defaults to `medium` and accepts
-  `low`, `medium`, or `high`.
+  `low`, `medium`, or `high`. In conservative reject-only mode this is a reject
+  threshold, not a positive selection threshold; a candidate is removed only
+  when the Utility LLM also gives a high-confidence low-relevance noise
+  judgment.
 - `web_context_candidate_judge_max_selected` defaults to `5` and accepts `1`
-  through `10`.
+  through `10`. It caps final injected sources after conservative filtering; it
+  is not a positive selection instruction to the Utility LLM.
 
 When `web_context_enabled=false`, ordinary Prompt Agent runs must not search or
 inject `# Retrieved Web`. When enabled, eligible ordinary text messages to the
@@ -243,13 +247,26 @@ de-duplication but before page fetching. The judge receives only the current
 user question, Web Context query/query source, and compact search candidate
 fields. It does not receive Agent prompts, chat history, KB/Core Memory/
 Worldbook content, attachments, page bodies, raw provider payloads, HTML,
-secrets, or Web Context prompt text. It selects sources that can help answer the
-current question as evidence. Invalid JSON, unavailable Utility LLM, or schema
-failure falls back to the pre-judge results with compact warnings; it must not
-fail the main Prompt Agent run. If a valid judge response rejects all
-candidates, Web Context injects nothing and the Prompt Agent run continues.
-Page fetching, when enabled, fetches only final selected candidates. The
-`web_context_max_results` setting still caps final injected sources.
+secrets, or Web Context prompt text. It is a conservative noise filter, not a
+final evidence or fact judge. Candidates are retained by default and are removed
+only when a valid item marks a known candidate `use_source=false`,
+`relevance=low`, `confidence=high`, and uses a clear reject role such as
+`noise`, `off_topic`, or `weak_match`. Missing Utility items, low/medium
+confidence, invalid items, unknown enum values, `use_source=true`, medium/high
+relevance, and reference/official/news/documentation/background/primary-source
+roles retain the candidate with compact warnings where applicable.
+Invalid JSON, unavailable Utility LLM, or whole-response schema failure falls
+back to the pre-judge results with compact warnings; it must not fail the main
+Prompt Agent run. If a valid judge response rejects all candidates, Web Context
+injects nothing and the Prompt Agent run continues. Page fetching, when enabled,
+fetches retained candidates, including unjudged candidates. The
+`web_context_max_results` and `web_context_candidate_judge_max_selected`
+settings still cap final injected sources.
+
+Settings -> General -> Web Search should describe Candidate Judge as a Utility
+LLM conservative noise filter: uncertain candidates are kept and only clearly
+unhelpful sources are removed. UI copy must not imply the Utility LLM is a
+final evidence or fact judge.
 
 With Intent Routing disabled or in shadow mode, enabled Web Context keeps the
 forced search behavior for eligible ordinary Prompt Agent messages. With Intent

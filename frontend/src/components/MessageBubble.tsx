@@ -352,9 +352,13 @@ type WebSearchContextDiagnostics = {
 type WebCandidateJudgeSummary = {
   enabled?: boolean;
   used?: boolean;
+  mode?: string;
   candidateCount?: number;
+  retainedCount?: number;
   selectedCount?: number;
   rejectedCount?: number;
+  unjudgedCount?: number;
+  invalidItemCount?: number;
   fallbackUsed?: boolean;
   warnings: string[];
 };
@@ -374,8 +378,10 @@ type WebSourceRef = {
   page_excerpt_preview?: string;
   page_excerpt_chars?: number;
   page_fetch_warning?: string;
+  candidate_judge_state?: string;
   candidate_judge_relevance?: string;
   candidate_judge_role?: string;
+  candidate_judge_confidence?: string;
   candidate_judge_reason?: string;
 };
 
@@ -674,8 +680,10 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
             ) : null}
             <div className="knowledge-snippet-scores">
               {scoreLabel(t('chat:contextModal.rank'), ref.rank)}
+              {ref.candidate_judge_state ? <Chip tone={ref.candidate_judge_state === 'retained' ? 'active' : 'neutral'}>{judgeStateLabel(ref.candidate_judge_state, t)}</Chip> : null}
               {ref.candidate_judge_relevance ? <Chip tone={ref.candidate_judge_relevance === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.relevance')}: {ref.candidate_judge_relevance}</Chip> : null}
               {ref.candidate_judge_role ? <Chip tone="neutral">{t('chat:contextModal.role')}: {ref.candidate_judge_role}</Chip> : null}
+              {ref.candidate_judge_confidence ? <Chip tone={ref.candidate_judge_confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {ref.candidate_judge_confidence}</Chip> : null}
               {ref.page_fetch_status ? <Chip tone={pageFetchStatusTone(ref.page_fetch_status)}>{pageFetchStatusLabel(ref.page_fetch_status, t)}</Chip> : null}
               {ref.source ? <span>{t('chat:contextModal.source')}: {ref.source}</span> : null}
               {ref.domain ? <span>{t('chat:contextModal.domain')}: {ref.domain}</span> : null}
@@ -696,6 +704,12 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
       })}
     </>
   );
+}
+
+function judgeStateLabel(state: string, t: ReturnType<typeof useTranslation>['t']): string {
+  const key = `chat:contextModal.candidateJudgeState.${state}`;
+  const label = t(key);
+  return label === key ? state : label;
 }
 
 function pageFetchStatusTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
@@ -900,9 +914,13 @@ function mergeWebCandidateJudge(values: unknown[]): WebCandidateJudgeSummary | u
   return {
     enabled: booleanValue(last.enabled),
     used: booleanValue(last.used),
+    mode: textValue(last.mode),
     candidateCount: numberValue(last.candidate_count),
+    retainedCount: numberValue(last.retained_count),
     selectedCount: numberValue(last.selected_count),
     rejectedCount: numberValue(last.rejected_count),
+    unjudgedCount: numberValue(last.unjudged_count),
+    invalidItemCount: numberValue(last.invalid_item_count),
     fallbackUsed: booleanValue(last.fallback_used),
     warnings: uniqueStrings(records.flatMap((record) => stringArray(record.warnings))),
   };
@@ -946,8 +964,10 @@ function webSourceRefs(context: Record<string, unknown> | undefined): WebSourceR
       page_excerpt_preview: textValue(item.page_excerpt_preview),
       page_excerpt_chars: numberValue(item.page_excerpt_chars),
       page_fetch_warning: textValue(item.page_fetch_warning),
+      candidate_judge_state: textValue(item.candidate_judge_state),
       candidate_judge_relevance: textValue(item.candidate_judge_relevance),
       candidate_judge_role: textValue(item.candidate_judge_role),
+      candidate_judge_confidence: textValue(item.candidate_judge_confidence),
       candidate_judge_reason: textValue(item.candidate_judge_reason),
     });
   });
@@ -2746,7 +2766,12 @@ function webDiagnosticsSummaryParts(summary: WebContextSummary, t: ReturnType<ty
   if (diagnostics?.filteredCount) parts.push(t('runs:contextSummary.filteredResults', { count: diagnostics.filteredCount }));
   if (diagnostics?.dedupedCount) parts.push(t('runs:contextSummary.deduplicatedResults', { count: diagnostics.dedupedCount }));
   if (summary.candidateJudge?.used) {
-    parts.push(t('runs:contextSummary.webCandidatesJudged', { judged: summary.candidateJudge.candidateCount ?? 0, selected: summary.candidateJudge.selectedCount ?? 0 }));
+    parts.push(t('runs:contextSummary.webCandidatesJudged', {
+      judged: summary.candidateJudge.candidateCount ?? 0,
+      retained: summary.candidateJudge.retainedCount ?? summary.candidateJudge.selectedCount ?? 0,
+      rejected: summary.candidateJudge.rejectedCount ?? 0,
+      unjudged: summary.candidateJudge.unjudgedCount ?? 0,
+    }));
     if (summary.candidateJudge.rejectedCount) parts.push(t('runs:contextSummary.webCandidatesRejected', { count: summary.candidateJudge.rejectedCount }));
   }
   if (summary.pageFetchEnabled) {

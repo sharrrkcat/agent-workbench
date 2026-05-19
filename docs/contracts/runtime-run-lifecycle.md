@@ -129,9 +129,10 @@ Each `source_refs` item may include only compact citation UI fields:
 `published_at`, `source`, a capped `snippet_preview` or short `snippet`, and
 compact page fetch fields such as `page_fetch_status`, `page_title`,
 `page_excerpt_preview`, `page_excerpt_chars`, and `page_fetch_warning`.
-When the Candidate Judge selects a final source, the source ref may also include
-compact `candidate_judge_relevance`, `candidate_judge_role`, and a short
-`candidate_judge_reason`.
+When the Candidate Judge annotates a final source, the source ref may also
+include compact `candidate_judge_state` (`retained` or `unjudged`),
+`candidate_judge_relevance`, `candidate_judge_role`,
+`candidate_judge_confidence`, and a short `candidate_judge_reason`.
 `page_excerpt_preview` must be capped for UI inspection and must not contain the
 full fetched page excerpt.
 `search_diagnostics` may include only compact filtering facts such as
@@ -141,10 +142,13 @@ bodies.
 Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
 `pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
 Candidate Judge summary fields may include `candidate_judge.enabled`,
-`candidate_judge.used`, candidate/selected/rejected counts, `fallback_used`,
-compact warning codes, and aggregate rejected reason counts. It must not include
-the raw Utility prompt, raw Utility output, raw SearXNG payload, page bodies,
-rendered Web context, or a full rejected source list.
+`candidate_judge.used`, `candidate_judge.mode =
+conservative_reject_only`, candidate/retained/rejected/unjudged counts,
+invalid item count, `fallback_used`, compact warning codes, and aggregate
+rejected reason counts. Missing Utility items, invalid items, unknown enum
+values, and low/medium confidence judgments retain the candidate. It must not
+include the raw Utility prompt, raw Utility output, raw SearXNG payload, page
+bodies, rendered Web context, or a full rejected source list.
 The plan may record whether Intent Routing influenced the decision, but it must
 not store raw Utility output, Utility prompts, full user text duplicates,
 rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web

@@ -670,23 +670,27 @@ class UtilityLLMService:
                     "candidate_id": "C1",
                     "use_source": True,
                     "relevance": "high",
+                    "confidence": "high",
                     "source_role": "reference",
                     "reason": "short reason under 160 chars",
                 }
             ]
         }
         prompt = (
-            "Judge whether each web search candidate can help answer the current user question as evidence.\n"
+            "Conservatively filter web search candidates for the current user question.\n"
             "Return strict JSON only with one key: items. Do not explain outside JSON.\n"
             f"Schema example: {json.dumps(schema, ensure_ascii=False)}\n"
             "Allowed relevance values: low, medium, high.\n"
+            "Allowed confidence values: low, medium, high.\n"
             "Allowed source_role values: reference, official, news, documentation, background, primary_source, noise, off_topic, weak_match.\n"
             "Use only the current question, Web Context query, query source, and compact candidate fields.\n"
-            "Do not require exact keyword overlap. Decide semantic usefulness for answering this question.\n"
-            "Useful candidates directly provide the requested object, event, price, version, news, official information, documentation, primary source, or background.\n"
-            "Weak candidates are only broadly related, navigation/search/author pages, generic recommendations, promotional short-form items, image collections, unrelated product/generator pages, or otherwise poor evidence.\n"
+            "Candidates are retained by default. Mark use_source=false only when the candidate is clearly unhelpful as evidence for this specific question.\n"
+            "If uncertain, keep the candidate with use_source=true. Do not reject because it only partially matches keywords or lacks exact keyword overlap.\n"
+            "Do not treat any site type as fixed noise. Judge only this question and candidate semantics.\n"
+            "Useful candidates can provide the requested object, event, price, version, news, official information, documentation, primary source, background, product, media, social post, image, video, or audio-generation information when relevant to the user request.\n"
+            "Use use_source=false only for obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question, and set relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
             "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
-            "Do not apply fixed site or path preferences. Judge only this question and candidate semantics.\n\n"
+            "Never reject solely because the candidate is a product, video, image, social, or generator page.\n\n"
             f"User question:\n{user_text}\n\n"
             f"Web Context query: {query}\n"
             f"Query source: {query_source}\n\n"

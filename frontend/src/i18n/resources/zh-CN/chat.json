@@ -186,6 +186,11 @@
     "domain": "域名",
     "relevance": "相关性",
     "role": "角色",
+    "confidence": "置信度",
+    "candidateJudgeState": {
+      "retained": "已保留",
+      "unjudged": "未判断"
+    },
     "snippet": "摘要",
     "pageTitle": "网页标题",
     "pageExcerptChars": "{{count}} 个网页摘录字符",
