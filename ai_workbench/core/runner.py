@@ -265,6 +265,7 @@ class AgentRunner:
         knowledge_query_override: str | None = None,
         existing_run_id: str = "",
         preparation_step_id: str = "",
+        client_message_id: str = "",
     ) -> RunResult:
         attachments = attachments or []
         try:
@@ -344,6 +345,7 @@ class AgentRunner:
                 action_id=action_id,
                 metadata={
                     "attachments": attachments,
+                    "client_message_id": client_message_id or None,
                     "input_source": "text",
                     "invocation": {
                         "route_type": "agent",
@@ -362,6 +364,12 @@ class AgentRunner:
                 origin="user_message",
             )
             current_user_message_id = user_message.message_id
+            self.event_bus.emit(
+                "message_updated",
+                session_id=session_id,
+                message_id=user_message.message_id,
+                payload={"message": user_message.model_dump(mode="json")},
+            )
         if current_user_message_id and not parent_id:
             parent_id = user_message.message_id
 
@@ -959,6 +967,9 @@ class AgentRunner:
             payload={
                 "message_id": draft_message_id,
                 "role": "assistant",
+                "session_id": session_id,
+                "run_id": run.run_id,
+                "status": "preparing",
                 "agent_id": agent.id,
                 "agent_name": agent.name,
                 "action_id": action_id,

@@ -8,11 +8,16 @@ streaming signals.
 
 - `message_updated` may acknowledge a newly persisted user message before an
   assistant draft exists. This lets clients clear local "sending" state for the
-  user bubble as soon as the backend has accepted/saved it.
+  user bubble as soon as the backend has accepted/saved it. User-message submit
+  payloads may include a compact `client_message_id`; when present, the
+  persisted user message echoes it in metadata so clients can replace optimistic
+  rows without relying on text matching.
 - `message_started` announces a new assistant draft before public deltas.
   Prompt Agent runs may emit it immediately after run creation and before
   expensive preparation steps, so run steps have a visible assistant row during
-  preparation. The later LLM stream must reuse this draft message id.
+  preparation. The payload includes assistant role, session/run/message ids,
+  creation time, and a preparing status. The later LLM stream must reuse this
+  draft message id.
 - `message_delta` carries visible incremental output for a streaming assistant
   message.
 - `message_completed` carries the final persisted assistant message and is the
@@ -98,9 +103,10 @@ planning, JSON extraction, or validation. Public output streaming requires
   `run_id`, attachments, status, `content_version`, and `parts`, but must not
   replace accumulated transient draft text.
 - When `message_updated` carries a persisted user message matching a local
-  optimistic user message by visible text and attachment ids, the frontend
-  should replace the optimistic row and clear that row's sending state without
-  waiting for `message_started`, `message_delta`, or `message_completed`.
+  optimistic user message by `client_message_id`, or by visible text and
+  attachment ids as a fallback, the frontend should replace the optimistic row
+  and clear that row's sending state without waiting for `message_started`,
+  `message_delta`, or `message_completed`.
 - For non-streaming source messages, `message_updated` may persist backend
   generated part changes, such as replacing a `form` part after a silent save or
   setting form-level `ui.collapsed=true`.

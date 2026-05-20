@@ -21,6 +21,27 @@ def test_status_bar_does_not_render_global_error_text() -> None:
     assert "{error}" not in source
 
 
+def test_chat_streaming_uses_client_message_ids_and_preparing_draft_contract() -> None:
+    store = read_frontend("store/useWorkbenchStore.ts")
+    client = read_frontend("api/client.ts")
+    bubble = read_frontend("components/MessageBubble.tsx")
+    types = read_frontend("types.ts")
+    en_chat = read_frontend("i18n/resources/en/chat.json")
+    zh_chat = read_frontend("i18n/resources/zh-CN/chat.json")
+
+    assert "client_message_id: clientMessageId" in store
+    assert "api.sendMessage(session.session_id, content, attachments, optimisticMessage.message_id)" in store
+    assert "client_message_id: clientMessageId" in client
+    assert "sameClientMessageId(message, updatedMessage)" in store
+    assert "payload.status === 'preparing' ? 'preparing' : 'streaming'" in store
+    assert "client_status: 'streaming'" in store
+    assert "stepsByRunId[event.run_id] || run?.steps || []" in store
+    assert "t('chat:status.preparing'" in bubble
+    assert "'preparing' | 'streaming'" in types
+    assert '"preparing": "Preparing"' in en_chat
+    assert '"preparing": "准备中"' in zh_chat
+
+
 def test_pet_sprite_uses_codex_animation_durations() -> None:
     source = read_frontend("components/PetSprite.tsx")
 
@@ -971,7 +992,7 @@ def test_command_buttons_render_as_send_message_shortcuts() -> None:
     assert "title={button.message}" in source
     assert "submitForm(" not in source[source.index("function CommandButtonsRenderer") : source.index("function ActionFormRenderer")]
     assert "invokeAction(" not in source[source.index("function CommandButtonsRenderer") : source.index("function ActionFormRenderer")]
-    assert "api.sendMessage(session.session_id, content, attachments)" in store
+    assert "api.sendMessage(session.session_id, content, attachments, optimisticMessage.message_id)" in store
     assert "/forms/submit" in client
     assert ".command-buttons" in styles
     assert ".command-buttons button" in styles

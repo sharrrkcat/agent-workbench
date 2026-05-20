@@ -22,6 +22,7 @@ class CreateMessageRequest(BaseModel):
 
     content: str = ""
     attachments: list[dict] = Field(default_factory=list)
+    client_message_id: str = ""
 
 
 class InvokeActionRequest(BaseModel):
@@ -81,6 +82,7 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
             content=payload.content,
             metadata={
                 "attachments": attachments,
+                "client_message_id": payload.client_message_id or None,
                 "input_source": "command",
                 "invocation": {
                     "route_type": "command",
@@ -90,12 +92,19 @@ async def create_message(session_id: str, payload: CreateMessageRequest, state: 
             },
         )
         input_message_id = user_message.message_id
+        state.events.emit(
+            "message_updated",
+            session_id=session_id,
+            message_id=user_message.message_id,
+            payload={"message": user_message.model_dump(mode="json")},
+        )
 
     result = await state.runtime.handle_input(
         session,
         payload.content,
         input_message_id=input_message_id,
         attachments=attachments,
+        client_message_id=payload.client_message_id,
     )
     if not result.success and result.run_id:
         run = state.runs.get_run(result.run_id)

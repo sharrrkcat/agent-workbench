@@ -467,10 +467,10 @@ export const api = {
       method: 'DELETE',
     }),
   listMessages: (sessionId: string) => request<Message[]>(`/api/sessions/${sessionId}/messages`),
-  sendMessage: (sessionId: string, content: string, attachments: SendMessageAttachment[] = []) =>
+  sendMessage: (sessionId: string, content: string, attachments: SendMessageAttachment[] = [], clientMessageId = '') =>
     request<RuntimeResponse>(`/api/sessions/${sessionId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, attachments }),
+      body: JSON.stringify({ content, attachments, client_message_id: clientMessageId }),
     }),
   deleteMessage: (messageId: string) =>
     request<DeleteMessageResponse>(`/api/messages/${messageId}`, {

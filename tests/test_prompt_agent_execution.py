@@ -93,6 +93,16 @@ class FakeStreamingLLMRuntime(FakeLLMRuntime):
             yield chunk
 
 
+class FakeKnowledgeModelBackend:
+    def __init__(self, loaded: bool = False) -> None:
+        self.loaded = loaded
+        self.loaded_checks: list[tuple[str, str]] = []
+
+    def embedding_model_loaded(self, model_path: str, device: str) -> bool:
+        self.loaded_checks.append((model_path, device))
+        return self.loaded
+
+
 class RawLLMRuntime(FakeLLMRuntime):
     def __init__(self, payload) -> None:
         super().__init__(response="")
@@ -1425,18 +1435,59 @@ def test_prompt_agent_emits_early_placeholder_bound_to_run_id() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="hello"))
     session = fixture.sessions.create_session()
 
-    result = run(fixture.runtime.handle_input(session, "@chat hello"))
+    result = run(fixture.runtime.handle_input(session, "@chat hello", client_message_id="client-1"))
     events = fixture.events.list_events()
     placeholder = next(event for event in events if event.type == "message_started")
 
     assert placeholder.run_id == result.run_id
     assert placeholder.payload["message_id"] == f"draft-{result.run_id}"
+    assert placeholder.payload["role"] == "assistant"
+    assert placeholder.payload["session_id"] == session.session_id
+    assert placeholder.payload["run_id"] == result.run_id
+    assert placeholder.payload["status"] == "preparing"
+    assert placeholder.payload["created_at"]
     assert placeholder.payload["agent_id"] == "chat"
     accepted_user = next(event for event in events if event.type == "message_updated")
+    assert accepted_user.payload["message"]["metadata"]["client_message_id"] == "client-1"
     first_step = next(index for index, event in enumerate(events) if event.type == "run_step_created")
     assert events.index(accepted_user) < first_step
     assert events.index(placeholder) < first_step
     assert [event.type for event in events].count("message_started") == 1
+
+
+def test_prompt_agent_broadcasts_draft_and_preparation_steps_before_embedding_load_and_streaming() -> None:
+    llm = FakeStreamingLLMRuntime(chunks=["hello"])
+    fixture = PromptRuntimeFixture(llm=llm)
+    fixture.agent_runner.knowledge_model_backend = FakeKnowledgeModelBackend(loaded=False)
+    fixture.agent_runner.semantic_router = StaticIntentSemanticRouter("chat")
+    embedding_profile = fixture.knowledge.create_embedding_profile(
+        EmbeddingModelProfile(name="Route Embeddings", alias="route", model_path="embeddings/route")
+    )
+    fixture.app_settings.patch(
+        {
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_embedding_model_profile_id": embedding_profile.id,
+        }
+    )
+    profile = add_profile(fixture, supports_streaming=True)
+    session = fixture.sessions.create_session()
+    fixture.sessions.set_llm_profile(session.session_id, profile.id)
+
+    result = run(fixture.runtime.handle_input(session, "hello", client_message_id="client-early"))
+    events = fixture.events.list_events()
+    event_types = [event.type for event in events]
+    accepted_index = next(index for index, event in enumerate(events) if event.type == "message_updated" and event.payload.get("message", {}).get("role") == "user")
+    draft_index = next(index for index, event in enumerate(events) if event.type == "message_started")
+    preparing_index = next(index for index, event in enumerate(events) if event.type == "run_step_created" and event.payload["step"]["label"] == "Preparing context tools")
+    embedding_index = next(index for index, event in enumerate(events) if event.type == "run_step_created" and event.payload["step"]["label"] == "Loading embedding model")
+    delta_index = next(index for index, event in enumerate(events) if event.type == "message_delta")
+    completed = next(event for event in events if event.type == "message_completed")
+
+    assert result.success is True
+    assert accepted_index < draft_index < preparing_index < embedding_index < delta_index
+    assert event_types.count("message_started") == 1
+    assert completed.payload["draft_message_id"] == f"draft-{result.run_id}"
 
 
 def test_prompt_agent_llm_failure_marks_calling_llm_step_failed() -> None:

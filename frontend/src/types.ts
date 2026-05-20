@@ -1193,7 +1193,7 @@ export type Message = {
   run_steps?: RunStep[];
   available_actions: AvailableAction[];
   created_at: string;
-  client_status?: 'pending' | 'failed' | 'streaming';
+  client_status?: 'pending' | 'failed' | 'preparing' | 'streaming';
   client_error?: AppError;
 };
 

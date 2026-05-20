@@ -24,6 +24,7 @@ class WorkbenchRuntime:
         raw_input: str,
         input_message_id: str = "",
         attachments: list[dict] | None = None,
+        client_message_id: str = "",
     ) -> RunResult:
         attachments = attachments or []
         route = self.router.route(session, raw_input)
@@ -33,6 +34,7 @@ class WorkbenchRuntime:
             input_message_id = input_message_id or self._create_agent_user_message(
                 route=route,
                 attachments=attachments,
+                client_message_id=client_message_id,
             )
             early_run = self._create_prompt_agent_run(route, input_message_id=input_message_id)
             agent = self.agent_runner.agent_registry.get(route.target_id or "")
@@ -78,6 +80,7 @@ class WorkbenchRuntime:
                     content=raw_input,
                     attachments=attachments,
                     intent_metadata=intent_metadata,
+                    client_message_id=client_message_id,
                 )
             return await self.command_runner.run(route.target_id or "", route.args, route.session_id, input_message_id=input_message_id, intent_routing_metadata=intent_metadata)
         if route.kind == RouteKind.AGENT:
@@ -104,6 +107,7 @@ class WorkbenchRuntime:
                 temporary_knowledge_base_ids=_intent_temporary_kb_ids(intent_metadata),
                 knowledge_query_override=_intent_query_override(intent_metadata),
                 input_message_id=input_message_id,
+                client_message_id=client_message_id,
                 create_user_message=False if input_message_id else True,
                 existing_run_id=early_run.run_id if early_run is not None else "",
                 preparation_step_id=preparation_step_id,
@@ -185,6 +189,7 @@ class WorkbenchRuntime:
         content: str,
         attachments: list[dict],
         intent_metadata: dict[str, Any],
+        client_message_id: str = "",
     ) -> str:
         user_message = self.command_runner.message_store.add_message(
             session_id=session_id,
@@ -192,6 +197,7 @@ class WorkbenchRuntime:
             content=content,
             metadata={
                 "attachments": attachments,
+                "client_message_id": client_message_id or None,
                 "input_source": "text",
                 "intent_routing": {
                     "predicted_intent": intent_metadata.get("predicted_intent"),
@@ -210,6 +216,12 @@ class WorkbenchRuntime:
             speaker_id="local_user",
             speaker_name="User",
             origin="user_message",
+        )
+        self.command_runner.event_bus.emit(
+            "message_updated",
+            session_id=session_id,
+            message_id=user_message.message_id,
+            payload={"message": user_message.model_dump(mode="json")},
         )
         return user_message.message_id
 
@@ -293,7 +305,7 @@ class WorkbenchRuntime:
             preparation_recorder=preparation_recorder,
         )
 
-    def _create_agent_user_message(self, *, route: RouteTarget, attachments: list[dict]) -> str:
+    def _create_agent_user_message(self, *, route: RouteTarget, attachments: list[dict], client_message_id: str = "") -> str:
         if self.agent_runner is None:
             return ""
         user_message = self.agent_runner.message_store.add_message(
@@ -304,6 +316,7 @@ class WorkbenchRuntime:
             action_id=route.action_id or "default",
             metadata={
                 "attachments": attachments,
+                "client_message_id": client_message_id or None,
                 "input_source": "text",
                 "invocation": {
                     "route_type": "agent",

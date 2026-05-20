@@ -143,6 +143,12 @@ export function MessageBubble({ message, onPreviewImage, onPreviewFile }: { mess
               {t('chat:status.sending', { defaultValue: 'Sending' })}
             </div>
           ) : null}
+          {message.client_status === 'preparing' ? (
+            <div className="message-status">
+              <Clock3 size={13} />
+              {t('chat:status.preparing', { defaultValue: 'Preparing' })}
+            </div>
+          ) : null}
           {message.client_status === 'streaming' ? (
             <div className="message-status">
               <Clock3 size={13} />

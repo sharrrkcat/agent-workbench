@@ -287,6 +287,7 @@
   },
   "status": {
     "sending": "Sending",
+    "preparing": "Preparing",
     "streaming": "Streaming",
     "testingLlm": "Testing LLM",
     "saving": "Saving",

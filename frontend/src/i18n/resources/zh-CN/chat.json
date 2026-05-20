@@ -279,6 +279,7 @@
   },
   "status": {
     "sending": "发送中",
+    "preparing": "准备中",
     "streaming": "流式输出中",
     "testingLlm": "测试 LLM 中",
     "saving": "保存中",

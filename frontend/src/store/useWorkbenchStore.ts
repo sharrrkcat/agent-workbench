@@ -549,7 +549,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       lastError: undefined,
     });
     try {
-      const result = await api.sendMessage(session.session_id, content, attachments);
+      const result = await api.sendMessage(session.session_id, content, attachments, optimisticMessage.message_id);
       await get().refreshCurrent();
       if (!result.success) {
         set({ error: undefined, lastError: undefined });
@@ -874,8 +874,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 }));
 
 function createOptimisticUserMessage(session: Session, content: string, attachments: SendMessageAttachment[]): Message {
+  const clientMessageId = `optimistic-${newClientId()}`;
   return {
-    message_id: `optimistic-${newClientId()}`,
+    message_id: clientMessageId,
     session_id: session.session_id,
     role: 'user',
     content_version: 2,
@@ -886,7 +887,7 @@ function createOptimisticUserMessage(session: Session, content: string, attachme
     run_id: null,
     parent_message_id: null,
     available_actions: [],
-    metadata: { attachments },
+    metadata: { attachments, client_message_id: clientMessageId },
     created_at: new Date().toISOString(),
     client_status: 'pending',
   };
@@ -940,7 +941,7 @@ function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Me
       streaming: true,
     },
     created_at: typeof payload.created_at === 'string' ? payload.created_at : event.created_at,
-    client_status: 'streaming',
+    client_status: payload.status === 'preparing' ? 'preparing' : 'streaming',
   };
 }
 
@@ -1165,6 +1166,17 @@ function sameAttachmentIds(left: Message, right: Message): boolean {
   return leftIds.every((id, index) => id === rightIds[index]);
 }
 
+function sameClientMessageId(left: Message, right: Message): boolean {
+  const leftId = stringMetadata(left, 'client_message_id') || left.message_id;
+  const rightId = stringMetadata(right, 'client_message_id');
+  return Boolean(leftId && rightId && leftId === rightId);
+}
+
+function stringMetadata(message: Message, key: string): string {
+  const value = message.metadata?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
 function attachmentIds(message: Message): string[] {
   const attachments = message.metadata?.attachments;
   if (!Array.isArray(attachments)) return [];
@@ -1201,7 +1213,7 @@ function appendDraftDelta(messages: Message[], event: RuntimeEvent, delta: strin
     if (reasoningDelta) {
       metadata.reasoning_content = `${typeof metadata.reasoning_content === 'string' ? metadata.reasoning_content : ''}${reasoningDelta}`;
     }
-    return { ...message, parts: [textPart(`${messageText(message)}${delta}`, 'markdown')], metadata };
+    return { ...message, parts: [textPart(`${messageText(message)}${delta}`, 'markdown')], metadata, client_status: 'streaming' };
   });
 }
 
@@ -1233,8 +1245,8 @@ function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, compl
       message.role === 'user' &&
       message.client_status === 'pending' &&
       updatedMessage.role === 'user' &&
-      messageText(message) === messageText(updatedMessage) &&
-      sameAttachmentIds(message, updatedMessage);
+      (sameClientMessageId(message, updatedMessage) ||
+        (messageText(message) === messageText(updatedMessage) && sameAttachmentIds(message, updatedMessage)));
     if (!sameMessage && !sameRunDraft && !sameAcceptedUser) return message;
     replaced = true;
     if (sameAcceptedUser) return { ...updatedMessage, client_status: undefined };
