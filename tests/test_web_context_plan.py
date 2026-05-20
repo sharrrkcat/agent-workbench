@@ -1050,6 +1050,182 @@ def test_page_excerpt_gate_accepts_wrapped_balanced_json() -> None:
     assert gate["accepted"] is True
 
 
+def test_page_excerpt_gate_repairs_unescaped_newlines_inside_reason_string() -> None:
+    raw = (
+        "```json\n"
+        '{"use_excerpt":true,"evidence_quality":"high","confidence":"high","coverage":"direct_answer",'
+        '"need_more":false,"reason":"Line one\nLine two"}'
+        "\n```"
+    )
+
+    gate = asyncio.run(
+        run_page_excerpt_gate(
+            settings=AppSettings(web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            original_user_text="latest alpha",
+            plan=asyncio.run(async_resolve(settings=AppSettings(web_context_enabled=True), text="latest alpha")),
+            candidate=web_result("https://gate.test"),
+            ref={"ref_id": "W1", "title": "Gate", "domain": "gate.test"},
+            page_title="Gate page",
+            page_excerpt="Direct evidence.",
+            accepted_evidence=[],
+            llm_runtime=FakeGateRuntime(raw),
+            llm_model_config={"model": "test"},
+        )
+    )
+
+    assert gate["status"] == "accepted"
+    assert gate["accepted"] is True
+    assert gate["parse_warning"] == "page_excerpt_gate_repaired_json_string_controls"
+    assert gate["result"].reason == "Line one Line two"
+
+
+def test_page_excerpt_gate_repairs_bullet_like_lines_inside_reason_string_as_rejected() -> None:
+    raw = (
+        "```json\n"
+        '{"use_excerpt":false,"evidence_quality":"low","confidence":"high","coverage":"off_topic",'
+        '"need_more":true,"reason":"Mostly navigation\n- Related links\n- Footer"}'
+        "\n```"
+    )
+
+    gate = asyncio.run(
+        run_page_excerpt_gate(
+            settings=AppSettings(web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            original_user_text="latest alpha",
+            plan=asyncio.run(async_resolve(settings=AppSettings(web_context_enabled=True), text="latest alpha")),
+            candidate=web_result("https://gate.test"),
+            ref={"ref_id": "W1", "title": "Gate", "domain": "gate.test"},
+            page_title="Gate page",
+            page_excerpt="Noisy evidence.",
+            accepted_evidence=[],
+            llm_runtime=FakeGateRuntime(raw),
+            llm_model_config={"model": "test"},
+        )
+    )
+
+    assert gate["status"] == "rejected"
+    assert gate["accepted"] is False
+    assert gate["parse_warning"] == "page_excerpt_gate_repaired_json_string_controls"
+    assert "warning" not in gate
+
+
+def test_page_excerpt_gate_repair_does_not_touch_structural_control_chars() -> None:
+    raw = (
+        "```json\n"
+        "{\n"
+        '"use_excerpt":true,\n'
+        '"evidence_quality":"high",\n'
+        '"confidence":"high",\n'
+        '"coverage":"direct_answer",\n'
+        '"need_more":false,\n'
+        '"reason":"Direct evidence."\n'
+        "}\n"
+        "```"
+    )
+
+    gate = asyncio.run(
+        run_page_excerpt_gate(
+            settings=AppSettings(web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            original_user_text="latest alpha",
+            plan=asyncio.run(async_resolve(settings=AppSettings(web_context_enabled=True), text="latest alpha")),
+            candidate=web_result("https://gate.test"),
+            ref={"ref_id": "W1", "title": "Gate", "domain": "gate.test"},
+            page_title="Gate page",
+            page_excerpt="Direct evidence.",
+            accepted_evidence=[],
+            llm_runtime=FakeGateRuntime(raw),
+            llm_model_config={"model": "test"},
+        )
+    )
+
+    assert gate["status"] == "accepted"
+    assert "parse_warning" not in gate
+
+
+def test_page_excerpt_gate_invalid_after_repair_is_failed() -> None:
+    raw = (
+        "```json\n"
+        '{"use_excerpt":true,"evidence_quality":"high","confidence":"high","coverage":"direct_answer",'
+        '"need_more":false,"reason":"Line one\nLine two",}'
+        "\n```"
+    )
+
+    gate = asyncio.run(
+        run_page_excerpt_gate(
+            settings=AppSettings(web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            original_user_text="latest alpha",
+            plan=asyncio.run(async_resolve(settings=AppSettings(web_context_enabled=True), text="latest alpha")),
+            candidate=web_result("https://gate.test"),
+            ref={"ref_id": "W1", "title": "Gate", "domain": "gate.test"},
+            page_title="Gate page",
+            page_excerpt="Direct evidence.",
+            accepted_evidence=[],
+            llm_runtime=FakeGateRuntime(raw),
+            llm_model_config={"model": "test"},
+        )
+    )
+
+    assert gate["status"] == "failed"
+    assert gate["warning"] == "page_excerpt_gate_invalid_json"
+
+
+def test_page_excerpt_gate_repair_warning_is_compact_summary_metadata() -> None:
+    raw = (
+        '{"use_excerpt":true,"evidence_quality":"high","confidence":"high","coverage":"direct_answer",'
+        '"need_more":false,"reason":"Line one\nLine two"}'
+    )
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://repair.test", snippet="Search summary.")]}
+
+    def fetch(url, **kwargs):
+        return PageFetchResult(status="fetched", excerpt="Direct evidence.")
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            query="latest",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            llm_runtime=FakeGateRuntime(raw),
+            llm_model_config={"model": "test"},
+        )
+    )
+
+    ref = result.metadata["source_refs"][0]
+    assert ref["page_excerpt_gate_status"] == "accepted"
+    assert "page_excerpt_gate_warning" not in ref
+    assert "page_excerpt_gate_repaired_json_string_controls" in result.metadata["page_excerpt_gate"]["warnings"]
+    assert "Line one" not in str(result.metadata["page_excerpt_gate"])
+
+
+def test_page_excerpt_gate_prompt_limits_reason_format() -> None:
+    utility = FakeWebPlanUtility(gate_payloads=[gate_payload(True, need_more=False)])
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://prompt.test")]}
+
+    def fetch(url, **kwargs):
+        return PageFetchResult(status="fetched", excerpt="Direct evidence.")
+
+    asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm"),
+            query="latest",
+            search_fn=search,
+            page_fetch_fn=fetch,
+            utility_llm_service=utility,
+        )
+    )
+
+    prompt = utility.gate_prompts[0]
+    assert "Return raw JSON only" in prompt
+    assert "Do not include markdown" in prompt
+    assert "Do not explain outside JSON" in prompt
+    assert "reason value must be one short sentence" in prompt
+    assert "Do not use bullet points" in prompt
+    assert "Do not use line breaks in reason" in prompt
+
+
 @pytest.mark.parametrize(
     ("payload", "expected_warning"),
     [

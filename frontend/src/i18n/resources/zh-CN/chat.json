@@ -194,6 +194,8 @@
       "unjudged": "未判断"
     },
     "snippet": "摘要",
+    "searchSnippet": "搜索摘要",
+    "fetchedPageExcerpt": "抓取页面正文",
     "pageTitle": "网页标题",
     "pageExcerptChars": "{{count}} 个网页摘录字符",
     "openSource": "打开来源",
@@ -243,6 +245,7 @@
       "page_fetch_http_403": "抓取失败：HTTP 403。",
       "page_fetch_http_500": "抓取失败：HTTP 500。",
       "page_excerpt_gate_invalid_json": "Gate JSON 无效。",
+      "page_excerpt_gate_repaired_json_string_controls": "Gate JSON 字符串控制字符已修复。",
       "page_excerpt_gate_schema_invalid": "Gate JSON 不符合必需结构。",
       "page_excerpt_gate_unavailable": "Page Excerpt Gate 不可用。",
       "page_excerpt_gate_backend_unavailable": "Page Excerpt Gate 后端不可用。",

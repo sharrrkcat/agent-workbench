@@ -3197,6 +3197,18 @@ input:disabled {
   overflow-wrap: anywhere;
 }
 
+.context-source-preview-block {
+  display: grid;
+  gap: 5px;
+}
+
+.context-source-preview-block > span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .knowledge-snippet-scores {
   display: flex;
   flex-wrap: wrap;

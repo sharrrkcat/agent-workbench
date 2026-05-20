@@ -310,9 +310,14 @@ metadata.
 All Page Excerpt Gate backends use the shared JSON extraction behavior: bare
 objects, fenced `json` blocks, plain fenced JSON blocks, and the first balanced
 JSON object surrounded by small explanatory text are accepted, but the extracted
-value must be a JSON object. Invalid JSON, missing required fields, unknown enum
-values, and empty reasons are Gate failures. Overlong reasons are compacted
-before metadata storage and do not make an otherwise valid Gate decision fail.
+value must be a JSON object. Gate prompts should request raw JSON only, but the
+Gate parser also tolerates fenced JSON. For Page Excerpt Gate only, if the
+extracted object fails JSON parsing because a JSON string value contains an
+unescaped literal newline, carriage-return, or tab, the parser may escape those
+control characters inside string values and retry once. Invalid JSON after this
+repair, missing required fields, unknown enum values, and empty reasons are Gate
+failures. Overlong reasons are compacted before metadata storage and do not make
+an otherwise valid Gate decision fail.
 
 The gate input is limited to the current user question, Web Context query/query
 source, compact accepted evidence summaries, compact source fields, page title,

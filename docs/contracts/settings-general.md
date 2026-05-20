@@ -253,6 +253,10 @@ source/snippet/status but do not inject the page excerpt. Fetching stops when
 the attempt limit, target accepted excerpt count, total accepted excerpt budget,
 `need_more=false` after at least one accepted excerpt, or retained candidate list
 is exhausted.
+The Web source inspection UI may still show capped fetched page excerpt previews
+for rejected or failed Gate decisions, alongside the original search snippet,
+so users can compare search summaries with fetched page content. This inspection
+display does not change what is injected into the main model.
 
 Page Excerpt Gate is an internal strict JSON judgment over compact page data.
 It may use the current Prompt Agent resolved model profile

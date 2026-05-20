@@ -992,6 +992,9 @@ async def _fetch_pages_for_results(
                     )
                     if gate.get("accepted"):
                         gate_result = gate["result"]
+                        parse_warning = str(gate.get("parse_warning") or "")
+                        if parse_warning:
+                            gate_warnings.append(parse_warning)
                         result["page_excerpt"] = excerpt
                         ref["page_excerpt_gate_status"] = "accepted"
                         ref["page_excerpt_injected"] = True
@@ -1019,6 +1022,9 @@ async def _fetch_pages_for_results(
                             ref["page_excerpt_confidence"] = gate_result.confidence
                             ref["page_excerpt_coverage"] = gate_result.coverage
                             ref["page_excerpt_gate_reason"] = gate_result.reason
+                        parse_warning = str(gate.get("parse_warning") or "")
+                        if parse_warning:
+                            gate_warnings.append(parse_warning)
                         warning = str(gate.get("warning") or "")
                         if warning:
                             ref["page_excerpt_gate_warning"] = warning
@@ -1103,7 +1109,7 @@ async def run_page_excerpt_gate(
         accepted_evidence=accepted_evidence,
     )
     try:
-        data = await _call_page_excerpt_gate_backend(
+        data, parse_warning = await _call_page_excerpt_gate_backend(
             backend=backend,
             prompt=prompt,
             settings=settings,
@@ -1122,7 +1128,10 @@ async def run_page_excerpt_gate(
     if result is None:
         return {"accepted": False, "status": "failed", "warning": warning or "page_excerpt_gate_invalid_json"}
     accepted = _page_excerpt_gate_accepts(result, min_quality=str(getattr(settings, "web_context_page_excerpt_gate_min_quality", "medium") or "medium"))
-    return {"accepted": accepted, "status": "accepted" if accepted else "rejected", "result": result}
+    payload = {"accepted": accepted, "status": "accepted" if accepted else "rejected", "result": result}
+    if parse_warning:
+        payload["parse_warning"] = parse_warning
+    return payload
 
 
 async def _call_page_excerpt_gate_backend(
@@ -1133,7 +1142,7 @@ async def _call_page_excerpt_gate_backend(
     utility_llm_service: Any,
     llm_runtime: Any,
     llm_model_config: dict[str, Any] | None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str | None]:
     if backend == "utility_llm":
         if utility_llm_service is None:
             raise UtilityLLMError("page_excerpt_gate_unavailable", "Utility LLM is unavailable.")
@@ -1165,12 +1174,100 @@ async def _call_page_excerpt_gate_backend(
     return _extract_page_excerpt_gate_json(raw)
 
 
-def _extract_page_excerpt_gate_json(raw: Any) -> dict[str, Any]:
+def _extract_page_excerpt_gate_json(raw: Any) -> tuple[dict[str, Any], str | None]:
     if isinstance(raw, dict):
         if any(key in raw for key in ("choices", "text", "content")):
-            return extract_json_object(_extract_gate_llm_text(raw))
-        return raw
-    return extract_json_object(_extract_gate_llm_text(raw))
+            return _extract_page_excerpt_gate_json_text(_extract_gate_llm_text(raw))
+        return raw, None
+    return _extract_page_excerpt_gate_json_text(_extract_gate_llm_text(raw))
+
+
+def _extract_page_excerpt_gate_json_text(text: str) -> tuple[dict[str, Any], str | None]:
+    raw_object = _extract_first_gate_json_object(str(text or ""))
+    try:
+        parsed = json.loads(raw_object)
+        warning = None
+    except json.JSONDecodeError:
+        repaired = _escape_control_chars_inside_json_strings(raw_object)
+        parsed = json.loads(repaired)
+        warning = "page_excerpt_gate_repaired_json_string_controls"
+    if not isinstance(parsed, dict):
+        raise ValueError("Page Excerpt Gate JSON output must be an object.")
+    return parsed, warning
+
+
+def _extract_first_gate_json_object(text: str) -> str:
+    value = str(text or "").strip()
+    if not value:
+        raise ValueError("empty Page Excerpt Gate JSON output")
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", value, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        return fenced.group(1).strip()
+    balanced = _first_balanced_gate_json_object(value)
+    if balanced is not None:
+        return balanced
+    return value
+
+
+def _first_balanced_gate_json_object(value: str) -> str | None:
+    start = value.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(value)):
+            char = value[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return value[start : index + 1]
+        start = value.find("{", start + 1)
+    return None
+
+
+def _escape_control_chars_inside_json_strings(value: str) -> str:
+    chars: list[str] = []
+    in_string = False
+    escaped = False
+    for char in value:
+        if in_string:
+            if escaped:
+                chars.append(char)
+                escaped = False
+                continue
+            if char == "\\":
+                chars.append(char)
+                escaped = True
+                continue
+            if char == '"':
+                chars.append(char)
+                in_string = False
+                continue
+            if char == "\n":
+                chars.append("\\n")
+            elif char == "\r":
+                chars.append("\\r")
+            elif char == "\t":
+                chars.append("\\t")
+            else:
+                chars.append(char)
+            continue
+        chars.append(char)
+        if char == '"':
+            in_string = True
+    return "".join(chars)
 
 
 def validate_page_excerpt_gate_response(data: Any, *, min_quality: str) -> tuple[PageExcerptGateResult | None, str | None]:
@@ -1249,10 +1346,11 @@ def _page_excerpt_gate_prompt(
     }
     return (
         "Judge whether this cleaned page excerpt is worth injecting into the main model as Web Context evidence.\n"
-        "Return strict JSON only. Do not write the final answer.\n"
+        "Return raw JSON only. Do not include markdown. Do not explain outside JSON. Do not write the final answer.\n"
         f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
         "Allowed evidence_quality/confidence values: low, medium, high.\n"
         "Allowed coverage values: direct_answer, supporting_background, partial, boilerplate, off_topic, insufficient.\n"
+        "The reason value must be one short sentence. Do not use bullet points. Do not use line breaks in reason.\n"
         "Accept useful facts, explanations, background, official information, news content, versions, prices, release dates, or role/person/product details that can help answer the user.\n"
         "Reject excerpts that are mostly navigation, ads, table of contents, login prompts, footers, related links, unrelated widgets, or off-topic page elements.\n"
         "Do not decide final factual correctness, do not select the final source list, do not rewrite the user question, and do not treat any site type as automatically good or bad.\n"

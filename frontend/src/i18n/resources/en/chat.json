@@ -202,6 +202,8 @@
       "unjudged": "unjudged"
     },
     "snippet": "Snippet",
+    "searchSnippet": "Search snippet",
+    "fetchedPageExcerpt": "Fetched page excerpt",
     "pageTitle": "Page title",
     "pageExcerptChars": "{{count}} page excerpt chars",
     "openSource": "Open source",
@@ -251,6 +253,7 @@
       "page_fetch_http_403": "Fetch failed: HTTP 403.",
       "page_fetch_http_500": "Fetch failed: HTTP 500.",
       "page_excerpt_gate_invalid_json": "Invalid Gate JSON.",
+      "page_excerpt_gate_repaired_json_string_controls": "Gate JSON string controls were repaired.",
       "page_excerpt_gate_schema_invalid": "Gate JSON did not match the required schema.",
       "page_excerpt_gate_unavailable": "Page Excerpt Gate was unavailable.",
       "page_excerpt_gate_backend_unavailable": "Page Excerpt Gate backend was unavailable.",

@@ -678,11 +678,9 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
       {refs.map((ref) => {
         const highlighted = Boolean(targetRef && ref.ref_id === targetRef);
         const pageTitle = ref.page_title && ref.page_title.trim() !== ref.title?.trim() ? ref.page_title : undefined;
-        const fetchedExcerptPreview = ref.page_fetch_status === 'fetched' ? ref.page_excerpt_preview : undefined;
-        const acceptedExcerptPreview = fetchedExcerptPreview && (ref.page_excerpt_injected || ref.page_excerpt_gate_status === 'accepted' || ref.page_excerpt_gate_status === 'disabled') ? fetchedExcerptPreview : undefined;
-        const visibleExcerptPreview = acceptedExcerptPreview || fetchedExcerptPreview;
-        const fallbackSnippet = !visibleExcerptPreview ? ref.snippet : undefined;
-        const showNotInjected = Boolean(visibleExcerptPreview && ref.page_excerpt_injected === false);
+        const searchSnippet = ref.snippet_preview || ref.snippet;
+        const fetchedExcerptPreview = ref.page_excerpt_preview;
+        const showNotInjected = Boolean(fetchedExcerptPreview && ref.page_excerpt_injected === false);
         const confidence = ref.page_excerpt_gate_status ? ref.page_excerpt_confidence : ref.candidate_judge_confidence;
         return (
           <article
@@ -700,10 +698,17 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
                 {pageTitle ? <small>{pageTitle}</small> : null}
               </div>
             </div>
-            {visibleExcerptPreview ? (
-              <pre className="knowledge-snippet-content context-content-block">{visibleExcerptPreview}</pre>
-            ) : fallbackSnippet ? (
-              <pre className="knowledge-snippet-content">{fallbackSnippet}</pre>
+            {searchSnippet ? (
+              <div className="context-source-preview-block">
+                <span>{t('chat:contextModal.searchSnippet')}</span>
+                <pre className="knowledge-snippet-content">{searchSnippet}</pre>
+              </div>
+            ) : null}
+            {fetchedExcerptPreview ? (
+              <div className="context-source-preview-block">
+                <span>{t('chat:contextModal.fetchedPageExcerpt')}</span>
+                <pre className="knowledge-snippet-content context-content-block">{fetchedExcerptPreview}</pre>
+              </div>
             ) : null}
             <div className="knowledge-snippet-scores">
               {scoreLabel(t('chat:contextModal.rank'), ref.rank)}
@@ -719,7 +724,6 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               {ref.source ? <span>{t('chat:contextModal.source')}: {ref.source}</span> : null}
               {ref.published_at ? <span>{t('chat:contextModal.published')}: {ref.published_at}</span> : null}
               {ref.page_excerpt_chars !== undefined ? <span>{t('chat:contextModal.pageExcerptChars', { count: ref.page_excerpt_chars })}</span> : null}
-              {ref.page_excerpt_gate_reason ? <span>{ref.page_excerpt_gate_reason}</span> : null}
               {ref.page_excerpt_gate_warning ? <span>{pageFetchWarningLabel(ref.page_excerpt_gate_warning, t)}</span> : null}
               {ref.candidate_judge_reason ? <span>{ref.candidate_judge_reason}</span> : null}
               {ref.page_fetch_warning ? <span>{pageFetchWarningLabel(ref.page_fetch_warning, t)}</span> : null}

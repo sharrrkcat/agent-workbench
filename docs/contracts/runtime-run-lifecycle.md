@@ -146,6 +146,9 @@ status/reason/warning fields are allowed. The inspection UI may display capped
 `page_excerpt_preview` for rejected or failed gate sources so users can inspect
 page-fetch quality, but rejected and failed excerpts must not be injected into
 the main model.
+The Web sources inspection modal may show both the original search snippet and
+the capped fetched page excerpt preview for the same source so users can compare
+search-summary text with fetched page content.
 When the Candidate Judge annotates a final source, the source ref may also
 include compact `candidate_judge_state` (`retained` or `unjudged`),
 `candidate_judge_relevance`, `candidate_judge_role`,
@@ -171,6 +174,11 @@ All Page Excerpt Gate backends use the shared strict JSON extraction behavior:
 bare JSON objects, fenced `json` objects, plain fenced JSON objects, and the
 first balanced JSON object surrounded by small explanatory text are accepted.
 The extracted value must still be a JSON object and pass schema/enum validation.
+For Page Excerpt Gate only, if that extracted object fails JSON parsing because
+a string value contains an unescaped literal newline, carriage-return, or tab,
+the parser may conservatively escape those control characters inside JSON string
+values and parse once more. Successful repair may add a compact warning code but
+does not make an otherwise valid Gate decision fail.
 Candidate Judge summary fields may include `candidate_judge.enabled`,
 `candidate_judge.used`, `candidate_judge.mode =
 conservative_reject_only`, `candidate_judge.schema = rejected_items_v1`,
