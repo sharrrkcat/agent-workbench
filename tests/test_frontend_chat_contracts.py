@@ -247,6 +247,18 @@ def test_text_part_renderer_uses_markdown_or_plain_paths() -> None:
     assert "onOpenWebCitation={onOpenWebCitation}" in bubble
     assert "renderKnowledgeCitationChildren" in bubble
     assert "webCitationRefMap" in bubble
+    assert "webCitationTitle" in bubble
+    assert "knowledgeCitationTitle" in bubble
+    assert "citation-title" in bubble
+    assert "ref.title, ref.page_title, ref.domain" in bubble
+    assert "ref.title" in bubble
+    assert "ref.source_title" in bubble
+    assert "ref.source_path" in bubble
+    assert "ref.heading_path" in bubble
+    assert "ref.knowledge_base_name" in bubble
+    assert "onClick={() => onOpenWeb(webLabel)}" in bubble
+    assert "onClick={() => onOpen({ token, labels: parsed.labels, refs, missingLabels })}" in bubble
+    assert "copyablePartsContent(message.parts)" in bubble
     assert "W\\d+" in bubble
     assert "['a', 'code', 'pre'].includes(node.type)" in bubble
 
@@ -508,11 +520,18 @@ def test_copyable_and_renderable_message_content_are_parts_first() -> None:
 
 def test_markdown_knowledge_citations_still_skip_code_pre_and_links() -> None:
     source = read_frontend("components/MessageBubble.tsx")
+    styles = read_frontend("styles.css")
 
     assert "parseKnowledgeCitationToken" in source
     assert "renderKnowledgeCitationChildren" in source
     assert "renderKnowledgeCitationNode" in source
     assert "['a', 'code', 'pre'].includes(node.type)" in source
+    assert ".citation-title" in styles
+    citation_title_block = styles[styles.index(".citation-title") : styles.index(".citation-label + .citation-title::before")]
+    assert "overflow: hidden" in citation_title_block
+    assert "text-overflow: ellipsis" in citation_title_block
+    assert "white-space: nowrap" in citation_title_block
+    assert "max-width: min(34ch, 58vw)" in styles
 
 
 def test_status_bar_only_shows_resolved_provider_and_model_target() -> None:
@@ -1136,8 +1155,14 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "summary.web" in source
     assert "webSummaryLabel" in source
     assert "runs:contextSummary.web" in source
-    assert "runs:contextSummary.webResultCount" in source
-    assert "runs:contextSummary.searchQuery" in source
+    assert "webAcceptedPageExcerptCount" in source
+    assert "webWarningCount" in source
+    assert "runs:contextSummary.webSourceCount" in source
+    assert "runs:contextSummary.webPageExcerptCount" in source
+    assert "runs:contextSummary.snippetsOnly" in source
+    assert "runs:contextSummary.webSkippedWithReason" in source
+    assert "runs:contextSummary.searchQuery" not in source[source.index("function webSummaryLabel") : source.index("function webPlanSummaryParts")]
+    assert "webDiagnosticsSummaryParts(summary, t)" not in source
     assert "runs:contextSummary.webQuerySource" in source
     assert "runs:contextSummary.webResolverConfidence" in source
     assert "runs:stepMessages.intentUsedForWebContext" in source
@@ -1164,6 +1189,9 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "candidate_judge_confidence" in source
     assert "candidate_judge_state" in source
     assert "candidate_judge_reason" in source
+    assert "nonWebWarnings" in source
+    assert "const warningCount = nonWebWarnings.length" in source
+    assert "...(summary.web?.warnings || [])" not in source
     assert "selectedCount" not in source
     assert "filteredResults" in source
     assert "deduplicatedResults" in source
@@ -1174,7 +1202,12 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert '"web": "Web"' in runs_en
     assert '"webContextPlan": "Web context plan"' in runs_en
     assert '"intentUsedForWebContext": "{{intent}} - not executed as route · used for Web context"' in runs_en
-    assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
+    assert '"webSourceCount_one": "{{count}} source"' in runs_en
+    assert '"webSourceCount_other": "{{count}} sources"' in runs_en
+    assert '"webPageExcerptCount_one": "{{count}} page excerpt"' in runs_en
+    assert '"webPageExcerptCount_other": "{{count}} page excerpts"' in runs_en
+    assert '"snippetsOnly": "snippets only"' in runs_en
+    assert '"webSkippedWithReason": "skipped · {{reason}}"' in runs_en
     assert '"webCandidatesJudged": "judged {{judged}} / retained {{retained}} / rejected {{rejected}} / unjudged {{unjudged}}"' in runs_en
     assert '"pagesFetched": "{{count}} pages fetched"' in runs_en
     assert '"pageExcerptGate": "pages attempted {{attempted}} · accepted {{accepted}} · rejected {{rejected}} · failed {{failed}}"' in runs_en

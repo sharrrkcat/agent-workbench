@@ -271,6 +271,13 @@ The frontend may expand run-step timelines from message metadata and run event
 state. It may render `Building context` as a compact `Context injected` summary
 for Core Memory, Worldbook, Knowledge, and warnings, but must not show or store
 full injected content in metadata.
+For Web Context, the `Building context` summary is intentionally compact and
+should show only final outcome facts such as source count, accepted page excerpt
+count or snippets-only state, provider, and warning count. It should avoid raw
+warning codes, page-attempt/failure details, Candidate Judge internals, Page
+Excerpt Gate reasons, page-cleaning diagnostics, and long query text. Detailed
+Web diagnostics remain available through compact metadata and the Web sources
+inspection modal.
 
 ## Related Contracts
 

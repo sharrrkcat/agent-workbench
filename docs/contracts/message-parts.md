@@ -123,6 +123,11 @@ clickable citation badges. This is render-time only: persisted message parts and
 copy behavior keep the original markdown text. Citation enhancement must avoid
 code blocks, inline code, and links, and unknown labels such as `[W99]` must not
 throw or trigger network calls.
+The frontend may render citation badges with readable titles from compact
+metadata, such as Web source title/page title/domain for `[W#]` and Knowledge
+source title/path/heading metadata for `[K#]`. These display labels are UI-only
+and must not mutate the stored markdown text, message parts, retry/edit content,
+or copy-to-clipboard output.
 Fetched Web Context page excerpts do not create new citation ids; `[W#]`
 continues to point at the matching compact Web source ref.
 Audio parts render with the project custom audio player, backed by a hidden

@@ -266,6 +266,11 @@ with Web citation UI from Prompt Agent Web Context. `[K#]` citations continue to
 resolve through Knowledge chunk APIs, while `[W#]` citations resolve only from
 compact `web_context.source_refs` metadata. Web citations do not change
 Knowledge retrieval, indexing, or snippet contracts.
+Knowledge citation badges may display a readable title from existing compact
+snippet metadata, preferring source or snippet title/path/heading-style fields
+when present and falling back to the `K#` label. This is a render-time display
+choice only and does not change retrieval, injection, chunk fetch behavior, or
+the raw `[K#]` markdown token.
 
 Script Agents with `llm` default to session Knowledge disabled. If settings or
 Agent overrides enable it, `ctx.llm.text`, `ctx.llm.json`, `ctx.llm.stream`,

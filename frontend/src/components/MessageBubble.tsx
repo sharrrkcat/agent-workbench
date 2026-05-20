@@ -194,6 +194,12 @@ type KnowledgeSnippetRef = {
   knowledge_base_name?: string;
   source_id?: string;
   source_title?: string;
+  title?: string;
+  source_name?: string;
+  path?: string;
+  source_path?: string;
+  heading?: string;
+  breadcrumbs?: string[];
   rank?: number;
   heading_path?: string;
   vector_score?: number;
@@ -1101,6 +1107,12 @@ function knowledgeSnippetRefs(context: Record<string, unknown> | undefined): Kno
         knowledge_base_name: textValue(item.knowledge_base_name),
         source_id: textValue(item.source_id),
         source_title: textValue(item.source_title),
+        title: textValue(item.title),
+        source_name: textValue(item.source_name),
+        path: textValue(item.path),
+        source_path: textValue(item.source_path),
+        heading: textValue(item.heading),
+        breadcrumbs: stringArray(item.breadcrumbs),
         rank: numberValue(item.rank),
         heading_path: textValue(item.heading_path),
         vector_score: numberValue(item.vector_score),
@@ -1242,7 +1254,7 @@ function splitKnowledgeCitationText(
   openRangeLabel: (labels: string) => string,
   openWebLabel: ((label: string) => string) | undefined,
 ): ReactNode {
-  const tokenPattern = /\[(?:K\d+(?:\s*(?:,|-|–)\s*K\d+)*|W\d+)\]/g;
+  const tokenPattern = /\[(?:W\d+|K\d+(?:\s*(?:,|-|–)\s*K\d+)*)\]/g;
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -1252,6 +1264,8 @@ function splitKnowledgeCitationText(
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
     const webLabel = token.match(/^\[(W\d+)\]$/)?.[1];
     if (webLabel && webRefsByLabel?.has(webLabel) && onOpenWeb) {
+      const ref = webRefsByLabel.get(webLabel);
+      const displayTitle = ref ? webCitationTitle(ref) : '';
       const ariaLabel = openWebLabel?.(webLabel) || webLabel;
       parts.push(
         <button
@@ -1259,10 +1273,11 @@ function splitKnowledgeCitationText(
           type="button"
           className="knowledge-citation-badge web-citation-badge"
           aria-label={ariaLabel}
-          title={ariaLabel}
+          title={displayTitle ? `${ariaLabel}: ${displayTitle}` : ariaLabel}
           onClick={() => onOpenWeb(webLabel)}
         >
-          {token}
+          <span className="citation-label">{webLabel}</span>
+          {displayTitle ? <span className="citation-title">{displayTitle}</span> : null}
         </button>,
       );
     } else {
@@ -1270,25 +1285,27 @@ function splitKnowledgeCitationText(
       if (!parsed) {
         parts.push(token);
       } else {
-      const refs = parsed.labels.map((label) => refsByLabel.get(label)).filter((ref): ref is KnowledgeSnippetRef => Boolean(ref));
-      const missingLabels = parsed.labels.filter((label) => !refsByLabel.has(label));
-      if (!refs.length) {
-        parts.push(token);
-      } else {
-        const ariaLabel = parsed.labels.length === 1 ? openLabel(parsed.labels[0]) : openRangeLabel(parsed.labels.join(', '));
-        parts.push(
-          <button
-            key={`${token}:${match.index}`}
-            type="button"
-            className="knowledge-citation-badge"
-            aria-label={ariaLabel}
-            title={ariaLabel}
-            onClick={() => onOpen({ token, labels: parsed.labels, refs, missingLabels })}
-          >
-            {token}
-          </button>,
-        );
-      }
+        const refs = parsed.labels.map((label) => refsByLabel.get(label)).filter((ref): ref is KnowledgeSnippetRef => Boolean(ref));
+        const missingLabels = parsed.labels.filter((label) => !refsByLabel.has(label));
+        if (!refs.length) {
+          parts.push(token);
+        } else {
+          const ariaLabel = parsed.labels.length === 1 ? openLabel(parsed.labels[0]) : openRangeLabel(parsed.labels.join(', '));
+          const displayTitle = parsed.labels.length === 1 ? knowledgeCitationTitle(refs[0]) : '';
+          parts.push(
+            <button
+              key={`${token}:${match.index}`}
+              type="button"
+              className="knowledge-citation-badge"
+              aria-label={ariaLabel}
+              title={displayTitle ? `${ariaLabel}: ${displayTitle}` : ariaLabel}
+              onClick={() => onOpen({ token, labels: parsed.labels, refs, missingLabels })}
+            >
+              <span className="citation-label">{parsed.labels.join(', ')}</span>
+              {displayTitle ? <span className="citation-title">{displayTitle}</span> : null}
+            </button>,
+          );
+        }
       }
     }
     lastIndex = match.index + token.length;
@@ -1296,6 +1313,25 @@ function splitKnowledgeCitationText(
 
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
   return parts.length ? parts : text;
+}
+
+function webCitationTitle(ref: WebSourceRef): string {
+  return firstText([ref.title, ref.page_title, ref.domain]) || '';
+}
+
+function knowledgeCitationTitle(ref: KnowledgeSnippetRef): string {
+  const breadcrumbTitle = ref.breadcrumbs?.length ? ref.breadcrumbs.join(' > ') : undefined;
+  return firstText([
+    ref.title,
+    ref.source_title,
+    ref.source_name,
+    ref.path,
+    ref.source_path,
+    ref.heading,
+    breadcrumbTitle,
+    ref.heading_path,
+    ref.knowledge_base_name,
+  ]) || '';
 }
 
 function ThoughtBlock({ content, streaming }: { content: string; streaming: boolean }) {
@@ -1452,7 +1488,8 @@ function RunStepTreeItem({ step, depth, runKnowledge, compact = false }: { step:
 function ContextInjectedBlock({ summary }: { summary: NormalizedContextMetadata }) {
   const { t } = useTranslation(['runs']);
   const knowledge = summary.knowledge?.retrieval;
-  const warningCount = (summary.memory?.warnings.length || 0) + (summary.worldbook?.warnings.length || 0) + (summary.knowledge?.warnings.length || 0) + (summary.web?.warnings.length || 0);
+  const nonWebWarnings = [...(summary.memory?.warnings || []), ...(summary.worldbook?.warnings || []), ...(summary.knowledge?.warnings || [])];
+  const warningCount = nonWebWarnings.length;
   return (
     <div className="run-step-knowledge" aria-label={t('runs:contextSummary.title')}>
       <strong>{t('runs:contextSummary.title')}</strong>
@@ -1469,9 +1506,9 @@ function ContextInjectedBlock({ summary }: { summary: NormalizedContextMetadata 
         {knowledge ? <DebugRow label={t('runs:contextSummary.reranker')} value={rerankerLabel(knowledge, t)} /> : null}
         {warningCount ? <DebugRow label={t('runs:contextSummary.warnings')} value={warningCount} /> : null}
       </div>
-      {warningCount ? (
+      {nonWebWarnings.length ? (
         <div className="run-step-knowledge-warnings">
-          {[...(summary.memory?.warnings || []), ...(summary.worldbook?.warnings || []), ...(summary.knowledge?.warnings || []), ...(summary.web?.warnings || [])].map((warning, index) => (
+          {nonWebWarnings.map((warning, index) => (
             <span key={`${warning}-${index}`}>{warning}</span>
           ))}
         </div>
@@ -2853,18 +2890,45 @@ function knowledgeSummaryLabel(summary: KnowledgeContextSummary | undefined, t: 
 }
 
 function webSummaryLabel(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string {
-  if (summary.injected) {
-    const provider = summary.provider || t('runs:contextSummary.unknown');
-    const resultLabel = [t('runs:contextSummary.webResultCount', { count: summary.resultCount ?? 0, provider }), ...webDiagnosticsSummaryParts(summary, t)].join(' · ');
-    return summary.query ? `${resultLabel} · ${t('runs:contextSummary.searchQuery', { query: summary.query })}` : resultLabel;
+  const sourceCount = summary.resultCount ?? summary.sourceRefs.length;
+  const excerptCount = webAcceptedPageExcerptCount(summary);
+  if (summary.injected || sourceCount > 0) {
+    const parts = [
+      t('runs:contextSummary.webSourceCount', { count: sourceCount }),
+      excerptCount > 0 ? t('runs:contextSummary.webPageExcerptCount', { count: excerptCount }) : t('runs:contextSummary.snippetsOnly'),
+    ];
+    if (summary.provider) parts.push(summary.provider);
+    const warnings = webWarningCount(summary);
+    if (warnings) parts.push(t('runs:contextSummary.warningsCount', { count: warnings }));
+    return parts.join(' · ');
   }
   if (summary.skippedReason) {
     const reason = webSkipReasonLabel(summary.skippedReason, t);
-    const plan = webPlanSummaryParts(summary, t).join(' · ');
-    return plan ? `${t('runs:contextSummary.skippedWithReason', { reason })} · ${plan}` : t('runs:contextSummary.skippedWithReason', { reason });
+    return t('runs:contextSummary.webSkippedWithReason', { reason });
   }
   if (summary.attempted) return t('runs:contextSummary.noResults');
   return summary.enabled === false ? t('runs:contextSummary.skipped') : t('runs:contextSummary.notUsed');
+}
+
+function webAcceptedPageExcerptCount(summary: WebContextSummary): number {
+  const fromRefs = summary.sourceRefs.filter((ref) => ref.page_excerpt_injected === true).length;
+  if (fromRefs > 0) return fromRefs;
+  return summary.pageExcerptGate?.accepted ?? 0;
+}
+
+function webWarningCount(summary: WebContextSummary): number {
+  return uniqueStrings([
+    ...summary.warnings,
+    ...summary.pageFetchWarnings,
+    ...(summary.searchDiagnostics?.warnings || []),
+    ...(summary.candidateJudge?.warnings || []),
+    ...(summary.pageExcerptGate?.warnings || []),
+    ...summary.sourceRefs.flatMap((ref) => [
+      ref.page_fetch_warning,
+      ref.page_cleaning_warning || undefined,
+      ref.page_excerpt_gate_warning,
+    ]),
+  ]).length;
 }
 
 function webPlanSummaryParts(summary: WebContextSummary, t: ReturnType<typeof useTranslation>['t']): string[] {
