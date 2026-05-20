@@ -73,6 +73,10 @@ embedding-model loading for semantic routing may appear as a child of
 planning remains under `Building context` as `Web context plan`; Utility LLM
 loading for that planning may appear in the preparation step, but the plan
 summary must not be duplicated.
+The assistant draft row for the run should be announced before
+`Preparing context tools` starts so `run_step_created` and `run_step_updated`
+events can attach to a visible message in realtime. The LLM streaming phase
+reuses that same draft row rather than creating a second assistant message.
 
 When Prompt Agent Web Context is enabled and the web plan is evaluated, runtime
 may add a compact `Web context plan` child step under `Building context`. The

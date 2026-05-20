@@ -35,6 +35,14 @@ class WorkbenchRuntime:
                 attachments=attachments,
             )
             early_run = self._create_prompt_agent_run(route, input_message_id=input_message_id)
+            agent = self.agent_runner.agent_registry.get(route.target_id or "")
+            self.agent_runner._emit_prompt_message_started(
+                agent=agent,
+                action_id=route.action_id or "default",
+                session_id=route.session_id,
+                run=early_run,
+                parent_id=input_message_id,
+            )
             preparation_step = self.agent_runner.run_lifecycle.start_step(early_run.run_id, "Preparing context tools")
             preparation_step_id = preparation_step.step_id
         recorder = _PreparationStepRecorder(

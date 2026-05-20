@@ -10,6 +10,9 @@ streaming signals.
   assistant draft exists. This lets clients clear local "sending" state for the
   user bubble as soon as the backend has accepted/saved it.
 - `message_started` announces a new assistant draft before public deltas.
+  Prompt Agent runs may emit it immediately after run creation and before
+  expensive preparation steps, so run steps have a visible assistant row during
+  preparation. The later LLM stream must reuse this draft message id.
 - `message_delta` carries visible incremental output for a streaming assistant
   message.
 - `message_completed` carries the final persisted assistant message and is the
@@ -64,6 +67,9 @@ authoritative visible content.
 ## Producer Rules
 
 - Emit `message_started` before public deltas for a new assistant draft.
+- If `message_started` was already emitted during Prompt Agent preparation, do
+  not emit a second draft for the LLM call. Reuse the same `message_id` for
+  `message_delta` and the same `draft_message_id` on `message_completed`.
 - Increment `seq` once for each public delta.
 - Do not emit empty visible deltas unless carrying `reasoning_delta`.
 - Emit `message_completed` once, with a greater `seq`.

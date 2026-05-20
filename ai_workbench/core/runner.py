@@ -396,7 +396,7 @@ class AgentRunner:
                 metadata=run_metadata,
             )
             self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
-        if not suppress_output:
+        if not suppress_output and not preparation_step_id:
             self._emit_prompt_message_started(
                 agent=agent,
                 action_id=action_id,
@@ -947,6 +947,10 @@ class AgentRunner:
 
     def _emit_prompt_message_started(self, agent, action_id: str, session_id: str, run: RunSchema, parent_id: str = "", llm_resolution: dict | None = None) -> str:
         draft_message_id = f"draft-{run.run_id}"
+        current = self.run_store.get_run(run.run_id)
+        metadata = dict(current.metadata or {})
+        metadata["draft_message_id"] = draft_message_id
+        self.run_store.update_metadata(run.run_id, metadata)
         self.event_bus.emit(
             "message_started",
             session_id=session_id,
@@ -986,14 +990,16 @@ class AgentRunner:
         calling_llm_step_id: str,
     ) -> RunResult:
         resolution = _public_llm_resolution(llm_config)
-        draft_message_id = self._emit_prompt_message_started(
-            agent=agent,
-            action_id=action_id,
-            session_id=session_id,
-            run=run,
-            parent_id=parent_id,
-            llm_resolution=resolution,
-        )
+        draft_message_id = f"draft-{run.run_id}"
+        if not self._has_message_started_event(run.run_id):
+            draft_message_id = self._emit_prompt_message_started(
+                agent=agent,
+                action_id=action_id,
+                session_id=session_id,
+                run=run,
+                parent_id=parent_id,
+                llm_resolution=resolution,
+            )
         metrics_recorder = LLMMetricsRecorder(streamed=True)
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -1143,6 +1149,21 @@ class AgentRunner:
             payload={"available_actions": message.available_actions},
         )
         return RunResult(success=True, run_id=done_run.run_id, data=content)
+
+    def _has_message_started_event(self, run_id: str) -> bool:
+        try:
+            metadata = self.run_store.get_run(run_id).metadata or {}
+            if metadata.get("draft_message_id") == f"draft-{run_id}":
+                return True
+        except Exception:
+            pass
+        events = getattr(self.event_bus, "list_events", None)
+        if not callable(events):
+            return False
+        try:
+            return any(event.type == "message_started" and event.run_id == run_id for event in events())
+        except Exception:
+            return False
 
     def _persist_prompt_message(
         self,

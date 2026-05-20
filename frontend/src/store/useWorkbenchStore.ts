@@ -702,7 +702,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         runs: mergedRunState.runs,
         runsById: mergedRunState.runsById,
         stepsByRunId: mergedRunState.stepsByRunId,
-        messages: buildTimeline(get().messages, mergedRunState.runs, get().messages, session.session_id),
+        messages: markDraftFailed(buildTimeline(get().messages, mergedRunState.runs, get().messages, session.session_id), event.run_id || '', error),
       });
       return;
     }
@@ -990,7 +990,7 @@ function mergeRunStepIntoState(state: Pick<WorkbenchState, 'runs' | 'runsById' |
 }
 
 function failedRunErrors(messages: Message[], runs: Run[], sessionId: string): Message[] {
-  const messageRunIds = new Set(messages.filter((message) => !isTransientMessage(message)).map((message) => message.run_id).filter(isNonEmptyString));
+  const messageRunIds = new Set(messages.map((message) => message.run_id).filter(isNonEmptyString));
   const seenRunIds = new Set<string>();
   return dedupeRuns(runs)
     .filter((run) => {
@@ -1038,7 +1038,7 @@ function removeSupersededFailedDrafts(messages: Message[], runs: Run[]): Message
   if (!failedRunIds.size) return messages;
   return messages.filter((message) => {
     if (!message.run_id || !failedRunIds.has(message.run_id) || !message.message_id.startsWith('draft-')) return true;
-    return Boolean(messageText(message));
+    return Boolean(messageText(message) || message.run_steps?.length || message.run?.steps?.length);
   });
 }
 
@@ -1359,6 +1359,19 @@ function parseLlmProviderStatusPayload(value: unknown): LlmProviderStatus | null
 
 function textPart(text: string, format: 'plain' | 'markdown'): MessagePart {
   return { id: 'part_1', type: 'text', format, text };
+}
+
+function markDraftFailed(messages: Message[], runId: string, error: AppError): Message[] {
+  if (!runId) return messages;
+  return messages.map((message) => {
+    if (!(message.message_id.startsWith('draft-') && message.run_id === runId)) return message;
+    return {
+      ...message,
+      client_status: 'failed' as const,
+      client_error: error,
+      metadata: { ...(message.metadata || {}), streaming: false, error },
+    };
+  });
 }
 
 function messageText(message: Pick<Message, 'parts'>): string {

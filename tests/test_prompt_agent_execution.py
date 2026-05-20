@@ -1435,7 +1435,8 @@ def test_prompt_agent_emits_early_placeholder_bound_to_run_id() -> None:
     accepted_user = next(event for event in events if event.type == "message_updated")
     first_step = next(index for index, event in enumerate(events) if event.type == "run_step_created")
     assert events.index(accepted_user) < first_step
-    assert first_step < events.index(placeholder)
+    assert events.index(placeholder) < first_step
+    assert [event.type for event in events].count("message_started") == 1
 
 
 def test_prompt_agent_llm_failure_marks_calling_llm_step_failed() -> None:
