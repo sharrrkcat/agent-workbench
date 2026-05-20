@@ -633,10 +633,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
     if (event.type === 'message_started' && event.run_id) {
       const draft = createDraftAssistantMessage(session.session_id, event);
+      const run = get().runsById[event.run_id];
+      const runSteps = get().stepsByRunId[event.run_id] || run?.steps || [];
       set({
         activeRunId: event.run_id,
         sending: true,
-        messages: upsertDraftMessage(get().messages, draft),
+        messages: upsertDraftMessage(get().messages, { ...draft, run, run_steps: runSteps }),
         lastMessageSeqById: clearStreamingSeq(get().lastMessageSeqById, draft.message_id),
         completedMessageIds: clearCompletedMessage(get().completedMessageIds, draft.message_id),
       });
@@ -1227,8 +1229,15 @@ function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, compl
   const next = messages.map((message) => {
     const sameMessage = message.message_id === updatedMessage.message_id;
     const sameRunDraft = message.message_id.startsWith('draft-') && message.run_id && message.run_id === updatedMessage.run_id;
-    if (!sameMessage && !sameRunDraft) return message;
+    const sameAcceptedUser =
+      message.role === 'user' &&
+      message.client_status === 'pending' &&
+      updatedMessage.role === 'user' &&
+      messageText(message) === messageText(updatedMessage) &&
+      sameAttachmentIds(message, updatedMessage);
+    if (!sameMessage && !sameRunDraft && !sameAcceptedUser) return message;
     replaced = true;
+    if (sameAcceptedUser) return { ...updatedMessage, client_status: undefined };
     const preserveStreamingContent = message.client_status === 'streaming' || completedMessageIds[message.message_id] || completedMessageIds[updatedMessage.message_id];
     return {
       ...message,

@@ -181,6 +181,16 @@ class LocalKnowledgeModelBackend:
             self._reranker_cache[key] = CrossEncoder(str(path), device=device)
         return self._reranker_cache[key]
 
+    def embedding_model_loaded(self, model_path: str, device: str | None = None) -> bool:
+        absolute_path = resolve_model_path(model_path, "embeddings", self.root)
+        resolved_device = resolve_device(device) if device else None
+        return any(path == str(absolute_path) and (resolved_device is None or cached_device == resolved_device) for path, cached_device in self._embedding_cache)
+
+    def reranker_model_loaded(self, model_path: str, device: str | None = None) -> bool:
+        absolute_path = resolve_model_path(model_path, "rerankers", self.root)
+        resolved_device = resolve_device(device) if device else None
+        return any(path == str(absolute_path) and (resolved_device is None or cached_device == resolved_device) for path, cached_device in self._reranker_cache)
+
     def unload_embedding_model(self, model_path: str, device: str | None = None) -> bool:
         absolute_path = resolve_model_path(model_path, "embeddings", self.root)
         resolved_device = resolve_device(device) if device else None

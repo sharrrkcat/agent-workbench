@@ -6,6 +6,9 @@ streaming signals.
 
 ## Event Roles
 
+- `message_updated` may acknowledge a newly persisted user message before an
+  assistant draft exists. This lets clients clear local "sending" state for the
+  user bubble as soon as the backend has accepted/saved it.
 - `message_started` announces a new assistant draft before public deltas.
 - `message_delta` carries visible incremental output for a streaming assistant
   message.
@@ -88,6 +91,10 @@ planning, JSON extraction, or validation. Public output streaming requires
 - During streaming, `message_updated` may conservatively merge metadata,
   `run_id`, attachments, status, `content_version`, and `parts`, but must not
   replace accumulated transient draft text.
+- When `message_updated` carries a persisted user message matching a local
+  optimistic user message by visible text and attachment ids, the frontend
+  should replace the optimistic row and clear that row's sending state without
+  waiting for `message_started`, `message_delta`, or `message_completed`.
 - For non-streaming source messages, `message_updated` may persist backend
   generated part changes, such as replacing a `form` part after a silent save or
   setting form-level `ui.collapsed=true`.

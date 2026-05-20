@@ -1367,15 +1367,20 @@ def test_prompt_agent_success_creates_default_run_steps() -> None:
     steps = fixture.runs.list_steps(result.run_id)
 
     assert [step.label for step in steps] == [
+        "Preparing context tools",
         "Resolving agent",
         "Intent semantic routing",
         "Building context",
         "Resolving model",
+        "Generating session title",
         "Calling LLM",
         "Saving response",
         "Cleanup",
     ]
-    assert [step.status.value for step in steps] == ["completed"] * 7
+    assert [step.status.value for step in steps] == ["completed"] * 9
+    preparing = next(step for step in steps if step.label == "Preparing context tools")
+    title = next(step for step in steps if step.label == "Generating session title")
+    assert title.parent_step_id == preparing.step_id
 
 
 def test_run_lifecycle_steps_write_timestamps_and_emit_updates() -> None:
@@ -1427,7 +1432,10 @@ def test_prompt_agent_emits_early_placeholder_bound_to_run_id() -> None:
     assert placeholder.run_id == result.run_id
     assert placeholder.payload["message_id"] == f"draft-{result.run_id}"
     assert placeholder.payload["agent_id"] == "chat"
-    assert events.index(placeholder) < next(index for index, event in enumerate(events) if event.type == "run_step_created")
+    accepted_user = next(event for event in events if event.type == "message_updated")
+    first_step = next(index for index, event in enumerate(events) if event.type == "run_step_created")
+    assert events.index(accepted_user) < first_step
+    assert first_step < events.index(placeholder)
 
 
 def test_prompt_agent_llm_failure_marks_calling_llm_step_failed() -> None:
@@ -1452,7 +1460,7 @@ def test_run_lifecycle_events_include_run_and_step_payloads() -> None:
 
     step_event = next(event for event in fixture.events.list_events() if event.type == "run_step_created")
     run_event = next(event for event in fixture.events.list_events() if event.type == "run_updated")
-    assert step_event.payload["step"]["label"] == "Resolving agent"
+    assert step_event.payload["step"]["label"] == "Preparing context tools"
     assert "parent_step_id" in step_event.payload["step"]
     assert "run_id" in run_event.payload["run"]
 

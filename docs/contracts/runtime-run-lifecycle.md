@@ -33,6 +33,7 @@ Terminal statuses must not move back to running.
 Prompt Agent top-level steps normally include:
 
 - `Resolving agent`
+- optional `Preparing context tools`
 - optional `Intent semantic routing`
 - `Building context`
 - `Resolving model`
@@ -52,6 +53,26 @@ Script Agent top-level steps normally include:
 Script custom steps created with `ctx.step` default under `Running script`.
 Long-running scripts may update step messages while polling external jobs.
 Steps should represent user-meaningful phases, not every helper function.
+
+Prompt Agent runs may create `Preparing context tools` as an early top-level
+step after the user message is accepted and before expensive pre-response work.
+It is used only for compact, user-understandable preparation that can otherwise
+look like the app is idle. Optional child steps include:
+
+- `Loading embedding model`
+- `Loading reranker`
+- `Loading utility LLM`
+- `Generating session title`
+
+These children are created only when the work is actually expected and the
+local model/cache is not already loaded, or when title generation is pending.
+Subsequent requests that reuse loaded models should avoid noisy duplicate load
+steps. Intent semantic routing keeps its own `Intent semantic routing` step;
+embedding-model loading for semantic routing may appear as a child of
+`Preparing context tools`, not as a second semantic-routing step. Web Context
+planning remains under `Building context` as `Web context plan`; Utility LLM
+loading for that planning may appear in the preparation step, but the plan
+summary must not be duplicated.
 
 When Prompt Agent Web Context is enabled and the web plan is evaluated, runtime
 may add a compact `Web context plan` child step under `Building context`. The
@@ -108,6 +129,13 @@ Metadata must not store:
 - full workflow JSON.
 - large binary data or image bytes.
 - secrets.
+
+Preparation-step metadata must be especially compact. It may include public
+backend/profile/model identifiers, `state` values such as `loading`, `loaded`,
+`reused`, or `skipped`, duration metrics, and compact warning codes. It must
+not include prompts, full user text copies, raw Utility LLM output, complete
+retrieval/search payloads, Knowledge snippets, vectors, provider secrets, or
+large diagnostics.
 
 Generated image metadata should record compact recipe/run facts such as
 attachment ids, prompt/request ids, image filtering counts, and output counts.

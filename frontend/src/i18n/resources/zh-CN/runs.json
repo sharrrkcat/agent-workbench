@@ -16,7 +16,12 @@
     "knowledgeRetrieval": "知识库检索",
     "preparingResponse": "准备响应",
     "intentSemanticRouting": "意图语义路由",
-    "webContextPlan": "联网上下文计划"
+    "webContextPlan": "联网上下文计划",
+    "preparingContextTools": "准备上下文工具",
+    "loadingEmbeddingModel": "加载 Embedding 模型",
+    "loadingReranker": "加载 Reranker",
+    "loadingUtilityLlm": "加载 Utility LLM",
+    "generatingSessionTitle": "生成会话标题"
   },
   "panel": {
     "title": "运行步骤",

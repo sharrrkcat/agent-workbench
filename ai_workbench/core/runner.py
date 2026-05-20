@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import time
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -262,14 +263,20 @@ class AgentRunner:
         intent_routing_metadata: dict[str, Any] | None = None,
         temporary_knowledge_base_ids: list[str] | None = None,
         knowledge_query_override: str | None = None,
+        existing_run_id: str = "",
+        preparation_step_id: str = "",
     ) -> RunResult:
         attachments = attachments or []
         try:
             agent = self.agent_registry.get(agent_id)
         except KeyError:
+            if existing_run_id:
+                self.run_lifecycle.fail_run(existing_run_id, "AGENT_NOT_FOUND", f"Unknown agent: {agent_id}")
             return RunResult(success=False, run_id="", error=f"Unknown agent: {agent_id}", error_code="AGENT_NOT_FOUND")
 
         if self.agent_config_store is not None and not self.agent_config_store.is_enabled(agent_id):
+            if existing_run_id:
+                self.run_lifecycle.fail_run(existing_run_id, "AGENT_DISABLED", f"Agent is disabled: {agent_id}")
             return RunResult(
                 success=False,
                 run_id="",
@@ -279,6 +286,8 @@ class AgentRunner:
 
         action = next((item for item in agent.actions if item.id == action_id), None)
         if action is None:
+            if existing_run_id:
+                self.run_lifecycle.fail_run(existing_run_id, "ACTION_NOT_FOUND", f"Unknown action '{action_id}' for agent '{agent_id}'.")
             return RunResult(
                 success=False,
                 run_id="",
@@ -286,6 +295,8 @@ class AgentRunner:
                 error_code="ACTION_NOT_FOUND",
             )
         if enforce_callable and not action.callable:
+            if existing_run_id:
+                self.run_lifecycle.fail_run(existing_run_id, "ACTION_NOT_CALLABLE", f"Action '{action_id}' for agent '{agent_id}' is not user-callable.")
             return RunResult(
                 success=False,
                 run_id="",
@@ -373,14 +384,18 @@ class AgentRunner:
             run_metadata["knowledge_query_override"] = knowledge_query_override
         if intent_routing_metadata is not None:
             run_metadata["intent_routing"] = intent_routing_metadata
-        run = self.run_store.create_run(
-            kind=kind,
-            target_id=agent_id,
-            action_id=action_id,
-            session_id=session_id,
-            metadata=run_metadata,
-        )
-        self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
+        if existing_run_id:
+            run = self.run_store.get_run(existing_run_id)
+            self.run_store.update_metadata(run.run_id, {**run.metadata, **run_metadata})
+        else:
+            run = self.run_store.create_run(
+                kind=kind,
+                target_id=agent_id,
+                action_id=action_id,
+                session_id=session_id,
+                metadata=run_metadata,
+            )
+            self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
         if not suppress_output:
             self._emit_prompt_message_started(
                 agent=agent,
@@ -424,6 +439,7 @@ class AgentRunner:
                 display_input=display_input,
                 form_id=form_id or "",
                 is_silent_submission=is_silent_submission,
+                preparation_step_id=preparation_step_id,
             )
         except asyncio.CancelledError:
             try:
@@ -435,6 +451,90 @@ class AgentRunner:
             return RunResult(success=False, run_id=run.run_id, error="Run was cancelled.", data=None)
         finally:
             self.active_runs.unregister(run.run_id)
+
+    def _start_knowledge_preparation_steps(
+        self,
+        run_id: str,
+        parent_step_id: str,
+        *,
+        session_id: str,
+        temporary_knowledge_base_ids: list[str] | None,
+    ) -> list[dict[str, Any] | None]:
+        if not parent_step_id or self.knowledge_store is None or self.knowledge_model_backend is None:
+            return []
+        steps: list[dict[str, Any] | None] = []
+        try:
+            settings = self.knowledge_store.get_settings()
+            kbs = []
+            if temporary_knowledge_base_ids:
+                for kb_id in temporary_knowledge_base_ids:
+                    try:
+                        kb = self.knowledge_store.get_knowledge_base(kb_id)
+                    except KeyError:
+                        continue
+                    if getattr(kb, "enabled", False):
+                        kbs.append(kb)
+            else:
+                for binding in self.knowledge_store.list_session_bindings(session_id):
+                    if not getattr(binding, "enabled", False):
+                        continue
+                    kb = getattr(binding, "knowledge_base", None) or self.knowledge_store.get_knowledge_base(binding.knowledge_base_id)
+                    if getattr(kb, "enabled", False):
+                        kbs.append(kb)
+            for profile_id in sorted({getattr(kb, "embedding_model_profile_id", "") for kb in kbs if getattr(kb, "embedding_model_profile_id", "")}):
+                profile = self.knowledge_store.get_embedding_profile(profile_id)
+                if not self._embedding_loaded(getattr(profile, "model_path", ""), getattr(settings, "local_model_device", "auto")):
+                    steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading embedding model", {"backend": "knowledge", "profile_id": profile_id, "model_path": getattr(profile, "model_path", None), "state": "loading"}))
+            reranker_path = str(getattr(settings, "reranker_model_path", "") or "")
+            if getattr(settings, "reranker_enabled", False) and reranker_path and not self._reranker_loaded(reranker_path, getattr(settings, "local_model_device", "auto")):
+                steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading reranker", {"backend": "knowledge", "model_path": reranker_path, "state": "loading"}))
+        except Exception:
+            return steps
+        return steps
+
+    def _start_utility_preparation_step(self, run_id: str, parent_step_id: str, settings: Any) -> dict[str, Any] | None:
+        if not parent_step_id or self.utility_llm_service is None:
+            return None
+        try:
+            backend = str(getattr(settings, "intent_routing_utility_llm_backend", "") or "")
+            if backend == "model_profile" or self.utility_llm_service.local_model_loaded(settings):
+                return None
+            status = self.utility_llm_service.status(settings)
+            if not status.get("available"):
+                return None
+            return self._start_preparation_step(run_id, parent_step_id, "Loading utility LLM", {"backend": backend, "model_path": status.get("model_path"), "state": "loading"})
+        except Exception:
+            return None
+
+    def _start_title_preparation_step(self, run_id: str, parent_step_id: str, settings: Any) -> dict[str, Any] | None:
+        if not parent_step_id:
+            return None
+        title_state = getattr(self.session_store.get_session(self.run_store.get_run(run_id).session_id), "title_generation_state", "") if self.session_store is not None else ""
+        if title_state != "pending":
+            return None
+        return self._start_preparation_step(run_id, parent_step_id, "Generating session title", {"state": "running", "finish_state": "completed", "backend": getattr(settings, "session_title_backend", "utility_llm")})
+
+    def _start_preparation_step(self, run_id: str, parent_step_id: str, label: str, metadata: dict[str, Any]) -> dict[str, Any]:
+        started_at = time.monotonic()
+        step = self.run_lifecycle.start_step(run_id, label, metadata=metadata, parent_step_id=parent_step_id)
+        return {"step_id": step.step_id, "started_at": started_at, "metadata": metadata}
+
+    def _finish_preparation_steps(self, steps: list[dict[str, Any] | None]) -> None:
+        for token in steps:
+            if not token:
+                continue
+            metadata = dict(token.get("metadata") or {})
+            metadata["state"] = str(metadata.pop("finish_state", "loaded"))
+            metadata["duration_ms"] = int((time.monotonic() - float(token.get("started_at") or time.monotonic())) * 1000)
+            self.run_lifecycle.complete_step(str(token["step_id"]), metadata=metadata)
+
+    def _embedding_loaded(self, model_path: str, device: str) -> bool:
+        loaded = getattr(self.knowledge_model_backend, "embedding_model_loaded", None)
+        return bool(callable(loaded) and loaded(model_path, device))
+
+    def _reranker_loaded(self, model_path: str, device: str) -> bool:
+        loaded = getattr(self.knowledge_model_backend, "reranker_model_loaded", None)
+        return bool(callable(loaded) and loaded(model_path, device))
 
     async def _run_prompt_agent(
         self,
@@ -454,6 +554,7 @@ class AgentRunner:
         display_input: str = "",
         form_id: str = "",
         is_silent_submission: bool = False,
+        preparation_step_id: str = "",
     ) -> RunResult:
         resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
@@ -528,6 +629,12 @@ class AgentRunner:
         except Exception:
             llm_config = None
         knowledge_mode = resolved_knowledge_context_mode(agent, agent_config)
+        knowledge_load_steps = self._start_knowledge_preparation_steps(
+            run.run_id,
+            preparation_step_id,
+            session_id=session_id,
+            temporary_knowledge_base_ids=temporary_knowledge_base_ids,
+        )
         knowledge_context = build_session_knowledge_context(
             knowledge_store=self.knowledge_store,
             model_backend=self.knowledge_model_backend,
@@ -540,9 +647,11 @@ class AgentRunner:
             temporary_knowledge_base_ids=temporary_knowledge_base_ids,
             query_override=knowledge_query_override,
         )
+        self._finish_preparation_steps(knowledge_load_steps)
         self._record_knowledge_context_metadata(run.run_id, knowledge_context.metadata)
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
+        web_utility_step = self._start_utility_preparation_step(run.run_id, preparation_step_id, app_settings)
         web_context = await build_web_context(
             app_settings_store=self.app_settings_store,
             settings=app_settings,
@@ -563,6 +672,7 @@ class AgentRunner:
             llm_runtime=self.llm_runtime,
             llm_model_config=llm_config.values if llm_config is not None else None,
         )
+        self._finish_preparation_steps([web_utility_step])
         self._record_context_metadata(run.run_id, "web_context", web_context.metadata)
         if isinstance(intent_routing, dict) and intent_step is not None and _web_query_used_for_web_context(web_context.metadata):
             intent_routing = {**intent_routing, "web_context_usage": "used_for_web_context"}
@@ -635,6 +745,7 @@ class AgentRunner:
             self._record_file_context_metadata(run.run_id, file_context["metadata"])
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
             self.run_lifecycle.complete_step(resolving_model_step.step_id)
+            title_step = self._start_title_preparation_step(run.run_id, preparation_step_id, app_settings)
             await maybe_generate_session_title_before_llm_call(
                 session_id=session_id,
                 source_message_id=current_user_message_id,
@@ -661,6 +772,9 @@ class AgentRunner:
                 unload_model_callback=self._unload_model_for_title_generation,
                 current_response_llm_resolution=_public_llm_resolution(llm_config),
             )
+            self._finish_preparation_steps([title_step])
+            if preparation_step_id:
+                self.run_lifecycle.complete_step(preparation_step_id)
             llm_use_key = self._begin_llm_use(llm_config)
             llm_started = True
             calling_llm_step = self.run_lifecycle.start_step(run.run_id, "Calling LLM", message="Waiting for model response...")

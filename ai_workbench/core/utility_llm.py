@@ -483,6 +483,21 @@ class UtilityLLMService:
         text = await asyncio.to_thread(backend_impl.generate, self._cache, absolute_path, model_path, device, options, prompt, max_new_tokens)
         return UtilityGeneration(text=text, model_path=model_path, device=device, backend=backend)
 
+    def local_model_loaded(self, settings: Any) -> bool:
+        try:
+            backend = _backend_for(settings)
+        except ValueError:
+            return False
+        if backend == "model_profile":
+            return False
+        try:
+            model_path = validate_utility_model_path_for_backend(getattr(settings, "intent_routing_utility_llm_model_path", ""), backend)
+            device = "cpu" if backend == "llama_cpp" else resolve_utility_device(getattr(settings, "intent_routing_device", "auto") or "auto")
+            options = normalize_utility_options(settings)
+            return _backend_instance(backend).cache_key(model_path, device, options) in self._cache
+        except Exception:
+            return False
+
     async def _generate_model_profile(self, prompt: str, settings: Any, *, max_new_tokens: int) -> UtilityGeneration:
         profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
         return await self.generate_with_model_profile(prompt, profile_id=profile_id, max_new_tokens=max_new_tokens)

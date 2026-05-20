@@ -187,6 +187,7 @@ async def build_intent_routing_metadata(
     command_registry: Any = None,
     semantic_router: Any = None,
     utility_llm_service: Any = None,
+    preparation_recorder: Any = None,
 ) -> dict[str, Any] | None:
     settings = app_settings_store.get() if app_settings_store is not None else None
     mode = getattr(settings, "intent_routing_mode", "shadow")
@@ -223,6 +224,7 @@ async def build_intent_routing_metadata(
         capability_registry=capability_registry,
         command_registry=command_registry,
         semantic_router=semantic_router,
+        preparation_recorder=preparation_recorder,
     )
     prediction = await _maybe_apply_utility_slots(
         text=route.args,
@@ -234,6 +236,7 @@ async def build_intent_routing_metadata(
         knowledge_store=knowledge_store,
         runtime_registry=runtime_registry,
         capability_config_store=capability_config_store,
+        preparation_recorder=preparation_recorder,
     )
     metadata = _decision_metadata(
         session=session,
@@ -501,7 +504,11 @@ def _semantic_prediction(
     capability_registry: Any = None,
     command_registry: Any = None,
     semantic_router: Any = None,
+    preparation_recorder: Any = None,
 ) -> dict[str, Any]:
+    step_token = None
+    if preparation_recorder is not None and callable(getattr(preparation_recorder, "start_embedding_load", None)):
+        step_token = preparation_recorder.start_embedding_load(settings=settings, knowledge_store=knowledge_store, model_backend=knowledge_model_backend)
     try:
         from ai_workbench.core.intent_semantic_router import SemanticRouter
 
@@ -518,6 +525,9 @@ def _semantic_prediction(
         )
     except Exception:
         prediction = {"predicted_intent": "chat", "confidence": 0.0, "source": "embedding_semantic_router", "warnings": ["semantic_router_unavailable"]}
+    finally:
+        if step_token is not None and preparation_recorder is not None and callable(getattr(preparation_recorder, "finish_model_load", None)):
+            preparation_recorder.finish_model_load(step_token, settings=settings)
     semantic_unavailable = bool(prediction.get("warnings") and any(str(item).startswith("semantic_router_") for item in prediction.get("warnings") or []))
     if semantic_unavailable:
         prediction = {**prediction, "source": "semantic_router_unavailable", "predicted_intent": "chat", "confidence": 0.0, "route_action": "fallback_current_agent", "auto_executable": False}
@@ -855,6 +865,7 @@ async def _maybe_apply_utility_slots(
     knowledge_store: Any = None,
     runtime_registry: Any = None,
     capability_config_store: Any = None,
+    preparation_recorder: Any = None,
 ) -> dict[str, Any]:
     predicted_intent = str(prediction.get("predicted_intent") or "chat")
     utility_required = predicted_intent in UTILITY_REQUIRED_INTENTS
@@ -893,10 +904,16 @@ async def _maybe_apply_utility_slots(
             pet_candidates=pet_candidates,
             prediction=prediction,
         )
+        step_token = None
         try:
+            if preparation_recorder is not None and callable(getattr(preparation_recorder, "start_utility_load", None)):
+                step_token = preparation_recorder.start_utility_load(settings=settings)
             extracted = await utility_llm_service.extract_intent_json(text, settings, context=context)
         except TypeError:
             extracted = await utility_llm_service.extract_intent_json(text, settings)
+        finally:
+            if step_token is not None and preparation_recorder is not None and callable(getattr(preparation_recorder, "finish_model_load", None)):
+                preparation_recorder.finish_model_load(step_token, settings=settings)
     except Exception as exc:
         code = "utility_invalid_json" if getattr(exc, "code", "") == "utility_llm_invalid_json" else "utility_slots_failed"
         return {**base, "utility_used": True, "utility_error_code": code, "warnings": _ensure_warning(list(prediction.get("warnings") or []), code)}

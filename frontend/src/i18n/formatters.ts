@@ -71,6 +71,11 @@ function normalizedRunStepKey(label: string): string {
   if (normalized === 'building context') return 'buildingContext';
   if (normalized === 'intent semantic routing') return 'intentSemanticRouting';
   if (normalized === 'web context plan') return 'webContextPlan';
+  if (normalized === 'preparing context tools') return 'preparingContextTools';
+  if (normalized === 'loading embedding model') return 'loadingEmbeddingModel';
+  if (normalized === 'loading reranker') return 'loadingReranker';
+  if (normalized === 'loading utility llm') return 'loadingUtilityLlm';
+  if (normalized === 'generating session title') return 'generatingSessionTitle';
   if (normalized === 'calling llm' || normalized === 'llm') return 'callingLlm';
   if (normalized === 'running script') return 'runningScript';
   if (normalized === 'running command') return 'runningCommand';
