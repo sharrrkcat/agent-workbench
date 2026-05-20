@@ -1167,6 +1167,31 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert '"webSkipReasons"' in runs_en
 
 
+def test_web_sources_modal_card_removes_duplicate_low_value_fields() -> None:
+    source = read_frontend("components/MessageBubble.tsx")
+    body = source[source.index("function WebSourcesTab"):source.index("function judgeStateLabel")]
+
+    assert "web-source-card" in body
+    assert "ref_id" in body
+    assert "ref.domain || t('chat:contextModal.domain')" in body
+    assert "sourceUrl" not in body
+    assert "{ref.domain ? <span>{t('chat:contextModal.domain')}" not in body
+    assert "{ref.page_title ? <span>{t('chat:contextModal.pageTitle')}" not in body
+    assert "ref.snippet_preview || ref.snippet" not in body
+    assert "acceptedExcerptPreview" in body
+    assert "fallbackSnippet" in body
+    assert "context-content-block" in body
+    assert "href={ref.url}" in body
+    assert "chat:contextModal.openSource" in body
+    assert "const confidence = ref.page_excerpt_gate_status ? ref.page_excerpt_confidence : ref.candidate_judge_confidence" in body
+    assert body.count("chat:contextModal.confidence") == 1
+    assert "candidate_judge_confidence ? <Chip" not in body
+    assert "setContextModalInitial({ tab: 'web', targetRef: refId })" in source
+    assert "targetRefElement.current.scrollIntoView" in source
+    assert "KnowledgeSnippetsTab" in source
+    assert "WorldbookEntriesTab" in source
+
+
 def test_running_run_steps_default_to_active_only_until_manually_expanded() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = read_frontend("styles.css")

@@ -677,6 +677,10 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
     <>
       {refs.map((ref) => {
         const highlighted = Boolean(targetRef && ref.ref_id === targetRef);
+        const pageTitle = ref.page_title && ref.page_title.trim() !== ref.title?.trim() ? ref.page_title : undefined;
+        const acceptedExcerptPreview = ref.page_excerpt_preview && (ref.page_excerpt_injected || ref.page_excerpt_gate_status === 'accepted' || ref.page_excerpt_gate_status === 'disabled') ? ref.page_excerpt_preview : undefined;
+        const fallbackSnippet = !acceptedExcerptPreview ? ref.snippet : undefined;
+        const confidence = ref.page_excerpt_gate_status ? ref.page_excerpt_confidence : ref.candidate_judge_confidence;
         return (
           <article
             className={`knowledge-snippet-card web-source-card ${highlighted ? 'targeted' : ''}`}
@@ -690,28 +694,26 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               <div>
                 <strong>{ref.title || ref.url || ref.ref_id}</strong>
                 <small>{ref.domain || t('chat:contextModal.domain')}</small>
-                {ref.url ? <small>{t('chat:contextModal.sourceUrl')}: {ref.url}</small> : null}
+                {pageTitle ? <small>{pageTitle}</small> : null}
               </div>
             </div>
-            {ref.snippet_preview || ref.snippet ? <pre className="knowledge-snippet-content">{ref.snippet_preview || ref.snippet}</pre> : null}
-            {ref.page_excerpt_preview && ref.page_excerpt_gate_status !== 'rejected' && ref.page_excerpt_gate_status !== 'failed' ? (
-              <pre className="knowledge-snippet-content context-content-block">{ref.page_excerpt_preview}</pre>
+            {acceptedExcerptPreview ? (
+              <pre className="knowledge-snippet-content context-content-block">{acceptedExcerptPreview}</pre>
+            ) : fallbackSnippet ? (
+              <pre className="knowledge-snippet-content">{fallbackSnippet}</pre>
             ) : null}
             <div className="knowledge-snippet-scores">
               {scoreLabel(t('chat:contextModal.rank'), ref.rank)}
               {ref.candidate_judge_state ? <Chip tone={ref.candidate_judge_state === 'retained' ? 'active' : 'neutral'}>{judgeStateLabel(ref.candidate_judge_state, t)}</Chip> : null}
               {ref.candidate_judge_relevance ? <Chip tone={ref.candidate_judge_relevance === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.relevance')}: {ref.candidate_judge_relevance}</Chip> : null}
               {ref.candidate_judge_role ? <Chip tone="neutral">{t('chat:contextModal.role')}: {ref.candidate_judge_role}</Chip> : null}
-              {ref.candidate_judge_confidence ? <Chip tone={ref.candidate_judge_confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {ref.candidate_judge_confidence}</Chip> : null}
               {ref.page_fetch_status ? <Chip tone={pageFetchStatusTone(ref.page_fetch_status)}>{pageFetchStatusLabel(ref.page_fetch_status, t)}</Chip> : null}
               {ref.page_excerpt_gate_status ? <Chip tone={pageExcerptGateStatusTone(ref.page_excerpt_gate_status)}>{pageExcerptGateStatusLabel(ref.page_excerpt_gate_status, t)}</Chip> : null}
               {ref.page_excerpt_quality ? <Chip tone={ref.page_excerpt_quality === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.quality')}: {ref.page_excerpt_quality}</Chip> : null}
-              {ref.page_excerpt_confidence ? <Chip tone={ref.page_excerpt_confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {ref.page_excerpt_confidence}</Chip> : null}
+              {confidence ? <Chip tone={confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {confidence}</Chip> : null}
               {ref.page_excerpt_coverage ? <Chip tone={ref.page_excerpt_coverage === 'direct_answer' ? 'active' : 'neutral'}>{t('chat:contextModal.coverage')}: {ref.page_excerpt_coverage}</Chip> : null}
               {ref.source ? <span>{t('chat:contextModal.source')}: {ref.source}</span> : null}
-              {ref.domain ? <span>{t('chat:contextModal.domain')}: {ref.domain}</span> : null}
               {ref.published_at ? <span>{t('chat:contextModal.published')}: {ref.published_at}</span> : null}
-              {ref.page_title ? <span>{t('chat:contextModal.pageTitle')}: {ref.page_title}</span> : null}
               {ref.page_excerpt_chars !== undefined ? <span>{t('chat:contextModal.pageExcerptChars', { count: ref.page_excerpt_chars })}</span> : null}
               {ref.page_excerpt_gate_reason ? <span>{ref.page_excerpt_gate_reason}</span> : null}
               {ref.page_excerpt_gate_warning ? <span>{pageFetchWarningLabel(ref.page_excerpt_gate_warning, t)}</span> : null}
