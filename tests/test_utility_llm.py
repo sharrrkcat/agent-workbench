@@ -443,10 +443,12 @@ def test_web_candidate_judge_prompt_uses_compact_candidates_only() -> None:
 
 def test_json_extractor_accepts_fenced_and_balanced_json_with_extra_fields() -> None:
     fenced = extract_json_object('Here:\n```json\n{"intent":"pet_command","domain":"workbench_pet","action":"wake","extra":{"nested":true}}\n```\nDone')
+    plain_fenced = extract_json_object('```\n{"intent":"web_query","query":"latest","confidence":0.9}\n```')
     prefixed = extract_json_object('Utility says {"intent":"pet_command","domain":"workbench_pet","action":"wake"} trailing {ignored}')
 
     assert fenced["intent"] == "pet_command"
     assert fenced["extra"]["nested"] is True
+    assert plain_fenced["intent"] == "web_query"
     assert prefixed["action"] == "wake"
 
 

@@ -678,8 +678,11 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
       {refs.map((ref) => {
         const highlighted = Boolean(targetRef && ref.ref_id === targetRef);
         const pageTitle = ref.page_title && ref.page_title.trim() !== ref.title?.trim() ? ref.page_title : undefined;
-        const acceptedExcerptPreview = ref.page_excerpt_preview && (ref.page_excerpt_injected || ref.page_excerpt_gate_status === 'accepted' || ref.page_excerpt_gate_status === 'disabled') ? ref.page_excerpt_preview : undefined;
-        const fallbackSnippet = !acceptedExcerptPreview ? ref.snippet : undefined;
+        const fetchedExcerptPreview = ref.page_fetch_status === 'fetched' ? ref.page_excerpt_preview : undefined;
+        const acceptedExcerptPreview = fetchedExcerptPreview && (ref.page_excerpt_injected || ref.page_excerpt_gate_status === 'accepted' || ref.page_excerpt_gate_status === 'disabled') ? fetchedExcerptPreview : undefined;
+        const visibleExcerptPreview = acceptedExcerptPreview || fetchedExcerptPreview;
+        const fallbackSnippet = !visibleExcerptPreview ? ref.snippet : undefined;
+        const showNotInjected = Boolean(visibleExcerptPreview && ref.page_excerpt_injected === false);
         const confidence = ref.page_excerpt_gate_status ? ref.page_excerpt_confidence : ref.candidate_judge_confidence;
         return (
           <article
@@ -697,8 +700,8 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
                 {pageTitle ? <small>{pageTitle}</small> : null}
               </div>
             </div>
-            {acceptedExcerptPreview ? (
-              <pre className="knowledge-snippet-content context-content-block">{acceptedExcerptPreview}</pre>
+            {visibleExcerptPreview ? (
+              <pre className="knowledge-snippet-content context-content-block">{visibleExcerptPreview}</pre>
             ) : fallbackSnippet ? (
               <pre className="knowledge-snippet-content">{fallbackSnippet}</pre>
             ) : null}
@@ -709,6 +712,7 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               {ref.candidate_judge_role ? <Chip tone="neutral">{t('chat:contextModal.role')}: {ref.candidate_judge_role}</Chip> : null}
               {ref.page_fetch_status ? <Chip tone={pageFetchStatusTone(ref.page_fetch_status)}>{pageFetchStatusLabel(ref.page_fetch_status, t)}</Chip> : null}
               {ref.page_excerpt_gate_status ? <Chip tone={pageExcerptGateStatusTone(ref.page_excerpt_gate_status)}>{pageExcerptGateStatusLabel(ref.page_excerpt_gate_status, t)}</Chip> : null}
+              {showNotInjected ? <Chip tone="neutral">{t('chat:contextModal.notInjected')}</Chip> : null}
               {ref.page_excerpt_quality ? <Chip tone={ref.page_excerpt_quality === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.quality')}: {ref.page_excerpt_quality}</Chip> : null}
               {confidence ? <Chip tone={confidence === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.confidence')}: {confidence}</Chip> : null}
               {ref.page_excerpt_coverage ? <Chip tone={ref.page_excerpt_coverage === 'direct_answer' ? 'active' : 'neutral'}>{t('chat:contextModal.coverage')}: {ref.page_excerpt_coverage}</Chip> : null}
@@ -755,7 +759,7 @@ function pageFetchStatusLabel(status: string, t: ReturnType<typeof useTranslatio
 function pageFetchWarningLabel(warning: string, t: ReturnType<typeof useTranslation>['t']): string {
   const key = `chat:contextModal.pageFetchWarnings.${warning}`;
   const label = t(key);
-  return label === key ? warning : label;
+  return label === key ? t('chat:contextModal.unknownWarning', { code: warning }) : label;
 }
 
 function pageExcerptGateStatusTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {

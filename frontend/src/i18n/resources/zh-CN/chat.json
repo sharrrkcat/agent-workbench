@@ -197,6 +197,8 @@
     "pageTitle": "网页标题",
     "pageExcerptChars": "{{count}} 个网页摘录字符",
     "openSource": "打开来源",
+    "notInjected": "未注入",
+    "unknownWarning": "未知警告：{{code}}",
     "injected": "已注入",
     "skipped": "已跳过",
     "matched": "已匹配",
@@ -239,7 +241,18 @@
       "page_extract_failed": "网页正文抽取失败。",
       "page_text_too_short": "网页正文过短。",
       "page_fetch_http_403": "抓取失败：HTTP 403。",
-      "page_fetch_http_500": "抓取失败：HTTP 500。"
+      "page_fetch_http_500": "抓取失败：HTTP 500。",
+      "page_excerpt_gate_invalid_json": "Gate JSON 无效。",
+      "page_excerpt_gate_schema_invalid": "Gate JSON 不符合必需结构。",
+      "page_excerpt_gate_unavailable": "Page Excerpt Gate 不可用。",
+      "page_excerpt_gate_backend_unavailable": "Page Excerpt Gate 后端不可用。",
+      "page_excerpt_gate_model_failed": "Page Excerpt Gate 模型调用失败。",
+      "page_excerpt_gate_timeout": "Page Excerpt Gate 超时。",
+      "page_excerpt_gate_unknown_enum": "Gate JSON 包含未知取值。",
+      "page_excerpt_gate_unknown_quality": "Gate JSON 包含未知质量取值。",
+      "page_excerpt_gate_unknown_confidence": "Gate JSON 包含未知置信度取值。",
+      "page_excerpt_gate_unknown_coverage": "Gate JSON 包含未知覆盖范围取值。",
+      "page_excerpt_gate_empty_reason": "Gate JSON reason 为空。"
     }
   },
   "citations": {

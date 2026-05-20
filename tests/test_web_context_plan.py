@@ -57,7 +57,8 @@ class FakeWebPlanUtility:
         if self.gate_error:
             raise self.gate_error
         payload = self.gate_payloads.pop(0) if self.gate_payloads else gate_payload(True, need_more=False)
-        return type("Raw", (), {"text": __import__("json").dumps(payload)})()
+        text = payload if isinstance(payload, str) else __import__("json").dumps(payload)
+        return type("Raw", (), {"text": text})()
 
 
 class FakeGateRuntime:
@@ -90,8 +91,14 @@ def gate_payload(
 
 
 def gate_json(**overrides) -> str:
-    payload = gate_payload(True, need_more=False, **overrides)
+    use_excerpt = bool(overrides.pop("use_excerpt", True))
+    need_more = bool(overrides.pop("need_more", False))
+    payload = gate_payload(use_excerpt, need_more=need_more, **overrides)
     return __import__("json").dumps(payload)
+
+
+def fenced_gate_json(**overrides) -> str:
+    return f"```json\n{gate_json(**overrides)}\n```"
 
 
 @pytest.mark.parametrize(
@@ -874,6 +881,7 @@ def test_page_excerpt_gate_rejects_first_and_progressively_accepts_until_enough(
     assert "Useful page excerpt 3." in result.rendered_text
     assert refs[0]["page_excerpt_gate_status"] == "rejected"
     assert refs[0]["page_excerpt_injected"] is False
+    assert refs[0]["page_excerpt_preview"] == "Useful page excerpt 1."
     assert refs[1]["page_excerpt_gate_status"] == "accepted"
     assert refs[2]["page_excerpt_gate_status"] == "accepted"
     assert refs[3]["page_fetch_status"] == "skipped"
@@ -977,6 +985,72 @@ def test_page_excerpt_gate_accepts_bare_and_fenced_json(raw) -> None:
 
 
 @pytest.mark.parametrize(
+    ("settings", "utility", "llm_runtime", "llm_model_config"),
+    [
+        (
+            AppSettings(web_context_page_excerpt_gate_backend="utility_llm"),
+            FakeWebPlanUtility(gate_payloads=[fenced_gate_json()]),
+            None,
+            None,
+        ),
+        (
+            AppSettings(web_context_page_excerpt_gate_backend="specific_model_profile", web_context_page_excerpt_gate_model_profile_id="profile-a"),
+            FakeWebPlanUtility(gate_payloads=[fenced_gate_json()]),
+            None,
+            None,
+        ),
+        (
+            AppSettings(web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            None,
+            FakeGateRuntime(fenced_gate_json()),
+            {"model": "test"},
+        ),
+    ],
+)
+def test_page_excerpt_gate_all_backends_accept_fenced_json(settings, utility, llm_runtime, llm_model_config) -> None:
+    gate = asyncio.run(
+        run_page_excerpt_gate(
+            settings=settings,
+            original_user_text="latest alpha",
+            plan=asyncio.run(async_resolve(settings=AppSettings(web_context_enabled=True), text="latest alpha")),
+            candidate=web_result("https://gate.test"),
+            ref={"ref_id": "W1", "title": "Gate", "domain": "gate.test"},
+            page_title="Gate page",
+            page_excerpt="Direct evidence.",
+            accepted_evidence=[],
+            utility_llm_service=utility,
+            llm_runtime=llm_runtime,
+            llm_model_config=llm_model_config,
+        )
+    )
+
+    assert gate["status"] == "accepted"
+    assert gate["accepted"] is True
+
+
+def test_page_excerpt_gate_accepts_wrapped_balanced_json() -> None:
+    raw = f"Here is the JSON:\n{gate_json(quality='medium', confidence='medium', coverage='partial', need_more=True)}"
+
+    gate = asyncio.run(
+        run_page_excerpt_gate(
+            settings=AppSettings(web_context_page_excerpt_gate_backend="follow_agent_model_profile"),
+            original_user_text="latest alpha",
+            plan=asyncio.run(async_resolve(settings=AppSettings(web_context_enabled=True), text="latest alpha")),
+            candidate=web_result("https://gate.test"),
+            ref={"ref_id": "W1", "title": "Gate", "domain": "gate.test"},
+            page_title="Gate page",
+            page_excerpt="Partial evidence.",
+            accepted_evidence=[],
+            llm_runtime=FakeGateRuntime(raw),
+            llm_model_config={"model": "test"},
+        )
+    )
+
+    assert gate["status"] == "accepted"
+    assert gate["accepted"] is True
+
+
+@pytest.mark.parametrize(
     ("payload", "expected_warning"),
     [
         ("not json", "page_excerpt_gate_invalid_json"),
@@ -1074,6 +1148,8 @@ def test_page_excerpt_gate_invalid_or_unavailable_does_not_inject_and_continues(
     assert "Excerpt from https://bad.test." not in result.rendered_text
     assert "Excerpt from https://good.test." in result.rendered_text
     assert result.metadata["source_refs"][0]["page_excerpt_gate_status"] == "failed"
+    assert result.metadata["source_refs"][0]["page_excerpt_injected"] is False
+    assert result.metadata["source_refs"][0]["page_excerpt_preview"] == "Excerpt from https://bad.test."
     assert result.metadata["source_refs"][0]["page_excerpt_gate_warning"] == "page_excerpt_gate_schema_invalid"
     assert result.metadata["page_excerpt_gate"]["accepted"] == 1
     assert result.metadata["page_excerpt_gate"]["rejected"] == 0

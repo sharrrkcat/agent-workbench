@@ -142,7 +142,10 @@ as `use_excerpt=false`, low confidence, quality below the threshold, or
 boilerplate/off-topic/insufficient coverage. `failed` means the Gate backend
 call, JSON parsing, or schema/enum validation failed. Rejected or failed gate
 sources must not expose the full excerpt; only capped previews and compact
-status/reason/warning fields are allowed.
+status/reason/warning fields are allowed. The inspection UI may display capped
+`page_excerpt_preview` for rejected or failed gate sources so users can inspect
+page-fetch quality, but rejected and failed excerpts must not be injected into
+the main model.
 When the Candidate Judge annotates a final source, the source ref may also
 include compact `candidate_judge_state` (`retained` or `unjudged`),
 `candidate_judge_relevance`, `candidate_judge_role`,
@@ -164,6 +167,10 @@ invalidity, and other Gate validation failures. It must not store the raw gate
 prompt, raw gate model output, rendered
 Web context, full page excerpts, raw HTML, raw HTTP responses, raw provider
 payloads, secrets, or a full accepted evidence chain.
+All Page Excerpt Gate backends use the shared strict JSON extraction behavior:
+bare JSON objects, fenced `json` objects, plain fenced JSON objects, and the
+first balanced JSON object surrounded by small explanatory text are accepted.
+The extracted value must still be a JSON object and pass schema/enum validation.
 Candidate Judge summary fields may include `candidate_judge.enabled`,
 `candidate_judge.used`, `candidate_judge.mode =
 conservative_reject_only`, `candidate_judge.schema = rejected_items_v1`,

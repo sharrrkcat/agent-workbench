@@ -205,6 +205,8 @@
     "pageTitle": "Page title",
     "pageExcerptChars": "{{count}} page excerpt chars",
     "openSource": "Open source",
+    "notInjected": "not injected",
+    "unknownWarning": "Unknown warning: {{code}}",
     "injected": "Injected",
     "skipped": "Skipped",
     "matched": "Matched",
@@ -247,7 +249,18 @@
       "page_extract_failed": "Page text extraction failed.",
       "page_text_too_short": "Page text was too short.",
       "page_fetch_http_403": "Fetch failed: HTTP 403.",
-      "page_fetch_http_500": "Fetch failed: HTTP 500."
+      "page_fetch_http_500": "Fetch failed: HTTP 500.",
+      "page_excerpt_gate_invalid_json": "Invalid Gate JSON.",
+      "page_excerpt_gate_schema_invalid": "Gate JSON did not match the required schema.",
+      "page_excerpt_gate_unavailable": "Page Excerpt Gate was unavailable.",
+      "page_excerpt_gate_backend_unavailable": "Page Excerpt Gate backend was unavailable.",
+      "page_excerpt_gate_model_failed": "Page Excerpt Gate model call failed.",
+      "page_excerpt_gate_timeout": "Page Excerpt Gate timed out.",
+      "page_excerpt_gate_unknown_enum": "Gate JSON used an unknown value.",
+      "page_excerpt_gate_unknown_quality": "Gate JSON used an unknown quality value.",
+      "page_excerpt_gate_unknown_confidence": "Gate JSON used an unknown confidence value.",
+      "page_excerpt_gate_unknown_coverage": "Gate JSON used an unknown coverage value.",
+      "page_excerpt_gate_empty_reason": "Gate JSON reason was empty."
     }
   },
   "citations": {

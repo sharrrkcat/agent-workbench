@@ -308,11 +308,11 @@ share the same visibility and context isolation boundaries: no messages/runs,
 no injected context, no selected-model mutation, and no raw prompt/output in
 metadata.
 All Page Excerpt Gate backends use the shared JSON extraction behavior: bare
-objects, fenced `json` blocks, and plain fenced JSON blocks are accepted, but
-the extracted value must be a JSON object. Invalid JSON, missing required
-fields, unknown enum values, and empty reasons are Gate failures. Overlong
-reasons are compacted before metadata storage and do not make an otherwise valid
-Gate decision fail.
+objects, fenced `json` blocks, plain fenced JSON blocks, and the first balanced
+JSON object surrounded by small explanatory text are accepted, but the extracted
+value must be a JSON object. Invalid JSON, missing required fields, unknown enum
+values, and empty reasons are Gate failures. Overlong reasons are compacted
+before metadata storage and do not make an otherwise valid Gate decision fail.
 
 The gate input is limited to the current user question, Web Context query/query
 source, compact accepted evidence summaries, compact source fields, page title,

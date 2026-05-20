@@ -1138,9 +1138,10 @@ async def _call_page_excerpt_gate_backend(
         if utility_llm_service is None:
             raise UtilityLLMError("page_excerpt_gate_unavailable", "Utility LLM is unavailable.")
         if callable(getattr(utility_llm_service, "extract_page_excerpt_gate_json", None)):
-            return await utility_llm_service.extract_page_excerpt_gate_json(prompt=prompt, settings=settings)
+            raw = await utility_llm_service.extract_page_excerpt_gate_json(prompt=prompt, settings=settings)
+            return _extract_page_excerpt_gate_json(raw)
         raw = await utility_llm_service.generate(prompt, settings, max_new_tokens=320)
-        return extract_json_object(getattr(raw, "text", raw))
+        return _extract_page_excerpt_gate_json(raw)
     if backend == "specific_model_profile":
         profile_id = str(getattr(settings, "web_context_page_excerpt_gate_model_profile_id", "") or "").strip()
         if not profile_id:
@@ -1148,7 +1149,7 @@ async def _call_page_excerpt_gate_backend(
         if utility_llm_service is None or not callable(getattr(utility_llm_service, "generate_with_model_profile", None)):
             raise UtilityLLMError("model_profile_generation_failed", "Model Profile gate backend is unavailable.")
         raw = await utility_llm_service.generate_with_model_profile(prompt, profile_id=profile_id, max_new_tokens=320)
-        return extract_json_object(getattr(raw, "text", raw))
+        return _extract_page_excerpt_gate_json(raw)
     if llm_runtime is None or not isinstance(llm_model_config, dict):
         raise UtilityLLMError("model_profile_generation_failed", "Follow-Agent gate backend is unavailable.")
     model_config = dict(llm_model_config)
@@ -1161,6 +1162,14 @@ async def _call_page_excerpt_gate_backend(
         raw = generate(prompt=prompt, model_config=model_config, stream=False)
     if hasattr(raw, "__await__"):
         raw = await raw
+    return _extract_page_excerpt_gate_json(raw)
+
+
+def _extract_page_excerpt_gate_json(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        if any(key in raw for key in ("choices", "text", "content")):
+            return extract_json_object(_extract_gate_llm_text(raw))
+        return raw
     return extract_json_object(_extract_gate_llm_text(raw))
 
 
