@@ -1554,6 +1554,7 @@ export type GeneralSettings = {
   web_context_page_excerpt_gate_prompt: string;
   web_context_page_excerpt_gate_prompt_default: string;
   web_context_fetch_pages_enabled: boolean;
+  web_context_page_cleaning_enabled: boolean;
   web_context_fetch_max_pages: number;
   web_context_fetch_timeout_seconds: number;
   web_context_fetch_max_bytes: number;

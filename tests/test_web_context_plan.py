@@ -5,7 +5,7 @@ import pytest
 
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.utility_llm import UtilityLLMError
-from ai_workbench.core.web_context import PageFetchResult, build_web_context, fetch_web_context_page, resolve_web_context_plan, run_page_excerpt_gate, validate_page_excerpt_gate_response, validate_web_context_plan_slots
+from ai_workbench.core.web_context import PageFetchResult, build_web_context, clean_web_page_html, extract_html_page_text, fetch_web_context_page, resolve_web_context_plan, run_page_excerpt_gate, validate_page_excerpt_gate_response, validate_web_context_plan_slots
 
 
 class FakeWebPlanUtility:
@@ -1480,6 +1480,217 @@ def test_page_excerpt_gate_input_and_metadata_are_compact() -> None:
     assert len(ref["page_excerpt_preview"]) == 700
     assert "E" * 1000 not in str(result.metadata)
     assert "# Retrieved Web" not in str(result.metadata)
+
+
+def test_enhanced_cleaning_disabled_uses_basic_extraction() -> None:
+    html = "<html><head><title>T</title></head><body><nav>Menu Link</nav><p>Article paragraph with enough detail.</p></body></html>"
+    basic = extract_html_page_text(html, excerpt_chars=1000)
+
+    page = fetch_web_context_page(
+        url="https://example.com/page",
+        timeout_seconds=5,
+        max_bytes=100000,
+        excerpt_chars=1000,
+        cleaning_enabled=False,
+        client=mock_client(lambda request: httpx.Response(200, headers={"content-type": "text/html"}, text=html, request=request)),
+    )
+
+    assert page.status == "fetched"
+    assert page.excerpt == basic["excerpt"]
+    assert page.cleaning["page_cleaning_status"] == "skipped"
+
+
+def test_enhanced_cleaning_removes_structural_and_boilerplate_nodes() -> None:
+    html = """
+    <html><head><title>Article Title</title><meta name="description" content="Meta summary."></head>
+    <body>
+      <header>Header navigation</header><nav>Home Products Pricing</nav>
+      <main><article>
+        <h1>Article Title</h1>
+        <p>The useful article paragraph explains the release with enough sentence detail.</p>
+        <form><input value="secret"><button>Submit</button></form>
+      </article></main>
+      <aside>Related links</aside><footer>Copyright 2026 Privacy Terms</footer>
+      <script>alert("x")</script><style>.ad{}</style>
+    </body></html>
+    """
+
+    cleaned = clean_web_page_html(final_url="https://example.com", html=html, basic_extracted=extract_html_page_text(html, excerpt_chars=2000), excerpt_chars=2000)
+
+    assert cleaned.page_title == "Article Title"
+    assert "Meta summary." in cleaned.excerpt
+    assert "useful article paragraph" in cleaned.excerpt
+    assert "Header navigation" not in cleaned.excerpt
+    assert "Related links" not in cleaned.excerpt
+    assert "Copyright" not in cleaned.excerpt
+    assert "alert" not in cleaned.excerpt
+    assert cleaned.diagnostics.status == "cleaned"
+
+
+def test_enhanced_cleaning_removes_generic_attribute_boilerplate() -> None:
+    html = """
+    <body>
+      <main>
+        <div class="advertisement promo">Buy now subscribe today</div>
+        <div id="related-posts"><a href="/a">Related one</a><a href="/b">Related two</a></div>
+        <p>This paragraph is the actual body with factual context and a complete sentence.</p>
+        <div role="navigation">Breadcrumb Home > News > Story</div>
+      </main>
+    </body>
+    """
+
+    cleaned = clean_web_page_html(final_url="https://example.com", html=html, basic_extracted=extract_html_page_text(html, excerpt_chars=2000), excerpt_chars=2000)
+
+    assert "actual body" in cleaned.excerpt
+    assert "Buy now" not in cleaned.excerpt
+    assert "Related one" not in cleaned.excerpt
+    assert "Breadcrumb" not in cleaned.excerpt
+    assert cleaned.diagnostics.dropped_block_count >= 1
+
+
+def test_enhanced_cleaning_falls_back_to_body_scoring_without_main() -> None:
+    html = """
+    <body>
+      <div class="sidebar"><a>Nav one</a><a>Nav two</a></div>
+      <section class="story-content"><p>Fallback content paragraph includes the relevant release details and enough length.</p></section>
+    </body>
+    """
+
+    cleaned = clean_web_page_html(final_url="https://example.com", html=html, basic_extracted=extract_html_page_text(html, excerpt_chars=2000), excerpt_chars=2000)
+
+    assert "Fallback content paragraph" in cleaned.excerpt
+    assert "Nav one" not in cleaned.excerpt
+
+
+def test_enhanced_cleaning_preserves_cjk_paragraphs_and_useful_lists() -> None:
+    html = """
+    <body><main>
+      <p>这是一个没有空格的中文段落，说明页面中的核心事实和发布时间，应该被保留下来。</p>
+      <h2>Release notes</h2>
+      <ul>
+        <li>Added offline mode for local sessions.</li>
+        <li>Fixed Web Context page excerpt cleaning.</li>
+      </ul>
+    </main></body>
+    """
+
+    cleaned = clean_web_page_html(final_url="https://example.com", html=html, basic_extracted=extract_html_page_text(html, excerpt_chars=2000), excerpt_chars=2000)
+
+    assert "中文段落" in cleaned.excerpt
+    assert "Added offline mode" in cleaned.excerpt
+    assert "Fixed Web Context" in cleaned.excerpt
+
+
+def test_enhanced_cleaning_drops_link_dense_navigation_and_dedupes() -> None:
+    html = """
+    <body><main>
+      <ul class="tags"><li><a>Tag one</a></li><li><a>Tag two</a></li><li><a>Tag three</a></li></ul>
+      <h1>Story</h1><h1>Story</h1>
+      <p>Unique article text with enough sentence detail to remain in the excerpt.</p>
+      <p>Unique article text with enough sentence detail to remain in the excerpt.</p>
+    </main></body>
+    """
+
+    cleaned = clean_web_page_html(final_url="https://example.com", html=html, basic_extracted=extract_html_page_text(html, excerpt_chars=2000), excerpt_chars=2000)
+
+    assert "Tag one" not in cleaned.excerpt
+    assert cleaned.excerpt.count("Unique article text") == 1
+    assert cleaned.diagnostics.duplicate_block_count >= 1
+
+
+def test_enhanced_cleaning_falls_back_to_basic_when_cleaned_too_short() -> None:
+    html = "<body><main><p>Short.</p></main><footer>Footer contact privacy terms.</footer></body>"
+    basic = extract_html_page_text(html, excerpt_chars=1000)
+
+    cleaned = clean_web_page_html(final_url="https://example.com", html=html, basic_extracted=basic, excerpt_chars=1000)
+
+    assert cleaned.diagnostics.status == "fallback_basic"
+    assert cleaned.diagnostics.warning == "page_cleaning_fallback_to_basic"
+    assert cleaned.excerpt == basic["excerpt"]
+
+
+def test_page_excerpt_gate_receives_cleaned_excerpt_and_injection_uses_it() -> None:
+    utility = FakeWebPlanUtility(gate_payloads=[gate_payload(True, need_more=False)])
+    noisy_html = """
+    <html><body><nav>Home Login Subscribe</nav>
+      <main><p>Clean evidence paragraph has the direct answer and enough detail for the model.</p></main>
+      <footer>Copyright Privacy Terms</footer>
+    </body></html>
+    """
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://clean.test", snippet="Search summary.")]}
+
+    page = fetch_web_context_page(
+        url="https://clean.test",
+        timeout_seconds=5,
+        max_bytes=100000,
+        excerpt_chars=2000,
+        client=mock_client(lambda request: httpx.Response(200, headers={"content-type": "text/html"}, text=noisy_html, request=request)),
+    )
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm"),
+            query="direct answer",
+            search_fn=search,
+            page_fetch_fn=lambda **kwargs: page,
+            utility_llm_service=utility,
+        )
+    )
+
+    prompt = utility.gate_prompts[0]
+    assert "Clean evidence paragraph" in prompt
+    assert "Home Login Subscribe" not in prompt
+    assert "Clean evidence paragraph" in result.rendered_text
+    assert "Copyright Privacy" not in result.rendered_text
+    ref = result.metadata["source_refs"][0]
+    assert ref["page_cleaning_status"] == "cleaned"
+    assert ref["page_cleaning_cleaned_chars"] > 0
+
+
+def test_cleaning_failure_records_warning_and_main_run_continues(monkeypatch) -> None:
+    def boom(**kwargs):
+        raise RuntimeError("cleaner failed")
+
+    monkeypatch.setattr("ai_workbench.core.web_context.clean_web_page_html", boom)
+    html = "<body><p>Basic body text is long enough to survive the fallback extractor path.</p></body>"
+
+    page = fetch_web_context_page(
+        url="https://example.com",
+        timeout_seconds=5,
+        max_bytes=100000,
+        excerpt_chars=1000,
+        client=mock_client(lambda request: httpx.Response(200, headers={"content-type": "text/html"}, text=html, request=request)),
+    )
+
+    assert page.status == "fetched"
+    assert page.cleaning["page_cleaning_status"] == "failed"
+    assert page.cleaning["page_cleaning_warning"] == "page_cleaning_failed"
+    assert "Basic body text" in page.excerpt
+
+
+def test_cleaning_metadata_does_not_store_raw_html_or_dropped_text() -> None:
+    html = """
+    <body><main>
+      <div class="advertisement">SECRET DROPPED AD TEXT</div>
+      <p>Clean compact evidence remains in the fetched page excerpt.</p>
+    </main></body>
+    """
+
+    page = fetch_web_context_page(
+        url="https://metadata.test",
+        timeout_seconds=5,
+        max_bytes=100000,
+        excerpt_chars=1000,
+        client=mock_client(lambda request: httpx.Response(200, headers={"content-type": "text/html"}, text=html, request=request)),
+    )
+
+    metadata = str(page.cleaning)
+    assert "SECRET DROPPED AD TEXT" not in metadata
+    assert "<body" not in metadata
+    assert "Clean compact evidence" not in metadata
+    assert page.cleaning["page_cleaning_status"] == "cleaned"
 
 
 def test_fetch_web_context_page_html_extraction_removes_scripts_and_limits_bytes() -> None:

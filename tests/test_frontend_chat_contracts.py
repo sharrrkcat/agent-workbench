@@ -1031,6 +1031,7 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_candidate_judge_prompt: string" in types
     assert "web_context_page_excerpt_gate_prompt: string" in types
     assert "web_context_fetch_pages_enabled: boolean" in types
+    assert "web_context_page_cleaning_enabled: boolean" in types
     assert "web_context_fetch_max_pages: number" in types
     assert "web_context_fetch_timeout_seconds: number" in types
     assert "web_context_fetch_max_bytes: number" in types
@@ -1061,6 +1062,7 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.pageExcerptGatePrompt" in panel
     assert "settings:general.resetToDefault" in panel
     assert "settings:general.pageFetching" in panel
+    assert "settings:general.enhancedContentCleaning" in panel
     assert "settings:general.maxPagesToTry" in panel
     assert "settings:general.maxPagesToTryHelp" in panel
     assert "settings:general.targetAcceptedPageExcerpts" in panel
@@ -1085,6 +1087,7 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_candidate_judge_prompt: values.web_context_candidate_judge_prompt" in panel
     assert "web_context_page_excerpt_gate_prompt: values.web_context_page_excerpt_gate_prompt" in panel
     assert "web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled" in panel
+    assert "web_context_page_cleaning_enabled: values.web_context_page_cleaning_enabled" in panel
     assert "web_context_total_page_excerpt_chars: values.web_context_total_page_excerpt_chars" in panel
     assert "web_context_target_page_excerpts: values.web_context_target_page_excerpts" in panel
     assert "web_context_page_excerpt_gate_enabled: values.web_context_page_excerpt_gate_enabled" in panel
@@ -1146,6 +1149,8 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "pageFetchEnabled" in source
     assert "page_fetch_status" in source
     assert "page_excerpt_preview" in source
+    assert "page_cleaning_status" in source
+    assert "page_cleaning_cleaned_chars" in source
     assert "pageExcerptGate" in source
     assert "page_excerpt_gate_status" in source
     assert "page_excerpt_quality" in source
@@ -1194,6 +1199,7 @@ def test_web_sources_modal_card_removes_duplicate_low_value_fields() -> None:
     assert "fetchedExcerptPreview" in body
     assert "chat:contextModal.searchSnippet" in body
     assert "chat:contextModal.fetchedPageExcerpt" in body
+    assert "pageCleaningStatusLabel(ref, t)" in body
     assert "context-content-block" in body
     assert "showNotInjected" in body
     assert "chat:contextModal.notInjected" in body
@@ -1208,6 +1214,7 @@ def test_web_sources_modal_card_removes_duplicate_low_value_fields() -> None:
     chat_en = read_frontend("i18n/resources/en/chat.json")
     assert '"searchSnippet": "Search snippet"' in chat_en
     assert '"fetchedPageExcerpt": "Fetched page excerpt"' in chat_en
+    assert '"cleaned": "cleaned"' in chat_en
     assert '"notInjected": "not injected"' in chat_en
     assert '"page_excerpt_gate_invalid_json": "Invalid Gate JSON."' in chat_en
     assert '"page_excerpt_gate_repaired_json_string_controls": "Gate JSON string controls were repaired."' in chat_en

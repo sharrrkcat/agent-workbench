@@ -207,6 +207,7 @@ General Web Search owns Prompt Agent Web Context injection settings:
 - `web_context_page_excerpt_gate_prompt` defaults to a non-empty internal
   prompt body and accepts `1` through `4000` characters.
 - `web_context_fetch_pages_enabled` defaults to `false`.
+- `web_context_page_cleaning_enabled` defaults to `true`.
 - `web_context_fetch_max_pages` defaults to `6` and accepts `1` through `10`.
 - `web_context_fetch_timeout_seconds` defaults to `5` and accepts `1` through
   `20`.
@@ -259,6 +260,15 @@ retained filtered/de-duplicated result pages. `web_context_fetch_max_pages`
 means the maximum retained candidate pages to attempt, not the number of page
 excerpts finally injected. `web_context_target_page_excerpts` controls how many
 accepted page excerpts may be injected when Page Excerpt Gate is enabled.
+When `web_context_page_cleaning_enabled=true`, fetched HTML is deterministically
+cleaned before excerpts enter Page Excerpt Gate or main-model injection. The
+cleaner removes common navigation, footer, header, sidebar, form, advertising,
+recommendation, sharing, login, cookie/consent, high-link-density, and duplicate
+block noise using generic HTML tags and semantic class/id/role/aria signals. If
+cleaning fails or leaves too little usable text, page fetching falls back to the
+basic text extractor with compact diagnostics and the Prompt Agent run
+continues. Disabling this setting restores the basic extractor for Prompt Agent
+Web Context page fetching only.
 Without Page Excerpt Gate, fetched excerpts keep the Round 8 behavior: the first
 retained candidates up to the attempt limit may append compact plain-text
 excerpts to the matching `[W#]` item while respecting the total excerpt budget.
@@ -342,9 +352,11 @@ Context search when General Web Search is enabled.
 Page fetching and Page Excerpt Gate settings belong only to Settings -> General
 -> Web Search because they are Prompt Agent Web Context runtime policy. The
 `/web-search` command and Settings test search continue to return search results
-only and must not fetch result pages or run Page Excerpt Gate. Candidate Judge
-settings also belong only to Settings -> General -> Web Search and must not be
-added to Settings -> Capabilities -> Web Search.
+only and must not fetch result pages, run enhanced content cleaning, or run Page
+Excerpt Gate. HTTP Capability `/fetch-url` also remains independent and does not
+use Prompt Agent Web Context page cleaning. Candidate Judge settings also belong
+only to Settings -> General -> Web Search and must not be added to Settings ->
+Capabilities -> Web Search.
 
 ## Utility LLM
 

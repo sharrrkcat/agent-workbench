@@ -128,6 +128,7 @@ class AppSettings(BaseModel):
     web_context_candidate_judge_prompt: StrictStr = Field(default=DEFAULT_WEB_CONTEXT_CANDIDATE_JUDGE_PROMPT, min_length=1, max_length=4000)
     web_context_page_excerpt_gate_prompt: StrictStr = Field(default=DEFAULT_WEB_CONTEXT_PAGE_EXCERPT_GATE_PROMPT, min_length=1, max_length=4000)
     web_context_fetch_pages_enabled: StrictBool = False
+    web_context_page_cleaning_enabled: StrictBool = True
     web_context_fetch_max_pages: int = Field(default=6, ge=1, le=10)
     web_context_fetch_timeout_seconds: float = Field(default=5, ge=1, le=20)
     web_context_fetch_max_bytes: int = Field(default=1048576, ge=100000, le=5000000)
@@ -456,6 +457,7 @@ class AppSettingsPatch(BaseModel):
     web_context_candidate_judge_prompt: StrictStr | None = Field(default=None, min_length=1, max_length=4000)
     web_context_page_excerpt_gate_prompt: StrictStr | None = Field(default=None, min_length=1, max_length=4000)
     web_context_fetch_pages_enabled: StrictBool | None = None
+    web_context_page_cleaning_enabled: StrictBool | None = None
     web_context_fetch_max_pages: int | None = Field(default=None, ge=1, le=10)
     web_context_fetch_timeout_seconds: float | None = Field(default=None, ge=1, le=20)
     web_context_fetch_max_bytes: int | None = Field(default=None, ge=100000, le=5000000)

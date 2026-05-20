@@ -85,6 +85,43 @@ class PageFetchResult:
     title: str = ""
     excerpt: str = ""
     warning: str | None = None
+    cleaning: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class WebPageCleaningDiagnostics:
+    enabled: bool
+    status: str
+    raw_text_chars: int = 0
+    cleaned_chars: int = 0
+    dropped_block_count: int = 0
+    kept_block_count: int = 0
+    duplicate_block_count: int = 0
+    warning: str | None = None
+
+    def compact_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "page_cleaning_enabled": self.enabled,
+            "page_cleaning_status": self.status,
+            "page_cleaning_raw_text_chars": self.raw_text_chars,
+            "page_cleaning_cleaned_chars": self.cleaned_chars,
+            "page_cleaning_dropped_block_count": self.dropped_block_count,
+            "page_cleaning_kept_block_count": self.kept_block_count,
+            "page_cleaning_duplicate_block_count": self.duplicate_block_count,
+            "page_cleaning_warning": self.warning,
+        }
+        return {key: value for key, value in payload.items() if value is not None}
+
+
+@dataclass
+class WebPageCleanResult:
+    page_title: str = ""
+    meta_description: str = ""
+    cleaned_text: str = ""
+    excerpt: str = ""
+    diagnostics: WebPageCleaningDiagnostics = field(
+        default_factory=lambda: WebPageCleaningDiagnostics(enabled=True, status="failed")
+    )
 
 
 @dataclass(frozen=True)
@@ -497,7 +534,7 @@ def append_web_context_to_system(messages: list[dict[str, Any]], rendered_text: 
 
 
 def web_context_step_metadata(web_context: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "candidate_judge", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings", "page_excerpt_gate"}
+    allowed = {"enabled", "attempted", "injected", "provider", "result_count", "warnings", "skipped_reason", "truncated", "query", "query_source", "resolver", "intent_influence", "search_diagnostics", "candidate_judge", "page_fetch_enabled", "pages_attempted", "pages_fetched", "pages_failed", "page_fetch_warnings", "pages_cleaned", "page_cleaning_fallbacks", "page_cleaning_warnings", "page_excerpt_gate"}
     return {key: value for key, value in (web_context or {}).items() if key in allowed}
 
 
@@ -906,6 +943,7 @@ async def _fetch_pages_for_results(
     total_chars = max(1000, min(int(getattr(settings, "web_context_total_page_excerpt_chars", 6000) or 6000), 20000))
     gate_enabled = bool(getattr(settings, "web_context_page_excerpt_gate_enabled", False))
     gate_backend = str(getattr(settings, "web_context_page_excerpt_gate_backend", "follow_agent_model_profile") or "follow_agent_model_profile")
+    cleaning_enabled = bool(getattr(settings, "web_context_page_cleaning_enabled", True))
     fetcher = page_fetch_fn or fetch_web_context_page
     next_results = [dict(item) for item in results]
     next_refs = [dict(item) for item in source_refs]
@@ -944,11 +982,21 @@ async def _fetch_pages_for_results(
         url = str(result.get("url") or "")
         attempted += 1
         try:
-            page = fetcher(url=url, timeout_seconds=timeout, max_bytes=max_bytes, excerpt_chars=min(per_page_chars, remaining_excerpt_chars))
+            fetch_kwargs = {
+                "url": url,
+                "timeout_seconds": timeout,
+                "max_bytes": max_bytes,
+                "excerpt_chars": min(per_page_chars, remaining_excerpt_chars),
+            }
+            if page_fetch_fn is None:
+                fetch_kwargs["cleaning_enabled"] = cleaning_enabled
+            page = fetcher(**fetch_kwargs)
         except Exception:
             page = PageFetchResult(status="failed", warning="page_fetch_failed")
         status = page.status
         ref["page_fetch_status"] = status
+        if page.cleaning:
+            ref.update(page.cleaning)
         if page.title:
             ref["page_title"] = page.title
         if page.excerpt:
@@ -1056,12 +1104,18 @@ async def _fetch_pages_for_results(
         "stopped_reason": stopped_reason,
         "warnings": sorted(set(gate_warnings)),
     }
+    cleaned_count = sum(1 for ref in next_refs if ref.get("page_cleaning_status") == "cleaned")
+    fallback_count = sum(1 for ref in next_refs if ref.get("page_cleaning_status") == "fallback_basic")
+    cleaning_warning_count = sum(1 for ref in next_refs if ref.get("page_cleaning_warning"))
     return next_results, next_refs, {
         "page_fetch_enabled": True,
         "pages_attempted": attempted,
         "pages_fetched": fetched,
         "pages_failed": failed,
         "page_fetch_warnings": warnings,
+        "pages_cleaned": cleaned_count,
+        "page_cleaning_fallbacks": fallback_count,
+        "page_cleaning_warnings": cleaning_warning_count,
         "page_excerpt_gate": gate_summary,
     }
 
@@ -1363,7 +1417,15 @@ def _extract_gate_llm_text(raw: Any) -> str:
     return str(raw or "")
 
 
-def fetch_web_context_page(*, url: str, timeout_seconds: float, max_bytes: int, excerpt_chars: int, client: httpx.Client | None = None) -> PageFetchResult:
+def fetch_web_context_page(
+    *,
+    url: str,
+    timeout_seconds: float,
+    max_bytes: int,
+    excerpt_chars: int,
+    client: httpx.Client | None = None,
+    cleaning_enabled: bool = True,
+) -> PageFetchResult:
     block_reason = _blocked_page_fetch_reason(url)
     if block_reason:
         return PageFetchResult(status="blocked", warning=block_reason)
@@ -1395,11 +1457,44 @@ def fetch_web_context_page(*, url: str, timeout_seconds: float, max_bytes: int, 
         return PageFetchResult(status="failed", warning="page_fetch_failed")
     html = content.decode(_encoding_from_headers(response.headers), errors="replace")
     extracted = extract_html_page_text(html, excerpt_chars=excerpt_chars)
-    warning = extracted.get("warning")
-    excerpt = str(extracted.get("excerpt") or "").strip()
+    if cleaning_enabled:
+        try:
+            cleaned = clean_web_page_html(
+                final_url=str(response.url),
+                html=html,
+                content_type=_content_type(response),
+                basic_extracted=extracted,
+                excerpt_chars=excerpt_chars,
+            )
+        except Exception:
+            cleaned = WebPageCleanResult(
+                page_title=str(extracted.get("title") or ""),
+                excerpt=str(extracted.get("excerpt") or "").strip(),
+                diagnostics=WebPageCleaningDiagnostics(
+                    enabled=True,
+                    status="failed",
+                    raw_text_chars=len(str(extracted.get("raw_text") or "")),
+                    cleaned_chars=0,
+                    warning="page_cleaning_failed",
+                ),
+            )
+        warning = cleaned.diagnostics.warning or extracted.get("warning")
+        excerpt = cleaned.excerpt.strip()
+        title = cleaned.page_title or str(extracted.get("title") or "")
+        cleaning = cleaned.diagnostics.compact_dict()
+    else:
+        warning = extracted.get("warning")
+        excerpt = str(extracted.get("excerpt") or "").strip()
+        title = str(extracted.get("title") or "")
+        cleaning = WebPageCleaningDiagnostics(
+            enabled=False,
+            status="skipped",
+            raw_text_chars=len(str(extracted.get("raw_text") or "")),
+            cleaned_chars=len(excerpt),
+        ).compact_dict()
     if not excerpt:
-        return PageFetchResult(status="failed", title=str(extracted.get("title") or ""), warning=warning or "page_extract_failed")
-    return PageFetchResult(status="fetched", title=str(extracted.get("title") or ""), excerpt=excerpt, warning=warning)
+        return PageFetchResult(status="failed", title=title, warning=warning or "page_extract_failed", cleaning=cleaning)
+    return PageFetchResult(status="fetched", title=title, excerpt=excerpt, warning=warning, cleaning=cleaning)
 
 
 def extract_html_page_text(html: str, *, excerpt_chars: int) -> dict[str, str]:
@@ -1410,10 +1505,315 @@ def extract_html_page_text(html: str, *, excerpt_chars: int) -> dict[str, str]:
     body = _collapse_ws(" ".join(parser.body_parts))
     text = " ".join(part for part in (description, body) if part).strip()
     excerpt = text[:excerpt_chars].rstrip()
-    result = {"title": title, "excerpt": excerpt}
+    result = {"title": title, "description": description, "excerpt": excerpt, "raw_text": body}
     if len(body) < MIN_USEFUL_PAGE_TEXT_CHARS:
         result["warning"] = "page_text_too_short"
     return result
+
+
+BOILERPLATE_ATTR_RE = re.compile(
+    r"(?:^|[\s_-])(nav|navigation|footer|header|sidebar|ads?|ad-|advertisement|promo|recommend|related|share|comment|cookie|consent|login|signup|subscribe|breadcrumb|tags?|categor(?:y|ies))(?:$|[\s_-])",
+    re.IGNORECASE,
+)
+BOILERPLATE_TEXT_RE = re.compile(
+    r"(copyright|all rights reserved|privacy policy|terms of use|cookie|subscribe|sign up|log in|login|download app|"
+    r"share this|related articles|recommended|you may also like|advertisement|客服|备案|版权所有|隐私|条款|登录|注册|下载.?app|分享|"
+    r"相关阅读|相关推荐|热门推荐|猜你喜欢|标签[:：]|分类[:：]|广告)",
+    re.IGNORECASE,
+)
+CONTENT_ATTR_RE = re.compile(r"(article|post|entry|content|main|body|story|news|text)", re.IGNORECASE)
+BLOCK_TAGS = {"h1", "h2", "h3", "h4", "p", "li", "blockquote", "pre", "code", "tr", "td", "th", "div"}
+CONTAINER_TAGS = {"article", "main", "section", "div", "body"}
+
+
+@dataclass
+class _HtmlNode:
+    tag: str
+    attrs: dict[str, str] = field(default_factory=dict)
+    parent: "_HtmlNode | None" = None
+    children: list["_HtmlNode"] = field(default_factory=list)
+    data: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _TextBlock:
+    text: str
+    tag: str
+    link_text_chars: int
+    text_chars: int
+    boilerplate_score: int
+
+    @property
+    def link_density(self) -> float:
+        return self.link_text_chars / max(1, self.text_chars)
+
+
+class _HTMLTreeParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.root = _HtmlNode("document")
+        self.current = self.root
+        self.title_parts: list[str] = []
+        self.description = ""
+        self.in_title = False
+        self.skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag_name = tag.lower()
+        attrs_dict = {str(key).lower(): str(value or "") for key, value in attrs}
+        if tag_name == "title":
+            self.in_title = True
+        if tag_name == "meta" and attrs_dict.get("name", "").lower() == "description":
+            self.description = attrs_dict.get("content", "")
+        node = _HtmlNode(tag_name, attrs_dict, parent=self.current)
+        self.current.children.append(node)
+        if tag_name not in {"br", "img", "meta", "link", "input"}:
+            self.current = node
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_name = tag.lower()
+        if tag_name == "title":
+            self.in_title = False
+        node: _HtmlNode | None = self.current
+        while node and node.parent and node.tag != tag_name:
+            node = node.parent
+        if node and node.parent:
+            self.current = node.parent
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.title_parts.append(data)
+        self.current.data.append(data)
+
+    @property
+    def title(self) -> str:
+        return " ".join(self.title_parts)
+
+
+def clean_web_page_html(
+    *,
+    final_url: str,
+    html: str,
+    content_type: str = "",
+    basic_extracted: dict[str, str] | None = None,
+    excerpt_chars: int,
+) -> WebPageCleanResult:
+    parser = _HTMLTreeParser()
+    parser.feed(str(html or ""))
+    title = _collapse_ws(parser.title or (basic_extracted or {}).get("title") or "")
+    description = _collapse_ws(parser.description or (basic_extracted or {}).get("description") or "")
+    raw_text = str((basic_extracted or {}).get("raw_text") or _node_text(_first_node(parser.root, "body") or parser.root))
+    raw_text_chars = len(_collapse_ws(raw_text))
+    candidate = _best_content_candidate(parser.root)
+    blocks = _extract_text_blocks(candidate)
+    kept, dropped_count, duplicate_count = _filter_text_blocks(blocks, page_title=title)
+    dropped_count += _non_content_block_count(candidate)
+    parts: list[str] = []
+    if description and not _is_duplicate_text(description, [block.text for block in kept]):
+        parts.append(description)
+    parts.extend(block.text for block in kept)
+    cleaned_text = "\n\n".join(parts).strip()
+    status = "cleaned"
+    warning = None
+    basic_excerpt = str((basic_extracted or {}).get("excerpt") or "").strip()
+    if len(_collapse_ws(cleaned_text)) < 50 and basic_excerpt:
+        cleaned_text = basic_excerpt
+        status = "fallback_basic"
+        warning = "page_cleaning_fallback_to_basic"
+    excerpt = cleaned_text[:excerpt_chars].rstrip()
+    diagnostics = WebPageCleaningDiagnostics(
+        enabled=True,
+        status=status,
+        raw_text_chars=raw_text_chars,
+        cleaned_chars=len(cleaned_text),
+        dropped_block_count=dropped_count,
+        kept_block_count=len(kept),
+        duplicate_block_count=duplicate_count,
+        warning=warning,
+    )
+    return WebPageCleanResult(
+        page_title=title,
+        meta_description=description,
+        cleaned_text=cleaned_text,
+        excerpt=excerpt,
+        diagnostics=diagnostics,
+    )
+
+
+def _first_node(root: _HtmlNode, tag: str) -> _HtmlNode | None:
+    if root.tag == tag:
+        return root
+    for child in root.children:
+        found = _first_node(child, tag)
+        if found:
+            return found
+    return None
+
+
+def _node_text(node: _HtmlNode, *, include_boilerplate: bool = True) -> str:
+    if not include_boilerplate and _is_non_content_node(node):
+        return ""
+    pieces = list(node.data)
+    for child in node.children:
+        pieces.append(_node_text(child, include_boilerplate=include_boilerplate))
+    return _collapse_ws(" ".join(pieces))
+
+
+def _is_non_content_node(node: _HtmlNode) -> bool:
+    if node.tag in {"script", "style", "noscript", "template", "svg", "canvas", "iframe", "form", "input", "button", "select", "textarea", "nav", "footer", "header", "aside", "menu"}:
+        return True
+    attr_text = " ".join(str(node.attrs.get(key, "")) for key in ("id", "class", "role", "aria-label", "itemprop"))
+    return bool(BOILERPLATE_ATTR_RE.search(attr_text))
+
+
+def _best_content_candidate(root: _HtmlNode) -> _HtmlNode:
+    candidates: list[tuple[int, _HtmlNode]] = []
+    for node in _walk_nodes(root):
+        if _is_non_content_node(node):
+            continue
+        attr_text = " ".join(str(node.attrs.get(key, "")) for key in ("id", "class", "role", "itemprop"))
+        preferred = node.tag in {"article", "main"} or node.attrs.get("role") == "main" or node.attrs.get("itemprop") == "articleBody"
+        if preferred or (node.tag in CONTAINER_TAGS and CONTENT_ATTR_RE.search(attr_text)):
+            candidates.append((_candidate_score(node) + (800 if preferred else 250), node))
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+    body = _first_node(root, "body")
+    if body:
+        body_candidates = [( _candidate_score(node), node) for node in _walk_nodes(body) if node.tag in CONTAINER_TAGS and not _is_non_content_node(node)]
+        if body_candidates:
+            return max(body_candidates, key=lambda item: item[0])[1]
+        return body
+    return root
+
+
+def _candidate_score(node: _HtmlNode) -> int:
+    text = _node_text(node, include_boilerplate=False)
+    blocks = [child for child in _walk_nodes(node) if child.tag in {"p", "li", "blockquote", "h1", "h2", "h3", "h4"}]
+    link_chars = _link_text_chars(node)
+    density_penalty = int((link_chars / max(1, len(text))) * 800)
+    return len(text) + len(blocks) * 35 - density_penalty
+
+
+def _walk_nodes(node: _HtmlNode):
+    yield node
+    for child in node.children:
+        yield from _walk_nodes(child)
+
+
+def _link_text_chars(node: _HtmlNode) -> int:
+    if node.tag == "a":
+        return len(_node_text(node))
+    return sum(_link_text_chars(child) for child in node.children)
+
+
+def _extract_text_blocks(root: _HtmlNode) -> list[_TextBlock]:
+    blocks: list[_TextBlock] = []
+    for node in _walk_nodes(root):
+        if _is_non_content_node(node) or _has_non_content_ancestor(node):
+            continue
+        if node.tag not in BLOCK_TAGS:
+            continue
+        if node.tag == "div" and any(child.tag in BLOCK_TAGS for child in node.children):
+            continue
+        if node.tag in {"td", "th", "tr"} and len(_node_text(node)) > 500:
+            continue
+        text = _collapse_ws(_node_text(node, include_boilerplate=False))
+        if not text:
+            continue
+        blocks.append(
+            _TextBlock(
+                text=text,
+                tag=node.tag,
+                link_text_chars=_link_text_chars(node),
+                text_chars=len(text),
+                boilerplate_score=_boilerplate_score(node, text),
+            )
+        )
+    return blocks
+
+
+def _has_non_content_ancestor(node: _HtmlNode) -> bool:
+    parent = node.parent
+    while parent:
+        if _is_non_content_node(parent):
+            return True
+        parent = parent.parent
+    return False
+
+
+def _non_content_block_count(root: _HtmlNode) -> int:
+    return sum(1 for node in _walk_nodes(root) if node.tag in BLOCK_TAGS and (_is_non_content_node(node) or _has_non_content_ancestor(node)))
+
+
+def _filter_text_blocks(blocks: list[_TextBlock], *, page_title: str) -> tuple[list[_TextBlock], int, int]:
+    kept: list[_TextBlock] = []
+    seen: set[str] = set()
+    dropped = 0
+    duplicate = 0
+    normalized_title = _normalize_block_key(page_title)
+    for block in blocks:
+        text = block.text
+        key = _normalize_block_key(text)
+        if not key:
+            dropped += 1
+            continue
+        if key in seen or (normalized_title and key == normalized_title and not kept):
+            duplicate += 1
+            continue
+        if _drop_block(block):
+            dropped += 1
+            continue
+        kept.append(block)
+        seen.add(key)
+    return kept, dropped, duplicate
+
+
+def _drop_block(block: _TextBlock) -> bool:
+    text = block.text
+    length = len(text)
+    cjk_chars = len(re.findall(r"[\u3400-\u9fff]", text))
+    if length < 16 and cjk_chars < 6 and block.tag not in {"h1", "h2", "h3", "li"}:
+        return True
+    if block.link_density > 0.55 and length < 500:
+        return True
+    if block.link_density > 0.35 and block.tag in {"li", "div"} and not _looks_like_sentence(text):
+        return True
+    if block.boilerplate_score >= 2:
+        return True
+    if len(re.sub(r"[-_=|•·\s]+", "", text)) < 8:
+        return True
+    if BOILERPLATE_TEXT_RE.search(text) and not _looks_like_sentence(text):
+        return True
+    return False
+
+
+def _boilerplate_score(node: _HtmlNode, text: str) -> int:
+    score = 0
+    attr_text = " ".join(str(node.attrs.get(key, "")) for key in ("id", "class", "role", "aria-label"))
+    if BOILERPLATE_ATTR_RE.search(attr_text):
+        score += 2
+    if BOILERPLATE_TEXT_RE.search(text):
+        score += 1
+    if text.count("|") + text.count("»") + text.count(">") >= 4:
+        score += 1
+    return score
+
+
+def _looks_like_sentence(text: str) -> bool:
+    if re.search(r"[。！？.!?]", text):
+        return True
+    if len(re.findall(r"[\u3400-\u9fff]", text)) >= 18:
+        return True
+    return len(re.findall(r"[A-Za-z]{3,}", text)) >= 8
+
+
+def _normalize_block_key(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip().lower())
+
+
+def _is_duplicate_text(text: str, existing: list[str]) -> bool:
+    key = _normalize_block_key(text)
+    return any(_normalize_block_key(item) == key for item in existing)
 
 
 class _HTMLPageTextExtractor(HTMLParser):

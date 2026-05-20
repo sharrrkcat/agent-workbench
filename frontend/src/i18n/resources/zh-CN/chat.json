@@ -198,6 +198,8 @@
     "fetchedPageExcerpt": "抓取页面正文",
     "pageTitle": "网页标题",
     "pageExcerptChars": "{{count}} 个网页摘录字符",
+    "pageCleaningChars": "{{status}}：{{count}} 字符",
+    "pageCleaningRatio": "{{status}}：{{raw}} -> {{clean}} 字符",
     "openSource": "打开来源",
     "notInjected": "未注入",
     "unknownWarning": "未知警告：{{code}}",
@@ -225,6 +227,12 @@
       "timeout": "已超时",
       "blocked": "已阻止"
     },
+    "pageCleaningStatus": {
+      "cleaned": "已清洗",
+      "fallback_basic": "基础回退",
+      "failed": "清洗失败",
+      "skipped": "清洗已跳过"
+    },
     "pageExcerptGateStatus": {
       "accepted": "Gate 已接受",
       "rejected": "Gate 已拒绝",
@@ -242,6 +250,8 @@
       "page_fetch_failed": "抓取失败。",
       "page_extract_failed": "网页正文抽取失败。",
       "page_text_too_short": "网页正文过短。",
+      "page_cleaning_failed": "网页正文清洗失败。",
+      "page_cleaning_fallback_to_basic": "正文清洗已回退到基础抽取。",
       "page_fetch_http_403": "抓取失败：HTTP 403。",
       "page_fetch_http_500": "抓取失败：HTTP 500。",
       "page_excerpt_gate_invalid_json": "Gate JSON 无效。",

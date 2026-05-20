@@ -206,6 +206,8 @@
     "fetchedPageExcerpt": "Fetched page excerpt",
     "pageTitle": "Page title",
     "pageExcerptChars": "{{count}} page excerpt chars",
+    "pageCleaningChars": "{{status}}: {{count}} chars",
+    "pageCleaningRatio": "{{status}}: {{raw}} -> {{clean}} chars",
     "openSource": "Open source",
     "notInjected": "not injected",
     "unknownWarning": "Unknown warning: {{code}}",
@@ -233,6 +235,12 @@
       "timeout": "timed out",
       "blocked": "blocked"
     },
+    "pageCleaningStatus": {
+      "cleaned": "cleaned",
+      "fallback_basic": "basic fallback",
+      "failed": "cleaning failed",
+      "skipped": "cleaning skipped"
+    },
     "pageExcerptGateStatus": {
       "accepted": "gate accepted",
       "rejected": "gate rejected",
@@ -250,6 +258,8 @@
       "page_fetch_failed": "Fetch failed.",
       "page_extract_failed": "Page text extraction failed.",
       "page_text_too_short": "Page text was too short.",
+      "page_cleaning_failed": "Page cleaning failed.",
+      "page_cleaning_fallback_to_basic": "Cleaning fell back to basic extraction.",
       "page_fetch_http_403": "Fetch failed: HTTP 403.",
       "page_fetch_http_500": "Fetch failed: HTTP 500.",
       "page_excerpt_gate_invalid_json": "Invalid Gate JSON.",

@@ -390,6 +390,14 @@ type WebSourceRef = {
   page_excerpt_preview?: string;
   page_excerpt_chars?: number;
   page_fetch_warning?: string;
+  page_cleaning_enabled?: boolean;
+  page_cleaning_status?: string;
+  page_cleaning_raw_text_chars?: number;
+  page_cleaning_cleaned_chars?: number;
+  page_cleaning_dropped_block_count?: number;
+  page_cleaning_kept_block_count?: number;
+  page_cleaning_duplicate_block_count?: number;
+  page_cleaning_warning?: string | null;
   page_excerpt_gate_status?: string;
   page_excerpt_quality?: string;
   page_excerpt_confidence?: string;
@@ -716,6 +724,7 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               {ref.candidate_judge_relevance ? <Chip tone={ref.candidate_judge_relevance === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.relevance')}: {ref.candidate_judge_relevance}</Chip> : null}
               {ref.candidate_judge_role ? <Chip tone="neutral">{t('chat:contextModal.role')}: {ref.candidate_judge_role}</Chip> : null}
               {ref.page_fetch_status ? <Chip tone={pageFetchStatusTone(ref.page_fetch_status)}>{pageFetchStatusLabel(ref.page_fetch_status, t)}</Chip> : null}
+              {ref.page_cleaning_status ? <Chip tone={pageCleaningStatusTone(ref.page_cleaning_status)}>{pageCleaningStatusLabel(ref, t)}</Chip> : null}
               {ref.page_excerpt_gate_status ? <Chip tone={pageExcerptGateStatusTone(ref.page_excerpt_gate_status)}>{pageExcerptGateStatusLabel(ref.page_excerpt_gate_status, t)}</Chip> : null}
               {showNotInjected ? <Chip tone="neutral">{t('chat:contextModal.notInjected')}</Chip> : null}
               {ref.page_excerpt_quality ? <Chip tone={ref.page_excerpt_quality === 'high' ? 'active' : 'neutral'}>{t('chat:contextModal.quality')}: {ref.page_excerpt_quality}</Chip> : null}
@@ -725,6 +734,7 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               {ref.published_at ? <span>{t('chat:contextModal.published')}: {ref.published_at}</span> : null}
               {ref.page_excerpt_chars !== undefined ? <span>{t('chat:contextModal.pageExcerptChars', { count: ref.page_excerpt_chars })}</span> : null}
               {ref.page_excerpt_gate_warning ? <span>{pageFetchWarningLabel(ref.page_excerpt_gate_warning, t)}</span> : null}
+              {ref.page_cleaning_warning ? <span>{pageFetchWarningLabel(ref.page_cleaning_warning, t)}</span> : null}
               {ref.candidate_judge_reason ? <span>{ref.candidate_judge_reason}</span> : null}
               {ref.page_fetch_warning ? <span>{pageFetchWarningLabel(ref.page_fetch_warning, t)}</span> : null}
               {ref.url ? (
@@ -758,6 +768,31 @@ function pageFetchStatusLabel(status: string, t: ReturnType<typeof useTranslatio
   const key = `chat:contextModal.pageFetchStatus.${status}`;
   const label = t(key);
   return label === key ? status : label;
+}
+
+function pageCleaningStatusTone(status: string): 'neutral' | 'active' | 'warning' | 'danger' {
+  if (status === 'cleaned') return 'active';
+  if (status === 'fallback_basic') return 'warning';
+  if (status === 'failed') return 'danger';
+  return 'neutral';
+}
+
+function pageCleaningStatusLabel(ref: WebSourceRef, t: ReturnType<typeof useTranslation>['t']): string {
+  const status = ref.page_cleaning_status || 'skipped';
+  const key = `chat:contextModal.pageCleaningStatus.${status}`;
+  const label = t(key);
+  const statusLabel = label === key ? status : label;
+  if (status === 'cleaned' && ref.page_cleaning_cleaned_chars !== undefined) {
+    return t('chat:contextModal.pageCleaningChars', { status: statusLabel, count: ref.page_cleaning_cleaned_chars });
+  }
+  if (ref.page_cleaning_raw_text_chars !== undefined && ref.page_cleaning_cleaned_chars !== undefined && status !== 'skipped') {
+    return t('chat:contextModal.pageCleaningRatio', {
+      status: statusLabel,
+      raw: ref.page_cleaning_raw_text_chars,
+      clean: ref.page_cleaning_cleaned_chars,
+    });
+  }
+  return statusLabel;
 }
 
 function pageFetchWarningLabel(warning: string, t: ReturnType<typeof useTranslation>['t']): string {
@@ -1029,6 +1064,14 @@ function webSourceRefs(context: Record<string, unknown> | undefined): WebSourceR
       page_excerpt_preview: textValue(item.page_excerpt_preview),
       page_excerpt_chars: numberValue(item.page_excerpt_chars),
       page_fetch_warning: textValue(item.page_fetch_warning),
+      page_cleaning_enabled: booleanValue(item.page_cleaning_enabled),
+      page_cleaning_status: textValue(item.page_cleaning_status),
+      page_cleaning_raw_text_chars: numberValue(item.page_cleaning_raw_text_chars),
+      page_cleaning_cleaned_chars: numberValue(item.page_cleaning_cleaned_chars),
+      page_cleaning_dropped_block_count: numberValue(item.page_cleaning_dropped_block_count),
+      page_cleaning_kept_block_count: numberValue(item.page_cleaning_kept_block_count),
+      page_cleaning_duplicate_block_count: numberValue(item.page_cleaning_duplicate_block_count),
+      page_cleaning_warning: textValue(item.page_cleaning_warning),
       page_excerpt_gate_status: textValue(item.page_excerpt_gate_status),
       page_excerpt_quality: textValue(item.page_excerpt_quality),
       page_excerpt_confidence: textValue(item.page_excerpt_confidence),

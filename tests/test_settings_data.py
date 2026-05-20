@@ -70,6 +70,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["web_context_page_excerpt_gate_prompt"] == DEFAULT_WEB_CONTEXT_PAGE_EXCERPT_GATE_PROMPT
     assert response.json()["web_context_page_excerpt_gate_prompt_default"] == DEFAULT_WEB_CONTEXT_PAGE_EXCERPT_GATE_PROMPT
     assert response.json()["web_context_fetch_pages_enabled"] is False
+    assert response.json()["web_context_page_cleaning_enabled"] is True
     assert response.json()["web_context_fetch_max_pages"] == 6
     assert response.json()["web_context_fetch_timeout_seconds"] == 5
     assert response.json()["web_context_fetch_max_bytes"] == 1048576
@@ -158,6 +159,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "web_context_candidate_judge_prompt": "Custom candidate judge body.",
             "web_context_page_excerpt_gate_prompt": "Custom page excerpt gate body.",
             "web_context_fetch_pages_enabled": True,
+            "web_context_page_cleaning_enabled": False,
             "web_context_fetch_max_pages": 4,
             "web_context_fetch_timeout_seconds": 8,
             "web_context_fetch_max_bytes": 2000000,
@@ -237,6 +239,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["web_context_candidate_judge_prompt"] == "Custom candidate judge body."
     assert patched.json()["web_context_page_excerpt_gate_prompt"] == "Custom page excerpt gate body."
     assert patched.json()["web_context_fetch_pages_enabled"] is True
+    assert patched.json()["web_context_page_cleaning_enabled"] is False
     assert patched.json()["web_context_fetch_max_pages"] == 4
     assert patched.json()["web_context_fetch_timeout_seconds"] == 8
     assert patched.json()["web_context_fetch_max_bytes"] == 2000000
@@ -339,6 +342,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"web_context_max_results": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_max_results": 11}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_fetch_pages_enabled": "yes"}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_cleaning_enabled": "yes"}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_fetch_max_pages": 0}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_fetch_max_pages": 11}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_fetch_timeout_seconds": 0}).status_code == 422
@@ -393,6 +397,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_prompt"] == "Custom candidate judge body."
     assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_gate_prompt"] == "Custom page excerpt gate body."
     assert restarted.get("/api/settings/general").json()["web_context_fetch_pages_enabled"] is True
+    assert restarted.get("/api/settings/general").json()["web_context_page_cleaning_enabled"] is False
     assert restarted.get("/api/settings/general").json()["web_context_fetch_max_pages"] == 4
     assert restarted.get("/api/settings/general").json()["web_context_fetch_timeout_seconds"] == 8
     assert restarted.get("/api/settings/general").json()["web_context_fetch_max_bytes"] == 2000000

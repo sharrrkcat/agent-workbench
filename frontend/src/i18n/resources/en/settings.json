@@ -98,6 +98,8 @@
     "pageFetching": "Page fetching",
     "enablePageFetching": "Enable page fetching",
     "pageFetchingHelp": "Progressively fetch retained search result pages as compact excerpts for Prompt Agent Web Context.",
+    "enhancedContentCleaning": "Enhanced content cleaning",
+    "enhancedContentCleaningHelp": "Removes common navigation, footer, ads, repeated lines, and link-heavy boilerplate before page excerpts are sent to Page Excerpt Gate or the main model.",
     "maxPagesToFetch": "Max pages to fetch",
     "maxPagesToTry": "Max pages to try",
     "targetAcceptedPageExcerpts": "Target accepted page excerpts",

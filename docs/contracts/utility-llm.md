@@ -329,8 +329,10 @@ an otherwise valid Gate decision fail.
 
 The gate input is limited to the current user question, Web Context query/query
 source, compact accepted evidence summaries, compact source fields, page title,
-the capped cleaned page excerpt, automatic current local/UTC time context, and
-the configured gate prompt body. It must not include Agent prompts, full
+the capped deterministic-cleaned page excerpt, automatic current local/UTC time
+context, and the configured gate prompt body. If enhanced cleaning falls back to
+basic extraction, the Gate receives that basic capped excerpt and compact source
+metadata records the fallback. It must not include Agent prompts, full
 chat history, assistant replies, Knowledge snippets, Core Memory, Worldbook
 content, attachments, raw SearXNG payloads, raw HTML, raw HTTP responses,
 rendered `# Retrieved Web`, secrets, or full page text beyond the configured

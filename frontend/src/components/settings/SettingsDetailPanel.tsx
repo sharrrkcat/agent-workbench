@@ -1133,6 +1133,11 @@ function GeneralWebSearchSettings({
           <ToggleSwitch checked={values.web_context_fetch_pages_enabled} onChange={(checked) => setValues({ ...values, web_context_fetch_pages_enabled: checked })} />
           <small>{t('settings:general.pageFetchingHelp')}</small>
         </label>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('settings:general.enhancedContentCleaning')}</span>
+          <ToggleSwitch checked={values.web_context_page_cleaning_enabled} onChange={(checked) => setValues({ ...values, web_context_page_cleaning_enabled: checked })} />
+          <small>{t('settings:general.enhancedContentCleaningHelp')}</small>
+        </label>
         <div className="settings-detail-grid">
           <NumberField label={t('settings:general.maxPagesToTry')} value={values.web_context_fetch_max_pages} min={1} max={10} onChange={(value) => setNumber('web_context_fetch_max_pages', value)} />
           <NumberField label={t('settings:general.targetAcceptedPageExcerpts')} value={values.web_context_target_page_excerpts} min={1} max={5} onChange={(value) => setNumber('web_context_target_page_excerpts', value)} />
@@ -1871,6 +1876,7 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     web_context_candidate_judge_prompt: values.web_context_candidate_judge_prompt,
     web_context_page_excerpt_gate_prompt: values.web_context_page_excerpt_gate_prompt,
     web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled,
+    web_context_page_cleaning_enabled: values.web_context_page_cleaning_enabled,
     web_context_fetch_max_pages: values.web_context_fetch_max_pages,
     web_context_fetch_timeout_seconds: values.web_context_fetch_timeout_seconds,
     web_context_fetch_max_bytes: values.web_context_fetch_max_bytes,

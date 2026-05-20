@@ -417,6 +417,8 @@
     "pageFetching": "网页正文抽取",
     "enablePageFetching": "启用网页正文抽取",
     "pageFetchingHelp": "为 Prompt Agent Web Context 渐进抓取保留候选页面，并注入精简正文摘录。",
+    "enhancedContentCleaning": "增强正文清洗",
+    "enhancedContentCleaningHelp": "在页面正文进入 Page Excerpt Gate 或主模型前，移除常见导航、页脚、广告、重复行和链接密集噪声。",
     "maxPagesToFetch": "最多抓取页面数",
     "maxPagesToTry": "最多尝试抓取页面数",
     "targetAcceptedPageExcerpts": "目标接受页面摘录数",

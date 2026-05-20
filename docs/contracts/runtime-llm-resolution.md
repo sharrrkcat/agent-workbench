@@ -115,8 +115,10 @@ recursively.
 Prompt composition for follow-agent and specific-profile Page Excerpt Gate calls
 includes automatic current local/UTC time context, the configured General Web
 Search gate prompt body, and app-owned fixed JSON schema/safety instructions.
-This composition does not mutate the main response model resolution and does not
-store raw prompts or raw model output in runtime metadata.
+The page excerpt in that prompt is the capped cleaned excerpt produced by Prompt
+Agent Web Context page fetching, or the capped basic excerpt when cleaning
+falls back. This composition does not mutate the main response model resolution
+and does not store raw prompts or raw model output in runtime metadata.
 
 Session title generation has its own resolver:
 

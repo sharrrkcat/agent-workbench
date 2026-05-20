@@ -136,6 +136,15 @@ Each `source_refs` item may include only compact citation UI fields:
 `published_at`, `source`, a capped `snippet_preview` or short `snippet`, and
 compact page fetch fields such as `page_fetch_status`, `page_title`,
 `page_excerpt_preview`, `page_excerpt_chars`, and `page_fetch_warning`.
+When enhanced page cleaning runs, `source_refs` may also include compact
+cleaning diagnostics: `page_cleaning_enabled`, `page_cleaning_status`
+(`cleaned`, `fallback_basic`, `skipped`, or `failed`),
+`page_cleaning_raw_text_chars`, `page_cleaning_cleaned_chars`,
+`page_cleaning_dropped_block_count`, `page_cleaning_kept_block_count`,
+`page_cleaning_duplicate_block_count`, and `page_cleaning_warning`. These are
+counts/statuses only; metadata must not store raw HTML, the full raw extracted
+text, dropped block text, or full cleaned text beyond the capped
+`page_excerpt_preview`.
 When Page Excerpt Gate is enabled, `source_refs` may also include compact
 per-source gate fields: `page_excerpt_gate_status` (`accepted`, `rejected`,
 `failed`, `skipped`, or `disabled`), `page_excerpt_quality`,
@@ -167,8 +176,12 @@ full fetched page excerpt.
 not include raw provider payloads, full filtered result lists, or fetched page
 bodies.
 Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
-`pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
-Page Excerpt Gate summary may include `page_excerpt_gate.enabled`, backend,
+`pages_fetched`, `pages_failed`, `page_fetch_warnings`, `pages_cleaned`,
+`page_cleaning_fallbacks`, and `page_cleaning_warnings`.
+Page Excerpt Gate receives the cleaned page excerpt when enhanced cleaning is
+enabled; if cleaning falls back, the Gate receives the basic excerpt and the
+source ref records the fallback. Page Excerpt Gate summary may include
+`page_excerpt_gate.enabled`, backend,
 attempted/accepted/rejected/failed counts, `stopped_reason`, and compact warning
 codes. Rejected counts are valid model judgments and must not be counted as
 failed. Failed counts are reserved for unavailable backends, model-call errors,
