@@ -395,6 +395,7 @@ type WebSourceRef = {
   page_excerpt_confidence?: string;
   page_excerpt_coverage?: string;
   page_excerpt_gate_reason?: string;
+  page_excerpt_gate_warning?: string;
   page_excerpt_injected?: boolean;
   candidate_judge_state?: string;
   candidate_judge_relevance?: string;
@@ -713,6 +714,7 @@ function WebSourcesTab({ refs, targetRef }: { refs: WebSourceRef[]; targetRef?: 
               {ref.page_title ? <span>{t('chat:contextModal.pageTitle')}: {ref.page_title}</span> : null}
               {ref.page_excerpt_chars !== undefined ? <span>{t('chat:contextModal.pageExcerptChars', { count: ref.page_excerpt_chars })}</span> : null}
               {ref.page_excerpt_gate_reason ? <span>{ref.page_excerpt_gate_reason}</span> : null}
+              {ref.page_excerpt_gate_warning ? <span>{pageFetchWarningLabel(ref.page_excerpt_gate_warning, t)}</span> : null}
               {ref.candidate_judge_reason ? <span>{ref.candidate_judge_reason}</span> : null}
               {ref.page_fetch_warning ? <span>{pageFetchWarningLabel(ref.page_fetch_warning, t)}</span> : null}
               {ref.url ? (
@@ -1022,6 +1024,7 @@ function webSourceRefs(context: Record<string, unknown> | undefined): WebSourceR
       page_excerpt_confidence: textValue(item.page_excerpt_confidence),
       page_excerpt_coverage: textValue(item.page_excerpt_coverage),
       page_excerpt_gate_reason: textValue(item.page_excerpt_gate_reason),
+      page_excerpt_gate_warning: textValue(item.page_excerpt_gate_warning),
       page_excerpt_injected: booleanValue(item.page_excerpt_injected),
       candidate_judge_state: textValue(item.candidate_judge_state),
       candidate_judge_relevance: textValue(item.candidate_judge_relevance),
@@ -2842,6 +2845,7 @@ function webDiagnosticsSummaryParts(summary: WebContextSummary, t: ReturnType<ty
       attempted: summary.pageExcerptGate.attempted ?? 0,
       accepted: summary.pageExcerptGate.accepted ?? 0,
       rejected: summary.pageExcerptGate.rejected ?? 0,
+      failed: summary.pageExcerptGate.failed ?? 0,
     }));
     if (summary.pageExcerptGate.stoppedReason) parts.push(t('runs:contextSummary.pageExcerptGateStopped', { reason: summary.pageExcerptGate.stoppedReason }));
   }

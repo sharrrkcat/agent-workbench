@@ -230,8 +230,8 @@
       "blocked": "blocked"
     },
     "pageExcerptGateStatus": {
-      "accepted": "excerpt accepted",
-      "rejected": "excerpt rejected",
+      "accepted": "gate accepted",
+      "rejected": "gate rejected",
       "failed": "gate failed",
       "skipped": "gate skipped",
       "disabled": "gate off"

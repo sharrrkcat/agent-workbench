@@ -409,6 +409,8 @@
     "maxPagesToFetch": "最多抓取页面数",
     "maxPagesToTry": "最多尝试抓取页面数",
     "targetAcceptedPageExcerpts": "目标接受页面摘录数",
+    "maxPagesToTryHelp": "“最多尝试抓取页面数”控制候选页面尝试次数，不等于最终注入正文数量。",
+    "targetAcceptedPageExcerptsHelp": "“目标接受正文数”控制最多注入多少条通过 Gate 的页面正文。",
     "fetchTimeout": "抓取超时",
     "maxBytesPerPage": "单页最大字节数",
     "excerptCharsPerPage": "单页摘录字符数",

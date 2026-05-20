@@ -67,7 +67,7 @@
     "webCandidatesRejected": "已拒绝 {{count}}",
     "pagesFetched": "已抓取 {{count}} 个页面",
     "pagesFailed": "{{count}} 个页面失败",
-    "pageExcerptGate": "尝试页面 {{attempted}} · 接受 {{accepted}} · 拒绝 {{rejected}}",
+    "pageExcerptGate": "尝试页面 {{attempted}} · 接受 {{accepted}} · 拒绝 {{rejected}} · 失败 {{failed}}",
     "pageExcerptGateStopped": "停止：{{reason}}",
     "searchQuery": "搜索词：{{query}}",
     "webQuerySource": "来源：{{source}}",

@@ -913,7 +913,7 @@ async def _fetch_pages_for_results(
     llm_runtime: Any = None,
     llm_model_config: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-    max_pages = max(1, min(int(getattr(settings, "web_context_fetch_max_pages", 2) or 2), 5))
+    max_pages = max(1, min(int(getattr(settings, "web_context_fetch_max_pages", 6) or 6), 10))
     target_excerpts = max(1, min(int(getattr(settings, "web_context_target_page_excerpts", 2) or 2), 5))
     timeout = max(1.0, min(float(getattr(settings, "web_context_fetch_timeout_seconds", 5) or 5), 20.0))
     max_bytes = max(100000, min(int(getattr(settings, "web_context_fetch_max_bytes", 1048576) or 1048576), 5000000))
@@ -1021,6 +1021,7 @@ async def _fetch_pages_for_results(
                             ref["page_excerpt_gate_reason"] = gate_result.reason
                         warning = str(gate.get("warning") or "")
                         if warning:
+                            ref["page_excerpt_gate_warning"] = warning
                             gate_warnings.append(warning)
                         if gate_status == "failed":
                             gate_failed += 1
@@ -1113,6 +1114,8 @@ async def run_page_excerpt_gate(
     except UtilityLLMError as exc:
         warning = "page_excerpt_gate_invalid_json" if exc.code == "utility_llm_invalid_json" else "page_excerpt_gate_unavailable"
         return {"accepted": False, "status": "failed", "warning": warning}
+    except (json.JSONDecodeError, ValueError):
+        return {"accepted": False, "status": "failed", "warning": "page_excerpt_gate_invalid_json"}
     except Exception:
         return {"accepted": False, "status": "failed", "warning": "page_excerpt_gate_unavailable"}
     result, warning = validate_page_excerpt_gate_response(data, min_quality=str(getattr(settings, "web_context_page_excerpt_gate_min_quality", "medium") or "medium"))
@@ -1164,6 +1167,9 @@ async def _call_page_excerpt_gate_backend(
 def validate_page_excerpt_gate_response(data: Any, *, min_quality: str) -> tuple[PageExcerptGateResult | None, str | None]:
     if not isinstance(data, dict):
         return None, "page_excerpt_gate_invalid_json"
+    required = ("use_excerpt", "evidence_quality", "confidence", "coverage", "need_more", "reason")
+    if any(key not in data for key in required):
+        return None, "page_excerpt_gate_schema_invalid"
     if not isinstance(data.get("use_excerpt"), bool) or not isinstance(data.get("need_more"), bool):
         return None, "page_excerpt_gate_schema_invalid"
     quality = str(data.get("evidence_quality") or "").strip().lower()

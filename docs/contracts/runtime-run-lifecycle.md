@@ -133,9 +133,16 @@ When Page Excerpt Gate is enabled, `source_refs` may also include compact
 per-source gate fields: `page_excerpt_gate_status` (`accepted`, `rejected`,
 `failed`, `skipped`, or `disabled`), `page_excerpt_quality`,
 `page_excerpt_confidence`, `page_excerpt_coverage`,
-`page_excerpt_gate_reason`, and `page_excerpt_injected`. Rejected or failed
-gate sources must not expose the full excerpt; only capped previews and compact
-status/reason fields are allowed.
+`page_excerpt_gate_reason`, `page_excerpt_gate_warning`, and
+`page_excerpt_injected`. `accepted` means the Gate returned valid JSON, passed
+schema validation, met the configured quality/confidence/coverage acceptance
+rules, and the excerpt was injected. `rejected` means the Gate returned valid
+JSON and schema-valid fields but the decision did not meet injection rules, such
+as `use_excerpt=false`, low confidence, quality below the threshold, or
+boilerplate/off-topic/insufficient coverage. `failed` means the Gate backend
+call, JSON parsing, or schema/enum validation failed. Rejected or failed gate
+sources must not expose the full excerpt; only capped previews and compact
+status/reason/warning fields are allowed.
 When the Candidate Judge annotates a final source, the source ref may also
 include compact `candidate_judge_state` (`retained` or `unjudged`),
 `candidate_judge_relevance`, `candidate_judge_role`,
@@ -150,7 +157,11 @@ Page fetch summary fields may include `page_fetch_enabled`, `pages_attempted`,
 `pages_fetched`, `pages_failed`, and `page_fetch_warnings`.
 Page Excerpt Gate summary may include `page_excerpt_gate.enabled`, backend,
 attempted/accepted/rejected/failed counts, `stopped_reason`, and compact warning
-codes. It must not store the raw gate prompt, raw gate model output, rendered
+codes. Rejected counts are valid model judgments and must not be counted as
+failed. Failed counts are reserved for unavailable backends, model-call errors,
+timeouts, invalid JSON, missing required fields, unknown enum values, schema
+invalidity, and other Gate validation failures. It must not store the raw gate
+prompt, raw gate model output, rendered
 Web context, full page excerpts, raw HTML, raw HTTP responses, raw provider
 payloads, secrets, or a full accepted evidence chain.
 Candidate Judge summary fields may include `candidate_judge.enabled`,

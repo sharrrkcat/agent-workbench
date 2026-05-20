@@ -1135,13 +1135,15 @@ function GeneralWebSearchSettings({
           <small>{t('settings:general.pageFetchingHelp')}</small>
         </label>
         <div className="settings-detail-grid">
-          <NumberField label={t('settings:general.maxPagesToTry')} value={values.web_context_fetch_max_pages} min={1} max={5} onChange={(value) => setNumber('web_context_fetch_max_pages', value)} />
+          <NumberField label={t('settings:general.maxPagesToTry')} value={values.web_context_fetch_max_pages} min={1} max={10} onChange={(value) => setNumber('web_context_fetch_max_pages', value)} />
           <NumberField label={t('settings:general.targetAcceptedPageExcerpts')} value={values.web_context_target_page_excerpts} min={1} max={5} onChange={(value) => setNumber('web_context_target_page_excerpts', value)} />
           <NumberField label={t('settings:general.fetchTimeout')} value={values.web_context_fetch_timeout_seconds} min={1} max={20} step={0.5} onChange={(value) => setNumber('web_context_fetch_timeout_seconds', value)} />
           <NumberField label={t('settings:general.maxBytesPerPage')} value={values.web_context_fetch_max_bytes} min={100000} max={5000000} step={100000} onChange={(value) => setNumber('web_context_fetch_max_bytes', value)} />
           <NumberField label={t('settings:general.excerptCharsPerPage')} value={values.web_context_page_excerpt_chars} min={500} max={8000} step={500} onChange={(value) => setNumber('web_context_page_excerpt_chars', value)} />
           <NumberField label={t('settings:general.totalPageExcerptBudget')} value={values.web_context_total_page_excerpt_chars} min={1000} max={20000} step={1000} onChange={(value) => setNumber('web_context_total_page_excerpt_chars', value)} />
         </div>
+        <p className="settings-muted-text">{t('settings:general.maxPagesToTryHelp')}</p>
+        <p className="settings-muted-text">{t('settings:general.targetAcceptedPageExcerptsHelp')}</p>
         <p className="settings-muted-text">{t('settings:general.pageFetchingSafety')}</p>
       </div>
       <div className="detail-section">

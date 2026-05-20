@@ -222,8 +222,8 @@
       "blocked": "已阻止"
     },
     "pageExcerptGateStatus": {
-      "accepted": "摘录已接受",
-      "rejected": "摘录已拒绝",
+      "accepted": "Gate 已接受",
+      "rejected": "Gate 已拒绝",
       "failed": "门控失败",
       "skipped": "门控已跳过",
       "disabled": "门控关闭"

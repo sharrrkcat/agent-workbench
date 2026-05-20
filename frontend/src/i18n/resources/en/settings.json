@@ -90,6 +90,8 @@
     "maxPagesToFetch": "Max pages to fetch",
     "maxPagesToTry": "Max pages to try",
     "targetAcceptedPageExcerpts": "Target accepted page excerpts",
+    "maxPagesToTryHelp": "Max pages to try controls how many retained candidates can be attempted, not how many excerpts are injected.",
+    "targetAcceptedPageExcerptsHelp": "Target accepted page excerpts controls how many accepted page excerpts may be injected.",
     "fetchTimeout": "Fetch timeout",
     "maxBytesPerPage": "Max bytes per page",
     "excerptCharsPerPage": "Excerpt chars per page",

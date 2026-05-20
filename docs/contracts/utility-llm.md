@@ -193,11 +193,12 @@ It must not include full prompts, full history, KB content, Worldbook content,
 Core Memory content, Agent prompts, raw embeddings, full candidate lists, full
 examples/specs, or secrets.
 
-Output is strict JSON. The parser may accept a JSON object, fenced `json`
-object, or a response with one balanced JSON object surrounded by explanation.
-Malformed JSON records `utility_invalid_json`; missing required slots or invalid
-enum values record `utility_slots_failed`. Extra fields are ignored. Semantic or
-slot conflicts are validator failures, not execution instructions.
+Output is strict JSON. The shared JSON extractor accepts a bare JSON object, a
+fenced `json` object, a plain fenced JSON object, or a response with one
+balanced JSON object surrounded by explanation. Malformed JSON records
+`utility_invalid_json`; missing required slots or invalid enum values record
+`utility_slots_failed`. Extra fields are ignored. Semantic or slot conflicts
+are validator failures, not execution instructions.
 
 For Intent Routing `web_query`, the Utility LLM may return only compact slots:
 `intent`, `query`, `use_original_query`, `freshness`, `domain_hints`, and
@@ -306,6 +307,12 @@ non-streaming JSON model calls rather than Utility LLM local backends, but they
 share the same visibility and context isolation boundaries: no messages/runs,
 no injected context, no selected-model mutation, and no raw prompt/output in
 metadata.
+All Page Excerpt Gate backends use the shared JSON extraction behavior: bare
+objects, fenced `json` blocks, and plain fenced JSON blocks are accepted, but
+the extracted value must be a JSON object. Invalid JSON, missing required
+fields, unknown enum values, and empty reasons are Gate failures. Overlong
+reasons are compacted before metadata storage and do not make an otherwise valid
+Gate decision fail.
 
 The gate input is limited to the current user question, Web Context query/query
 source, compact accepted evidence summaries, compact source fields, page title,

@@ -201,7 +201,7 @@ General Web Search owns Prompt Agent Web Context injection settings:
 - `web_context_prompt` defaults to a non-empty Web Context instruction and
   accepts `1` through `4000` characters.
 - `web_context_fetch_pages_enabled` defaults to `false`.
-- `web_context_fetch_max_pages` defaults to `2` and accepts `1` through `5`.
+- `web_context_fetch_max_pages` defaults to `6` and accepts `1` through `10`.
 - `web_context_fetch_timeout_seconds` defaults to `5` and accepts `1` through
   `20`.
 - `web_context_fetch_max_bytes` defaults to `1048576` and accepts `100000`
@@ -241,7 +241,9 @@ be cited with `[W1]`-style source markers when used. The prompt affects only
 future context builds and must not be copied into run or message metadata.
 When page fetching is enabled, Prompt Agent Web Context progressively tries
 retained filtered/de-duplicated result pages. `web_context_fetch_max_pages`
-means the maximum pages to try, not the number of excerpts finally injected.
+means the maximum retained candidate pages to attempt, not the number of page
+excerpts finally injected. `web_context_target_page_excerpts` controls how many
+accepted page excerpts may be injected when Page Excerpt Gate is enabled.
 Without Page Excerpt Gate, fetched excerpts keep the Round 8 behavior: the first
 retained candidates up to the attempt limit may append compact plain-text
 excerpts to the matching `[W#]` item while respecting the total excerpt budget.

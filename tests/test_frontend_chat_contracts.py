@@ -1054,7 +1054,9 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.webContextPrompt" in panel
     assert "settings:general.pageFetching" in panel
     assert "settings:general.maxPagesToTry" in panel
+    assert "settings:general.maxPagesToTryHelp" in panel
     assert "settings:general.targetAcceptedPageExcerpts" in panel
+    assert "settings:general.targetAcceptedPageExcerptsHelp" in panel
     assert "settings:general.totalPageExcerptBudget" in panel
     assert "settings:general.pageExcerptGate" in panel
     assert "settings:general.pageExcerptGateBackend" in panel
@@ -1137,6 +1139,7 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert "page_excerpt_confidence" in source
     assert "page_excerpt_coverage" in source
     assert "page_excerpt_gate_reason" in source
+    assert "page_excerpt_gate_warning" in source
     assert "candidateJudge" in source
     assert "candidate_judge_relevance" in source
     assert "candidate_judge_role" in source
@@ -1156,7 +1159,9 @@ def test_run_context_summary_includes_web_context_compact_metadata() -> None:
     assert '"webResultCount": "{{count}} results · {{provider}}"' in runs_en
     assert '"webCandidatesJudged": "judged {{judged}} / retained {{retained}} / rejected {{rejected}} / unjudged {{unjudged}}"' in runs_en
     assert '"pagesFetched": "{{count}} pages fetched"' in runs_en
-    assert '"pageExcerptGate": "pages attempted {{attempted}} · accepted {{accepted}} · rejected {{rejected}}"' in runs_en
+    assert '"pageExcerptGate": "pages attempted {{attempted}} · accepted {{accepted}} · rejected {{rejected}} · failed {{failed}}"' in runs_en
+    assert '"accepted": "gate accepted"' in read_frontend("i18n/resources/en/chat.json")
+    assert '"rejected": "gate rejected"' in read_frontend("i18n/resources/en/chat.json")
     assert '"knowledge_query_candidate_blocked": "knowledge query candidate blocked"' in runs_en
     assert '"web_results_filtered_empty": "all web results were filtered"' in runs_en
     assert '"webSkipReasons"' in runs_en

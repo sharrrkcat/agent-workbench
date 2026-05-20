@@ -126,7 +126,7 @@ class AppSettings(BaseModel):
     web_context_context_budget_chars: int = Field(default=4000, ge=500, le=20000)
     web_context_prompt: StrictStr = Field(default=DEFAULT_WEB_CONTEXT_PROMPT, min_length=1, max_length=4000)
     web_context_fetch_pages_enabled: StrictBool = False
-    web_context_fetch_max_pages: int = Field(default=2, ge=1, le=5)
+    web_context_fetch_max_pages: int = Field(default=6, ge=1, le=10)
     web_context_fetch_timeout_seconds: float = Field(default=5, ge=1, le=20)
     web_context_fetch_max_bytes: int = Field(default=1048576, ge=100000, le=5000000)
     web_context_page_excerpt_chars: int = Field(default=2000, ge=500, le=8000)
@@ -427,7 +427,7 @@ class AppSettingsPatch(BaseModel):
     web_context_context_budget_chars: int | None = Field(default=None, ge=500, le=20000)
     web_context_prompt: StrictStr | None = Field(default=None, min_length=1, max_length=4000)
     web_context_fetch_pages_enabled: StrictBool | None = None
-    web_context_fetch_max_pages: int | None = Field(default=None, ge=1, le=5)
+    web_context_fetch_max_pages: int | None = Field(default=None, ge=1, le=10)
     web_context_fetch_timeout_seconds: float | None = Field(default=None, ge=1, le=20)
     web_context_fetch_max_bytes: int | None = Field(default=None, ge=100000, le=5000000)
     web_context_page_excerpt_chars: int | None = Field(default=None, ge=500, le=8000)

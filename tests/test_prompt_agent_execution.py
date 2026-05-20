@@ -482,7 +482,7 @@ def test_prompt_agent_web_context_injects_results_after_knowledge(monkeypatch) -
 
 def test_prompt_agent_page_excerpt_gate_follow_agent_is_internal_non_streaming(monkeypatch) -> None:
     llm = SequentialLLMRuntime([
-        '{"use_excerpt":true,"evidence_quality":"high","confidence":"high","coverage":"direct_answer","need_more":false,"reason":"direct evidence"}',
+        '```json\n{"use_excerpt":true,"evidence_quality":"high","confidence":"high","coverage":"direct_answer","need_more":false,"reason":"direct evidence"}\n```',
         "visible answer",
     ])
     fixture = PromptRuntimeFixture(llm=llm)
@@ -540,6 +540,7 @@ def test_prompt_agent_page_excerpt_gate_follow_agent_is_internal_non_streaming(m
     metadata = fixture.runs.get_run(result.run_id).metadata["web_context"]
     assert metadata["page_excerpt_gate"]["backend"] == "follow_agent_model_profile"
     assert metadata["page_excerpt_gate"]["accepted"] == 1
+    assert metadata["source_refs"][0]["page_excerpt_gate_status"] == "accepted"
     assert "direct evidence" in metadata["source_refs"][0]["page_excerpt_gate_reason"]
 
 
