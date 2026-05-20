@@ -2,6 +2,7 @@ import time
 from typing import Any
 
 from ai_workbench.core.llm_config import LLMConfigError
+from ai_workbench.core.events import flush_realtime_events
 from ai_workbench.core.intent_router import build_intent_routing_metadata
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import AgentRunner, CommandRunner
@@ -36,7 +37,9 @@ class WorkbenchRuntime:
                 attachments=attachments,
                 client_message_id=client_message_id,
             )
+            await flush_realtime_events()
             early_run = self._create_prompt_agent_run(route, input_message_id=input_message_id)
+            await flush_realtime_events()
             agent = self.agent_runner.agent_registry.get(route.target_id or "")
             self.agent_runner._emit_prompt_message_started(
                 agent=agent,
@@ -45,8 +48,10 @@ class WorkbenchRuntime:
                 run=early_run,
                 parent_id=input_message_id,
             )
+            await flush_realtime_events()
             preparation_step = self.agent_runner.run_lifecycle.start_step(early_run.run_id, "Preparing context tools")
             preparation_step_id = preparation_step.step_id
+            await flush_realtime_events()
         recorder = _PreparationStepRecorder(
             lifecycle=self.agent_runner.run_lifecycle if self.agent_runner is not None else None,
             run_id=early_run.run_id if early_run is not None else "",

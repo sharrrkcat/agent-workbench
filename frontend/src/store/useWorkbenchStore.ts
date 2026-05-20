@@ -632,7 +632,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       return;
     }
     if (event.type === 'message_started' && event.run_id) {
-      const draft = createDraftAssistantMessage(session.session_id, event);
+      const draft = normalizeStartedMessage(session.session_id, event);
+      if (!draft) return;
       const run = get().runsById[event.run_id];
       const runSteps = get().stepsByRunId[event.run_id] || run?.steps || [];
       set({
@@ -662,9 +663,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       return;
     }
     if (event.type === 'message_updated') {
-      const updatedMessage = parseMessagePayload(event.payload.message);
+      const updatedMessage = parseUpdatedMessageFromEvent(event);
       if (updatedMessage) {
-        set({ messages: mergeUpdatedMessage(get().messages, updatedMessage, get().completedMessageIds) });
+        const nextMessages = mergeUpdatedMessage(get().messages, updatedMessage, get().completedMessageIds, clientMessageIdFromEvent(event, updatedMessage));
+        set({
+          messages: nextMessages,
+          sending: updatedMessage.role === 'user' && nextMessages.some((message) => message.message_id === updatedMessage.message_id) ? false : get().sending,
+        });
       }
       return;
     }
@@ -922,26 +927,34 @@ function commandErrorTitle(error: AppError): string {
   return 'System';
 }
 
-function createDraftAssistantMessage(sessionId: string, event: RuntimeEvent): Message {
+function normalizeStartedMessage(sessionId: string, event: RuntimeEvent): Message | null {
   const payload = event.payload || {};
+  const source = isRecord(payload.message) ? payload.message : isRecord(payload) && typeof payload.message_id === 'string' ? payload : {};
+  const sourceMetadata = isRecord(source.metadata) ? source.metadata : {};
+  const messageId = stringValue(source.message_id) || stringValue(event.message_id) || `draft-${event.run_id || newClientId()}`;
+  const runId = stringValue(source.run_id) || stringValue(event.run_id);
+  if (!messageId || !runId) return null;
+  const status = stringValue(source.client_status) || stringValue(source.status) || 'preparing';
   return {
-    message_id: typeof event.message_id === 'string' && event.message_id ? event.message_id : `draft-${event.run_id || newClientId()}`,
-    session_id: sessionId,
-    role: 'assistant',
+    message_id: messageId,
+    session_id: stringValue(source.session_id) || stringValue(event.session_id) || sessionId,
+    role: stringValue(source.role) === 'agent' ? 'agent' : 'assistant',
     content_version: 2,
-    parts: [],
-    agent_id: typeof payload.agent_id === 'string' ? payload.agent_id : null,
-    command_name: null,
-    action_id: typeof payload.action_id === 'string' ? payload.action_id : 'default',
-    run_id: event.run_id || null,
-    parent_message_id: typeof payload.parent_message_id === 'string' ? payload.parent_message_id : null,
+    parts: Array.isArray(source.parts) ? source.parts as MessagePart[] : [],
+    agent_id: stringValue(source.agent_id) || null,
+    command_name: stringValue(source.command_name) || null,
+    action_id: stringValue(source.action_id) || 'default',
+    run_id: runId,
+    parent_message_id: stringValue(source.parent_message_id) || null,
     available_actions: [],
     metadata: {
-      llm_resolution: isRecord(payload.llm_resolution) ? payload.llm_resolution : undefined,
+      ...sourceMetadata,
+      llm_resolution: isRecord(source.llm_resolution) ? source.llm_resolution : isRecord(sourceMetadata.llm_resolution) ? sourceMetadata.llm_resolution : undefined,
       streaming: true,
+      status,
     },
-    created_at: typeof payload.created_at === 'string' ? payload.created_at : event.created_at,
-    client_status: payload.status === 'preparing' ? 'preparing' : 'streaming',
+    created_at: stringValue(source.created_at) || event.created_at,
+    client_status: status === 'preparing' ? 'preparing' : 'streaming',
   };
 }
 
@@ -1166,15 +1179,26 @@ function sameAttachmentIds(left: Message, right: Message): boolean {
   return leftIds.every((id, index) => id === rightIds[index]);
 }
 
-function sameClientMessageId(left: Message, right: Message): boolean {
-  const leftId = stringMetadata(left, 'client_message_id') || left.message_id;
-  const rightId = stringMetadata(right, 'client_message_id');
-  return Boolean(leftId && rightId && leftId === rightId);
+function sameClientMessageId(left: Message, right: Message, eventClientMessageId = ''): boolean {
+  const rightId = eventClientMessageId || clientMessageIdFromMessage(right);
+  if (!rightId) return false;
+  return clientMessageIdsForMatch(left).includes(rightId);
+}
+
+function clientMessageIdsForMatch(message: Message): string[] {
+  return [message.message_id, stringMessageField(message, 'id'), clientMessageIdFromMessage(message), stringMessageField(message, 'client_message_id')].filter(Boolean);
+}
+
+function clientMessageIdFromMessage(message: Message): string {
+  return stringMetadata(message, 'client_message_id') || stringMessageField(message, 'client_message_id');
 }
 
 function stringMetadata(message: Message, key: string): string {
-  const value = message.metadata?.[key];
-  return typeof value === 'string' ? value : '';
+  return stringValue(message.metadata?.[key]);
+}
+
+function stringMessageField(message: Message, key: string): string {
+  return stringValue((message as unknown as Record<string, unknown>)[key]);
 }
 
 function attachmentIds(message: Message): string[] {
@@ -1236,7 +1260,7 @@ function replaceDraftWithFinal(messages: Message[], finalMessage: Message, draft
   return sortMessagesByCreatedAt([...withoutDuplicates, finalMessage]);
 }
 
-function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, completedMessageIds: Record<string, boolean> = {}): Message[] {
+function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, completedMessageIds: Record<string, boolean> = {}, clientMessageId = ''): Message[] {
   let replaced = false;
   const next = messages.map((message) => {
     const sameMessage = message.message_id === updatedMessage.message_id;
@@ -1245,7 +1269,7 @@ function mergeUpdatedMessage(messages: Message[], updatedMessage: Message, compl
       message.role === 'user' &&
       message.client_status === 'pending' &&
       updatedMessage.role === 'user' &&
-      (sameClientMessageId(message, updatedMessage) ||
+      (sameClientMessageId(message, updatedMessage, clientMessageId) ||
         (messageText(message) === messageText(updatedMessage) && sameAttachmentIds(message, updatedMessage)));
     if (!sameMessage && !sameRunDraft && !sameAcceptedUser) return message;
     replaced = true;
@@ -1303,7 +1327,7 @@ function markDraftInterrupted(messages: Message[], runId: string): Message[] {
 }
 
 function isMatchingDraft(message: Message, runId: string, messageId: string): boolean {
-  if (!message.message_id.startsWith('draft-') && message.client_status !== 'streaming') return false;
+  if (!message.message_id.startsWith('draft-') && !['preparing', 'streaming'].includes(message.client_status || '')) return false;
   if (messageId && message.message_id === messageId) return true;
   return Boolean(runId && message.run_id === runId);
 }
@@ -1362,6 +1386,22 @@ function pruneCompletedMessageState(current: Record<string, boolean>, messages: 
 function parseMessagePayload(value: unknown): Message | null {
   if (!isRecord(value)) return null;
   return value as Message;
+}
+
+function parseUpdatedMessageFromEvent(event: RuntimeEvent): Message | null {
+  const message = parseMessagePayload(event.payload.message);
+  if (!message) return null;
+  const clientMessageId = clientMessageIdFromEvent(event, message);
+  if (!clientMessageId) return message;
+  return {
+    ...message,
+    metadata: { ...(message.metadata || {}), client_message_id: clientMessageId },
+    client_message_id: clientMessageId,
+  };
+}
+
+function clientMessageIdFromEvent(event: RuntimeEvent, message?: Message | null): string {
+  return stringValue(event.payload.client_message_id) || (message ? clientMessageIdFromMessage(message) : '');
 }
 
 function parseLlmProviderStatusPayload(value: unknown): LlmProviderStatus | null {
@@ -1536,6 +1576,10 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' && value ? value : '';
 }
 
 function chooseEnabledDefaultAgent(agents: Agent[], preferredAgentId?: string | null): string | undefined {

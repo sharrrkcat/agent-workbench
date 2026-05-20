@@ -32,14 +32,43 @@ def test_chat_streaming_uses_client_message_ids_and_preparing_draft_contract() -
     assert "client_message_id: clientMessageId" in store
     assert "api.sendMessage(session.session_id, content, attachments, optimisticMessage.message_id)" in store
     assert "client_message_id: clientMessageId" in client
-    assert "sameClientMessageId(message, updatedMessage)" in store
-    assert "payload.status === 'preparing' ? 'preparing' : 'streaming'" in store
+    assert "sameClientMessageId(message, updatedMessage, clientMessageId)" in store
+    assert "clientMessageIdFromEvent(event, updatedMessage)" in store
+    assert "clientMessageIdsForMatch" in store
+    assert "message.message_id, stringMessageField(message, 'id'), clientMessageIdFromMessage(message), stringMessageField(message, 'client_message_id')" in store
+    assert "status === 'preparing' ? 'preparing' : 'streaming'" in store
     assert "client_status: 'streaming'" in store
     assert "stepsByRunId[event.run_id] || run?.steps || []" in store
+    assert "normalizeStartedMessage(session.session_id, event)" in store
+    assert "isRecord(payload.message) ? payload.message" in store
+    assert "typeof payload.message_id === 'string' ? payload" in store
+    assert "content_version: 2" in store
+    assert "parts: Array.isArray(source.parts) ? source.parts as MessagePart[] : []" in store
+    assert "stringValue(source.run_id) || stringValue(event.run_id)" in store
+    assert "!['preparing', 'streaming'].includes(message.client_status || '')" in store
+    assert "replaceDraftWithFinal(get().messages, finalMessage, draftMessageId)" in store
     assert "t('chat:status.preparing'" in bubble
+    assert "message.client_status === 'preparing') return true" in bubble
     assert "'preparing' | 'streaming'" in types
+    assert "client_message_id?: string | null" in types
     assert '"preparing": "Preparing"' in en_chat
     assert '"preparing": "准备中"' in zh_chat
+
+
+def test_message_started_payload_object_and_empty_draft_contract() -> None:
+    store = read_frontend("store/useWorkbenchStore.ts")
+    bubble = read_frontend("components/MessageBubble.tsx")
+
+    assert "function normalizeStartedMessage" in store
+    assert "const source = isRecord(payload.message) ? payload.message : isRecord(payload) && typeof payload.message_id === 'string' ? payload : {}" in store
+    assert "role: stringValue(source.role) === 'agent' ? 'agent' : 'assistant'" in store
+    assert "session_id: stringValue(source.session_id) || stringValue(event.session_id)" in store
+    assert "created_at: stringValue(source.created_at) || event.created_at" in store
+    assert "if (!messageId || !runId) return null" in store
+    assert "parts: Array.isArray(source.parts) ? source.parts as MessagePart[] : []" in store
+    assert "message.client_status === 'preparing' ? (" in bubble
+    assert "hasRenderableParts(message.parts)" in bubble
+    assert "(message.role === 'assistant' || message.role === 'agent') && message.run_id && message.client_status === 'preparing'" in bubble
 
 
 def test_pet_sprite_uses_codex_animation_durations() -> None:
@@ -839,8 +868,8 @@ def test_empty_running_script_placeholder_remains_visible() -> None:
 def test_non_draft_streaming_placeholder_accepts_deltas() -> None:
     source = read_frontend("store/useWorkbenchStore.ts")
 
-    assert "message.client_status !== 'streaming'" in source
-    assert "message_id: typeof event.message_id === 'string'" in source
+    assert "!['preparing', 'streaming'].includes(message.client_status || '')" in source
+    assert "message_id: messageId" in source
     assert "message_updated" in source
     assert "mergeUpdatedMessage" in source
 

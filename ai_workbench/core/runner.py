@@ -19,7 +19,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.config_schema import resolve_config
 from ai_workbench.core.context import ContextBuilder, LLMContextError, group_transcript_identity_instruction, validate_llm_context_messages
-from ai_workbench.core.events import EventBus
+from ai_workbench.core.events import EventBus, flush_realtime_events
 from ai_workbench.core.llm_config import LLMConfigError, require_llm_model, resolve_llm_config
 from ai_workbench.core.llm_stream import LLMResult, LLMStreamChunk, LLMMetricsRecorder
 from ai_workbench.core.message_parts import command_result_to_parts, make_error_part, make_text_part
@@ -370,6 +370,7 @@ class AgentRunner:
                 message_id=user_message.message_id,
                 payload={"message": user_message.model_dump(mode="json")},
             )
+            await flush_realtime_events()
         if current_user_message_id and not parent_id:
             parent_id = user_message.message_id
 
@@ -404,6 +405,7 @@ class AgentRunner:
                 metadata=run_metadata,
             )
             self.event_bus.emit("run_started", session_id=session_id, run_id=run.run_id)
+            await flush_realtime_events()
         if not suppress_output and not preparation_step_id:
             self._emit_prompt_message_started(
                 agent=agent,
@@ -412,6 +414,7 @@ class AgentRunner:
                 run=run,
                 parent_id=parent_id,
             )
+            await flush_realtime_events()
         if action_id != "default":
             self.event_bus.emit(
                 "action_invoked",
@@ -643,7 +646,10 @@ class AgentRunner:
             session_id=session_id,
             temporary_knowledge_base_ids=temporary_knowledge_base_ids,
         )
-        knowledge_context = build_session_knowledge_context(
+        if knowledge_load_steps:
+            await flush_realtime_events()
+        knowledge_context = await asyncio.to_thread(
+            build_session_knowledge_context,
             knowledge_store=self.knowledge_store,
             model_backend=self.knowledge_model_backend,
             query=args,
@@ -660,6 +666,8 @@ class AgentRunner:
         if knowledge_context.rendered_text:
             messages = append_knowledge_to_system(messages, knowledge_context.rendered_text)
         web_utility_step = self._start_utility_preparation_step(run.run_id, preparation_step_id, app_settings)
+        if web_utility_step:
+            await flush_realtime_events()
         web_context = await build_web_context(
             app_settings_store=self.app_settings_store,
             settings=app_settings,
@@ -754,6 +762,8 @@ class AgentRunner:
             self._record_vision_metadata(run.run_id, vision_input["metadata"])
             self.run_lifecycle.complete_step(resolving_model_step.step_id)
             title_step = self._start_title_preparation_step(run.run_id, preparation_step_id, app_settings)
+            if title_step:
+                await flush_realtime_events()
             await maybe_generate_session_title_before_llm_call(
                 session_id=session_id,
                 source_message_id=current_user_message_id,

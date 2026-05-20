@@ -95,6 +95,11 @@ class EventBus:
         self._subscribers.clear()
 
 
+async def flush_realtime_events() -> None:
+    """Yield so websocket/event subscribers can drain queued realtime events."""
+    await asyncio.sleep(0)
+
+
 def _event_message(event: Event) -> str:
     if "error" in event.payload:
         return str(event.payload["error"])

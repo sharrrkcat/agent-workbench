@@ -1175,6 +1175,8 @@ export type MessagePart =
 
 export type Message = {
   message_id: string;
+  id?: string | null;
+  client_message_id?: string | null;
   session_id: string;
   role: 'user' | 'assistant' | 'agent' | 'system' | 'tool' | 'command';
   speaker_type?: 'user' | 'agent' | 'capability' | 'system' | null;

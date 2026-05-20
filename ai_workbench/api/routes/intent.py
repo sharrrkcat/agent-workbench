@@ -156,7 +156,7 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
     )
     if not getattr(session, "session_id", ""):
         settings = state.app_settings.get()
-        prediction = _semantic_prediction(
+        prediction = await _semantic_prediction(
             text=text,
             settings=settings,
             agent_registry=state.agents,

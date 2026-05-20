@@ -16,8 +16,10 @@ streaming signals.
   Prompt Agent runs may emit it immediately after run creation and before
   expensive preparation steps, so run steps have a visible assistant row during
   preparation. The payload includes assistant role, session/run/message ids,
-  creation time, and a preparing status. The later LLM stream must reuse this
-  draft message id.
+  creation time, and a preparing status. The frontend accepts either
+  `payload.message` or the payload object itself as the draft message envelope,
+  with top-level event ids used to fill missing fields. The later LLM stream
+  must reuse this draft message id.
 - `message_delta` carries visible incremental output for a streaming assistant
   message.
 - `message_completed` carries the final persisted assistant message and is the

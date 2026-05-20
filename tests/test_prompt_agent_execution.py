@@ -103,6 +103,20 @@ class FakeKnowledgeModelBackend:
         return self.loaded
 
 
+class BlockingEmbeddingBackend(FakeKnowledgeModelBackend):
+    def __init__(self) -> None:
+        super().__init__(loaded=False)
+        self.started = ThreadingEvent()
+        self.release = ThreadingEvent()
+        self.completed = ThreadingEvent()
+
+    def embed_texts(self, model_path: str, texts: list[str], normalize: bool, device: str) -> list[list[float]]:
+        self.started.set()
+        self.release.wait(timeout=2)
+        self.completed.set()
+        return [[1.0, 0.0] for _ in texts]
+
+
 class RawLLMRuntime(FakeLLMRuntime):
     def __init__(self, payload) -> None:
         super().__init__(response="")
@@ -1488,6 +1502,54 @@ def test_prompt_agent_broadcasts_draft_and_preparation_steps_before_embedding_lo
     assert accepted_index < draft_index < preparing_index < embedding_index < delta_index
     assert event_types.count("message_started") == 1
     assert completed.payload["draft_message_id"] == f"draft-{result.run_id}"
+
+
+def test_realtime_subscriber_receives_early_events_before_blocking_embedding_loader_finishes() -> None:
+    async def scenario():
+        llm = FakeStreamingLLMRuntime(chunks=["hello"])
+        fixture = PromptRuntimeFixture(llm=llm)
+        backend = BlockingEmbeddingBackend()
+        fixture.agent_runner.knowledge_model_backend = backend
+        embedding_profile = fixture.knowledge.create_embedding_profile(
+            EmbeddingModelProfile(name="Route Embeddings", alias="route", model_path="embeddings/route")
+        )
+        fixture.app_settings.patch(
+            {
+                "intent_routing_enabled": True,
+                "intent_routing_default_for_prompt_agents": True,
+                "intent_routing_embedding_model_profile_id": embedding_profile.id,
+            }
+        )
+        profile = add_profile(fixture, supports_streaming=True)
+        session = fixture.sessions.create_session(default_agent_id="chat")
+        fixture.sessions.set_llm_profile(session.session_id, profile.id)
+        session = fixture.sessions.get_session(session.session_id)
+        queue = fixture.events.subscribe()
+        task = asyncio.create_task(fixture.runtime.handle_input(session, "hello", client_message_id="client-flush"))
+
+        assert await asyncio.to_thread(backend.started.wait, 1)
+        early_events = []
+        while not queue.empty():
+            early_events.append(queue.get_nowait())
+
+        backend.release.set()
+        result = await task
+        fixture.events.unsubscribe(queue)
+        return fixture, result, backend, early_events
+
+    fixture, result, backend, early_events = run(scenario())
+    early_types = [event.type for event in early_events]
+    early_step_labels = [event.payload.get("step", {}).get("label") for event in early_events if event.type == "run_step_created"]
+
+    assert result.success is True
+    assert backend.completed.is_set()
+    assert "message_updated" in early_types
+    assert "run_started" in early_types
+    assert "message_started" in early_types
+    assert "Loading embedding model" in early_step_labels
+    assert next(event for event in early_events if event.type == "message_updated").payload["message"]["role"] == "user"
+    assert next(event for event in early_events if event.type == "message_started").payload["status"] == "preparing"
+    assert [event.type for event in fixture.events.list_events()].count("message_started") == 1
 
 
 def test_prompt_agent_llm_failure_marks_calling_llm_step_failed() -> None:

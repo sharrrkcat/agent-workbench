@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 import inspect
 import re
@@ -214,7 +215,7 @@ async def build_intent_routing_metadata(
         return {**base, "skip_reason": reason, "bypass_reason": reason}
     if mode not in {"shadow", "auto"}:
         return {**base, "skip_reason": "unsupported_mode", "bypass_reason": "unsupported_mode"}
-    prediction = _semantic_prediction(
+    prediction = await _semantic_prediction(
         text=route.args,
         settings=settings,
         agent_registry=agent_registry,
@@ -493,7 +494,7 @@ def _decision_metadata(
     return metadata
 
 
-def _semantic_prediction(
+async def _semantic_prediction(
     *,
     text: str,
     settings: Any,
@@ -509,11 +510,16 @@ def _semantic_prediction(
     step_token = None
     if preparation_recorder is not None and callable(getattr(preparation_recorder, "start_embedding_load", None)):
         step_token = preparation_recorder.start_embedding_load(settings=settings, knowledge_store=knowledge_store, model_backend=knowledge_model_backend)
+        if step_token is not None:
+            from ai_workbench.core.events import flush_realtime_events
+
+            await flush_realtime_events()
     try:
         from ai_workbench.core.intent_semantic_router import SemanticRouter
 
         router = semantic_router or SemanticRouter()
-        prediction = router.decide(
+        prediction = await asyncio.to_thread(
+            router.decide,
             text,
             settings=settings,
             knowledge_store=knowledge_store,
@@ -908,6 +914,10 @@ async def _maybe_apply_utility_slots(
         try:
             if preparation_recorder is not None and callable(getattr(preparation_recorder, "start_utility_load", None)):
                 step_token = preparation_recorder.start_utility_load(settings=settings)
+                if step_token is not None:
+                    from ai_workbench.core.events import flush_realtime_events
+
+                    await flush_realtime_events()
             extracted = await utility_llm_service.extract_intent_json(text, settings, context=context)
         except TypeError:
             extracted = await utility_llm_service.extract_intent_json(text, settings)

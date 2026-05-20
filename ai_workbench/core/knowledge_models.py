@@ -4,6 +4,7 @@ import gc
 import importlib.util
 import logging
 import math
+import threading
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -126,6 +127,8 @@ class LocalKnowledgeModelBackend:
         self.root = root or repo_root()
         self._embedding_cache: dict[tuple[str, str], Any] = {}
         self._reranker_cache: dict[tuple[str, str], Any] = {}
+        self._embedding_cache_lock = threading.RLock()
+        self._reranker_cache_lock = threading.RLock()
         self._active_embedding_calls = 0
         self._active_reranker_calls = 0
 
@@ -167,19 +170,21 @@ class LocalKnowledgeModelBackend:
 
     def _load_embedding_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
-        if key not in self._embedding_cache:
-            from sentence_transformers import SentenceTransformer  # type: ignore
+        with self._embedding_cache_lock:
+            if key not in self._embedding_cache:
+                from sentence_transformers import SentenceTransformer  # type: ignore
 
-            self._embedding_cache[key] = SentenceTransformer(str(path), device=device)
-        return self._embedding_cache[key]
+                self._embedding_cache[key] = SentenceTransformer(str(path), device=device)
+            return self._embedding_cache[key]
 
     def _load_reranker_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
-        if key not in self._reranker_cache:
-            from sentence_transformers import CrossEncoder  # type: ignore
+        with self._reranker_cache_lock:
+            if key not in self._reranker_cache:
+                from sentence_transformers import CrossEncoder  # type: ignore
 
-            self._reranker_cache[key] = CrossEncoder(str(path), device=device)
-        return self._reranker_cache[key]
+                self._reranker_cache[key] = CrossEncoder(str(path), device=device)
+            return self._reranker_cache[key]
 
     def embedding_model_loaded(self, model_path: str, device: str | None = None) -> bool:
         absolute_path = resolve_model_path(model_path, "embeddings", self.root)

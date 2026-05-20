@@ -5,6 +5,7 @@ import gc
 import importlib.util
 import json
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -342,6 +343,7 @@ class UtilityLLMService:
         self.capability_config_store = capability_config_store
         self.llm_defaults_store = llm_defaults_store
         self._cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+        self._cache_lock = threading.RLock()
 
     def configure(
         self,
@@ -480,8 +482,12 @@ class UtilityLLMService:
         absolute_path = resolve_utility_model_path(model_path, self.root, backend)
         if not backend_impl.path_exists(absolute_path):
             raise UtilityLLMError(UTILITY_MODEL_NOT_FOUND, f"Utility LLM model not found: {model_path}")
-        text = await asyncio.to_thread(backend_impl.generate, self._cache, absolute_path, model_path, device, options, prompt, max_new_tokens)
+        text = await asyncio.to_thread(self._generate_local_sync, backend_impl, absolute_path, model_path, device, options, prompt, max_new_tokens)
         return UtilityGeneration(text=text, model_path=model_path, device=device, backend=backend)
+
+    def _generate_local_sync(self, backend_impl: Any, absolute_path: Path, model_path: str, device: str, options: dict[str, Any], prompt: str, max_new_tokens: int) -> str:
+        with self._cache_lock:
+            return backend_impl.generate(self._cache, absolute_path, model_path, device, options, prompt, max_new_tokens)
 
     def local_model_loaded(self, settings: Any) -> bool:
         try:
@@ -518,10 +524,10 @@ class UtilityLLMService:
         try:
             chat = getattr(self.llm_runtime, "chat", None)
             if callable(chat):
-                raw = chat(messages=[{"role": "user", "content": prompt}], model_config=model_config, stream=False)
+                raw = await asyncio.to_thread(chat, messages=[{"role": "user", "content": prompt}], model_config=model_config, stream=False)
             else:
                 generate = getattr(self.llm_runtime, "generate")
-                raw = generate(prompt=prompt, model_config=model_config, stream=False)
+                raw = await asyncio.to_thread(generate, prompt=prompt, model_config=model_config, stream=False)
             if asyncio.iscoroutine(raw) or hasattr(raw, "__await__"):
                 raw = await raw
             text = _extract_llm_text(raw)

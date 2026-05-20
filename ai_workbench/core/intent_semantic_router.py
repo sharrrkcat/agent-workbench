@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -185,6 +186,7 @@ class SemanticRouter:
         self.ttl_seconds = ttl_seconds
         self.builder = builder or SemanticRouteIndexBuilder()
         self._index: SemanticRouteIndex | None = None
+        self._index_lock = threading.RLock()
 
     def candidate_summary(
         self,
@@ -289,27 +291,28 @@ class SemanticRouter:
         )
         key = self.builder.index_key(profile=profile, settings=settings, candidates=candidates)
         now = time.monotonic()
-        if self._index is not None and self._index.key == key and now - self._index.built_at <= self.ttl_seconds:
+        with self._index_lock:
+            if self._index is not None and self._index.key == key and now - self._index.built_at <= self.ttl_seconds:
+                return self._index
+            if not candidates:
+                raise RuntimeError(SEMANTIC_INDEX_BUILD_FAILED)
+            settings_obj = knowledge_store.get_settings()
+            result = embed_texts(
+                backend=model_backend,
+                profile=profile,
+                texts=[candidate.document_text() for candidate in candidates],
+                purpose="document",
+                device=getattr(settings_obj, "local_model_device", "auto"),
+            )
+            version = key[:12]
+            self._index = SemanticRouteIndex(
+                key=key,
+                version=version,
+                profile_id=profile.id,
+                candidates=candidates,
+                vectors=result["vectors"],
+            )
             return self._index
-        if not candidates:
-            raise RuntimeError(SEMANTIC_INDEX_BUILD_FAILED)
-        settings_obj = knowledge_store.get_settings()
-        result = embed_texts(
-            backend=model_backend,
-            profile=profile,
-            texts=[candidate.document_text() for candidate in candidates],
-            purpose="document",
-            device=getattr(settings_obj, "local_model_device", "auto"),
-        )
-        version = key[:12]
-        self._index = SemanticRouteIndex(
-            key=key,
-            version=version,
-            profile_id=profile.id,
-            candidates=candidates,
-            vectors=result["vectors"],
-        )
-        return self._index
 
 
 def candidate_summary(candidates: list[SemanticRouteCandidate]) -> dict[str, int]:

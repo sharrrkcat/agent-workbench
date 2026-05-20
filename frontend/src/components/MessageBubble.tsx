@@ -2568,6 +2568,7 @@ function normalizeFileContentPayload(content: unknown): FileContentPayload {
 function hasRenderableMessage(message: Message, reasoningContent: string): boolean {
   if (reasoningContent.trim()) return true;
   if (hasRenderableParts(message.parts)) return true;
+  if ((message.role === 'assistant' || message.role === 'agent') && message.run_id && message.client_status === 'preparing') return true;
   if (message.role === 'user' && messageAttachments(message).length) return true;
   return false;
 }
