@@ -1547,6 +1547,12 @@ export type GeneralSettings = {
   web_context_context_budget_chars: number;
   web_context_prompt: string;
   web_context_prompt_default: string;
+  web_context_plan_resolver_prompt: string;
+  web_context_plan_resolver_prompt_default: string;
+  web_context_candidate_judge_prompt: string;
+  web_context_candidate_judge_prompt_default: string;
+  web_context_page_excerpt_gate_prompt: string;
+  web_context_page_excerpt_gate_prompt_default: string;
   web_context_fetch_pages_enabled: boolean;
   web_context_fetch_max_pages: number;
   web_context_fetch_timeout_seconds: number;

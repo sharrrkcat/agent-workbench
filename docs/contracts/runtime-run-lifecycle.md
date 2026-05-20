@@ -124,6 +124,13 @@ fields include enablement, attempted/injected booleans, truncated query,
 warnings, compact search filtering diagnostics, compact page fetch diagnostics,
 compact Web Candidate Relevance Judge diagnostics, and a compact resolver object
 with `used`, `reason`, and `confidence`.
+Web Context Plan Resolver, Candidate Judge, Page Excerpt Gate, and final
+`# Retrieved Web` prompt composition include current local/UTC time context so
+freshness, relative dates, current versions, prices, releases, and source dates
+are judged relative to runtime time rather than model training cutoff. Metadata
+may record compact booleans or generated dates if needed, but must not store the
+full composed prompt, configured prompt bodies, raw model output, or rendered
+Web Context injection block.
 Each `source_refs` item may include only compact citation UI fields:
 `ref_id` such as `W1`, `rank`, `title`, validated HTTP/HTTPS `url`, `domain`,
 `published_at`, `source`, a capped `snippet_preview` or short `snippet`, and

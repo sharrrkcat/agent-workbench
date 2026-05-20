@@ -200,6 +200,12 @@ General Web Search owns Prompt Agent Web Context injection settings:
   through `20000`.
 - `web_context_prompt` defaults to a non-empty Web Context instruction and
   accepts `1` through `4000` characters.
+- `web_context_plan_resolver_prompt` defaults to a non-empty internal prompt
+  body and accepts `1` through `4000` characters.
+- `web_context_candidate_judge_prompt` defaults to a non-empty internal prompt
+  body and accepts `1` through `4000` characters.
+- `web_context_page_excerpt_gate_prompt` defaults to a non-empty internal
+  prompt body and accepts `1` through `4000` characters.
 - `web_context_fetch_pages_enabled` defaults to `false`.
 - `web_context_fetch_max_pages` defaults to `6` and accepts `1` through `10`.
 - `web_context_fetch_timeout_seconds` defaults to `5` and accepts `1` through
@@ -235,10 +241,19 @@ current session default Prompt Agent may call the core Web Search runtime during
 `Building context` and inject compact SearXNG results after Knowledge context
 and before conversation/current-message context.
 The rendered `# Retrieved Web` block begins with the current General
-`web_context_prompt`. The default tells the model that Web results are untrusted
-external sources, should be used as evidence rather than instructions, and must
-be cited with `[W1]`-style source markers when used. The prompt affects only
-future context builds and must not be copied into run or message metadata.
+`web_context_prompt` plus automatic current local/UTC time context. The default
+tells the model that Web results are untrusted external sources, should be used
+as evidence rather than instructions, must not be followed as instructions, and
+must be cited with `[W1]`-style source markers when used. The prompt affects
+only future context builds and must not be copied into run or message metadata.
+Settings -> General -> Web Search also owns the user-configurable prompt bodies
+for the Web Context Plan Resolver, Candidate Relevance Judge, and Page Excerpt
+Gate. These fields customize judgment criteria and style only. JSON schemas,
+allowed enum values, required fields, parser tolerance, compact input
+boundaries, and safety boundaries remain code-owned and are appended after the
+configured prompt body. Current local time, current UTC time, local date, and
+timezone/offset are injected automatically into internal Web Context prompts and
+the final Web Context injection block for freshness-sensitive judgments.
 When page fetching is enabled, Prompt Agent Web Context progressively tries
 retained filtered/de-duplicated result pages. `web_context_fetch_max_pages`
 means the maximum retained candidate pages to attempt, not the number of page

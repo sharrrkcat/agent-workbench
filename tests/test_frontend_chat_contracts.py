@@ -1027,6 +1027,9 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_context_budget_chars: number" in types
     assert "web_context_prompt: string" in types
     assert "web_context_prompt_default: string" in types
+    assert "web_context_plan_resolver_prompt: string" in types
+    assert "web_context_candidate_judge_prompt: string" in types
+    assert "web_context_page_excerpt_gate_prompt: string" in types
     assert "web_context_fetch_pages_enabled: boolean" in types
     assert "web_context_fetch_max_pages: number" in types
     assert "web_context_fetch_timeout_seconds: number" in types
@@ -1051,7 +1054,12 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "settings:general.enableWebSearchContext" in panel
     assert "settings:general.maxWebResults" in panel
     assert "settings:general.webContextBudget" in panel
-    assert "settings:general.webContextPrompt" in panel
+    assert "settings:general.advancedPromptTemplates" in panel
+    assert "settings:general.webContextInjectionPrompt" in panel
+    assert "settings:general.webContextPlanResolverPrompt" in panel
+    assert "settings:general.candidateRelevanceJudgePrompt" in panel
+    assert "settings:general.pageExcerptGatePrompt" in panel
+    assert "settings:general.resetToDefault" in panel
     assert "settings:general.pageFetching" in panel
     assert "settings:general.maxPagesToTry" in panel
     assert "settings:general.maxPagesToTryHelp" in panel
@@ -1073,6 +1081,9 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "capability_id === 'web_search'" in panel
     assert "web_context_enabled: values.web_context_enabled" in panel
     assert "web_context_prompt: values.web_context_prompt" in panel
+    assert "web_context_plan_resolver_prompt: values.web_context_plan_resolver_prompt" in panel
+    assert "web_context_candidate_judge_prompt: values.web_context_candidate_judge_prompt" in panel
+    assert "web_context_page_excerpt_gate_prompt: values.web_context_page_excerpt_gate_prompt" in panel
     assert "web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled" in panel
     assert "web_context_total_page_excerpt_chars: values.web_context_total_page_excerpt_chars" in panel
     assert "web_context_target_page_excerpts: values.web_context_target_page_excerpts" in panel
@@ -1081,7 +1092,9 @@ def test_general_web_search_category_and_fields_are_exposed() -> None:
     assert "web_context_candidate_judge_enabled: values.web_context_candidate_judge_enabled" in panel
     files_body = panel[panel.index("function GeneralFilesSettings"):panel.index("function GeneralMemorySettings")]
     web_search_body = panel[panel.index("function GeneralWebSearchSettings"):panel.index("function titleModelProfileOptionLabel")]
+    base_card = web_search_body[web_search_body.index("settings:general.webSearchContext"):web_search_body.index("settings:general.candidateRelevanceJudge")]
     assert "web_context_fetch_pages_enabled" not in files_body
+    assert "web_context_prompt" not in base_card
     assert "web_context_fetch_pages_enabled" in web_search_body
     assert "web_context_candidate_judge_enabled" in web_search_body
     assert "labelKey: 'sections.webSearch'" not in nav

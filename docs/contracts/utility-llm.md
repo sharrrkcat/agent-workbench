@@ -32,6 +32,11 @@ Callers must assume small local Utility LLMs may miss useful context. Utility
 LLM output can assist deterministic core logic, but it must not be treated as a
 stable final authority for complex evidence evaluation, source selection, or
 fact judgment.
+Web Context internal JSON calls may receive a user-configurable prompt body from
+General settings, but that body is composed with app-owned current-time context
+and fixed JSON schema/safety instructions. The configured body can tune
+criteria; it cannot override validation, required fields, allowed enum values,
+or metadata compactness rules.
 
 It may reference a Model Profile as a backend, but that reference does not make
 Utility LLM an owner of provider/model configuration and does not mutate main
@@ -227,6 +232,7 @@ This planning call is internal. It does not create a message or run, does not
 trigger Intent Routing or title generation, does not inject Knowledge, Core
 Memory, Worldbook, attachments, assistant replies, or full history, and does
 not change main model resolution. It must receive only the current user text,
+automatic current local/UTC time context, the configured resolver prompt body,
 compact task rules, a strict schema, and small examples. Runtime metadata may
 store only validated compact slots and warnings, never raw Utility output or the
 prompt.
@@ -276,6 +282,8 @@ The judge input is limited to:
 - compact candidate fields: candidate id, rank, title, domain, short URL path,
   snippet preview, and source label.
 - task rules and strict schema.
+- automatic current local/UTC time context and the configured reject-only prompt
+  body.
 
 It must not receive Agent prompts, full chat history, assistant output,
 Knowledge snippets, Core Memory, Worldbook entries, attachments, raw SearXNG
@@ -321,7 +329,8 @@ an otherwise valid Gate decision fail.
 
 The gate input is limited to the current user question, Web Context query/query
 source, compact accepted evidence summaries, compact source fields, page title,
-and the capped cleaned page excerpt. It must not include Agent prompts, full
+the capped cleaned page excerpt, automatic current local/UTC time context, and
+the configured gate prompt body. It must not include Agent prompts, full
 chat history, assistant replies, Knowledge snippets, Core Memory, Worldbook
 content, attachments, raw SearXNG payloads, raw HTML, raw HTTP responses,
 rendered `# Retrieved Web`, secrets, or full page text beyond the configured

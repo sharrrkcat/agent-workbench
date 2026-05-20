@@ -71,6 +71,20 @@ class FakeGateRuntime:
         return {"choices": [{"message": {"content": self.text}}]}
 
 
+class PromptCapturingUtility:
+    def __init__(self, payload=None) -> None:
+        self.payload = payload or {}
+        self.prompts: list[str] = []
+
+    def status(self, settings):
+        return {"available": True}
+
+    async def generate(self, prompt, settings, max_new_tokens=128):
+        self.prompts.append(prompt)
+        text = __import__("json").dumps(self.payload)
+        return type("Raw", (), {"text": text})()
+
+
 def gate_payload(
     use_excerpt: bool,
     *,
@@ -133,6 +147,33 @@ def test_web_context_plan_shadow_ignores_shadow_prediction() -> None:
     assert plan.should_search is True
     assert plan.query == "hello"
     assert plan.query_source == "raw_user_text_forced_shadow_mode"
+
+
+def test_web_context_plan_resolver_uses_custom_prompt_and_current_time() -> None:
+    utility = PromptCapturingUtility(
+        {
+            "should_search": True,
+            "query": "latest release",
+            "reason": "time_sensitive_fact_question",
+            "confidence": "high",
+        }
+    )
+    plan = asyncio.run(
+        async_resolve(
+            settings=AppSettings(web_context_enabled=True, intent_routing_enabled=True, intent_routing_mode="auto", web_context_plan_resolver_prompt="CUSTOM PLAN BODY"),
+            text="what is the latest release?",
+            intent={"enabled": True, "mode": "auto", "predicted_intent": "chat"},
+            utility=utility,
+        )
+    )
+
+    assert plan.should_search is True
+    prompt = utility.prompts[0]
+    assert "CUSTOM PLAN BODY" in prompt
+    assert "Current local time:" in prompt
+    assert "Current UTC time:" in prompt
+    assert "Schema:" in prompt
+    assert "should_search" in prompt
 
 
 def test_web_context_plan_auto_skips_selected_knowledge_and_pet() -> None:
@@ -383,6 +424,26 @@ def test_web_context_candidate_judge_disabled_keeps_round8_behavior() -> None:
     assert result.metadata["candidate_judge"]["enabled"] is False
 
 
+def test_web_context_injection_uses_custom_prompt_and_current_time_without_metadata_prompt() -> None:
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://source.test", snippet="fresh source")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_prompt="CUSTOM INJECTION BODY"),
+            query="latest source",
+            search_fn=search,
+        )
+    )
+
+    assert "# Retrieved Web" in result.rendered_text
+    assert "CUSTOM INJECTION BODY" in result.rendered_text
+    assert "Current local time:" in result.rendered_text
+    assert "Current UTC time:" in result.rendered_text
+    assert "CUSTOM INJECTION BODY" not in str(result.metadata)
+    assert "Current local time:" not in str(result.metadata)
+
+
 def test_web_context_candidate_judge_receives_compact_candidates_and_rejects_only_noise() -> None:
     utility = FakeWebPlanUtility(
         judge_payload={
@@ -423,6 +484,31 @@ def test_web_context_candidate_judge_receives_compact_candidates_and_rejects_onl
     assert result.metadata["candidate_judge"]["mode"] == "conservative_reject_only"
     assert result.metadata["candidate_judge"]["retained_count"] == 2
     assert result.metadata["candidate_judge"]["rejected_count"] == 1
+
+
+def test_web_context_candidate_judge_uses_custom_prompt_with_fixed_schema_and_time() -> None:
+    utility = PromptCapturingUtility({"rejected_items": []})
+
+    def search(query, context=None):
+        return {"provider": "searxng", "results": [web_result("https://candidate.test")]}
+
+    result = asyncio.run(
+        build_web_context(
+            settings=AppSettings(web_context_enabled=True, web_context_candidate_judge_enabled=True, web_context_candidate_judge_prompt="CUSTOM JUDGE BODY"),
+            query="latest candidate",
+            search_fn=search,
+            utility_llm_service=utility,
+        )
+    )
+
+    prompt = utility.prompts[0]
+    assert result.metadata["candidate_judge"]["schema"] == "rejected_items_v1"
+    assert "CUSTOM JUDGE BODY" in prompt
+    assert "Current local time:" in prompt
+    assert "Current UTC time:" in prompt
+    assert "rejected_items_v1" in prompt
+    assert "use_source" in prompt
+    assert "raw JSON only" in prompt
 
 
 def test_web_context_candidate_judge_keeps_low_confidence_and_medium_relevance_rejects() -> None:
@@ -1209,7 +1295,7 @@ def test_page_excerpt_gate_prompt_limits_reason_format() -> None:
 
     asyncio.run(
         build_web_context(
-            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm"),
+            settings=AppSettings(web_context_enabled=True, web_context_fetch_pages_enabled=True, web_context_page_excerpt_gate_enabled=True, web_context_page_excerpt_gate_backend="utility_llm", web_context_page_excerpt_gate_prompt="CUSTOM GATE BODY"),
             query="latest",
             search_fn=search,
             page_fetch_fn=fetch,
@@ -1218,6 +1304,9 @@ def test_page_excerpt_gate_prompt_limits_reason_format() -> None:
     )
 
     prompt = utility.gate_prompts[0]
+    assert "CUSTOM GATE BODY" in prompt
+    assert "Current local time:" in prompt
+    assert "Current UTC time:" in prompt
     assert "Return raw JSON only" in prompt
     assert "Do not include markdown" in prompt
     assert "Do not explain outside JSON" in prompt

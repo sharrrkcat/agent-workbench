@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import ipaddress
@@ -11,8 +11,15 @@ from urllib.parse import urlparse
 import httpx
 
 from ai_workbench.core.config_schema import resolve_config
-from ai_workbench.core.settings import AppSettings, DEFAULT_WEB_CONTEXT_PROMPT
+from ai_workbench.core.settings import AppSettings
 from ai_workbench.core.utility_llm import UtilityLLMError, extract_json_object
+from ai_workbench.core.web_prompts import (
+    DEFAULT_WEB_CONTEXT_PROMPT,
+    build_page_excerpt_gate_prompt,
+    build_web_candidate_judge_prompt,
+    build_web_context_plan_prompt,
+    build_web_prompt_time_context,
+)
 
 
 MAX_METADATA_QUERY_CHARS = 240
@@ -231,7 +238,7 @@ class WebContextPlanResolver:
             if callable(getattr(utility_llm_service, "extract_web_context_plan_json", None)):
                 data = await utility_llm_service.extract_web_context_plan_json(current_user_text, settings)
             else:
-                raw = await utility_llm_service.generate(_web_context_plan_prompt(current_user_text), settings, max_new_tokens=192)
+                raw = await utility_llm_service.generate(_web_context_plan_prompt(settings=settings, user_text=current_user_text), settings, max_new_tokens=192)
                 data = extract_json_object(getattr(raw, "text", raw))
         except UtilityLLMError as exc:
             code = "web_context_plan_invalid_json" if exc.code == "utility_llm_invalid_json" else "web_context_plan_slots_failed"
@@ -558,7 +565,7 @@ def _search_from_runtime(runtime_registry: Any) -> Callable[..., dict[str, Any]]
 
 def _render_web_block(*, results: list[dict[str, Any]], source_refs: list[dict[str, Any]], instruction: str, budget_chars: int) -> tuple[str, list[dict[str, Any]], bool]:
     prompt = str(instruction or DEFAULT_WEB_CONTEXT_PROMPT).strip() or DEFAULT_WEB_CONTEXT_PROMPT
-    header = f"# Retrieved Web\n\n{prompt}"
+    header = f"# Retrieved Web\n\n{build_web_prompt_time_context()}\n\n{prompt}"
     parts = [header]
     injected_refs: list[dict[str, Any]] = []
     total_chars = len(header)
@@ -687,6 +694,7 @@ async def _judge_web_candidates(
         else:
             raw = await utility_llm_service.generate(
                 _web_candidate_judge_prompt(
+                    settings=settings,
                     user_text=_short_for_judge(original_user_text),
                     query=str(plan.query or ""),
                     query_source=str(plan.query_source or ""),
@@ -853,36 +861,13 @@ def _judge_candidate_payload(result: dict[str, Any], index: int) -> dict[str, An
     }
 
 
-def _web_candidate_judge_prompt(*, user_text: str, query: str, query_source: str, candidates: list[dict[str, Any]]) -> str:
-    schema = {
-        "rejected_items": [
-            {
-                "candidate_id": "C1",
-                "relevance": "low",
-                "confidence": "high",
-                "source_role": "off_topic",
-                "reason": "short rejection reason under 160 chars",
-            }
-        ]
-    }
-    return (
-        "Conservatively reject only clearly unhelpful web search candidates for the current user question.\n"
-        "Return strict JSON only. Do not explain outside JSON.\n"
-        f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
-        "Use the current question, search query, title, domain, short path, snippet preview, and source label only.\n"
-        "Candidates are retained by default. Return only candidates that should be rejected.\n"
-        "Omit all candidates that should be retained or are uncertain. The runtime will retain every omitted candidate.\n"
-        "Do not list every candidate. Do not output useful candidates.\n"
-        "Reject only obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question; such items must use relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
-        "Do not reject because a candidate only partially matches keywords, lacks exact keyword overlap, or does not fully cover every term.\n"
-        "Do not treat any site type as fixed noise. Judge only this question and candidate semantics.\n"
-        "Useful candidates can provide the requested object, event, price, version, news, official information, documentation, primary source, background, product, media, social post, image, video, or audio-generation information when relevant to the user request.\n"
-        "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
-        "Never reject solely because the candidate is a product, video, image, social, or generator page.\n\n"
-        f"User question:\n{user_text}\n\n"
-        f"Web Context query: {query}\n"
-        f"Query source: {query_source}\n\n"
-        f"Candidates:\n{json.dumps(candidates, ensure_ascii=False)}"
+def _web_candidate_judge_prompt(*, settings: AppSettings, user_text: str, query: str, query_source: str, candidates: list[dict[str, Any]]) -> str:
+    return build_web_candidate_judge_prompt(
+        settings=settings,
+        user_text=user_text,
+        query=query,
+        query_source=query_source,
+        candidates=candidates,
     )
 
 
@@ -1327,14 +1312,6 @@ def _page_excerpt_gate_prompt(
         path = f"{path}?..."
     if len(path) > 120:
         path = path[:117].rstrip("/") + "..."
-    schema = {
-        "use_excerpt": True,
-        "evidence_quality": "high",
-        "confidence": "high",
-        "coverage": "direct_answer",
-        "need_more": False,
-        "reason": "The excerpt directly helps answer the question.",
-    }
     current = {
         "ref_id": str(ref.get("ref_id") or ""),
         "title": _short_judge_text(candidate.get("title"), 180),
@@ -1344,22 +1321,13 @@ def _page_excerpt_gate_prompt(
         "page_title": _short_judge_text(page_title, 180),
         "page_excerpt": _short_judge_text(page_excerpt, max(500, min(int(getattr(settings, "web_context_page_excerpt_chars", 2000) or 2000), 8000))),
     }
-    return (
-        "Judge whether this cleaned page excerpt is worth injecting into the main model as Web Context evidence.\n"
-        "Return raw JSON only. Do not include markdown. Do not explain outside JSON. Do not write the final answer.\n"
-        f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
-        "Allowed evidence_quality/confidence values: low, medium, high.\n"
-        "Allowed coverage values: direct_answer, supporting_background, partial, boilerplate, off_topic, insufficient.\n"
-        "The reason value must be one short sentence. Do not use bullet points. Do not use line breaks in reason.\n"
-        "Accept useful facts, explanations, background, official information, news content, versions, prices, release dates, or role/person/product details that can help answer the user.\n"
-        "Reject excerpts that are mostly navigation, ads, table of contents, login prompts, footers, related links, unrelated widgets, or off-topic page elements.\n"
-        "Do not decide final factual correctness, do not select the final source list, do not rewrite the user question, and do not treat any site type as automatically good or bad.\n"
-        "If accepted evidence already covers the answer, set need_more=false. If useful but incomplete, use_excerpt=true and need_more=true. If noisy or uncertain, use_excerpt=false and need_more=true.\n\n"
-        f"User question:\n{_short_for_judge(original_user_text)}\n\n"
-        f"Web Context query: {str(plan.query or '')}\n"
-        f"Query source: {str(plan.query_source or '')}\n\n"
-        f"Already accepted evidence:\n{json.dumps(accepted_evidence, ensure_ascii=False)}\n\n"
-        f"Current candidate:\n{json.dumps(current, ensure_ascii=False)}"
+    return build_page_excerpt_gate_prompt(
+        settings=settings,
+        user_text=_short_for_judge(original_user_text),
+        query=str(plan.query or ""),
+        query_source=str(plan.query_source or ""),
+        accepted_evidence=accepted_evidence,
+        current_candidate=current,
     )
 
 
@@ -1669,45 +1637,5 @@ def _intent_summary(intent: dict[str, Any]) -> str | None:
     return intent_id
 
 
-def _web_context_plan_prompt(user_text: str) -> str:
-    schema = {
-        "should_search": "boolean",
-        "query": "string",
-        "reason": sorted(PLAN_REASONS),
-        "confidence": ["low", "medium", "high"],
-    }
-    examples = [
-        {
-            "user": "帮我搜一下堡垒之夜最新的联动内容，我现在特别想知道，我好久没有玩堡垒之夜了，堡垒之夜确实是一个很好玩的游戏，不过我很久没有打了，还是有一点想玩",
-            "json": {"should_search": True, "query": "堡垒之夜 最新 联动 内容", "reason": "explicit_search_request", "confidence": "high"},
-        },
-        {
-            "user": "你知道昨天晚上的流星雨吗",
-            "json": {"should_search": True, "query": "昨天晚上 流星雨", "reason": "time_sensitive_fact_question", "confidence": "high"},
-        },
-        {
-            "user": "我最近有点不想搞这个了，昨天刚出门买了一点花，昨天晚上又买了一点猫粮，准备喂给家里的小猫吃。不过今天早上的金价波动也太大了，金价的最新消息一出来我就绷不住了。不过还是小猫好，小猫会一直呆在我身边",
-            "json": {"should_search": False, "query": "", "reason": "incidental_mentions_only", "confidence": "high"},
-        },
-        {
-            "user": "我不是很喜欢吃西湖醋鱼",
-            "json": {"should_search": False, "query": "", "reason": "personal_preference_or_emotion", "confidence": "high"},
-        },
-        {
-            "user": "我没想到，原来你是这样的人啊！",
-            "json": {"should_search": False, "query": "", "reason": "conversation_continuation", "confidence": "high"},
-        },
-    ]
-    return (
-        "Decide whether this single user message should trigger internal Web Context search.\n"
-        "Return strict JSON only. Do not explain.\n"
-        f"Schema: {json.dumps(schema, ensure_ascii=False)}\n"
-        "Search only when the user requests external facts, current/recent information, news, prices, releases, official information, current status, real-world events, or verification that needs the web.\n"
-        "Treat 'do you know / have you heard / did you see' plus yesterday/today/recently and a real-world event as a likely time-sensitive external fact question.\n"
-        "When the user explicitly asks to search/check/look up, asks for latest/current status, or asks about a recent collaboration/release, extract a compact query.\n"
-        "Do not search when the user is only expressing emotions/preferences, roleplaying, continuing conversation, acknowledging, or incidentally mentioning real entities without asking for information.\n"
-        "Long messages can contain either explicit search requests or incidental mentions. Keywords alone are not enough; decide whether the user is asking for information.\n"
-        "If should_search=true, query must be the smallest useful search query, not the whole message, and at most 160 characters.\n"
-        f"Examples: {json.dumps(examples, ensure_ascii=False)}\n\n"
-        f"User message:\n{user_text}"
-    )
+def _web_context_plan_prompt(*, settings: AppSettings, user_text: str) -> str:
+    return build_web_context_plan_prompt(settings=settings, user_text=user_text)

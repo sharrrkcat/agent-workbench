@@ -10,6 +10,7 @@ from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION, DEFAULT_SESSION_TITLE_PROMPT, DEFAULT_WEB_CONTEXT_PROMPT
 from ai_workbench.core.settings import DEFAULT_CODE_FONT_FAMILY, DEFAULT_MESSAGE_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY
 from ai_workbench.core.settings import AppSettingsStore
+from ai_workbench.core.web_prompts import DEFAULT_WEB_CONTEXT_CANDIDATE_JUDGE_PROMPT, DEFAULT_WEB_CONTEXT_PAGE_EXCERPT_GATE_PROMPT, DEFAULT_WEB_CONTEXT_PLAN_RESOLVER_PROMPT
 from ai_workbench.db.models import AppMetadataRecord
 from ai_workbench.core.schema.run import RunStatus
 from scripts.cleanup_attachments import main as cleanup_main
@@ -62,6 +63,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["web_context_context_budget_chars"] == 4000
     assert response.json()["web_context_prompt"] == DEFAULT_WEB_CONTEXT_PROMPT
     assert response.json()["web_context_prompt_default"] == DEFAULT_WEB_CONTEXT_PROMPT
+    assert response.json()["web_context_plan_resolver_prompt"] == DEFAULT_WEB_CONTEXT_PLAN_RESOLVER_PROMPT
+    assert response.json()["web_context_plan_resolver_prompt_default"] == DEFAULT_WEB_CONTEXT_PLAN_RESOLVER_PROMPT
+    assert response.json()["web_context_candidate_judge_prompt"] == DEFAULT_WEB_CONTEXT_CANDIDATE_JUDGE_PROMPT
+    assert response.json()["web_context_candidate_judge_prompt_default"] == DEFAULT_WEB_CONTEXT_CANDIDATE_JUDGE_PROMPT
+    assert response.json()["web_context_page_excerpt_gate_prompt"] == DEFAULT_WEB_CONTEXT_PAGE_EXCERPT_GATE_PROMPT
+    assert response.json()["web_context_page_excerpt_gate_prompt_default"] == DEFAULT_WEB_CONTEXT_PAGE_EXCERPT_GATE_PROMPT
     assert response.json()["web_context_fetch_pages_enabled"] is False
     assert response.json()["web_context_fetch_max_pages"] == 6
     assert response.json()["web_context_fetch_timeout_seconds"] == 5
@@ -147,6 +154,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "web_context_max_results": 7,
             "web_context_context_budget_chars": 6000,
             "web_context_prompt": "Use web citations like [W1].",
+            "web_context_plan_resolver_prompt": "Custom plan resolver body.",
+            "web_context_candidate_judge_prompt": "Custom candidate judge body.",
+            "web_context_page_excerpt_gate_prompt": "Custom page excerpt gate body.",
             "web_context_fetch_pages_enabled": True,
             "web_context_fetch_max_pages": 4,
             "web_context_fetch_timeout_seconds": 8,
@@ -223,6 +233,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["web_context_max_results"] == 7
     assert patched.json()["web_context_context_budget_chars"] == 6000
     assert patched.json()["web_context_prompt"] == "Use web citations like [W1]."
+    assert patched.json()["web_context_plan_resolver_prompt"] == "Custom plan resolver body."
+    assert patched.json()["web_context_candidate_judge_prompt"] == "Custom candidate judge body."
+    assert patched.json()["web_context_page_excerpt_gate_prompt"] == "Custom page excerpt gate body."
     assert patched.json()["web_context_fetch_pages_enabled"] is True
     assert patched.json()["web_context_fetch_max_pages"] == 4
     assert patched.json()["web_context_fetch_timeout_seconds"] == 8
@@ -350,6 +363,12 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert client.patch("/api/settings/general", json={"web_context_context_budget_chars": 20001}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_prompt": "   "}).status_code == 422
     assert client.patch("/api/settings/general", json={"web_context_prompt": "x" * 4001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_plan_resolver_prompt": "   "}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_prompt": "   "}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_gate_prompt": "   "}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_plan_resolver_prompt": "x" * 4001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_candidate_judge_prompt": "x" * 4001}).status_code == 422
+    assert client.patch("/api/settings/general", json={"web_context_page_excerpt_gate_prompt": "x" * 4001}).status_code == 422
 
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=db_url))
     assert restarted.get("/api/settings/general").json()["max_file_size_mb"] == 20
@@ -370,6 +389,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.patch("/api/settings/general", json={"web_context_max_results": 3}).json()["web_context_max_results"] == 3
     assert restarted.get("/api/settings/general").json()["web_context_context_budget_chars"] == 6000
     assert restarted.get("/api/settings/general").json()["web_context_prompt"] == "Use web citations like [W1]."
+    assert restarted.get("/api/settings/general").json()["web_context_plan_resolver_prompt"] == "Custom plan resolver body."
+    assert restarted.get("/api/settings/general").json()["web_context_candidate_judge_prompt"] == "Custom candidate judge body."
+    assert restarted.get("/api/settings/general").json()["web_context_page_excerpt_gate_prompt"] == "Custom page excerpt gate body."
     assert restarted.get("/api/settings/general").json()["web_context_fetch_pages_enabled"] is True
     assert restarted.get("/api/settings/general").json()["web_context_fetch_max_pages"] == 4
     assert restarted.get("/api/settings/general").json()["web_context_fetch_timeout_seconds"] == 8

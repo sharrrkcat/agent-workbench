@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -382,7 +382,7 @@ def test_web_context_plan_prompt_includes_time_sensitive_and_incidental_guidance
     async def generate(prompt, settings, max_new_tokens=128):
         captured["prompt"] = prompt
         return UtilityGeneration(
-            text='{"should_search":true,"query":"昨天晚上 流星雨","reason":"time_sensitive_fact_question","confidence":"high"}',
+            text='{"should_search":true,"query":"yesterday meteor shower","reason":"time_sensitive_fact_question","confidence":"high"}',
             model_path="utility_llms/test",
             device="cpu",
             backend="transformers",
@@ -390,14 +390,16 @@ def test_web_context_plan_prompt_includes_time_sensitive_and_incidental_guidance
 
     service.generate = generate
 
-    result = run(service.extract_web_context_plan_json("你知道昨天晚上的流星雨吗", AppSettings(intent_routing_utility_llm_model_path="utility_llms/test")))
+    result = run(service.extract_web_context_plan_json("浣犵煡閬撴槰澶╂櫄涓婄殑娴佹槦闆ㄥ悧", AppSettings(intent_routing_utility_llm_model_path="utility_llms/test")))
 
     prompt = captured["prompt"]
     assert result["reason"] == "time_sensitive_fact_question"
-    assert "你知道昨天晚上的流星雨吗" in prompt
+    assert "浣犵煡閬撴槰澶╂櫄涓婄殑娴佹槦闆ㄥ悧" in prompt
+    assert "Current local time:" in prompt
+    assert "Current UTC time:" in prompt
     assert "time_sensitive_fact_question" in prompt
-    assert "Long messages can contain either explicit search requests or incidental mentions" in prompt
-    assert "我不是很喜欢吃西湖醋鱼" in prompt
+    assert "incidental_mentions_only" in prompt
+    assert "Search for the latest event details" in prompt
 
 
 def test_web_candidate_judge_prompt_uses_compact_candidates_only() -> None:
@@ -429,15 +431,17 @@ def test_web_candidate_judge_prompt_uses_compact_candidates_only() -> None:
     prompt = captured["prompt"]
     assert result["rejected_items"][0]["candidate_id"] == "C2"
     assert "Who is Mark Grayson?" in prompt
+    assert "Current local time:" in prompt
+    assert "Current UTC time:" in prompt
     assert "confidence" in prompt
     assert "Candidates are retained by default" in prompt
     assert "rejected_items" in prompt
-    assert "use_source" not in prompt
+    assert "use_source" in prompt
     assert "selected" not in prompt.lower()
     assert "best sources" not in prompt.lower()
     assert "Character background." in prompt
     assert "page body" not in prompt.lower()
-    assert "chat history" not in prompt.lower()
+    assert "full chat history" not in prompt.lower()
     assert captured["max_new_tokens"] == 768
 
 

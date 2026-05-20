@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import gc
@@ -629,29 +629,9 @@ class UtilityLLMService:
         return result
 
     async def extract_web_context_plan_json(self, text: str, settings: Any) -> dict[str, Any]:
-        prompt = (
-            "Decide whether this single user message should trigger internal Web Context search.\n"
-            "Return strict JSON only with keys: should_search, query, reason, confidence.\n"
-            "Allowed reason values: explicit_search_request, external_fact_question, time_sensitive_fact_question, incidental_mentions_only, personal_preference_or_emotion, conversation_continuation, insufficient_external_fact_request.\n"
-            "Allowed confidence values: low, medium, high.\n"
-            "Search only when the user requests external facts, current/recent information, news, prices, releases, official information, current status, real-world events, or verification that needs the web.\n"
-            "Treat 'do you know / have you heard / did you see' plus yesterday/today/recently and a real-world event as a likely time-sensitive external fact question.\n"
-            "When the user explicitly asks to search/check/look up, asks for latest/current status, or asks about a recent collaboration/release, extract a compact query.\n"
-            "Do not search when the user is only expressing emotions/preferences, roleplaying, continuing conversation, acknowledging, or incidentally mentioning real entities without asking for information.\n"
-            "Long messages can contain either explicit search requests or incidental mentions. Keywords alone are not enough; decide whether the user is asking for information.\n"
-            "If should_search=true, query must be the smallest useful search query, not the whole message, and at most 160 characters.\n"
-            "Positive example input: 帮我搜一下堡垒之夜最新的联动内容，我现在特别想知道，我好久没有玩堡垒之夜了，堡垒之夜确实是一个很好玩的游戏，不过我很久没有打了，还是有一点想玩\n"
-            "Positive example JSON: {\"should_search\":true,\"query\":\"堡垒之夜 最新 联动 内容\",\"reason\":\"explicit_search_request\",\"confidence\":\"high\"}\n"
-            "Positive example input: 你知道昨天晚上的流星雨吗\n"
-            "Positive example JSON: {\"should_search\":true,\"query\":\"昨天晚上 流星雨\",\"reason\":\"time_sensitive_fact_question\",\"confidence\":\"high\"}\n"
-            "Negative example input: 我最近有点不想搞这个了，昨天刚出门买了一点花，昨天晚上又买了一点猫粮，准备喂给家里的小猫吃。不过今天早上的金价波动也太大了，金价的最新消息一出来我就绷不住了。不过还是小猫好，小猫会一直呆在我身边\n"
-            "Negative example JSON: {\"should_search\":false,\"query\":\"\",\"reason\":\"incidental_mentions_only\",\"confidence\":\"high\"}\n\n"
-            "Negative example input: 我不是很喜欢吃西湖醋鱼\n"
-            "Negative example JSON: {\"should_search\":false,\"query\":\"\",\"reason\":\"personal_preference_or_emotion\",\"confidence\":\"high\"}\n"
-            "Negative example input: 我没想到，原来你是这样的人啊！\n"
-            "Negative example JSON: {\"should_search\":false,\"query\":\"\",\"reason\":\"conversation_continuation\",\"confidence\":\"high\"}\n\n"
-            f"User message:\n{text}"
-        )
+        from ai_workbench.core.web_prompts import build_web_context_plan_prompt
+
+        prompt = build_web_context_plan_prompt(settings=settings, user_text=text)
         raw = await self.generate(prompt, settings, max_new_tokens=192)
         try:
             return extract_json_object(raw.text)
@@ -667,38 +647,14 @@ class UtilityLLMService:
         candidates: list[dict[str, Any]],
         settings: Any,
     ) -> dict[str, Any]:
-        schema = {
-            "rejected_items": [
-                {
-                    "candidate_id": "C1",
-                    "relevance": "low",
-                    "confidence": "high",
-                    "source_role": "off_topic",
-                    "reason": "short rejection reason under 160 chars",
-                }
-            ]
-        }
-        prompt = (
-            "Conservatively reject only clearly unhelpful web search candidates for the current user question.\n"
-            "Return strict JSON only with one key: rejected_items. Do not explain outside JSON.\n"
-            f"Schema example: {json.dumps(schema, ensure_ascii=False)}\n"
-            "Allowed relevance values: low, medium, high.\n"
-            "Allowed confidence values: low, medium, high.\n"
-            "Allowed source_role values: reference, official, news, documentation, background, primary_source, noise, off_topic, weak_match.\n"
-            "Use only the current question, Web Context query, query source, and compact candidate fields.\n"
-            "Candidates are retained by default. Return only candidates that should be rejected.\n"
-            "Omit all candidates that should be retained or are uncertain. The runtime will retain every omitted candidate.\n"
-            "Do not list every candidate. Do not output useful candidates.\n"
-            "Reject only obvious noise, off-topic candidates, or weak matches that cannot reasonably help answer the question; such items must use relevance=low, confidence=high, and source_role noise/off_topic/weak_match.\n"
-            "Do not reject because a candidate only partially matches keywords, lacks exact keyword overlap, or does not fully cover every term.\n"
-            "Do not treat any site type as fixed noise. Judge only this question and candidate semantics.\n"
-            "Useful candidates can provide the requested object, event, price, version, news, official information, documentation, primary source, background, product, media, social post, image, video, or audio-generation information when relevant to the user request.\n"
-            "If the user asks for images, video, buying options, audio generation, social posts, or product info, those page types can be relevant.\n"
-            "Never reject solely because the candidate is a product, video, image, social, or generator page.\n\n"
-            f"User question:\n{user_text}\n\n"
-            f"Web Context query: {query}\n"
-            f"Query source: {query_source}\n\n"
-            f"Candidates:\n{json.dumps(candidates, ensure_ascii=False)}"
+        from ai_workbench.core.web_prompts import build_web_candidate_judge_prompt
+
+        prompt = build_web_candidate_judge_prompt(
+            settings=settings,
+            user_text=user_text,
+            query=query,
+            query_source=query_source,
+            candidates=candidates,
         )
         raw = await self.generate(prompt, settings, max_new_tokens=768)
         try:

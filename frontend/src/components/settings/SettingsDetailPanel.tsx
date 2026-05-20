@@ -1081,6 +1081,10 @@ function GeneralWebSearchSettings({
         maxResults: String(resolved.max_results || t('status:common.unknown')),
       })
     : t('settings:general.webSearchProviderUnavailable');
+  function resetPrompt(key: 'web_context_prompt' | 'web_context_plan_resolver_prompt' | 'web_context_candidate_judge_prompt' | 'web_context_page_excerpt_gate_prompt') {
+    const defaultKey = `${key}_default` as keyof GeneralSettings;
+    setValues({ ...values, [key]: String(values[defaultKey] || '') });
+  }
   return (
     <>
       <div className="detail-section">
@@ -1096,11 +1100,6 @@ function GeneralWebSearchSettings({
           <NumberField label={t('settings:general.maxWebResults')} value={values.web_context_max_results} min={1} max={10} onChange={(value) => setNumber('web_context_max_results', value)} />
           <NumberField label={t('settings:general.webContextBudget')} value={values.web_context_context_budget_chars} min={500} max={20000} step={500} onChange={(value) => setNumber('web_context_context_budget_chars', value)} />
         </div>
-        <label className="config-field settings-config-field">
-          <span>{t('settings:general.webContextPrompt')}</span>
-          <textarea rows={7} maxLength={4000} value={values.web_context_prompt} onChange={(event) => setValues({ ...values, web_context_prompt: event.currentTarget.value })} />
-          <small>{t('settings:general.webContextPromptHelp')}</small>
-        </label>
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
@@ -1211,6 +1210,40 @@ function GeneralWebSearchSettings({
       </div>
       <div className="detail-section">
         <div className="detail-section-heading">
+          <h3>{t('settings:general.advancedPromptTemplates')}</h3>
+        </div>
+        <p className="settings-muted-text">{t('settings:general.advancedPromptTemplatesHelp')}</p>
+        <PromptTemplateField
+          label={t('settings:general.webContextInjectionPrompt')}
+          description={t('settings:general.webContextInjectionPromptHelp')}
+          value={values.web_context_prompt}
+          onChange={(value) => setValues({ ...values, web_context_prompt: value })}
+          onReset={() => resetPrompt('web_context_prompt')}
+        />
+        <PromptTemplateField
+          label={t('settings:general.webContextPlanResolverPrompt')}
+          description={t('settings:general.webContextPlanResolverPromptHelp')}
+          value={values.web_context_plan_resolver_prompt}
+          onChange={(value) => setValues({ ...values, web_context_plan_resolver_prompt: value })}
+          onReset={() => resetPrompt('web_context_plan_resolver_prompt')}
+        />
+        <PromptTemplateField
+          label={t('settings:general.candidateRelevanceJudgePrompt')}
+          description={t('settings:general.candidateRelevanceJudgePromptHelp')}
+          value={values.web_context_candidate_judge_prompt}
+          onChange={(value) => setValues({ ...values, web_context_candidate_judge_prompt: value })}
+          onReset={() => resetPrompt('web_context_candidate_judge_prompt')}
+        />
+        <PromptTemplateField
+          label={t('settings:general.pageExcerptGatePrompt')}
+          description={t('settings:general.pageExcerptGatePromptHelp')}
+          value={values.web_context_page_excerpt_gate_prompt}
+          onChange={(value) => setValues({ ...values, web_context_page_excerpt_gate_prompt: value })}
+          onReset={() => resetPrompt('web_context_page_excerpt_gate_prompt')}
+        />
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
           <h3>{t('settings:general.searchProvider')}</h3>
         </div>
         <dl className="settings-definition-grid">
@@ -1225,6 +1258,33 @@ function GeneralWebSearchSettings({
 function titleModelProfileOptionLabel(profile: LlmProfile): string {
   const pieces = [profile.name || profile.alias || profile.id, profile.alias, profile.provider].filter(Boolean);
   return pieces.join(' / ');
+}
+
+function PromptTemplateField({
+  label,
+  description,
+  value,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  description: string;
+  value: string;
+  onChange: (value: string) => void;
+  onReset: () => void;
+}) {
+  const { t } = useTranslation(['settings']);
+  return (
+    <label className="config-field settings-config-field">
+      <span>{label}</span>
+      <textarea rows={7} maxLength={4000} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+      <small>{description}</small>
+      <button className="settings-secondary-button" type="button" onClick={onReset}>
+        <RefreshCw size={14} />
+        {t('settings:general.resetToDefault')}
+      </button>
+    </label>
+  );
 }
 
 function GeneralIntentRoutingSettings({
@@ -1807,6 +1867,9 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     web_context_max_results: values.web_context_max_results,
     web_context_context_budget_chars: values.web_context_context_budget_chars,
     web_context_prompt: values.web_context_prompt,
+    web_context_plan_resolver_prompt: values.web_context_plan_resolver_prompt,
+    web_context_candidate_judge_prompt: values.web_context_candidate_judge_prompt,
+    web_context_page_excerpt_gate_prompt: values.web_context_page_excerpt_gate_prompt,
     web_context_fetch_pages_enabled: values.web_context_fetch_pages_enabled,
     web_context_fetch_max_pages: values.web_context_fetch_max_pages,
     web_context_fetch_timeout_seconds: values.web_context_fetch_timeout_seconds,

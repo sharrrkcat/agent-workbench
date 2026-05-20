@@ -112,6 +112,11 @@ not create assistant messages, do not create Agent or command runs, do not enter
 Prompt Agent context building, and do not trigger title generation, Intent
 Routing, Knowledge, Core Memory, Worldbook, attachments, history, or Web Context
 recursively.
+Prompt composition for follow-agent and specific-profile Page Excerpt Gate calls
+includes automatic current local/UTC time context, the configured General Web
+Search gate prompt body, and app-owned fixed JSON schema/safety instructions.
+This composition does not mutate the main response model resolution and does not
+store raw prompts or raw model output in runtime metadata.
 
 Session title generation has its own resolver:
 
