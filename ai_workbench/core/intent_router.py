@@ -96,7 +96,8 @@ def compact_utility_context(
             "image_generation_target": "comfyui_agent",
             "knowledge_query_override_only": True,
             "non_chat_auto_requires_utility_slots": True,
-            "web_query_diagnostic_only": True,
+            "web_query_can_signal_web_context": True,
+            "web_query_direct_command_execute": False,
         },
     }
     if pet_candidates:
@@ -606,10 +607,10 @@ def _with_pipeline_result(
         result["web_query_freshness"] = normalized.get("freshness") or "any"
         result["web_query_domain_hints"] = list(normalized.get("domain_hints") or [])
         result["web_query_language_hint"] = normalized.get("language_hint")
-        result["not_executed_reason"] = validation.not_executed_reason or "web_query_diagnostic_only"
+        result["not_executed_reason"] = validation.not_executed_reason or "web_context_signal_only"
         result["diagnostic_reason"] = result["not_executed_reason"]
         result["warnings"] = _ensure_warning(result["warnings"], str(result["not_executed_reason"]))
-        result["route_action"] = "metadata_only"
+        result["route_action"] = "web_context_signal"
         result["auto_executable"] = False
         result["would_execute"] = False
         result["executed"] = False

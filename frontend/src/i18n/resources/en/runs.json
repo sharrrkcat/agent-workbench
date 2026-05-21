@@ -85,8 +85,8 @@
     "webQuerySources": {
       "resolver": "resolver",
       "web_context_plan_resolver": "resolver",
-      "intent_web_query_slots": "Intent web query slots",
-      "intent_web_query_original_text": "Intent web query original text",
+      "intent_web_query_slots": "Intent Web Context signal",
+      "intent_web_query_original_text": "Intent Web Context original text",
       "raw_user_text_forced": "raw user text",
       "raw_user_text_forced_shadow_mode": "raw user text"
     },

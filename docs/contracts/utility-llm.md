@@ -207,9 +207,11 @@ are validator failures, not execution instructions.
 
 For Intent Routing `web_query`, the Utility LLM may return only compact slots:
 `intent`, `query`, `use_original_query`, `freshness`, `domain_hints`, and
-`language_hint`. These slots are diagnostic-only in this round; they must not
-cause Web Search Capability calls, provider-bound web prompts, web context
-injection, or search result storage.
+`language_hint`. These slots are query signals only. They may inform Prompt
+Agent Web Context planning when General Web Search and runtime gates allow it,
+but they must not directly execute `/web-search`, call Web Search Capability
+commands, bypass Web Context settings, or store search results in Intent
+Routing metadata.
 
 ## Web Context Plan Resolver Interaction
 

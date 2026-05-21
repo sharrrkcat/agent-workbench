@@ -51,6 +51,8 @@ def _intent_routing_step_message(intent: dict[str, Any]) -> str:
     predicted = str(intent.get("predicted_intent") or "chat")
     if intent.get("web_context_usage") == "used_for_web_context":
         return f"{predicted} - used for Web context"
+    if predicted == "web_query" and intent.get("validation_ok"):
+        return f"{predicted} - Web context signal"
     if intent.get("executed") or intent.get("would_execute"):
         return f"{predicted} - executed"
     reason = _intent_reason_label(str(intent.get("not_executed_reason") or intent.get("diagnostic_reason") or "not executed"))
@@ -93,6 +95,7 @@ def _intent_reason_label(reason: str) -> str:
         "agent_route_auto_route_disabled": "diagnostic-only",
         "action_route_auto_route_disabled": "diagnostic-only",
         "compound_intent_not_auto_routed": "diagnostic-only",
+        "web_context_signal_only": "Web context signal",
         "utility_llm_required": "Utility LLM required",
         "utility_llm_unavailable": "Utility LLM unavailable",
         "utility_slots_failed": "Utility LLM slots invalid",

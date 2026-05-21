@@ -124,11 +124,13 @@ settings and must not affect route decisions.
   slots, and Knowledge validation pass.
 - `pet_command`: may execute only the narrow existing `/pet` Capability command
   path described below.
-- `web_query`: diagnostic-only. It identifies requests for current, recent,
-  latest, official, or web-searched information and may extract compact query
-  slots, but it does not call Web Search Capability, does not execute SearXNG,
-  does not inject Prompt Agent web context, and does not create command or Agent
-  runs.
+- `web_query`: identifies requests for current, recent, latest, official, or
+  web-searched information and may extract compact query slots. In eligible
+  Prompt Agent runs, validated slots can provide query signals to the Web
+  Context pipeline. Intent Routing itself does not execute `/web-search`, does
+  not call Web Search Capability commands directly, does not create command or
+  Agent runs, and does not bypass General Web Search settings or Web Context
+  runtime gates.
 - `image_generation`: diagnostic-only until action routing is designed. It does
   not auto-route to ComfyUI.
 - `command_like`: diagnostic-only. It must not execute slash commands such as
@@ -146,9 +148,10 @@ The safe auto-route allowlist is deliberately narrow:
 - narrow `pet_command` for `/pet status`, `/pet wake`, `/pet tuck`,
   `/pet reload`, and `/pet select <pet_id>`
 
-Web queries, general command-like requests, generic Agent routes, Agent actions,
-image generation, and compound/multi-intent matches are metadata only in this
-version.
+General command-like requests, generic Agent routes, Agent actions, image
+generation, and compound/multi-intent matches are metadata only in this
+version. Web queries are planning signals for Prompt Agent Web Context and are
+not direct command-execution routes.
 
 ## Web Query Rules
 
@@ -168,16 +171,17 @@ The validator requires semantic predicted intent `web_query`, Utility
 and `use_original_query` is not true, validation records
 `web_query_missing_query`.
 
-The executor plan is always diagnostic-only:
+The executor plan is a Web Context signal, not a direct route execution:
 
 - `would_execute=false`
 - `executed=false`
-- `not_executed_reason=web_query_diagnostic_only`
-- `route_action=metadata_only`
+- `not_executed_reason=web_context_signal_only`
+- `route_action=web_context_signal`
 
-This round must not call `/web-search`, Web Search Capability diagnostics, a
-SearXNG provider, Knowledge retrieval, Prompt Agent Web Context, vectorization,
-rerank, or search-result summarization for `web_query`.
+Intent Routing must not execute `/web-search`, call Web Search Capability
+commands directly, create an independent Web Search command result, or bypass
+General Web Search settings. Search, page fetching, filtering, and context
+injection belong to the Prompt Agent Web Context pipeline.
 
 Prompt Agent Web Context owns a separate Web Context Plan Resolver. That
 resolver may use compact Intent Routing outcome metadata as one input, but it
@@ -192,10 +196,10 @@ validated `web_query` may provide the Web Context search query through compact
 slots, while failed, diagnostic-only, uncertain, or chat outcomes fall through
 to the Web Context Plan Resolver instead of becoming Intent Routing execution.
 In real Prompt Agent runs, the runtime may add compact
-`web_context_usage=used_for_web_context` metadata when those diagnostic
-`web_query` slots/original query are consumed by Prompt Agent Web Context. This
-is a display hint only: `web_query` remains `executed=false`,
-`would_execute=false`, and `not_executed_reason=web_query_diagnostic_only`.
+`web_context_usage=used_for_web_context` metadata when those `web_query`
+slots/original query are consumed by Prompt Agent Web Context. This is a display
+hint only: `web_query` remains `executed=false`, `would_execute=false`, and
+`not_executed_reason=web_context_signal_only`.
 Route Test remains diagnostic-only and does not enter Web Context planning.
 If the semantic top intent is `knowledge_query`, Utility LLM slots successfully
 confirm `knowledge_query` with a non-empty query or `use_original_query=true`,
@@ -363,7 +367,7 @@ Common codes include:
 - `knowledge_query_missing_query`
 - `knowledge_query_candidate_blocked`
 - `knowledge_query_below_threshold`
-- `web_query_diagnostic_only`
+- `web_context_signal_only`
 - `used_for_web_context`
 - `web_query_missing_query`
 - `kb_hint_semantic_conflict`
@@ -396,7 +400,8 @@ Common codes include:
   `web_context_enabled` setting. Intent Routing disabled and shadow mode keep
   the forced Web Context behavior for eligible ordinary Prompt Agent messages.
   Intent Routing auto mode uses the separate Web Context Plan Resolver described
-  above; `web_query` itself remains diagnostic-only.
+  above; `web_query` itself is a compact Web Context signal, not a direct Web
+  Search command route.
 - General -> Utility LLM owns Utility backend/model/device/options. The Intent
   Routing page shows only a compact Utility LLM status summary.
 - Agent detail -> Intent Routing owns Prompt Agent overrides and Agent target

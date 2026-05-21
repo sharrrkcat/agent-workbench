@@ -247,9 +247,9 @@ rendered `# Retrieved Web`, raw provider payloads, fetched page bodies, Web
 Context prompt text, KB snippets, Core Memory, Worldbook content, or secrets.
 
 For real Prompt Agent runs only, `intent_routing.web_context_usage` may be
-`used_for_web_context` when diagnostic `web_query` slots/original query were
-used by Prompt Agent Web Context. This is a display hint and does not mean the
-Intent Routing executor ran a route.
+`used_for_web_context` when validated `web_query` slots/original query were used
+by Prompt Agent Web Context. This is a display hint and does not mean Intent
+Routing executed a slash command or Web Search Capability command directly.
 
 Known Web Context skip reasons include `knowledge_query_selected`,
 `knowledge_query_candidate_blocked`, `pet_command_selected`, resolver reasons

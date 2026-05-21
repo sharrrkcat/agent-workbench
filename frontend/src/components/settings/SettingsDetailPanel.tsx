@@ -2023,7 +2023,7 @@ function routeMainTarget(decision: Record<string, unknown>, t: ReturnType<typeof
     return String(decision.generated_command || t('settings:general.none'));
   }
   if (decision.predicted_intent === 'web_query') {
-    return String(decision.web_query || t('settings:general.webQueryDiagnosticOnly'));
+    return String(decision.web_query || t('settings:general.webContextSignal'));
   }
   if (decision.predicted_intent === 'chat') {
     return String(decision.target_agent_id || t('settings:general.currentPromptAgent'));

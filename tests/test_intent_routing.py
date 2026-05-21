@@ -270,7 +270,7 @@ def test_route_test_api_reports_pet_command_without_executing(tmp_path) -> None:
     assert state.messages.list_all_messages() == []
 
 
-def test_route_test_api_reports_web_query_diagnostic_only_without_search(tmp_path) -> None:
+def test_route_test_api_reports_web_query_signal_without_direct_search_command(tmp_path) -> None:
     client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test-web.db'}"))
     state = client.app.state.runtime_state
     profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
@@ -305,12 +305,13 @@ def test_route_test_api_reports_web_query_diagnostic_only_without_search(tmp_pat
     assert decision["route_spec_id"] == "web_query"
     assert decision["slot_schema_id"] == "web_query_slots"
     assert decision["validator_id"] == "web_query"
-    assert decision["executor_id"] == "web_query_diagnostic"
+    assert decision["executor_id"] == "web_context_signal"
     assert decision["validation_ok"] is True
     assert decision["would_execute"] is False
     assert decision["executed"] is False
-    assert decision["not_executed_reason"] == "web_query_diagnostic_only"
-    assert decision["executor_plan"]["route_action"] == "metadata_only"
+    assert decision["not_executed_reason"] == "web_context_signal_only"
+    assert decision["executor_plan"]["route_action"] == "web_context_signal"
+    assert decision["route_action"] == "web_context_signal"
     assert decision["slots"]["query"] == "OpenAI API latest changes"
     assert decision["slots"]["freshness"] == "recent"
     assert decision["slots"]["domain_hints"] == ["openai.com"]

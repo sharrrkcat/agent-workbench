@@ -87,8 +87,8 @@
     "webQuerySources": {
       "resolver": "Resolver",
       "web_context_plan_resolver": "Resolver",
-      "intent_web_query_slots": "意图联网查询 slots",
-      "intent_web_query_original_text": "意图联网原文",
+      "intent_web_query_slots": "Intent Web Context 信号",
+      "intent_web_query_original_text": "Intent Web Context 原文",
       "raw_user_text_forced": "用户原文",
       "raw_user_text_forced_shadow_mode": "用户原文"
     },

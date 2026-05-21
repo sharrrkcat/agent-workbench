@@ -461,7 +461,7 @@ def test_auto_command_like_intent_is_not_executed() -> None:
     assert "command_like_auto_route_disabled" in intent["warnings"]
 
 
-def test_auto_web_query_is_diagnostic_only_and_can_feed_web_context(monkeypatch) -> None:
+def test_auto_web_query_signal_can_feed_web_context_without_direct_command(monkeypatch) -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
     enable_auto(fixture)
     fixture.app_settings.patch({"web_context_enabled": True})
@@ -509,12 +509,13 @@ def test_auto_web_query_is_diagnostic_only_and_can_feed_web_context(monkeypatch)
     assert result.success is True
     assert prompt_run.kind == "agent"
     assert prompt_run.target_id == "chat"
+    assert all(run.kind != "command" for run in fixture.runs.list_all_runs())
     assert intent["predicted_intent"] == "web_query"
-    assert intent["route_action"] == "metadata_only"
+    assert intent["route_action"] == "web_context_signal"
     assert intent["auto_executable"] is False
     assert intent["would_execute"] is False
     assert intent["executed"] is False
-    assert intent["not_executed_reason"] == "web_query_diagnostic_only"
+    assert intent["not_executed_reason"] == "web_context_signal_only"
     assert intent["web_context_usage"] == "used_for_web_context"
     assert intent["slots"]["query"] == "Qwen recent releases"
     assert intent["slots"]["domain_hints"] == ["qwenlm.github.io"]
@@ -523,7 +524,7 @@ def test_auto_web_query_is_diagnostic_only_and_can_feed_web_context(monkeypatch)
     assert web_context["injected"] is True
     assert search_calls[0][0] == "Qwen recent releases"
     assert intent_step.message == "web_query - used for Web context"
-    assert "web_query_diagnostic_only" not in intent_step.message
+    assert "web_context_signal_only" not in intent_step.message
     assert web_plan_step.metadata["web_context_plan"]["query_source"] == "intent_web_query_slots"
     assert "web_context" not in web_plan_step.metadata
     assert service.calls == ["find recent news about Qwen"]

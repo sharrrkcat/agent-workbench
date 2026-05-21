@@ -1,7 +1,7 @@
 from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.command_registry import CommandRegistry
-from ai_workbench.core.intent_specs import build_semantic_candidate_specs
+from ai_workbench.core.intent_specs import build_semantic_candidate_specs, get_route_spec
 from ai_workbench.core.intent_semantic_router import SemanticRouter
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
 from ai_workbench.core.settings import AppSettings
@@ -126,3 +126,15 @@ def test_web_query_custom_examples_are_semantic_candidates() -> None:
     ]
     assert [candidate["text"] for candidate in web_custom] == ["check official release notes", "what changed today"]
     assert all(candidate["field"] == "example" for candidate in web_custom)
+
+
+def test_web_query_safety_notes_describe_web_context_signal() -> None:
+    spec = get_route_spec("web_query")
+
+    assert spec is not None
+    assert spec.executor_id == "web_context_signal"
+    notes = " ".join(spec.safety_notes)
+    stale_note = "Diagnostic" + "-" + "only in this version"
+    assert stale_note not in notes
+    assert "Web Context pipeline" in notes
+    assert "Web Search Capability commands directly" in notes

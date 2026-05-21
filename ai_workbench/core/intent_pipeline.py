@@ -261,16 +261,16 @@ class WebQueryValidator:
             "domain_hints": [str(item)[:120] for item in domain_hints[:5] if str(item or "").strip()],
             "language_hint": _short_text(str(slots.get("language_hint") or "").strip(), 40) or None,
         }
-        reason = "web_query_diagnostic_only"
+        reason = "web_context_signal_only"
         plan = ExecutorPlan(
-            route_action="metadata_only",
+            route_action="web_context_signal",
             auto_executable=False,
             would_execute=False,
             metadata={
                 "not_executed_reason": reason,
                 "executed": False,
                 "would_execute": False,
-                "web_search_capability_called": False,
+                "web_search_command_executed": False,
             },
         )
         return ValidatorResult(ok=True, not_executed_reason=reason, warnings=_ensure_warning(warnings, reason), normalized_slots=normalized, executor_plan=plan)

@@ -625,11 +625,11 @@ class UtilityLLMService:
     async def extract_intent_json(self, text: str, settings: Any, context: dict[str, Any] | None = None) -> dict[str, Any]:
         compact_context = json.dumps(context or {}, ensure_ascii=False)[:6000]
         prompt = (
-            "Classify the user's message for internal shadow diagnostics only.\n"
+            "Classify the user's message for internal route planning.\n"
             "Return strict JSON with keys: intent, confidence, target_agent_hint, kb_hint, query, use_original_query, command_hint, target_agent_id, kb_id, match_source, domain, action, target_pet_hint, source_pet_hint, target_pet_explicit, source_pet_explicit, freshness, domain_hints, language_hint.\n"
             "Allowed intent values: chat, image_generation, knowledge_query, pet_command, web_query, agent_route, command_like, unknown.\n"
             "Use compact top RouteSpec/ActionSpec candidates and slot schemas only; do not invent agent ids or knowledge base ids outside the candidates.\n"
-            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query must provide query and may provide kb_hint; only set use_original_query=true when the original message is the best retrieval query. web_query must provide query or use_original_query=true, may set freshness to any/recent/today, and is diagnostic-only without web search execution. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
+            "Safety: command_like must not be executed automatically. Generic agent_route requires future confirmation. image_generation may target comfyui_agent. knowledge_query must provide query and may provide kb_hint; only set use_original_query=true when the original message is the best retrieval query. web_query must provide a compact query signal or use_original_query=true, may set freshness to any/recent/today, and must not execute slash commands or Web Search Capability commands directly from Intent Routing. pet_command must set domain to workbench_pet only for the app's desktop pet, never for real pets or fictional-character questions.\n"
             "Use null for unknown slots. Do not explain.\n\n"
             f"Compact candidates:\n{compact_context}\n\n"
             f"User message:\n{text}"

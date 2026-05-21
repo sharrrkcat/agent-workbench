@@ -194,7 +194,7 @@ WEB_QUERY_SLOT_SCHEMA = SlotSchema(
         SlotField("intent", required=True, enum_values=("web_query", "unknown"), description="Predicted intent id."),
         SlotField("query", required=False, max_chars=240, description="Short web search query."),
         SlotField("use_original_query", type="boolean", required=False, max_chars=None, description="Use the original user text when query is empty."),
-        SlotField("freshness", required=False, enum_values=("any", "recent", "today"), max_chars=20, description="Freshness requirement for the diagnostic web query."),
+        SlotField("freshness", required=False, enum_values=("any", "recent", "today"), max_chars=20, description="Freshness requirement for the web context query signal."),
         SlotField("domain_hints", type="string[]", required=False, max_chars=None, description="Optional compact domain hints."),
         SlotField("language_hint", required=False, max_chars=40, description="Optional language hint."),
     ),
@@ -311,9 +311,12 @@ def get_builtin_route_specs() -> tuple[RouteSpec, ...]:
             auto_executable=False,
             utility_required=True,
             validator_id="web_query",
-            executor_id="web_query_diagnostic",
+            executor_id="web_context_signal",
             slot_schema=WEB_QUERY_SLOT_SCHEMA,
-            safety_notes=("Diagnostic-only in this version.", "Do not call Web Search Capability or inject Prompt Agent web context."),
+            safety_notes=(
+                "Provides compact query signals for the Prompt Agent Web Context pipeline.",
+                "Do not execute slash commands or call Web Search Capability commands directly from Intent Routing.",
+            ),
             metadata_kind="web_query",
         ),
         RouteSpec(
