@@ -133,15 +133,17 @@ http://localhost:1234/v1
 
 Set `AGENT_WORKBENCH_LLM_MODEL` in `.env`, or configure the `llm` capability in Settings. Local LM Studio setups often do not require an API key; an empty key is allowed.
 
-In Settings, LLM configuration is split under `LLM`:
+In Settings, model configuration is split under `Models`:
 
-- Defaults.
 - Provider Profiles.
-- Model Profiles.
+- LLM Model Profiles.
+- Embedding Model Profiles.
+
+The Default model profile fallback lives in Settings -> General -> LLM & Prompts.
 
 ## LLM Provider And Model Profiles
 
-Provider Profiles hold connection details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state.
+Provider Profiles hold connection details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state.
 
 Provider status checks are available for configured providers and return structured reachability/model-availability information without exposing API keys. LM Studio, llama.cpp, and OpenAI-compatible providers each keep their existing status behavior.
 
@@ -151,11 +153,11 @@ Knowledge RAG v1 provides local embedding/reranker settings, embedding model pro
 
 Settings uses manifest-declared AgentConfig and CapabilityConfig `config_schema` fields. Unknown user config fields are rejected by the API, and secret fields are masked in API/UI responses while still stored as plaintext JSON in SQLite in this alpha.
 
-Settings -> General stores local app settings for Files, Appearance fonts, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings belong to LLM & Prompts; Utility LLM backend/model/device/options belong to Utility LLM; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
+Settings -> General stores local app settings for Files, Appearance fonts, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings and the Default model profile fallback belong to LLM & Prompts; Utility LLM backend/model/device/options belong to Utility LLM; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
 
 Settings -> Appearance -> Fonts configures separate UI, message, and code fonts. Each font can use a single installed system font name, a single local custom font file, or a local custom font family folder under `data/assets/fonts/<folder>/`. Family folders may include `font.json` to declare Regular/Bold/Italic/variable faces; otherwise common filename suffixes such as `BoldItalic`, `Light`, and `SemiBold` are inferred. Local font files are served through generated asset ids, not arbitrary disk paths.
 
-Settings -> Knowledge owns local RAG defaults, embedding model profiles, Knowledge Bases, and source indexing status. The Chat header Context Sources modal manages session Knowledge Base and Worldbook bindings. KB binding order is preserved for UI continuity but does not change Knowledge retrieval ranking.
+Settings -> Models -> Embedding Model Profiles owns embedding profile management. Settings -> Knowledge owns local RAG defaults, Knowledge Bases, and source indexing status. The Chat header Context Sources modal manages session Knowledge Base and Worldbook bindings. KB binding order is preserved for UI continuity but does not change Knowledge retrieval ranking.
 
 Full contracts: [Knowledge](docs/contracts/knowledge.md), [Utility LLM](docs/contracts/utility-llm.md), and [Intent Routing](docs/contracts/intent-routing.md).
 
@@ -212,7 +214,7 @@ health without external probes: backend and database status, attachment storage,
 EventBus/WebSocket/run counts, recent failed runs, non-secret LLM config health,
 and File/HTTP readiness from local configuration only.
 
-Diagnostics does not send telemetry, does not contact cloud services, does not expose API keys, and does not read file contents or make HTTP requests. LLM connection testing remains in Settings -> LLM through the explicit Test connection button.
+Diagnostics does not send telemetry, does not contact cloud services, does not expose API keys, and does not read file contents or make HTTP requests. LLM connection testing remains in Settings -> Models through the explicit Test connection button.
 
 Runs also have a lightweight event timeline:
 

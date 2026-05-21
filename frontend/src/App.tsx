@@ -136,7 +136,7 @@ function currentLocationKey(): string {
 }
 
 function explicitSettingsTarget(): SettingsInitialTarget {
-  const sections: SettingsSection[] = ['general', 'appearance', 'llm', 'knowledge', 'worldbook', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
+  const sections: SettingsSection[] = ['general', 'appearance', 'models', 'knowledge', 'worldbook', 'agents', 'capabilities', 'data', 'diagnostics', 'developer', 'about'];
   const params = new URLSearchParams(window.location.search);
   const queryTab = params.get('tab');
   const querySubsection = params.get('subsection');
@@ -144,9 +144,25 @@ function explicitSettingsTarget(): SettingsInitialTarget {
   const stateTab = window.history.state?.settingsTab;
   const stateSubsection = window.history.state?.settingsSubsection;
   const candidate = queryTab || hashMatch?.[1] || stateTab;
-  const section = sections.includes(candidate as SettingsSection) ? (candidate as SettingsSection) : 'general';
+  const normalizedCandidate = candidate === 'llm' ? 'models' : candidate;
+  const section = sections.includes(normalizedCandidate as SettingsSection) ? (normalizedCandidate as SettingsSection) : 'general';
   const subsection = querySubsection || stateSubsection;
   const target: SettingsInitialTarget = { section };
+  if (section === 'models' && ['provider-profiles', 'providers'].includes(subsection)) {
+    target.llmSubsection = 'providers';
+  }
+  if (section === 'models' && ['model-profiles', 'llm-model-profiles', 'models'].includes(subsection)) {
+    target.llmSubsection = 'models';
+  }
+  if (section === 'models' && ['embedding-models', 'embedding-model-profiles', 'embedding_models'].includes(subsection)) {
+    target.llmSubsection = 'embedding_models';
+    target.knowledgeSubsection = 'embedding_models';
+  }
+  if (candidate === 'knowledge' && ['embedding-models', 'embedding-model-profiles', 'embedding_models'].includes(subsection)) {
+    target.section = 'models';
+    target.llmSubsection = 'embedding_models';
+    target.knowledgeSubsection = 'embedding_models';
+  }
   if (section === 'knowledge' && ['defaults', 'embedding_models', 'knowledge_bases'].includes(subsection)) {
     target.knowledgeSubsection = subsection as KnowledgeSettingsSubsection;
   }

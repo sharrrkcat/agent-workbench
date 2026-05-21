@@ -33,6 +33,12 @@ Settings -> General owns local app settings for:
 It does not own AgentConfig, CapabilityConfig, Provider Profiles, Model Profiles,
 Knowledge settings, Agent manifests, or Capability manifests.
 
+Settings -> Models owns shared model configuration pages:
+
+- Provider Profiles.
+- LLM Model Profiles.
+- Embedding Model Profiles.
+
 ## Files
 
 General file settings control chat attachment uploads and Prompt Agent file
@@ -173,6 +179,11 @@ General LLM & Prompts owns automatic session title settings:
 - title prompt.
 - title input limit.
 - best-effort title model release.
+
+General LLM & Prompts also exposes the Default model profile fallback used by
+main LLM resolution after session override, AgentConfig override, and manifest
+profile resolution. It reuses the existing LLM defaults API and does not change
+the runtime resolution order.
 
 Full title and Utility LLM behavior is owned by
 [utility-llm.md](utility-llm.md#session-title-interaction).

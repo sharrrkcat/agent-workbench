@@ -15,8 +15,8 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string>('');
   const [llmProfiles, setLlmProfiles] = useState<LlmProfile[]>([]);
   const [llmProviderProfiles, setLlmProviderProfiles] = useState<LlmProviderProfile[]>([]);
-  const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('global');
-  const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('defaults');
+  const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('');
+  const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('providers');
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
@@ -34,6 +34,18 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   }, []);
 
   useEffect(() => {
+    if (initialTarget?.section === 'models' && initialTarget.llmSubsection) {
+      setSelectedLlmSubsection(initialTarget.llmSubsection);
+      if (initialTarget.llmSubsection === 'providers') {
+        setSelectedLlmItemId(llmProviderProfiles[0] ? `provider:${llmProviderProfiles[0].id}` : '');
+      } else if (initialTarget.llmSubsection === 'models') {
+        setSelectedLlmItemId(llmProfiles[0]?.id || '');
+      }
+    }
+    if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'embedding_models') {
+      setSelectedKnowledgeSubsection('embedding_models');
+      setSelectedKnowledgeItemId('');
+    }
     if (initialTarget?.section === 'knowledge' && initialTarget.knowledgeSubsection) {
       setSelectedKnowledgeSubsection(initialTarget.knowledgeSubsection);
       setSelectedKnowledgeItemId(initialTarget.knowledgeSubsection === 'defaults' ? 'global' : '');
@@ -42,10 +54,10 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
       setSelectedWorldbookSubsection(initialTarget.worldbookSubsection);
       setSelectedWorldbookItemId(initialTarget.worldbookSubsection === 'defaults' ? 'global' : '');
     }
-  }, [initialTarget?.knowledgeSubsection, initialTarget?.section, initialTarget?.worldbookSubsection]);
+  }, [initialTarget?.knowledgeSubsection, initialTarget?.llmSubsection, initialTarget?.section, initialTarget?.worldbookSubsection]);
 
   useEffect(() => {
-    if (activeSection === 'knowledge') {
+    if (activeSection === 'knowledge' || activeSection === 'models') {
       void refreshKnowledgeObjects().catch(() => undefined);
     }
     if (activeSection === 'worldbook') {
@@ -83,12 +95,13 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     if (section === 'capabilities' && !selectedCapabilityId && capabilityConfigs[0]) {
       setSelectedCapabilityId(capabilityConfigs[0].capability_id);
     }
-    if (section === 'llm' && !selectedLlmItemId) {
-      setSelectedLlmItemId('global');
+    if (section === 'models' && !selectedLlmItemId) {
+      setSelectedLlmItemId(llmProviderProfiles[0] ? `provider:${llmProviderProfiles[0].id}` : '');
     }
-    if (section === 'llm') {
-      setSelectedLlmSubsection('defaults');
-      setSelectedLlmItemId('global');
+    if (section === 'models') {
+      setSelectedLlmSubsection('providers');
+      setSelectedLlmItemId(llmProviderProfiles[0] ? `provider:${llmProviderProfiles[0].id}` : '');
+      void refreshKnowledgeObjects().catch(() => undefined);
     }
     if (section === 'general') {
       setGeneralCategory('files');
@@ -128,7 +141,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     const [profiles, providerProfiles] = await Promise.all([api.listLlmProfiles(), api.listLlmProviderProfiles()]);
     setLlmProfiles(profiles);
     setLlmProviderProfiles(providerProfiles);
-    if (nextSelectedId === 'global' || nextSelectedId === 'new' || nextSelectedId === 'new-provider') {
+    if (nextSelectedId === 'new' || nextSelectedId === 'new-provider') {
       setSelectedLlmItemId(nextSelectedId);
       return;
     }
@@ -137,15 +150,15 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
       return;
     }
     if (selectedLlmItemId.startsWith('provider:') && !providerProfiles.some((profile) => `provider:${profile.id}` === selectedLlmItemId)) {
-      setSelectedLlmItemId('global');
+      setSelectedLlmItemId(providerProfiles[0] ? `provider:${providerProfiles[0].id}` : '');
       return;
     }
     if (nextSelectedId && profiles.some((profile) => profile.id === nextSelectedId)) {
       setSelectedLlmItemId(nextSelectedId);
       return;
     }
-    if (selectedLlmItemId !== 'global' && selectedLlmItemId !== 'new' && !profiles.some((profile) => profile.id === selectedLlmItemId)) {
-      setSelectedLlmItemId('global');
+    if (selectedLlmItemId && selectedLlmItemId !== 'new' && !selectedLlmItemId.startsWith('provider:') && !profiles.some((profile) => profile.id === selectedLlmItemId)) {
+      setSelectedLlmItemId(profiles[0]?.id || '');
     }
   }
 
@@ -191,17 +204,28 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     if (!confirmDirtyNavigation()) return;
     setDetailDirty(false);
     setSelectedLlmSubsection(subsection);
-    if (subsection === 'defaults') {
-      setSelectedLlmItemId('global');
-    } else if (subsection === 'providers') {
+    if (subsection === 'providers') {
       const providerId = selectedLlmItemId.startsWith('provider:') ? selectedLlmItemId : llmProviderProfiles[0] ? `provider:${llmProviderProfiles[0].id}` : '';
       setSelectedLlmItemId(providerId);
-    } else {
+    } else if (subsection === 'models') {
       const modelId = selectedLlmItemId && !selectedLlmItemId.startsWith('provider:') && selectedLlmItemId !== 'global' && selectedLlmItemId !== 'new-provider'
         ? selectedLlmItemId
         : llmProfiles[0]?.id || '';
       setSelectedLlmItemId(modelId);
+    } else {
+      setSelectedKnowledgeSubsection('embedding_models');
+      setSelectedKnowledgeItemId(embeddingProfiles[0]?.id || '');
     }
+  }
+
+  function goToEmbeddingProfiles() {
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setActiveSection('models');
+    setSelectedLlmSubsection('embedding_models');
+    setSelectedKnowledgeSubsection('embedding_models');
+    setSelectedKnowledgeItemId(embeddingProfiles[0]?.id || '');
+    void refreshKnowledgeObjects().catch(() => undefined);
   }
 
   function changeKnowledgeSubsection(subsection: KnowledgeSettingsSubsection) {
@@ -250,7 +274,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   const selectedAgentConfig = agentConfigs.find((config) => config.agent_id === selectedAgentId) || agentConfigs[0];
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentConfig?.agent_id);
   const selectedCapabilityConfig = useMemo(() => {
-    if (activeSection === 'llm') {
+    if (activeSection === 'models') {
       return capabilityConfigs.find((config) => config.capability_id === 'llm') || capabilityConfigs[0];
     }
     return capabilityConfigs.find((config) => config.capability_id === selectedCapabilityId) || capabilityConfigs[0];
@@ -316,6 +340,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         onKnowledgeObjectsChanged={refreshKnowledgeObjects}
         onWorldbookObjectsChanged={refreshWorldbookObjects}
         onSelectGeneralCategory={setGeneralCategory}
+        onManageEmbeddingProfiles={goToEmbeddingProfiles}
         activeTab={activeDetailTab}
         onTabChange={setActiveDetailTab}
         onDirtyChange={setDetailDirty}

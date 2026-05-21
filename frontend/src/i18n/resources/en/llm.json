@@ -68,6 +68,7 @@
     "environmentOverride": "Environment variables may override saved settings.",
     "chooseModelThenSave": "Choose a model, then Save to store it in the LLM capability config.",
     "fallbackOrder": "Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.",
+    "defaultModelProfileFallback": "Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.",
     "legacyReadonly": "Legacy provider, base URL, and model fields are retained only as readonly fallback config when no model profile is resolved.",
     "preferRefreshedModel": "Prefer selecting a refreshed provider model when available.",
     "manualModelId": "Use manual Model ID when the provider is offline, does not support listing models, or when you need a custom alias.",

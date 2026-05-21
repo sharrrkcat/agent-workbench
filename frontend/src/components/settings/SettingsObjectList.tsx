@@ -16,7 +16,7 @@ export type WorldbookSettingsCategory = WorldbookSettingsSubsection;
 
 export function SettingsObjectList({
   section,
-  llmSubsection = 'defaults',
+  llmSubsection = 'providers',
   knowledgeSubsection = 'defaults',
   worldbookSubsection = 'defaults',
   generalCategory = 'files',
@@ -286,27 +286,25 @@ export function SettingsObjectList({
     );
   }
 
-  if (section === 'llm') {
-    const llmConfig = capabilityConfigs.find((config) => config.capability_id === 'llm');
-    const llmEnabled = llmConfig?.enabled ?? false;
-    if (llmSubsection === 'defaults') {
+  if (section === 'models') {
+    if (llmSubsection === 'embedding_models') {
       return (
-        <aside className="settings-object-list" aria-label={t('settings:objectList.llmDefaults')}>
-          <ObjectListHeader title={t('settings:subsections.defaults')} count={1} />
-          <button
-            type="button"
-            className={`settings-object-row ${selectedLlmItemId === 'global' ? 'active' : ''} ${llmEnabled ? '' : 'disabled'}`}
-            onClick={() => onSelectLlmItem?.('global')}
-          >
-            <div className="settings-object-avatar">
-              <SlidersHorizontal size={16} />
-            </div>
-            <div className="settings-object-copy">
-              <strong>{t('settings:llm.defaultModelProfile')}</strong>
-              <small>{t('settings:llm.globalFallback')}</small>
-            </div>
-            <span className={`settings-status-dot ${llmEnabled ? 'enabled' : ''}`}>{llmEnabled ? t('common:enabled') : t('common:disabled')}</span>
-          </button>
+        <aside className="settings-object-list" aria-label={t('settings:objectList.embeddingModelProfiles')}>
+          <ObjectListHeader title={t('settings:subsections.embeddingModels')} count={embeddingProfiles.length} actionLabel={t('settings:objectList.newModel')} onAction={() => onSelectKnowledgeItem?.('new')} />
+          <div className="settings-list-scroll">
+            {embeddingProfiles.length ? (
+              embeddingProfiles.map((profile) => (
+                <EmbeddingProfileListItem
+                  key={profile.id}
+                  profile={profile}
+                  active={selectedKnowledgeItemId === profile.id}
+                  onClick={() => onSelectKnowledgeItem?.(profile.id)}
+                />
+              ))
+            ) : (
+              <div className="settings-empty-state compact">{t('settings:objectList.noEmbeddingProfiles')}</div>
+            )}
+          </div>
         </aside>
       );
     }

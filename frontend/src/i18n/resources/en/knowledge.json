@@ -69,7 +69,8 @@
     "removeFile": "Remove file",
     "reindexAll": "Reindex all",
     "reindexing": "Reindexing...",
-    "closeSourceDetail": "Close source detail"
+    "closeSourceDetail": "Close source detail",
+    "manageEmbeddingProfiles": "Manage embedding model profiles"
   },
   "labels": {
     "modelsRoot": "Models root",

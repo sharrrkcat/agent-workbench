@@ -434,6 +434,36 @@ export function LlmDefaultsDetail({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const { t } = useTranslation(['llm', 'common', 'status', 'settings']);
+  return (
+    <form className="settings-detail-form" onSubmit={(event) => event.preventDefault()}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">
+            <Settings size={18} />
+          </div>
+          <div>
+            <h2>{t('llm:labels.defaultModelProfile')}</h2>
+            <p>{t('settings:llm.globalFallback', { ns: 'settings', defaultValue: 'Global fallback' })}</p>
+          </div>
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        <LlmDefaultModelProfileSection profiles={profiles} providerProfiles={providerProfiles} onDirtyChange={onDirtyChange} />
+      </div>
+    </form>
+  );
+}
+
+export function LlmDefaultModelProfileSection({
+  profiles,
+  providerProfiles,
+  onDirtyChange,
+}: {
+  profiles: LlmProfile[];
+  providerProfiles: LlmProviderProfile[];
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const { t } = useTranslation(['llm', 'common', 'status']);
   const [defaults, setDefaults] = useState<LlmDefaults | null>(null);
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
@@ -456,6 +486,7 @@ export function LlmDefaultsDetail({
 
   useEffect(() => {
     onDirtyChange(dirty);
+    return () => onDirtyChange(false);
   }, [dirty, onDirtyChange]);
 
   async function save() {
@@ -473,18 +504,11 @@ export function LlmDefaultsDetail({
   }
 
   return (
-    <form className="settings-detail-form" onSubmit={(event) => event.preventDefault()}>
-      <header className="settings-detail-header">
-        <div className="settings-detail-title">
-          <div className="settings-detail-avatar">
-            <Settings size={18} />
-          </div>
-          <div>
-            <h2>{t('llm:labels.defaultModelProfile')}</h2>
-            <p>{t('settings:llm.globalFallback', { ns: 'settings', defaultValue: 'Global fallback' })}</p>
-          </div>
-        </div>
-        <div className="settings-detail-actions">
+    <>
+      {error ? <SettingsApiError error={error} /> : null}
+      <section className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('llm:labels.defaultModelProfile')}</h3>
           {dirty ? (
             <button className="settings-primary-button" type="button" onClick={() => void save()} disabled={busy}>
               <Save size={14} />
@@ -492,11 +516,6 @@ export function LlmDefaultsDetail({
             </button>
           ) : null}
         </div>
-      </header>
-      <div className="settings-detail-body">
-        {error ? <SettingsApiError error={error} /> : null}
-        <section className="detail-section">
-          <h3>{t('llm:sections.defaults')}</h3>
           <label className="config-field settings-config-field">
             <span>{t('llm:labels.defaultModelProfile')}</span>
             <select value={selected} onChange={(event) => setSelected(event.target.value)} disabled={busy}>
@@ -507,7 +526,7 @@ export function LlmDefaultsDetail({
                 </option>
               ))}
             </select>
-            <small>Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.</small>
+            <small>{t('llm:help.defaultModelProfileFallback')}</small>
           </label>
           {selectedProfile ? (
             <dl className="settings-definition-grid compact">
@@ -533,15 +552,14 @@ export function LlmDefaultsDetail({
           ) : (
             <div className="settings-empty-state compact">{t('llm:empty.noDefaultProfile')}</div>
           )}
-        </section>
-        <section className="detail-section">
-          <h3>{t('llm:sections.advanced')}</h3>
-          <p className="settings-muted-copy">
-            {t('llm:help.legacyReadonly')}
-          </p>
-        </section>
-      </div>
-    </form>
+      </section>
+      <section className="detail-section">
+        <h3>{t('llm:sections.advanced')}</h3>
+        <p className="settings-muted-copy">
+          {t('llm:help.legacyReadonly')}
+        </p>
+      </section>
+    </>
   );
 }
 

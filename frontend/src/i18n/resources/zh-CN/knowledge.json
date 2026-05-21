@@ -58,7 +58,8 @@
     "pasteText": "粘贴文本",
     "index": "索引",
     "deleteOrigin": "删除 Origin",
-    "removeFile": "移除文件"
+    "removeFile": "移除文件",
+    "manageEmbeddingProfiles": "管理 Embedding 模型配置"
   },
   "labels": {
     "modelsRoot": "模型根目录",

@@ -29,6 +29,10 @@ fallback uses:
 - `AGENT_WORKBENCH_LLM_MODEL`
 - `AGENT_WORKBENCH_LLM_TIMEOUT`
 
+The Default model profile fallback is configured in Settings -> General -> LLM &
+Prompts. Provider Profiles and LLM Model Profiles are managed under Settings ->
+Models.
+
 ## Profile Semantics
 
 Provider Profile means connection details: provider, base URL, API key, timeout,

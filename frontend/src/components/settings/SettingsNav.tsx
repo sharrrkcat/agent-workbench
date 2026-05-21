@@ -1,12 +1,13 @@
 import { Activity, Bot, BookOpenText, Boxes, BrainCircuit, Code2, Database, Info, Palette, Settings, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-export type SettingsSection = 'general' | 'appearance' | 'llm' | 'knowledge' | 'worldbook' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
-export type LlmSettingsSubsection = 'defaults' | 'providers' | 'models';
+export type SettingsSection = 'general' | 'appearance' | 'models' | 'knowledge' | 'worldbook' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
+export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models';
 export type KnowledgeSettingsSubsection = 'defaults' | 'embedding_models' | 'knowledge_bases';
 export type WorldbookSettingsSubsection = 'defaults' | 'worldbooks';
 export type SettingsInitialTarget = {
   section: SettingsSection;
+  llmSubsection?: LlmSettingsSubsection;
   knowledgeSubsection?: KnowledgeSettingsSubsection;
   worldbookSubsection?: WorldbookSettingsSubsection;
 };
@@ -14,7 +15,7 @@ export type SettingsInitialTarget = {
 const sections: { id: SettingsSection; labelKey: string; icon: typeof Settings }[] = [
   { id: 'general', labelKey: 'sections.general', icon: Settings },
   { id: 'appearance', labelKey: 'sections.appearance', icon: Palette },
-  { id: 'llm', labelKey: 'sections.llm', icon: SlidersHorizontal },
+  { id: 'models', labelKey: 'sections.models', icon: SlidersHorizontal },
   { id: 'knowledge', labelKey: 'sections.knowledge', icon: BrainCircuit },
   { id: 'worldbook', labelKey: 'sections.worldbook', icon: BookOpenText },
   { id: 'agents', labelKey: 'sections.agents', icon: Bot },
@@ -27,7 +28,7 @@ const sections: { id: SettingsSection; labelKey: string; icon: typeof Settings }
 
 export function SettingsNav({
   activeSection,
-  activeLlmSubsection = 'defaults',
+  activeLlmSubsection = 'providers',
   activeKnowledgeSubsection = 'defaults',
   activeWorldbookSubsection = 'defaults',
   onChange,
@@ -60,15 +61,8 @@ export function SettingsNav({
               <Icon size={16} />
               <span>{t(section.labelKey)}</span>
             </button>
-            {section.id === 'llm' && activeSection === 'llm' ? (
-              <div className="settings-subnav" aria-label="LLM settings sections">
-                <button
-                  type="button"
-                  className={activeLlmSubsection === 'defaults' ? 'active' : ''}
-                  onClick={() => onLlmSubsectionChange?.('defaults')}
-                >
-                  <span>{t('subsections.defaults')}</span>
-                </button>
+            {section.id === 'models' && activeSection === 'models' ? (
+              <div className="settings-subnav" aria-label={t('aria.modelsSettingsSections')}>
                 <button
                   type="button"
                   className={activeLlmSubsection === 'providers' ? 'active' : ''}
@@ -83,6 +77,13 @@ export function SettingsNav({
                 >
                   <span>{t('subsections.modelProfiles')}</span>
                 </button>
+                <button
+                  type="button"
+                  className={activeLlmSubsection === 'embedding_models' ? 'active' : ''}
+                  onClick={() => onLlmSubsectionChange?.('embedding_models')}
+                >
+                  <span>{t('subsections.embeddingModels')}</span>
+                </button>
               </div>
             ) : null}
             {section.id === 'knowledge' && activeSection === 'knowledge' ? (
@@ -93,13 +94,6 @@ export function SettingsNav({
                   onClick={() => onKnowledgeSubsectionChange?.('defaults')}
                 >
                   <span>{t('subsections.defaults')}</span>
-                </button>
-                <button
-                  type="button"
-                  className={activeKnowledgeSubsection === 'embedding_models' ? 'active' : ''}
-                  onClick={() => onKnowledgeSubsectionChange?.('embedding_models')}
-                >
-                  <span>{t('subsections.embeddingModels')}</span>
                 </button>
                 <button
                   type="button"

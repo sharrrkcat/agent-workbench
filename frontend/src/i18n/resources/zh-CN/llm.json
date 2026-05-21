@@ -68,6 +68,7 @@
     "environmentOverride": "环境变量可能覆盖已保存设置。",
     "chooseModelThenSave": "选择模型后点击保存，将其写入 LLM Capability 配置。",
     "fallbackOrder": "运行时 fallback 顺序：会话覆盖、Agent 覆盖、manifest、默认模型配置，然后是 legacy/env fallback。",
+    "defaultModelProfileFallback": "运行时 fallback 顺序：会话覆盖、Agent 覆盖、manifest、默认模型配置，然后是 legacy/env fallback。",
     "legacyReadonly": "仅当没有解析出模型配置时，legacy provider、base URL 和 model 字段才作为只读 fallback 配置保留。",
     "preferRefreshedModel": "可用时优先选择已刷新的 Provider 模型。",
     "manualModelId": "当 Provider 离线、不支持列出模型，或需要自定义 alias 时使用手动 Model ID。",

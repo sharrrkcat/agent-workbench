@@ -1,7 +1,7 @@
 # Knowledge / RAG Contract
 
 Knowledge v1 is the local RAG foundation for Agent Workbench. It owns local
-model settings, embedding model profiles, knowledge bases, source indexing,
+Knowledge defaults, embedding model profiles, knowledge bases, source indexing,
 SQLite chunk/vector/FTS storage, explicit retrieval search, session KB bindings,
 automatic context injection, and a thin Knowledge Capability wrapper.
 
@@ -10,7 +10,8 @@ automatic context injection, and a thin Knowledge Capability wrapper.
 Knowledge v1 includes:
 
 - local Knowledge settings.
-- embedding model profiles.
+- embedding model profiles managed in Settings -> Models -> Embedding Model
+  Profiles.
 - knowledge bases.
 - pasted text, text attachment, and managed-origin source indexing.
 - SQLite storage for sources, chunks, float32 vectors, and FTS rows.
@@ -78,6 +79,10 @@ retrieval backends.
 
 Embedding Model Profiles bind a user-named profile to a local embedding model
 path and instructions.
+
+The Settings UI exposes them under Settings -> Models -> Embedding Model
+Profiles. Settings -> Knowledge keeps Knowledge Defaults and Knowledge Bases;
+Knowledge Base configuration still selects an Embedding Model Profile.
 
 - `model_path` must be relative to `data/models`.
 - Embedding profiles use `embeddings/<folder>`.

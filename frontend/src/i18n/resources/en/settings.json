@@ -1,6 +1,6 @@
 {
   "title": "Settings",
-  "description": "Configure local agents, capabilities, and LLM connection details.",
+  "description": "Configure local agents, capabilities, and model connection details.",
   "placeholder": "This settings section will be added later.",
   "summary": {
     "agents": "{{count}} agents",
@@ -9,7 +9,7 @@
   "sections": {
     "general": "General",
     "appearance": "Appearance",
-    "llm": "LLM",
+    "models": "Models",
     "knowledge": "Knowledge",
     "worldbook": "Worldbook",
     "agents": "Agents",
@@ -22,12 +22,13 @@
   "subsections": {
     "defaults": "Defaults",
     "providerProfiles": "Provider Profiles",
-    "modelProfiles": "Model Profiles",
-    "embeddingModels": "Embedding Models",
+    "modelProfiles": "LLM Model Profiles",
+    "embeddingModels": "Embedding Model Profiles",
     "knowledgeBases": "Knowledge Bases",
     "worldbooks": "Worldbooks"
   },
   "aria": {
+    "modelsSettingsSections": "Models settings sections",
     "worldbookSettingsSections": "Worldbook settings sections"
   },
   "searchPlaceholder": "Search settings",
@@ -44,7 +45,7 @@
     "worldbookDefaults": "Worldbook defaults",
     "worldbooks": "Worldbooks",
     "llmDefaults": "LLM defaults",
-    "llmProviderProfiles": "LLM provider profiles",
+    "llmProviderProfiles": "Provider profiles",
     "llmModelProfiles": "LLM model profiles",
     "settingsCategory": "Settings category",
     "noObjects": "No objects in this section.",

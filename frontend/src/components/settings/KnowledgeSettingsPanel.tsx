@@ -189,11 +189,13 @@ export function KnowledgeSettingsDetail({
   selectedItemId = 'global',
   onObjectsChanged,
   onDirtyChange,
+  onManageEmbeddingProfiles,
 }: {
   category: KnowledgeSettingsCategory;
   selectedItemId?: string;
   onObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
+  onManageEmbeddingProfiles?: () => void;
 }) {
   const { t } = useTranslation(['knowledge', 'common', 'status']);
   const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
@@ -329,6 +331,7 @@ export function KnowledgeSettingsDetail({
         mode={selectedItemId}
         onRefresh={refreshObjects}
         onDirtyChange={onDirtyChange}
+        onManageEmbeddingProfiles={onManageEmbeddingProfiles}
       />
     );
   }
@@ -378,6 +381,7 @@ export function KnowledgeSettingsDetail({
             onSwitchDevice={switchLocalModelDevice}
             onSetValues={setValues}
             onCopy={copyText}
+            onManageEmbeddingProfiles={onManageEmbeddingProfiles}
           />
         ) : null}
         {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} scan={scan} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
@@ -410,6 +414,7 @@ function KnowledgeOverviewTab({
   onSwitchDevice,
   onSetValues,
   onCopy,
+  onManageEmbeddingProfiles,
 }: {
   values: KnowledgeSettings;
   scan: KnowledgeModelScan | null;
@@ -418,6 +423,7 @@ function KnowledgeOverviewTab({
   onSwitchDevice: (device: KnowledgeSettings['local_model_device']) => void;
   onSetValues: (values: KnowledgeSettings) => void;
   onCopy: (text: string) => void;
+  onManageEmbeddingProfiles?: () => void;
 }) {
   const { t } = useTranslation(['knowledge', 'status']);
   const backend = scan?.backend;
@@ -448,6 +454,11 @@ function KnowledgeOverviewTab({
             <RefreshCw size={14} />
             {busy === 'scan' ? t('knowledge:actions.scanning') : t('knowledge:actions.scanLocalModels')}
           </button>
+          {onManageEmbeddingProfiles ? (
+            <button className="settings-secondary-button" type="button" onClick={onManageEmbeddingProfiles}>
+              {t('knowledge:actions.manageEmbeddingProfiles')}
+            </button>
+          ) : null}
         </div>
       </div>
       {cudaMismatch ? (
@@ -876,12 +887,13 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
   );
 }
 
-function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, onRefresh, onDirtyChange }: {
+function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, onRefresh, onDirtyChange, onManageEmbeddingProfiles }: {
   knowledgeBases: KnowledgeBase[];
   profiles: EmbeddingModelProfile[];
   mode: FormMode;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
+  onManageEmbeddingProfiles?: () => void;
 }) {
   const { t } = useTranslation('knowledge');
   const selected = knowledgeBases.find((kb) => kb.id === mode);
@@ -889,15 +901,16 @@ function KnowledgeBasesEditor({ knowledgeBases, profiles, mode, onRefresh, onDir
   if (!initial) {
     return <Empty title={t('empty.noKnowledgeBaseSelected')} message={knowledgeBases.length ? t('empty.selectKnowledgeBase') : t('empty.noKnowledgeBases')} />;
   }
-  return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
+  return <KnowledgeBaseForm initial={initial} profiles={profiles} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} onManageEmbeddingProfiles={onManageEmbeddingProfiles} />;
 }
 
-function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange }: {
+function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange, onManageEmbeddingProfiles }: {
   initial: Partial<KnowledgeBase>;
   profiles: EmbeddingModelProfile[];
   isNew: boolean;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
+  onManageEmbeddingProfiles?: () => void;
 }) {
   const { t } = useTranslation(['knowledge', 'common', 'status']);
   const [values, setValues] = useState<Partial<KnowledgeBase>>(initial);
@@ -1659,6 +1672,13 @@ function KnowledgeBaseForm({ initial, profiles, isNew, onRefresh, onDirtyChange 
                 <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
                 <SelectField label={t('knowledge:labels.embeddingModelProfile')} value={values.embedding_model_profile_id || ''} options={profiles.map((profile) => profile.id)} labels={Object.fromEntries(profiles.map((profile) => [profile.id, profile.name]))} onChange={(value) => setValues({ ...values, embedding_model_profile_id: value })} />
               </div>
+              {onManageEmbeddingProfiles ? (
+                <div className="settings-button-row">
+                  <button className="settings-secondary-button" type="button" onClick={onManageEmbeddingProfiles}>
+                    {t('knowledge:actions.manageEmbeddingProfiles')}
+                  </button>
+                </div>
+              ) : null}
               <TextAreaField label={t('knowledge:labels.aliases')} value={values.aliases_text || ''} onChange={(value) => setValues({ ...values, aliases_text: value })} />
               <p className="settings-muted-text">{t('knowledge:help.aliases')}</p>
               <TextAreaField label={t('knowledge:labels.description')} value={values.description || ''} onChange={(value) => setValues({ ...values, description: value })} />

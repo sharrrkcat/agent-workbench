@@ -1,6 +1,6 @@
 {
   "title": "设置",
-  "description": "配置本地 Agents、Capabilities 和 LLM 连接详情。",
+  "description": "配置本地 Agents、Capabilities 和模型连接详情。",
   "placeholder": "此设置分区稍后添加。",
   "summary": {
     "agents": "{{count}} 个 Agent",
@@ -9,7 +9,7 @@
   "sections": {
     "general": "通用",
     "appearance": "外观",
-    "llm": "LLM",
+    "models": "Models",
     "knowledge": "知识库",
     "worldbook": "世界书",
     "agents": "Agents",
@@ -22,12 +22,13 @@
   "subsections": {
     "defaults": "默认值",
     "providerProfiles": "Provider 配置",
-    "modelProfiles": "模型配置",
-    "embeddingModels": "Embedding 模型",
+    "modelProfiles": "LLM 模型配置",
+    "embeddingModels": "Embedding 模型配置",
     "knowledgeBases": "知识库",
     "worldbooks": "世界书"
   },
   "aria": {
+    "modelsSettingsSections": "模型设置分区",
     "worldbookSettingsSections": "世界书设置分区"
   },
   "searchPlaceholder": "搜索设置",
@@ -44,7 +45,7 @@
     "worldbookDefaults": "世界书默认值",
     "worldbooks": "世界书",
     "llmDefaults": "LLM 默认值",
-    "llmProviderProfiles": "LLM Provider 配置",
+    "llmProviderProfiles": "Provider 配置",
     "llmModelProfiles": "LLM 模型配置",
     "settingsCategory": "设置类别",
     "noObjects": "此分区暂无对象。",

@@ -6,7 +6,7 @@ import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmModelScan, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
-import { LlmDefaultsDetail, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
+import { LlmDefaultModelProfileSection, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { getStatusLabel } from '../../i18n/formatters';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -28,7 +28,7 @@ export function SettingsDetailPanel({
   llmProfiles = [],
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
-  llmSubsection = 'defaults',
+  llmSubsection = 'providers',
   generalCategory = 'files',
   appearanceCategory = 'pet',
   knowledgeSubsection = 'defaults',
@@ -39,6 +39,7 @@ export function SettingsDetailPanel({
   onKnowledgeObjectsChanged,
   onWorldbookObjectsChanged,
   onSelectGeneralCategory,
+  onManageEmbeddingProfiles,
   activeTab,
   onTabChange,
   onDirtyChange,
@@ -63,6 +64,7 @@ export function SettingsDetailPanel({
   onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onWorldbookObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
+  onManageEmbeddingProfiles?: () => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -103,24 +105,29 @@ export function SettingsDetailPanel({
     );
   }
 
-  if (section === 'llm') {
+  if (section === 'models') {
     return (
       <section className="settings-detail-panel">
-        {llmSubsection === 'defaults' ? (
-          <LlmDefaultsDetail profiles={llmProfiles} providerProfiles={llmProviderProfiles} onDirtyChange={onDirtyChange} />
-        ) : llmSubsection === 'providers' ? (
+        {llmSubsection === 'providers' ? (
           <LlmProviderProfileDetail
             profiles={llmProviderProfiles}
             selectedProfileId={selectedLlmItemId === 'new-provider' ? 'new' : selectedLlmItemId.replace(/^provider:/, '')}
             onProfilesChanged={onLlmProfilesChanged || (async () => undefined)}
             onDirtyChange={onDirtyChange}
           />
-        ) : (
+        ) : llmSubsection === 'models' ? (
           <LlmProfileDetail
             profiles={llmProfiles}
             providerProfiles={llmProviderProfiles}
             selectedProfileId={selectedLlmItemId}
             onProfilesChanged={onLlmProfilesChanged || (async () => undefined)}
+            onDirtyChange={onDirtyChange}
+          />
+        ) : (
+          <KnowledgeSettingsDetail
+            category="embedding_models"
+            selectedItemId={selectedKnowledgeItemId}
+            onObjectsChanged={onKnowledgeObjectsChanged}
             onDirtyChange={onDirtyChange}
           />
         )}
@@ -131,7 +138,7 @@ export function SettingsDetailPanel({
   if (section === 'general') {
     return (
       <section className="settings-detail-panel">
-        <GeneralDetail category={generalCategory} llmProfiles={llmProfiles} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />
+        <GeneralDetail category={generalCategory} llmProfiles={llmProfiles} llmProviderProfiles={llmProviderProfiles} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />
       </section>
     );
   }
@@ -158,6 +165,7 @@ export function SettingsDetailPanel({
           selectedItemId={selectedKnowledgeItemId}
           onObjectsChanged={onKnowledgeObjectsChanged}
           onDirtyChange={onDirtyChange}
+          onManageEmbeddingProfiles={onManageEmbeddingProfiles}
         />
       </section>
     );
@@ -271,10 +279,12 @@ function LlmDetail({ config, onDirtyChange }: { config: CapabilityConfig; onDirt
 function GeneralDetail({
   category,
   llmProfiles,
+  llmProviderProfiles,
   onDirtyChange,
 }: {
   category: GeneralSettingsCategory;
   llmProfiles: LlmProfile[];
+  llmProviderProfiles: LlmProviderProfile[];
   onDirtyChange: (dirty: boolean) => void;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
 }) {
@@ -283,6 +293,7 @@ function GeneralDetail({
   const [values, setValues] = useState<GeneralSettings | null>(generalSettings || null);
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
   const [saved, setSaved] = useState(false);
+  const [defaultModelDirty, setDefaultModelDirty] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
   const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'web_search' ? t('settings:general.webSearch') : category === 'utility_llm' ? t('settings:general.utilityLlm') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
   const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'web_search' ? t('settings:general.webSearchDescription') : category === 'utility_llm' ? t('settings:general.utilityLlmDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
@@ -296,8 +307,8 @@ function GeneralDetail({
   }, [generalSettings]);
 
   useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange(dirty || defaultModelDirty);
+  }, [defaultModelDirty, dirty, onDirtyChange]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -382,7 +393,16 @@ function GeneralDetail({
         ) : category === 'intent_routing' ? (
           <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
         ) : (
-          <GeneralPromptSettings values={values} llmProfiles={llmProfiles} setValues={setValues} setNumber={setNumber} setInstruction={setInstruction} resetInstruction={resetInstruction} />
+          <GeneralPromptSettings
+            values={values}
+            llmProfiles={llmProfiles}
+            llmProviderProfiles={llmProviderProfiles}
+            setValues={setValues}
+            setNumber={setNumber}
+            setInstruction={setInstruction}
+            resetInstruction={resetInstruction}
+            onDefaultModelDirtyChange={setDefaultModelDirty}
+          />
         )}
       </div>
     </form>
@@ -916,17 +936,21 @@ function GeneralFilesSettings({
 function GeneralPromptSettings({
   values,
   llmProfiles,
+  llmProviderProfiles,
   setValues,
   setNumber,
   setInstruction,
   resetInstruction,
+  onDefaultModelDirtyChange,
 }: {
   values: GeneralSettings;
   llmProfiles: LlmProfile[];
+  llmProviderProfiles: LlmProviderProfile[];
   setValues: (values: GeneralSettings) => void;
   setNumber: (key: keyof GeneralSettings, value: string) => void;
   setInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction', value: string) => void;
   resetInstruction: (key: 'session_title_prompt' | 'group_transcript_system_instruction' | 'command_result_context_instruction') => void;
+  onDefaultModelDirtyChange: (dirty: boolean) => void;
 }) {
   const { t } = useTranslation('settings');
   const selectedTitleProfile = values.session_title_model_profile_id
@@ -936,6 +960,7 @@ function GeneralPromptSettings({
   const titleProfileDisabled = Boolean(selectedTitleProfile && !selectedTitleProfile.enabled);
   return (
     <>
+      <LlmDefaultModelProfileSection profiles={llmProfiles} providerProfiles={llmProviderProfiles} onDirtyChange={onDefaultModelDirtyChange} />
       <div className="detail-section">
         <div className="detail-section-heading">
           <h3>{t('general.sessionTitles')}</h3>
