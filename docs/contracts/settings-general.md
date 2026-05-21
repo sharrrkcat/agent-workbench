@@ -46,6 +46,11 @@ do not add editable root paths and do not own per-model generation, embedding,
 or reranking parameters.
 LLM Model Profiles may select internal Provider Profiles only with `llm/...`
 refs. Embedding and reranker refs remain outside LLM Model Profile selection.
+Embedding Model Profiles may select Provider Profiles that support embeddings:
+internal providers with `embedding/...` refs, OpenAI-compatible / LM Studio
+embedding APIs, or Ollama embed APIs. Provider Profiles still own only source
+connection or local inventory details; dimensions, normalization, query
+instruction, and document instruction remain Embedding Model Profile fields.
 
 ## Files
 

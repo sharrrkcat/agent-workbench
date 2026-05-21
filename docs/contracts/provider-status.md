@@ -85,6 +85,12 @@ Internal providers:
   valid/invalid, model file/folder exists/missing, optional dependency
   available/unavailable, and loaded/unloaded when the local cache can be
   inspected.
+- Embedding Model Profiles may use Provider Profiles independently of main LLM
+  resolution. Internal embedding profiles use only `embedding/...` refs and
+  report dependency/ref availability through compact status or test errors.
+  External embedding profiles use provider reachability plus embedding test
+  calls; status/test responses must not include API keys, absolute paths, raw
+  provider payloads, or full directory trees.
 - Internal provider unload is best-effort cache release only. It may release
   cached `internal_transformers` or `internal_llama_cpp` LLM runtimes, and must
   never delete model files or user data. Unsupported, unavailable, or failed
@@ -131,8 +137,10 @@ not force-released. In this alpha, manual LLM release is limited to provider
 profiles with reliable unload support: LM Studio native unload and best-effort
 internal LLM runtime cache release.
 
-Embedding and reranker local cache release is best-effort. ComfyUI memory
-release is an external service request through ComfyUI `/free` with
+Embedding and reranker local cache release is best-effort. The `embedding`
+target may release local/internal embedding caches; external embedding
+providers have no local cache and should be skipped or reported as no local
+cache. ComfyUI memory release is an external service request through ComfyUI `/free` with
 `unload_models` and `free_memory` booleans. ComfyUI release failure is a cleanup
 warning and must not turn an already successful image generation into a failed
 run.

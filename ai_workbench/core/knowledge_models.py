@@ -126,6 +126,7 @@ class LocalKnowledgeModelBackend:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or repo_root()
         self._embedding_cache: dict[tuple[str, str], Any] = {}
+        self._llama_embedding_cache: dict[str, Any] = {}
         self._reranker_cache: dict[tuple[str, str], Any] = {}
         self._embedding_cache_lock = threading.RLock()
         self._reranker_cache_lock = threading.RLock()
@@ -168,6 +169,23 @@ class LocalKnowledgeModelBackend:
         finally:
             self._active_reranker_calls = max(0, self._active_reranker_calls - 1)
 
+    def llama_cpp_embed_texts(self, model_path: Path, texts: list[str], normalize: bool) -> list[list[float]]:
+        self._active_embedding_calls += 1
+        try:
+            model = self._load_llama_embedding_model(model_path)
+            vectors: list[list[float]] = []
+            for text in texts:
+                data = model.create_embedding(text)
+                rows = data.get("data") if isinstance(data, dict) else None
+                embedding = rows[0].get("embedding") if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+                if not isinstance(embedding, list):
+                    raise KnowledgeModelError(LOCAL_MODEL_BACKEND_UNAVAILABLE, "llama.cpp did not return an embedding vector.")
+                vector = [float(value) for value in embedding]
+                vectors.append(_normalize_vector(vector) if normalize else vector)
+            return vectors
+        finally:
+            self._active_embedding_calls = max(0, self._active_embedding_calls - 1)
+
     def _load_embedding_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
         with self._embedding_cache_lock:
@@ -176,6 +194,15 @@ class LocalKnowledgeModelBackend:
 
                 self._embedding_cache[key] = SentenceTransformer(str(path), device=device)
             return self._embedding_cache[key]
+
+    def _load_llama_embedding_model(self, path: Path) -> Any:
+        key = str(path)
+        with self._embedding_cache_lock:
+            if key not in self._llama_embedding_cache:
+                from llama_cpp import Llama  # type: ignore
+
+                self._llama_embedding_cache[key] = Llama(model_path=key, embedding=True, verbose=False)
+            return self._llama_embedding_cache[key]
 
     def _load_reranker_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
@@ -200,13 +227,17 @@ class LocalKnowledgeModelBackend:
         absolute_path = resolve_model_path(model_path, "embeddings", self.root)
         resolved_device = resolve_device(device) if device else None
         removed = _drop_cache_entries(self._embedding_cache, str(absolute_path), resolved_device)
+        if str(absolute_path) in self._llama_embedding_cache:
+            del self._llama_embedding_cache[str(absolute_path)]
+            removed += 1
         if removed:
             _collect_model_memory()
         return bool(removed)
 
     def unload_all_embedding_models(self) -> int:
-        removed = len(self._embedding_cache)
+        removed = len(self._embedding_cache) + len(self._llama_embedding_cache)
         self._embedding_cache.clear()
+        self._llama_embedding_cache.clear()
         if removed:
             _collect_model_memory()
         return removed

@@ -1257,7 +1257,7 @@ class SqlKnowledgeStore:
                 conflict = _find_embedding_profile_by_alias(session, str(alias))
                 if conflict is not None and conflict.id != record.id:
                     raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
-            stale_keys = {"model_path", "dimension", "normalize", "document_instruction"}
+            stale_keys = {"provider_profile_id", "provider_model_id", "model_path", "dimension", "normalize", "document_instruction", "query_instruction"}
             needs_reindex = any(key in values and getattr(record, key) != values[key] for key in stale_keys)
             candidate = _embedding_profile_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
             profile = EmbeddingModelProfile.model_validate(candidate.model_dump())
@@ -1509,7 +1509,7 @@ class SqlKnowledgeStore:
                         source_id=source.id,
                         chunk_id=chunk_id,
                         embedding_model_profile_id=embedding_model_profile.id,
-                        embedding_model_id_snapshot=embedding_model_profile.model_path,
+                        embedding_model_id_snapshot=_embedding_profile_model_identity(embedding_model_profile),
                         embedding_dimension=embedding_dimension,
                         embedding_normalize_snapshot=embedding_model_profile.normalize,
                         vector_blob=array("f", [float(value) for value in vector]).tobytes(),
@@ -1900,7 +1900,9 @@ def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> Embed
         id=record.id,
         name=record.name,
         alias=record.alias,
-        model_path=record.model_path,
+        model_path=getattr(record, "model_path", "") or "",
+        provider_profile_id=getattr(record, "provider_profile_id", None),
+        provider_model_id=getattr(record, "provider_model_id", "") or "",
         dimension=record.dimension,
         normalize=record.normalize,
         document_instruction=record.document_instruction,
@@ -1910,6 +1912,10 @@ def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> Embed
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )
+
+
+def _embedding_profile_model_identity(profile: EmbeddingModelProfile) -> str:
+    return profile.provider_model_id or profile.model_path
 
 
 def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:

@@ -263,7 +263,7 @@ export type LlmProfile = {
   alias: string;
   name: string;
   provider_profile_id?: string | null;
-  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'internal_transformers' | 'internal_llama_cpp';
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'ollama' | 'internal_transformers' | 'internal_llama_cpp';
   base_url: string;
   api_key: string;
   api_key_set?: boolean;
@@ -359,7 +359,7 @@ export type LlmProviderStatusRefreshResponse = {
 export type LlmProviderProfile = {
   id: string;
   name: string;
-  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'internal_transformers' | 'internal_llama_cpp';
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'ollama' | 'internal_transformers' | 'internal_llama_cpp';
   base_url: string;
   api_key: string;
   api_key_set?: boolean;
@@ -462,6 +462,8 @@ export type EmbeddingModelProfile = {
   name: string;
   alias: string;
   model_path: string;
+  provider_profile_id?: string | null;
+  provider_model_id: string;
   dimension?: number | null;
   normalize: boolean;
   document_instruction: string;
@@ -478,6 +480,8 @@ export type EmbeddingModelProfileInput = Partial<
     | 'name'
     | 'alias'
     | 'model_path'
+    | 'provider_profile_id'
+    | 'provider_model_id'
     | 'dimension'
     | 'normalize'
     | 'document_instruction'

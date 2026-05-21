@@ -1733,7 +1733,7 @@ function utilityModelProfileOptionLabel(profile: LlmProfile, t: ReturnType<typeo
 
 function embeddingProfileOptionLabel(profile: EmbeddingModelProfile, t: ReturnType<typeof useTranslation>['t']): string {
   const status = profile.enabled ? '' : ` (${t('common:disabled')})`;
-  return `${profile.name} / ${profile.alias} / ${profile.model_path}${status}`;
+  return `${profile.name} / ${profile.alias} / ${profile.provider_model_id || profile.model_path}${status}`;
 }
 
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {

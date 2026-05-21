@@ -11,7 +11,7 @@ import { SecretInput } from './SecretInput';
 import { stableConfigString, type ConfigValues } from './configUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
-const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'internal_transformers', 'internal_llama_cpp'] as const;
+const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'ollama', 'internal_transformers', 'internal_llama_cpp'] as const;
 const llmProfileProviderOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'internal_transformers', 'internal_llama_cpp'] as const;
 const internalProviderOptions = new Set<string>(['internal_transformers', 'internal_llama_cpp']);
 const profileDefaults: LlmProfileInput = {

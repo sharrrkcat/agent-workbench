@@ -3,7 +3,7 @@ import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useCallback, useEffec
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../types';
+import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview, LlmProviderModel, LlmProviderProfile } from '../../types';
 import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
@@ -159,6 +159,8 @@ const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
   alias: '',
   model_path: '',
+  provider_profile_id: null,
+  provider_model_id: '',
   dimension: null,
   normalize: true,
   document_instruction: '',
@@ -202,6 +204,7 @@ export function KnowledgeSettingsDetail({
   const [values, setValues] = useState<KnowledgeSettings | null>(null);
   const [scan, setScan] = useState<KnowledgeModelScan | null>(null);
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
+  const [providerProfiles, setProviderProfiles] = useState<LlmProviderProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
@@ -214,15 +217,17 @@ export function KnowledgeSettingsDetail({
   const downloadCommand = `uv run python scripts/download_knowledge_model.py --type ${downloadType} --model-id ${downloadModelId || '<model-id>'} --target ${downloadTarget || '<target-folder>'}`;
 
   async function refresh() {
-    const [nextSettings, nextProfiles, nextBases] = await Promise.all([
+    const [nextSettings, nextProfiles, nextBases, nextProviders] = await Promise.all([
       api.getKnowledgeSettings(),
       api.listEmbeddingModels(),
       api.listKnowledgeBases(),
+      api.listLlmProviderProfiles(),
     ]);
     setSettings(nextSettings);
     setValues(nextSettings);
     setEmbeddingProfiles(nextProfiles);
     setKnowledgeBases(nextBases);
+    setProviderProfiles(nextProviders);
   }
 
   async function refreshObjects(selectedId?: string) {
@@ -315,6 +320,7 @@ export function KnowledgeSettingsDetail({
     return (
       <EmbeddingModelsEditor
         profiles={embeddingProfiles}
+        providerProfiles={providerProfiles}
         scan={scan}
         mode={selectedItemId}
         onRefresh={refreshObjects}
@@ -701,8 +707,9 @@ function KnowledgeDownloadTab({
   );
 }
 
-function EmbeddingModelsEditor({ profiles, scan, mode, onRefresh, onDirtyChange }: {
+function EmbeddingModelsEditor({ profiles, providerProfiles, scan, mode, onRefresh, onDirtyChange }: {
   profiles: EmbeddingModelProfile[];
+  providerProfiles: LlmProviderProfile[];
   scan: KnowledgeModelScan | null;
   mode: FormMode;
   onRefresh: (selectedItemId?: string) => Promise<void>;
@@ -714,21 +721,23 @@ function EmbeddingModelsEditor({ profiles, scan, mode, onRefresh, onDirtyChange 
   if (!initial) {
     return <Empty title={t('empty.noEmbeddingSelected')} message={profiles.length ? t('empty.selectEmbedding') : t('empty.noEmbeddingProfiles')} />;
   }
-  return <EmbeddingProfileForm initial={initial} scan={scan} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
+  return <EmbeddingProfileForm initial={initial} providerProfiles={providerProfiles} scan={scan} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
 
-function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }: {
+function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefresh, onDirtyChange }: {
   initial: Partial<EmbeddingModelProfile>;
+  providerProfiles: LlmProviderProfile[];
   scan: KnowledgeModelScan | null;
   isNew: boolean;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const { t } = useTranslation(['knowledge', 'common']);
+  const { t } = useTranslation(['knowledge', 'common', 'llm']);
   const [values, setValues] = useState<Partial<EmbeddingModelProfile>>(initial);
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [providerModels, setProviderModels] = useState<LlmProviderModel[]>([]);
   const [normalizeTouched, setNormalizeTouched] = useState(false);
   const scopeId = isNew ? 'new' : initial.id || '';
   const baselineKey = stableConfigString(buildEmbeddingModelPayload(initial));
@@ -737,6 +746,12 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
   const dirty = hydrated && stableConfigString(buildEmbeddingModelPayload(values)) !== baselineKey;
   const embeddingOptions = modelPathOptions(scan?.embedding_models ?? [], values.model_path || '');
   const currentEmbeddingMissing = scan ? Boolean(values.model_path) && !scan.embedding_models.some((model) => model.model_path === values.model_path) : false;
+  const embeddingProviderProfiles = providerProfiles.filter((profile) => embeddingProviderSupported(profile.provider));
+  const selectedProvider = embeddingProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
+  const selectedProviderInternal = Boolean(selectedProvider && isInternalEmbeddingProvider(selectedProvider.provider));
+  const providerModelOptions = selectedProviderInternal
+    ? providerModels.filter((model) => isEmbeddingProviderModel(model)).map((model) => model.id)
+    : providerModels.filter((model) => Boolean(model.id)).map((model) => model.id);
 
   useEffect(() => {
     setValues(initial);
@@ -748,6 +763,7 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
     setBusy('');
     setResult('');
     setError(null);
+    setProviderModels([]);
   }, [scopeId]);
 
   useEffect(() => {
@@ -796,6 +812,22 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
       setBusy('');
     }
   }
+  async function refreshProviderModels() {
+    if (!values.provider_profile_id) return;
+    setBusy('provider-models');
+    try {
+      setError(null);
+      const response = await api.listLlmProviderModels(values.provider_profile_id);
+      const models = response.models.filter((model) => Boolean(model.id));
+      setProviderModels(models);
+      const embeddingModels = models.filter((model) => isEmbeddingProviderModel(model));
+      setResult(t('knowledge:results.providerModelsFound', { count: selectedProviderInternal ? embeddingModels.length : models.length }));
+    } catch (error) {
+      setError(toSettingsError(error, 'Failed to refresh provider models.'));
+    } finally {
+      setBusy('');
+    }
+  }
   function selectModelPath(modelPath: string) {
     const preset = embeddingPresetForPath(modelPath);
     const folderName = modelFolderName(modelPath);
@@ -828,7 +860,7 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
             <h2>{values.name || t('knowledge:titles.newEmbeddingModel')}</h2>
             <p>
               <code>{values.alias || 'profile_key'}</code>
-              <span>{values.model_path || t('knowledge:empty.noModelPath')}</span>
+              <span>{values.provider_model_id || values.model_path || t('knowledge:empty.noModelPath')}</span>
             </p>
           </div>
         </div>
@@ -857,6 +889,39 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
           <div className="settings-detail-grid">
             <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
             <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
+            <label className="config-field settings-config-field">
+              <span>{t('knowledge:labels.providerProfile')}</span>
+              <select
+                value={values.provider_profile_id || ''}
+                onChange={(event) => setValues({ ...values, provider_profile_id: event.target.value || null, provider_model_id: '', model_path: values.model_path || '' })}
+              >
+                <option value="">{t('knowledge:labels.legacyLocalModelPath')}</option>
+                {embeddingProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
+              </select>
+            </label>
+            {values.provider_profile_id ? (
+              <div>
+                <div className="settings-button-row">
+                  <SelectField
+                    label={selectedProviderInternal ? t('knowledge:labels.embeddingModelRef') : t('knowledge:labels.providerModelId')}
+                    value={values.provider_model_id || ''}
+                    options={providerModelOptions}
+                    disabled={!providerModelOptions.length}
+                    placeholder={selectedProviderInternal ? t('knowledge:empty.noProviderEmbeddingModels') : t('knowledge:empty.noProviderModels')}
+                    onChange={(value) => setValues({ ...values, provider_model_id: value })}
+                  />
+                  <button className="settings-secondary-button" type="button" onClick={refreshProviderModels} disabled={Boolean(busy)}>
+                    {busy === 'provider-models' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+                    {t('knowledge:actions.refreshProviderModels')}
+                  </button>
+                </div>
+                {!selectedProviderInternal ? (
+                  <TextField label={t('knowledge:labels.providerModelIdManual')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
+                ) : null}
+                <p className="settings-muted-text">{selectedProviderInternal ? t('knowledge:hints.internalEmbeddingRefsOnly') : t('knowledge:hints.externalEmbeddingModelId')}</p>
+                {!selectedProvider?.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
+              </div>
+            ) : (
             <div>
               <SelectField
                 label={t('knowledge:labels.modelPathChooseFirst')}
@@ -872,6 +937,7 @@ function EmbeddingProfileForm({ initial, scan, isNew, onRefresh, onDirtyChange }
               {!embeddingOptions.length ? <p className="settings-muted-text">{t('knowledge:hints.scanLocalModelsInOverviewFirst')}</p> : null}
               {currentEmbeddingMissing ? <p className="settings-muted-text">{t('knowledge:hints.currentSavedPathNotScanned')}</p> : null}
             </div>
+            )}
             <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
           </div>
         </section>
@@ -2436,6 +2502,18 @@ function modelPathLabels(paths: string[]): Record<string, string> {
   return Object.fromEntries(paths.map((path) => [path, modelFolderName(path)]));
 }
 
+function embeddingProviderSupported(provider: string): boolean {
+  return ['internal_transformers', 'internal_llama_cpp', 'openai_compatible', 'lm_studio', 'ollama'].includes(provider);
+}
+
+function isInternalEmbeddingProvider(provider: string | undefined): boolean {
+  return provider === 'internal_transformers' || provider === 'internal_llama_cpp';
+}
+
+function isEmbeddingProviderModel(model: LlmProviderModel): boolean {
+  return model.kind === 'embedding' || model.type === 'embedding' || String(model.id || model.model_ref || '').startsWith('embedding/');
+}
+
 function normalizedOriginFolder(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
 }
@@ -2480,6 +2558,8 @@ function buildEmbeddingModelPayload(values: Partial<EmbeddingModelProfile>): Emb
     name: values.name ?? '',
     alias: values.alias ?? '',
     model_path: values.model_path ?? '',
+    provider_profile_id: values.provider_profile_id || null,
+    provider_model_id: values.provider_model_id ?? '',
     dimension: parseOptionalInteger(values.dimension, 'Dimension'),
     normalize: values.normalize ?? true,
     document_instruction: values.document_instruction ?? '',

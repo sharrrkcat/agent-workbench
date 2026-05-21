@@ -45,6 +45,8 @@ def search_knowledge(
     max_chunks_per_knowledge_base: int | None = None,
     expand_query: bool | None = None,
     query_expander: Callable[[str, int, str], list[str]] | None = None,
+    provider_profile_store: Any | None = None,
+    repo_root: Any | None = None,
 ) -> dict[str, Any]:
     settings = knowledge_store.get_settings()
     debug: dict[str, Any] = {
@@ -88,6 +90,8 @@ def search_knowledge(
                 texts=queries,
                 purpose="query",
                 device=settings.local_model_device,
+                provider_profile_store=provider_profile_store,
+                repo_root=repo_root,
             )
             for query_vector in embedding_result["vectors"]:
                 results, warnings = search_vectors(
@@ -102,7 +106,8 @@ def search_knowledge(
                 vector_candidates.extend(_from_vector(result) for result in results)
         finally:
             if settings.unload_embedding_model_after_use:
-                safe_unload_embedding_model(model_backend, profile.model_path, settings.local_model_device, debug["warnings"])
+                if profile.model_path:
+                    safe_unload_embedding_model(model_backend, profile.model_path, settings.local_model_device, debug["warnings"])
         debug["embedding_groups"].append(
             {
                 "embedding_model_profile_id": profile.id,

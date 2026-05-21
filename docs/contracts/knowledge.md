@@ -34,9 +34,9 @@ Local model directories are:
 - `data/models/rerankers/<model-folder>`
 
 Provider Profiles can list local embedding and reranker inventory using
-`embedding/...` and `reranker/...` refs, but this round does not change
-Knowledge indexing, retrieval, embedding generation, reranking, or Embedding
-Model Profile schema.
+`embedding/...` and `reranker/...` refs. Embedding Model Profiles may now
+reference Provider Profiles for embedding generation; reranker runtime remains
+owned by Knowledge Defaults and is not providerized.
 Internal LLM Model Profile support for `llm/...` refs is owned by the runtime
 LLM resolution contract and does not change Knowledge behavior.
 
@@ -86,23 +86,36 @@ retrieval backends.
 
 ## Embedding Model Profiles
 
-Embedding Model Profiles bind a user-named profile to a local embedding model
-path and instructions.
+Embedding Model Profiles bind a user-named profile to an embedding provider
+source, provider model id/ref, dimensions, normalization behavior, and query /
+document instructions.
 
 The Settings UI exposes them under Settings -> Models -> Embedding Model
 Profiles. Settings -> Knowledge keeps Knowledge Defaults and Knowledge Bases;
 Knowledge Base configuration still selects an Embedding Model Profile.
 
-- `model_path` must be relative to `data/models`.
-- Embedding profiles use `embeddings/<folder>`.
+- New profiles should set `provider_profile_id` and `provider_model_id`.
+- Internal provider profiles use `provider_model_id` refs shaped as
+  `embedding/...`, resolved under `data/models/embeddings`.
+- OpenAI-compatible and LM Studio providers use an OpenAI-compatible embeddings
+  endpoint. Ollama providers use the Ollama embed endpoint.
+- Legacy local profiles may still carry `model_path` for compatibility.
+  `model_path` must be relative to `data/models`.
+- Legacy local embedding profiles use `embeddings/<folder>`.
 - Reranker settings use `rerankers/<folder>`.
 - Absolute paths and `..` segments are rejected.
 - `purpose` is `query` or `document`.
-- Query and document instructions are profile fields applied by the API.
+- Query and document instructions are profile fields applied by the unified
+  embedding service before provider calls.
 - Dimensions are detected from generated vectors and stored/displayed as compact
   metadata.
 - Normalization follows the profile/default behavior and is reused by retrieval
   and Intent Routing.
+
+Changing `provider_profile_id`, `provider_model_id`, legacy `model_path`,
+dimension, normalization, or query/document instructions marks indexed sources
+using that profile as needing reindex. It does not delete existing chunks,
+vectors, or FTS rows and does not automatically rebuild indexes.
 
 Intent Routing may reference an existing enabled Embedding Model Profile, but it
 does not own profiles, create profiles, download models, or persist route
@@ -224,6 +237,10 @@ enabled KBs.
 Retrieval pipeline:
 
 - group vector search by `embedding_model_profile_id`.
+- generate one query embedding per selected embedding profile group using
+  `purpose=query` and the profile's query instruction.
+- index document chunks using `purpose=document` and the profile's document
+  instruction.
 - embed one query per profile group with `purpose=query`.
 - search only matching model-profile vectors.
 - run FTS5/BM25 across selected KBs.

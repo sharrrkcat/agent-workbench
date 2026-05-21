@@ -45,6 +45,10 @@ starts with `llm/`, resolved under `data/models/llms`. Internal provider
 inventory can also list `embedding/` and `reranker/` refs for future profile
 types, but LLM Model Profiles must not select those refs.
 
+Embedding Model Profiles are a separate Models profile type. They may reference
+Provider Profiles for embedding APIs or internal `embedding/...` refs, but they
+do not participate in main LLM resolution and do not change the order above.
+
 Model Profile means user-facing model selection and behavior defaults: provider
 model id, stable profile key, capabilities, generation defaults, notes, and
 enabled state.

@@ -59,6 +59,7 @@ def test_optional_dependency_missing_returns_structured_error_and_startup_works(
 def test_embedding_api_uses_instructions_normalizes_and_checks_batch_and_dimension(tmp_path: Path) -> None:
     backend = FakeKnowledgeBackend()
     client = make_client_with_backend(tmp_path, backend)
+    client.app.state.runtime_state.repo_root = tmp_path
     profile = create_embedding_profile(client)
 
     empty = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "query", "inputs": []})
@@ -78,6 +79,119 @@ def test_embedding_api_uses_instructions_normalizes_and_checks_batch_and_dimensi
     document = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "document", "inputs": ["hello"]})
     assert document.status_code == 200
     assert backend.calls[-1]["texts"] == ["Document:\nhello"]
+
+
+def test_embedding_profile_internal_provider_uses_embedding_ref_only(tmp_path: Path) -> None:
+    backend = FakeKnowledgeBackend()
+    client = make_client_with_backend(tmp_path, backend)
+    client.app.state.runtime_state.repo_root = tmp_path
+    model_dir = tmp_path / "data" / "models" / "embeddings" / "local-embed"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Internal embeddings", "provider": "internal_transformers", "enabled": True},
+    ).json()
+    bad = client.post(
+        "/api/knowledge/embedding-models",
+        json={"name": "Bad", "alias": "bad", "provider_profile_id": provider["id"], "provider_model_id": "llm/local-embed"},
+    )
+    assert bad.status_code == 422
+    profile = client.post(
+        "/api/knowledge/embedding-models",
+        json={"name": "Local", "alias": "local", "provider_profile_id": provider["id"], "provider_model_id": "embedding/local-embed"},
+    ).json()
+    response = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "document", "inputs": ["hello"]})
+    assert response.status_code == 200
+    assert response.json()["provider_model_id"] == "embedding/local-embed"
+    assert backend.calls[-1]["model_path"] == "embeddings/local-embed"
+
+
+def test_embedding_profile_openai_compatible_provider_uses_embeddings_endpoint(tmp_path: Path, monkeypatch) -> None:
+    class FakeEmbeddingResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"data": [{"index": 0, "embedding": [1.0, 2.0, 2.0]}]}
+
+    class FakeEmbeddingClient:
+        calls: list[dict] = []
+
+        def __init__(self, timeout) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def post(self, url, headers=None, json=None):
+            self.calls.append({"url": url, "headers": headers, "json": json})
+            return FakeEmbeddingResponse()
+
+    import ai_workbench.core.embedding as embedding_module
+
+    monkeypatch.setattr(embedding_module.httpx, "Client", FakeEmbeddingClient)
+    client = make_client_with_backend(tmp_path, FakeKnowledgeBackend())
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Embeddings API", "provider": "openai_compatible", "base_url": "http://provider/v1", "api_key": "secret"},
+    ).json()
+    profile = client.post(
+        "/api/knowledge/embedding-models",
+        json={"name": "External", "alias": "external", "provider_profile_id": provider["id"], "provider_model_id": "text-embedding-3-small"},
+    ).json()
+    response = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "query", "inputs": ["hello"]})
+    assert response.status_code == 200
+    assert response.json()["vectors"][0] == pytest.approx([1 / 3, 2 / 3, 2 / 3])
+    assert FakeEmbeddingClient.calls[-1]["url"] == "http://provider/v1/embeddings"
+    assert FakeEmbeddingClient.calls[-1]["json"] == {"model": "text-embedding-3-small", "input": ["hello"]}
+    assert FakeEmbeddingClient.calls[-1]["headers"]["Authorization"] == "Bearer secret"
+
+
+def test_embedding_profile_ollama_provider_uses_embed_endpoint(tmp_path: Path, monkeypatch) -> None:
+    class FakeOllamaResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"embeddings": [[0.0, 3.0, 4.0]]}
+
+    class FakeOllamaClient:
+        calls: list[dict] = []
+
+        def __init__(self, timeout) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def post(self, url, json=None):
+            self.calls.append({"url": url, "json": json})
+            return FakeOllamaResponse()
+
+    import ai_workbench.core.embedding as embedding_module
+
+    monkeypatch.setattr(embedding_module.httpx, "Client", FakeOllamaClient)
+    client = make_client_with_backend(tmp_path, FakeKnowledgeBackend())
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Ollama", "provider": "ollama", "base_url": "http://ollama:11434"},
+    ).json()
+    profile = client.post(
+        "/api/knowledge/embedding-models",
+        json={"name": "Ollama Embed", "alias": "ollama-embed", "provider_profile_id": provider["id"], "provider_model_id": "nomic-embed-text"},
+    ).json()
+    response = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "query", "inputs": ["hello"]})
+    assert response.status_code == 200
+    assert response.json()["vectors"][0] == pytest.approx([0.0, 0.6, 0.8])
+    assert FakeOllamaClient.calls[-1]["url"] == "http://ollama:11434/api/embed"
+    assert FakeOllamaClient.calls[-1]["json"] == {"model": "nomic-embed-text", "input": ["hello"]}
 
     client.patch(f"/api/knowledge/embedding-models/{profile['id']}", json={"dimension": 4})
     mismatch = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "query", "inputs": ["hello"]})

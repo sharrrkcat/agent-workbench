@@ -24,6 +24,7 @@
     "lm_studio": "LM Studio",
     "llama_cpp": "llama.cpp server",
     "custom": "Custom",
+    "ollama": "Ollama",
     "internal_transformers": "Internal transformers",
     "internal_llama_cpp": "Internal llama.cpp"
   },

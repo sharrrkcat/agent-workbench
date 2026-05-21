@@ -10,7 +10,7 @@ from sqlmodel import Session as DbSession
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.embedding import embed_texts
+from ai_workbench.core.embedding import embed_texts, legacy_model_path_for_embedding_ref, unload_model_path_for_profile
 from ai_workbench.core.knowledge_indexing import (
     KnowledgeIndexError,
     build_search_text,
@@ -32,6 +32,7 @@ from ai_workbench.core.knowledge_models import (
     safe_unload_reranker_model,
     scan_local_models,
 )
+from ai_workbench.core.provider_inventory import normalize_internal_embedding_model_ref
 from ai_workbench.core.knowledge_origins import (
     list_origin_folder_suggestions,
     mark_origin_imported,
@@ -162,9 +163,7 @@ def list_embedding_models(state: RuntimeState = Depends(get_state)) -> list[dict
 @router.post("/embedding-models")
 def create_embedding_model(payload: EmbeddingModelProfileCreate, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        profile = EmbeddingModelProfile.model_validate(
-            {**payload.model_dump(), "model_path": normalize_model_path(payload.model_path, "embeddings")}
-        )
+        profile = EmbeddingModelProfile.model_validate(_normalize_embedding_profile_payload(payload.model_dump(), state))
         return state.knowledge.create_embedding_profile(profile).model_dump()
     except ValidationError as exc:
         _raise_validation(exc)
@@ -183,9 +182,9 @@ def get_embedding_model(profile_id: str, state: RuntimeState = Depends(get_state
 @router.patch("/embedding-models/{profile_id}")
 def patch_embedding_model(profile_id: str, payload: EmbeddingModelProfilePatch, state: RuntimeState = Depends(get_state)) -> dict:
     try:
+        existing = state.knowledge.get_embedding_profile(profile_id)
         updates = payload.model_dump(exclude_unset=True)
-        if "model_path" in updates:
-            updates["model_path"] = normalize_model_path(updates["model_path"], "embeddings")
+        updates = _normalize_embedding_profile_payload(updates, state, partial=True, existing=existing)
         return state.knowledge.update_embedding_profile(profile_id, updates).model_dump()
     except ValidationError as exc:
         _raise_validation(exc)
@@ -220,12 +219,17 @@ def test_embedding_model(profile_id: str, payload: EmbeddingTestRequest, state: 
                 texts=[payload.text],
                 purpose=payload.purpose,
                 device=settings.local_model_device,
+                provider_profile_store=state.provider_profiles,
+                repo_root=state.repo_root,
             )
             vector = result["vectors"][0]
             return {
                 "ok": True,
                 "model_profile_id": profile.id,
                 "model_path": profile.model_path,
+                "provider_profile_id": result.get("provider_profile_id"),
+                "provider": result.get("provider"),
+                "provider_model_id": result.get("provider_model_id"),
                 "purpose": payload.purpose,
                 "dimension": result["dimension"],
                 "normalized": profile.normalize,
@@ -233,7 +237,7 @@ def test_embedding_model(profile_id: str, payload: EmbeddingTestRequest, state: 
             }
         finally:
             if settings.unload_embedding_model_after_use:
-                safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
+                _safe_unload_embedding_profile(state, profile, settings.local_model_device)
     except KeyError:
         raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
     except KnowledgeModelError as exc:
@@ -256,10 +260,12 @@ def create_embeddings(payload: EmbeddingsRequest, state: RuntimeState = Depends(
                 texts=payload.inputs,
                 purpose=payload.purpose,
                 device=settings.local_model_device,
+                provider_profile_store=state.provider_profiles,
+                repo_root=state.repo_root,
             )
         finally:
             if settings.unload_embedding_model_after_use:
-                safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
+                _safe_unload_embedding_profile(state, profile, settings.local_model_device)
     except KeyError:
         raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {payload.model_profile_id}")
     except KnowledgeModelError as exc:
@@ -332,6 +338,8 @@ def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_st
             max_chunks_per_knowledge_base=payload.max_chunks_per_knowledge_base,
             expand_query=payload.expand_query,
             query_expander=_api_query_expander(state, payload.session_id),
+            provider_profile_store=state.provider_profiles,
+            repo_root=state.repo_root,
         )
         response["context_preview"] = _context_preview_for_search_response(response, state)
         return response
@@ -703,7 +711,7 @@ def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends
                 results.append({"source_id": source.id, "status": "failed", "chunks": source.chunks, "error": exc.message})
     finally:
         if settings.unload_embedding_model_after_use:
-            safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
+            _safe_unload_embedding_profile(state, profile, settings.local_model_device)
     return {"knowledge_base_id": knowledge_base_id, "sources": results}
 
 
@@ -822,6 +830,8 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
                 profile=profile,
                 chunks=chunks,
                 device=settings.local_model_device,
+                provider_profile_store=state.provider_profiles,
+                repo_root=state.repo_root,
             )
         except KnowledgeModelError as exc:
             raise model_error_to_index_error(exc) from exc
@@ -839,7 +849,7 @@ def _index_prepared_source(knowledge_base_id: str, source_text, state: RuntimeSt
         raise
     finally:
         if unload_after_use and settings.unload_embedding_model_after_use:
-            safe_unload_embedding_model(state.knowledge_model_backend, profile.model_path, settings.local_model_device)
+            _safe_unload_embedding_profile(state, profile, settings.local_model_device)
 
 
 def _require_session(state: RuntimeState, session_id: str) -> None:
@@ -847,6 +857,52 @@ def _require_session(state: RuntimeState, session_id: str) -> None:
         state.sessions.get_session(session_id)
     except KeyError:
         raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
+
+
+def _normalize_embedding_profile_payload(values: dict, state: RuntimeState, partial: bool = False, existing: EmbeddingModelProfile | None = None) -> dict:
+    normalized = dict(values)
+    provider_profile_id = normalized.get("provider_profile_id", existing.provider_profile_id if existing is not None else None)
+    provider_model_id = str(normalized.get("provider_model_id", existing.provider_model_id if existing is not None else "") or "").strip()
+    model_path = str(normalized.get("model_path", existing.model_path if existing is not None else "") or "").strip()
+    if provider_profile_id:
+        try:
+            provider = state.provider_profiles.get(str(provider_profile_id))
+        except KeyError as exc:
+            raise ValueError("KNOWLEDGE_EMBEDDING_PROVIDER_NOT_FOUND") from exc
+        if provider.provider in {"internal_transformers", "internal_llama_cpp"}:
+            provider_model_id = normalize_internal_embedding_model_ref(provider_model_id)
+            normalized["provider_model_id"] = provider_model_id
+            if not model_path:
+                normalized["model_path"] = legacy_model_path_for_embedding_ref(provider_model_id)
+        elif provider.provider not in {"openai_compatible", "lm_studio", "ollama"}:
+            raise ValueError("KNOWLEDGE_EMBEDDING_PROVIDER_UNSUPPORTED")
+        else:
+            if not provider_model_id and not partial:
+                raise ValueError("KNOWLEDGE_EMBEDDING_PROVIDER_MODEL_REQUIRED")
+            if provider_model_id:
+                normalized["provider_model_id"] = provider_model_id
+            normalized.setdefault("model_path", "")
+    elif "model_path" in normalized or not partial:
+        normalized["model_path"] = normalize_model_path(model_path, "embeddings")
+    if "provider_profile_id" in normalized and not normalized.get("provider_profile_id"):
+        normalized["provider_profile_id"] = None
+    return normalized
+
+
+def _safe_unload_embedding_profile(state: RuntimeState, profile: EmbeddingModelProfile, device: str, warnings: list[str] | None = None) -> bool:
+    provider = None
+    if profile.provider_profile_id:
+        try:
+            provider = state.provider_profiles.get(profile.provider_profile_id)
+        except Exception:
+            provider = None
+    try:
+        model_path = unload_model_path_for_profile(profile, provider)
+    except Exception:
+        model_path = profile.model_path
+    if not model_path:
+        return False
+    return safe_unload_embedding_model(state.knowledge_model_backend, model_path, device, warnings)
 
 
 def _api_query_expander(state: RuntimeState, session_id: str | None):

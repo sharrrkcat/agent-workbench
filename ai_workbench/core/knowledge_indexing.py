@@ -947,6 +947,8 @@ def embed_chunks(
     profile: EmbeddingModelProfile,
     chunks: list[ChunkDraft],
     device: str,
+    provider_profile_store: Any | None = None,
+    repo_root: Any | None = None,
 ) -> dict:
     return embed_texts(
         backend=backend,
@@ -954,6 +956,8 @@ def embed_chunks(
         texts=[build_embedding_input("", chunk) for chunk in chunks],
         purpose="document",
         device=device,
+        provider_profile_store=provider_profile_store,
+        repo_root=repo_root,
     )
 
 

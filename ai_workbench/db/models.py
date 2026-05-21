@@ -266,7 +266,9 @@ class EmbeddingModelProfileRecord(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     alias: str = Field(index=True, unique=True)
-    model_path: str
+    model_path: str = ""
+    provider_profile_id: Optional[str] = Field(default=None, index=True)
+    provider_model_id: str = ""
     dimension: Optional[int] = None
     normalize: bool = True
     document_instruction: str = ""

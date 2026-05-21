@@ -52,7 +52,9 @@ class EmbeddingModelProfile(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     alias: str
-    model_path: str
+    model_path: str = ""
+    provider_profile_id: str | None = None
+    provider_model_id: str = ""
     dimension: int | None = Field(default=None, ge=1)
     normalize: StrictBool = True
     document_instruction: str = ""
@@ -80,13 +82,28 @@ class EmbeddingModelProfile(BaseModel):
     def _text(cls, value: Any) -> str:
         return "" if value is None else str(value)
 
+    @field_validator("model_path", "provider_model_id", mode="before")
+    @classmethod
+    def _path_text(cls, value: Any) -> str:
+        return "" if value is None else str(value).strip()
+
+    @field_validator("provider_profile_id", mode="before")
+    @classmethod
+    def _optional_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
 
 class EmbeddingModelProfileCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
     alias: str
-    model_path: str
+    model_path: str = ""
+    provider_profile_id: str | None = None
+    provider_model_id: str = ""
     dimension: int | None = Field(default=None, ge=1)
     normalize: StrictBool = True
     document_instruction: str = ""
@@ -104,6 +121,19 @@ class EmbeddingModelProfileCreate(BaseModel):
     def _alias(cls, value: str) -> str:
         return validate_alias(value)
 
+    @field_validator("model_path", "provider_model_id", mode="before")
+    @classmethod
+    def _path_text(cls, value: Any) -> str:
+        return "" if value is None else str(value).strip()
+
+    @field_validator("provider_profile_id", mode="before")
+    @classmethod
+    def _optional_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
 
 class EmbeddingModelProfilePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -111,6 +141,8 @@ class EmbeddingModelProfilePatch(BaseModel):
     name: str | None = None
     alias: str | None = None
     model_path: str | None = None
+    provider_profile_id: str | None = None
+    provider_model_id: str | None = None
     dimension: int | None = Field(default=None, ge=1)
     normalize: StrictBool | None = None
     document_instruction: str | None = None
@@ -132,6 +164,14 @@ class EmbeddingModelProfilePatch(BaseModel):
     @classmethod
     def _alias(cls, value: str | None) -> str | None:
         return validate_alias(value) if value is not None else None
+
+    @field_validator("provider_profile_id", mode="before")
+    @classmethod
+    def _optional_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
 
 KnowledgeIndexStatus = Literal["empty", "ready", "indexing", "failed", "needs_reindex"]
@@ -494,7 +534,7 @@ class MemoryKnowledgeStore(KnowledgeStore):
         existing = self.get_embedding_profile(profile_id)
         if "alias" in values and any(item.alias == values["alias"] and item.id != existing.id for item in self._embedding_profiles.values()):
             raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
-        stale_keys = {"model_path", "dimension", "normalize", "document_instruction"}
+        stale_keys = {"provider_profile_id", "provider_model_id", "model_path", "dimension", "normalize", "document_instruction", "query_instruction"}
         needs_reindex = any(key in values and getattr(existing, key) != values[key] for key in stale_keys)
         updated = EmbeddingModelProfile.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
         self._embedding_profiles[existing.id] = updated

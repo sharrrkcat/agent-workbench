@@ -41,6 +41,7 @@ def init_db(engine) -> None:
     ensure_message_speaker_columns(engine)
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
+    ensure_embedding_profile_columns(engine)
     ensure_knowledge_settings_columns(engine)
     ensure_knowledge_base_columns(engine)
     ensure_worldbook_settings_columns(engine)
@@ -191,6 +192,23 @@ def ensure_llm_profile_columns(engine) -> None:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(llm_profiles)").fetchall()}
         if "provider_profile_id" not in columns:
             connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN provider_profile_id VARCHAR"))
+
+
+def ensure_embedding_profile_columns(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "embedding_model_profiles" not in tables:
+            return
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(embedding_model_profiles)").fetchall()}
+        additions = {
+            "provider_profile_id": "VARCHAR",
+            "provider_model_id": "VARCHAR DEFAULT ''",
+        }
+        for column, ddl in additions.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE embedding_model_profiles ADD COLUMN {column} {ddl}"))
 
 
 def ensure_knowledge_settings_columns(engine) -> None:

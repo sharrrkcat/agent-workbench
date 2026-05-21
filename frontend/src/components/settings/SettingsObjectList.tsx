@@ -436,7 +436,7 @@ function EmbeddingProfileListItem({ profile, active, onClick }: { profile: Embed
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
       <div className="settings-object-copy">
         <strong>{profile.name || 'Untitled model'}</strong>
-        <small>{profile.alias || 'No profile key'} / {profile.model_path || 'No model path'}</small>
+        <small>{profile.alias || 'No profile key'} / {profile.provider_model_id || profile.model_path || 'No model path'}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>

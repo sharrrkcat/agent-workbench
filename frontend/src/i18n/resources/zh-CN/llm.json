@@ -95,6 +95,7 @@
     "llama_cpp": "llama.cpp server",
     "custom": "自定义",
     "internal_transformers": "内部 transformers",
-    "internal_llama_cpp": "内部 llama.cpp"
+    "internal_llama_cpp": "内部 llama.cpp",
+    "ollama": "Ollama"
   }
 }

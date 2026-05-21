@@ -13,6 +13,7 @@ LLM_PROFILE_PROVIDERS = (
     "lm_studio",
     "llama_cpp",
     "custom",
+    "ollama",
     "internal_transformers",
     "internal_llama_cpp",
 )
@@ -21,6 +22,7 @@ PROVIDER_PROFILE_PROVIDERS = (
     "lm_studio",
     "llama_cpp",
     "custom",
+    "ollama",
     "internal_transformers",
     "internal_llama_cpp",
 )
@@ -29,6 +31,7 @@ ProviderProfileProvider = Literal[
     "lm_studio",
     "llama_cpp",
     "custom",
+    "ollama",
     "internal_transformers",
     "internal_llama_cpp",
 ]

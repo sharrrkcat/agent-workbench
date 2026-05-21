@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -107,6 +108,8 @@ def patch_provider_profile(profile_id: str, payload: ProviderProfilePatchRequest
 def delete_provider_profile(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _get_provider_or_404(state, profile_id)
     used_by = [profile.id for profile in state.llm_profiles.list() if profile.provider_profile_id == profile_id]
+    if getattr(state, "knowledge", None) is not None:
+        used_by.extend([profile.id for profile in state.knowledge.list_embedding_profiles() if profile.provider_profile_id == profile_id])
     if used_by:
         raise_error(409, "LLM_PROVIDER_PROFILE_IN_USE", "Provider profile is used by model profiles.", {"model_profile_ids": used_by})
     state.provider_profiles.delete(profile_id)
@@ -137,7 +140,7 @@ def refresh_provider_models(profile_id: str, state: RuntimeState = Depends(get_s
         raise_error(400, "LLM_PROVIDER_PROFILE_DISABLED", f"Provider profile is disabled: {profile.name}", {"provider_profile_id": profile.id})
     try:
         if is_internal_provider(profile.provider):
-            inventory = scan_internal_provider_models(profile.provider)
+            inventory = scan_internal_provider_models(profile.provider, state.repo_root)
             return {
                 "success": True,
                 "provider_profile_id": profile.id,
@@ -146,6 +149,15 @@ def refresh_provider_models(profile_id: str, state: RuntimeState = Depends(get_s
                 "warnings": inventory["warnings"],
                 "backend": inventory["backend"],
                 "models_root": inventory["models_root"],
+            }
+        if profile.provider == "ollama":
+            models = _ollama_model_items(profile)
+            return {
+                "success": True,
+                "provider_profile_id": profile.id,
+                "provider": profile.provider,
+                "models": models,
+                "warnings": [],
             }
         runtime = state.runtimes.get_runtime("llm")
         models = _runtime_model_items(runtime, _provider_model_config(profile))
@@ -170,7 +182,7 @@ def test_provider_profile(profile_id: str, state: RuntimeState = Depends(get_sta
     profile = _get_provider_or_404(state, profile_id)
     try:
         if is_internal_provider(profile.provider):
-            inventory = scan_internal_provider_models(profile.provider)
+            inventory = scan_internal_provider_models(profile.provider, state.repo_root)
             available = bool(inventory["backend"].get("available"))
             return {
                 "success": available,
@@ -182,6 +194,9 @@ def test_provider_profile(profile_id: str, state: RuntimeState = Depends(get_sta
                 "models_root": inventory["models_root"],
                 "error_code": None if available else "INTERNAL_PROVIDER_DEPENDENCY_UNAVAILABLE",
             }
+        if profile.provider == "ollama":
+            models = _ollama_model_items(profile)
+            return {"success": True, "message": "Provider profile is reachable.", "base_url": profile.base_url, "models": [item["id"] for item in models]}
         runtime = state.runtimes.get_runtime("llm")
         models = _runtime_list_models(runtime, _provider_model_config(profile))
         return {"success": True, "message": "Provider profile is reachable.", "base_url": profile.base_url, "models": models}
@@ -216,6 +231,23 @@ def _provider_model_warnings(profile: ProviderProfileSchema) -> list[str]:
     if profile.provider == "llama_cpp":
         return ["llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed."]
     return []
+
+
+def _ollama_model_items(profile: ProviderProfileSchema) -> list[dict[str, Any]]:
+    with httpx.Client(timeout=float(profile.timeout_seconds or 60)) as client:
+        response = client.get(f"{profile.base_url.rstrip('/')}/api/tags")
+        response.raise_for_status()
+        data = response.json()
+    models = data.get("models") if isinstance(data, dict) else []
+    items: list[dict[str, Any]] = []
+    for item in models if isinstance(models, list) else []:
+        if isinstance(item, dict):
+            model_id = str(item.get("name") or item.get("model") or "").strip()
+        else:
+            model_id = str(item or "").strip()
+        if model_id:
+            items.append({"id": model_id, "name": model_id, "type": "unknown", "raw": {}})
+    return items
 
 
 def _validation_message(exc: ValidationError) -> str:
