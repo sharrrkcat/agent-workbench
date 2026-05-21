@@ -1591,6 +1591,7 @@ export type GeneralSettings = {
   intent_routing_chat_examples: string;
   intent_routing_image_generation_examples: string;
   intent_routing_knowledge_query_examples: string;
+  intent_routing_web_query_examples: string;
   intent_routing_agent_route_examples: string;
   intent_routing_command_like_examples: string;
 };

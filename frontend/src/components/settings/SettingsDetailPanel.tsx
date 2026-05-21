@@ -1464,6 +1464,7 @@ function GeneralIntentRoutingSettings({
           <TextAreaField label={t('settings:general.chatExamples')} value={values.intent_routing_chat_examples} onChange={(value) => setString('intent_routing_chat_examples', value)} />
           <TextAreaField label={t('settings:general.imageGenerationExamples')} value={values.intent_routing_image_generation_examples} onChange={(value) => setString('intent_routing_image_generation_examples', value)} />
           <TextAreaField label={t('settings:general.knowledgeQueryExamples')} value={values.intent_routing_knowledge_query_examples} onChange={(value) => setString('intent_routing_knowledge_query_examples', value)} />
+          <TextAreaField label={t('settings:general.webQueryExamples')} help={t('settings:general.webQueryExamplesHelp')} value={values.intent_routing_web_query_examples} onChange={(value) => setString('intent_routing_web_query_examples', value)} />
           <TextAreaField label={t('settings:general.agentRouteExamples')} value={values.intent_routing_agent_route_examples} onChange={(value) => setString('intent_routing_agent_route_examples', value)} />
           <TextAreaField label={t('settings:general.commandLikeExamples')} value={values.intent_routing_command_like_examples} onChange={(value) => setString('intent_routing_command_like_examples', value)} />
         </div>
@@ -1911,6 +1912,7 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_chat_examples: values.intent_routing_chat_examples,
     intent_routing_image_generation_examples: values.intent_routing_image_generation_examples,
     intent_routing_knowledge_query_examples: values.intent_routing_knowledge_query_examples,
+    intent_routing_web_query_examples: values.intent_routing_web_query_examples,
     intent_routing_agent_route_examples: values.intent_routing_agent_route_examples,
     intent_routing_command_like_examples: values.intent_routing_command_like_examples,
   };
@@ -2114,11 +2116,12 @@ function TextField({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
-function TextAreaField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function TextAreaField({ label, help, value, onChange }: { label: string; help?: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="config-field settings-config-field">
       <span>{label}</span>
       <textarea rows={5} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+      {help ? <small>{help}</small> : null}
     </label>
   );
 }

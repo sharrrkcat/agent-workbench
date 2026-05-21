@@ -163,6 +163,7 @@ class AppSettings(BaseModel):
     intent_routing_chat_examples: str = ""
     intent_routing_image_generation_examples: str = ""
     intent_routing_knowledge_query_examples: str = ""
+    intent_routing_web_query_examples: str = ""
     intent_routing_agent_route_examples: str = ""
     intent_routing_command_like_examples: str = ""
 
@@ -492,6 +493,7 @@ class AppSettingsPatch(BaseModel):
     intent_routing_chat_examples: str | None = None
     intent_routing_image_generation_examples: str | None = None
     intent_routing_knowledge_query_examples: str | None = None
+    intent_routing_web_query_examples: str | None = None
     intent_routing_agent_route_examples: str | None = None
     intent_routing_command_like_examples: str | None = None
 

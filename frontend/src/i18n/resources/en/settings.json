@@ -316,6 +316,8 @@
     "chatExamples": "Chat examples",
     "imageGenerationExamples": "Image generation examples",
     "knowledgeQueryExamples": "Knowledge query examples",
+    "webQueryExamples": "Web query examples",
+    "webQueryExamplesHelp": "One example per line. Helps recognize requests for current, recent, official, or web-searched information.",
     "agentRouteExamples": "Agent route examples",
     "commandLikeExamples": "Command-like examples",
     "oneExamplePerLine": "One example per line.",

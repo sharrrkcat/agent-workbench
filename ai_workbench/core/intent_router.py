@@ -52,6 +52,7 @@ CUSTOM_EXAMPLE_FIELDS = {
     "chat": "intent_routing_chat_examples",
     "image_generation": "intent_routing_image_generation_examples",
     "knowledge_query": "intent_routing_knowledge_query_examples",
+    "web_query": "intent_routing_web_query_examples",
     "agent_route": "intent_routing_agent_route_examples",
     "command_like": "intent_routing_command_like_examples",
 }

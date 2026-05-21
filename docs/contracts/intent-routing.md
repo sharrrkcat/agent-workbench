@@ -21,8 +21,9 @@ Routing.
 ## Modes And Eligibility
 
 Settings -> General -> Intent Routing owns the master switch, global mode,
-safe-auto switch, semantic thresholds, custom built-in-intent examples, and the
-semantic router Embedding Model Profile reference.
+safe-auto switch, semantic thresholds, custom built-in-intent examples
+(`chat`, `image_generation`, `knowledge_query`, `web_query`, `agent_route`,
+and `command_like`), and the semantic router Embedding Model Profile reference.
 
 Agent detail -> Intent Routing owns Prompt Agent effective entry overrides and
 Agent target hints. Agent target hints help classify diagnostic `agent_route`

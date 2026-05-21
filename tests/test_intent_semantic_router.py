@@ -1,6 +1,7 @@
 from ai_workbench.core.agent_registry import AgentRegistry
 from ai_workbench.core.capability_registry import CapabilityRegistry
 from ai_workbench.core.command_registry import CommandRegistry
+from ai_workbench.core.intent_specs import build_semantic_candidate_specs
 from ai_workbench.core.intent_semantic_router import SemanticRouter
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, MemoryKnowledgeStore
 from ai_workbench.core.settings import AppSettings
@@ -111,3 +112,17 @@ def test_semantic_router_recognizes_web_query_without_stealing_writing() -> None
     assert web["predicted_intent"] == "web_query"
     assert web["intent_group_scores"][0]["intent"] == "web_query"
     assert writing["predicted_intent"] != "web_query"
+
+
+def test_web_query_custom_examples_are_semantic_candidates() -> None:
+    settings = AppSettings(intent_routing_web_query_examples="check official release notes\n\nwhat changed today")
+
+    candidates = build_semantic_candidate_specs(settings=settings)
+
+    web_custom = [
+        candidate
+        for candidate in candidates
+        if candidate["intent"] == "web_query" and candidate["source"] == "custom"
+    ]
+    assert [candidate["text"] for candidate in web_custom] == ["check official release notes", "what changed today"]
+    assert all(candidate["field"] == "example" for candidate in web_custom)

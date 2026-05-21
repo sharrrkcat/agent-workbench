@@ -42,6 +42,8 @@ class FakeEmbeddingBackend:
 
 def _fake_vector(text: str) -> list[float]:
     value = text.casefold()
+    if "web_query:" in value and "market pulse" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
     if "image_generation:" in value:
         return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     if "knowledge_query:" in value:
@@ -66,6 +68,8 @@ def _fake_vector(text: str) -> list[float]:
         value = value.split("knowledge_base:", 1)[1]
     if any(token in value for token in ["image", "picture", "draw", "concept art"]):
         return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if "market pulse" in value:
+        return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
     if any(token in value for token in ["latest", "recent news", "current exchange rate", "联网", "搜索网页", "搜一下", "查一下", "最新", "今天日元"]):
         return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
     if any(token in value for token in ["knowledge", "documentation", "docs", "lore", "kb", "project", "stormtrooper", "say about", "star wars", "sw"]):
@@ -143,6 +147,7 @@ def test_utility_extractor_receives_compact_candidates() -> None:
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_utility_llm_model_path": "utility_llms/test-router",
             "intent_routing_knowledge_query_examples": "ask the lore binder",
+            "intent_routing_web_query_examples": "check official release notes",
         }
     )
     fixture.knowledge.create_knowledge_base(KnowledgeBase(name="Lore KB", aliases_text="lore, codex", embedding_model_profile_id=profile.id))
@@ -159,6 +164,7 @@ def test_utility_extractor_receives_compact_candidates() -> None:
     assert "slot_schema" in context["top_route_specs"][0]
     assert "examples" not in context["top_route_specs"][0]
     assert any(intent["id"] == "knowledge_query" and "ask the lore binder" in intent["examples"] for intent in context["intents"])
+    assert any(intent["id"] == "web_query" and "check official release notes" in intent["examples"] for intent in context["intents"])
     assert any(agent["id"] == "translate" and "translator" in agent["aliases"] for agent in context["agents"])
     assert any(kb["name"] == "Lore KB" and "lore" in kb["aliases"] for kb in context["knowledge_bases"])
     assert context["safety"]["command_like_auto_execute"] is False
@@ -197,6 +203,34 @@ def test_route_test_api_predicts_without_creating_messages_or_runs(tmp_path) -> 
     assert decision["would_execute"] is False
     assert decision["diagnostic_reason"] == "image_generation_action_routing_not_ready"
     assert decision["top_candidates"]
+    assert state.runs.list_all_runs() == []
+
+
+def test_route_test_uses_custom_web_query_examples_without_execution(tmp_path) -> None:
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), database_url=f"sqlite:///{tmp_path / 'route-test-web.db'}"))
+    state = client.app.state.runtime_state
+    profile = state.knowledge.create_embedding_profile(EmbeddingModelProfile(name="Test Embeddings", alias="test", model_path="embeddings/test"))
+    state.app_settings.patch({"intent_routing_embedding_model_profile_id": profile.id})
+    state.knowledge_model_backend = FakeEmbeddingBackend()
+    client.patch(
+        "/api/settings/general",
+        json={
+            "intent_routing_enabled": True,
+            "intent_routing_default_for_prompt_agents": True,
+            "intent_routing_mode": "auto",
+            "intent_routing_auto_route_safe_intents": True,
+            "intent_routing_web_query_examples": "market pulse brief",
+        },
+    )
+
+    response = client.post("/api/intent/test-route", json={"text": "market pulse brief for AI chips", "include_utility": False})
+
+    assert response.status_code == 200
+    decision = response.json()["decision"]
+    assert decision["predicted_intent"] == "web_query"
+    assert any(candidate.get("intent") == "web_query" and candidate.get("source") == "custom" for candidate in decision["top_candidates"])
+    assert decision["would_execute"] is False
+    assert decision["executed"] is False
     assert state.runs.list_all_runs() == []
     assert state.messages.list_all_messages() == []
 

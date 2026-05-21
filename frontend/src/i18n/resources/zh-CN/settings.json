@@ -233,6 +233,8 @@
     "chatExamples": "Chat examples",
     "imageGenerationExamples": "Image generation examples",
     "knowledgeQueryExamples": "Knowledge query examples",
+    "webQueryExamples": "Web 查询示例",
+    "webQueryExamplesHelp": "每行一个示例，用于帮助识别需要当前、最新、官方或网页信息的问题。",
     "agentRouteExamples": "Agent route examples",
     "commandLikeExamples": "Command-like examples",
     "oneExamplePerLine": "One example per line.",

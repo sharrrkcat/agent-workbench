@@ -371,8 +371,10 @@ Profile, Model Profile, AgentConfig, or CapabilityConfig. Full contract:
 ## Intent Routing
 
 General Intent Routing owns master enablement, global mode, safe-auto toggle,
-semantic thresholds, custom examples, Route Test controls, semantic router
-Embedding Model Profile reference, and compact Utility LLM status display.
+semantic thresholds, custom route examples for `chat`, `image_generation`,
+`knowledge_query`, `web_query`, `agent_route`, and `command_like`, Route Test
+controls, semantic router Embedding Model Profile reference, and compact Utility
+LLM status display.
 
 Prompt Agent overrides and target hints live in AgentConfig runtime fields. Full
 contract: [intent-routing.md](intent-routing.md).

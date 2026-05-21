@@ -109,6 +109,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_chat_examples"] == ""
     assert response.json()["intent_routing_image_generation_examples"] == ""
     assert response.json()["intent_routing_knowledge_query_examples"] == ""
+    assert response.json()["intent_routing_web_query_examples"] == ""
     assert response.json()["intent_routing_agent_route_examples"] == ""
     assert response.json()["intent_routing_command_like_examples"] == ""
     assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
@@ -194,6 +195,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "intent_routing_chat_examples": "keep chatting",
             "intent_routing_image_generation_examples": "paint a castle",
             "intent_routing_knowledge_query_examples": "ask the docs",
+            "intent_routing_web_query_examples": "check official release notes",
             "intent_routing_agent_route_examples": "send to translator",
             "intent_routing_command_like_examples": "free resources",
         },
@@ -278,6 +280,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["intent_routing_chat_examples"] == "keep chatting"
     assert patched.json()["intent_routing_image_generation_examples"] == "paint a castle"
     assert patched.json()["intent_routing_knowledge_query_examples"] == "ask the docs"
+    assert patched.json()["intent_routing_web_query_examples"] == "check official release notes"
     assert patched.json()["intent_routing_agent_route_examples"] == "send to translator"
     assert patched.json()["intent_routing_command_like_examples"] == "free resources"
 
@@ -424,6 +427,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["intent_routing_chat_examples"] == "keep chatting"
     assert restarted.get("/api/settings/general").json()["intent_routing_image_generation_examples"] == "paint a castle"
     assert restarted.get("/api/settings/general").json()["intent_routing_knowledge_query_examples"] == "ask the docs"
+    assert restarted.get("/api/settings/general").json()["intent_routing_web_query_examples"] == "check official release notes"
     assert restarted.get("/api/settings/general").json()["intent_routing_agent_route_examples"] == "send to translator"
     assert restarted.get("/api/settings/general").json()["intent_routing_command_like_examples"] == "free resources"
 
