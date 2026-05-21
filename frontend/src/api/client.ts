@@ -187,7 +187,7 @@ export const api = {
   testLlmProviderProfile: (profileId: string) =>
     request<LlmTestResult>(`/api/llm-provider-profiles/${profileId}/test`, { method: 'POST' }),
   listLlmProviderModels: (profileId: string) =>
-    request<{ success: boolean; provider_profile_id: string; provider: string; models: LlmProviderModel[]; warnings: string[] }>(`/api/llm-provider-profiles/${profileId}/refresh-models`, { method: 'POST' }),
+    request<{ success: boolean; provider_profile_id: string; provider: string; models: LlmProviderModel[]; warnings: string[]; backend?: Record<string, unknown>; models_root?: string }>(`/api/llm-provider-profiles/${profileId}/refresh-models`, { method: 'POST' }),
   refreshLlmProviderStatuses: (providerProfileIds?: string[]) =>
     request<LlmProviderStatusRefreshResponse>('/api/llm-provider-profiles/status/refresh', {
       method: 'POST',

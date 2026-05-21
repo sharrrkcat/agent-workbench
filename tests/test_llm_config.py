@@ -271,6 +271,49 @@ def test_provider_refresh_models_passes_provider_kind_to_runtime() -> None:
     assert response.json()["warnings"]
 
 
+def test_internal_provider_refresh_models_scans_safe_inventory(monkeypatch, tmp_path: Path) -> None:
+    import ai_workbench.core.provider_inventory as inventory_module
+
+    models_root = tmp_path / "data" / "models"
+    (models_root / "llms" / "qwen").mkdir(parents=True)
+    (models_root / "llms" / "qwen" / "config.json").write_text("{}", encoding="utf-8")
+    (models_root / "llms" / "gguf-only").mkdir()
+    (models_root / "llms" / "gguf-only" / "model.gguf").write_text("", encoding="utf-8")
+    (models_root / "llms" / "direct.gguf").write_text("", encoding="utf-8")
+    (models_root / "llms" / "qwen-gguf").mkdir()
+    (models_root / "llms" / "qwen-gguf" / "model.gguf").write_text("", encoding="utf-8")
+    (models_root / "embeddings" / "bge").mkdir(parents=True)
+    (models_root / "embeddings" / "bge" / "model.safetensors").write_text("", encoding="utf-8")
+    (models_root / "rerankers" / "ranker").mkdir(parents=True)
+    (models_root / "rerankers" / "ranker" / "sentence_bert_config.json").write_text("{}", encoding="utf-8")
+    (models_root / "utility_llms" / "old").mkdir(parents=True)
+    (models_root / "utility_llms" / "old" / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(inventory_module, "models_root_path", lambda root=None: models_root)
+
+    llm = ProviderModelRuntime()
+    client = TestClient(create_app(llm_runtime=llm, use_memory=True))
+    transformers = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Local transformers", "provider": "internal_transformers"},
+    ).json()
+    llama_cpp = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Local llama.cpp", "provider": "internal_llama_cpp"},
+    ).json()
+
+    transformers_payload = client.post(f"/api/llm-provider-profiles/{transformers['id']}/refresh-models").json()
+    llama_payload = client.post(f"/api/llm-provider-profiles/{llama_cpp['id']}/refresh-models").json()
+
+    assert transformers["base_url"] == ""
+    assert {item["id"] for item in transformers_payload["models"]} == {"llm/qwen", "embedding/bge", "reranker/ranker"}
+    assert all(item["source"] == "internal" for item in transformers_payload["models"])
+    assert all(not item["relative_path"].startswith("utility_llms") for item in transformers_payload["models"])
+    assert transformers_payload["warnings"] == ["legacy_utility_llms_not_scanned"]
+    assert {item["id"] for item in llama_payload["models"]} == {"llm/direct.gguf", "llm/qwen-gguf/model.gguf", "llm/gguf-only/model.gguf"}
+    assert all(item["backend"] == "internal_llama_cpp" for item in llama_payload["models"])
+    assert not llm.model_calls
+
+
 def test_builtin_llm_runtime_model_listing_provider_urls(monkeypatch) -> None:
     from capabilities.llm import CapabilityRuntime
     import capabilities.llm as llm_module

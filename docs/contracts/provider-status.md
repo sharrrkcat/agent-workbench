@@ -63,6 +63,27 @@ OpenAI-compatible providers:
 - Do not expose portable loaded/unloaded pool semantics and should not produce a
   yellow unloaded status.
 
+Internal providers:
+
+- `internal_transformers` and `internal_llama_cpp` are Provider Profile source
+  types for local model inventory. They scan fixed roots under `data/models`:
+  `llms`, `embeddings`, and `rerankers`.
+- Refresh/status checks are filesystem metadata and optional dependency
+  availability checks only. They must not load model weights, initialize torch,
+  initialize transformers pipelines, or initialize llama-cpp runtimes.
+- `internal_transformers` lists model folders that look like HF,
+  safetensors, sentence-transformers, or cross-encoder folders. It must not
+  list pure GGUF files as transformers models.
+- `internal_llama_cpp` lists `.gguf` files in the same three purpose roots.
+- Internal model refs use purpose prefixes: `llm/...`, `embedding/...`, and
+  `reranker/...`. Returned internal metadata may include `model_ref`,
+  `display_name`, `kind`, `source=internal`, `backend`, and safe
+  `relative_path`; it must not return absolute paths, file contents, secrets, or
+  full directory trees.
+- `data/models/utility_llms` remains owned by the Utility LLM contract and is
+  not scanned for Provider Profile inventory. If present, Provider Profile
+  inventory may return a compact `legacy_utility_llms_not_scanned` warning.
+
 ## UI Usage
 
 - Chat status dots and model dropdown cached status should prefer Model Profile

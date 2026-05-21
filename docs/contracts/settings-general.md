@@ -39,6 +39,12 @@ Settings -> Models owns shared model configuration pages:
 - LLM Model Profiles.
 - Embedding Model Profiles.
 
+Provider Profiles can represent external API providers or internal local model
+backends. Internal Provider Profiles use fixed local inventory roots under
+`data/models/llms`, `data/models/embeddings`, and `data/models/rerankers`; they
+do not add editable root paths and do not own per-model generation, embedding,
+or reranking parameters.
+
 ## Files
 
 General file settings control chat attachment uploads and Prompt Agent file

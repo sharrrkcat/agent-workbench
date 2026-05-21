@@ -16,7 +16,8 @@
     "testConnection": "测试连接",
     "testing": "测试中...",
     "newProfile": "新建配置",
-    "duplicate": "复制"
+    "duplicate": "复制",
+    "newProvider": "新建 Provider"
   },
   "labels": {
     "currentModelCapabilities": "当前模型能力",
@@ -49,7 +50,8 @@
     "vision": "Vision",
     "tools": "Tools",
     "reasoningOutput": "Reasoning 输出",
-    "streaming": "Streaming"
+    "streaming": "Streaming",
+    "localModelsRoot": "本地模型根目录"
   },
   "empty": {
     "noConfigFields": "此 Capability 没有可配置字段。",
@@ -74,7 +76,8 @@
     "manualModelId": "当 Provider 离线、不支持列出模型，或需要自定义 alias 时使用手动 Model ID。",
     "reasoningOutput": "Reasoning 输出只声明期望输出行为，不会改变 Provider 请求参数。",
     "profileKey": "Agent manifest 中通过 llm.profile 使用。当前映射到 API alias。",
-    "llamaCppAlias": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。"
+    "llamaCppAlias": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。",
+    "internalProviderRoot": "本地扫描 data/models/llms、data/models/embeddings 和 data/models/rerankers。Base URL 和 API key 不会使用。"
   },
   "results": {
     "providerReturnedNoModels": "Provider 没有返回模型。",
@@ -83,5 +86,13 @@
     "foundModels_plural": "找到 {{count}} 个模型。",
     "foundChatModels": "找到 {{count}} 个 chat/LLM 模型。",
     "foundChatModels_plural": "找到 {{count}} 个 chat/LLM 模型。"
+  },
+  "providers": {
+    "openai_compatible": "OpenAI-compatible",
+    "lm_studio": "LM Studio",
+    "llama_cpp": "llama.cpp server",
+    "custom": "自定义",
+    "internal_transformers": "内部 transformers",
+    "internal_llama_cpp": "内部 llama.cpp"
   }
 }

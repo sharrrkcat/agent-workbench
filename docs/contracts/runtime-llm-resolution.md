@@ -38,6 +38,11 @@ Models.
 Provider Profile means connection details: provider, base URL, API key, timeout,
 enabled state, and provider-specific metadata.
 
+Provider Profiles may also represent internal inventory backends
+(`internal_transformers` and `internal_llama_cpp`) for local model discovery.
+This inventory does not change the main LLM resolution order and does not mean
+LLM Model Profile runtime generation has switched to internal provider refs.
+
 Model Profile means user-facing model selection and behavior defaults: provider
 model id, stable profile key, capabilities, generation defaults, notes, and
 enabled state.

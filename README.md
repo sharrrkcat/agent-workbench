@@ -143,9 +143,9 @@ The Default model profile fallback lives in Settings -> General -> LLM & Prompts
 
 ## LLM Provider And Model Profiles
 
-Provider Profiles hold connection details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state.
+Provider Profiles hold model source details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. They can also represent internal local inventory backends that scan `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers` without loading model weights. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state.
 
-Provider status checks are available for configured providers and return structured reachability/model-availability information without exposing API keys. LM Studio, llama.cpp, and OpenAI-compatible providers each keep their existing status behavior.
+Provider status checks are available for configured providers and return structured reachability/model-availability information without exposing API keys or absolute local paths. LM Studio, llama.cpp, and OpenAI-compatible providers each keep their existing status behavior.
 
 Knowledge RAG v1 provides local embedding/reranker settings, embedding model profiles, Knowledge Bases, source indexing, retrieval search, session bindings, automatic context injection, and a thin Knowledge Capability. Full Knowledge contract: [docs/contracts/knowledge.md](docs/contracts/knowledge.md).
 

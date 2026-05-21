@@ -16,7 +16,16 @@
     "testConnection": "Test connection",
     "testing": "Testing...",
     "newProfile": "New profile",
+    "newProvider": "New provider",
     "duplicate": "Duplicate"
+  },
+  "providers": {
+    "openai_compatible": "OpenAI-compatible",
+    "lm_studio": "LM Studio",
+    "llama_cpp": "llama.cpp server",
+    "custom": "Custom",
+    "internal_transformers": "Internal transformers",
+    "internal_llama_cpp": "Internal llama.cpp"
   },
   "labels": {
     "currentModelCapabilities": "Current model capabilities",
@@ -32,6 +41,7 @@
     "timeout": "Timeout",
     "apiKey": "API key",
     "apiKeySet": "API key set",
+    "localModelsRoot": "Local models root",
     "availableModels": "Available models",
     "defaultModelProfile": "Default model profile",
     "status": "Status",
@@ -74,7 +84,8 @@
     "manualModelId": "Use manual Model ID when the provider is offline, does not support listing models, or when you need a custom alias.",
     "reasoningOutput": "Reasoning output declares expected output behavior only. It does not change provider request parameters.",
     "profileKey": "Used by agent manifests as llm.profile. This currently maps to API alias.",
-    "llamaCppAlias": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed."
+    "llamaCppAlias": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.",
+    "internalProviderRoot": "Scans data/models/llms, data/models/embeddings, and data/models/rerankers locally. Base URL and API key are not used."
   },
   "results": {
     "providerReturnedNoModels": "Provider returned no models.",

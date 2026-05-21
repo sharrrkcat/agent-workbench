@@ -28,8 +28,15 @@ chat-time scan/reindex, or Capability-owned retrieval/indexing backends.
 
 Local model directories are:
 
+- `data/models/llms/<model-folder-or-file>` for internal provider LLM
+  inventory.
 - `data/models/embeddings/<model-folder>`
 - `data/models/rerankers/<model-folder>`
+
+Provider Profiles can list local embedding and reranker inventory using
+`embedding/...` and `reranker/...` refs, but this round does not change
+Knowledge indexing, retrieval, embedding generation, reranking, or Embedding
+Model Profile schema.
 
 Optional dependencies include `sentence-transformers`, `torch`, and
 `transformers`. Missing optional dependencies must not break normal chat

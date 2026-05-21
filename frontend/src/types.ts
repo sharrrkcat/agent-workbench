@@ -216,6 +216,9 @@ export type LlmTestResult = {
   base_url: string;
   models?: string[];
   error_code?: string;
+  warnings?: string[];
+  backend?: Record<string, unknown>;
+  models_root?: string;
 };
 
 export type WebSearchDiagnosticResultItem = {
@@ -283,8 +286,14 @@ export type LlmProfile = {
 
 export type LlmProviderModel = {
   id: string;
+  model_ref?: string;
   name?: string | null;
   type?: 'llm' | 'embedding' | 'unknown' | string;
+  display_name?: string | null;
+  kind?: 'llm' | 'embedding' | 'reranker' | string;
+  source?: 'internal' | string;
+  backend?: string;
+  relative_path?: string;
   loaded?: boolean | null;
   loaded_instance_ids?: string[];
   capabilities?: {
@@ -311,8 +320,14 @@ export type LlmProviderStatusCode =
 
 export type LlmProviderStatusModel = {
   id: string;
+  model_ref?: string;
   name?: string | null;
   type?: 'llm' | 'embedding' | 'unknown' | string;
+  display_name?: string | null;
+  kind?: 'llm' | 'embedding' | 'reranker' | string;
+  source?: 'internal' | string;
+  backend?: string;
+  relative_path?: string;
   available?: boolean | null;
   loaded?: boolean | null;
   status?: LlmProviderStatusCode | string;
@@ -332,6 +347,8 @@ export type LlmProviderStatus = {
   checked_at: string;
   models: LlmProviderStatusModel[];
   warnings: string[];
+  backend?: Record<string, unknown>;
+  models_root?: string;
   error?: { code?: string; message?: string; raw?: string };
 };
 
@@ -342,7 +359,7 @@ export type LlmProviderStatusRefreshResponse = {
 export type LlmProviderProfile = {
   id: string;
   name: string;
-  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom';
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'internal_transformers' | 'internal_llama_cpp';
   base_url: string;
   api_key: string;
   api_key_set?: boolean;

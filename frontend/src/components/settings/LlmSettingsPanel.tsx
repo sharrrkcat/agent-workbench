@@ -11,7 +11,9 @@ import { SecretInput } from './SecretInput';
 import { stableConfigString, type ConfigValues } from './configUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
-const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom'] as const;
+const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'internal_transformers', 'internal_llama_cpp'] as const;
+const llmProfileProviderOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom'] as const;
+const internalProviderOptions = new Set<string>(['internal_transformers', 'internal_llama_cpp']);
 const profileDefaults: LlmProfileInput = {
   alias: '',
   name: '',
@@ -593,7 +595,9 @@ export function LlmProviderProfileDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SettingsErrorValue | null>(null);
   const [result, setResult] = useState<LlmTestResult | null>(null);
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<LlmProviderModel[]>([]);
+  const providerKind = String(draft.provider || 'openai_compatible');
+  const internalProvider = isInternalProvider(providerKind);
 
   useEffect(() => {
     setDraft(baseDraft);
@@ -672,18 +676,26 @@ export function LlmProviderProfileDetail({
     setError(null);
     try {
       const response = await api.listLlmProviderModels(selectedProfile.id);
-      setModels(response.models.map((model) => model.id).filter(Boolean));
-      const chatModels = response.models.filter(isChatModel);
-      const message = response.models.length && !chatModels.length
+      const modelItems = response.models.filter((model) => Boolean(model.id));
+      setModels(modelItems);
+      const chatModels = modelItems.filter(isChatModel);
+      const message = internalProvider
+        ? modelItems.length
+          ? t('llm:results.foundModels', { count: modelItems.length })
+          : t('llm:results.providerReturnedNoModels')
+        : modelItems.length && !chatModels.length
         ? t('llm:results.providerReturnedNoChatModels')
-        : response.models.length
-          ? t('llm:results.foundModels', { count: response.models.length })
+        : modelItems.length
+          ? t('llm:results.foundModels', { count: modelItems.length })
           : t('llm:results.providerReturnedNoModels');
       setResult({
         success: true,
         message,
         base_url: selectedProfile.base_url,
-        models: response.models.map((model) => model.id).filter(Boolean),
+        models: modelItems.map((model) => model.id),
+        warnings: response.warnings,
+        backend: response.backend,
+        models_root: response.models_root,
       });
     } catch (caught) {
       setError(toSettingsError(caught, 'Failed to refresh provider models.'));
@@ -702,8 +714,8 @@ export function LlmProviderProfileDetail({
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">{profileInitials(String(draft.name || 'Provider'))}</div>
           <div>
-            <h2>{String(draft.name || 'New provider')}</h2>
-            <p><span>{String(draft.provider || 'openai_compatible')}</span></p>
+            <h2>{String(draft.name || t('llm:actions.newProvider'))}</h2>
+            <p><span>{providerDisplayLabel(t, providerKind)}</span></p>
           </div>
         </div>
         <div className="settings-detail-actions">
@@ -729,18 +741,40 @@ export function LlmProviderProfileDetail({
             <TextField label={t('llm:labels.name')} value={draft.name} onChange={(name) => setDraft({ ...draft, name })} disabled={busy} />
             <label className="config-field settings-config-field">
               <span>{t('llm:labels.provider')}</span>
-              <select value={draft.provider || 'openai_compatible'} onChange={(event) => setDraft({ ...draft, provider: event.target.value as LlmProviderProfileInput['provider'] })} disabled={busy}>
-                {providerOptions.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+              <select
+                value={providerKind}
+                onChange={(event) => {
+                  const provider = event.target.value as LlmProviderProfileInput['provider'];
+                  setDraft({
+                    ...draft,
+                    provider,
+                    base_url: isInternalProvider(provider) ? '' : draft.base_url,
+                    api_key: isInternalProvider(provider) ? '' : draft.api_key,
+                  });
+                }}
+                disabled={busy}
+              >
+                {providerOptions.map((provider) => <option key={provider} value={provider}>{providerDisplayLabel(t, provider)}</option>)}
               </select>
             </label>
-            <TextField label={t('llm:labels.baseUrl')} value={draft.base_url} onChange={(base_url) => setDraft({ ...draft, base_url })} disabled={busy} />
-            <TextField label={t('llm:labels.apiKey')} value={draft.api_key} onChange={(api_key) => setDraft({ ...draft, api_key })} disabled={busy} secret hasSecret={Boolean(selectedProfile?.api_key_set)} />
+            {internalProvider ? (
+              <div className="settings-muted-copy">
+                <strong>{t('llm:labels.localModelsRoot')}</strong>
+                <span>{t('llm:help.internalProviderRoot')}</span>
+              </div>
+            ) : (
+              <>
+                <TextField label={t('llm:labels.baseUrl')} value={draft.base_url} onChange={(base_url) => setDraft({ ...draft, base_url })} disabled={busy} />
+                <TextField label={t('llm:labels.apiKey')} value={draft.api_key} onChange={(api_key) => setDraft({ ...draft, api_key })} disabled={busy} secret hasSecret={Boolean(selectedProfile?.api_key_set)} />
+              </>
+            )}
             <NumberField label={t('llm:labels.timeout')} value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
           </div>
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
+          {result?.warnings?.length ? <p className="settings-warning-text">{result.warnings.join(', ')}</p> : null}
           {models.length ? (
             <div className="settings-chip-row">
-              {models.map((model) => <span key={model}>{model}</span>)}
+              {models.map((model) => <span key={model.id}>{internalProvider ? `${model.kind || model.type || 'model'}: ` : ''}{model.id}</span>)}
             </div>
           ) : null}
         </section>
@@ -1097,7 +1131,7 @@ function ProfileForm({
       <label className="config-field settings-config-field">
         <span>Provider</span>
         <select value={draft.provider || 'openai_compatible'} onChange={(event) => set('provider', event.target.value)} disabled={disabled}>
-          {providerOptions.map((provider) => (
+          {llmProfileProviderOptions.map((provider) => (
             <option key={provider} value={provider}>
               {provider}
             </option>
@@ -1292,7 +1326,16 @@ function providerProfileBaseUrl(providerProfileId: string, providers: LlmProvide
 }
 
 function isChatModel(model: LlmProviderModel): boolean {
-  return String(model.type || 'unknown').toLowerCase() !== 'embedding';
+  const kind = String(model.kind || model.type || 'unknown').toLowerCase();
+  return kind !== 'embedding' && kind !== 'reranker';
+}
+
+function isInternalProvider(provider: string | undefined | null): boolean {
+  return internalProviderOptions.has(String(provider || ''));
+}
+
+function providerDisplayLabel(t: (key: string, options?: Record<string, unknown>) => string, provider: string): string {
+  return t(`llm:providers.${provider}`, { defaultValue: provider });
 }
 
 function providerHelperText(providerProfileId: string | undefined | null, providers: LlmProviderProfile[]) {

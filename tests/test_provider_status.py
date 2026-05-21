@@ -1,5 +1,6 @@
 from datetime import datetime
 import asyncio
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -365,6 +366,30 @@ def test_status_refresh_all_only_enabled_and_missing_is_clear() -> None:
     missing = client.post("/api/llm-provider-profiles/status/refresh", json={"provider_profile_ids": ["missing"]})
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "LLM_PROVIDER_PROFILE_NOT_FOUND"
+
+
+def test_internal_provider_status_uses_local_inventory(monkeypatch, tmp_path: Path) -> None:
+    import ai_workbench.core.provider_inventory as inventory_module
+
+    models_root = tmp_path / "data" / "models"
+    (models_root / "llms" / "tiny").mkdir(parents=True)
+    (models_root / "llms" / "tiny" / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(inventory_module, "models_root_path", lambda root=None: models_root)
+    client = TestClient(create_app(use_memory=True))
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Internal", "provider": "internal_transformers"},
+    ).json()
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["provider"] == "internal_transformers"
+    assert payload["reachable"] is True
+    assert payload["mode"] == "internal_transformers"
+    assert payload["models"][0]["id"] == "llm/tiny"
+    assert payload["models"][0]["relative_path"] == "llms/tiny"
+    assert "api_key" not in str(payload)
+    assert str(tmp_path) not in str(payload)
 
 
 def test_unload_unsupported_provider_returns_structured_error() -> None:

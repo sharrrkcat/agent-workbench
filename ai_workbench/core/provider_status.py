@@ -5,6 +5,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from ai_workbench.core.provider_inventory import is_internal_provider, scan_internal_provider_models
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.time import isoformat_utc, utc_now
 
@@ -86,6 +87,8 @@ def refresh_provider_status(provider: ProviderProfileSchema, model_profiles: Ite
 
     model_profiles = list(model_profiles)
     try:
+        if is_internal_provider(provider.provider):
+            return _refresh_internal_provider(provider, model_profiles, checked_at)
         if provider.provider == "lm_studio":
             return _refresh_lm_studio(provider, model_profiles, checked_at)
         if provider.provider == "llama_cpp":
@@ -451,6 +454,37 @@ def _refresh_openai_compatible(provider: ProviderProfileSchema, model_profiles: 
         models=models,
         warnings=[] if status != MODEL_STATUS_UNKNOWN else ["Provider returned an incomplete model list."],
     )
+
+
+def _refresh_internal_provider(provider: ProviderProfileSchema, model_profiles: list[LLMProfileSchema], checked_at: str) -> Dict[str, Any]:
+    inventory = scan_internal_provider_models(provider.provider)
+    provider_models = [
+        {
+            **item,
+            "available": True,
+            "status": READY,
+        }
+        for item in inventory["models"]
+    ]
+    models = _map_model_profiles(model_profiles, provider_models, reliable=True, ready_when_available=True)
+    if not model_profiles:
+        models = provider_models
+    dependency_available = bool(inventory["backend"].get("available"))
+    warnings = list(inventory["warnings"])
+    if not dependency_available:
+        warnings.append("internal_provider_dependency_unavailable")
+    payload = _provider_payload(
+        provider=provider,
+        reachable=True,
+        status=_aggregate_model_status(models) if dependency_available else MODEL_STATUS_UNKNOWN,
+        mode=provider.provider,
+        checked_at=checked_at,
+        models=models,
+        warnings=warnings,
+    )
+    payload["backend"] = inventory["backend"]
+    payload["models_root"] = inventory["models_root"]
+    return payload
 
 
 def _provider_payload(

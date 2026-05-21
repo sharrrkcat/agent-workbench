@@ -8,6 +8,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.configs import _runtime_list_models, _runtime_model_items, _safe_llm_error
 from ai_workbench.core.config_schema import MASKED_SECRET
+from ai_workbench.core.provider_inventory import is_internal_provider, scan_internal_provider_models
 from ai_workbench.core.provider_status import ProviderStatusError, refresh_provider_status, refresh_provider_statuses
 from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
 from ai_workbench.core.time import utc_now
@@ -135,6 +136,17 @@ def refresh_provider_models(profile_id: str, state: RuntimeState = Depends(get_s
     if not profile.enabled:
         raise_error(400, "LLM_PROVIDER_PROFILE_DISABLED", f"Provider profile is disabled: {profile.name}", {"provider_profile_id": profile.id})
     try:
+        if is_internal_provider(profile.provider):
+            inventory = scan_internal_provider_models(profile.provider)
+            return {
+                "success": True,
+                "provider_profile_id": profile.id,
+                "provider": profile.provider,
+                "models": inventory["models"],
+                "warnings": inventory["warnings"],
+                "backend": inventory["backend"],
+                "models_root": inventory["models_root"],
+            }
         runtime = state.runtimes.get_runtime("llm")
         models = _runtime_model_items(runtime, _provider_model_config(profile))
         return {
@@ -157,6 +169,19 @@ def refresh_provider_models(profile_id: str, state: RuntimeState = Depends(get_s
 def test_provider_profile(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     profile = _get_provider_or_404(state, profile_id)
     try:
+        if is_internal_provider(profile.provider):
+            inventory = scan_internal_provider_models(profile.provider)
+            available = bool(inventory["backend"].get("available"))
+            return {
+                "success": available,
+                "message": "Local model inventory is available." if available else "Local model directories are available; optional backend dependency is unavailable.",
+                "base_url": "",
+                "models": [item["id"] for item in inventory["models"]],
+                "warnings": inventory["warnings"],
+                "backend": inventory["backend"],
+                "models_root": inventory["models_root"],
+                "error_code": None if available else "INTERNAL_PROVIDER_DEPENDENCY_UNAVAILABLE",
+            }
         runtime = state.runtimes.get_runtime("llm")
         models = _runtime_list_models(runtime, _provider_model_config(profile))
         return {"success": True, "message": "Provider profile is reachable.", "base_url": profile.base_url, "models": models}
