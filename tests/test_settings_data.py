@@ -99,7 +99,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["intent_routing_confirm_uncertain"] is True
     assert response.json()["intent_routing_embedding_model_profile_id"] is None
     assert "intent_routing_embedding_model_path" not in response.json()
-    assert response.json()["intent_routing_utility_llm_backend"] == "transformers"
+    assert response.json()["intent_routing_utility_llm_backend"] == "model_profile"
     assert response.json()["intent_routing_utility_llm_model_profile_id"] is None
     assert response.json()["intent_routing_utility_llm_model_path"] == ""
     assert response.json()["intent_routing_utility_llm_context_size"] == 4096

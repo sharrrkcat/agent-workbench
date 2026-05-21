@@ -12,7 +12,7 @@ Utility LLM is:
 
 - a core runtime service.
 - an internal short-call helper.
-- optionally backed by local model files or an existing Model Profile.
+- backed by a selected enabled LLM Model Profile.
 - suitable for simple JSON slots, query extraction, and low-risk auxiliary
   judgments.
 
@@ -38,34 +38,31 @@ and fixed JSON schema/safety instructions. The configured body can tune
 criteria; it cannot override validation, required fields, allowed enum values,
 or metadata compactness rules.
 
-It may reference a Model Profile as a backend, but that reference does not make
+It references a Model Profile as its backend, but that reference does not make
 Utility LLM an owner of provider/model configuration and does not mutate main
 LLM resolution.
 
-## Backends
+## Backend
 
-Supported backends:
+The supported primary backend is an existing enabled LLM Model Profile selected
+in Settings -> General -> Utility LLM. Local Utility models should be placed
+under `data/models/llms`, discovered through an internal Provider Profile, and
+selected through an LLM Model Profile.
 
-- `transformers`: local Hugging Face / safetensors folder.
-- `llama_cpp`: local GGUF file through optional `llama-cpp-python`.
-- `model_profile`: existing LLM Model Profile for an internal short call.
-
-Model path contract:
-
-- `transformers`: `utility_llms/<folder>`
-- `llama_cpp`: `utility_llms/<model-folder>/<file>.gguf`
-- root-level GGUF files directly under `utility_llms` are ignored/invalid.
-- `model_profile` does not require a local Utility LLM path.
-
-Local paths are under `data/models/utility_llms`. The app never downloads Utility
-LLM files, installs optional dependencies, or registers GGUF files as Provider
-Profiles or Model Profiles.
+Legacy `transformers` and `llama_cpp` Utility backend fields and
+`data/models/utility_llms` paths may remain in stored settings for compatibility.
+They are deprecated, not shown as the primary UI flow, and must not be silently
+cleared, moved, or scanned as new Provider Profile inventory. If a legacy
+`utility_llms/...` path is present, status/UI should return a compact migration
+warning telling the user to place the model under `data/models/llms` and create
+an internal Provider Profile plus LLM Model Profile.
 
 ## Settings Ownership
 
-Settings -> General -> Utility LLM owns backend, local model path or Model
-Profile reference, device, runtime options, llama.cpp options, scan/status/test
-controls, and unload controls.
+Settings -> General -> Utility LLM owns the Utility model profile reference,
+status/test controls, and supported unload controls. Deprecated local backend,
+path, device, and llama.cpp option fields may remain as legacy storage but are
+not the primary configuration surface.
 
 Settings -> General -> Intent Routing may show a compact Utility LLM status
 summary, but it does not own backend/model/device/options.
@@ -81,19 +78,20 @@ Utility LLM APIs:
 | endpoint | responsibility |
 | --- | --- |
 | `GET /api/intent/utility-llm/status` | reports compact configuration, availability, loaded state, backend status, and public Model Profile identifiers when relevant |
-| `GET /api/intent/utility-llm/models/scan` | scans local `data/models/utility_llms` folders without loading weights, downloading files, installing dependencies, or creating records |
+| `GET /api/intent/utility-llm/models/scan` | legacy diagnostic scan for old `data/models/utility_llms` folders; not the primary configuration flow |
 | `POST /api/intent/utility-llm/test-title` | tests configured title generation behavior and returns compact title/error data |
 | `POST /api/intent/utility-llm/test-json` | tests strict JSON extraction and returns compact parsed slots/error data |
-| `POST /api/intent/utility-llm/unload` | releases only local Utility LLM caches |
+| `POST /api/intent/utility-llm/unload` | best-effort release for local caches owned by the selected internal LLM Model Profile |
 
 `POST /api/intent/test-route` may use Utility LLM when `include_utility` is
 requested and route gates require it, but Route Test remains an Intent Routing
 diagnostic API. It must not execute commands, create messages/runs, run
 Knowledge retrieval, or mutate session state.
 
-The Utility LLM unload endpoint releases only local Utility LLM caches. It does
-not unload the main LLM, embeddings, reranker, or ComfyUI. For `model_profile`,
-it returns a no-local-cache style result and does not call global LLM unload.
+The Utility LLM unload endpoint releases only local caches for the configured
+Utility model profile when that profile uses an internal local provider. It does
+not unload embeddings, reranker, ComfyUI, or unrelated main-response models. For
+external Model Profiles it returns a no-local-cache style result.
 
 Common status/test reason codes include:
 
@@ -110,11 +108,13 @@ Common status/test reason codes include:
 - `model_profile_generation_failed`
 - `utility_llm_invalid_json`
 - `no_local_utility_cache`
+- `legacy_utility_backend_deprecated`
+- `legacy_utility_llms_not_migrated`
 
-## Model Profile Backend
+## Model Profile Calls
 
-The `model_profile` backend performs an internal non-streaming deterministic
-short call through an existing Model Profile. It must not:
+Utility LLM performs an internal non-streaming deterministic short call through
+the selected Model Profile. It must not:
 
 - create a visible message.
 - create an Agent run.

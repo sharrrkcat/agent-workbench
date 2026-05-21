@@ -38,14 +38,25 @@ Models.
 Provider Profile means connection details: provider, base URL, API key, timeout,
 enabled state, and provider-specific metadata.
 
-Provider Profiles may also represent internal inventory backends
-(`internal_transformers` and `internal_llama_cpp`) for local model discovery.
-This inventory does not change the main LLM resolution order and does not mean
-LLM Model Profile runtime generation has switched to internal provider refs.
+Provider Profiles may also represent internal local LLM backends
+(`internal_transformers` and `internal_llama_cpp`). LLM Model Profiles may
+reference those providers with a `provider_model_id` / `model_id` value that
+starts with `llm/`, resolved under `data/models/llms`. Internal provider
+inventory can also list `embedding/` and `reranker/` refs for future profile
+types, but LLM Model Profiles must not select those refs.
 
 Model Profile means user-facing model selection and behavior defaults: provider
 model id, stable profile key, capabilities, generation defaults, notes, and
 enabled state.
+
+Internal LLM Model Profile runtime support is metadata-only until generation:
+startup and Settings loading must not import torch, transformers, or
+llama-cpp-python. Generation through `internal_llama_cpp` requires a `.gguf`
+`llm/...` ref and optional `llama-cpp-python`; generation through
+`internal_transformers` requires a model directory `llm/...` ref plus optional
+`transformers` and `torch`. Internal adapters do not support vision, tools, or
+provider function calling in this round, and should not claim streaming support
+unless an adapter explicitly implements and tests it.
 
 Composer `Default` means the Agent default resolved model. It is not an
 additional Model Profile.
@@ -102,8 +113,10 @@ Core Memory, Worldbook, and Knowledge may be injected into eligible Script Agent
 ## Utility LLM And Titles
 
 Utility LLM does not participate in main LLM resolution. It is configured by
-General settings and may use `transformers`, `llama_cpp`, or a direct
-`model_profile` backend. It does not change the user's selected main model.
+General settings and uses a selected enabled LLM Model Profile for internal
+short calls. Legacy local Utility LLM backend fields may still be read for
+compatibility warnings, but they are not the primary runtime selector. Utility
+LLM does not change the user's selected main model.
 Full behavior: [utility-llm.md](utility-llm.md).
 
 Page Excerpt Gate has two internal Model Profile resolution modes outside the

@@ -967,8 +967,7 @@ async def _maybe_apply_utility_slots(
 def _utility_available(utility_llm_service: Any, settings: Any) -> tuple[bool, str | None]:
     if utility_llm_service is None or settings is None:
         return False, "utility_llm_unavailable"
-    backend = str(getattr(settings, "intent_routing_utility_llm_backend", "transformers") or "transformers")
-    configured = bool(getattr(settings, "intent_routing_utility_llm_model_profile_id", None)) if backend == "model_profile" else bool(getattr(settings, "intent_routing_utility_llm_model_path", ""))
+    configured = bool(getattr(settings, "intent_routing_utility_llm_model_profile_id", None))
     if not configured:
         return False, "utility_llm_required"
     status = getattr(utility_llm_service, "status", None)

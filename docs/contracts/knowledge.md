@@ -37,6 +37,8 @@ Provider Profiles can list local embedding and reranker inventory using
 `embedding/...` and `reranker/...` refs, but this round does not change
 Knowledge indexing, retrieval, embedding generation, reranking, or Embedding
 Model Profile schema.
+Internal LLM Model Profile support for `llm/...` refs is owned by the runtime
+LLM resolution contract and does not change Knowledge behavior.
 
 Optional dependencies include `sentence-transformers`, `torch`, and
 `transformers`. Missing optional dependencies must not break normal chat

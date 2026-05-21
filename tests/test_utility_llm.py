@@ -53,7 +53,7 @@ def test_status_unconfigured_returns_unavailable() -> None:
     assert response.status_code == 200
     assert response.json()["configured"] is False
     assert response.json()["available"] is False
-    assert response.json()["reason"] == "model_path_not_configured"
+    assert response.json()["reason"] == "model_profile_not_configured"
 
 
 def test_api_test_endpoints_use_runtime_utility_service() -> None:
@@ -277,7 +277,7 @@ def test_scan_utility_models_returns_hf_and_nested_gguf(tmp_path: Path) -> None:
     assert "root_gguf_ignored" in result["warnings"]
 
 
-def test_llama_cpp_status_missing_dependency_does_not_fail_startup(tmp_path: Path) -> None:
+def test_legacy_llama_cpp_settings_report_migration_warning(tmp_path: Path) -> None:
     service = UtilityLLMService(tmp_path)
     settings = AppSettings(
         intent_routing_utility_llm_backend="llama_cpp",
@@ -286,12 +286,14 @@ def test_llama_cpp_status_missing_dependency_does_not_fail_startup(tmp_path: Pat
 
     status = service.status(settings)
 
-    assert status["backend"] == "llama_cpp"
+    assert status["backend"] == "model_profile"
     assert status["available"] is False
-    assert status["reason"] in {"llama_cpp_unavailable", "model_not_found"}
+    assert status["reason"] == "model_profile_not_configured"
+    assert "legacy_utility_backend_deprecated" in status["warnings"]
+    assert "legacy_utility_llms_not_migrated" in status["warnings"]
 
 
-def test_status_reports_backend_path_mismatch() -> None:
+def test_status_ignores_legacy_backend_path_for_primary_profile_backend() -> None:
     service = UtilityLLMService()
     settings = SimpleNamespace(
         intent_routing_utility_llm_backend="transformers",
@@ -305,53 +307,8 @@ def test_status_reports_backend_path_mismatch() -> None:
     status = service.status(settings)
 
     assert status["available"] is False
-    assert status["reason"] == "backend_model_path_mismatch"
-
-
-def test_llama_cpp_fake_backend_generates_title_and_json(monkeypatch, tmp_path: Path) -> None:
-    utility_root = tmp_path / "data" / "models" / "utility_llms" / "tiny"
-    utility_root.mkdir(parents=True)
-    (utility_root / "tiny.gguf").write_bytes(b"fake")
-    module = ModuleType("llama_cpp")
-
-    class FakeLlama:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        def create_chat_completion(self, messages, max_tokens, temperature, stop):
-            prompt = messages[0]["content"]
-            if "one key: title" in prompt:
-                return {"choices": [{"message": {"content": '{"title":"Tiny Title"}'}}]}
-            return {"choices": [{"message": {"content": '{"intent":"knowledge_query","confidence":0.88,"kb_hint":"KB","query":"Q"}'}}]}
-
-    module.Llama = FakeLlama
-    monkeypatch.setitem(sys.modules, "llama_cpp", module)
-    original_find_spec = __import__("importlib").util.find_spec
-
-    def fake_find_spec(name):
-        if name == "llama_cpp":
-            return object()
-        return original_find_spec(name)
-
-    monkeypatch.setattr("importlib.util.find_spec", fake_find_spec)
-    service = UtilityLLMService(tmp_path)
-    settings = AppSettings(
-        intent_routing_utility_llm_backend="llama_cpp",
-        intent_routing_utility_llm_model_path="utility_llms/tiny/tiny.gguf",
-        intent_routing_utility_llm_context_size=1024,
-        intent_routing_utility_llm_gpu_layers=0,
-        intent_routing_utility_llm_threads=2,
-    )
-
-    title = run(service.generate_title("hello", settings))
-    extracted = run(service.extract_intent_json("ask kb", settings))
-    unloaded = service.unload()
-
-    assert title["title"] == "Tiny Title"
-    assert title["backend"] == "utility_llm:llama_cpp"
-    assert extracted["intent"] == "knowledge_query"
-    assert extracted["kb_hint"] == "KB"
-    assert unloaded["removed"] == 1
+    assert status["reason"] == "model_profile_not_configured"
+    assert "legacy_utility_backend_deprecated" in status["warnings"]
 
 
 def test_json_extractor_validation_clamps_and_filters_slots() -> None:
@@ -498,7 +455,7 @@ def test_title_generation_prefers_utility_llm_when_available() -> None:
     fixture = PromptRuntimeFixture(llm=llm)
     utility = FakeUtilityLLM(title="Utility Session")
     fixture.agent_runner.utility_llm_service = utility
-    fixture.app_settings.patch({"auto_generate_session_titles": True, "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B"})
+    fixture.app_settings.patch({"auto_generate_session_titles": True, "intent_routing_utility_llm_model_profile_id": "fake-utility-profile"})
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
 
     result = run(fixture.runtime.handle_input(session, "hello"))
@@ -509,7 +466,7 @@ def test_title_generation_prefers_utility_llm_when_available() -> None:
     metadata = fixture.runs.get_run(result.run_id).metadata["title_generation"]
     assert metadata["backend"] == "utility_llm"
     assert metadata["fallback_used"] is False
-    assert metadata["utility_model_path"] == "utility_llms/Qwen3-0.6B"
+    assert metadata.get("utility_model_path") in {None, ""}
 
 
 def test_title_generation_falls_back_to_model_profile_when_utility_fails() -> None:
@@ -517,7 +474,7 @@ def test_title_generation_falls_back_to_model_profile_when_utility_fails() -> No
     fixture = PromptRuntimeFixture(llm=llm)
     set_chat_title_profile(fixture)
     fixture.agent_runner.utility_llm_service = FakeUtilityLLM(fail_title=True)
-    fixture.app_settings.patch({"auto_generate_session_titles": True, "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B"})
+    fixture.app_settings.patch({"auto_generate_session_titles": True, "intent_routing_utility_llm_model_profile_id": "fake-utility-profile"})
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
 
     result = run(fixture.runtime.handle_input(session, "hello"))
@@ -570,7 +527,7 @@ def test_intent_shadow_uses_utility_extractor_for_slots_without_reroute() -> Non
     fixture.app_settings.patch({
         "intent_routing_enabled": True,
         "intent_routing_default_for_prompt_agents": True,
-        "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B",
+        "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
     })
     session = fixture.sessions.create_session(default_agent_id="chat")
 
@@ -591,7 +548,7 @@ def test_intent_shadow_utility_failure_records_slots_failed_without_rule_based_f
     fixture.app_settings.patch({
         "intent_routing_enabled": True,
         "intent_routing_default_for_prompt_agents": True,
-        "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B",
+        "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
     })
     session = fixture.sessions.create_session(default_agent_id="chat")
 

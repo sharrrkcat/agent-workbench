@@ -77,7 +77,9 @@
     "reasoningOutput": "Reasoning 输出只声明期望输出行为，不会改变 Provider 请求参数。",
     "profileKey": "Agent manifest 中通过 llm.profile 使用。当前映射到 API alias。",
     "llamaCppAlias": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。",
-    "internalProviderRoot": "本地扫描 data/models/llms、data/models/embeddings 和 data/models/rerankers。Base URL 和 API key 不会使用。"
+    "llamaCppProviderModelList": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。",
+    "internalProviderRoot": "本地扫描 data/models/llms、data/models/embeddings 和 data/models/rerankers。Base URL 和 API key 不会使用。",
+    "internalLlmProfilesOnly": "LLM Model Profiles 只能选择此内部 provider 下的 llm/ 模型 ref。"
   },
   "results": {
     "providerReturnedNoModels": "Provider 没有返回模型。",

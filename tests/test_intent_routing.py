@@ -145,7 +145,7 @@ def test_utility_extractor_receives_compact_candidates() -> None:
         {
             "intent_routing_enabled": True,
             "intent_routing_default_for_prompt_agents": True,
-            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+            "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
             "intent_routing_knowledge_query_examples": "ask the lore binder",
             "intent_routing_web_query_examples": "check official release notes",
         }
@@ -293,7 +293,7 @@ def test_route_test_api_reports_web_query_signal_without_direct_search_command(t
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
             "intent_routing_auto_route_safe_intents": True,
-            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+            "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
         },
     )
 
@@ -333,7 +333,7 @@ def test_route_test_web_query_missing_query_reports_validator_reason(tmp_path) -
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
             "intent_routing_auto_route_safe_intents": True,
-            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+            "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
         },
     )
 

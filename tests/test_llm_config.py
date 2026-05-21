@@ -719,6 +719,176 @@ def test_missing_and_disabled_provider_profile_raise_clear_errors() -> None:
         raise AssertionError("expected disabled provider profile error")
 
 
+def test_internal_provider_profile_resolves_without_base_url() -> None:
+    providers = ProviderProfileStore()
+    providers.create(ProviderProfileSchema(id="internal-provider", name="Internal", provider="internal_llama_cpp", base_url=""))
+    models = LLMProfileStore()
+    models.create(
+        LLMProfileSchema(
+            id="internal-model",
+            alias="internal_model",
+            name="Internal Model",
+            provider_profile_id="internal-provider",
+            model_id="llm/tiny/model.gguf",
+            supports_streaming=False,
+        )
+    )
+
+    config = resolve_llm_config(
+        capability_schema=llm_capability(),
+        llm_profile_store=models,
+        provider_profile_store=providers,
+        session_llm_profile_id="internal-model",
+    )
+
+    assert config.values["provider"] == "internal_llama_cpp"
+    assert config.values["model"] == "llm/tiny/model.gguf"
+    assert config.values["base_url"] == ""
+    assert config.values["supports_streaming"] is False
+    assert config.metadata["provider_profile_id"] == "internal-provider"
+
+
+def test_internal_provider_profile_rejects_non_llm_ref() -> None:
+    providers = ProviderProfileStore()
+    providers.create(ProviderProfileSchema(id="internal-provider", name="Internal", provider="internal_transformers", base_url=""))
+    models = LLMProfileStore()
+    models.create(
+        LLMProfileSchema(
+            id="bad-internal-model",
+            alias="bad_internal_model",
+            name="Bad Internal Model",
+            provider_profile_id="internal-provider",
+            model_id="embedding/tiny",
+        )
+    )
+
+    try:
+        resolve_llm_config(
+            capability_schema=llm_capability(),
+            llm_profile_store=models,
+            provider_profile_store=providers,
+            session_llm_profile_id="bad-internal-model",
+        )
+    except Exception as exc:
+        assert getattr(exc, "code") == "LLM_PROFILE_INVALID"
+    else:
+        raise AssertionError("expected internal non-LLM ref to be rejected")
+
+
+def test_internal_llama_cpp_runtime_generates_with_fake_backend(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    from types import ModuleType
+
+    import capabilities.llm as llm_module
+
+    model_path = tmp_path / "tiny.gguf"
+    model_path.write_bytes(b"fake")
+    module = ModuleType("llama_cpp")
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def create_chat_completion(self, messages, max_tokens, temperature, top_p, stop):
+            assert messages[0]["content"] == "hello"
+            assert max_tokens == 32
+            return {"choices": [{"message": {"content": "internal llama ok"}}]}
+
+    module.Llama = FakeLlama
+    monkeypatch.setitem(sys.modules, "llama_cpp", module)
+    monkeypatch.setattr(llm_module.importlib.util, "find_spec", lambda name: object() if name == "llama_cpp" else None)
+    monkeypatch.setattr(llm_module, "resolve_internal_llm_model_ref", lambda provider, model_ref: model_path)
+    llm_module.unload_internal_model()
+
+    result = llm_module.CapabilityRuntime().chat_raw(
+        messages=[{"role": "user", "content": "hello"}],
+        model_config={"provider": "internal_llama_cpp", "model": "llm/tiny.gguf", "model_id": "llm/tiny.gguf", "max_tokens": 32},
+    )
+
+    assert result["content"] == "internal llama ok"
+    assert llm_module.internal_model_loaded("internal_llama_cpp", "llm/tiny.gguf") is True
+    assert llm_module.unload_internal_model("internal_llama_cpp", "llm/tiny.gguf") == 1
+
+
+def test_internal_transformers_runtime_generates_with_fake_backend(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    from types import ModuleType
+
+    import capabilities.llm as llm_module
+
+    model_dir = tmp_path / "tiny-hf"
+    model_dir.mkdir()
+    transformers = ModuleType("transformers")
+    torch = ModuleType("torch")
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return False
+
+        @staticmethod
+        def empty_cache():
+            return None
+
+    class FakeTensor:
+        shape = (1, 2)
+
+        def to(self, device):
+            return self
+
+    class FakeGenerated:
+        def __getitem__(self, item):
+            return [1, 2, 3]
+
+    class FakeTokenizer:
+        eos_token_id = 0
+
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return cls()
+
+        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, **kwargs):
+            return "rendered"
+
+        def __call__(self, rendered, return_tensors):
+            return {"input_ids": FakeTensor()}
+
+        def decode(self, generated, skip_special_tokens=True):
+            return "internal transformers ok"
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return cls()
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return None
+
+        def generate(self, **kwargs):
+            return [FakeGenerated()]
+
+    torch.cuda = FakeCuda
+    transformers.AutoTokenizer = FakeTokenizer
+    transformers.AutoModelForCausalLM = FakeModel
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    monkeypatch.setattr(llm_module.importlib.util, "find_spec", lambda name: object() if name in {"torch", "transformers"} else None)
+    monkeypatch.setattr(llm_module, "resolve_internal_llm_model_ref", lambda provider, model_ref: model_dir)
+    llm_module.unload_internal_model()
+
+    result = llm_module.CapabilityRuntime().chat_raw(
+        messages=[{"role": "user", "content": "hello"}],
+        model_config={"provider": "internal_transformers", "model": "llm/tiny-hf", "model_id": "llm/tiny-hf", "max_tokens": 16},
+    )
+
+    assert result["content"] == "internal transformers ok"
+    assert llm_module.internal_model_loaded("internal_transformers", "llm/tiny-hf") is True
+    assert llm_module.unload_internal_model("internal_transformers", "llm/tiny-hf") == 1
+
+
 def llm_capability_registry():
     from ai_workbench.core.capability_registry import CapabilityRegistry
 

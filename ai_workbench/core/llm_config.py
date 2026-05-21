@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from ai_workbench.core.config_schema import MASKED_SECRET, ConfigFieldSchema, validate_user_config
+from ai_workbench.core.provider_inventory import is_internal_provider, normalize_internal_llm_model_ref
 
 
 class LLMConfigError(ValueError):
@@ -173,6 +174,11 @@ def _apply_model_profile(
     profile_values = profile.model_dump()
     provider = _resolve_provider_profile(profile, provider_profile_store)
     if provider is not None:
+        if is_internal_provider(provider.provider):
+            try:
+                normalize_internal_llm_model_ref(profile.model_id)
+            except ValueError as exc:
+                raise LLMConfigError("LLM_PROFILE_INVALID", str(exc)) from exc
         for key, source_key in (
             ("provider", "provider"),
             ("base_url", "base_url"),
@@ -185,6 +191,8 @@ def _apply_model_profile(
         metadata["provider_profile_id"] = provider.id
         metadata["provider_profile_name"] = provider.name
         metadata["provider"] = provider.provider
+        _set_value(values, sources, "provider_profile_id", provider.id, source)
+        _set_value(values, sources, "provider_profile_name", provider.name, source)
     else:
         if not profile.base_url:
             raise LLMConfigError("LLM_PROFILE_INVALID", f"Model profile '{profile.alias}' must reference a provider profile or define legacy base_url.")
@@ -233,7 +241,7 @@ def _resolve_provider_profile(profile, provider_profile_store: Any = None):
         raise LLMConfigError("LLM_PROVIDER_PROFILE_NOT_FOUND", f"Provider profile not found: {provider_profile_id}") from exc
     if not provider.enabled:
         raise LLMConfigError("LLM_PROVIDER_PROFILE_DISABLED", f"Provider profile is disabled: {provider.name}")
-    if not provider.base_url:
+    if not provider.base_url and not is_internal_provider(provider.provider):
         raise LLMConfigError("LLM_PROVIDER_PROFILE_INVALID", f"Provider profile '{provider.name}' must define base_url.")
     return provider
 

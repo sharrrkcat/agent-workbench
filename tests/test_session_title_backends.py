@@ -11,7 +11,7 @@ class TitleUtilityLLM:
 
     async def generate_title(self, user_input, settings):
         self.title_calls.append(user_input)
-        return {"title": self.title, "backend": "utility_llm", "model_path": settings.intent_routing_utility_llm_model_path}
+        return {"title": self.title, "backend": "utility_llm", "model_profile_id": settings.intent_routing_utility_llm_model_profile_id}
 
     def unload(self):
         self.unload_calls += 1
@@ -136,7 +136,7 @@ def test_utility_backend_unload_after_generation_releases_utility_model() -> Non
     fixture.app_settings.patch(
         {
             "auto_generate_session_titles": True,
-            "intent_routing_utility_llm_model_path": "utility_llms/Qwen3-0.6B",
+            "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
             "session_title_unload_after_generation": True,
         }
     )
@@ -234,7 +234,7 @@ def test_intent_auto_knowledge_query_title_uses_original_user_input(monkeypatch)
     title_profile = set_chat_title_profile(fixture, "knowledge-title-profile", "knowledge-title-model")
     fixture.app_settings.patch({"auto_generate_session_titles": True, "session_title_backend": "follow_agent_model_profile"})
     enable_auto(fixture)
-    fixture.app_settings.patch({"intent_routing_utility_llm_model_path": "utility_llms/test-router"})
+    fixture.app_settings.patch({"intent_routing_utility_llm_model_profile_id": "fake-utility-profile"})
     session = fixture.sessions.create_session(default_agent_id="chat", title="Session 1")
     kb = bind_test_kb(fixture, session.session_id)
     fixture.agent_runner.utility_llm_service = FakeUtilityIntentService(

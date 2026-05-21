@@ -32,6 +32,7 @@ UTILITY_INTENTS = {"chat", "image_generation", "knowledge_query", "pet_command",
 PET_DOMAINS = {"workbench_pet", "real_pet", "fictional_character", "unclear"}
 PET_ACTIONS = {"status", "wake", "tuck", "select", "reload", "unknown"}
 UTILITY_BACKENDS = {"transformers", "llama_cpp", "model_profile"}
+UTILITY_PRIMARY_BACKEND = "model_profile"
 GGUF_PLACEMENT_HELP = "GGUF files must be placed under data/models/utility_llms/<model-folder>/<file>.gguf"
 
 
@@ -77,7 +78,7 @@ def utility_backend_status() -> dict[str, Any]:
 
 
 def normalize_utility_backend(value: Any) -> str:
-    backend = str(value or "transformers").strip() or "transformers"
+    backend = str(value or UTILITY_PRIMARY_BACKEND).strip() or UTILITY_PRIMARY_BACKEND
     if backend not in UTILITY_BACKENDS:
         raise ValueError("Utility LLM backend must be transformers, llama_cpp, or model_profile.")
     return backend
@@ -302,7 +303,10 @@ def _extract_llama_cpp_text(result: Any) -> str:
 
 
 def _backend_for(settings: Any) -> str:
-    return normalize_utility_backend(getattr(settings, "intent_routing_utility_llm_backend", "transformers"))
+    # Round 3 unifies Utility LLM runtime on LLM Model Profiles. The legacy
+    # backend field is still accepted for old stored settings and migration
+    # warnings, but it no longer selects a local Utility backend.
+    return UTILITY_PRIMARY_BACKEND
 
 
 def _backend_instance(backend: str) -> TransformersUtilityLlmBackend | LlamaCppUtilityLlmBackend:
@@ -422,6 +426,7 @@ class UtilityLLMService:
 
     def _model_profile_status(self, settings: Any) -> dict[str, Any]:
         profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
+        legacy_warnings = self._legacy_utility_warnings(settings)
         base = {
             "available": False,
             "configured": bool(profile_id),
@@ -438,7 +443,7 @@ class UtilityLLMService:
             "options": normalize_utility_options(settings),
             "backend_status": {"type": "model_profile"},
             "reason": None,
-            "warnings": [],
+            "warnings": legacy_warnings,
         }
         if not profile_id:
             return {**base, "reason": UTILITY_MODEL_PROFILE_NOT_CONFIGURED}
@@ -463,6 +468,8 @@ class UtilityLLMService:
             "requested_model_id": getattr(profile, "model_id", None),
             "backend_status": compact_status,
         }
+        if str(compact_status.get("provider") or "").startswith("internal_"):
+            payload["loaded"] = self._internal_model_profile_loaded(profile, provider)
         if reason:
             return {**payload, "reason": reason}
         return {**payload, "available": True, "reason": None}
@@ -584,7 +591,8 @@ class UtilityLLMService:
                 provider = self.provider_profile_store.get(provider_id)
             except KeyError:
                 return profile, None, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
-            if not getattr(provider, "enabled", False) or not getattr(provider, "base_url", ""):
+            provider_type = str(getattr(provider, "provider", "") or "")
+            if not getattr(provider, "enabled", False) or (not getattr(provider, "base_url", "") and not provider_type.startswith("internal_")):
                 return profile, provider, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
         elif not getattr(profile, "base_url", ""):
             return profile, None, UTILITY_PROVIDER_PROFILE_UNAVAILABLE
@@ -687,7 +695,7 @@ class UtilityLLMService:
         if settings is not None:
             try:
                 if _backend_for(settings) == "model_profile":
-                    return {"ok": True, "status": "no_local_utility_cache", "reason": "no_local_utility_cache", "removed": 0}
+                    return self._unload_model_profile(settings)
             except ValueError:
                 pass
         removed = len(self._cache)
@@ -695,6 +703,48 @@ class UtilityLLMService:
         if removed:
             _collect_model_memory()
         return {"ok": True, "status": "unloaded", "removed": removed}
+
+    def _legacy_utility_warnings(self, settings: Any) -> list[str]:
+        legacy_backend = str(getattr(settings, "intent_routing_utility_llm_backend", "") or "")
+        legacy_path = str(getattr(settings, "intent_routing_utility_llm_model_path", "") or "").strip()
+        warnings: list[str] = []
+        if legacy_backend in {"transformers", "llama_cpp"}:
+            warnings.append("legacy_utility_backend_deprecated")
+        if legacy_path:
+            if legacy_path.startswith("utility_llms/"):
+                warnings.append("legacy_utility_llms_not_migrated")
+            elif legacy_path.startswith("llms/"):
+                warnings.append("legacy_utility_path_requires_model_profile")
+        return warnings
+
+    def _internal_model_profile_loaded(self, profile: Any, provider: Any) -> bool:
+        provider_type = str(getattr(provider, "provider", "") or "")
+        model_ref = str(getattr(profile, "model_id", "") or "")
+        if not provider_type.startswith("internal_") or not model_ref:
+            return False
+        try:
+            from capabilities.llm import internal_model_loaded  # type: ignore
+
+            return bool(internal_model_loaded(provider_type, model_ref))
+        except Exception:
+            return False
+
+    def _unload_model_profile(self, settings: Any) -> dict[str, Any]:
+        profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
+        profile, provider, reason = self._lookup_model_profile(profile_id)
+        if reason or profile is None:
+            return {"ok": False, "status": "unavailable", "reason": reason or UTILITY_MODEL_PROFILE_NOT_FOUND, "removed": 0}
+        provider_type = str(getattr(provider, "provider", "") or "")
+        model_ref = str(getattr(profile, "model_id", "") or "")
+        if not provider_type.startswith("internal_"):
+            return {"ok": True, "status": "no_local_utility_cache", "reason": "no_local_utility_cache", "removed": 0}
+        try:
+            from capabilities.llm import unload_internal_model  # type: ignore
+
+            removed = unload_internal_model(provider=provider_type, model_ref=model_ref)
+        except Exception as exc:
+            return {"ok": False, "status": "failed", "reason": str(exc) or "internal_unload_failed", "removed": 0}
+        return {"ok": True, "status": "unloaded" if removed else "no_local_utility_cache", "removed": removed}
 
 
 def extract_json_object(text: str) -> dict[str, Any]:

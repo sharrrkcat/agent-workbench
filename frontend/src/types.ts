@@ -263,7 +263,7 @@ export type LlmProfile = {
   alias: string;
   name: string;
   provider_profile_id?: string | null;
-  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom';
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'internal_transformers' | 'internal_llama_cpp';
   base_url: string;
   api_key: string;
   api_key_set?: boolean;
@@ -1361,6 +1361,7 @@ export type RuntimeResourceCpu = {
   available: boolean;
   percent: number | null;
   reason?: string | null;
+  warnings?: string[];
 };
 
 export type RuntimeResourceMemory = {
@@ -1425,6 +1426,7 @@ export type UtilityLlmStatus = {
     api_key_set?: boolean;
   };
   reason?: string | null;
+  warnings?: string[];
 };
 
 export type UtilityLlmModelScanItem = {

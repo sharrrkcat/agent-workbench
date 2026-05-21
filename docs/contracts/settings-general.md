@@ -44,6 +44,8 @@ backends. Internal Provider Profiles use fixed local inventory roots under
 `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers`; they
 do not add editable root paths and do not own per-model generation, embedding,
 or reranking parameters.
+LLM Model Profiles may select internal Provider Profiles only with `llm/...`
+refs. Embedding and reranker refs remain outside LLM Model Profile selection.
 
 ## Files
 
@@ -377,9 +379,10 @@ Capabilities -> Web Search.
 
 ## Utility LLM
 
-General Utility LLM owns backend, local model path or Model Profile reference,
-device, runtime options, llama.cpp options, scan/status/test controls, and unload
-controls.
+General Utility LLM owns the Utility model profile reference, status/test
+controls, and supported unload controls. The primary UI selects an enabled LLM
+Model Profile only; deprecated local `transformers` / `llama_cpp` Utility
+backend and path fields may remain as legacy storage for compatibility warnings.
 
 Utility LLM is a core internal service, not an Agent, Capability, Provider
 Profile, Model Profile, AgentConfig, or CapabilityConfig. Full contract:

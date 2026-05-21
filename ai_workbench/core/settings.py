@@ -153,7 +153,7 @@ class AppSettings(BaseModel):
     intent_routing_auto_route_safe_intents: StrictBool = False
     intent_routing_confirm_uncertain: StrictBool = True
     intent_routing_embedding_model_profile_id: str | None = None
-    intent_routing_utility_llm_backend: str = "transformers"
+    intent_routing_utility_llm_backend: str = "model_profile"
     intent_routing_utility_llm_model_profile_id: str | None = None
     intent_routing_utility_llm_model_path: str = ""
     intent_routing_utility_llm_context_size: int = Field(default=4096, ge=512, le=32768)

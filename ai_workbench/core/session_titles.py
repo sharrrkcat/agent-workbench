@@ -328,12 +328,8 @@ def resolve_title_generation_backend(
     requested = str(getattr(settings, "session_title_backend", "utility_llm") or "utility_llm")
     backend = force_backend or requested
     if backend == "utility_llm":
-        utility_backend = str(getattr(settings, "intent_routing_utility_llm_backend", "transformers") or "transformers")
-        model_path = str(getattr(settings, "intent_routing_utility_llm_model_path", "") or "").strip()
         model_profile_id = str(getattr(settings, "intent_routing_utility_llm_model_profile_id", "") or "").strip()
-        if utility_backend == "model_profile" and model_profile_id:
-            return TitleBackendDecision(requested_backend=requested, backend="utility_llm", warnings=[])
-        if utility_backend != "model_profile" and model_path:
+        if model_profile_id:
             return TitleBackendDecision(requested_backend=requested, backend="utility_llm", warnings=[])
         backend = "follow_agent_model_profile"
         fallback_used = True

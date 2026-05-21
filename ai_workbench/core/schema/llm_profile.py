@@ -8,7 +8,14 @@ from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 LLM_PROFILE_ALIAS_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-LLM_PROFILE_PROVIDERS = ("openai_compatible", "lm_studio", "llama_cpp", "custom")
+LLM_PROFILE_PROVIDERS = (
+    "openai_compatible",
+    "lm_studio",
+    "llama_cpp",
+    "custom",
+    "internal_transformers",
+    "internal_llama_cpp",
+)
 PROVIDER_PROFILE_PROVIDERS = (
     "openai_compatible",
     "lm_studio",
@@ -34,7 +41,7 @@ class LLMProfileSchema(BaseModel):
     alias: str
     name: str
     provider_profile_id: Optional[str] = None
-    provider: Literal["openai_compatible", "lm_studio", "llama_cpp", "custom"] = "openai_compatible"
+    provider: ProviderProfileProvider = "openai_compatible"
     base_url: str = ""
     api_key: str = ""
     model_id: str = ""

@@ -85,7 +85,9 @@
     "reasoningOutput": "Reasoning output declares expected output behavior only. It does not change provider request parameters.",
     "profileKey": "Used by agent manifests as llm.profile. This currently maps to API alias.",
     "llamaCppAlias": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.",
-    "internalProviderRoot": "Scans data/models/llms, data/models/embeddings, and data/models/rerankers locally. Base URL and API key are not used."
+    "llamaCppProviderModelList": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.",
+    "internalProviderRoot": "Scans data/models/llms, data/models/embeddings, and data/models/rerankers locally. Base URL and API key are not used.",
+    "internalLlmProfilesOnly": "LLM Model Profiles can select only refs under llm/ from this internal provider."
   },
   "results": {
     "providerReturnedNoModels": "Provider returned no models.",

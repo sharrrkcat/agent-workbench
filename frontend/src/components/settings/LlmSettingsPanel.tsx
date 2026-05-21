@@ -12,7 +12,7 @@ import { stableConfigString, type ConfigValues } from './configUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
 const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'internal_transformers', 'internal_llama_cpp'] as const;
-const llmProfileProviderOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom'] as const;
+const llmProfileProviderOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'internal_transformers', 'internal_llama_cpp'] as const;
 const internalProviderOptions = new Set<string>(['internal_transformers', 'internal_llama_cpp']);
 const profileDefaults: LlmProfileInput = {
   alias: '',
@@ -678,7 +678,7 @@ export function LlmProviderProfileDetail({
       const response = await api.listLlmProviderModels(selectedProfile.id);
       const modelItems = response.models.filter((model) => Boolean(model.id));
       setModels(modelItems);
-      const chatModels = modelItems.filter(isChatModel);
+      const chatModels = modelItems.filter((model) => isChatModel(model, providerKind));
       const message = internalProvider
         ? modelItems.length
           ? t('llm:results.foundModels', { count: modelItems.length })
@@ -927,7 +927,8 @@ export function LlmProfileDetail({
     setError(null);
     try {
       const response = await api.listLlmProviderModels(providerId);
-      const chatModels = response.models.filter((model) => Boolean(model.id) && isChatModel(model));
+      const provider = providerProfiles.find((item) => item.id === providerId);
+      const chatModels = response.models.filter((model) => Boolean(model.id) && isChatModel(model, provider?.provider));
       setModels(chatModels);
       setResult({
         success: true,
@@ -952,6 +953,12 @@ export function LlmProfileDetail({
     if (!model) return;
     const modelName = String(model.name || model.id);
     const next: LlmProfileInput = { model_id: model.id };
+    const selectedProvider = providerProfiles.find((provider) => provider.id === draft.provider_profile_id);
+    if (isInternalProvider(selectedProvider?.provider)) {
+      next.supports_streaming = false;
+      next.supports_vision = false;
+      next.supports_tools = false;
+    }
     if (!String(draft.name || '').trim()) {
       next.name = modelName;
       if (!keyTouched && isNew) {
@@ -1024,7 +1031,14 @@ export function LlmProfileDetail({
               <select
                 value={String(draft.provider_profile_id || '')}
                 onChange={(event) => {
-                  updateDraft({ provider_profile_id: event.target.value || null });
+                  const provider = providerProfiles.find((item) => item.id === event.target.value);
+                  updateDraft({
+                    provider_profile_id: event.target.value || null,
+                    model_id: isInternalProvider(provider?.provider) ? '' : draft.model_id,
+                    supports_streaming: isInternalProvider(provider?.provider) ? false : draft.supports_streaming,
+                    supports_vision: isInternalProvider(provider?.provider) ? false : draft.supports_vision,
+                    supports_tools: isInternalProvider(provider?.provider) ? false : draft.supports_tools,
+                  });
                   setModels([]);
                   setSelectedProviderModelId('');
                 }}
@@ -1043,7 +1057,7 @@ export function LlmProfileDetail({
               <span>{t('llm:labels.chooseFromProvider')}</span>
               <select value={selectedProviderModelId} onChange={(event) => selectProviderModel(event.target.value)} disabled={busy || !models.length}>
                 <option value="">{models.length ? t('llm:empty.selectRefreshedModel') : t('llm:empty.noRefreshedModels')}</option>
-                {models.map((model) => <option key={model.id} value={model.id} title={model.id}>{model.name || model.id}</option>)}
+                {models.map((model) => <option key={model.id} value={model.id} title={model.id}>{modelOptionLabel(model)}</option>)}
               </select>
               <small>{t('llm:help.preferRefreshedModel')}</small>
             </label>
@@ -1325,7 +1339,10 @@ function providerProfileBaseUrl(providerProfileId: string, providers: LlmProvide
   return providers.find((item) => item.id === providerProfileId)?.base_url || '';
 }
 
-function isChatModel(model: LlmProviderModel): boolean {
+function isChatModel(model: LlmProviderModel, provider?: string): boolean {
+  if (isInternalProvider(provider)) {
+    return String(model.kind || model.type || model.id || '').toLowerCase() === 'llm' || String(model.id || '').startsWith('llm/');
+  }
   const kind = String(model.kind || model.type || 'unknown').toLowerCase();
   return kind !== 'embedding' && kind !== 'reranker';
 }
@@ -1341,9 +1358,23 @@ function providerDisplayLabel(t: (key: string, options?: Record<string, unknown>
 function providerHelperText(providerProfileId: string | undefined | null, providers: LlmProviderProfile[]) {
   const provider = providers.find((item) => item.id === providerProfileId);
   if (provider?.provider === 'llama_cpp') {
-    return <small>llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.</small>;
+    return <ProviderHelperText translationKey="llm:help.llamaCppProviderModelList" />;
+  }
+  if (isInternalProvider(provider?.provider)) {
+    return <ProviderHelperText translationKey="llm:help.internalLlmProfilesOnly" />;
   }
   return null;
+}
+
+function ProviderHelperText({ translationKey }: { translationKey: string }) {
+  const { t } = useTranslation('llm');
+  return <small>{t(translationKey)}</small>;
+}
+
+function modelOptionLabel(model: LlmProviderModel): string {
+  const name = String(model.name || model.display_name || '').trim();
+  const id = String(model.id || '').trim();
+  return name && name !== id ? `${name} (${id})` : id;
 }
 
 export function sanitizeProfileKey(value: string): string {

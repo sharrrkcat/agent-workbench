@@ -8,6 +8,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.configs import _runtime_list_models, _safe_llm_error
 from ai_workbench.core.config_schema import MASKED_SECRET
+from ai_workbench.core.provider_inventory import is_internal_provider, normalize_internal_llm_model_ref, scan_internal_provider_models
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema
 from ai_workbench.core.time import utc_now
 
@@ -100,12 +101,22 @@ def patch_llm_profile(
     if "api_key" in values and values.get("api_key") is None:
         values["api_key"] = ""
     try:
+        candidate_provider_id = values.get("provider_profile_id", existing.provider_profile_id)
+        candidate_model_id = values.get("model_id", existing.model_id)
+        if candidate_provider_id:
+            provider = state.provider_profiles.get(str(candidate_provider_id))
+            _validate_internal_llm_ref(provider.provider, str(candidate_model_id or ""))
         updated = state.llm_profiles.update(existing.id, values)
         return _serialize_profile(updated)
+    except KeyError as exc:
+        raise_error(400, "LLM_PROFILE_INVALID", f"Provider profile not found: {candidate_provider_id}")
+    except ValueError as exc:
+        message = str(exc) or "LLM profile is invalid."
+        if "alias" in message.lower() or "already exists" in message.lower():
+            raise_error(409, "LLM_PROFILE_ALIAS_CONFLICT", message)
+        raise_error(400, "LLM_PROFILE_INVALID", message)
     except ValidationError as exc:
         raise_error(400, "LLM_PROFILE_INVALID", _validation_message(exc))
-    except ValueError as exc:
-        raise_error(409, "LLM_PROFILE_ALIAS_CONFLICT", str(exc) or "LLM profile alias already exists.")
 
 
 @router.delete("/{profile_id_or_alias}")
@@ -158,6 +169,11 @@ def list_llm_profile_models(profile_id_or_alias: str, state: RuntimeState = Depe
     try:
         if not profile.provider_profile_id and not profile.base_url:
             raise ValueError(f"LLM profile '{profile.alias}' must define base_url.")
+        provider = state.provider_profiles.get(profile.provider_profile_id) if profile.provider_profile_id else None
+        if provider is not None and is_internal_provider(provider.provider):
+            inventory = scan_internal_provider_models(provider.provider)
+            models = [item for item in inventory["models"] if item.get("kind") == "llm" or str(item.get("id") or "").startswith("llm/")]
+            return {"success": True, "models": [{"id": item["id"], **item} for item in models]}
         runtime = state.runtimes.get_runtime("llm")
         models = _runtime_list_models(runtime, _profile_model_config(profile, state))
         return {"success": True, "models": [{"id": model_id} for model_id in models]}
@@ -197,6 +213,8 @@ def _profile_model_config(profile: LLMProfileSchema, state: RuntimeState | None 
         "model": profile.model_id,
         "model_id": profile.model_id,
         "timeout": (provider.timeout_seconds if provider is not None else profile.timeout) or 60,
+        "provider_profile_id": provider.id if provider is not None else profile.provider_profile_id,
+        "provider_profile_name": provider.name if provider is not None else None,
     }
 
 
@@ -215,9 +233,16 @@ def _validate_model_profile_create(payload: LLMProfileCreateRequest, state: Runt
     if not str(payload.model_id or "").strip():
         raise ValueError("model_id is required.")
     try:
-        state.provider_profiles.get(str(payload.provider_profile_id))
+        provider = state.provider_profiles.get(str(payload.provider_profile_id))
     except KeyError as exc:
         raise ValueError(f"Provider profile not found: {payload.provider_profile_id}") from exc
+    _validate_internal_llm_ref(provider.provider, payload.model_id)
+
+
+def _validate_internal_llm_ref(provider: str, model_id: str) -> None:
+    if not is_internal_provider(provider):
+        return
+    normalize_internal_llm_model_ref(model_id)
 
 
 def _validation_message(exc: ValidationError) -> str:

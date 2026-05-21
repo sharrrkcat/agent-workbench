@@ -8,6 +8,7 @@ from ai_workbench.core.provider_status import (
     MODEL_NOT_LOADED,
     PROVIDER_UNREACHABLE,
     READY,
+    MODEL_STATUS_UNKNOWN,
     refresh_provider_status_for_profile,
     unload_model_for_profile,
 )
@@ -70,7 +71,7 @@ class RuntimeMemoryService:
         target = self._resolve_llm_target(session_id=session_id)
         if target.get("error"):
             return _summary("llm", False, False, str(target["error"]), "unavailable")
-        if target.get("provider") != "lm_studio":
+        if target.get("provider") not in {"lm_studio", "internal_transformers", "internal_llama_cpp"}:
             return _summary("llm", False, False, "Current provider is not LM Studio.", "unavailable")
         provider_profile_id = str(target.get("provider_profile_id") or "")
         model_id = str(target.get("model_id") or "")
@@ -87,6 +88,8 @@ class RuntimeMemoryService:
             return _summary("llm", True, True, "No model loaded.", "not_loaded")
         if model_status == READY:
             return _summary("llm", True, True, "", "loaded")
+        if target.get("provider") in {"internal_transformers", "internal_llama_cpp"} and model_status == MODEL_STATUS_UNKNOWN:
+            return _summary("llm", True, True, "", "unknown")
         return _summary("llm", True, True, "", "unknown")
 
     def _free_llm(self, session_id: str = "") -> dict[str, str]:

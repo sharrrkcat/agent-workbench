@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.message_parts import text_from_parts
 from tests.test_api import create_session
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
@@ -80,11 +81,12 @@ def test_free_memory_command_usage_and_result() -> None:
     usage = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/free-memory"})
     assert usage.status_code == 200
     usage_messages = usage.json()["messages"]
-    assert usage_messages[-1]["content"] == "/free-memory [llm|comfyui|embedding|reranker|all]"
+    assert text_from_parts(usage_messages[-1]["parts"]) == "/free-memory [llm|comfyui|embedding|reranker|all]"
 
     result = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/free-memory embedding"})
     assert result.status_code == 200
     messages = result.json()["messages"]
     assert messages[-1]["command_name"] == "/free-memory"
-    assert "Memory release result" in messages[-1]["content"]
-    assert "Embedding: skipped" in messages[-1]["content"]
+    content = text_from_parts(messages[-1]["parts"])
+    assert "Memory release result" in content
+    assert "Embedding: skipped" in content

@@ -143,9 +143,9 @@ The Default model profile fallback lives in Settings -> General -> LLM & Prompts
 
 ## LLM Provider And Model Profiles
 
-Provider Profiles hold model source details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. They can also represent internal local inventory backends that scan `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers` without loading model weights. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state.
+Provider Profiles hold model source details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. They can also represent internal local inventory backends that scan `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers` without loading model weights. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state. Internal LLM Model Profiles use `llm/...` refs from `data/models/llms`; embedding and reranker refs remain out of scope for LLM generation.
 
-Provider status checks are available for configured providers and return structured reachability/model-availability information without exposing API keys or absolute local paths. LM Studio, llama.cpp, and OpenAI-compatible providers each keep their existing status behavior.
+Provider status checks are available for configured providers and return structured reachability/model-availability information without exposing API keys or absolute local paths. LM Studio, llama.cpp, OpenAI-compatible, and internal providers each keep provider-specific status behavior. Internal status and unload are local cache/inventory operations only and never delete model files.
 
 Knowledge RAG v1 provides local embedding/reranker settings, embedding model profiles, Knowledge Bases, source indexing, retrieval search, session bindings, automatic context injection, and a thin Knowledge Capability. Full Knowledge contract: [docs/contracts/knowledge.md](docs/contracts/knowledge.md).
 
@@ -153,7 +153,7 @@ Knowledge RAG v1 provides local embedding/reranker settings, embedding model pro
 
 Settings uses manifest-declared AgentConfig and CapabilityConfig `config_schema` fields. Unknown user config fields are rejected by the API, and secret fields are masked in API/UI responses while still stored as plaintext JSON in SQLite in this alpha.
 
-Settings -> General stores local app settings for Files, Appearance fonts, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings and the Default model profile fallback belong to LLM & Prompts; Utility LLM backend/model/device/options belong to Utility LLM; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
+Settings -> General stores local app settings for Files, Appearance fonts, LLM & Prompts, Memory, Utility LLM, and Intent Routing. Session title settings and the Default model profile fallback belong to LLM & Prompts; Utility LLM selects one enabled LLM Model Profile for internal short calls; Intent Routing behavior, examples, Route Test, semantic profile selection, and compact Utility status live under Intent Routing.
 
 Settings -> Appearance -> Fonts configures separate UI, message, and code fonts. Each font can use a single installed system font name, a single local custom font file, or a local custom font family folder under `data/assets/fonts/<folder>/`. Family folders may include `font.json` to declare Regular/Bold/Italic/variable faces; otherwise common filename suffixes such as `BoldItalic`, `Light`, and `SemiBold` are inferred. Local font files are served through generated asset ids, not arbitrary disk paths.
 

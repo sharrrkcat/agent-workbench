@@ -5,7 +5,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from ai_workbench.core.provider_inventory import is_internal_provider, scan_internal_provider_models
+from ai_workbench.core.provider_inventory import internal_llm_model_ref_exists, is_internal_provider, scan_internal_provider_models
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.time import isoformat_utc, utc_now
 
@@ -134,6 +134,8 @@ def unload_model(
     model_profile_id: str | None = None,
     model_id: str | None = None,
 ) -> Dict[str, Any]:
+    if is_internal_provider(provider.provider):
+        return _internal_unload(provider, model_id=model_id)
     if provider.provider != "lm_studio":
         return _unsupported_unload(provider, model_id=model_id)
     if not provider.enabled:
@@ -467,6 +469,24 @@ def _refresh_internal_provider(provider: ProviderProfileSchema, model_profiles: 
         for item in inventory["models"]
     ]
     models = _map_model_profiles(model_profiles, provider_models, reliable=True, ready_when_available=True)
+    if model_profiles:
+        by_id = {str(item.get("id") or ""): item for item in models}
+        for profile in model_profiles:
+            item = by_id.get(profile.model_id)
+            if item is None:
+                continue
+            if not profile.model_id.startswith("llm/"):
+                item["status"] = MODEL_NOT_AVAILABLE
+                item["available"] = False
+                item["warning_code"] = "internal_llm_ref_invalid"
+                continue
+            exists, reason = internal_llm_model_ref_exists(provider.provider, profile.model_id)
+            if not exists:
+                item["status"] = MODEL_NOT_AVAILABLE
+                item["available"] = False
+                item["warning_code"] = reason
+            else:
+                item["loaded"] = _internal_model_loaded(provider.provider, profile.model_id)
     if not model_profiles:
         models = provider_models
     dependency_available = bool(inventory["backend"].get("available"))
@@ -485,6 +505,38 @@ def _refresh_internal_provider(provider: ProviderProfileSchema, model_profiles: 
     payload["backend"] = inventory["backend"]
     payload["models_root"] = inventory["models_root"]
     return payload
+
+
+def _internal_unload(provider: ProviderProfileSchema, model_id: str | None = None) -> Dict[str, Any]:
+    unloaded: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+    try:
+        from capabilities.llm import unload_internal_model  # type: ignore
+
+        removed = unload_internal_model(provider=provider.provider, model_ref=model_id or None)
+        if removed:
+            unloaded.append({"model_id": model_id or "", "removed": str(removed)})
+    except Exception as exc:
+        errors.append({"code": UNLOAD_FAILED, "message": str(exc) or "Internal model unload failed."})
+    return {
+        "ok": not errors,
+        "provider": provider.provider,
+        "provider_profile_id": provider.id,
+        "model_id": model_id or "",
+        "unloaded": unloaded,
+        "skipped": not bool(unloaded) and not errors,
+        "skip_reason": "skipped_no_model" if not unloaded and not errors else None,
+        "errors": errors,
+    }
+
+
+def _internal_model_loaded(provider: str, model_id: str) -> bool:
+    try:
+        from capabilities.llm import internal_model_loaded  # type: ignore
+
+        return bool(internal_model_loaded(provider, model_id))
+    except Exception:
+        return False
 
 
 def _provider_payload(

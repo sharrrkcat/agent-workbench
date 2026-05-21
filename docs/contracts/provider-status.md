@@ -80,6 +80,15 @@ Internal providers:
   `display_name`, `kind`, `source=internal`, `backend`, and safe
   `relative_path`; it must not return absolute paths, file contents, secrets, or
   full directory trees.
+- LLM Model Profiles may use only `llm/...` refs from internal providers.
+  Status for those profiles reports provider enabled/disabled, model ref
+  valid/invalid, model file/folder exists/missing, optional dependency
+  available/unavailable, and loaded/unloaded when the local cache can be
+  inspected.
+- Internal provider unload is best-effort cache release only. It may release
+  cached `internal_transformers` or `internal_llama_cpp` LLM runtimes, and must
+  never delete model files or user data. Unsupported, unavailable, or failed
+  unload remains a cleanup/status outcome.
 - `data/models/utility_llms` remains owned by the Utility LLM contract and is
   not scanned for Provider Profile inventory. If present, Provider Profile
   inventory may return a compact `legacy_utility_llms_not_scanned` warning.
@@ -119,7 +128,8 @@ and returns compact per-target results with status such as `freed`, `skipped`,
 Memory release is best-effort and never deletes model files, Knowledge Bases,
 indexes, sessions, settings, attachments, or local user assets. Busy targets are
 not force-released. In this alpha, manual LLM release is limited to provider
-profiles with reliable unload support, currently LM Studio paths.
+profiles with reliable unload support: LM Studio native unload and best-effort
+internal LLM runtime cache release.
 
 Embedding and reranker local cache release is best-effort. ComfyUI memory
 release is an external service request through ComfyUI `/free` with

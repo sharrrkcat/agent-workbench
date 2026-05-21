@@ -725,7 +725,7 @@ def enable_auto_intent_for_web_tests(fixture: PromptRuntimeFixture, intent: str,
             "intent_routing_default_for_prompt_agents": True,
             "intent_routing_mode": "auto",
             "intent_routing_auto_route_safe_intents": True,
-            "intent_routing_utility_llm_model_path": "utility_llms/test-router",
+            "intent_routing_utility_llm_model_profile_id": "fake-utility-profile",
         }
     )
     fixture.agent_runner.semantic_router = StaticIntentSemanticRouter(intent)

@@ -305,12 +305,12 @@ lists, or provider-bound prompt text. Output is strict JSON used only as
 validator input. Invalid JSON records `utility_invalid_json`; extraction or slot
 validation failure records `utility_slots_failed`.
 
-The Model Profile Utility backend is an internal non-streaming deterministic
-short call. It does not create an Agent run or visible message, recursively
-trigger Intent Routing or title generation, inject Knowledge/Core
-Memory/Worldbook/attachments/history, mutate selected Model Profiles, or change
-main response LLM resolution. Metadata may include public profile/provider/model
-identifiers only.
+The Utility LLM uses the selected LLM Model Profile for an internal
+non-streaming deterministic short call. It does not create an Agent run or
+visible message, recursively trigger Intent Routing or title generation, inject
+Knowledge/Core Memory/Worldbook/attachments/history, mutate selected Model
+Profiles, or change main response LLM resolution. Metadata may include public
+profile/provider/model identifiers only.
 
 See [Utility LLM](utility-llm.md) for the full Utility LLM contract.
 
@@ -411,8 +411,8 @@ Common codes include:
   Intent Routing auto mode uses the separate Web Context Plan Resolver described
   above; `web_query` itself is a compact Web Context signal, not a direct Web
   Search command route.
-- General -> Utility LLM owns Utility backend/model/device/options. The Intent
-  Routing page shows only a compact Utility LLM status summary.
+- General -> Utility LLM owns the Utility model profile. The Intent Routing page
+  shows only a compact Utility LLM status summary.
 - Agent detail -> Intent Routing owns Prompt Agent overrides and Agent target
   hints.
 - Knowledge Base aliases are Knowledge Base data used for `kb_hint` matching.
