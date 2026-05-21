@@ -380,13 +380,6 @@ def _decision_metadata(
             capability_config_store=capability_config_store,
             auto_mode=False,
         )
-    if not bool(getattr(settings, "intent_routing_auto_route_safe_intents", False)):
-        metadata["route_action"] = "metadata_only"
-        metadata["auto_executable"] = False
-        metadata["not_executed_reason"] = "safe_auto_route_disabled"
-        metadata["warnings"] = [*warnings, "safe_auto_route_disabled"]
-        metadata["executor_plan"] = {"route_action": "metadata_only", "auto_executable": False, "would_execute": False}
-        return metadata
     if intent_id in DIAGNOSTIC_ONLY_WARNINGS:
         metadata["route_action"] = "metadata_only"
         metadata["auto_executable"] = False

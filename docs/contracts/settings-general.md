@@ -370,8 +370,16 @@ Profile, Model Profile, AgentConfig, or CapabilityConfig. Full contract:
 
 ## Intent Routing
 
-General Intent Routing owns master enablement, global mode, safe-auto toggle,
-semantic thresholds, custom route examples for `chat`, `image_generation`,
+General Intent Routing exposes a single primary `Intent Routing Mode` control:
+`Off`, `Shadow: diagnose only`, and `Auto: safe routing`. `Off` stores
+`intent_routing_enabled=false`; `Shadow` stores `intent_routing_enabled=true`
+and `intent_routing_mode=shadow`; `Auto` stores `intent_routing_enabled=true`
+and `intent_routing_mode=auto`, with legacy safe-auto saved true when the UI
+selects Auto. Legacy safe-auto and confirm-uncertain fields remain schema
+compatibility fields, not primary UI controls.
+
+General Intent Routing also owns Prompt Agent default enablement, semantic
+thresholds, custom route examples for `chat`, `image_generation`,
 `knowledge_query`, `web_query`, `agent_route`, and `command_like`, Route Test
 controls, semantic router Embedding Model Profile reference, and compact Utility
 LLM status display.

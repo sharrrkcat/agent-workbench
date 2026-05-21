@@ -20,10 +20,16 @@ Routing.
 
 ## Modes And Eligibility
 
-Settings -> General -> Intent Routing owns the master switch, global mode,
-safe-auto switch, semantic thresholds, custom built-in-intent examples
+Settings -> General -> Intent Routing exposes one primary mode control:
+`Off`, `Shadow: diagnose only`, and `Auto: safe routing`. `Off` disables
+Intent Routing. `Shadow` enables prediction metadata without route changes.
+`Auto` enables the existing safe automatic routing scope. The page also owns
+Prompt Agent default enablement, semantic thresholds, custom built-in-intent examples
 (`chat`, `image_generation`, `knowledge_query`, `web_query`, `agent_route`,
 and `command_like`), and the semantic router Embedding Model Profile reference.
+Legacy `intent_routing_auto_route_safe_intents` and
+`intent_routing_confirm_uncertain` fields may still be read and saved for
+compatibility, but they are not primary user-flow controls.
 
 Agent detail -> Intent Routing owns Prompt Agent effective entry overrides and
 Agent target hints. Agent target hints help classify diagnostic `agent_route`
@@ -31,7 +37,8 @@ candidates; they do not grant generic Agent auto execution.
 
 Intent Routing is eligible only when all of these are true:
 
-- General `intent_routing_enabled` is true.
+- General `intent_routing_enabled` is true. The `Off` UI mode stores this as
+  false.
 - General `intent_routing_mode` is `shadow` or `auto`.
 - The input is ordinary text to the current session default Agent's `default`
   action.
@@ -43,8 +50,10 @@ Script Agents, non-Prompt Agents, and `group_transcript` mode do not enter the
 classifier.
 
 `shadow` mode records compact prediction metadata only and never changes the
-selected route. `auto` mode may execute only the safe allowlist below when all
-semantic, Utility LLM, validator, and executor gates pass.
+selected route. `auto` mode means safe automatic routing is enabled and may
+execute only the safe allowlist below when all semantic, Utility LLM, validator,
+and executor gates pass. Runtime must not require the legacy safe-auto field to
+be true before evaluating safe auto routing in `auto` mode.
 
 ## Pipeline
 
@@ -214,7 +223,6 @@ without letting Utility slots bypass semantic routing.
 `knowledge_query` auto execution requires:
 
 - General mode `auto`.
-- `intent_routing_auto_route_safe_intents=true`.
 - all normal eligibility gates.
 - semantic predicted intent `knowledge_query`.
 - semantic score and margin meet intent thresholds.
@@ -392,7 +400,8 @@ Common codes include:
 ## Settings And UI Ownership
 
 - General -> Intent Routing owns route behavior, examples, Route Test, semantic
-  router profile selection/status, candidate counts, and safe-auto controls.
+  router profile selection/status, candidate counts, and the primary
+  Off/Shadow/Auto mode control.
 - The Chat composer Intent Routing toggle controls the global General
   `intent_routing_enabled` setting. It does not create session-specific routing
   state.

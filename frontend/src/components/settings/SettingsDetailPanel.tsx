@@ -1314,6 +1314,7 @@ function GeneralIntentRoutingSettings({
   const selectedProfile = embeddingProfiles.find((profile) => profile.id === values.intent_routing_embedding_model_profile_id);
   const missingSelectedProfile = Boolean(values.intent_routing_embedding_model_profile_id && !selectedProfile);
   const disabledSelectedProfile = Boolean(selectedProfile && !selectedProfile.enabled);
+  const intentRoutingMode = values.intent_routing_enabled ? values.intent_routing_mode : 'off';
 
   async function refreshStatus() {
     try {
@@ -1353,48 +1354,37 @@ function GeneralIntentRoutingSettings({
     }
   }
 
+  function setIntentRoutingMode(mode: 'off' | 'shadow' | 'auto') {
+    if (mode === 'off') {
+      setValues({ ...values, intent_routing_enabled: false });
+      return;
+    }
+    setValues({
+      ...values,
+      intent_routing_enabled: true,
+      intent_routing_mode: mode,
+      intent_routing_auto_route_safe_intents: mode === 'auto' ? true : values.intent_routing_auto_route_safe_intents,
+    });
+  }
+
   return (
     <>
       <div className="detail-section">
         <div className="detail-section-heading">
           <h3>{t('settings:general.intentRouting')}</h3>
         </div>
-        <div className="settings-hint-callout">
-          <ul>
-            <li>{t('settings:general.intentRoutingExplicitBypass')}</li>
-            <li>{t('settings:general.intentRoutingShadowRecords')}</li>
-            <li>{t('settings:general.intentRoutingAutoSafeOnly')}</li>
-          </ul>
-        </div>
-        <label className="config-field settings-config-field boolean-field">
-          <span>{t('settings:general.enableIntentRouting')}</span>
-          <ToggleSwitch checked={values.intent_routing_enabled} onChange={(checked) => setValues({ ...values, intent_routing_enabled: checked })} />
+        <label className="config-field settings-config-field">
+          <span>{t('settings:general.intentRoutingMode')}</span>
+          <select value={intentRoutingMode} onChange={(event) => setIntentRoutingMode(event.currentTarget.value as 'off' | 'shadow' | 'auto')}>
+            <option value="off">{t('settings:general.intentRoutingModeOff')}</option>
+            <option value="shadow">{t('settings:general.intentRoutingModeShadow')}</option>
+            <option value="auto">{t('settings:general.intentRoutingModeAuto')}</option>
+          </select>
         </label>
         <label className="config-field settings-config-field boolean-field">
           <span>{t('settings:general.defaultForPromptAgents')}</span>
           <ToggleSwitch checked={values.intent_routing_default_for_prompt_agents} onChange={(checked) => setValues({ ...values, intent_routing_default_for_prompt_agents: checked })} />
           <small>{t('settings:general.defaultForPromptAgentsHelp')}</small>
-        </label>
-        <label className="config-field settings-config-field">
-          <span>{t('settings:general.intentRoutingMode')}</span>
-          <select value={values.intent_routing_mode} onChange={(event) => setString('intent_routing_mode', event.currentTarget.value)}>
-            <option value="shadow">{t('settings:general.shadowMode')}</option>
-            <option value="auto">{t('settings:general.autoMode')}</option>
-          </select>
-          <small>{values.intent_routing_mode === 'auto' ? t('settings:general.autoModeHelp') : t('settings:general.shadowModeHelp')}</small>
-        </label>
-        {values.intent_routing_mode === 'auto' && !values.intent_routing_auto_route_safe_intents ? (
-          <p className="settings-warning-text">{t('settings:general.autoModeSafeRoutingOff')}</p>
-        ) : null}
-        <label className="config-field settings-config-field boolean-field">
-          <span>{t('settings:general.autoRouteSafeIntents')}</span>
-          <ToggleSwitch checked={values.intent_routing_auto_route_safe_intents} onChange={(checked) => setValues({ ...values, intent_routing_auto_route_safe_intents: checked })} />
-          <small>{t('settings:general.autoRouteSafeIntentsHelp')}</small>
-        </label>
-        <label className="config-field settings-config-field boolean-field">
-          <span>{t('settings:general.confirmUncertainRoutes')}</span>
-          <ToggleSwitch checked={values.intent_routing_confirm_uncertain} onChange={(checked) => setValues({ ...values, intent_routing_confirm_uncertain: checked })} />
-          <small>{t('settings:general.plannedForLater')}</small>
         </label>
       </div>
       <div className="detail-section">
@@ -1835,6 +1825,7 @@ function embeddingProfileOptionLabel(profile: EmbeddingModelProfile, t: ReturnTy
 }
 
 function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings> {
+  const autoIntentRouting = values.intent_routing_enabled && values.intent_routing_mode === 'auto';
   return {
     max_image_size_mb: values.max_image_size_mb,
     max_file_size_mb: values.max_file_size_mb,
@@ -1899,7 +1890,7 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     intent_routing_semantic_kb_min_score: values.intent_routing_semantic_kb_min_score,
     intent_routing_semantic_agent_min_score: values.intent_routing_semantic_agent_min_score,
     intent_routing_semantic_command_min_score: values.intent_routing_semantic_command_min_score,
-    intent_routing_auto_route_safe_intents: values.intent_routing_auto_route_safe_intents,
+    intent_routing_auto_route_safe_intents: autoIntentRouting ? true : values.intent_routing_auto_route_safe_intents,
     intent_routing_confirm_uncertain: values.intent_routing_confirm_uncertain,
     intent_routing_embedding_model_profile_id: values.intent_routing_embedding_model_profile_id,
     intent_routing_utility_llm_backend: values.intent_routing_utility_llm_backend,

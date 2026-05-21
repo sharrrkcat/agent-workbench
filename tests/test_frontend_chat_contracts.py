@@ -1358,12 +1358,14 @@ def test_general_intent_routing_auto_mode_contract() -> None:
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
 
     assert "intent_routing_mode: 'shadow' | 'auto';" in types
-    assert '<option value="auto">{t(\'settings:general.autoMode\')}</option>' in panel
-    assert "settings:general.autoModeHelp" in panel
-    assert "settings:general.autoModeSafeRoutingOff" in panel
-    assert "settings:general.intentRoutingExplicitBypass" in panel
-    assert "settings:general.intentRoutingShadowRecords" in panel
-    assert "settings:general.intentRoutingAutoSafeOnly" in panel
+    assert "const intentRoutingMode = values.intent_routing_enabled ? values.intent_routing_mode : 'off';" in panel
+    assert '<option value="off">{t(\'settings:general.intentRoutingModeOff\')}</option>' in panel
+    assert '<option value="shadow">{t(\'settings:general.intentRoutingModeShadow\')}</option>' in panel
+    assert '<option value="auto">{t(\'settings:general.intentRoutingModeAuto\')}</option>' in panel
+    assert "intent_routing_auto_route_safe_intents: mode === 'auto' ? true" in panel
+    assert "settings:general.autoRouteSafeIntents" not in panel
+    assert "settings:general.confirmUncertainRoutes" not in panel
+    assert "settings:general.enableIntentRouting" not in panel
     assert "intent_routing_semantic_intent_min_score: number;" in types
     assert "settings:general.semanticThresholds" in panel
     assert "settings:general.openUtilityLlmSettings" not in panel

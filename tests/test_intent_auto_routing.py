@@ -67,8 +67,9 @@ def enable_utility(fixture: PromptRuntimeFixture, payload: dict) -> FakeUtilityI
     return service
 
 
-def test_auto_mode_without_safe_auto_route_keeps_shadow_style_route() -> None:
+def test_auto_mode_ignores_legacy_safe_auto_false_for_safe_routes() -> None:
     fixture = PromptRuntimeFixture(llm=FakeLLMRuntime(response="chat reply"))
+    enable_semantic_router(fixture)
     fixture.app_settings.patch(
         {
             "intent_routing_enabled": True,
@@ -79,14 +80,17 @@ def test_auto_mode_without_safe_auto_route_keeps_shadow_style_route() -> None:
     )
     session = fixture.sessions.create_session(default_agent_id="chat")
 
-    result = run(fixture.runtime.handle_input(session, "generate an image of a castle"))
+    result = run(fixture.runtime.handle_input(session, "please help me write a concise update"))
 
     prompt_run = fixture.runs.get_run(result.run_id)
     intent = prompt_run.metadata["intent_routing"]
     assert prompt_run.target_id == "chat"
     assert intent["mode"] == "auto"
-    assert intent["route_action"] == "metadata_only"
-    assert "safe_auto_route_disabled" in intent["warnings"]
+    assert intent["predicted_intent"] == "chat"
+    assert intent["route_action"] == "current_prompt_agent"
+    assert intent["auto_executable"] is True
+    assert intent["executed"] is True
+    assert "safe_auto_route_disabled" not in intent["warnings"]
 
 
 def test_auto_chat_keeps_current_prompt_agent_without_knowledge_override() -> None:
