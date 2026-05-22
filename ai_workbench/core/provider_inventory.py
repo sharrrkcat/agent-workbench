@@ -54,11 +54,24 @@ def internal_provider_backend_status(provider: str) -> dict[str, Any]:
         transformers_available = importlib.util.find_spec("transformers") is not None
         sentence_transformers_available = importlib.util.find_spec("sentence_transformers") is not None
         torch_available = importlib.util.find_spec("torch") is not None
+        cuda_available = False
+        mps_available = False
+        if torch_available:
+            try:
+                import torch  # type: ignore
+
+                cuda_available = bool(torch.cuda.is_available())
+                mps_available = bool(getattr(getattr(torch, "backends", None), "mps", None) and torch.backends.mps.is_available())
+            except Exception:
+                cuda_available = False
+                mps_available = False
         return {
             "available": (transformers_available or sentence_transformers_available) and torch_available,
             "transformers_available": transformers_available,
             "sentence_transformers_available": sentence_transformers_available,
             "torch_available": torch_available,
+            "cuda_available": cuda_available,
+            "mps_available": mps_available,
         }
     if provider == "internal_llama_cpp":
         llama_cpp_available = importlib.util.find_spec("llama_cpp") is not None

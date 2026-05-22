@@ -64,6 +64,10 @@ llama-cpp-python. Generation through `internal_llama_cpp` requires a `.gguf`
 `transformers` and `torch`. Internal adapters do not support vision, tools, or
 provider function calling in this round, and should not claim streaming support
 unless an adapter explicitly implements and tests it.
+Internal LLM runtime device/acceleration comes from the selected Provider
+Profile: `internal_transformers.local_runtime_device` controls torch device
+selection, and `internal_llama_cpp.llama_cpp_gpu_layers` controls llama.cpp GPU
+layer offload. This does not change the main resolution order.
 
 Composer `Default` means the Agent default resolved model. It is not an
 additional Model Profile.

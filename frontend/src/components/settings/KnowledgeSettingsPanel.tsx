@@ -374,16 +374,9 @@ function KnowledgeModelsTab({
       <div className="detail-section">
         <div className="detail-section-heading"><h3>{t('knowledge:sections.embedding')}</h3></div>
         <div className="settings-detail-grid">
-          <SelectField
-            label={t('knowledge:labels.localModelDevice')}
-            value={values.local_model_device}
-            options={['auto', 'cpu', 'cuda']}
-            onChange={(value) => setValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })}
-          />
           <NumberField label={t('knowledge:labels.batchSize')} value={values.embedding_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, embedding_batch_size: value }); }} />
           <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.embedding_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, embedding_timeout_seconds: value }); }} />
         </div>
-        <p className="settings-muted-text">{t('knowledge:hints.localModelDevice')}</p>
         <label className="config-field settings-config-field boolean-field">
           <span>{t('knowledge:labels.unloadEmbeddingModelAfterUse')}</span>
           <ToggleSwitch checked={values.unload_embedding_model_after_use} onChange={(checked) => setValues({ ...values, unload_embedding_model_after_use: checked })} />

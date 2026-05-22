@@ -46,6 +46,8 @@
     "apiKeySet": "API key set",
     "modelsRoot": "Models root",
     "backend": "Backend",
+    "runtimeDevice": "Runtime device",
+    "gpuLayers": "GPU layers",
     "localModelsRoot": "Local models root",
     "availableModels": "Available models",
     "defaultModelProfile": "Default model profile",
@@ -89,7 +91,15 @@
     "llamaCppAlias": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.",
     "llamaCppProviderModelList": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.",
     "internalProviderRoot": "Scans data/models/llms, data/models/embeddings, and data/models/rerankers locally. Base URL and API key are not used.",
-    "internalLlmProfilesOnly": "LLM Model Profiles can select only refs under llm/ from this internal provider."
+    "internalLlmProfilesOnly": "LLM Model Profiles can select only refs under llm/ from this internal provider.",
+    "runtimeDevice": "Uses torch / transformers / sentence-transformers device semantics for internal transformers models. GPU availability depends on the installed torch backend.",
+    "gpuLayers": "Uses llama.cpp GPU layer offload semantics, which are separate from torch devices. Use 0 for CPU only, -1 to offload as much as possible, or a positive layer count."
+  },
+  "runtimeDevices": {
+    "auto": "Auto",
+    "cpu": "CPU",
+    "cuda": "CUDA",
+    "mps": "MPS"
   },
   "install": {
     "title": "Install commands",

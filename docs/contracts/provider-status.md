@@ -83,8 +83,16 @@ Internal providers:
 - Internal Provider Profile UI may show the safe local models root
   (`data/models`), compact dependency/backend availability, CUDA/GPU
   availability when already reported by status APIs, copyable install command
-  examples, and refreshed model refs. It should not repeat embedding/reranker
-  folder counts because refreshed inventory is the source of model visibility.
+  examples, selected runtime device or GPU layer settings, and refreshed model
+  refs. It should not repeat embedding/reranker folder counts because refreshed
+  inventory is the source of model visibility.
+- `internal_transformers` status reports configured `local_runtime_device` and
+  dependency/GPU availability when detectable. Selecting `cuda` or `mps` while
+  the matching torch backend is unavailable returns a compact warning/status
+  signal instead of failing Settings load.
+- `internal_llama_cpp` status reports configured `llama_cpp_gpu_layers`.
+  Non-zero GPU layer configuration means offload is requested; the status must
+  not claim GPU readiness unless the llama-cpp-python backend can verify it.
 - LLM Model Profiles may use only `llm/...` refs from internal providers.
   Status for those profiles reports provider enabled/disabled, model ref
   valid/invalid, model file/folder exists/missing, optional dependency
@@ -147,12 +155,13 @@ not force-released. In this alpha, manual LLM release is limited to provider
 profiles with reliable unload support: LM Studio native unload and best-effort
 internal LLM runtime cache release.
 
-Embedding and reranker local cache release is best-effort. The `embedding`
-target may release local/internal embedding caches; external embedding
-providers have no local cache and should be skipped or reported as no local
-cache. The `reranker` target may release cached internal reranker runtimes and
-must never delete model files, Knowledge data, or settings. ComfyUI memory
-release is an external service request through ComfyUI `/free` with
+Embedding and reranker local cache release is best-effort and targets
+provider-owned internal caches. The `embedding` target may release
+local/internal embedding caches; external embedding providers have no local
+cache and should be skipped or reported as no local cache. The `reranker`
+target may release cached internal reranker runtimes and must never delete
+model files, Knowledge data, or settings. ComfyUI memory release is an external
+service request through ComfyUI `/free` with
 `unload_models` and `free_memory` booleans. ComfyUI release failure is a cleanup
 warning and must not turn an already successful image generation into a failed
 run.

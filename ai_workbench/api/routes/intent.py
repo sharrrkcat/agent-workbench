@@ -166,6 +166,7 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
             capability_registry=state.capabilities,
             command_registry=state.commands,
             semantic_router=state.semantic_router,
+            provider_profile_store=state.provider_profiles,
         )
         prediction = await _maybe_apply_utility_slots(
             text=text,
@@ -221,6 +222,7 @@ async def test_route(payload: RouteTestRequest, state: RuntimeState = Depends(ge
         command_registry=state.commands,
         semantic_router=state.semantic_router,
         utility_llm_service=state.utility_llm if payload.include_utility else None,
+        provider_profile_store=state.provider_profiles,
     )
     return {"ok": True, "decision": _route_test_decision(decision or {"eligible": False, "bypassed": True, "bypass_reason": "unavailable"})}
 

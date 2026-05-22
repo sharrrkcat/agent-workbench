@@ -108,6 +108,34 @@ def test_embedding_profile_internal_provider_uses_embedding_ref_only(tmp_path: P
     assert backend.calls[-1]["model_path"] == "embeddings/local-embed"
 
 
+def test_embedding_profile_internal_provider_uses_provider_runtime_device(tmp_path: Path) -> None:
+    backend = FakeKnowledgeBackend()
+    client = make_client_with_backend(tmp_path, backend)
+    client.app.state.runtime_state.repo_root = tmp_path
+    model_dir = tmp_path / "data" / "models" / "embeddings" / "local-embed"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": "Internal embeddings",
+            "provider": "internal_transformers",
+            "enabled": True,
+            "metadata": {"local_runtime_device": "cpu"},
+        },
+    ).json()
+    client.patch("/api/knowledge/settings", json={"local_model_device": "cuda"})
+    profile = client.post(
+        "/api/knowledge/embedding-models",
+        json={"name": "Local", "alias": "local", "provider_profile_id": provider["id"], "provider_model_id": "embedding/local-embed"},
+    ).json()
+
+    response = client.post("/api/knowledge/embeddings", json={"model_profile_id": profile["id"], "purpose": "document", "inputs": ["hello"]})
+
+    assert response.status_code == 200
+    assert backend.calls[-1]["device"] == "cpu"
+
+
 def test_embedding_profile_openai_compatible_provider_uses_embeddings_endpoint(tmp_path: Path, monkeypatch) -> None:
     class FakeEmbeddingResponse:
         def raise_for_status(self) -> None:
@@ -238,8 +266,9 @@ def test_reranker_model_profile_crud_test_and_defaults_selection(tmp_path: Path)
     (model_dir / "config.json").write_text("{}", encoding="utf-8")
     provider = client.post(
         "/api/llm-provider-profiles",
-        json={"name": "Internal", "provider": "internal_transformers"},
+        json={"name": "Internal", "provider": "internal_transformers", "metadata": {"local_runtime_device": "cpu"}},
     ).json()
+    client.patch("/api/knowledge/settings", json={"local_model_device": "cuda"})
     profile_response = client.post(
         "/api/knowledge/reranker-models",
         json={
@@ -264,6 +293,7 @@ def test_reranker_model_profile_crud_test_and_defaults_selection(tmp_path: Path)
     assert test_response.status_code == 200, test_response.text
     assert [item["id"] for item in test_response.json()["results"]] == ["doc1", "doc2"]
     assert backend.calls[-1]["model_path"] == "rerankers/mock-reranker"
+    assert backend.calls[-1]["device"] == "cpu"
 
     settings = client.patch("/api/knowledge/settings", json={"reranker_enabled": True, "reranker_profile_id": profile["id"]})
     assert settings.status_code == 200, settings.text

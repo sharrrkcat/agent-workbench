@@ -11,6 +11,7 @@ from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.route import RouteKind, RouteTarget
 from ai_workbench.core.session import Session
 from ai_workbench.core.message_parts import text_from_parts
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 
 
 class WorkbenchRuntime:
@@ -58,6 +59,7 @@ class WorkbenchRuntime:
             parent_step_id=preparation_step_id,
             knowledge_model_backend=getattr(self.agent_runner, "knowledge_model_backend", None) if self.agent_runner is not None else None,
             utility_llm_service=getattr(self.agent_runner, "utility_llm_service", None) if self.agent_runner is not None else None,
+            provider_profile_store=getattr(self.agent_runner, "provider_profile_store", None) if self.agent_runner is not None else None,
         )
         intent_metadata = await self._intent_routing_metadata(session, route, preparation_recorder=recorder)
         route = self._apply_intent_route(route, intent_metadata)
@@ -307,6 +309,7 @@ class WorkbenchRuntime:
             runtime_registry=getattr(self.agent_runner, "runtime_registry", None),
             command_registry=getattr(self.command_runner, "command_registry", None),
             semantic_router=getattr(self.agent_runner, "semantic_router", None),
+            provider_profile_store=getattr(self.agent_runner, "provider_profile_store", None),
             preparation_recorder=preparation_recorder,
         )
 
@@ -490,12 +493,14 @@ class _PreparationStepRecorder:
         parent_step_id: str,
         knowledge_model_backend: Any,
         utility_llm_service: Any,
+        provider_profile_store: Any,
     ) -> None:
         self.lifecycle = lifecycle
         self.run_id = run_id
         self.parent_step_id = parent_step_id
         self.knowledge_model_backend = knowledge_model_backend
         self.utility_llm_service = utility_llm_service
+        self.provider_profile_store = provider_profile_store
 
     def start_embedding_load(self, *, settings: Any, knowledge_store: Any, model_backend: Any) -> dict[str, Any] | None:
         if self.lifecycle is None or not self.run_id or not self.parent_step_id or knowledge_store is None or model_backend is None:
@@ -507,8 +512,17 @@ class _PreparationStepRecorder:
             profile = knowledge_store.get_embedding_profile(profile_id)
             settings_obj = knowledge_store.get_settings()
             device = getattr(settings_obj, "local_model_device", "auto")
+            model_path = getattr(profile, "model_path", "")
+            if getattr(profile, "provider_profile_id", None) and self.provider_profile_store is not None:
+                try:
+                    provider = self.provider_profile_store.get(profile.provider_profile_id)
+                    if provider.provider == "internal_transformers" and getattr(profile, "provider_model_id", "").startswith("embedding/"):
+                        device = provider_runtime_settings(provider, legacy_device=device)["local_runtime_device"]
+                        model_path = "embeddings/" + str(profile.provider_model_id).removeprefix("embedding/")
+                except Exception:
+                    pass
             loaded = getattr(model_backend, "embedding_model_loaded", None)
-            if callable(loaded) and loaded(getattr(profile, "model_path", ""), device):
+            if callable(loaded) and loaded(model_path, device):
                 return None
             return self._start("Loading embedding model", {"backend": "intent_routing", "profile_id": profile_id, "model_path": getattr(profile, "model_path", None), "state": "loading"})
         except Exception:

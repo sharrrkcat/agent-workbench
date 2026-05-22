@@ -68,7 +68,7 @@ Main API groups and responsibilities:
 
 | API group | responsibility |
 | --- | --- |
-| `GET/PATCH /api/knowledge/settings` | Knowledge Defaults, local model device, retrieval knobs, chunk/index limits, prompt templates, query expansion, and local model unload settings |
+| `GET/PATCH /api/knowledge/settings` | Knowledge Defaults, retrieval knobs, chunk/index limits, prompt templates, query expansion, local model unload settings, and deprecated `local_model_device` compatibility storage |
 | `GET /api/knowledge/models/scan` | local embedding/reranker folder scan and optional backend availability without loading weights |
 | `GET/POST/PATCH/DELETE /api/knowledge/embedding-models` | Embedding Model Profile CRUD |
 | `POST /api/knowledge/embedding-models/{id}/test` | profile-specific embedding test |
@@ -101,8 +101,9 @@ The Settings UI exposes them under Settings -> Models -> Embedding Model
 Profiles. Settings -> Knowledge keeps Knowledge Defaults and Knowledge Bases;
 Knowledge Base configuration still selects an Embedding Model Profile.
 Knowledge Defaults -> Models owns the default model profile selections and
-runtime knobs that affect Knowledge behavior, including the current local model
-device setting while embedding/reranker runtimes still read it.
+runtime knobs that affect Knowledge behavior. Local runtime device and
+acceleration settings for internal embedding/reranker models are resolved from
+the selected Provider Profile, not from Knowledge Defaults.
 
 - New profiles should set `provider_profile_id` and `provider_model_id`.
 - Internal provider profiles use `provider_model_id` refs shaped as
@@ -117,6 +118,9 @@ device setting while embedding/reranker runtimes still read it.
 - `purpose` is `query` or `document`.
 - Query and document instructions are profile fields applied by the unified
   embedding service before provider calls.
+- Internal embedding generation uses the selected Provider Profile runtime
+  setting: `internal_transformers.local_runtime_device` or
+  `internal_llama_cpp.llama_cpp_gpu_layers`.
 - Dimensions are detected from generated vectors and stored/displayed as compact
   metadata.
 - Normalization follows the profile/default behavior and is reused by retrieval
@@ -154,8 +158,16 @@ limits remain Knowledge Defaults fields and are not profile fields.
 - Reranker profiles participate only in retrieval-time candidate reordering.
   They do not participate in indexing, vector generation, FTS/BM25 writes, or
   Knowledge Base profile grouping.
+- Internal reranker runtime uses the selected Provider Profile runtime setting:
+  `internal_transformers.local_runtime_device` or
+  `internal_llama_cpp.llama_cpp_gpu_layers`.
 - Reranker failure is fail-open: retrieval records a compact warning and falls
   back to RRF order.
+
+`KnowledgeSettings.local_model_device` is a deprecated compatibility field. Old
+databases may still store it, and old internal transformers Provider Profiles
+that have no provider-owned runtime setting may use it as a fallback, but it is
+not the active Settings UI owner for local model device selection.
 
 ## Data Ownership
 

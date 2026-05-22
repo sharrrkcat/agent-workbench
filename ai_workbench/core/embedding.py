@@ -7,6 +7,7 @@ import httpx
 from ai_workbench.core.knowledge_models import KnowledgeModelError, LocalKnowledgeModelBackend
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile
 from ai_workbench.core.provider_inventory import resolve_internal_embedding_model_ref
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
 
 
@@ -50,7 +51,7 @@ def embed_texts(
                 "Embedding provider profile is disabled.",
                 {"provider_profile_id": provider.id},
             )
-        vectors = _embed_with_provider(provider=provider, profile=profile, prepared=prepared, normalize=profile.normalize, device=device, backend=backend, repo_root=repo_root)
+        vectors = _embed_with_provider(provider=provider, profile=profile, prepared=prepared, normalize=profile.normalize, legacy_device=device, backend=backend, repo_root=repo_root)
     else:
         vectors = backend.embed_texts(profile.model_path, prepared, normalize=profile.normalize, device=device)
     if profile.normalize:
@@ -93,7 +94,7 @@ def _embed_with_provider(
     profile: EmbeddingModelProfile,
     prepared: list[str],
     normalize: bool,
-    device: str,
+    legacy_device: str,
     backend: LocalKnowledgeModelBackend,
     repo_root: Path | None,
 ) -> list[list[float]]:
@@ -107,7 +108,8 @@ def _embed_with_provider(
     if provider.provider == "internal_transformers":
         try:
             resolve_internal_embedding_model_ref(provider.provider, model_id, repo_root)
-            return backend.embed_texts(legacy_model_path_for_embedding_ref(model_id), prepared, normalize=normalize, device=device)
+            runtime = provider_runtime_settings(provider, legacy_device=legacy_device)
+            return backend.embed_texts(legacy_model_path_for_embedding_ref(model_id), prepared, normalize=normalize, device=runtime["local_runtime_device"])
         except KnowledgeModelError:
             raise
         except Exception as exc:
@@ -170,10 +172,11 @@ def _embed_ollama(*, provider: ProviderProfileSchema, model_id: str, texts: list
 def _embed_with_llama_cpp(*, provider: ProviderProfileSchema, model_id: str, texts: list[str], normalize: bool, repo_root: Path | None, backend: LocalKnowledgeModelBackend) -> list[list[float]]:
     try:
         model_path = resolve_internal_embedding_model_ref(provider.provider, model_id, repo_root)
+        runtime = provider_runtime_settings(provider)
         embed = getattr(backend, "llama_cpp_embed_texts", None)
         if not callable(embed):
             raise KnowledgeModelError(INTERNAL_EMBEDDING_UNAVAILABLE, "llama.cpp embedding backend is not configured.", {"provider_profile_id": provider.id, "provider_model_id": model_id})
-        return embed(model_path, texts, normalize=normalize)
+        return embed(model_path, texts, normalize=normalize, gpu_layers=runtime["llama_cpp_gpu_layers"])
     except KnowledgeModelError:
         raise
     except ImportError as exc:

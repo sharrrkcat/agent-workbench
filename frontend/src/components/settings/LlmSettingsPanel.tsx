@@ -54,6 +54,26 @@ const internalProviderInstallCommands = {
     { key: 'cuda128', command: 'CMAKE_ARGS="-DGGML_CUDA=on" uv pip install llama-cpp-python --force-reinstall --no-cache-dir' },
   ],
 } as const;
+const localRuntimeDeviceOptions = ['auto', 'cpu', 'cuda', 'mps'] as const;
+
+function providerMetadata(draft: LlmProviderProfileInput): Record<string, unknown> {
+  return { ...(draft.metadata || {}) };
+}
+
+function updateProviderMetadata(draft: LlmProviderProfileInput, values: Record<string, unknown>): LlmProviderProfileInput {
+  return { ...draft, metadata: { ...providerMetadata(draft), ...values } };
+}
+
+function runtimeDeviceValue(draft: LlmProviderProfileInput): string {
+  const value = String(providerMetadata(draft).local_runtime_device || 'auto');
+  return localRuntimeDeviceOptions.includes(value as (typeof localRuntimeDeviceOptions)[number]) ? value : 'auto';
+}
+
+function gpuLayersValue(draft: LlmProviderProfileInput): number {
+  const raw = providerMetadata(draft).llama_cpp_gpu_layers;
+  const parsed = typeof raw === 'number' ? raw : Number.parseInt(String(raw ?? '0'), 10);
+  return Number.isFinite(parsed) && parsed >= -1 ? parsed : 0;
+}
 
 export function LlmSettingsPanel({
   config,
@@ -764,11 +784,17 @@ export function LlmProviderProfileDetail({
                 value={providerKind}
                 onChange={(event) => {
                   const provider = event.target.value as LlmProviderProfileInput['provider'];
+                  const nextMetadata = provider === 'internal_transformers'
+                    ? { local_runtime_device: runtimeDeviceValue(draft) }
+                    : provider === 'internal_llama_cpp'
+                      ? { llama_cpp_gpu_layers: gpuLayersValue(draft) }
+                      : {};
                   setDraft({
                     ...draft,
                     provider,
                     base_url: isInternalProvider(provider) ? '' : draft.base_url,
                     api_key: isInternalProvider(provider) ? '' : draft.api_key,
+                    metadata: nextMetadata,
                   });
                 }}
                 disabled={busy}
@@ -784,6 +810,9 @@ export function LlmProviderProfileDetail({
             )}
             <NumberField label={t('llm:labels.timeout')} value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
           </div>
+          {internalProvider ? (
+            <InternalProviderRuntimeSettings provider={providerKind} draft={draft} setDraft={setDraft} busy={busy} />
+          ) : null}
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
           {result?.warnings?.length ? <p className="settings-warning-text">{result.warnings.join(', ')}</p> : null}
           {internalProvider ? (
@@ -803,6 +832,56 @@ export function LlmProviderProfileDetail({
       </div>
     </form>
   );
+}
+
+function InternalProviderRuntimeSettings({
+  provider,
+  draft,
+  setDraft,
+  busy,
+}: {
+  provider: string;
+  draft: LlmProviderProfileInput;
+  setDraft: (draft: LlmProviderProfileInput) => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation('llm');
+  if (provider === 'internal_transformers') {
+    return (
+      <div className="settings-muted-copy">
+        <div className="settings-detail-grid">
+          <label className="config-field settings-config-field">
+            <span>{t('llm:labels.runtimeDevice')}</span>
+            <select
+              value={runtimeDeviceValue(draft)}
+              onChange={(event) => setDraft(updateProviderMetadata(draft, { local_runtime_device: event.target.value }))}
+              disabled={busy}
+            >
+              {localRuntimeDeviceOptions.map((device) => <option key={device} value={device}>{t(`llm:runtimeDevices.${device}`)}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="settings-muted-text">{t('llm:help.runtimeDevice')}</p>
+      </div>
+    );
+  }
+  if (provider === 'internal_llama_cpp') {
+    return (
+      <div className="settings-muted-copy">
+        <div className="settings-detail-grid">
+          <NumberField
+            label={t('llm:labels.gpuLayers')}
+            value={gpuLayersValue(draft)}
+            onChange={(value) => setDraft(updateProviderMetadata(draft, { llama_cpp_gpu_layers: value === null ? 0 : value }))}
+            disabled={busy}
+            integer
+          />
+        </div>
+        <p className="settings-muted-text">{t('llm:help.gpuLayers')}</p>
+      </div>
+    );
+  }
+  return null;
 }
 
 function InternalProviderEnvironment({
@@ -845,6 +924,12 @@ function InternalProviderEnvironment({
           <div>
             <dt>CUDA</dt>
             <dd>{formatInternalProviderStatus(backend?.cuda_available, t)}</dd>
+          </div>
+        ) : null}
+        {'mps_available' in (backend || {}) ? (
+          <div>
+            <dt>MPS</dt>
+            <dd>{formatInternalProviderStatus(backend?.mps_available, t)}</dd>
           </div>
         ) : null}
       </dl>
@@ -1417,7 +1502,13 @@ function cleanProfileInput(input: LlmProfileInput): LlmProfileInput {
 }
 
 function cleanProviderInput(input: LlmProviderProfileInput): LlmProviderProfileInput {
-  const entries = Object.entries(input).filter(([key, value]) => {
+  const normalized: LlmProviderProfileInput = { ...input };
+  if (normalized.provider === 'internal_transformers') {
+    normalized.metadata = { local_runtime_device: runtimeDeviceValue(normalized) };
+  } else if (normalized.provider === 'internal_llama_cpp') {
+    normalized.metadata = { llama_cpp_gpu_layers: gpuLayersValue(normalized) };
+  }
+  const entries = Object.entries(normalized).filter(([key, value]) => {
     if (value === undefined) return false;
     if (key === 'api_key' && String(value || '').trim() === '') return false;
     return true;

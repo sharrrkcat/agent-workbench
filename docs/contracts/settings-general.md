@@ -45,8 +45,12 @@ backends. Internal Provider Profiles use fixed local inventory roots under
 `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers`; they
 do not add editable root paths and do not own per-model generation, embedding,
 or reranking parameters. Internal Provider Profile detail pages own the local
-model environment display and compact install command examples. Knowledge
-Defaults no longer displays local model overview or install commands.
+model environment display, compact install command examples, and local runtime
+device/acceleration defaults. `internal_transformers` owns
+`local_runtime_device` (`auto`, `cpu`, `cuda`, or `mps`); `internal_llama_cpp`
+owns `llama_cpp_gpu_layers` (`0` for CPU only, `-1` for offload as much as
+possible, or a positive layer count). Knowledge Defaults no longer displays
+local model overview, install commands, or active local model device controls.
 LLM Model Profiles may select internal Provider Profiles only with `llm/...`
 refs. Embedding and reranker refs remain outside LLM Model Profile selection.
 Embedding Model Profiles may select Provider Profiles that support embeddings:
@@ -62,9 +66,9 @@ Reranker Model Profiles may select only internal Provider Profiles with
 retrieval strategy parameters; candidate counts, thresholds, and context limits
 do not move into Reranker Model Profiles. Legacy local reranker path selection
 is not exposed as a current Settings workflow.
-The current local model device setting remains in Knowledge Defaults because
-embedding and reranker runtimes still read it there; it is not migrated to
-Provider Profiles in this contract revision.
+The legacy `KnowledgeSettings.local_model_device` field may remain in stored
+settings for old databases, but new Settings UI and provider-aware runtime paths
+resolve local device/acceleration from the selected internal Provider Profile.
 
 ## Files
 

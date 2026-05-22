@@ -34,6 +34,7 @@ from ai_workbench.core.provider_status import (
     refresh_provider_status_for_profile,
     unload_model_for_profile,
 )
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 from ai_workbench.core.run_lifecycle import RunLifecycle
 from ai_workbench.core.schema.result import CommandResult, RunResult
 from ai_workbench.core.schema.run import RunSchema, RunStatus
@@ -497,18 +498,35 @@ class AgentRunner:
                         kbs.append(kb)
             for profile_id in sorted({getattr(kb, "embedding_model_profile_id", "") for kb in kbs if getattr(kb, "embedding_model_profile_id", "")}):
                 profile = self.knowledge_store.get_embedding_profile(profile_id)
-                if not self._embedding_loaded(getattr(profile, "model_path", ""), getattr(settings, "local_model_device", "auto")):
+                embedding_path = getattr(profile, "model_path", "")
+                embedding_device = getattr(settings, "local_model_device", "auto")
+                if getattr(profile, "provider_profile_id", None) and self.provider_profile_store is not None:
+                    try:
+                        provider = self.provider_profile_store.get(profile.provider_profile_id)
+                        if provider.provider == "internal_transformers" and getattr(profile, "provider_model_id", "").startswith("embedding/"):
+                            embedding_path = "embeddings/" + str(profile.provider_model_id).removeprefix("embedding/")
+                            embedding_device = provider_runtime_settings(provider, legacy_device=embedding_device)["local_runtime_device"]
+                    except Exception:
+                        pass
+                if not self._embedding_loaded(embedding_path, embedding_device):
                     steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading embedding model", {"backend": "knowledge", "profile_id": profile_id, "model_path": getattr(profile, "model_path", None), "state": "loading"}))
             reranker_path = str(getattr(settings, "reranker_model_path", "") or "")
             reranker_profile_id = str(getattr(settings, "reranker_profile_id", "") or "")
             if reranker_profile_id:
                 try:
                     profile = self.knowledge_store.get_reranker_profile(reranker_profile_id)
+                    reranker_device = getattr(settings, "local_model_device", "auto")
                     if str(getattr(profile, "provider_model_id", "")).startswith("reranker/"):
                         reranker_path = "rerankers/" + str(profile.provider_model_id).removeprefix("reranker/")
+                    if getattr(profile, "provider_profile_id", None) and self.provider_profile_store is not None:
+                        provider = self.provider_profile_store.get(profile.provider_profile_id)
+                        if provider.provider == "internal_transformers":
+                            reranker_device = provider_runtime_settings(provider, legacy_device=reranker_device)["local_runtime_device"]
                 except Exception:
                     reranker_path = ""
-            if getattr(settings, "reranker_enabled", False) and reranker_path and not self._reranker_loaded(reranker_path, getattr(settings, "local_model_device", "auto")):
+            else:
+                reranker_device = getattr(settings, "local_model_device", "auto")
+            if getattr(settings, "reranker_enabled", False) and reranker_path and not self._reranker_loaded(reranker_path, reranker_device):
                 steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading reranker", {"backend": "knowledge", "model_path": reranker_path, "profile_id": reranker_profile_id or None, "state": "loading"}))
         except Exception:
             return steps

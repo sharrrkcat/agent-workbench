@@ -6,6 +6,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from ai_workbench.core.provider_inventory import internal_llm_model_ref_exists, is_internal_provider, scan_internal_provider_models
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.time import isoformat_utc, utc_now
 
@@ -491,8 +492,17 @@ def _refresh_internal_provider(provider: ProviderProfileSchema, model_profiles: 
         models = provider_models
     dependency_available = bool(inventory["backend"].get("available"))
     warnings = list(inventory["warnings"])
+    runtime_settings = provider_runtime_settings(provider)
     if not dependency_available:
         warnings.append("internal_provider_dependency_unavailable")
+    if provider.provider == "internal_transformers":
+        selected_device = runtime_settings.get("local_runtime_device")
+        if selected_device == "cuda" and not inventory["backend"].get("cuda_available"):
+            warnings.append("internal_provider_cuda_unavailable")
+        if selected_device == "mps" and not inventory["backend"].get("mps_available"):
+            warnings.append("internal_provider_mps_unavailable")
+    if provider.provider == "internal_llama_cpp" and int(runtime_settings.get("llama_cpp_gpu_layers") or 0) != 0:
+        warnings.append("internal_provider_gpu_layers_configured_backend_unverified")
     payload = _provider_payload(
         provider=provider,
         reachable=True,
@@ -504,6 +514,7 @@ def _refresh_internal_provider(provider: ProviderProfileSchema, model_profiles: 
     )
     payload["backend"] = inventory["backend"]
     payload["models_root"] = inventory["models_root"]
+    payload["runtime_settings"] = runtime_settings
     return payload
 
 

@@ -48,6 +48,9 @@ The supported primary backend is an existing enabled LLM Model Profile selected
 in Settings -> General -> Utility LLM. Local Utility models should be placed
 under `data/models/llms`, discovered through an internal Provider Profile, and
 selected through an LLM Model Profile.
+When the selected Utility LLM Model Profile uses an internal Provider Profile,
+the Utility call inherits that Provider Profile's runtime device or GPU layer
+settings. Utility LLM does not own separate active local acceleration settings.
 
 Legacy `transformers` and `llama_cpp` Utility backend fields and
 `data/models/utility_llms` paths may remain in stored settings for compatibility.

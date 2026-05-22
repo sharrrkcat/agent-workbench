@@ -220,6 +220,7 @@ class SemanticRouter:
         agent_config_store: Any = None,
         capability_registry: Any = None,
         command_registry: Any = None,
+        provider_profile_store: Any = None,
     ) -> dict[str, Any]:
         profile_id = str(getattr(settings, "intent_routing_embedding_model_profile_id", "") or "").strip()
         if not profile_id:
@@ -252,6 +253,7 @@ class SemanticRouter:
                 agent_config_store=agent_config_store,
                 capability_registry=capability_registry,
                 command_registry=command_registry,
+                provider_profile_store=provider_profile_store,
             )
             settings_obj = knowledge_store.get_settings()
             query = embed_texts(
@@ -260,6 +262,7 @@ class SemanticRouter:
                 texts=[text],
                 purpose="query",
                 device=getattr(settings_obj, "local_model_device", "auto"),
+                provider_profile_store=provider_profile_store,
             )["vectors"][0]
         except Exception:
             return SemanticRouteDecision(
@@ -280,6 +283,7 @@ class SemanticRouter:
         agent_config_store: Any,
         capability_registry: Any,
         command_registry: Any,
+        provider_profile_store: Any = None,
     ) -> SemanticRouteIndex:
         candidates = self.builder.build_candidates(
             settings=settings,
@@ -303,6 +307,7 @@ class SemanticRouter:
                 texts=[candidate.document_text() for candidate in candidates],
                 purpose="document",
                 device=getattr(settings_obj, "local_model_device", "auto"),
+                provider_profile_store=provider_profile_store,
             )
             version = key[:12]
             self._index = SemanticRouteIndex(

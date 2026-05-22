@@ -190,6 +190,7 @@ async def build_intent_routing_metadata(
     command_registry: Any = None,
     semantic_router: Any = None,
     utility_llm_service: Any = None,
+    provider_profile_store: Any = None,
     preparation_recorder: Any = None,
 ) -> dict[str, Any] | None:
     settings = app_settings_store.get() if app_settings_store is not None else None
@@ -227,6 +228,7 @@ async def build_intent_routing_metadata(
         capability_registry=capability_registry,
         command_registry=command_registry,
         semantic_router=semantic_router,
+        provider_profile_store=provider_profile_store,
         preparation_recorder=preparation_recorder,
     )
     prediction = await _maybe_apply_utility_slots(
@@ -500,6 +502,7 @@ async def _semantic_prediction(
     capability_registry: Any = None,
     command_registry: Any = None,
     semantic_router: Any = None,
+    provider_profile_store: Any = None,
     preparation_recorder: Any = None,
 ) -> dict[str, Any]:
     step_token = None
@@ -523,6 +526,7 @@ async def _semantic_prediction(
             agent_config_store=agent_config_store,
             capability_registry=capability_registry,
             command_registry=command_registry,
+            provider_profile_store=provider_profile_store,
         )
     except Exception:
         prediction = {"predicted_intent": "chat", "confidence": 0.0, "source": "embedding_semantic_router", "warnings": ["semantic_router_unavailable"]}

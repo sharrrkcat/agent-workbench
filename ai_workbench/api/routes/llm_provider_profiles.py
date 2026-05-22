@@ -10,6 +10,7 @@ from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.configs import _runtime_list_models, _runtime_model_items, _safe_llm_error
 from ai_workbench.core.config_schema import MASKED_SECRET
 from ai_workbench.core.provider_inventory import is_internal_provider, scan_internal_provider_models
+from ai_workbench.core.provider_runtime import normalize_provider_runtime_metadata
 from ai_workbench.core.provider_status import ProviderStatusError, refresh_provider_status, refresh_provider_statuses
 from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
 from ai_workbench.core.time import utc_now
@@ -71,7 +72,13 @@ def refresh_all_provider_status(payload: ProviderStatusRefreshRequest = None, st
 @router.post("")
 def create_provider_profile(payload: ProviderProfileCreateRequest, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        profile = ProviderProfileSchema(id=str(uuid4()), created_at=utc_now(), updated_at=utc_now(), **payload.model_dump())
+        values = payload.model_dump()
+        values["metadata"] = normalize_provider_runtime_metadata(
+            str(values.get("provider") or ""),
+            values.get("metadata"),
+            legacy_device=_legacy_knowledge_device(state),
+        )
+        profile = ProviderProfileSchema(id=str(uuid4()), created_at=utc_now(), updated_at=utc_now(), **values)
         return _serialize_provider(state.provider_profiles.create(profile))
     except ValidationError as exc:
         raise_error(400, "LLM_PROVIDER_PROFILE_INVALID", _validation_message(exc))
@@ -92,12 +99,20 @@ def refresh_one_provider_status(profile_id: str, state: RuntimeState = Depends(g
 
 @router.patch("/{profile_id}")
 def patch_provider_profile(profile_id: str, payload: ProviderProfilePatchRequest, state: RuntimeState = Depends(get_state)) -> dict:
-    _get_provider_or_404(state, profile_id)
+    current = _get_provider_or_404(state, profile_id)
     values = payload.model_dump(exclude_unset=True)
     if values.get("api_key") == MASKED_SECRET:
         values.pop("api_key", None)
     if "api_key" in values and values.get("api_key") is None:
         values["api_key"] = ""
+    provider_kind = str(values.get("provider") or current.provider)
+    metadata = values.get("metadata") if "metadata" in values else current.metadata
+    if is_internal_provider(provider_kind):
+        values["metadata"] = normalize_provider_runtime_metadata(
+            provider_kind,
+            metadata,
+            legacy_device=_legacy_knowledge_device(state),
+        )
     try:
         return _serialize_provider(state.provider_profiles.update(profile_id, values))
     except ValidationError as exc:
@@ -216,9 +231,18 @@ def _get_provider_or_404(state: RuntimeState, profile_id: str) -> ProviderProfil
 
 def _serialize_provider(profile: ProviderProfileSchema) -> Dict[str, Any]:
     data = profile.model_dump()
+    if is_internal_provider(profile.provider):
+        data["metadata"] = normalize_provider_runtime_metadata(profile.provider, profile.metadata)
     data["api_key"] = MASKED_SECRET if profile.api_key else ""
     data["api_key_set"] = bool(profile.api_key)
     return data
+
+
+def _legacy_knowledge_device(state: RuntimeState) -> str | None:
+    try:
+        return str(getattr(state.knowledge.get_settings(), "local_model_device", "") or "")
+    except Exception:
+        return None
 
 
 def _provider_model_config(profile: ProviderProfileSchema) -> Dict[str, Any]:

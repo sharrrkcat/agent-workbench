@@ -88,18 +88,22 @@ def backend_availability() -> dict[str, Any]:
     torch_available = importlib.util.find_spec("torch") is not None
     transformers_available = importlib.util.find_spec("transformers") is not None
     cuda_available = False
+    mps_available = False
     if torch_available:
         try:
             import torch  # type: ignore
 
             cuda_available = bool(torch.cuda.is_available())
+            mps_available = bool(getattr(getattr(torch, "backends", None), "mps", None) and torch.backends.mps.is_available())
         except Exception:
             cuda_available = False
+            mps_available = False
     return {
         "sentence_transformers_available": sentence_transformers_available,
         "torch_available": torch_available,
         "transformers_available": transformers_available,
         "cuda_available": cuda_available,
+        "mps_available": mps_available,
         "available": sentence_transformers_available and torch_available,
     }
 
@@ -115,11 +119,19 @@ def resolve_device(requested: str) -> str:
                 availability,
             )
         return "cuda"
+    if requested == "mps":
+        if not availability["torch_available"] or not availability.get("mps_available"):
+            raise KnowledgeModelError(
+                LOCAL_MODEL_BACKEND_UNAVAILABLE,
+                "MPS was selected, but torch MPS is not available.",
+                availability,
+            )
+        return "mps"
     if requested == "auto":
         return "cuda" if availability["torch_available"] and availability["cuda_available"] else "cpu"
     if requested == "cpu":
         return "cpu"
-    raise ValueError("local_model_device must be auto, cpu, or cuda.")
+    raise ValueError("local_runtime_device must be auto, cpu, cuda, or mps.")
 
 
 class LocalKnowledgeModelBackend:
@@ -170,10 +182,10 @@ class LocalKnowledgeModelBackend:
         finally:
             self._active_reranker_calls = max(0, self._active_reranker_calls - 1)
 
-    def llama_cpp_embed_texts(self, model_path: Path, texts: list[str], normalize: bool) -> list[list[float]]:
+    def llama_cpp_embed_texts(self, model_path: Path, texts: list[str], normalize: bool, gpu_layers: int = 0) -> list[list[float]]:
         self._active_embedding_calls += 1
         try:
-            model = self._load_llama_embedding_model(model_path)
+            model = self._load_llama_embedding_model(model_path, gpu_layers=gpu_layers)
             vectors: list[list[float]] = []
             for text in texts:
                 data = model.create_embedding(text)
@@ -187,10 +199,10 @@ class LocalKnowledgeModelBackend:
         finally:
             self._active_embedding_calls = max(0, self._active_embedding_calls - 1)
 
-    def llama_cpp_rerank(self, model_path: Path, query: str, documents: list[dict[str, str]]) -> list[dict[str, Any]]:
+    def llama_cpp_rerank(self, model_path: Path, query: str, documents: list[dict[str, str]], gpu_layers: int = 0) -> list[dict[str, Any]]:
         self._active_reranker_calls += 1
         try:
-            model = self._load_llama_reranker_model(model_path)
+            model = self._load_llama_reranker_model(model_path, gpu_layers=gpu_layers)
             scores: list[dict[str, Any]] = []
             for document in documents:
                 score_method = getattr(model, "score", None)
@@ -211,22 +223,22 @@ class LocalKnowledgeModelBackend:
                 self._embedding_cache[key] = SentenceTransformer(str(path), device=device)
             return self._embedding_cache[key]
 
-    def _load_llama_embedding_model(self, path: Path) -> Any:
-        key = str(path)
+    def _load_llama_embedding_model(self, path: Path, gpu_layers: int = 0) -> Any:
+        key = f"{path}::gpu_layers={gpu_layers}"
         with self._embedding_cache_lock:
             if key not in self._llama_embedding_cache:
                 from llama_cpp import Llama  # type: ignore
 
-                self._llama_embedding_cache[key] = Llama(model_path=key, embedding=True, verbose=False)
+                self._llama_embedding_cache[key] = Llama(model_path=str(path), embedding=True, n_gpu_layers=int(gpu_layers), verbose=False)
             return self._llama_embedding_cache[key]
 
-    def _load_llama_reranker_model(self, path: Path) -> Any:
-        key = str(path)
+    def _load_llama_reranker_model(self, path: Path, gpu_layers: int = 0) -> Any:
+        key = f"{path}::gpu_layers={gpu_layers}"
         with self._reranker_cache_lock:
             if key not in self._llama_reranker_cache:
                 from llama_cpp import Llama  # type: ignore
 
-                self._llama_reranker_cache[key] = Llama(model_path=key, verbose=False)
+                self._llama_reranker_cache[key] = Llama(model_path=str(path), n_gpu_layers=int(gpu_layers), verbose=False)
             return self._llama_reranker_cache[key]
 
     def _load_reranker_model(self, path: Path, device: str) -> Any:
@@ -252,8 +264,9 @@ class LocalKnowledgeModelBackend:
         absolute_path = resolve_model_path(model_path, "embeddings", self.root)
         resolved_device = resolve_device(device) if device else None
         removed = _drop_cache_entries(self._embedding_cache, str(absolute_path), resolved_device)
-        if str(absolute_path) in self._llama_embedding_cache:
-            del self._llama_embedding_cache[str(absolute_path)]
+        llama_keys = [key for key in self._llama_embedding_cache if key == str(absolute_path) or key.startswith(f"{absolute_path}::")]
+        for key in llama_keys:
+            del self._llama_embedding_cache[key]
             removed += 1
         if removed:
             _collect_model_memory()
@@ -274,9 +287,11 @@ class LocalKnowledgeModelBackend:
         if resolved_path is None:
             removed += len(self._llama_reranker_cache)
             self._llama_reranker_cache.clear()
-        elif resolved_path in self._llama_reranker_cache:
-            del self._llama_reranker_cache[resolved_path]
-            removed += 1
+        else:
+            llama_keys = [key for key in self._llama_reranker_cache if key == resolved_path or key.startswith(f"{resolved_path}::")]
+            for key in llama_keys:
+                del self._llama_reranker_cache[key]
+                removed += 1
         if removed:
             _collect_model_memory()
         return bool(removed)

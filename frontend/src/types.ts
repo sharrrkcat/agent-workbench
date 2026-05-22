@@ -349,6 +349,11 @@ export type LlmProviderStatus = {
   warnings: string[];
   backend?: Record<string, unknown>;
   models_root?: string;
+  runtime_settings?: {
+    local_runtime_device?: 'auto' | 'cpu' | 'cuda' | 'mps' | string;
+    llama_cpp_gpu_layers?: number;
+    warnings?: string[];
+  };
   error?: { code?: string; message?: string; raw?: string };
 };
 
@@ -739,7 +744,10 @@ export type KnowledgeChunk = {
   heading_path: string;
   content: string;
   chunk_index: number;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    local_runtime_device?: 'auto' | 'cpu' | 'cuda' | 'mps' | string;
+    llama_cpp_gpu_layers?: number;
+  };
 };
 
 export type WorldbookSettings = {

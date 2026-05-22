@@ -255,7 +255,7 @@ def _internal_transformers_generate(messages: List[Dict[str, str]], model_config
             import torch  # type: ignore
             from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
 
-            resolved_device = "cuda" if device == "auto" and torch.cuda.is_available() else "cpu" if device == "auto" else device
+            resolved_device = _resolve_torch_device(torch, device)
             tokenizer = AutoTokenizer.from_pretrained(str(path), local_files_only=True, trust_remote_code=True)
             model = AutoModelForCausalLM.from_pretrained(str(path), local_files_only=True, trust_remote_code=True)
             model.to(resolved_device)
@@ -454,12 +454,36 @@ def _stop(model_config: Dict[str, Any]) -> list[str] | None:
     return ["</s>", "<|im_end|>"]
 
 
+def _resolve_torch_device(torch: Any, requested: str) -> str:
+    device = str(requested or "auto").strip().lower()
+    cuda_available = bool(torch.cuda.is_available())
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    mps_available = bool(mps_backend and mps_backend.is_available())
+    if device == "auto":
+        if cuda_available:
+            return "cuda"
+        if mps_available:
+            return "mps"
+        return "cpu"
+    if device == "cuda" and not cuda_available:
+        raise RuntimeError("cuda_unavailable")
+    if device == "mps" and not mps_available:
+        raise RuntimeError("mps_unavailable")
+    if device in {"cpu", "cuda", "mps"}:
+        return device
+    raise ValueError("local_runtime_device must be auto, cpu, cuda, or mps.")
+
+
 def _internal_error_code(provider: str, exc: Exception) -> str:
     text = str(exc)
     if "llama_cpp_unavailable" in text:
         return "llama_cpp_unavailable"
     if "transformers_unavailable" in text:
         return "transformers_unavailable"
+    if "cuda_unavailable" in text:
+        return "cuda_unavailable"
+    if "mps_unavailable" in text:
+        return "mps_unavailable"
     if provider == "internal_llama_cpp" and not internal_provider_backend_status(provider).get("available"):
         return "llama_cpp_unavailable"
     if provider == "internal_transformers" and not internal_provider_backend_status(provider).get("available"):

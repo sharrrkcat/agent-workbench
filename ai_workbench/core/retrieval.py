@@ -10,6 +10,7 @@ from ai_workbench.core.knowledge_models import KnowledgeModelError, safe_unload_
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
 from ai_workbench.core.rerank import rerank_documents, rerank_with_profile, unload_model_path_for_reranker_profile
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 from ai_workbench.core.vector_store import VectorSearchResult, search_vectors
 
 
@@ -108,7 +109,7 @@ def search_knowledge(
             if settings.unload_embedding_model_after_use:
                 model_path = _embedding_unload_path(profile, provider_profile_store)
                 if model_path:
-                    safe_unload_embedding_model(model_backend, model_path, settings.local_model_device, debug["warnings"])
+                    safe_unload_embedding_model(model_backend, model_path, _embedding_unload_device(profile, provider_profile_store, settings.local_model_device), debug["warnings"])
         debug["embedding_groups"].append(
             {
                 "embedding_model_profile_id": profile.id,
@@ -203,6 +204,26 @@ def _embedding_unload_path(profile: EmbeddingModelProfile, provider_profile_stor
         return unload_model_path_for_profile(profile, provider)
     except Exception:
         return profile.model_path
+
+
+def _embedding_unload_device(profile: EmbeddingModelProfile, provider_profile_store: Any | None, legacy_device: str) -> str:
+    if profile.provider_profile_id and provider_profile_store is not None:
+        try:
+            provider = provider_profile_store.get(profile.provider_profile_id)
+            if provider.provider == "internal_transformers":
+                return str(provider_runtime_settings(provider, legacy_device=legacy_device)["local_runtime_device"])
+        except Exception:
+            return legacy_device
+    return legacy_device
+
+
+def _reranker_unload_device(provider: Any | None, legacy_device: str) -> str:
+    try:
+        if provider is not None and provider.provider == "internal_transformers":
+            return str(provider_runtime_settings(provider, legacy_device=legacy_device)["local_runtime_device"])
+    except Exception:
+        return legacy_device
+    return legacy_device
 
 
 def expand_query_variants(*, llm_runtime: Any, query: str, max_variants: int, prompt_template: str, model_config: dict[str, Any] | None = None) -> list[str]:
@@ -435,7 +456,7 @@ def _rerank_candidates(
         return candidates
     finally:
         if settings.unload_reranker_model_after_use:
-            safe_unload_reranker_model(backend, unload_path, settings.local_model_device, debug["warnings"])
+            safe_unload_reranker_model(backend, unload_path, _reranker_unload_device(provider, settings.local_model_device), debug["warnings"])
 
 
 def _trim_results(candidates: list[RetrievalCandidate], top_k: int, max_context_chars: int) -> list[dict[str, Any]]:

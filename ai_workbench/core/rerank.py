@@ -4,6 +4,7 @@ from typing import Any
 from ai_workbench.core.knowledge_models import KnowledgeModelError, LocalKnowledgeModelBackend
 from ai_workbench.core.knowledge_store import RerankerModelProfile
 from ai_workbench.core.provider_inventory import resolve_internal_reranker_model_ref
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
 
 
@@ -57,7 +58,8 @@ def rerank_with_profile(
         try:
             resolve_internal_reranker_model_ref(provider.provider, profile.provider_model_id, repo_root)
             model_path = legacy_model_path_for_reranker_ref(profile.provider_model_id)
-            result = rerank_documents(backend=backend, model_path=model_path, query=query, documents=documents, device=device)
+            runtime = provider_runtime_settings(provider, legacy_device=device)
+            result = rerank_documents(backend=backend, model_path=model_path, query=query, documents=documents, device=runtime["local_runtime_device"])
             result.update({"model_profile_id": profile.id, "provider_profile_id": provider.id, "provider": provider.provider, "provider_model_id": profile.provider_model_id})
             return result
         except KnowledgeModelError:
@@ -97,6 +99,7 @@ def _rerank_with_llama_cpp(
 ) -> dict:
     try:
         model_path = resolve_internal_reranker_model_ref(provider.provider, profile.provider_model_id, repo_root)
+        runtime = provider_runtime_settings(provider)
         rerank = getattr(backend, "llama_cpp_rerank", None)
         if not callable(rerank):
             raise KnowledgeModelError(INTERNAL_RERANKER_UNAVAILABLE, "llama.cpp reranker backend is not configured.", {"provider_profile_id": provider.id, "provider_model_id": profile.provider_model_id})
@@ -106,7 +109,7 @@ def _rerank_with_llama_cpp(
             "provider_profile_id": provider.id,
             "provider": provider.provider,
             "provider_model_id": profile.provider_model_id,
-            "results": rerank(model_path, query, documents),
+            "results": rerank(model_path, query, documents, gpu_layers=runtime["llama_cpp_gpu_layers"]),
         }
     except KnowledgeModelError:
         raise

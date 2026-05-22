@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from ai_workbench.core.config_schema import MASKED_SECRET, ConfigFieldSchema, validate_user_config
 from ai_workbench.core.provider_inventory import is_internal_provider, normalize_internal_llm_model_ref
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 
 
 class LLMConfigError(ValueError):
@@ -193,6 +194,14 @@ def _apply_model_profile(
         metadata["provider"] = provider.provider
         _set_value(values, sources, "provider_profile_id", provider.id, source)
         _set_value(values, sources, "provider_profile_name", provider.name, source)
+        if provider.provider == "internal_transformers":
+            runtime = provider_runtime_settings(provider)
+            _set_value(values, sources, "device", runtime["local_runtime_device"], source)
+            metadata["local_runtime_device"] = runtime["local_runtime_device"]
+        elif provider.provider == "internal_llama_cpp":
+            runtime = provider_runtime_settings(provider)
+            _set_value(values, sources, "gpu_layers", runtime["llama_cpp_gpu_layers"], source)
+            metadata["llama_cpp_gpu_layers"] = runtime["llama_cpp_gpu_layers"]
     else:
         if not profile.base_url:
             raise LLMConfigError("LLM_PROFILE_INVALID", f"Model profile '{profile.alias}' must reference a provider profile or define legacy base_url.")

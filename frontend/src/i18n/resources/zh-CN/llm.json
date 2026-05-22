@@ -55,7 +55,9 @@
     "streaming": "Streaming",
     "localModelsRoot": "本地模型根目录",
     "modelsRoot": "模型根目录",
-    "backend": "Backend"
+    "backend": "Backend",
+    "runtimeDevice": "Runtime device",
+    "gpuLayers": "GPU layers"
   },
   "empty": {
     "noConfigFields": "此 Capability 没有可配置字段。",
@@ -80,7 +82,15 @@
     "llamaCppAlias": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。",
     "llamaCppProviderModelList": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。",
     "internalProviderRoot": "本地扫描 data/models/llms、data/models/embeddings 和 data/models/rerankers。Base URL 和 API key 不会使用。",
-    "internalLlmProfilesOnly": "LLM Model Profiles 只能选择此内部 provider 下的 llm/ 模型 ref。"
+    "internalLlmProfilesOnly": "LLM Model Profiles 只能选择此内部 provider 下的 llm/ 模型 ref。",
+    "runtimeDevice": "internal transformers 使用 torch / transformers / sentence-transformers 的 device 语义。GPU 是否可用取决于已安装的 torch 后端。",
+    "gpuLayers": "internal llama.cpp 使用 llama.cpp GPU layer offload 语义，和 torch device 不同。0 表示 CPU only，-1 表示尽量 offload，正整数表示指定层数。"
+  },
+  "runtimeDevices": {
+    "auto": "Auto",
+    "cpu": "CPU",
+    "cuda": "CUDA",
+    "mps": "MPS"
   },
   "results": {
     "providerReturnedNoModels": "Provider 没有返回模型。",

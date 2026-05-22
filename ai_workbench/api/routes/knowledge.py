@@ -33,6 +33,7 @@ from ai_workbench.core.knowledge_models import (
     scan_local_models,
 )
 from ai_workbench.core.provider_inventory import normalize_internal_embedding_model_ref, normalize_internal_reranker_model_ref
+from ai_workbench.core.provider_runtime import provider_runtime_settings
 from ai_workbench.core.knowledge_origins import (
     list_origin_folder_suggestions,
     mark_origin_imported,
@@ -1016,7 +1017,10 @@ def _safe_unload_embedding_profile(state: RuntimeState, profile: EmbeddingModelP
         model_path = profile.model_path
     if not model_path:
         return False
-    return safe_unload_embedding_model(state.knowledge_model_backend, model_path, device, warnings)
+    unload_device = device
+    if provider is not None and provider.provider == "internal_transformers":
+        unload_device = str(provider_runtime_settings(provider, legacy_device=device)["local_runtime_device"])
+    return safe_unload_embedding_model(state.knowledge_model_backend, model_path, unload_device, warnings)
 
 
 def _safe_unload_reranker_profile(state: RuntimeState, profile: RerankerModelProfile, device: str, warnings: list[str] | None = None) -> bool:
@@ -1030,7 +1034,10 @@ def _safe_unload_reranker_profile(state: RuntimeState, profile: RerankerModelPro
         model_path = unload_model_path_for_reranker_profile(profile, provider)
     except Exception:
         model_path = legacy_model_path_for_reranker_ref(profile.provider_model_id) if profile.provider_model_id.startswith("reranker/") else None
-    return safe_unload_reranker_model(state.knowledge_model_backend, model_path, device, warnings)
+    unload_device = device
+    if provider is not None and provider.provider == "internal_transformers":
+        unload_device = str(provider_runtime_settings(provider, legacy_device=device)["local_runtime_device"])
+    return safe_unload_reranker_model(state.knowledge_model_backend, model_path, unload_device, warnings)
 
 
 def _validate_rerank_request(payload: RerankRequest, settings) -> list[dict]:

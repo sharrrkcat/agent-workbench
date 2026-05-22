@@ -748,6 +748,40 @@ def test_internal_provider_profile_resolves_without_base_url() -> None:
     assert config.metadata["provider_profile_id"] == "internal-provider"
 
 
+def test_internal_provider_runtime_settings_resolve_from_provider_metadata() -> None:
+    providers = ProviderProfileStore()
+    providers.create(
+        ProviderProfileSchema(
+            id="internal-provider",
+            name="Internal",
+            provider="internal_llama_cpp",
+            base_url="",
+            metadata={"llama_cpp_gpu_layers": -1},
+        )
+    )
+    models = LLMProfileStore()
+    models.create(
+        LLMProfileSchema(
+            id="internal-model",
+            alias="internal_model",
+            name="Internal Model",
+            provider_profile_id="internal-provider",
+            model_id="llm/tiny/model.gguf",
+            supports_streaming=False,
+        )
+    )
+
+    config = resolve_llm_config(
+        capability_schema=llm_capability(),
+        llm_profile_store=models,
+        provider_profile_store=providers,
+        session_llm_profile_id="internal-model",
+    )
+
+    assert config.values["gpu_layers"] == -1
+    assert config.metadata["llama_cpp_gpu_layers"] == -1
+
+
 def test_internal_provider_profile_rejects_non_llm_ref() -> None:
     providers = ProviderProfileStore()
     providers.create(ProviderProfileSchema(id="internal-provider", name="Internal", provider="internal_transformers", base_url=""))
