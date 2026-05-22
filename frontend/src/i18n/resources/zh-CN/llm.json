@@ -8,7 +8,8 @@
     "connection": "连接",
     "model": "模型",
     "generationDefaults": "生成默认值",
-    "capabilities": "能力"
+    "capabilities": "能力",
+    "localModelEnvironment": "本地模型环境"
   },
   "actions": {
     "refreshModels": "刷新模型",
@@ -17,7 +18,8 @@
     "testing": "测试中...",
     "newProfile": "新建配置",
     "duplicate": "复制",
-    "newProvider": "新建 Provider"
+    "newProvider": "新建 Provider",
+    "copyCommand": "复制命令"
   },
   "labels": {
     "currentModelCapabilities": "当前模型能力",
@@ -51,7 +53,9 @@
     "tools": "Tools",
     "reasoningOutput": "Reasoning 输出",
     "streaming": "Streaming",
-    "localModelsRoot": "本地模型根目录"
+    "localModelsRoot": "本地模型根目录",
+    "modelsRoot": "模型根目录",
+    "backend": "Backend"
   },
   "empty": {
     "noConfigFields": "此 Capability 没有可配置字段。",
@@ -84,7 +88,8 @@
     "foundModels": "找到 {{count}} 个模型。",
     "foundModels_plural": "找到 {{count}} 个模型。",
     "foundChatModels": "找到 {{count}} 个 chat/LLM 模型。",
-    "foundChatModels_plural": "找到 {{count}} 个 chat/LLM 模型。"
+    "foundChatModels_plural": "找到 {{count}} 个 chat/LLM 模型。",
+    "commandCopied": "命令已复制。"
   },
   "providers": {
     "openai_compatible": "OpenAI-compatible",
@@ -94,5 +99,15 @@
     "internal_transformers": "内部 transformers",
     "internal_llama_cpp": "内部 llama.cpp",
     "ollama": "Ollama"
+  },
+  "install": {
+    "title": "安装命令",
+    "commands": {
+      "basicCpu": "Basic / CPU 安装",
+      "cuda128": "CUDA 12.8 示例"
+    }
+  },
+  "errors": {
+    "copyCommandFailed": "复制命令失败。请手动选中文本后复制。"
   }
 }

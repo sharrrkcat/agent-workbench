@@ -44,7 +44,9 @@ Provider Profiles can represent external API providers or internal local model
 backends. Internal Provider Profiles use fixed local inventory roots under
 `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers`; they
 do not add editable root paths and do not own per-model generation, embedding,
-or reranking parameters.
+or reranking parameters. Internal Provider Profile detail pages own the local
+model environment display and compact install command examples. Knowledge
+Defaults no longer displays local model overview or install commands.
 LLM Model Profiles may select internal Provider Profiles only with `llm/...`
 refs. Embedding and reranker refs remain outside LLM Model Profile selection.
 Embedding Model Profiles may select Provider Profiles that support embeddings:
@@ -60,6 +62,9 @@ Reranker Model Profiles may select only internal Provider Profiles with
 retrieval strategy parameters; candidate counts, thresholds, and context limits
 do not move into Reranker Model Profiles. Legacy local reranker path selection
 is not exposed as a current Settings workflow.
+The current local model device setting remains in Knowledge Defaults because
+embedding and reranker runtimes still read it there; it is not migrated to
+Provider Profiles in this contract revision.
 
 ## Files
 

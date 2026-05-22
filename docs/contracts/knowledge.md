@@ -25,6 +25,8 @@ Knowledge v1 includes:
 Knowledge v1 does not include automatic model download, dependency install,
 arbitrary local path import, file watching, scheduled scan, background reindex,
 chat-time scan/reindex, or Capability-owned retrieval/indexing backends.
+Knowledge Defaults does not own local model environment overview or install
+commands; internal Provider Profiles show that local model environment display.
 
 ## Local Models
 
@@ -52,7 +54,8 @@ There is no automatic download/install path:
 - no `/api/knowledge/models/download` endpoint.
 - no backend shell execution.
 - no background download task.
-- the Download tab only generates copyable commands.
+- copyable install command examples are shown only on internal Provider Profile
+  detail pages.
 
 Model scanning creates expected directories, lists direct child folders, and
 reports backend availability without loading model weights. Test endpoints may
@@ -97,6 +100,9 @@ document instructions.
 The Settings UI exposes them under Settings -> Models -> Embedding Model
 Profiles. Settings -> Knowledge keeps Knowledge Defaults and Knowledge Bases;
 Knowledge Base configuration still selects an Embedding Model Profile.
+Knowledge Defaults -> Models owns the default model profile selections and
+runtime knobs that affect Knowledge behavior, including the current local model
+device setting while embedding/reranker runtimes still read it.
 
 - New profiles should set `provider_profile_id` and `provider_model_id`.
 - Internal provider profiles use `provider_model_id` refs shaped as

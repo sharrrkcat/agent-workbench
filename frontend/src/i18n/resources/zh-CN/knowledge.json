@@ -6,7 +6,7 @@
     "newKnowledgeBase": "新建知识库"
   },
   "descriptions": {
-    "defaults": "本地模型、检索、分块和上下文 prompt 默认值。"
+    "defaults": "模型配置选择、检索、分块和上下文 prompt 默认值。"
   },
   "sections": {
     "localModels": "本地模型",
@@ -317,7 +317,8 @@
     "selectedRerankerProfileMissing": "所选 Reranker 模型配置缺失或已禁用。",
     "providerDisabled": "选中的 Provider 配置已禁用。",
     "unloadEmbeddingModelAfterUse": "索引或搜索完成后释放本地 embedding 模型。可以降低显存占用，但下一次搜索会变慢。",
-    "unloadRerankerModelAfterUse": "Rerank 完成后释放本地 reranker。可以降低显存占用，但下一次 rerank 会变慢。"
+    "unloadRerankerModelAfterUse": "Rerank 完成后释放本地 reranker。可以降低显存占用，但下一次 rerank 会变慢。",
+    "localModelDevice": "当前本地 embedding 和 reranker 的设备选择仍归此处。加速设置迁移到 Provider Profiles 前暂时保留在这里。"
   },
   "help": {
     "aliases": "使用英文逗号分隔 Intent Routing 使用的别名。",

@@ -6,6 +6,7 @@
     "defaults": "Defaults",
     "advanced": "Advanced",
     "connection": "Connection",
+    "localModelEnvironment": "Local model environment",
     "model": "Model",
     "generationDefaults": "Generation defaults",
     "capabilities": "Capabilities"
@@ -17,7 +18,8 @@
     "testing": "Testing...",
     "newProfile": "New profile",
     "newProvider": "New provider",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
+    "copyCommand": "Copy command"
   },
   "providers": {
     "openai_compatible": "OpenAI-compatible",
@@ -42,6 +44,8 @@
     "timeout": "Timeout",
     "apiKey": "API key",
     "apiKeySet": "API key set",
+    "modelsRoot": "Models root",
+    "backend": "Backend",
     "localModelsRoot": "Local models root",
     "availableModels": "Available models",
     "defaultModelProfile": "Default model profile",
@@ -87,12 +91,23 @@
     "internalProviderRoot": "Scans data/models/llms, data/models/embeddings, and data/models/rerankers locally. Base URL and API key are not used.",
     "internalLlmProfilesOnly": "LLM Model Profiles can select only refs under llm/ from this internal provider."
   },
+  "install": {
+    "title": "Install commands",
+    "commands": {
+      "basicCpu": "Basic / CPU install",
+      "cuda128": "CUDA 12.8 example"
+    }
+  },
   "results": {
+    "commandCopied": "Command copied.",
     "providerReturnedNoModels": "Provider returned no models.",
     "providerReturnedNoChatModels": "Provider returned models, but none are chat/LLM models.",
     "foundModels": "Found {{count}} model.",
     "foundModels_plural": "Found {{count}} models.",
     "foundChatModels": "Found {{count}} chat/LLM model.",
     "foundChatModels_plural": "Found {{count}} chat/LLM models."
+  },
+  "errors": {
+    "copyCommandFailed": "Failed to copy command. Select and copy it manually."
   }
 }

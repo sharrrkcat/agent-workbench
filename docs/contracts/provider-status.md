@@ -80,6 +80,11 @@ Internal providers:
   `display_name`, `kind`, `source=internal`, `backend`, and safe
   `relative_path`; it must not return absolute paths, file contents, secrets, or
   full directory trees.
+- Internal Provider Profile UI may show the safe local models root
+  (`data/models`), compact dependency/backend availability, CUDA/GPU
+  availability when already reported by status APIs, copyable install command
+  examples, and refreshed model refs. It should not repeat embedding/reranker
+  folder counts because refreshed inventory is the source of model visibility.
 - LLM Model Profiles may use only `llm/...` refs from internal providers.
   Status for those profiles reports provider enabled/disabled, model ref
   valid/invalid, model file/folder exists/missing, optional dependency

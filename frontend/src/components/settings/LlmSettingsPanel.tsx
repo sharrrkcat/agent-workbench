@@ -1,4 +1,4 @@
-import { Brain, Eye, Hammer, Plus, Radio, RefreshCw, Save, Settings, Trash2, Zap } from 'lucide-react';
+import { Brain, Clipboard, Eye, Hammer, Plus, Radio, RefreshCw, Save, Settings, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
@@ -44,6 +44,16 @@ const providerDefaults: LlmProviderProfileInput = {
   enabled: true,
   metadata: {},
 };
+const internalProviderInstallCommands = {
+  internal_transformers: [
+    { key: 'basicCpu', command: 'uv pip install sentence-transformers transformers torch' },
+    { key: 'cuda128', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\nuv pip install sentence-transformers transformers' },
+  ],
+  internal_llama_cpp: [
+    { key: 'basicCpu', command: 'uv pip install llama-cpp-python' },
+    { key: 'cuda128', command: 'CMAKE_ARGS="-DGGML_CUDA=on" uv pip install llama-cpp-python --force-reinstall --no-cache-dir' },
+  ],
+} as const;
 
 export function LlmSettingsPanel({
   config,
@@ -586,7 +596,7 @@ export function LlmProviderProfileDetail({
 }) {
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
   const isNew = selectedProfileId === 'new';
-  const { t } = useTranslation(['llm', 'common', 'settings']);
+  const { t } = useTranslation(['llm', 'common', 'settings', 'status']);
   const baseDraft = useMemo(() => selectedProfile ? providerDraftFromProfile(selectedProfile) : providerDefaults, [selectedProfile]);
   const baselineKey = stableConfigString(cleanProviderInput(baseDraft));
   const scopeId = isNew ? 'new' : selectedProfile?.id || '';
@@ -704,6 +714,15 @@ export function LlmProviderProfileDetail({
     }
   }
 
+  async function copyProviderCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+      setResult({ success: true, message: t('llm:results.commandCopied'), base_url: selectedProfile?.base_url || '' });
+    } catch {
+      setError({ code: 'COPY_FAILED', message: t('llm:errors.copyCommandFailed'), details: {} });
+    }
+  }
+
   if (!selectedProfile && !isNew) {
     return <div className="settings-placeholder"><h2>{t('settings:subsections.providerProfiles', { ns: 'settings', defaultValue: 'Provider Profile' })}</h2><p>{t('llm:empty.selectProviderProfile')}</p></div>;
   }
@@ -757,12 +776,7 @@ export function LlmProviderProfileDetail({
                 {providerOptions.map((provider) => <option key={provider} value={provider}>{providerDisplayLabel(t, provider)}</option>)}
               </select>
             </label>
-            {internalProvider ? (
-              <div className="settings-muted-copy">
-                <strong>{t('llm:labels.localModelsRoot')}</strong>
-                <span>{t('llm:help.internalProviderRoot')}</span>
-              </div>
-            ) : (
+            {internalProvider ? null : (
               <>
                 <TextField label={t('llm:labels.baseUrl')} value={draft.base_url} onChange={(base_url) => setDraft({ ...draft, base_url })} disabled={busy} />
                 <TextField label={t('llm:labels.apiKey')} value={draft.api_key} onChange={(api_key) => setDraft({ ...draft, api_key })} disabled={busy} secret hasSecret={Boolean(selectedProfile?.api_key_set)} />
@@ -772,6 +786,14 @@ export function LlmProviderProfileDetail({
           </div>
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
           {result?.warnings?.length ? <p className="settings-warning-text">{result.warnings.join(', ')}</p> : null}
+          {internalProvider ? (
+            <InternalProviderEnvironment
+              provider={providerKind}
+              backend={result?.backend}
+              modelsRoot={result?.models_root}
+              onCopyCommand={(command) => void copyProviderCommand(command)}
+            />
+          ) : null}
           {models.length ? (
             <div className="settings-chip-row">
               {models.map((model) => <span key={model.id}>{internalProvider ? `${model.kind || model.type || 'model'}: ` : ''}{model.id}</span>)}
@@ -781,6 +803,83 @@ export function LlmProviderProfileDetail({
       </div>
     </form>
   );
+}
+
+function InternalProviderEnvironment({
+  provider,
+  backend,
+  modelsRoot,
+  onCopyCommand,
+}: {
+  provider: string;
+  backend?: Record<string, unknown>;
+  modelsRoot?: string;
+  onCopyCommand: (command: string) => void;
+}) {
+  const { t } = useTranslation(['llm', 'status']);
+  const commands = provider === 'internal_llama_cpp'
+    ? internalProviderInstallCommands.internal_llama_cpp
+    : internalProviderInstallCommands.internal_transformers;
+  const dependencyKeys = provider === 'internal_llama_cpp'
+    ? ['llama_cpp_available']
+    : ['sentence_transformers_available', 'transformers_available', 'torch_available'];
+  return (
+    <div className="settings-muted-copy">
+      <strong>{t('llm:sections.localModelEnvironment')}</strong>
+      <dl className="settings-definition-grid compact">
+        <div>
+          <dt>{t('llm:labels.modelsRoot')}</dt>
+          <dd>{modelsRoot || 'data/models'}</dd>
+        </div>
+        <div>
+          <dt>{t('llm:labels.backend')}</dt>
+          <dd>{formatInternalProviderStatus(backend?.available, t)}</dd>
+        </div>
+        {dependencyKeys.map((key) => (
+          <div key={key}>
+            <dt>{dependencyLabelKey(key)}</dt>
+            <dd>{formatInternalProviderStatus(backend?.[key], t)}</dd>
+          </div>
+        ))}
+        {'cuda_available' in (backend || {}) ? (
+          <div>
+            <dt>CUDA</dt>
+            <dd>{formatInternalProviderStatus(backend?.cuda_available, t)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <strong>{t('llm:install.title')}</strong>
+      {commands.map((item) => (
+        <ProviderInstallCommand key={item.key} title={t(`llm:install.commands.${item.key}`)} command={item.command} onCopy={onCopyCommand} />
+      ))}
+    </div>
+  );
+}
+
+function ProviderInstallCommand({ title, command, onCopy }: { title: string; command: string; onCopy: (command: string) => void }) {
+  const { t } = useTranslation('llm');
+  return (
+    <div className="knowledge-command-card">
+      <div className="knowledge-command-card-body">
+        <strong>{title}</strong>
+        <code>{command}</code>
+      </div>
+      <button className="settings-secondary-button" type="button" onClick={() => onCopy(command)}>
+        <Clipboard size={14} />
+        {t('actions.copyCommand')}
+      </button>
+    </div>
+  );
+}
+
+function formatInternalProviderStatus(value: unknown, t: ReturnType<typeof useTranslation>['t']): string {
+  if (value === true) return t('status:common.available');
+  if (value === false) return t('status:common.unavailable');
+  return t('status:common.unknown', { defaultValue: 'Unknown' });
+}
+
+function dependencyLabelKey(key: string): string {
+  return key.replace(/_available$/, '').replace(/_/g, '-');
 }
 
 export function LlmProfileDetail({

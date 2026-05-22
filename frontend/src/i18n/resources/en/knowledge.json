@@ -6,7 +6,7 @@
     "newKnowledgeBase": "New knowledge base"
   },
   "descriptions": {
-    "defaults": "Local model, retrieval, chunking, and context prompt defaults."
+    "defaults": "Model profile selection, retrieval, chunking, and context prompt defaults."
   },
   "sections": {
     "localModels": "Local Models",
@@ -311,6 +311,7 @@
     "scanLocalModelsInOverviewFirst": "Scan local models in Overview first.",
     "selectedRerankerProfileMissing": "The selected reranker model profile is missing or disabled.",
     "providerDisabled": "The selected provider profile is disabled.",
+    "localModelDevice": "Current runtime owner for local embedding and reranker device selection. This stays here until acceleration settings move to Provider Profiles.",
     "unloadEmbeddingModelAfterUse": "Release the local embedding model after indexing or search. This can reduce VRAM usage but makes the next search slower.",
     "unloadRerankerModelAfterUse": "Release the local reranker after reranking. This can reduce VRAM usage but makes the next rerank slower."
   },

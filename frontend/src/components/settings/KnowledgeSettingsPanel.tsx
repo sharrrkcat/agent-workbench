@@ -3,7 +3,7 @@ import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useCallback, useEffec
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview, LlmProviderModel, LlmProviderProfile, RerankerModelProfile, RerankerModelProfileInput } from '../../types';
+import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview, LlmProviderModel, LlmProviderProfile, RerankerModelProfile, RerankerModelProfileInput } from '../../types';
 import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
@@ -15,7 +15,7 @@ import { AppModal, StatusChip } from '../ui';
 type FormMode = 'list' | 'new' | string;
 type SourceSortKey = 'title' | 'source_type' | 'folder_path' | 'chunks' | 'status' | 'indexed_at';
 type SortDirection = 'asc' | 'desc';
-type KnowledgeDefaultsTab = 'overview' | 'models' | 'retrieval' | 'chunking' | 'context' | 'download';
+type KnowledgeDefaultsTab = 'models' | 'retrieval' | 'chunking' | 'context';
 type KnowledgeBaseTab = 'config' | 'manage_sources' | 'source_list' | 'search';
 type SourceModal = 'create_origin' | 'import_files' | 'paste_text' | null;
 type DownloadModelType = 'embedding' | 'reranker';
@@ -28,12 +28,6 @@ type EmbeddingProfilePreset = {
   document_instruction?: string;
   query_instruction?: string;
 };
-
-const KNOWLEDGE_INSTALL_COMMANDS = [
-  { key: 'basicCpu', command: 'uv pip install sentence-transformers torch transformers' },
-  { key: 'cuda128', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\nuv pip install sentence-transformers transformers' },
-  { key: 'cuda126', command: 'uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126\nuv pip install sentence-transformers transformers' },
-] as const;
 
 const KNOWLEDGE_MODEL_PRESETS: {
   type: DownloadModelType;
@@ -148,13 +142,6 @@ const KNOWLEDGE_MODEL_PRESETS: {
   },
 ];
 
-const KNOWLEDGE_MODEL_PRESET_GROUPS = [
-  'recommendedEmbeddings',
-  'advancedEmbeddings',
-  'recommendedRerankers',
-  'advancedRerankers',
-] as const;
-
 const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
   alias: '',
@@ -215,7 +202,6 @@ export function KnowledgeSettingsDetail({
   const { t } = useTranslation(['knowledge', 'common', 'status']);
   const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
   const [values, setValues] = useState<KnowledgeSettings | null>(null);
-  const [scan, setScan] = useState<KnowledgeModelScan | null>(null);
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
   const [rerankerProfiles, setRerankerProfiles] = useState<RerankerModelProfile[]>(rerankerProfilesProp || []);
   const [providerProfiles, setProviderProfiles] = useState<LlmProviderProfile[]>([]);
@@ -223,12 +209,8 @@ export function KnowledgeSettingsDetail({
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [localError, setLocalError] = useState<SettingsErrorValue | null>(null);
-  const [defaultsTab, setDefaultsTab] = useState<KnowledgeDefaultsTab>('overview');
-  const [downloadType, setDownloadType] = useState<DownloadModelType>('embedding');
-  const [downloadModelId, setDownloadModelId] = useState(KNOWLEDGE_MODEL_PRESETS[0].modelId);
-  const [downloadTarget, setDownloadTarget] = useState(KNOWLEDGE_MODEL_PRESETS[0].target);
+  const [defaultsTab, setDefaultsTab] = useState<KnowledgeDefaultsTab>('models');
   const dirty = Boolean(values && settings && JSON.stringify(values) !== JSON.stringify(settings));
-  const downloadCommand = `uv run python scripts/download_knowledge_model.py --type ${downloadType} --model-id ${downloadModelId || '<model-id>'} --target ${downloadTarget || '<target-folder>'}`;
 
   async function refresh() {
     const [nextSettings, nextProfiles, nextRerankers, nextBases, nextProviders] = await Promise.all([
@@ -253,8 +235,6 @@ export function KnowledgeSettingsDetail({
 
   useEffect(() => {
     void refresh()
-      .then(() => api.scanKnowledgeModels())
-      .then(setScan)
       .catch((error) => setLocalError(toSettingsError(error, 'Failed to load Knowledge settings.')));
   }, []);
 
@@ -267,49 +247,6 @@ export function KnowledgeSettingsDetail({
     setResult('');
     setLocalError(null);
   }, [category, selectedItemId]);
-
-  async function runScan() {
-    setBusy('scan');
-    try {
-      setLocalError(null);
-      setScan(await api.scanKnowledgeModels());
-    } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to scan local models.'));
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function switchLocalModelDevice(device: KnowledgeSettings['local_model_device']) {
-    setBusy(`device:${device}`);
-    try {
-      setLocalError(null);
-      const saved = await api.updateKnowledgeSettings({ local_model_device: device });
-      setSettings(saved);
-      setValues((current) => current ? { ...current, local_model_device: saved.local_model_device } : saved);
-      setResult(t('knowledge:results.localModelDeviceSet', { device }));
-    } catch (error) {
-      setLocalError(toSettingsError(error, 'Failed to update local model device.'));
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function copyText(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setResult(t('knowledge:results.commandCopied'));
-    } catch {
-      setLocalError({ code: 'COPY_FAILED', message: t('knowledge:errors.copyCommandFailed'), details: {} });
-    }
-  }
-
-  function selectPreset(index: number) {
-    const preset = KNOWLEDGE_MODEL_PRESETS[index];
-    setDownloadType(preset.type);
-    setDownloadModelId(preset.modelId);
-    setDownloadTarget(preset.target);
-  }
 
   async function saveDefaults(event: FormEvent) {
     event.preventDefault();
@@ -393,138 +330,22 @@ export function KnowledgeSettingsDetail({
       </header>
       <DetailTabs
         tabs={[
-          { id: 'overview', label: t('knowledge:tabs.overview') },
           { id: 'models', label: t('knowledge:tabs.models') },
           { id: 'retrieval', label: t('knowledge:tabs.retrieval') },
           { id: 'chunking', label: t('knowledge:tabs.chunking') },
           { id: 'context', label: t('knowledge:tabs.context') },
-          { id: 'download', label: t('knowledge:tabs.download') },
         ]}
         activeTab={defaultsTab}
         onChange={(tab) => setDefaultsTab(tab as KnowledgeDefaultsTab)}
       />
       <div className="settings-detail-body">
         {localError ? <SettingsApiError error={localError} /> : null}
-        {defaultsTab === 'overview' ? (
-          <KnowledgeOverviewTab
-            values={values}
-            scan={scan}
-            busy={busy}
-            onRunScan={runScan}
-            onSwitchDevice={switchLocalModelDevice}
-            onSetValues={setValues}
-            onCopy={copyText}
-            onManageEmbeddingProfiles={onManageEmbeddingProfiles}
-          />
-        ) : null}
         {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} rerankerProfiles={rerankerProfilesProp || rerankerProfiles} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
         {defaultsTab === 'retrieval' ? <KnowledgeRetrievalTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'chunking' ? <KnowledgeChunkingTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'context' ? <KnowledgeContextTab values={values} setValues={setValues} /> : null}
-        {defaultsTab === 'download' ? (
-          <KnowledgeDownloadTab
-            downloadType={downloadType}
-            downloadModelId={downloadModelId}
-            downloadTarget={downloadTarget}
-            downloadCommand={downloadCommand}
-            onSelectPreset={selectPreset}
-            onSetType={setDownloadType}
-            onSetModelId={setDownloadModelId}
-            onSetTarget={setDownloadTarget}
-            onCopy={copyText}
-          />
-        ) : null}
       </div>
     </form>
-  );
-}
-
-function KnowledgeOverviewTab({
-  values,
-  scan,
-  busy,
-  onRunScan,
-  onSwitchDevice,
-  onSetValues,
-  onCopy,
-  onManageEmbeddingProfiles,
-}: {
-  values: KnowledgeSettings;
-  scan: KnowledgeModelScan | null;
-  busy: string;
-  onRunScan: () => void;
-  onSwitchDevice: (device: KnowledgeSettings['local_model_device']) => void;
-  onSetValues: (values: KnowledgeSettings) => void;
-  onCopy: (text: string) => void;
-  onManageEmbeddingProfiles?: () => void;
-}) {
-  const { t } = useTranslation(['knowledge', 'status']);
-  const backend = scan?.backend;
-  const missingOptionalDependencies = backend ? !backend.sentence_transformers_available || !backend.torch_available || !backend.transformers_available : false;
-  const cudaMismatch = values.local_model_device === 'cuda' && backend?.cuda_available === false;
-  return (
-    <>
-      <div className="detail-section">
-        <div className="detail-section-heading">
-          <h3>{t('knowledge:sections.localModels')}</h3>
-        </div>
-        <dl className="settings-definition-grid">
-          <Metric label={t('knowledge:labels.modelsRoot')} value={values.models_root} />
-          <Metric label={t('knowledge:labels.backend')} value={backendLabel(scan?.backend, t)} />
-          <Metric label={t('knowledge:labels.embeddingFolders')} value={scan ? String(scan.embedding_models.length) : 'Not scanned'} />
-          <Metric label={t('knowledge:labels.rerankerFolders')} value={scan ? String(scan.reranker_models.length) : 'Not scanned'} />
-          <Metric label="sentence-transformers" value={dependencyLabel(backend?.sentence_transformers_available, t)} />
-          <Metric label="torch" value={dependencyLabel(backend?.torch_available, t)} />
-          <Metric label="transformers" value={dependencyLabel(backend?.transformers_available, t)} />
-          <Metric label="CUDA" value={backend?.cuda_available ? 'yes' : backend ? 'no' : 'Not scanned'} />
-          <Metric label={t('knowledge:labels.localModelDevice')} value={values.local_model_device} />
-        </dl>
-        <div className="settings-detail-grid">
-          <SelectField label={t('knowledge:labels.localModelDevice')} value={values.local_model_device} options={['auto', 'cpu', 'cuda']} onChange={(value) => onSetValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })} />
-        </div>
-        <div className="settings-button-row">
-          <button className="settings-secondary-button" type="button" onClick={onRunScan} disabled={busy === 'scan'}>
-            <RefreshCw size={14} />
-            {busy === 'scan' ? t('knowledge:actions.scanning') : t('knowledge:actions.scanLocalModels')}
-          </button>
-          {onManageEmbeddingProfiles ? (
-            <button className="settings-secondary-button" type="button" onClick={onManageEmbeddingProfiles}>
-              {t('knowledge:actions.manageEmbeddingProfiles')}
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {cudaMismatch ? (
-        <div className="detail-section knowledge-warning-section">
-          <div className="detail-section-heading"><h3>{t('knowledge:install.cudaWarningTitle')}</h3></div>
-          <p className="settings-warning-text">{t('knowledge:install.cudaWarningBody')}</p>
-          <div className="settings-button-row">
-            <button className="settings-secondary-button" type="button" onClick={() => onSwitchDevice('cpu')} disabled={Boolean(busy)}>
-              {t('knowledge:actions.switchToCpu')}
-            </button>
-            <button className="settings-secondary-button" type="button" onClick={() => onSwitchDevice('auto')} disabled={Boolean(busy)}>
-              {t('knowledge:actions.switchToAuto')}
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <div className="detail-section">
-        <div className="detail-section-heading"><h3>{t('knowledge:install.title')}</h3></div>
-        {missingOptionalDependencies ? <p className="settings-muted-text">{t('knowledge:install.missingOptionalDependencies')}</p> : null}
-        {KNOWLEDGE_INSTALL_COMMANDS.map((item) => (
-          <CommandCard
-            key={item.key}
-            title={t(`knowledge:install.commands.${item.key}`)}
-            command={item.command}
-            onCopy={onCopy}
-          />
-        ))}
-        <p className="settings-muted-text">{t('knowledge:install.cudaDepends')}</p>
-        <p className="settings-muted-text">{t('knowledge:install.pytorchSelector')}</p>
-        <p className="settings-muted-text">{t('knowledge:install.restartAndScan')}</p>
-        <p className="settings-muted-text">{t('knowledge:install.cudaUnavailableExplanation')}</p>
-      </div>
-    </>
   );
 }
 
@@ -553,9 +374,16 @@ function KnowledgeModelsTab({
       <div className="detail-section">
         <div className="detail-section-heading"><h3>{t('knowledge:sections.embedding')}</h3></div>
         <div className="settings-detail-grid">
+          <SelectField
+            label={t('knowledge:labels.localModelDevice')}
+            value={values.local_model_device}
+            options={['auto', 'cpu', 'cuda']}
+            onChange={(value) => setValues({ ...values, local_model_device: value as KnowledgeSettings['local_model_device'] })}
+          />
           <NumberField label={t('knowledge:labels.batchSize')} value={values.embedding_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, embedding_batch_size: value }); }} />
           <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.embedding_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, embedding_timeout_seconds: value }); }} />
         </div>
+        <p className="settings-muted-text">{t('knowledge:hints.localModelDevice')}</p>
         <label className="config-field settings-config-field boolean-field">
           <span>{t('knowledge:labels.unloadEmbeddingModelAfterUse')}</span>
           <ToggleSwitch checked={values.unload_embedding_model_after_use} onChange={(checked) => setValues({ ...values, unload_embedding_model_after_use: checked })} />
@@ -667,67 +495,6 @@ function KnowledgeContextTab({ values, setValues }: { values: KnowledgeSettings;
       <TextAreaField label={t('labels.knowledgeContextInstruction')} value={values.knowledge_context_instruction} onChange={(value) => setValues({ ...values, knowledge_context_instruction: value })} />
       <TextAreaField label={t('labels.snippetTemplate')} value={values.knowledge_context_snippet_template} onChange={(value) => setValues({ ...values, knowledge_context_snippet_template: value })} />
     </div>
-  );
-}
-
-function KnowledgeDownloadTab({
-  downloadType,
-  downloadModelId,
-  downloadTarget,
-  downloadCommand,
-  onSelectPreset,
-  onSetType,
-  onSetModelId,
-  onSetTarget,
-  onCopy,
-}: {
-  downloadType: DownloadModelType;
-  downloadModelId: string;
-  downloadTarget: string;
-  downloadCommand: string;
-  onSelectPreset: (index: number) => void;
-  onSetType: (type: DownloadModelType) => void;
-  onSetModelId: (value: string) => void;
-  onSetTarget: (value: string) => void;
-  onCopy: (text: string) => void;
-}) {
-  const { t } = useTranslation('knowledge');
-  return (
-    <>
-      <div className="detail-section">
-        <div className="detail-section-heading"><h3>{t('download.modelPresets')}</h3></div>
-        <p className="settings-muted-text">{t('download.vramEstimateDisclaimer')}</p>
-        <p className="settings-muted-text">{t('download.cpuMemoryNote')}</p>
-        {KNOWLEDGE_MODEL_PRESET_GROUPS.map((group) => (
-          <div className="knowledge-model-preset-group" key={group}>
-            <h4>{t(`download.groups.${group}`)}</h4>
-            <div className="knowledge-model-preset-list">
-              {KNOWLEDGE_MODEL_PRESETS.map((preset, index) => ({ preset, index }))
-                .filter(({ preset }) => preset.group === group)
-                .map(({ preset, index }) => (
-                  <button className="knowledge-model-preset" type="button" key={preset.modelId} onClick={() => onSelectPreset(index)}>
-                    <strong>{preset.modelId}</strong>
-                    <span>{t(`download.modelTypes.${preset.type}`)} - {t(`download.notes.${preset.noteKey}`)}</span>
-                    <span>{t('download.estimatedVram', { value: t(`download.estimatedVramValues.${preset.estimatedVramKey}`) })}</span>
-                    <code>{preset.target}</code>
-                  </button>
-                ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="detail-section">
-        <div className="detail-section-heading"><h3>{t('download.generatedCommand')}</h3></div>
-        <p className="settings-muted-text">{t('download.runFromProjectRoot')}</p>
-        <p className="settings-muted-text">{t('download.scanAfterDownload')}</p>
-        <div className="settings-detail-grid">
-          <SelectField label={t('download.modelType')} value={downloadType} options={['embedding', 'reranker']} labels={{ embedding: t('download.modelTypes.embedding'), reranker: t('download.modelTypes.reranker') }} onChange={(value) => onSetType(value as DownloadModelType)} />
-          <TextField label={t('download.targetFolder')} value={downloadTarget} onChange={onSetTarget} />
-        </div>
-        <TextField label={t('download.customModelId')} value={downloadModelId} onChange={onSetModelId} />
-        <CommandCard command={downloadCommand} onCopy={onCopy} />
-      </div>
-    </>
   );
 }
 
@@ -2672,44 +2439,6 @@ function Metric({ label, value, valueClassName }: { label: string; value: string
 
 function LoadingSpinner() {
   return <Loader2 className="spin" size={14} aria-hidden="true" />;
-}
-
-function CommandCard({ command, title, onCopy }: { command: string; title?: string; onCopy: (text: string) => void }) {
-  const { t } = useTranslation('knowledge');
-  return (
-    <div className="knowledge-command-card">
-      <div className="knowledge-command-card-body">
-        {title ? <strong>{title}</strong> : null}
-        <code>{command}</code>
-      </div>
-      <button className="settings-secondary-button" type="button" onClick={() => onCopy(command)}>
-        <Clipboard size={14} />
-        {t('actions.copyCommand')}
-      </button>
-    </div>
-  );
-}
-
-function ModelScanSummary({ scan }: { scan: KnowledgeModelScan }) {
-  const { t } = useTranslation(['knowledge', 'status']);
-  return (
-    <dl className="settings-definition-grid">
-      <Metric label={t('knowledge:labels.embeddingFolders')} value={String(scan.embedding_models.length)} />
-      <Metric label={t('knowledge:labels.rerankerFolders')} value={String(scan.reranker_models.length)} />
-      <Metric label="sentence-transformers" value={scan.backend.sentence_transformers_available ? t('status:common.available') : t('status:common.unavailable')} />
-      <Metric label="torch" value={scan.backend.torch_available ? t('status:common.available') : t('status:common.unavailable')} />
-    </dl>
-  );
-}
-
-function backendLabel(backend: KnowledgeModelScan['backend'] | undefined, t: ReturnType<typeof useTranslation>['t']): string {
-  if (!backend) return t('knowledge:backend.notScanned');
-  return backend.available ? t('knowledge:backend.available') : t('knowledge:backend.unavailableOptionalDeps');
-}
-
-function dependencyLabel(value: boolean | undefined, t: ReturnType<typeof useTranslation>['t']): string {
-  if (value === undefined) return t('knowledge:backend.notScanned');
-  return value ? t('status:common.available') : t('status:common.unavailable');
 }
 
 function knowledgeSettingsPatch(values: KnowledgeSettings): Partial<KnowledgeSettings> {
