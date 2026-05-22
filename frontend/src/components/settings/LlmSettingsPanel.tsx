@@ -802,33 +802,40 @@ export function LlmProviderProfileDetail({
                 {providerOptions.map((provider) => <option key={provider} value={provider}>{providerDisplayLabel(t, provider)}</option>)}
               </select>
             </label>
-            {internalProvider ? null : (
+            {internalProvider ? (
+              <>
+                <NumberField label={t('llm:labels.timeout')} value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
+                <InternalProviderRuntimeSettings provider={providerKind} draft={draft} setDraft={setDraft} busy={busy} />
+              </>
+            ) : (
               <>
                 <TextField label={t('llm:labels.baseUrl')} value={draft.base_url} onChange={(base_url) => setDraft({ ...draft, base_url })} disabled={busy} />
                 <TextField label={t('llm:labels.apiKey')} value={draft.api_key} onChange={(api_key) => setDraft({ ...draft, api_key })} disabled={busy} secret hasSecret={Boolean(selectedProfile?.api_key_set)} />
+                <NumberField label={t('llm:labels.timeout')} value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
               </>
             )}
-            <NumberField label={t('llm:labels.timeout')} value={draft.timeout_seconds} onChange={(timeout_seconds) => setDraft({ ...draft, timeout_seconds })} disabled={busy} integer />
           </div>
-          {internalProvider ? (
-            <InternalProviderRuntimeSettings provider={providerKind} draft={draft} setDraft={setDraft} busy={busy} />
-          ) : null}
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
           {result?.warnings?.length ? <p className="settings-warning-text">{result.warnings.join(', ')}</p> : null}
-          {internalProvider ? (
-            <InternalProviderEnvironment
-              provider={providerKind}
-              backend={result?.backend}
-              modelsRoot={result?.models_root}
-              onCopyCommand={(command) => void copyProviderCommand(command)}
-            />
-          ) : null}
           {models.length ? (
             <div className="settings-chip-row">
               {models.map((model) => <span key={model.id}>{internalProvider ? `${model.kind || model.type || 'model'}: ` : ''}{model.id}</span>)}
             </div>
           ) : null}
         </section>
+        {internalProvider ? (
+          <>
+            <InternalProviderEnvironment
+              provider={providerKind}
+              backend={result?.backend}
+              modelsRoot={result?.models_root}
+            />
+            <InternalProviderInstallCommands
+              provider={providerKind}
+              onCopyCommand={(command) => void copyProviderCommand(command)}
+            />
+          </>
+        ) : null}
       </div>
     </form>
   );
@@ -848,37 +855,35 @@ function InternalProviderRuntimeSettings({
   const { t } = useTranslation('llm');
   if (provider === 'internal_transformers') {
     return (
-      <div className="settings-muted-copy">
-        <div className="settings-detail-grid">
-          <label className="config-field settings-config-field">
-            <span>{t('llm:labels.runtimeDevice')}</span>
-            <select
-              value={runtimeDeviceValue(draft)}
-              onChange={(event) => setDraft(updateProviderMetadata(draft, { local_runtime_device: event.target.value }))}
-              disabled={busy}
-            >
-              {localRuntimeDeviceOptions.map((device) => <option key={device} value={device}>{t(`llm:runtimeDevices.${device}`)}</option>)}
-            </select>
-          </label>
-        </div>
-        <p className="settings-muted-text">{t('llm:help.runtimeDevice')}</p>
-      </div>
+      <label className="config-field settings-config-field">
+        <span>{t('llm:labels.runtimeDevice')}</span>
+        <select
+          value={runtimeDeviceValue(draft)}
+          onChange={(event) => setDraft(updateProviderMetadata(draft, { local_runtime_device: event.target.value }))}
+          disabled={busy}
+        >
+          {localRuntimeDeviceOptions.map((device) => <option key={device} value={device}>{t(`llm:runtimeDevices.${device}`)}</option>)}
+        </select>
+        <small>{t('llm:help.runtimeDevice')}</small>
+      </label>
     );
   }
   if (provider === 'internal_llama_cpp') {
     return (
-      <div className="settings-muted-copy">
-        <div className="settings-detail-grid">
-          <NumberField
-            label={t('llm:labels.gpuLayers')}
-            value={gpuLayersValue(draft)}
-            onChange={(value) => setDraft(updateProviderMetadata(draft, { llama_cpp_gpu_layers: value === null ? 0 : value }))}
-            disabled={busy}
-            integer
-          />
-        </div>
-        <p className="settings-muted-text">{t('llm:help.gpuLayers')}</p>
-      </div>
+      <label className="config-field settings-config-field">
+        <span>{t('llm:labels.gpuLayers')}</span>
+        <input
+          type="number"
+          step={1}
+          value={String(gpuLayersValue(draft))}
+          onChange={(event) => {
+            const raw = event.target.value;
+            setDraft(updateProviderMetadata(draft, { llama_cpp_gpu_layers: raw === '' ? 0 : Number.parseInt(raw, 10) }));
+          }}
+          disabled={busy}
+        />
+        <small>{t('llm:help.gpuLayers')}</small>
+      </label>
     );
   }
   return null;
@@ -888,24 +893,21 @@ function InternalProviderEnvironment({
   provider,
   backend,
   modelsRoot,
-  onCopyCommand,
 }: {
   provider: string;
   backend?: Record<string, unknown>;
   modelsRoot?: string;
-  onCopyCommand: (command: string) => void;
 }) {
   const { t } = useTranslation(['llm', 'status']);
-  const commands = provider === 'internal_llama_cpp'
-    ? internalProviderInstallCommands.internal_llama_cpp
-    : internalProviderInstallCommands.internal_transformers;
   const dependencyKeys = provider === 'internal_llama_cpp'
     ? ['llama_cpp_available']
     : ['sentence_transformers_available', 'transformers_available', 'torch_available'];
   return (
-    <div className="settings-muted-copy">
-      <strong>{t('llm:sections.localModelEnvironment')}</strong>
-      <dl className="settings-definition-grid compact">
+    <section className="detail-section">
+      <div className="detail-section-heading">
+        <h3>{t('llm:sections.localModelEnvironment')}</h3>
+      </div>
+      <dl className="settings-definition-grid internal-provider-environment-grid">
         <div>
           <dt>{t('llm:labels.modelsRoot')}</dt>
           <dd>{modelsRoot || 'data/models'}</dd>
@@ -933,11 +935,30 @@ function InternalProviderEnvironment({
           </div>
         ) : null}
       </dl>
-      <strong>{t('llm:install.title')}</strong>
+    </section>
+  );
+}
+
+function InternalProviderInstallCommands({
+  provider,
+  onCopyCommand,
+}: {
+  provider: string;
+  onCopyCommand: (command: string) => void;
+}) {
+  const { t } = useTranslation('llm');
+  const commands = provider === 'internal_llama_cpp'
+    ? internalProviderInstallCommands.internal_llama_cpp
+    : internalProviderInstallCommands.internal_transformers;
+  return (
+    <section className="detail-section">
+      <div className="detail-section-heading">
+        <h3>{t('llm:install.title')}</h3>
+      </div>
       {commands.map((item) => (
         <ProviderInstallCommand key={item.key} title={t(`llm:install.commands.${item.key}`)} command={item.command} onCopy={onCopyCommand} />
       ))}
-    </div>
+    </section>
   );
 }
 

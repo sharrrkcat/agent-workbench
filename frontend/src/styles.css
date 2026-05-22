@@ -7527,6 +7527,10 @@ input:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.settings-definition-grid.internal-provider-environment-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .settings-definition-grid div {
   display: grid;
   gap: 4px;
@@ -8221,6 +8225,10 @@ input:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .settings-definition-grid.internal-provider-environment-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .settings-definition-grid.knowledge-source-overview-row.first,
   .settings-definition-grid.knowledge-source-overview-row.second,
   .settings-definition-grid.knowledge-source-overview-row.third {
@@ -8253,6 +8261,10 @@ input:disabled {
 
 @media (max-width: 620px) {
   .settings-definition-grid.semantic-candidate-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-definition-grid.internal-provider-environment-grid {
     grid-template-columns: 1fr;
   }
 
