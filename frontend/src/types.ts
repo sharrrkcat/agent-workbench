@@ -429,6 +429,7 @@ export type KnowledgeSettings = {
   embedding_timeout_seconds: number;
   unload_embedding_model_after_use: boolean;
   reranker_enabled: boolean;
+  reranker_profile_id?: string | null;
   reranker_model_path: string | null;
   reranker_batch_size: number;
   reranker_timeout_seconds: number;
@@ -486,6 +487,30 @@ export type EmbeddingModelProfileInput = Partial<
     | 'normalize'
     | 'document_instruction'
     | 'query_instruction'
+    | 'enabled'
+    | 'notes'
+  >
+>;
+
+export type RerankerModelProfile = {
+  id: string;
+  name: string;
+  alias: string;
+  provider_profile_id: string;
+  provider_model_id: string;
+  enabled: boolean;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RerankerModelProfileInput = Partial<
+  Pick<
+    RerankerModelProfile,
+    | 'name'
+    | 'alias'
+    | 'provider_profile_id'
+    | 'provider_model_id'
     | 'enabled'
     | 'notes'
   >

@@ -3,7 +3,7 @@ import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, useCallback, useEffec
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
-import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview, LlmProviderModel, LlmProviderProfile } from '../../types';
+import type { EmbeddingModelProfile, EmbeddingModelProfileInput, KnowledgeBase, KnowledgeBaseInput, KnowledgeModelScan, KnowledgeOrigin, KnowledgeOriginFolderSuggestion, KnowledgeSearchResponse, KnowledgeSettings, KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview, LlmProviderModel, LlmProviderProfile, RerankerModelProfile, RerankerModelProfileInput } from '../../types';
 import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
@@ -169,6 +169,15 @@ const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   notes: '',
 };
 
+const defaultRerankerProfile: Partial<RerankerModelProfile> = {
+  name: '',
+  alias: '',
+  provider_profile_id: '',
+  provider_model_id: '',
+  enabled: true,
+  notes: '',
+};
+
 const defaultKnowledgeBase: Partial<KnowledgeBase> = {
   name: '',
   description: '',
@@ -192,18 +201,23 @@ export function KnowledgeSettingsDetail({
   onObjectsChanged,
   onDirtyChange,
   onManageEmbeddingProfiles,
+  rerankerProfiles: rerankerProfilesProp,
+  providerProfiles: providerProfilesProp,
 }: {
   category: KnowledgeSettingsCategory;
   selectedItemId?: string;
   onObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
   onManageEmbeddingProfiles?: () => void;
+  rerankerProfiles?: RerankerModelProfile[];
+  providerProfiles?: LlmProviderProfile[];
 }) {
   const { t } = useTranslation(['knowledge', 'common', 'status']);
   const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
   const [values, setValues] = useState<KnowledgeSettings | null>(null);
   const [scan, setScan] = useState<KnowledgeModelScan | null>(null);
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
+  const [rerankerProfiles, setRerankerProfiles] = useState<RerankerModelProfile[]>(rerankerProfilesProp || []);
   const [providerProfiles, setProviderProfiles] = useState<LlmProviderProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [busy, setBusy] = useState('');
@@ -217,17 +231,19 @@ export function KnowledgeSettingsDetail({
   const downloadCommand = `uv run python scripts/download_knowledge_model.py --type ${downloadType} --model-id ${downloadModelId || '<model-id>'} --target ${downloadTarget || '<target-folder>'}`;
 
   async function refresh() {
-    const [nextSettings, nextProfiles, nextBases, nextProviders] = await Promise.all([
+    const [nextSettings, nextProfiles, nextRerankers, nextBases, nextProviders] = await Promise.all([
       api.getKnowledgeSettings(),
       api.listEmbeddingModels(),
+      api.listRerankerModels(),
       api.listKnowledgeBases(),
       api.listLlmProviderProfiles(),
     ]);
     setSettings(nextSettings);
     setValues(nextSettings);
     setEmbeddingProfiles(nextProfiles);
+    setRerankerProfiles(nextRerankers);
     setKnowledgeBases(nextBases);
-    setProviderProfiles(nextProviders);
+    setProviderProfiles(providerProfilesProp || nextProviders);
   }
 
   async function refreshObjects(selectedId?: string) {
@@ -329,6 +345,18 @@ export function KnowledgeSettingsDetail({
     );
   }
 
+  if (category === 'reranker_models') {
+    return (
+      <RerankerModelsEditor
+        profiles={rerankerProfilesProp || rerankerProfiles}
+        providerProfiles={providerProfilesProp || providerProfiles}
+        mode={selectedItemId}
+        onRefresh={refreshObjects}
+        onDirtyChange={onDirtyChange}
+      />
+    );
+  }
+
   if (category === 'knowledge_bases') {
     return (
       <KnowledgeBasesEditor
@@ -390,7 +418,7 @@ export function KnowledgeSettingsDetail({
             onManageEmbeddingProfiles={onManageEmbeddingProfiles}
           />
         ) : null}
-        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} scan={scan} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
+        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} rerankerProfiles={rerankerProfilesProp || rerankerProfiles} scan={scan} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
         {defaultsTab === 'retrieval' ? <KnowledgeRetrievalTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'chunking' ? <KnowledgeChunkingTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'context' ? <KnowledgeContextTab values={values} setValues={setValues} /> : null}
@@ -504,6 +532,7 @@ function KnowledgeOverviewTab({
 function KnowledgeModelsTab({
   values,
   setValues,
+  rerankerProfiles,
   scan,
   busy,
   setBusy,
@@ -512,6 +541,7 @@ function KnowledgeModelsTab({
 }: {
   values: KnowledgeSettings;
   setValues: (values: KnowledgeSettings) => void;
+  rerankerProfiles: RerankerModelProfile[];
   scan: KnowledgeModelScan | null;
   busy: string;
   setBusy: (busy: string) => void;
@@ -521,6 +551,8 @@ function KnowledgeModelsTab({
   const { t } = useTranslation(['knowledge']);
   const rerankerOptions = modelPathOptions(scan?.reranker_models ?? [], values.reranker_model_path || '');
   const currentRerankerMissing = scan ? Boolean(values.reranker_model_path) && !scan.reranker_models.some((model) => model.model_path === values.reranker_model_path) : false;
+  const enabledRerankerProfiles = rerankerProfiles.filter((profile) => profile.enabled);
+  const selectedRerankerMissing = Boolean(values.reranker_profile_id) && !rerankerProfiles.some((profile) => profile.id === values.reranker_profile_id);
   return (
     <>
       <div className="detail-section">
@@ -542,6 +574,18 @@ function KnowledgeModelsTab({
           <ToggleSwitch checked={values.reranker_enabled} onChange={(checked) => setValues({ ...values, reranker_enabled: checked })} />
         </label>
         <div className="settings-detail-grid">
+          <label className="config-field settings-config-field">
+            <span>{t('knowledge:labels.rerankerModelProfile')}</span>
+            <select
+              value={values.reranker_profile_id || ''}
+              onChange={(event) => setValues({ ...values, reranker_profile_id: event.target.value || null })}
+            >
+              <option value="">{t('knowledge:labels.rerankerDisabled')}</option>
+              {enabledRerankerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {profile.provider_model_id}</option>)}
+            </select>
+            <small>{t('knowledge:hints.rerankerProfileSelection')}</small>
+          </label>
+          {selectedRerankerMissing ? <p className="settings-warning-text">{t('knowledge:hints.selectedRerankerProfileMissing')}</p> : null}
           <div>
             <SelectField
               label={t('knowledge:labels.rerankerModelPath')}
@@ -553,6 +597,7 @@ function KnowledgeModelsTab({
               onChange={(value) => setValues({ ...values, reranker_model_path: value || null })}
             />
             <p className="settings-muted-text">{t('knowledge:hints.chooseScannedRerankerModel')}</p>
+            <p className="settings-muted-text">{t('knowledge:hints.legacyRerankerPath')}</p>
             {!rerankerOptions.length ? <p className="settings-muted-text">{t('knowledge:hints.scanLocalModelsInOverviewFirst')}</p> : null}
             {currentRerankerMissing ? <p className="settings-muted-text">{t('knowledge:hints.currentSavedPathNotScanned')}</p> : null}
           </div>
@@ -946,6 +991,198 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
           <label className="config-field settings-config-field boolean-field"><span>{t('knowledge:labels.normalize')}</span><ToggleSwitch checked={values.normalize ?? true} onChange={(checked) => { setNormalizeTouched(true); setValues({ ...values, normalize: checked }); }} /></label>
           <TextAreaField label={t('knowledge:labels.documentInstruction')} value={values.document_instruction || ''} onChange={(value) => setValues({ ...values, document_instruction: value })} />
           <TextAreaField label={t('knowledge:labels.queryInstruction')} value={values.query_instruction || ''} onChange={(value) => setValues({ ...values, query_instruction: value })} />
+          <TextAreaField label={t('knowledge:labels.notes')} value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
+        </section>
+      </div>
+    </form>
+  );
+}
+
+function RerankerModelsEditor({ profiles, providerProfiles, mode, onRefresh, onDirtyChange }: {
+  profiles: RerankerModelProfile[];
+  providerProfiles: LlmProviderProfile[];
+  mode: FormMode;
+  onRefresh: (selectedItemId?: string) => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const { t } = useTranslation('knowledge');
+  const selected = profiles.find((profile) => profile.id === mode);
+  const initial = mode === 'new' ? defaultRerankerProfile : selected;
+  if (!initial) {
+    return <Empty title={t('empty.noRerankerSelected')} message={profiles.length ? t('empty.selectReranker') : t('empty.noRerankerProfiles')} />;
+  }
+  return <RerankerProfileForm initial={initial} providerProfiles={providerProfiles} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
+}
+
+function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDirtyChange }: {
+  initial: Partial<RerankerModelProfile>;
+  providerProfiles: LlmProviderProfile[];
+  isNew: boolean;
+  onRefresh: (selectedItemId?: string) => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const { t } = useTranslation(['knowledge', 'common', 'llm']);
+  const [values, setValues] = useState<Partial<RerankerModelProfile>>(initial);
+  const [busy, setBusy] = useState('');
+  const [result, setResult] = useState('');
+  const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [providerModels, setProviderModels] = useState<LlmProviderModel[]>([]);
+  const scopeId = isNew ? 'new-reranker' : initial.id || '';
+  const baselineKey = stableConfigString(buildRerankerModelPayload(initial));
+  const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
+  const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
+  const dirty = hydrated && stableConfigString(buildRerankerModelPayload(values)) !== baselineKey;
+  const rerankerProviderProfiles = providerProfiles.filter((profile) => rerankerProviderSupported(profile.provider));
+  const selectedProvider = rerankerProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
+  const providerModelOptions = providerModels.filter((model) => isRerankerProviderModel(model)).map((model) => model.id);
+
+  useEffect(() => {
+    setValues(initial);
+    setDraftReady({ scopeId, baselineKey });
+  }, [baselineKey, initial, scopeId]);
+
+  useEffect(() => {
+    setBusy('');
+    setResult('');
+    setError(null);
+    setProviderModels([]);
+  }, [scopeId]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setBusy('saving');
+    try {
+      setError(null);
+      const payload = buildRerankerModelPayload(values);
+      const saved = isNew ? await api.createRerankerModel(payload) : await api.patchRerankerModel(values.id || '', payload);
+      await onRefresh(saved.id);
+      setResult(t('knowledge:results.rerankerSaved'));
+    } catch (error) {
+      setError(toSettingsError(error, t('knowledge:errors.saveRerankerFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function remove() {
+    if (!values.id) return;
+    setBusy('deleting');
+    try {
+      setError(null);
+      await api.deleteRerankerModel(values.id);
+      await onRefresh();
+      setResult(t('knowledge:results.rerankerDeleted'));
+    } catch (error) {
+      setError(toSettingsError(error, t('knowledge:errors.deleteRerankerFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function test() {
+    if (!values.id) return;
+    setBusy('testing');
+    try {
+      setError(null);
+      const response = await api.testRerankerModel(values.id, { query: 'What is RAG?', documents: [{ id: 'doc1', text: 'Retrieval augmented generation uses retrieved context.' }, { id: 'doc2', text: 'Other text.' }] });
+      setResult(t('knowledge:results.rerankerReturned', { count: response.results.length }));
+    } catch (error) {
+      setError(toSettingsError(error, t('knowledge:errors.rerankerUnavailable')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function refreshProviderModels() {
+    if (!values.provider_profile_id) return;
+    setBusy('provider-models');
+    try {
+      setError(null);
+      const response = await api.listLlmProviderModels(values.provider_profile_id);
+      const models = response.models.filter((model) => Boolean(model.id));
+      setProviderModels(models);
+      setResult(t('knowledge:results.providerModelsFound', { count: models.filter((model) => isRerankerProviderModel(model)).length }));
+    } catch (error) {
+      setError(toSettingsError(error, t('knowledge:errors.refreshProviderModelsFailed')));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <form className="settings-detail-form" onSubmit={save}>
+      <header className="settings-detail-header">
+        <div className="settings-detail-title">
+          <div className="settings-detail-avatar">{profileInitials(values.name || values.alias || 'RM') || <BrainCircuit size={18} />}</div>
+          <div>
+            <h2>{values.name || t('knowledge:titles.newRerankerModel')}</h2>
+            <p>
+              <code>{values.alias || t('knowledge:labels.profileKey')}</code>
+              <span>{values.provider_model_id || t('knowledge:empty.noRerankerRef')}</span>
+            </p>
+          </div>
+        </div>
+        <div className="settings-detail-actions">
+          {result ? <span className="settings-badge success">{result}</span> : null}
+          {dirty ? (
+            <button className="settings-primary-button" type="submit" disabled={Boolean(busy)}>
+              <Save size={14} />
+              {busy === 'saving' ? t('common:saving') : t('common:save')}
+            </button>
+          ) : null}
+          {!isNew ? (
+            <button className="settings-secondary-button" type="button" onClick={test} disabled={Boolean(busy)}>
+              {busy === 'testing' ? <LoadingSpinner /> : <Play size={14} />}
+              {t('knowledge:actions.test')}
+            </button>
+          ) : null}
+          {!isNew ? <button className="settings-secondary-button danger" type="button" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14} />{t('common:delete')}</button> : null}
+          <ToggleSwitch checked={values.enabled ?? true} onChange={(checked) => setValues({ ...values, enabled: checked })} disabled={Boolean(busy)} />
+        </div>
+      </header>
+      <div className="settings-detail-body">
+        {error ? <SettingsApiError error={error} /> : null}
+        <section className="detail-section">
+          <h3>{t('knowledge:sections.model')}</h3>
+          <div className="settings-detail-grid">
+            <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
+            <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
+            <label className="config-field settings-config-field">
+              <span>{t('knowledge:labels.providerProfile')}</span>
+              <select
+                value={values.provider_profile_id || ''}
+                onChange={(event) => setValues({ ...values, provider_profile_id: event.target.value, provider_model_id: '' })}
+              >
+                <option value="">{t('knowledge:empty.noProviderSelected')}</option>
+                {rerankerProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
+              </select>
+            </label>
+            <div>
+              <div className="settings-button-row">
+                <SelectField
+                  label={t('knowledge:labels.rerankerModelRef')}
+                  value={values.provider_model_id || ''}
+                  options={providerModelOptions}
+                  disabled={!providerModelOptions.length}
+                  placeholder={t('knowledge:empty.noProviderRerankerModels')}
+                  onChange={(value) => setValues({ ...values, provider_model_id: value })}
+                />
+                <button className="settings-secondary-button" type="button" onClick={refreshProviderModels} disabled={Boolean(busy) || !values.provider_profile_id}>
+                  {busy === 'provider-models' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+                  {t('knowledge:actions.refreshProviderModels')}
+                </button>
+              </div>
+              <p className="settings-muted-text">{t('knowledge:hints.internalRerankerRefsOnly')}</p>
+              {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
+            </div>
+          </div>
+        </section>
+        <section className="detail-section">
+          <h3>{t('knowledge:sections.runtime')}</h3>
           <TextAreaField label={t('knowledge:labels.notes')} value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
         </section>
       </div>
@@ -2514,6 +2751,14 @@ function isEmbeddingProviderModel(model: LlmProviderModel): boolean {
   return model.kind === 'embedding' || model.type === 'embedding' || String(model.id || model.model_ref || '').startsWith('embedding/');
 }
 
+function rerankerProviderSupported(provider: string): boolean {
+  return ['internal_transformers', 'internal_llama_cpp'].includes(provider);
+}
+
+function isRerankerProviderModel(model: LlmProviderModel): boolean {
+  return model.kind === 'reranker' || model.type === 'reranker' || String(model.id || model.model_ref || '').startsWith('reranker/');
+}
+
 function normalizedOriginFolder(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
 }
@@ -2564,6 +2809,17 @@ function buildEmbeddingModelPayload(values: Partial<EmbeddingModelProfile>): Emb
     normalize: values.normalize ?? true,
     document_instruction: values.document_instruction ?? '',
     query_instruction: values.query_instruction ?? '',
+    enabled: values.enabled ?? true,
+    notes: values.notes ?? '',
+  };
+}
+
+function buildRerankerModelPayload(values: Partial<RerankerModelProfile>): RerankerModelProfileInput {
+  return {
+    name: values.name ?? '',
+    alias: values.alias ?? '',
+    provider_profile_id: values.provider_profile_id ?? '',
+    provider_model_id: values.provider_model_id ?? '',
     enabled: values.enabled ?? true,
     notes: values.notes ?? '',
   };

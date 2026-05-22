@@ -9,7 +9,7 @@ from ai_workbench.core.keyword_search import KeywordSearchResult, search_keyword
 from ai_workbench.core.knowledge_models import KnowledgeModelError, safe_unload_embedding_model, safe_unload_reranker_model
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
-from ai_workbench.core.rerank import rerank_documents
+from ai_workbench.core.rerank import rerank_documents, rerank_with_profile, unload_model_path_for_reranker_profile
 from ai_workbench.core.vector_store import VectorSearchResult, search_vectors
 
 
@@ -139,10 +139,13 @@ def search_knowledge(
     merged = merged[:merged_limit]
     ranked = _rerank_candidates(
         backend=model_backend,
+        knowledge_store=knowledge_store,
         settings=settings,
         query=query,
         candidates=merged,
         debug=debug,
+        provider_profile_store=provider_profile_store,
+        repo_root=repo_root,
     )
     debug["before_filter_count"] = len(ranked)
     score_threshold = min_score_threshold if min_score_threshold is not None else (settings.min_score_threshold if settings.min_score_threshold is not None else settings.default_min_score)
@@ -361,15 +364,18 @@ def _from_keyword(result: KeywordSearchResult) -> RetrievalCandidate:
 def _rerank_candidates(
     *,
     backend: Any,
+    knowledge_store: Any,
     settings: KnowledgeSettings,
     query: str,
     candidates: list[RetrievalCandidate],
     debug: dict[str, Any],
+    provider_profile_store: Any | None = None,
+    repo_root: Any | None = None,
 ) -> list[RetrievalCandidate]:
     if not settings.reranker_enabled:
         return candidates
-    if not settings.reranker_model_path:
-        debug["warnings"].append("Reranker is enabled but reranker_model_path is not configured.")
+    if not settings.reranker_profile_id and not settings.reranker_model_path:
+        debug["warnings"].append("Reranker is enabled but no reranker profile or legacy reranker_model_path is configured.")
         return candidates
     limited = candidates[: settings.reranker_candidate_limit]
     documents = [{"id": candidate.chunk_id, "text": candidate.content} for candidate in limited]
@@ -377,13 +383,32 @@ def _rerank_candidates(
         return candidates
     debug["reranker_input_count"] = len(documents)
     try:
-        response = rerank_documents(
-            backend=backend,
-            model_path=settings.reranker_model_path,
-            query=query,
-            documents=documents,
-            device=settings.local_model_device,
-        )
+        profile = None
+        provider = None
+        unload_path = settings.reranker_model_path
+        if settings.reranker_profile_id:
+            profile = knowledge_store.get_reranker_profile(settings.reranker_profile_id)
+            if provider_profile_store is None:
+                raise KnowledgeModelError("KNOWLEDGE_RERANKER_PROVIDER_NOT_CONFIGURED", "Reranker provider profile store is not configured.")
+            provider = provider_profile_store.get(profile.provider_profile_id)
+            response = rerank_with_profile(
+                backend=backend,
+                profile=profile,
+                provider_profile_store=provider_profile_store,
+                query=query,
+                documents=documents,
+                device=settings.local_model_device,
+                repo_root=repo_root,
+            )
+            unload_path = unload_model_path_for_reranker_profile(profile, provider)
+        else:
+            response = rerank_documents(
+                backend=backend,
+                model_path=settings.reranker_model_path or "",
+                query=query,
+                documents=documents,
+                device=settings.local_model_device,
+            )
         scores = {str(item["id"]): float(item["score"]) for item in response.get("results", [])}
         debug["reranker_output_count"] = len(scores)
         for candidate in limited:
@@ -396,7 +421,7 @@ def _rerank_candidates(
         return candidates
     finally:
         if settings.unload_reranker_model_after_use:
-            safe_unload_reranker_model(backend, settings.reranker_model_path, settings.local_model_device, debug["warnings"])
+            safe_unload_reranker_model(backend, unload_path, settings.local_model_device, debug["warnings"])
 
 
 def _trim_results(candidates: list[RetrievalCandidate], top_k: int, max_context_chars: int) -> list[dict[str, Any]]:

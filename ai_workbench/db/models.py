@@ -157,6 +157,7 @@ class KnowledgeSettingsRecord(SQLModel, table=True):
     embedding_timeout_seconds: int = 60
     unload_embedding_model_after_use: bool = False
     reranker_enabled: bool = False
+    reranker_profile_id: Optional[str] = None
     reranker_model_path: Optional[str] = None
     reranker_batch_size: int = 16
     reranker_timeout_seconds: int = 60
@@ -273,6 +274,20 @@ class EmbeddingModelProfileRecord(SQLModel, table=True):
     normalize: bool = True
     document_instruction: str = ""
     query_instruction: str = ""
+    enabled: bool = True
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class RerankerModelProfileRecord(SQLModel, table=True):
+    __tablename__ = "reranker_model_profiles"
+
+    id: str = Field(primary_key=True)
+    name: str
+    alias: str = Field(index=True, unique=True)
+    provider_profile_id: str = Field(index=True)
+    provider_model_id: str = ""
     enabled: bool = True
     notes: str = ""
     created_at: datetime = Field(default_factory=utc_now)

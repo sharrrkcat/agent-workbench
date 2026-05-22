@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, Worldbook } from '../../types';
+import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, RerankerModelProfile, Worldbook } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsInitialTarget, type SettingsSection, type WorldbookSettingsSubsection } from './SettingsNav';
 import { SettingsObjectList, type AppearanceSettingsCategory, type GeneralSettingsCategory } from './SettingsObjectList';
@@ -18,6 +18,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('');
   const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('providers');
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
+  const [rerankerProfiles, setRerankerProfiles] = useState<RerankerModelProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
   const [selectedKnowledgeItemId, setSelectedKnowledgeItemId] = useState<string>('global');
@@ -163,12 +164,16 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   }
 
   async function refreshKnowledgeObjects(nextSelectedId?: string) {
-    const [profiles, bases] = await Promise.all([api.listEmbeddingModels(), api.listKnowledgeBases()]);
+    const [profiles, rerankers, bases] = await Promise.all([api.listEmbeddingModels(), api.listRerankerModels(), api.listKnowledgeBases()]);
     setEmbeddingProfiles(profiles);
+    setRerankerProfiles(rerankers);
     setKnowledgeBases(bases);
     if (nextSelectedId) {
       setSelectedKnowledgeItemId(nextSelectedId);
       return;
+    }
+    if (selectedLlmSubsection === 'reranker_models' && !selectedKnowledgeItemId) {
+      setSelectedKnowledgeItemId(rerankers[0]?.id || '');
     }
     if (selectedKnowledgeSubsection === 'embedding_models' && !selectedKnowledgeItemId) {
       setSelectedKnowledgeItemId(profiles[0]?.id || '');
@@ -178,6 +183,9 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     }
     if (selectedKnowledgeSubsection === 'embedding_models' && selectedKnowledgeItemId && selectedKnowledgeItemId !== 'new' && !profiles.some((profile) => profile.id === selectedKnowledgeItemId)) {
       setSelectedKnowledgeItemId(profiles[0]?.id || '');
+    }
+    if (selectedLlmSubsection === 'reranker_models' && selectedKnowledgeItemId && selectedKnowledgeItemId !== 'new' && !rerankers.some((profile) => profile.id === selectedKnowledgeItemId)) {
+      setSelectedKnowledgeItemId(rerankers[0]?.id || '');
     }
     if (selectedKnowledgeSubsection === 'knowledge_bases' && selectedKnowledgeItemId && selectedKnowledgeItemId !== 'new' && !bases.some((base) => base.id === selectedKnowledgeItemId)) {
       setSelectedKnowledgeItemId(bases[0]?.id || '');
@@ -212,9 +220,11 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         ? selectedLlmItemId
         : llmProfiles[0]?.id || '';
       setSelectedLlmItemId(modelId);
-    } else {
+    } else if (subsection === 'embedding_models') {
       setSelectedKnowledgeSubsection('embedding_models');
       setSelectedKnowledgeItemId(embeddingProfiles[0]?.id || '');
+    } else if (subsection === 'reranker_models') {
+      setSelectedKnowledgeItemId(rerankerProfiles[0]?.id || '');
     }
   }
 
@@ -307,6 +317,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
         embeddingProfiles={embeddingProfiles}
+        rerankerProfiles={rerankerProfiles}
         knowledgeBases={knowledgeBases}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
         worldbooks={worldbooks}
@@ -328,6 +339,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         health={health}
         llmProfiles={llmProfiles}
         llmProviderProfiles={llmProviderProfiles}
+        rerankerProfiles={rerankerProfiles}
         selectedLlmItemId={selectedLlmItemId}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}

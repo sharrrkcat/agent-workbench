@@ -48,6 +48,9 @@ types, but LLM Model Profiles must not select those refs.
 Embedding Model Profiles are a separate Models profile type. They may reference
 Provider Profiles for embedding APIs or internal `embedding/...` refs, but they
 do not participate in main LLM resolution and do not change the order above.
+Reranker Model Profiles are also separate Models profiles. They may reference
+internal Provider Profiles for Knowledge retrieval reranking, but they do not
+participate in main LLM resolution and do not change the order above.
 
 Model Profile means user-facing model selection and behavior defaults: provider
 model id, stable profile key, capabilities, generation defaults, notes, and

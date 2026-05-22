@@ -500,8 +500,16 @@ class AgentRunner:
                 if not self._embedding_loaded(getattr(profile, "model_path", ""), getattr(settings, "local_model_device", "auto")):
                     steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading embedding model", {"backend": "knowledge", "profile_id": profile_id, "model_path": getattr(profile, "model_path", None), "state": "loading"}))
             reranker_path = str(getattr(settings, "reranker_model_path", "") or "")
+            reranker_profile_id = str(getattr(settings, "reranker_profile_id", "") or "")
+            if reranker_profile_id:
+                try:
+                    profile = self.knowledge_store.get_reranker_profile(reranker_profile_id)
+                    if str(getattr(profile, "provider_model_id", "")).startswith("reranker/"):
+                        reranker_path = "rerankers/" + str(profile.provider_model_id).removeprefix("reranker/")
+                except Exception:
+                    reranker_path = ""
             if getattr(settings, "reranker_enabled", False) and reranker_path and not self._reranker_loaded(reranker_path, getattr(settings, "local_model_device", "auto")):
-                steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading reranker", {"backend": "knowledge", "model_path": reranker_path, "state": "loading"}))
+                steps.append(self._start_preparation_step(run_id, parent_step_id, "Loading reranker", {"backend": "knowledge", "model_path": reranker_path, "profile_id": reranker_profile_id or None, "state": "loading"}))
         except Exception:
             return steps
         return steps

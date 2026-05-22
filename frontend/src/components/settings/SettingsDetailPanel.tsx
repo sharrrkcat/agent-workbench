@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultModelProfileSection, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -27,6 +27,7 @@ export function SettingsDetailPanel({
   health,
   llmProfiles = [],
   llmProviderProfiles = [],
+  rerankerProfiles = [],
   selectedLlmItemId = 'global',
   llmSubsection = 'providers',
   generalCategory = 'files',
@@ -52,6 +53,7 @@ export function SettingsDetailPanel({
   health?: HealthDetails;
   llmProfiles?: LlmProfile[];
   llmProviderProfiles?: LlmProviderProfile[];
+  rerankerProfiles?: RerankerModelProfile[];
   selectedLlmItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
@@ -123,10 +125,19 @@ export function SettingsDetailPanel({
             onProfilesChanged={onLlmProfilesChanged || (async () => undefined)}
             onDirtyChange={onDirtyChange}
           />
-        ) : (
+        ) : llmSubsection === 'embedding_models' ? (
           <KnowledgeSettingsDetail
             category="embedding_models"
             selectedItemId={selectedKnowledgeItemId}
+            onObjectsChanged={onKnowledgeObjectsChanged}
+            onDirtyChange={onDirtyChange}
+          />
+        ) : (
+          <KnowledgeSettingsDetail
+            category="reranker_models"
+            selectedItemId={selectedKnowledgeItemId}
+            rerankerProfiles={rerankerProfiles}
+            providerProfiles={llmProviderProfiles}
             onObjectsChanged={onKnowledgeObjectsChanged}
             onDirtyChange={onDirtyChange}
           />

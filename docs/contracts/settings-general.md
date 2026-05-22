@@ -38,6 +38,7 @@ Settings -> Models owns shared model configuration pages:
 - Provider Profiles.
 - LLM Model Profiles.
 - Embedding Model Profiles.
+- Reranker Model Profiles.
 
 Provider Profiles can represent external API providers or internal local model
 backends. Internal Provider Profiles use fixed local inventory roots under
@@ -51,6 +52,10 @@ internal providers with `embedding/...` refs, OpenAI-compatible / LM Studio
 embedding APIs, or Ollama embed APIs. Provider Profiles still own only source
 connection or local inventory details; dimensions, normalization, query
 instruction, and document instruction remain Embedding Model Profile fields.
+Reranker Model Profiles may select only internal Provider Profiles with
+`reranker/...` refs. Knowledge Defaults owns the disabled/profile selection and
+retrieval strategy parameters; candidate counts, thresholds, and context limits
+do not move into Reranker Model Profiles.
 
 ## Files
 

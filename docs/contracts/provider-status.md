@@ -91,6 +91,11 @@ Internal providers:
   External embedding profiles use provider reachability plus embedding test
   calls; status/test responses must not include API keys, absolute paths, raw
   provider payloads, or full directory trees.
+- Reranker Model Profiles may use only internal Provider Profiles with
+  `reranker/...` refs. Profile test/status paths report provider enabled state,
+  ref validity, model existence, optional dependency availability, and loaded
+  state where the local cache can be inspected. External reranker providers are
+  not supported.
 - Internal provider unload is best-effort cache release only. It may release
   cached `internal_transformers` or `internal_llama_cpp` LLM runtimes, and must
   never delete model files or user data. Unsupported, unavailable, or failed
@@ -140,7 +145,9 @@ internal LLM runtime cache release.
 Embedding and reranker local cache release is best-effort. The `embedding`
 target may release local/internal embedding caches; external embedding
 providers have no local cache and should be skipped or reported as no local
-cache. ComfyUI memory release is an external service request through ComfyUI `/free` with
+cache. The `reranker` target may release cached internal reranker runtimes and
+must never delete model files, Knowledge data, or settings. ComfyUI memory
+release is an external service request through ComfyUI `/free` with
 `unload_models` and `free_memory` booleans. ComfyUI release failure is a cleanup
 warning and must not turn an already successful image generation into a failed
 run.

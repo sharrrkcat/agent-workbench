@@ -1,6 +1,6 @@
 import { Boxes, Gauge, Globe, PawPrint, Plus, SlidersHorizontal, Type } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, Worldbook } from '../../types';
+import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, RerankerModelProfile, Worldbook } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
@@ -11,7 +11,7 @@ import { getKnowledgeIndexStatusLabel } from '../../i18n/formatters';
 
 export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory' | 'web_search' | 'utility_llm' | 'intent_routing';
 export type AppearanceSettingsCategory = 'pet' | 'fonts' | 'chat_status_panel';
-export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection;
+export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection | 'reranker_models';
 export type WorldbookSettingsCategory = WorldbookSettingsSubsection;
 
 export function SettingsObjectList({
@@ -29,6 +29,7 @@ export function SettingsObjectList({
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
   embeddingProfiles = [],
+  rerankerProfiles = [],
   knowledgeBases = [],
   selectedKnowledgeItemId = 'global',
   worldbooks = [],
@@ -55,6 +56,7 @@ export function SettingsObjectList({
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
   embeddingProfiles?: EmbeddingModelProfile[];
+  rerankerProfiles?: RerankerModelProfile[];
   knowledgeBases?: KnowledgeBase[];
   selectedKnowledgeItemId?: string;
   worldbooks?: Worldbook[];
@@ -287,6 +289,27 @@ export function SettingsObjectList({
   }
 
   if (section === 'models') {
+    if (llmSubsection === 'reranker_models') {
+      return (
+        <aside className="settings-object-list" aria-label={t('settings:objectList.rerankerModelProfiles')}>
+          <ObjectListHeader title={t('settings:subsections.rerankerModels')} count={rerankerProfiles.length} actionLabel={t('settings:objectList.newModel')} onAction={() => onSelectKnowledgeItem?.('new')} />
+          <div className="settings-list-scroll">
+            {rerankerProfiles.length ? (
+              rerankerProfiles.map((profile) => (
+                <RerankerProfileListItem
+                  key={profile.id}
+                  profile={profile}
+                  active={selectedKnowledgeItemId === profile.id}
+                  onClick={() => onSelectKnowledgeItem?.(profile.id)}
+                />
+              ))
+            ) : (
+              <div className="settings-empty-state compact">{t('settings:objectList.noRerankerProfiles')}</div>
+            )}
+          </div>
+        </aside>
+      );
+    }
     if (llmSubsection === 'embedding_models') {
       return (
         <aside className="settings-object-list" aria-label={t('settings:objectList.embeddingModelProfiles')}>
@@ -437,6 +460,20 @@ function EmbeddingProfileListItem({ profile, active, onClick }: { profile: Embed
       <div className="settings-object-copy">
         <strong>{profile.name || 'Untitled model'}</strong>
         <small>{profile.alias || 'No profile key'} / {profile.provider_model_id || profile.model_path || 'No model path'}</small>
+      </div>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
+    </button>
+  );
+}
+
+function RerankerProfileListItem({ profile, active, onClick }: { profile: RerankerModelProfile; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation(['common', 'settings']);
+  return (
+    <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
+        <small>{profile.alias || t('settings:objectList.noProfileKey')} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>

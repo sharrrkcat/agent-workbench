@@ -244,7 +244,14 @@ class RuntimeMemoryService:
     def _cache_count(self, target: str) -> int:
         cache_name = "_embedding_cache" if target == "embedding" else "_reranker_cache"
         cache = getattr(self.knowledge_model_backend, cache_name, None)
-        return len(cache) if isinstance(cache, dict) else 0
+        count = len(cache) if isinstance(cache, dict) else 0
+        if target == "embedding":
+            llama_cache = getattr(self.knowledge_model_backend, "_llama_embedding_cache", None)
+            return count + (len(llama_cache) if isinstance(llama_cache, dict) else 0)
+        if target == "reranker":
+            llama_cache = getattr(self.knowledge_model_backend, "_llama_reranker_cache", None)
+            return count + (len(llama_cache) if isinstance(llama_cache, dict) else 0)
+        return count
 
     def _capability_enabled(self, capability_id: str) -> bool:
         try:

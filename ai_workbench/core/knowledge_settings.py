@@ -38,6 +38,7 @@ class KnowledgeSettings(BaseModel):
     embedding_timeout_seconds: int = Field(default=60, ge=1, le=3600)
     unload_embedding_model_after_use: StrictBool = False
     reranker_enabled: StrictBool = False
+    reranker_profile_id: str | None = None
     reranker_model_path: str | None = None
     reranker_batch_size: int = Field(default=16, ge=1, le=1024)
     reranker_timeout_seconds: int = Field(default=60, ge=1, le=3600)
@@ -72,9 +73,9 @@ class KnowledgeSettings(BaseModel):
             raise ValueError("Default chunk profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.")
         return value
 
-    @field_validator("reranker_model_path", mode="before")
+    @field_validator("reranker_profile_id", "reranker_model_path", mode="before")
     @classmethod
-    def _normalize_reranker_model_path(cls, value: Any) -> str | None:
+    def _normalize_optional_text(cls, value: Any) -> str | None:
         if value is None:
             return None
         text = str(value).strip()
@@ -111,6 +112,7 @@ class KnowledgeSettingsPatch(BaseModel):
     embedding_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
     unload_embedding_model_after_use: StrictBool | None = None
     reranker_enabled: StrictBool | None = None
+    reranker_profile_id: str | None = None
     reranker_model_path: str | None = None
     reranker_batch_size: int | None = Field(default=None, ge=1, le=1024)
     reranker_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
@@ -145,9 +147,9 @@ class KnowledgeSettingsPatch(BaseModel):
             raise ValueError("Default chunk profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.")
         return value
 
-    @field_validator("reranker_model_path", mode="before")
+    @field_validator("reranker_profile_id", "reranker_model_path", mode="before")
     @classmethod
-    def _normalize_reranker_model_path(cls, value: Any) -> str | None:
+    def _normalize_optional_text(cls, value: Any) -> str | None:
         if value is None:
             return None
         text = str(value).strip()
@@ -180,6 +182,8 @@ class KnowledgeSettingsPatch(BaseModel):
 
 def knowledge_settings_patch_updates(patch: KnowledgeSettingsPatch) -> dict[str, Any]:
     updates = patch.model_dump(exclude_unset=True)
+    if "reranker_profile_id" in patch.model_fields_set and not patch.reranker_profile_id:
+        updates["reranker_profile_id"] = None
     if "reranker_model_path" in patch.model_fields_set and not patch.reranker_model_path:
         updates["reranker_model_path"] = None
     return updates

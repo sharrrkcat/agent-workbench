@@ -138,16 +138,17 @@ In Settings, model configuration is split under `Models`:
 - Provider Profiles.
 - LLM Model Profiles.
 - Embedding Model Profiles.
+- Reranker Model Profiles.
 
 The Default model profile fallback lives in Settings -> General -> LLM & Prompts.
 
 ## LLM Provider And Model Profiles
 
-Provider Profiles hold model source details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. They can also represent internal local inventory backends that scan `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers` without loading model weights. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state. Internal LLM Model Profiles use `llm/...` refs from `data/models/llms`; Embedding Model Profiles can use Provider Profiles with `embedding/...` refs or external embedding APIs.
+Provider Profiles hold model source details such as provider label, base URL, API key, timeout, enabled state, and provider-specific metadata. They can also represent internal local inventory backends that scan `data/models/llms`, `data/models/embeddings`, and `data/models/rerankers` without loading model weights. LLM Model Profiles hold user-facing model selection and behavior defaults such as provider model id, stable profile key, capabilities, generation defaults, notes, and enabled state. Internal LLM Model Profiles use `llm/...` refs from `data/models/llms`; Embedding Model Profiles can use Provider Profiles with `embedding/...` refs or external embedding APIs; Reranker Model Profiles use internal Provider Profiles with `reranker/...` refs from `data/models/rerankers`.
 
 Provider status checks are available for configured providers and return structured reachability/model-availability information without exposing API keys or absolute local paths. LM Studio, llama.cpp, OpenAI-compatible, and internal providers each keep provider-specific status behavior. Internal status and unload are local cache/inventory operations only and never delete model files.
 
-Knowledge RAG v1 provides local embedding/reranker settings, embedding model profiles, Knowledge Bases, source indexing, retrieval search, session bindings, automatic context injection, and a thin Knowledge Capability. Full Knowledge contract: [docs/contracts/knowledge.md](docs/contracts/knowledge.md).
+Knowledge RAG v1 provides embedding and reranker model profiles, Knowledge Bases, source indexing, retrieval search, session bindings, automatic context injection, and a thin Knowledge Capability. Knowledge Defaults can leave reranking disabled or select an enabled Reranker Model Profile while keeping retrieval strategy parameters in Knowledge settings. Full Knowledge contract: [docs/contracts/knowledge.md](docs/contracts/knowledge.md).
 
 ## Settings
 
@@ -157,7 +158,7 @@ Settings -> General stores local app settings for Files, Appearance fonts, LLM &
 
 Settings -> Appearance -> Fonts configures separate UI, message, and code fonts. Each font can use a single installed system font name, a single local custom font file, or a local custom font family folder under `data/assets/fonts/<folder>/`. Family folders may include `font.json` to declare Regular/Bold/Italic/variable faces; otherwise common filename suffixes such as `BoldItalic`, `Light`, and `SemiBold` are inferred. Local font files are served through generated asset ids, not arbitrary disk paths.
 
-Settings -> Models -> Embedding Model Profiles owns embedding profile management, including Provider Profile selection for internal embeddings, OpenAI-compatible/LM Studio embeddings, and Ollama embed. Settings -> Knowledge owns local RAG defaults, Knowledge Bases, and source indexing status. The Chat header Context Sources modal manages session Knowledge Base and Worldbook bindings. KB binding order is preserved for UI continuity but does not change Knowledge retrieval ranking.
+Settings -> Models -> Embedding Model Profiles owns embedding profile management, including Provider Profile selection for internal embeddings, OpenAI-compatible/LM Studio embeddings, and Ollama embed. Settings -> Models -> Reranker Model Profiles owns internal reranker model selection. Settings -> Knowledge owns local RAG defaults, Knowledge Bases, and source indexing status. The Chat header Context Sources modal manages session Knowledge Base and Worldbook bindings. KB binding order is preserved for UI continuity but does not change Knowledge retrieval ranking.
 
 Full contracts: [Knowledge](docs/contracts/knowledge.md), [Utility LLM](docs/contracts/utility-llm.md), and [Intent Routing](docs/contracts/intent-routing.md).
 

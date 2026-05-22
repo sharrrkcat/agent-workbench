@@ -30,6 +30,8 @@ import type {
   OrphanScanResult,
   EmbeddingModelProfile,
   EmbeddingModelProfileInput,
+  RerankerModelProfile,
+  RerankerModelProfileInput,
   KnowledgeBase,
   KnowledgeBaseInput,
   KnowledgeOrigin,
@@ -305,8 +307,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  listRerankerModels: () => request<RerankerModelProfile[]>('/api/knowledge/reranker-models'),
+  createRerankerModel: (profile: RerankerModelProfileInput) =>
+    request<RerankerModelProfile>('/api/knowledge/reranker-models', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchRerankerModel: (profileId: string, patch: RerankerModelProfileInput) =>
+    request<RerankerModelProfile>(`/api/knowledge/reranker-models/${profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteRerankerModel: (profileId: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/knowledge/reranker-models/${profileId}`, { method: 'DELETE' }),
+  testRerankerModel: (profileId: string, payload: { query: string; documents: { id: string; text: string }[] }) =>
+    request<{ ok: boolean; results: { id: string; score: number }[] }>(`/api/knowledge/reranker-models/${profileId}/test`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   rerankKnowledge: (payload: { query: string; documents: { id: string; text: string }[] }) =>
-    request<{ ok: boolean; model_path: string; results: { id: string; score: number }[] }>('/api/knowledge/rerank', {
+    request<{ ok: boolean; model_path?: string; model_profile_id?: string; results: { id: string; score: number }[] }>('/api/knowledge/rerank', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

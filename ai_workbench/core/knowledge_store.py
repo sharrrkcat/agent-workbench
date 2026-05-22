@@ -174,6 +174,93 @@ class EmbeddingModelProfilePatch(BaseModel):
         return text or None
 
 
+class RerankerModelProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    alias: str
+    provider_profile_id: str
+    provider_model_id: str
+    enabled: StrictBool = True
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("Name must not be empty.")
+        return text
+
+    @field_validator("alias")
+    @classmethod
+    def _alias(cls, value: str) -> str:
+        return validate_alias(value)
+
+    @field_validator("provider_profile_id", "provider_model_id", mode="before")
+    @classmethod
+    def _required_text(cls, value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("Provider profile and model ref are required.")
+        return text
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _text(cls, value: Any) -> str:
+        return "" if value is None else str(value)
+
+
+class RerankerModelProfileCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    alias: str
+    provider_profile_id: str
+    provider_model_id: str
+    enabled: StrictBool = True
+    notes: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return RerankerModelProfile(name=value, alias="tmp", provider_profile_id="provider", provider_model_id="reranker/tmp").name
+
+    @field_validator("alias")
+    @classmethod
+    def _alias(cls, value: str) -> str:
+        return validate_alias(value)
+
+
+class RerankerModelProfilePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    alias: str | None = None
+    provider_profile_id: str | None = None
+    provider_model_id: str | None = None
+    enabled: StrictBool | None = None
+    notes: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("Name must not be empty.")
+        return text
+
+    @field_validator("alias")
+    @classmethod
+    def _alias(cls, value: str | None) -> str | None:
+        return validate_alias(value) if value is not None else None
+
+
 KnowledgeIndexStatus = Literal["empty", "ready", "indexing", "failed", "needs_reindex"]
 
 
@@ -425,6 +512,21 @@ class KnowledgeStore:
     def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
         raise NotImplementedError
 
+    def list_reranker_profiles(self) -> list[RerankerModelProfile]:
+        raise NotImplementedError
+
+    def create_reranker_profile(self, profile: RerankerModelProfile) -> RerankerModelProfile:
+        raise NotImplementedError
+
+    def get_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
+        raise NotImplementedError
+
+    def update_reranker_profile(self, profile_id: str, values: dict[str, Any]) -> RerankerModelProfile:
+        raise NotImplementedError
+
+    def delete_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
+        raise NotImplementedError
+
     def list_knowledge_bases(self) -> list[KnowledgeBase]:
         raise NotImplementedError
 
@@ -496,6 +598,7 @@ class MemoryKnowledgeStore(KnowledgeStore):
     def __init__(self) -> None:
         self._settings = KnowledgeSettings()
         self._embedding_profiles: dict[str, EmbeddingModelProfile] = {}
+        self._reranker_profiles: dict[str, RerankerModelProfile] = {}
         self._knowledge_bases: dict[str, KnowledgeBase] = {}
         self._bindings: dict[tuple[str, str], SessionKnowledgeBinding] = {}
         self._next_binding_id = 1
@@ -547,6 +650,36 @@ class MemoryKnowledgeStore(KnowledgeStore):
         if any(kb.embedding_model_profile_id == existing.id for kb in self._knowledge_bases.values()):
             raise ValueError("KNOWLEDGE_EMBEDDING_MODEL_IN_USE")
         del self._embedding_profiles[existing.id]
+        return existing
+
+    def list_reranker_profiles(self) -> list[RerankerModelProfile]:
+        return sorted(self._reranker_profiles.values(), key=lambda item: (item.alias, item.created_at))
+
+    def create_reranker_profile(self, profile: RerankerModelProfile) -> RerankerModelProfile:
+        if any(item.alias == profile.alias for item in self._reranker_profiles.values()):
+            raise ValueError("KNOWLEDGE_RERANKER_ALIAS_EXISTS")
+        self._reranker_profiles[profile.id] = profile
+        return profile
+
+    def get_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
+        try:
+            return self._reranker_profiles[profile_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown reranker model profile: {profile_id}") from exc
+
+    def update_reranker_profile(self, profile_id: str, values: dict[str, Any]) -> RerankerModelProfile:
+        existing = self.get_reranker_profile(profile_id)
+        if "alias" in values and any(item.alias == values["alias"] and item.id != existing.id for item in self._reranker_profiles.values()):
+            raise ValueError("KNOWLEDGE_RERANKER_ALIAS_EXISTS")
+        updated = RerankerModelProfile.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
+        self._reranker_profiles[existing.id] = updated
+        return updated
+
+    def delete_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
+        existing = self.get_reranker_profile(profile_id)
+        if self._settings.reranker_profile_id == existing.id:
+            raise ValueError("KNOWLEDGE_RERANKER_MODEL_IN_USE")
+        del self._reranker_profiles[existing.id]
         return existing
 
     def list_knowledge_bases(self) -> list[KnowledgeBase]:

@@ -32,7 +32,7 @@ from ai_workbench.core.knowledge_models import (
     safe_unload_reranker_model,
     scan_local_models,
 )
-from ai_workbench.core.provider_inventory import normalize_internal_embedding_model_ref
+from ai_workbench.core.provider_inventory import normalize_internal_embedding_model_ref, normalize_internal_reranker_model_ref
 from ai_workbench.core.knowledge_origins import (
     list_origin_folder_suggestions,
     mark_origin_imported,
@@ -53,8 +53,11 @@ from ai_workbench.core.knowledge_store import (
     KnowledgeOriginCreate,
     KnowledgeOriginPatch,
     KnowledgeSource,
+    RerankerModelProfile,
+    RerankerModelProfileCreate,
+    RerankerModelProfilePatch,
 )
-from ai_workbench.core.rerank import rerank_documents
+from ai_workbench.core.rerank import legacy_model_path_for_reranker_ref, rerank_documents, rerank_with_profile, unload_model_path_for_reranker_profile
 from ai_workbench.core.retrieval import expand_query_variants, search_knowledge
 from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord, KnowledgeOriginRecord, KnowledgeSourceRecord
 
@@ -141,6 +144,8 @@ def patch_knowledge_settings(payload: dict, state: RuntimeState = Depends(get_st
     try:
         patch = KnowledgeSettingsPatch.model_validate(payload)
         updates = patch.model_dump(exclude_unset=True)
+        if "reranker_profile_id" in updates and updates["reranker_profile_id"]:
+            _require_reranker_profile(state, updates["reranker_profile_id"])
         if "reranker_model_path" in updates and updates["reranker_model_path"]:
             updates["reranker_model_path"] = normalize_model_path(updates["reranker_model_path"], "rerankers")
         return state.knowledge.patch_settings(updates).model_dump()
@@ -244,6 +249,80 @@ def test_embedding_model(profile_id: str, payload: EmbeddingTestRequest, state: 
         raise_error(400, exc.code, exc.message, exc.details)
 
 
+@router.get("/reranker-models")
+def list_reranker_models(state: RuntimeState = Depends(get_state)) -> list[dict]:
+    return [profile.model_dump() for profile in state.knowledge.list_reranker_profiles()]
+
+
+@router.post("/reranker-models")
+def create_reranker_model(payload: RerankerModelProfileCreate, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        profile = RerankerModelProfile.model_validate(_normalize_reranker_profile_payload(payload.model_dump(), state))
+        return state.knowledge.create_reranker_profile(profile).model_dump()
+    except ValidationError as exc:
+        _raise_validation(exc)
+    except ValueError as exc:
+        _raise_store_error(exc)
+
+
+@router.get("/reranker-models/{profile_id}")
+def get_reranker_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        return state.knowledge.get_reranker_profile(profile_id).model_dump()
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_RERANKER_MODEL_NOT_FOUND", f"Reranker model profile not found: {profile_id}")
+
+
+@router.patch("/reranker-models/{profile_id}")
+def patch_reranker_model(profile_id: str, payload: RerankerModelProfilePatch, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        existing = state.knowledge.get_reranker_profile(profile_id)
+        updates = _normalize_reranker_profile_payload(payload.model_dump(exclude_unset=True), state, partial=True, existing=existing)
+        return state.knowledge.update_reranker_profile(profile_id, updates).model_dump()
+    except ValidationError as exc:
+        _raise_validation(exc)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_RERANKER_MODEL_NOT_FOUND", f"Reranker model profile not found: {profile_id}")
+    except ValueError as exc:
+        _raise_store_error(exc)
+
+
+@router.delete("/reranker-models/{profile_id}")
+def delete_reranker_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        profile = state.knowledge.delete_reranker_profile(profile_id)
+        return {"deleted": True, "profile_id": profile.id}
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_RERANKER_MODEL_NOT_FOUND", f"Reranker model profile not found: {profile_id}")
+    except ValueError as exc:
+        _raise_store_error(exc)
+
+
+@router.post("/reranker-models/{profile_id}/test")
+def test_reranker_model(profile_id: str, payload: RerankRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    _validate_rerank_request(payload, state.knowledge.get_settings())
+    settings = state.knowledge.get_settings()
+    try:
+        profile = state.knowledge.get_reranker_profile(profile_id)
+        try:
+            return rerank_with_profile(
+                backend=state.knowledge_model_backend,
+                profile=profile,
+                provider_profile_store=state.provider_profiles,
+                query=payload.query,
+                documents=[document.model_dump() for document in payload.documents],
+                device=settings.local_model_device,
+                repo_root=state.repo_root,
+            )
+        finally:
+            if settings.unload_reranker_model_after_use:
+                _safe_unload_reranker_profile(state, profile, settings.local_model_device)
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_RERANKER_MODEL_NOT_FOUND", f"Reranker model profile not found: {profile_id}")
+    except KnowledgeModelError as exc:
+        raise_error(400, exc.code, exc.message, exc.details)
+
+
 @router.post("/embeddings")
 def create_embeddings(payload: EmbeddingsRequest, state: RuntimeState = Depends(get_state)) -> dict:
     settings = state.knowledge.get_settings()
@@ -277,22 +356,26 @@ def rerank(payload: RerankRequest, state: RuntimeState = Depends(get_state)) -> 
     settings = state.knowledge.get_settings()
     if not settings.reranker_enabled:
         raise_error(400, "KNOWLEDGE_RERANKER_DISABLED", "Reranker is disabled.")
-    if not settings.reranker_model_path:
-        raise_error(400, "KNOWLEDGE_RERANKER_MODEL_NOT_CONFIGURED", "Reranker model path is not configured.")
-    if not payload.query.strip():
-        raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Query must not be empty.")
-    if len(payload.documents) > settings.reranker_candidate_limit:
-        raise_error(422, "KNOWLEDGE_RERANKER_CANDIDATE_LIMIT_EXCEEDED", "Documents exceed reranker_candidate_limit.")
-    max_text_chars = settings.default_max_context_chars
-    documents = []
-    for document in payload.documents:
-        if not document.text.strip():
-            raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Document text must not be empty.")
-        if len(document.text) > max_text_chars:
-            raise_error(422, "KNOWLEDGE_DOCUMENT_TOO_LARGE", "Document text exceeds max context chars.")
-        documents.append(document.model_dump())
+    if not settings.reranker_profile_id and not settings.reranker_model_path:
+        raise_error(400, "KNOWLEDGE_RERANKER_MODEL_NOT_CONFIGURED", "Reranker profile or legacy model path is not configured.")
+    documents = _validate_rerank_request(payload, settings)
     try:
-        model_path = normalize_model_path(settings.reranker_model_path, "rerankers")
+        if settings.reranker_profile_id:
+            profile = state.knowledge.get_reranker_profile(settings.reranker_profile_id)
+            try:
+                return rerank_with_profile(
+                    backend=state.knowledge_model_backend,
+                    profile=profile,
+                    provider_profile_store=state.provider_profiles,
+                    query=payload.query,
+                    documents=documents,
+                    device=settings.local_model_device,
+                    repo_root=state.repo_root,
+                )
+            finally:
+                if settings.unload_reranker_model_after_use:
+                    _safe_unload_reranker_profile(state, profile, settings.local_model_device)
+        model_path = normalize_model_path(settings.reranker_model_path or "", "rerankers")
         try:
             return rerank_documents(
                 backend=state.knowledge_model_backend,
@@ -306,6 +389,8 @@ def rerank(payload: RerankRequest, state: RuntimeState = Depends(get_state)) -> 
                 safe_unload_reranker_model(state.knowledge_model_backend, model_path, settings.local_model_device)
     except ValueError as exc:
         raise_error(422, "INVALID_KNOWLEDGE_MODEL_PATH", str(exc))
+    except KeyError:
+        raise_error(404, "KNOWLEDGE_RERANKER_MODEL_NOT_FOUND", f"Reranker model profile not found: {settings.reranker_profile_id}")
     except KnowledgeModelError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
 
@@ -737,6 +822,15 @@ def _require_embedding_profile(state: RuntimeState, profile_id: str) -> None:
         raise_error(400, "KNOWLEDGE_EMBEDDING_MODEL_DISABLED", f"Embedding model profile is disabled: {profile_id}")
 
 
+def _require_reranker_profile(state: RuntimeState, profile_id: str) -> None:
+    try:
+        profile = state.knowledge.get_reranker_profile(profile_id)
+    except KeyError:
+        raise_error(400, "KNOWLEDGE_RERANKER_MODEL_NOT_FOUND", f"Reranker model profile not found: {profile_id}")
+    if not profile.enabled:
+        raise_error(400, "KNOWLEDGE_RERANKER_MODEL_DISABLED", f"Reranker model profile is disabled: {profile_id}")
+
+
 def _prepare_source_input(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState):
     state.knowledge.get_knowledge_base(knowledge_base_id)
     if payload.source_type == "pasted_text":
@@ -889,6 +983,27 @@ def _normalize_embedding_profile_payload(values: dict, state: RuntimeState, part
     return normalized
 
 
+def _normalize_reranker_profile_payload(values: dict, state: RuntimeState, partial: bool = False, existing: RerankerModelProfile | None = None) -> dict:
+    normalized = dict(values)
+    provider_profile_id = str(normalized.get("provider_profile_id", existing.provider_profile_id if existing is not None else "") or "").strip()
+    provider_model_id = str(normalized.get("provider_model_id", existing.provider_model_id if existing is not None else "") or "").strip()
+    if not provider_profile_id and not partial:
+        raise ValueError("KNOWLEDGE_RERANKER_PROVIDER_REQUIRED")
+    if provider_profile_id:
+        try:
+            provider = state.provider_profiles.get(provider_profile_id)
+        except KeyError as exc:
+            raise ValueError("KNOWLEDGE_RERANKER_PROVIDER_NOT_FOUND") from exc
+        if provider.provider not in {"internal_transformers", "internal_llama_cpp"}:
+            raise ValueError("KNOWLEDGE_RERANKER_PROVIDER_UNSUPPORTED")
+        if not provider_model_id and not partial:
+            raise ValueError("KNOWLEDGE_RERANKER_PROVIDER_MODEL_REQUIRED")
+        if provider_model_id:
+            normalized["provider_model_id"] = normalize_internal_reranker_model_ref(provider_model_id)
+        normalized["provider_profile_id"] = provider_profile_id
+    return normalized
+
+
 def _safe_unload_embedding_profile(state: RuntimeState, profile: EmbeddingModelProfile, device: str, warnings: list[str] | None = None) -> bool:
     provider = None
     if profile.provider_profile_id:
@@ -903,6 +1018,36 @@ def _safe_unload_embedding_profile(state: RuntimeState, profile: EmbeddingModelP
     if not model_path:
         return False
     return safe_unload_embedding_model(state.knowledge_model_backend, model_path, device, warnings)
+
+
+def _safe_unload_reranker_profile(state: RuntimeState, profile: RerankerModelProfile, device: str, warnings: list[str] | None = None) -> bool:
+    provider = None
+    if profile.provider_profile_id:
+        try:
+            provider = state.provider_profiles.get(profile.provider_profile_id)
+        except Exception:
+            provider = None
+    try:
+        model_path = unload_model_path_for_reranker_profile(profile, provider)
+    except Exception:
+        model_path = legacy_model_path_for_reranker_ref(profile.provider_model_id) if profile.provider_model_id.startswith("reranker/") else None
+    return safe_unload_reranker_model(state.knowledge_model_backend, model_path, device, warnings)
+
+
+def _validate_rerank_request(payload: RerankRequest, settings) -> list[dict]:
+    if not payload.query.strip():
+        raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Query must not be empty.")
+    if len(payload.documents) > settings.reranker_candidate_limit:
+        raise_error(422, "KNOWLEDGE_RERANKER_CANDIDATE_LIMIT_EXCEEDED", "Documents exceed reranker_candidate_limit.")
+    max_text_chars = settings.default_max_context_chars
+    documents = []
+    for document in payload.documents:
+        if not document.text.strip():
+            raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Document text must not be empty.")
+        if len(document.text) > max_text_chars:
+            raise_error(422, "KNOWLEDGE_DOCUMENT_TOO_LARGE", "Document text exceeds max context chars.")
+        documents.append(document.model_dump())
+    return documents
 
 
 def _api_query_expander(state: RuntimeState, session_id: str | None):
@@ -982,6 +1127,10 @@ def _raise_store_error(exc: ValueError) -> None:
         raise_error(409, "KNOWLEDGE_EMBEDDING_ALIAS_EXISTS", "Embedding model alias already exists.")
     if message == "KNOWLEDGE_EMBEDDING_MODEL_IN_USE":
         raise_error(409, "KNOWLEDGE_EMBEDDING_MODEL_IN_USE", "Embedding model profile is used by a knowledge base.")
+    if message == "KNOWLEDGE_RERANKER_ALIAS_EXISTS":
+        raise_error(409, "KNOWLEDGE_RERANKER_ALIAS_EXISTS", "Reranker model alias already exists.")
+    if message == "KNOWLEDGE_RERANKER_MODEL_IN_USE":
+        raise_error(409, "KNOWLEDGE_RERANKER_MODEL_IN_USE", "Reranker model profile is used by Knowledge Defaults.")
     raise_error(422, "INVALID_KNOWLEDGE_VALUE", message)
 
 

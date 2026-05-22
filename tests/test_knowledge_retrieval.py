@@ -370,6 +370,28 @@ def test_reranker_enabled_reranks_merged_candidates_once(tmp_path: Path) -> None
     assert payload["results"][0]["rerank_score"] == 10.0
 
 
+def test_reranker_profile_reranks_merged_candidates(tmp_path: Path) -> None:
+    client, backend = make_client(tmp_path)
+    _profile, kb = setup_indexed_kbs(client)
+    model_dir = tmp_path / "data" / "models" / "rerankers" / "mock-reranker"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    provider = client.post("/api/llm-provider-profiles", json={"name": "Internal", "provider": "internal_transformers"}).json()
+    reranker = client.post(
+        "/api/knowledge/reranker-models",
+        json={"name": "Mock Reranker", "alias": "mock-reranker", "provider_profile_id": provider["id"], "provider_model_id": "reranker/mock-reranker"},
+    ).json()
+    client.patch("/api/knowledge/settings", json={"reranker_enabled": True, "reranker_profile_id": reranker["id"]})
+
+    response = client.post("/api/knowledge/search", json={"query": "alpha beta", "knowledge_base_ids": [kb["id"]], "debug": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["debug"]["reranker_used"] is True
+    assert backend.rerank_calls[-1]["model_path"] == "rerankers/mock-reranker"
+    assert payload["results"][0]["title"] == "Beta"
+
+
 def test_reranker_unload_after_use_runs_after_successful_rerank(tmp_path: Path) -> None:
     client, backend = make_client(tmp_path)
     _profile, kb = setup_indexed_kbs(client)

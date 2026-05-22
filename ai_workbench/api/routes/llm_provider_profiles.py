@@ -110,6 +110,9 @@ def delete_provider_profile(profile_id: str, state: RuntimeState = Depends(get_s
     used_by = [profile.id for profile in state.llm_profiles.list() if profile.provider_profile_id == profile_id]
     if getattr(state, "knowledge", None) is not None:
         used_by.extend([profile.id for profile in state.knowledge.list_embedding_profiles() if profile.provider_profile_id == profile_id])
+        list_rerankers = getattr(state.knowledge, "list_reranker_profiles", None)
+        if callable(list_rerankers):
+            used_by.extend([profile.id for profile in list_rerankers() if profile.provider_profile_id == profile_id])
     if used_by:
         raise_error(409, "LLM_PROVIDER_PROFILE_IN_USE", "Provider profile is used by model profiles.", {"model_profile_ids": used_by})
     state.provider_profiles.delete(profile_id)

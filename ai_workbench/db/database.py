@@ -234,6 +234,7 @@ def ensure_knowledge_settings_columns(engine) -> None:
             ),
             "unload_embedding_model_after_use": "BOOLEAN DEFAULT 0",
             "unload_reranker_model_after_use": "BOOLEAN DEFAULT 0",
+            "reranker_profile_id": "VARCHAR",
             "default_chunk_profile": "VARCHAR",
         }
         for column, ddl in additions.items():

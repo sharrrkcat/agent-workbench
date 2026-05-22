@@ -128,6 +128,7 @@ class LocalKnowledgeModelBackend:
         self._embedding_cache: dict[tuple[str, str], Any] = {}
         self._llama_embedding_cache: dict[str, Any] = {}
         self._reranker_cache: dict[tuple[str, str], Any] = {}
+        self._llama_reranker_cache: dict[str, Any] = {}
         self._embedding_cache_lock = threading.RLock()
         self._reranker_cache_lock = threading.RLock()
         self._active_embedding_calls = 0
@@ -186,6 +187,21 @@ class LocalKnowledgeModelBackend:
         finally:
             self._active_embedding_calls = max(0, self._active_embedding_calls - 1)
 
+    def llama_cpp_rerank(self, model_path: Path, query: str, documents: list[dict[str, str]]) -> list[dict[str, Any]]:
+        self._active_reranker_calls += 1
+        try:
+            model = self._load_llama_reranker_model(model_path)
+            scores: list[dict[str, Any]] = []
+            for document in documents:
+                score_method = getattr(model, "score", None)
+                if not callable(score_method):
+                    raise KnowledgeModelError(LOCAL_MODEL_BACKEND_UNAVAILABLE, "llama.cpp rerank scoring is unavailable for this model.")
+                score = score_method(query, document["text"])
+                scores.append({"id": document["id"], "score": float(score)})
+            return sorted(scores, key=lambda item: item["score"], reverse=True)
+        finally:
+            self._active_reranker_calls = max(0, self._active_reranker_calls - 1)
+
     def _load_embedding_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
         with self._embedding_cache_lock:
@@ -203,6 +219,15 @@ class LocalKnowledgeModelBackend:
 
                 self._llama_embedding_cache[key] = Llama(model_path=key, embedding=True, verbose=False)
             return self._llama_embedding_cache[key]
+
+    def _load_llama_reranker_model(self, path: Path) -> Any:
+        key = str(path)
+        with self._reranker_cache_lock:
+            if key not in self._llama_reranker_cache:
+                from llama_cpp import Llama  # type: ignore
+
+                self._llama_reranker_cache[key] = Llama(model_path=key, verbose=False)
+            return self._llama_reranker_cache[key]
 
     def _load_reranker_model(self, path: Path, device: str) -> Any:
         key = (str(path), device)
@@ -246,13 +271,20 @@ class LocalKnowledgeModelBackend:
         resolved_path = str(resolve_model_path(model_path, "rerankers", self.root)) if model_path else None
         resolved_device = resolve_device(device) if device else None
         removed = _drop_cache_entries(self._reranker_cache, resolved_path, resolved_device)
+        if resolved_path is None:
+            removed += len(self._llama_reranker_cache)
+            self._llama_reranker_cache.clear()
+        elif resolved_path in self._llama_reranker_cache:
+            del self._llama_reranker_cache[resolved_path]
+            removed += 1
         if removed:
             _collect_model_memory()
         return bool(removed)
 
     def unload_all_reranker_models(self) -> int:
-        removed = len(self._reranker_cache)
+        removed = len(self._reranker_cache) + len(self._llama_reranker_cache)
         self._reranker_cache.clear()
+        self._llama_reranker_cache.clear()
         if removed:
             _collect_model_memory()
         return removed

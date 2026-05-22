@@ -158,6 +158,9 @@ function explicitSettingsTarget(): SettingsInitialTarget {
     target.llmSubsection = 'embedding_models';
     target.knowledgeSubsection = 'embedding_models';
   }
+  if (section === 'models' && ['reranker-models', 'reranker-model-profiles', 'reranker_models'].includes(subsection)) {
+    target.llmSubsection = 'reranker_models';
+  }
   if (candidate === 'knowledge' && ['embedding-models', 'embedding-model-profiles', 'embedding_models'].includes(subsection)) {
     target.section = 'models';
     target.llmSubsection = 'embedding_models';

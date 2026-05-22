@@ -228,6 +228,49 @@ def test_reranker_api_disabled_configured_limit_and_mock_sorted_scores(tmp_path:
     assert [item["id"] for item in response.json()["results"]] == ["doc1", "doc2"]
 
 
+def test_reranker_model_profile_crud_test_and_defaults_selection(tmp_path: Path) -> None:
+    backend = FakeKnowledgeBackend()
+    client = make_client_with_backend(tmp_path, backend)
+    client.app.state.runtime_state.repo_root = tmp_path
+    model_dir = tmp_path / "data" / "models" / "rerankers" / "mock-reranker"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "Internal", "provider": "internal_transformers"},
+    ).json()
+    profile_response = client.post(
+        "/api/knowledge/reranker-models",
+        json={
+            "name": "Mock Reranker",
+            "alias": "mock-reranker",
+            "provider_profile_id": provider["id"],
+            "provider_model_id": "reranker/mock-reranker",
+            "enabled": True,
+        },
+    )
+    assert profile_response.status_code == 200, profile_response.text
+    profile = profile_response.json()
+    assert profile["provider_model_id"] == "reranker/mock-reranker"
+
+    bad_ref = client.patch(f"/api/knowledge/reranker-models/{profile['id']}", json={"provider_model_id": "embedding/not-allowed"})
+    assert bad_ref.status_code == 422
+
+    test_response = client.post(
+        f"/api/knowledge/reranker-models/{profile['id']}/test",
+        json={"query": "q", "documents": [{"id": "doc2", "text": "b"}, {"id": "doc1", "text": "a"}]},
+    )
+    assert test_response.status_code == 200, test_response.text
+    assert [item["id"] for item in test_response.json()["results"]] == ["doc1", "doc2"]
+    assert backend.calls[-1]["model_path"] == "rerankers/mock-reranker"
+
+    settings = client.patch("/api/knowledge/settings", json={"reranker_enabled": True, "reranker_profile_id": profile["id"]})
+    assert settings.status_code == 200, settings.text
+    rerank_response = client.post("/api/knowledge/rerank", json={"query": "q", "documents": [{"id": "doc2", "text": "b"}, {"id": "doc1", "text": "a"}]})
+    assert rerank_response.status_code == 200, rerank_response.text
+    assert rerank_response.json()["model_profile_id"] == profile["id"]
+
+
 def test_resolve_device_auto_cpu_and_cuda_unavailable(monkeypatch) -> None:
     monkeypatch.setattr("ai_workbench.core.knowledge_models.backend_availability", lambda: {"torch_available": True, "cuda_available": False})
     assert resolve_device("auto") == "cpu"

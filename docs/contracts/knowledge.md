@@ -12,6 +12,8 @@ Knowledge v1 includes:
 - local Knowledge settings.
 - embedding model profiles managed in Settings -> Models -> Embedding Model
   Profiles.
+- reranker model profiles managed in Settings -> Models -> Reranker Model
+  Profiles.
 - knowledge bases.
 - pasted text, text attachment, and managed-origin source indexing.
 - SQLite storage for sources, chunks, float32 vectors, and FTS rows.
@@ -34,9 +36,9 @@ Local model directories are:
 - `data/models/rerankers/<model-folder>`
 
 Provider Profiles can list local embedding and reranker inventory using
-`embedding/...` and `reranker/...` refs. Embedding Model Profiles may now
-reference Provider Profiles for embedding generation; reranker runtime remains
-owned by Knowledge Defaults and is not providerized.
+`embedding/...` and `reranker/...` refs. Embedding Model Profiles reference
+Provider Profiles for embedding generation. Reranker Model Profiles reference
+internal Provider Profiles for reranking with `reranker/...` refs.
 Internal LLM Model Profile support for `llm/...` refs is owned by the runtime
 LLM resolution contract and does not change Knowledge behavior.
 
@@ -67,6 +69,8 @@ Main API groups and responsibilities:
 | `GET /api/knowledge/models/scan` | local embedding/reranker folder scan and optional backend availability without loading weights |
 | `GET/POST/PATCH/DELETE /api/knowledge/embedding-models` | Embedding Model Profile CRUD |
 | `POST /api/knowledge/embedding-models/{id}/test` | profile-specific embedding test |
+| `GET/POST/PATCH/DELETE /api/knowledge/reranker-models` | Reranker Model Profile CRUD |
+| `POST /api/knowledge/reranker-models/{id}/test` | profile-specific reranker test |
 | `POST /api/knowledge/embeddings` | Workbench-native embedding generation for query/document inputs |
 | `POST /api/knowledge/rerank` | Workbench-native global reranker test/API using Knowledge Defaults |
 | `GET/POST/PATCH/DELETE /api/knowledge/bases` | Knowledge Base CRUD, aliases, display metadata, and per-KB defaults |
@@ -120,6 +124,30 @@ vectors, or FTS rows and does not automatically rebuild indexes.
 Intent Routing may reference an existing enabled Embedding Model Profile, but it
 does not own profiles, create profiles, download models, or persist route
 candidate embeddings.
+
+## Reranker Model Profiles
+
+Reranker Model Profiles bind a user-named profile to an internal provider and
+one reranker model ref.
+
+The Settings UI exposes them under Settings -> Models -> Reranker Model
+Profiles. Knowledge Defaults selects either disabled/no reranker profile or an
+enabled Reranker Model Profile. Retrieval strategy parameters such as candidate
+limit, top-k, min score threshold, context budget, per-source limits, and per-KB
+limits remain Knowledge Defaults fields and are not profile fields.
+
+- First-version Reranker Model Profiles support only `internal_transformers`
+  and `internal_llama_cpp` Provider Profiles.
+- `provider_model_id` must be shaped as `reranker/...`, resolved under
+  `data/models/rerankers`.
+- External providers are not supported for reranking.
+- Legacy local Knowledge Defaults may still carry `reranker_model_path` for
+  compatibility. New setups should use Reranker Model Profiles.
+- Reranker profiles participate only in retrieval-time candidate reordering.
+  They do not participate in indexing, vector generation, FTS/BM25 writes, or
+  Knowledge Base profile grouping.
+- Reranker failure is fail-open: retrieval records a compact warning and falls
+  back to RRF order.
 
 ## Data Ownership
 
@@ -246,7 +274,8 @@ Retrieval pipeline:
 - run FTS5/BM25 across selected KBs.
 - dedupe candidates by chunk id.
 - merge vector and keyword candidates with RRF.
-- optionally run the configured global reranker once over the merged set.
+- optionally run the configured global reranker profile once over the merged
+  set.
 - apply quality filtering.
 - apply per-source and per-KB chunk limits.
 - trim by top-k and context budget.

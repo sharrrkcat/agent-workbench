@@ -23,6 +23,7 @@ from ai_workbench.core.knowledge_store import (
     KnowledgeOrigin,
     KnowledgeSource,
     KnowledgeSourceIndexResult,
+    RerankerModelProfile,
     SessionKnowledgeBinding,
 )
 from ai_workbench.core.time import ensure_utc, utc_now
@@ -46,6 +47,7 @@ from ai_workbench.db.models import (
     KnowledgeOriginRecord,
     KnowledgeSettingsRecord,
     KnowledgeSourceRecord,
+    RerankerModelProfileRecord,
     LLMProfileRecord,
     MessageRecord,
     ProviderProfileRecord,
@@ -1285,6 +1287,62 @@ class SqlKnowledgeStore:
             session.commit()
             return profile
 
+    def list_reranker_profiles(self) -> List[RerankerModelProfile]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(RerankerModelProfileRecord).order_by(RerankerModelProfileRecord.alias)).all()
+            return [_reranker_profile_from_record(record) for record in records]
+
+    def create_reranker_profile(self, profile: RerankerModelProfile) -> RerankerModelProfile:
+        with DbSession(self.engine) as session:
+            if session.get(RerankerModelProfileRecord, profile.id) is not None:
+                raise ValueError("KNOWLEDGE_RERANKER_ID_EXISTS")
+            if _find_reranker_profile_by_alias(session, profile.alias) is not None:
+                raise ValueError("KNOWLEDGE_RERANKER_ALIAS_EXISTS")
+            record = RerankerModelProfileRecord(**profile.model_dump())
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _reranker_profile_from_record(record)
+
+    def get_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(RerankerModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown reranker model profile: {profile_id}")
+            return _reranker_profile_from_record(record)
+
+    def update_reranker_profile(self, profile_id: str, values: Dict[str, Any]) -> RerankerModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(RerankerModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown reranker model profile: {profile_id}")
+            alias = values.get("alias")
+            if alias is not None:
+                conflict = _find_reranker_profile_by_alias(session, str(alias))
+                if conflict is not None and conflict.id != record.id:
+                    raise ValueError("KNOWLEDGE_RERANKER_ALIAS_EXISTS")
+            candidate = _reranker_profile_from_record(record).model_copy(update={**values, "updated_at": utc_now()})
+            profile = RerankerModelProfile.model_validate(candidate.model_dump())
+            for key, value in profile.model_dump().items():
+                setattr(record, key, value)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _reranker_profile_from_record(record)
+
+    def delete_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(RerankerModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown reranker model profile: {profile_id}")
+            settings = session.get(KnowledgeSettingsRecord, 1)
+            if settings is not None and getattr(settings, "reranker_profile_id", None) == record.id:
+                raise ValueError("KNOWLEDGE_RERANKER_MODEL_IN_USE")
+            profile = _reranker_profile_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
     def list_knowledge_bases(self) -> List[KnowledgeBase]:
         with DbSession(self.engine) as session:
             records = session.exec(select(KnowledgeBaseRecord).order_by(KnowledgeBaseRecord.name)).all()
@@ -1895,6 +1953,10 @@ def _find_embedding_profile_by_alias(session: DbSession, alias: str) -> Optional
     return session.exec(select(EmbeddingModelProfileRecord).where(EmbeddingModelProfileRecord.alias == alias)).first()
 
 
+def _find_reranker_profile_by_alias(session: DbSession, alias: str) -> Optional[RerankerModelProfileRecord]:
+    return session.exec(select(RerankerModelProfileRecord).where(RerankerModelProfileRecord.alias == alias)).first()
+
+
 def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> EmbeddingModelProfile:
     return EmbeddingModelProfile(
         id=record.id,
@@ -1916,6 +1978,20 @@ def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> Embed
 
 def _embedding_profile_model_identity(profile: EmbeddingModelProfile) -> str:
     return profile.provider_model_id or profile.model_path
+
+
+def _reranker_profile_from_record(record: RerankerModelProfileRecord) -> RerankerModelProfile:
+    return RerankerModelProfile(
+        id=record.id,
+        name=record.name,
+        alias=record.alias,
+        provider_profile_id=record.provider_profile_id,
+        provider_model_id=record.provider_model_id,
+        enabled=record.enabled,
+        notes=record.notes,
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
 
 
 def _knowledge_base_from_record(record: KnowledgeBaseRecord) -> KnowledgeBase:
