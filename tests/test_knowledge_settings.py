@@ -17,12 +17,22 @@ def make_client(tmp_path: Path) -> TestClient:
 
 
 def create_embedding_profile(client: TestClient, alias: str = "bge_m3") -> dict:
+    root = client.app.state.runtime_state.repo_root
+    model_dir = root / "data" / "models" / "embeddings" / "bge-m3"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": f"Embedding provider {alias}", "provider": "internal_transformers", "enabled": True},
+    )
+    assert provider.status_code == 200, provider.text
     response = client.post(
         "/api/knowledge/embedding-models",
         json={
             "name": "BGE M3",
             "alias": alias,
-            "model_path": "embeddings/bge-m3",
+            "provider_profile_id": provider.json()["id"],
+            "provider_model_id": "embedding/bge-m3",
             "dimension": 3,
             "normalize": True,
             "document_instruction": "Document:",
@@ -140,9 +150,9 @@ def test_embedding_model_profile_crud_and_kb_in_use_delete_rejection(tmp_path: P
     client = make_client(tmp_path)
     profile = create_embedding_profile(client)
     assert client.post("/api/knowledge/embedding-models", json={**profile, "id": "ignored"}).status_code == 422
-    assert client.post("/api/knowledge/embedding-models", json={**{k: profile[k] for k in ["name", "model_path"]}, "alias": "Bad Alias"}).status_code == 422
-    assert client.post("/api/knowledge/embedding-models", json={**{k: profile[k] for k in ["name", "alias"]}, "model_path": "rerankers/x"}).status_code == 422
-    assert client.post("/api/knowledge/embedding-models", json={**{k: profile[k] for k in ["name", "model_path"]}, "alias": profile["alias"]}).status_code == 409
+    assert client.post("/api/knowledge/embedding-models", json={**{k: profile[k] for k in ["name", "provider_profile_id", "provider_model_id"]}, "alias": "Bad Alias"}).status_code == 422
+    assert client.post("/api/knowledge/embedding-models", json={**{k: profile[k] for k in ["name", "alias"]}, "model_path": "embeddings/legacy"}).status_code == 422
+    assert client.post("/api/knowledge/embedding-models", json={**{k: profile[k] for k in ["name", "provider_profile_id", "provider_model_id"]}, "alias": profile["alias"]}).status_code == 409
     assert client.get("/api/knowledge/embedding-models").json()[0]["alias"] == "bge_m3"
 
     patched = client.patch(f"/api/knowledge/embedding-models/{profile['id']}", json={"name": "BGE M3 local", "dimension": 4})

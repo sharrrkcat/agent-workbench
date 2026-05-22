@@ -52,10 +52,14 @@ internal providers with `embedding/...` refs, OpenAI-compatible / LM Studio
 embedding APIs, or Ollama embed APIs. Provider Profiles still own only source
 connection or local inventory details; dimensions, normalization, query
 instruction, and document instruction remain Embedding Model Profile fields.
+The primary Embedding Model Profile workflow is Provider Profile plus provider
+model id/ref; legacy local model-path selection is not exposed in the Settings
+UI.
 Reranker Model Profiles may select only internal Provider Profiles with
 `reranker/...` refs. Knowledge Defaults owns the disabled/profile selection and
 retrieval strategy parameters; candidate counts, thresholds, and context limits
-do not move into Reranker Model Profiles.
+do not move into Reranker Model Profiles. Legacy local reranker path selection
+is not exposed as a current Settings workflow.
 
 ## Files
 

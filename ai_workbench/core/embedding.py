@@ -82,7 +82,7 @@ def legacy_model_path_for_embedding_ref(model_ref: str) -> str:
 
 
 def unload_model_path_for_profile(profile: EmbeddingModelProfile, provider: ProviderProfileSchema | None = None) -> str:
-    if provider is not None and provider.provider == "internal_transformers" and profile.provider_model_id:
+    if provider is not None and provider.provider in {"internal_transformers", "internal_llama_cpp"} and profile.provider_model_id:
         return legacy_model_path_for_embedding_ref(profile.provider_model_id)
     return profile.model_path
 

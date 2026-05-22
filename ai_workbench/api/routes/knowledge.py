@@ -10,7 +10,7 @@ from sqlmodel import Session as DbSession
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.embedding import embed_texts, legacy_model_path_for_embedding_ref, unload_model_path_for_profile
+from ai_workbench.core.embedding import embed_texts, unload_model_path_for_profile
 from ai_workbench.core.knowledge_indexing import (
     KnowledgeIndexError,
     build_search_text,
@@ -966,18 +966,17 @@ def _normalize_embedding_profile_payload(values: dict, state: RuntimeState, part
         if provider.provider in {"internal_transformers", "internal_llama_cpp"}:
             provider_model_id = normalize_internal_embedding_model_ref(provider_model_id)
             normalized["provider_model_id"] = provider_model_id
-            if not model_path:
-                normalized["model_path"] = legacy_model_path_for_embedding_ref(provider_model_id)
         elif provider.provider not in {"openai_compatible", "lm_studio", "ollama"}:
             raise ValueError("KNOWLEDGE_EMBEDDING_PROVIDER_UNSUPPORTED")
         else:
-            if not provider_model_id and not partial:
+            if not provider_model_id and (not partial or "provider_profile_id" in normalized or "provider_model_id" in normalized):
                 raise ValueError("KNOWLEDGE_EMBEDDING_PROVIDER_MODEL_REQUIRED")
             if provider_model_id:
                 normalized["provider_model_id"] = provider_model_id
-            normalized.setdefault("model_path", "")
-    elif "model_path" in normalized or not partial:
-        normalized["model_path"] = normalize_model_path(model_path, "embeddings")
+        if "model_path" in normalized:
+            normalized["model_path"] = ""
+    elif not partial or "provider_profile_id" in normalized or "provider_model_id" in normalized or "model_path" in normalized:
+        raise ValueError("KNOWLEDGE_EMBEDDING_PROVIDER_REQUIRED")
     if "provider_profile_id" in normalized and not normalized.get("provider_profile_id"):
         normalized["provider_profile_id"] = None
     return normalized

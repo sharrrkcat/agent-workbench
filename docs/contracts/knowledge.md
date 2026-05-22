@@ -103,10 +103,10 @@ Knowledge Base configuration still selects an Embedding Model Profile.
   `embedding/...`, resolved under `data/models/embeddings`.
 - OpenAI-compatible and LM Studio providers use an OpenAI-compatible embeddings
   endpoint. Ollama providers use the Ollama embed endpoint.
-- Legacy local profiles may still carry `model_path` for compatibility.
-  `model_path` must be relative to `data/models`.
-- Legacy local embedding profiles use `embeddings/<folder>`.
-- Reranker settings use `rerankers/<folder>`.
+- The current Settings and API workflow no longer exposes a legacy local
+  `model_path` configuration path. The database may retain the old column as
+  inert compatibility storage, but new or edited profiles should use
+  `provider_profile_id` plus `provider_model_id`.
 - Absolute paths and `..` segments are rejected.
 - `purpose` is `query` or `document`.
 - Query and document instructions are profile fields applied by the unified
@@ -116,10 +116,10 @@ Knowledge Base configuration still selects an Embedding Model Profile.
 - Normalization follows the profile/default behavior and is reused by retrieval
   and Intent Routing.
 
-Changing `provider_profile_id`, `provider_model_id`, legacy `model_path`,
-dimension, normalization, or query/document instructions marks indexed sources
-using that profile as needing reindex. It does not delete existing chunks,
-vectors, or FTS rows and does not automatically rebuild indexes.
+Changing `provider_profile_id`, `provider_model_id`, dimension, normalization,
+or query/document instructions marks indexed sources using that profile as
+needing reindex. It does not delete existing chunks, vectors, or FTS rows and
+does not automatically rebuild indexes.
 
 Intent Routing may reference an existing enabled Embedding Model Profile, but it
 does not own profiles, create profiles, download models, or persist route
@@ -141,8 +141,10 @@ limits remain Knowledge Defaults fields and are not profile fields.
 - `provider_model_id` must be shaped as `reranker/...`, resolved under
   `data/models/rerankers`.
 - External providers are not supported for reranking.
-- Legacy local Knowledge Defaults may still carry `reranker_model_path` for
-  compatibility. New setups should use Reranker Model Profiles.
+- The current Settings workflow does not expose legacy local
+  `reranker_model_path` configuration. Knowledge Defaults choose disabled or an
+  enabled Reranker Model Profile; the old settings field may remain only as
+  deprecated compatibility storage.
 - Reranker profiles participate only in retrieval-time candidate reordering.
   They do not participate in indexing, vector generation, FTS/BM25 writes, or
   Knowledge Base profile grouping.

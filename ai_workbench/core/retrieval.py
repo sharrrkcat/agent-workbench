@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ai_workbench.core.embedding import embed_texts
+from ai_workbench.core.embedding import embed_texts, unload_model_path_for_profile
 from ai_workbench.core.keyword_search import KeywordSearchResult, search_keywords
 from ai_workbench.core.knowledge_models import KnowledgeModelError, safe_unload_embedding_model, safe_unload_reranker_model
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
@@ -106,8 +106,9 @@ def search_knowledge(
                 vector_candidates.extend(_from_vector(result) for result in results)
         finally:
             if settings.unload_embedding_model_after_use:
-                if profile.model_path:
-                    safe_unload_embedding_model(model_backend, profile.model_path, settings.local_model_device, debug["warnings"])
+                model_path = _embedding_unload_path(profile, provider_profile_store)
+                if model_path:
+                    safe_unload_embedding_model(model_backend, model_path, settings.local_model_device, debug["warnings"])
         debug["embedding_groups"].append(
             {
                 "embedding_model_profile_id": profile.id,
@@ -189,6 +190,19 @@ def rrf_merge(
         if candidate.keyword_rank is not None:
             target.rrf_score += 1.0 / (rrf_k + candidate.keyword_rank)
     return sorted(merged.values(), key=lambda item: item.rrf_score, reverse=True)
+
+
+def _embedding_unload_path(profile: EmbeddingModelProfile, provider_profile_store: Any | None) -> str:
+    provider = None
+    if profile.provider_profile_id and provider_profile_store is not None:
+        try:
+            provider = provider_profile_store.get(profile.provider_profile_id)
+        except Exception:
+            provider = None
+    try:
+        return unload_model_path_for_profile(profile, provider)
+    except Exception:
+        return profile.model_path
 
 
 def expand_query_variants(*, llm_runtime: Any, query: str, max_variants: int, prompt_template: str, model_config: dict[str, Any] | None = None) -> list[str]:

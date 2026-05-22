@@ -46,6 +46,7 @@ def test_model_path_validators_reject_escape_and_wrong_kind() -> None:
 
 def test_optional_dependency_missing_returns_structured_error_and_startup_works(tmp_path: Path) -> None:
     client = make_client_with_backend(tmp_path, FakeKnowledgeBackend("KNOWLEDGE_LOCAL_MODEL_BACKEND_UNAVAILABLE"))
+    client.app.state.runtime_state.repo_root = tmp_path
     profile = create_embedding_profile(client)
     response = client.post(
         "/api/knowledge/embeddings",

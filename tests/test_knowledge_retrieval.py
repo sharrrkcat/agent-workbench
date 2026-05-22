@@ -65,12 +65,22 @@ def make_client(tmp_path: Path) -> tuple[TestClient, MockKnowledgeBackend]:
 
 
 def create_profile(client: TestClient, alias: str, model_folder: str) -> dict:
+    root = client.app.state.runtime_state.repo_root
+    model_dir = root / "data" / "models" / "embeddings" / model_folder
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": f"Internal embeddings {alias}", "provider": "internal_transformers", "enabled": True},
+    )
+    assert provider.status_code == 200, provider.text
     response = client.post(
         "/api/knowledge/embedding-models",
         json={
             "name": alias,
             "alias": alias,
-            "model_path": f"embeddings/{model_folder}",
+            "provider_profile_id": provider.json()["id"],
+            "provider_model_id": f"embedding/{model_folder}",
             "dimension": 3,
             "normalize": False,
             "document_instruction": "",

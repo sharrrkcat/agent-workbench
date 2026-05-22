@@ -337,7 +337,6 @@ export function KnowledgeSettingsDetail({
       <EmbeddingModelsEditor
         profiles={embeddingProfiles}
         providerProfiles={providerProfiles}
-        scan={scan}
         mode={selectedItemId}
         onRefresh={refreshObjects}
         onDirtyChange={onDirtyChange}
@@ -418,7 +417,7 @@ export function KnowledgeSettingsDetail({
             onManageEmbeddingProfiles={onManageEmbeddingProfiles}
           />
         ) : null}
-        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} rerankerProfiles={rerankerProfilesProp || rerankerProfiles} scan={scan} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
+        {defaultsTab === 'models' ? <KnowledgeModelsTab values={values} setValues={setValues} rerankerProfiles={rerankerProfilesProp || rerankerProfiles} busy={busy} setBusy={setBusy} setResult={setResult} setLocalError={setLocalError} /> : null}
         {defaultsTab === 'retrieval' ? <KnowledgeRetrievalTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'chunking' ? <KnowledgeChunkingTab values={values} setValues={setValues} /> : null}
         {defaultsTab === 'context' ? <KnowledgeContextTab values={values} setValues={setValues} /> : null}
@@ -533,7 +532,6 @@ function KnowledgeModelsTab({
   values,
   setValues,
   rerankerProfiles,
-  scan,
   busy,
   setBusy,
   setResult,
@@ -542,15 +540,12 @@ function KnowledgeModelsTab({
   values: KnowledgeSettings;
   setValues: (values: KnowledgeSettings) => void;
   rerankerProfiles: RerankerModelProfile[];
-  scan: KnowledgeModelScan | null;
   busy: string;
   setBusy: (busy: string) => void;
   setResult: (result: string) => void;
   setLocalError: (error: SettingsErrorValue | null) => void;
 }) {
   const { t } = useTranslation(['knowledge']);
-  const rerankerOptions = modelPathOptions(scan?.reranker_models ?? [], values.reranker_model_path || '');
-  const currentRerankerMissing = scan ? Boolean(values.reranker_model_path) && !scan.reranker_models.some((model) => model.model_path === values.reranker_model_path) : false;
   const enabledRerankerProfiles = rerankerProfiles.filter((profile) => profile.enabled);
   const selectedRerankerMissing = Boolean(values.reranker_profile_id) && !rerankerProfiles.some((profile) => profile.id === values.reranker_profile_id);
   return (
@@ -586,21 +581,6 @@ function KnowledgeModelsTab({
             <small>{t('knowledge:hints.rerankerProfileSelection')}</small>
           </label>
           {selectedRerankerMissing ? <p className="settings-warning-text">{t('knowledge:hints.selectedRerankerProfileMissing')}</p> : null}
-          <div>
-            <SelectField
-              label={t('knowledge:labels.rerankerModelPath')}
-              value={values.reranker_model_path || ''}
-              options={rerankerOptions}
-              labels={modelPathLabels(rerankerOptions)}
-              disabled={!rerankerOptions.length}
-              placeholder={t('knowledge:empty.noLocalRerankerModels')}
-              onChange={(value) => setValues({ ...values, reranker_model_path: value || null })}
-            />
-            <p className="settings-muted-text">{t('knowledge:hints.chooseScannedRerankerModel')}</p>
-            <p className="settings-muted-text">{t('knowledge:hints.legacyRerankerPath')}</p>
-            {!rerankerOptions.length ? <p className="settings-muted-text">{t('knowledge:hints.scanLocalModelsInOverviewFirst')}</p> : null}
-            {currentRerankerMissing ? <p className="settings-muted-text">{t('knowledge:hints.currentSavedPathNotScanned')}</p> : null}
-          </div>
           <NumberField label={t('knowledge:labels.batchSize')} value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
           <NumberField label={t('knowledge:labels.timeoutSeconds')} value={values.reranker_timeout_seconds} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_timeout_seconds: value }); }} />
           <NumberField label={t('knowledge:labels.candidateLimit')} value={values.reranker_candidate_limit} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_candidate_limit: value }); }} />
@@ -752,10 +732,9 @@ function KnowledgeDownloadTab({
   );
 }
 
-function EmbeddingModelsEditor({ profiles, providerProfiles, scan, mode, onRefresh, onDirtyChange }: {
+function EmbeddingModelsEditor({ profiles, providerProfiles, mode, onRefresh, onDirtyChange }: {
   profiles: EmbeddingModelProfile[];
   providerProfiles: LlmProviderProfile[];
-  scan: KnowledgeModelScan | null;
   mode: FormMode;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -766,13 +745,12 @@ function EmbeddingModelsEditor({ profiles, providerProfiles, scan, mode, onRefre
   if (!initial) {
     return <Empty title={t('empty.noEmbeddingSelected')} message={profiles.length ? t('empty.selectEmbedding') : t('empty.noEmbeddingProfiles')} />;
   }
-  return <EmbeddingProfileForm initial={initial} providerProfiles={providerProfiles} scan={scan} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
+  return <EmbeddingProfileForm initial={initial} providerProfiles={providerProfiles} isNew={mode === 'new'} onRefresh={onRefresh} onDirtyChange={onDirtyChange} />;
 }
 
-function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefresh, onDirtyChange }: {
+function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onDirtyChange }: {
   initial: Partial<EmbeddingModelProfile>;
   providerProfiles: LlmProviderProfile[];
-  scan: KnowledgeModelScan | null;
   isNew: boolean;
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -789,14 +767,13 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
   const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
   const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
   const dirty = hydrated && stableConfigString(buildEmbeddingModelPayload(values)) !== baselineKey;
-  const embeddingOptions = modelPathOptions(scan?.embedding_models ?? [], values.model_path || '');
-  const currentEmbeddingMissing = scan ? Boolean(values.model_path) && !scan.embedding_models.some((model) => model.model_path === values.model_path) : false;
   const embeddingProviderProfiles = providerProfiles.filter((profile) => embeddingProviderSupported(profile.provider));
   const selectedProvider = embeddingProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
   const selectedProviderInternal = Boolean(selectedProvider && isInternalEmbeddingProvider(selectedProvider.provider));
   const providerModelOptions = selectedProviderInternal
-    ? providerModels.filter((model) => isEmbeddingProviderModel(model)).map((model) => model.id)
-    : providerModels.filter((model) => Boolean(model.id)).map((model) => model.id);
+    ? providerModels.filter((model) => isEmbeddingProviderModel(model))
+    : providerModels.filter((model) => Boolean(model.id));
+  const selectedProviderModelId = providerModelOptions.some((model) => model.id === values.provider_model_id) ? values.provider_model_id || '' : '';
 
   useEffect(() => {
     setValues(initial);
@@ -873,18 +850,22 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
       setBusy('');
     }
   }
-  function selectModelPath(modelPath: string) {
-    const preset = embeddingPresetForPath(modelPath);
-    const folderName = modelFolderName(modelPath);
+  function selectProviderModel(modelId: string) {
+    if (!modelId) {
+      setValues({ ...values, provider_model_id: '' });
+      return;
+    }
+    const model = providerModelOptions.find((item) => item.id === modelId);
+    const modelName = readableModelName(model || modelId);
     const fallback: EmbeddingProfilePreset = {
-      name: folderName,
-      alias: safeProfileKey(folderName),
+      name: modelName,
+      alias: safeProfileKey(modelName),
       normalize: values.normalize ?? true,
     };
-    const profile = preset?.profile ?? fallback;
+    const profile = embeddingPresetForRef(modelId)?.profile ?? fallback;
     setValues({
       ...values,
-      model_path: modelPath,
+      provider_model_id: modelId,
       name: values.name?.trim() ? values.name : profile.name,
       alias: values.alias?.trim() ? values.alias : profile.alias,
       dimension: values.dimension || values.dimension === 0 ? values.dimension : (profile.dimension ?? null),
@@ -892,7 +873,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
       document_instruction: values.document_instruction?.trim() ? values.document_instruction : (profile.document_instruction ?? ''),
       query_instruction: values.query_instruction?.trim() ? values.query_instruction : (profile.query_instruction ?? ''),
     });
-    if (preset) {
+    if (embeddingPresetForRef(modelId)) {
       setResult(t('knowledge:results.recommendedPresetApplied'));
     }
   }
@@ -905,7 +886,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
             <h2>{values.name || t('knowledge:titles.newEmbeddingModel')}</h2>
             <p>
               <code>{values.alias || 'profile_key'}</code>
-              <span>{values.provider_model_id || values.model_path || t('knowledge:empty.noModelPath')}</span>
+              <span>{values.provider_model_id || t('knowledge:empty.noProviderModelSelected')}</span>
             </p>
           </div>
         </div>
@@ -930,61 +911,44 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
       <div className="settings-detail-body">
         {error ? <SettingsApiError error={error} /> : null}
         <section className="detail-section">
-          <h3>{t('knowledge:sections.model')}</h3>
-          <div className="settings-detail-grid">
+          <div className="detail-section-heading">
+            <h3>{t('knowledge:sections.model')}</h3>
+            <div className="settings-button-row">
+              <button className="settings-secondary-button" type="button" onClick={refreshProviderModels} disabled={Boolean(busy) || !values.provider_profile_id}>
+                {busy === 'provider-models' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+                {t('llm:actions.refreshModels')}
+              </button>
+            </div>
+          </div>
+          <div className="settings-config-form llm-profile-form">
             <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
-            <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
             <label className="config-field settings-config-field">
               <span>{t('knowledge:labels.providerProfile')}</span>
               <select
                 value={values.provider_profile_id || ''}
-                onChange={(event) => setValues({ ...values, provider_profile_id: event.target.value || null, provider_model_id: '', model_path: values.model_path || '' })}
+                onChange={(event) => {
+                  setValues({ ...values, provider_profile_id: event.target.value || null, provider_model_id: '' });
+                  setProviderModels([]);
+                }}
               >
-                <option value="">{t('knowledge:labels.legacyLocalModelPath')}</option>
+                <option value="">{t('knowledge:empty.noProviderSelected')}</option>
                 {embeddingProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
               </select>
+              {!embeddingProviderProfiles.length ? <small>{t('knowledge:empty.noEmbeddingProviderProfiles')}</small> : null}
             </label>
-            {values.provider_profile_id ? (
-              <div>
-                <div className="settings-button-row">
-                  <SelectField
-                    label={selectedProviderInternal ? t('knowledge:labels.embeddingModelRef') : t('knowledge:labels.providerModelId')}
-                    value={values.provider_model_id || ''}
-                    options={providerModelOptions}
-                    disabled={!providerModelOptions.length}
-                    placeholder={selectedProviderInternal ? t('knowledge:empty.noProviderEmbeddingModels') : t('knowledge:empty.noProviderModels')}
-                    onChange={(value) => setValues({ ...values, provider_model_id: value })}
-                  />
-                  <button className="settings-secondary-button" type="button" onClick={refreshProviderModels} disabled={Boolean(busy)}>
-                    {busy === 'provider-models' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
-                    {t('knowledge:actions.refreshProviderModels')}
-                  </button>
-                </div>
-                {!selectedProviderInternal ? (
-                  <TextField label={t('knowledge:labels.providerModelIdManual')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
-                ) : null}
-                <p className="settings-muted-text">{selectedProviderInternal ? t('knowledge:hints.internalEmbeddingRefsOnly') : t('knowledge:hints.externalEmbeddingModelId')}</p>
-                {!selectedProvider?.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
-              </div>
-            ) : (
-            <div>
-              <SelectField
-                label={t('knowledge:labels.modelPathChooseFirst')}
-                value={values.model_path || ''}
-                options={embeddingOptions}
-                labels={modelPathLabels(embeddingOptions)}
-                disabled={!embeddingOptions.length}
-                placeholder={t('knowledge:empty.noLocalEmbeddingModels')}
-                onChange={selectModelPath}
-              />
-              <p className="settings-muted-text">{t('knowledge:hints.chooseScannedEmbeddingModel')}</p>
-              <p className="settings-muted-text">{t('knowledge:hints.presetFieldsFilledWhenAvailable')}</p>
-              {!embeddingOptions.length ? <p className="settings-muted-text">{t('knowledge:hints.scanLocalModelsInOverviewFirst')}</p> : null}
-              {currentEmbeddingMissing ? <p className="settings-muted-text">{t('knowledge:hints.currentSavedPathNotScanned')}</p> : null}
-            </div>
-            )}
+            <label className="config-field settings-config-field">
+              <span>{t('llm:labels.chooseFromProvider')}</span>
+              <select value={selectedProviderModelId} onChange={(event) => selectProviderModel(event.target.value)} disabled={Boolean(busy) || !providerModelOptions.length}>
+                <option value="">{providerModelOptions.length ? t('llm:empty.selectRefreshedModel') : selectedProviderInternal ? t('knowledge:empty.noProviderEmbeddingModels') : t('knowledge:empty.noProviderModels')}</option>
+                {providerModelOptions.map((model) => <option key={model.id} value={model.id} title={model.id}>{providerModelOptionLabel(model)}</option>)}
+              </select>
+              <small>{t('llm:help.preferRefreshedModel')}</small>
+            </label>
+            <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
             <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
           </div>
+          <p className="settings-muted-text">{selectedProviderInternal ? t('knowledge:hints.internalEmbeddingRefsOnly') : t('knowledge:hints.externalEmbeddingModelId')}</p>
+          {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
         </section>
         <section className="detail-section">
           <h3>{t('knowledge:sections.runtime')}</h3>
@@ -992,6 +956,12 @@ function EmbeddingProfileForm({ initial, providerProfiles, scan, isNew, onRefres
           <TextAreaField label={t('knowledge:labels.documentInstruction')} value={values.document_instruction || ''} onChange={(value) => setValues({ ...values, document_instruction: value })} />
           <TextAreaField label={t('knowledge:labels.queryInstruction')} value={values.query_instruction || ''} onChange={(value) => setValues({ ...values, query_instruction: value })} />
           <TextAreaField label={t('knowledge:labels.notes')} value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
+        </section>
+        <section className="detail-section">
+          <h3>{t('knowledge:sections.advanced')}</h3>
+          <div className="settings-config-form llm-profile-form">
+            <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: safeProfileKey(value) })} />
+          </div>
         </section>
       </div>
     </form>
@@ -1034,7 +1004,8 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
   const dirty = hydrated && stableConfigString(buildRerankerModelPayload(values)) !== baselineKey;
   const rerankerProviderProfiles = providerProfiles.filter((profile) => rerankerProviderSupported(profile.provider));
   const selectedProvider = rerankerProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
-  const providerModelOptions = providerModels.filter((model) => isRerankerProviderModel(model)).map((model) => model.id);
+  const providerModelOptions = providerModels.filter((model) => isRerankerProviderModel(model));
+  const selectedProviderModelId = providerModelOptions.some((model) => model.id === values.provider_model_id) ? values.provider_model_id || '' : '';
 
   useEffect(() => {
     setValues(initial);
@@ -1113,6 +1084,21 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
     }
   }
 
+  function selectProviderModel(modelId: string) {
+    if (!modelId) {
+      setValues({ ...values, provider_model_id: '' });
+      return;
+    }
+    const model = providerModelOptions.find((item) => item.id === modelId);
+    const modelName = readableModelName(model || modelId);
+    setValues({
+      ...values,
+      provider_model_id: modelId,
+      name: values.name?.trim() ? values.name : modelName,
+      alias: values.alias?.trim() ? values.alias : safeProfileKey(modelName),
+    });
+  }
+
   return (
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
@@ -1147,43 +1133,53 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
       <div className="settings-detail-body">
         {error ? <SettingsApiError error={error} /> : null}
         <section className="detail-section">
-          <h3>{t('knowledge:sections.model')}</h3>
-          <div className="settings-detail-grid">
+          <div className="detail-section-heading">
+            <h3>{t('knowledge:sections.model')}</h3>
+            <div className="settings-button-row">
+              <button className="settings-secondary-button" type="button" onClick={refreshProviderModels} disabled={Boolean(busy) || !values.provider_profile_id}>
+                {busy === 'provider-models' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+                {t('llm:actions.refreshModels')}
+              </button>
+            </div>
+          </div>
+          <div className="settings-config-form llm-profile-form">
             <TextField label={t('knowledge:labels.name')} value={values.name || ''} onChange={(value) => setValues({ ...values, name: value })} />
-            <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: value })} />
             <label className="config-field settings-config-field">
               <span>{t('knowledge:labels.providerProfile')}</span>
               <select
                 value={values.provider_profile_id || ''}
-                onChange={(event) => setValues({ ...values, provider_profile_id: event.target.value, provider_model_id: '' })}
+                onChange={(event) => {
+                  setValues({ ...values, provider_profile_id: event.target.value, provider_model_id: '' });
+                  setProviderModels([]);
+                }}
               >
                 <option value="">{t('knowledge:empty.noProviderSelected')}</option>
                 {rerankerProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
               </select>
+              {!rerankerProviderProfiles.length ? <small>{t('knowledge:empty.noRerankerProviderProfiles')}</small> : null}
             </label>
-            <div>
-              <div className="settings-button-row">
-                <SelectField
-                  label={t('knowledge:labels.rerankerModelRef')}
-                  value={values.provider_model_id || ''}
-                  options={providerModelOptions}
-                  disabled={!providerModelOptions.length}
-                  placeholder={t('knowledge:empty.noProviderRerankerModels')}
-                  onChange={(value) => setValues({ ...values, provider_model_id: value })}
-                />
-                <button className="settings-secondary-button" type="button" onClick={refreshProviderModels} disabled={Boolean(busy) || !values.provider_profile_id}>
-                  {busy === 'provider-models' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
-                  {t('knowledge:actions.refreshProviderModels')}
-                </button>
-              </div>
-              <p className="settings-muted-text">{t('knowledge:hints.internalRerankerRefsOnly')}</p>
-              {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
-            </div>
+            <label className="config-field settings-config-field">
+              <span>{t('llm:labels.chooseFromProvider')}</span>
+              <select value={selectedProviderModelId} onChange={(event) => selectProviderModel(event.target.value)} disabled={Boolean(busy) || !providerModelOptions.length}>
+                <option value="">{providerModelOptions.length ? t('llm:empty.selectRefreshedModel') : t('knowledge:empty.noProviderRerankerModels')}</option>
+                {providerModelOptions.map((model) => <option key={model.id} value={model.id} title={model.id}>{providerModelOptionLabel(model)}</option>)}
+              </select>
+              <small>{t('llm:help.preferRefreshedModel')}</small>
+            </label>
+            <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
           </div>
+          <p className="settings-muted-text">{t('knowledge:hints.internalRerankerRefsOnly')}</p>
+          {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
         </section>
         <section className="detail-section">
           <h3>{t('knowledge:sections.runtime')}</h3>
           <TextAreaField label={t('knowledge:labels.notes')} value={values.notes || ''} onChange={(value) => setValues({ ...values, notes: value })} />
+        </section>
+        <section className="detail-section">
+          <h3>{t('knowledge:sections.advanced')}</h3>
+          <div className="settings-config-form llm-profile-form">
+            <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: safeProfileKey(value) })} />
+          </div>
         </section>
       </div>
     </form>
@@ -2730,15 +2726,6 @@ function knowledgeSettingsPatch(values: KnowledgeSettings): Partial<KnowledgeSet
   return patch;
 }
 
-function modelPathOptions(models: { model_path: string }[], currentPath: string): string[] {
-  const paths = models.map((model) => model.model_path);
-  return currentPath && !paths.includes(currentPath) ? [currentPath, ...paths] : paths;
-}
-
-function modelPathLabels(paths: string[]): Record<string, string> {
-  return Object.fromEntries(paths.map((path) => [path, modelFolderName(path)]));
-}
-
 function embeddingProviderSupported(provider: string): boolean {
   return ['internal_transformers', 'internal_llama_cpp', 'openai_compatible', 'lm_studio', 'ollama'].includes(provider);
 }
@@ -2783,15 +2770,28 @@ function originFolderLeafName(value: string): string {
   return slashIndex >= 0 ? normalized.slice(slashIndex + 1) : normalized;
 }
 
-function embeddingPresetForPath(modelPath: string) {
-  const folderName = modelFolderName(modelPath).toLowerCase();
+function embeddingPresetForRef(modelRef: string) {
+  const folderName = modelLeafName(modelRef).toLowerCase();
   return KNOWLEDGE_MODEL_PRESETS.find((preset) => preset.type === 'embedding' && preset.target.toLowerCase() === folderName && preset.profile);
 }
 
-function modelFolderName(modelPath: string): string {
-  const normalized = modelPath.replace(/\\/g, '/').replace(/\/+$/, '');
+function modelLeafName(modelRef: string): string {
+  const normalized = modelRef.replace(/\\/g, '/').replace(/\/+$/, '');
   const parts = normalized.split('/').filter(Boolean);
-  return parts[parts.length - 1] || modelPath;
+  return parts[parts.length - 1] || modelRef;
+}
+
+function readableModelName(model: LlmProviderModel | string): string {
+  if (typeof model === 'string') {
+    return modelLeafName(model);
+  }
+  return String(model.name || model.display_name || modelLeafName(model.id) || model.id);
+}
+
+function providerModelOptionLabel(model: LlmProviderModel): string {
+  const name = String(model.name || model.display_name || '').trim();
+  const id = String(model.id || '').trim();
+  return name && name !== id ? `${name} (${id})` : id;
 }
 
 function safeProfileKey(value: string): string {
