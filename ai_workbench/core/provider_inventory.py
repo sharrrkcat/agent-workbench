@@ -259,7 +259,9 @@ def _scan_llama_cpp_models(base: Path, provider: str) -> list[dict[str, Any]]:
             dirs[:] = [name for name in dirs if not (root_path / name).is_symlink() and _is_safe_descendant(root_path / name, base)]
             for filename in files:
                 path = root_path / filename
-                if filename.lower().endswith(".gguf"):
+                if filename.lower().endswith(".gguf") and not (
+                    kind == "llm" and _is_llama_cpp_auxiliary_gguf(filename)
+                ):
                     paths.append(path)
         for path in sorted(paths, key=lambda item: item.relative_to(kind_dir).as_posix().lower()):
             if path.is_symlink() or not path.is_file() or not _is_safe_descendant(path, base):
@@ -287,6 +289,16 @@ def _looks_like_transformers_model(path: Path) -> bool:
     if any(child.is_dir() and child.name.endswith("_Pooling") for child in children):
         return True
     return False
+
+
+def _is_llama_cpp_auxiliary_gguf(filename: str) -> bool:
+    lowered = filename.casefold()
+    return (
+        lowered.startswith("mmproj")
+        or "mmproj" in lowered
+        or "projector" in lowered
+        or "vision-projector" in lowered
+    )
 
 
 def _model_item(ref: str, display_name: str, kind: str, provider: str, relative_path: str) -> dict[str, Any]:

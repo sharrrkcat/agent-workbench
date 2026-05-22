@@ -280,8 +280,11 @@ def test_internal_provider_refresh_models_scans_safe_inventory(monkeypatch, tmp_
     (models_root / "llms" / "gguf-only").mkdir()
     (models_root / "llms" / "gguf-only" / "model.gguf").write_text("", encoding="utf-8")
     (models_root / "llms" / "direct.gguf").write_text("", encoding="utf-8")
+    (models_root / "llms" / "mmproj-F16.gguf").write_text("", encoding="utf-8")
+    (models_root / "llms" / "model-vision-projector.gguf").write_text("", encoding="utf-8")
     (models_root / "llms" / "qwen-gguf").mkdir()
     (models_root / "llms" / "qwen-gguf" / "model.gguf").write_text("", encoding="utf-8")
+    (models_root / "llms" / "qwen-gguf" / "projector.gguf").write_text("", encoding="utf-8")
     (models_root / "embeddings" / "bge").mkdir(parents=True)
     (models_root / "embeddings" / "bge" / "model.safetensors").write_text("", encoding="utf-8")
     (models_root / "rerankers" / "ranker").mkdir(parents=True)
@@ -310,6 +313,8 @@ def test_internal_provider_refresh_models_scans_safe_inventory(monkeypatch, tmp_
     assert all(not item["relative_path"].startswith("utility_llms") for item in transformers_payload["models"])
     assert transformers_payload["warnings"] == ["legacy_utility_llms_not_scanned"]
     assert {item["id"] for item in llama_payload["models"]} == {"llm/direct.gguf", "llm/qwen-gguf/model.gguf", "llm/gguf-only/model.gguf"}
+    assert all("mmproj" not in item["id"] for item in llama_payload["models"])
+    assert all("projector" not in item["id"] for item in llama_payload["models"])
     assert all(item["backend"] == "internal_llama_cpp" for item in llama_payload["models"])
     assert not llm.model_calls
 

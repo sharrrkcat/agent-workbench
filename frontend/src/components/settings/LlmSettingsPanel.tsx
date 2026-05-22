@@ -1549,10 +1549,23 @@ function providerProfileBaseUrl(providerProfileId: string, providers: LlmProvide
 
 function isChatModel(model: LlmProviderModel, provider?: string): boolean {
   if (isInternalProvider(provider)) {
+    if (provider === 'internal_llama_cpp' && isLlamaCppAuxiliaryModel(model.id)) {
+      return false;
+    }
     return String(model.kind || model.type || model.id || '').toLowerCase() === 'llm' || String(model.id || '').startsWith('llm/');
   }
   const kind = String(model.kind || model.type || 'unknown').toLowerCase();
   return kind !== 'embedding' && kind !== 'reranker';
+}
+
+function isLlamaCppAuxiliaryModel(modelId: string | undefined): boolean {
+  const basename = String(modelId || '').split('/').pop()?.toLowerCase() || '';
+  return (
+    basename.startsWith('mmproj') ||
+    basename.includes('mmproj') ||
+    basename.includes('projector') ||
+    basename.includes('vision-projector')
+  );
 }
 
 function isInternalProvider(provider: string | undefined | null): boolean {
