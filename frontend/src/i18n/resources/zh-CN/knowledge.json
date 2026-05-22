@@ -96,6 +96,8 @@
     "name": "名称",
     "profileKey": "配置 key",
     "modelPath": "模型路径",
+    "legacyModelPath": "旧模型路径",
+    "legacyModelPathValue": "旧模型路径：{{path}}",
     "providerProfile": "Provider 配置",
     "embeddingModelRef": "Embedding 模型引用",
     "providerModelId": "Provider 模型 ID",
@@ -315,6 +317,7 @@
   "hints": {
     "scanLocalModelsInOverviewFirst": "请先在概览中扫描本地模型。",
     "selectedRerankerProfileMissing": "所选 Reranker 模型配置缺失或已禁用。",
+    "providerMissing": "所选 Provider 配置缺失，或已不再支持此模型配置类型。",
     "providerDisabled": "选中的 Provider 配置已禁用。",
     "unloadEmbeddingModelAfterUse": "索引或搜索完成后释放本地 embedding 模型。可以降低显存占用，但下一次搜索会变慢。",
     "unloadRerankerModelAfterUse": "Rerank 完成后释放本地 reranker。可以降低显存占用，但下一次 rerank 会变慢。",

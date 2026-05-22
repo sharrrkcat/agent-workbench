@@ -60,6 +60,7 @@
     "newModel": "新建模型",
     "newProvider": "新建 Provider",
     "untitledModel": "未命名模型",
+    "noProviderProfile": "没有 Provider 配置",
     "noProfileKey": "没有 profile key",
     "noModelRef": "没有模型 ref",
     "newKnowledgeBase": "新建知识库",

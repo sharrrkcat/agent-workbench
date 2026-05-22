@@ -47,6 +47,9 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
       setSelectedKnowledgeSubsection('embedding_models');
       setSelectedKnowledgeItemId('');
     }
+    if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'reranker_models') {
+      setSelectedKnowledgeItemId('');
+    }
     if (initialTarget?.section === 'knowledge' && initialTarget.knowledgeSubsection) {
       setSelectedKnowledgeSubsection(initialTarget.knowledgeSubsection);
       setSelectedKnowledgeItemId(initialTarget.knowledgeSubsection === 'defaults' ? 'global' : '');

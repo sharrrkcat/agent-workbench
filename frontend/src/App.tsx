@@ -166,6 +166,10 @@ function explicitSettingsTarget(): SettingsInitialTarget {
     target.llmSubsection = 'embedding_models';
     target.knowledgeSubsection = 'embedding_models';
   }
+  if (candidate === 'knowledge' && ['reranker-models', 'reranker-model-profiles', 'reranker_models'].includes(subsection)) {
+    target.section = 'models';
+    target.llmSubsection = 'reranker_models';
+  }
   if (section === 'knowledge' && ['defaults', 'embedding_models', 'knowledge_bases'].includes(subsection)) {
     target.knowledgeSubsection = subsection as KnowledgeSettingsSubsection;
   }

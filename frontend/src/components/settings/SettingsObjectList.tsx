@@ -421,8 +421,8 @@ function ProfileListItem({
   active: boolean;
   onClick: () => void;
 }) {
-  const { t } = useTranslation('common');
-  const providerName = providerProfiles.find((provider) => provider.id === profile.provider_profile_id)?.name || 'No provider';
+  const { t } = useTranslation(['common', 'settings']);
+  const providerName = providerProfiles.find((provider) => provider.id === profile.provider_profile_id)?.name || t('settings:objectList.noProviderProfile');
   return (
     <button type="button" className={`settings-object-row llm-object-row llm-model-profile-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
@@ -431,7 +431,7 @@ function ProfileListItem({
           <strong>{profile.name}</strong>
           <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
         </div>
-        <small>{providerName} / {profile.model_id || 'No model ID'}</small>
+        <small>{providerName} / {profile.model_id || t('settings:objectList.noModelRef')}</small>
         <ModelCapabilityIcons capabilities={capabilitiesFromProfile(profile)} className="settings-capability-icons" />
       </div>
     </button>
@@ -453,13 +453,14 @@ function ProviderListItem({ profile, active, onClick }: { profile: LlmProviderPr
 }
 
 function EmbeddingProfileListItem({ profile, active, onClick }: { profile: EmbeddingModelProfile; active: boolean; onClick: () => void }) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'settings', 'knowledge']);
+  const modelLabel = profile.provider_model_id || (profile.model_path ? t('knowledge:labels.legacyModelPathValue', { path: profile.model_path }) : t('settings:objectList.noModelRef'));
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
       <div className="settings-object-copy">
-        <strong>{profile.name || 'Untitled model'}</strong>
-        <small>{profile.alias || 'No profile key'} / {profile.provider_model_id || profile.model_path || 'No model path'}</small>
+        <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
+        <small>{profile.alias || t('settings:objectList.noProfileKey')} / {modelLabel}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>
@@ -494,9 +495,12 @@ function KnowledgeBaseListItem({
   const { t } = useTranslation(['common', 'status', 'knowledge']);
   const profile = embeddingProfiles.find((item) => item.id === knowledgeBase.embedding_model_profile_id);
   const profileName = knowledgeBase.embedding_model_profile_name || profile?.name || t('status:common.unavailable');
+  const providerModelId = profile?.provider_model_id || '';
+  const legacyModelPath = knowledgeBase.embedding_model_profile_model_path || profile?.model_path || '';
   const profileTitle = [
     knowledgeBase.embedding_model_profile_alias || profile?.alias ? `${t('knowledge:labels.profileKey')}: ${knowledgeBase.embedding_model_profile_alias || profile?.alias}` : '',
-    knowledgeBase.embedding_model_profile_model_path || profile?.model_path ? `${t('knowledge:labels.modelPath')}: ${knowledgeBase.embedding_model_profile_model_path || profile?.model_path}` : '',
+    providerModelId ? `${t('knowledge:labels.providerModelId')}: ${providerModelId}` : '',
+    !providerModelId && legacyModelPath ? `${t('knowledge:labels.legacyModelPath')}: ${legacyModelPath}` : '',
   ].filter(Boolean).join('\n');
   return (
     <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${knowledgeBase.enabled ? '' : 'disabled'}`} onClick={onClick}>

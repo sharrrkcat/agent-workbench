@@ -408,7 +408,7 @@ export type LlmDefaults = {
   default_model_profile_id: string | null;
 };
 
-export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases';
+export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'reranker_models' | 'knowledge_bases';
 export type WorldbookSettingsCategory = 'defaults' | 'worldbooks';
 
 export type KnowledgeBackendStatus = {

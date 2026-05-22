@@ -145,7 +145,6 @@ const KNOWLEDGE_MODEL_PRESETS: {
 const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   name: '',
   alias: '',
-  model_path: '',
   provider_profile_id: null,
   provider_model_id: '',
   dimension: null,
@@ -528,6 +527,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
   const dirty = hydrated && stableConfigString(buildEmbeddingModelPayload(values)) !== baselineKey;
   const embeddingProviderProfiles = providerProfiles.filter((profile) => embeddingProviderSupported(profile.provider));
   const selectedProvider = embeddingProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
+  const selectedProviderMissing = Boolean(values.provider_profile_id && !selectedProvider);
   const selectedProviderInternal = Boolean(selectedProvider && isInternalEmbeddingProvider(selectedProvider.provider));
   const providerModelOptions = selectedProviderInternal
     ? providerModels.filter((model) => isEmbeddingProviderModel(model))
@@ -691,6 +691,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
                 }}
               >
                 <option value="">{t('knowledge:empty.noProviderSelected')}</option>
+                {selectedProviderMissing ? <option value={values.provider_profile_id || ''}>{t('knowledge:hints.providerMissing')}</option> : null}
                 {embeddingProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
               </select>
             </label>
@@ -704,6 +705,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
             <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
             <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
           </div>
+          {selectedProviderMissing ? <p className="settings-warning-text">{t('knowledge:hints.providerMissing')}</p> : null}
           {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
         </section>
         <section className="detail-section">
@@ -760,6 +762,7 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
   const dirty = hydrated && stableConfigString(buildRerankerModelPayload(values)) !== baselineKey;
   const rerankerProviderProfiles = providerProfiles.filter((profile) => rerankerProviderSupported(profile.provider));
   const selectedProvider = rerankerProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
+  const selectedProviderMissing = Boolean(values.provider_profile_id && !selectedProvider);
   const providerModelOptions = providerModels.filter((model) => isRerankerProviderModel(model));
   const selectedProviderModelId = providerModelOptions.some((model) => model.id === values.provider_model_id) ? values.provider_model_id || '' : '';
 
@@ -910,6 +913,7 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
                 }}
               >
                 <option value="">{t('knowledge:empty.noProviderSelected')}</option>
+                {selectedProviderMissing ? <option value={values.provider_profile_id || ''}>{t('knowledge:hints.providerMissing')}</option> : null}
                 {rerankerProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
               </select>
             </label>
@@ -922,6 +926,7 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
             </label>
             <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
           </div>
+          {selectedProviderMissing ? <p className="settings-warning-text">{t('knowledge:hints.providerMissing')}</p> : null}
           {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
         </section>
         <section className="detail-section">
@@ -2517,7 +2522,6 @@ function buildEmbeddingModelPayload(values: Partial<EmbeddingModelProfile>): Emb
   return {
     name: values.name ?? '',
     alias: values.alias ?? '',
-    model_path: values.model_path ?? '',
     provider_profile_id: values.provider_profile_id || null,
     provider_model_id: values.provider_model_id ?? '',
     dimension: parseOptionalInteger(values.dimension, 'Dimension'),
