@@ -61,7 +61,6 @@
     "noCapabilities": "无能力",
     "noDefaultProfile": "未选择默认模型配置。",
     "selectProviderProfile": "选择 Provider 配置",
-    "selectProviderFirst": "请先选择 Provider 配置。",
     "selectRefreshedModel": "选择已刷新的模型",
     "noRefreshedModels": "没有已刷新的模型",
     "missingProviderProfile": "缺失 Provider 配置"
@@ -72,8 +71,6 @@
     "fallbackOrder": "运行时 fallback 顺序：会话覆盖、Agent 覆盖、manifest、默认模型配置，然后是 legacy/env fallback。",
     "defaultModelProfileFallback": "运行时 fallback 顺序：会话覆盖、Agent 覆盖、manifest、默认模型配置，然后是 legacy/env fallback。",
     "legacyReadonly": "仅当没有解析出模型配置时，legacy provider、base URL 和 model 字段才作为只读 fallback 配置保留。",
-    "preferRefreshedModel": "可用时优先选择已刷新的 Provider 模型。",
-    "manualModelId": "当 Provider 离线、不支持列出模型，或需要自定义 alias 时使用手动 Model ID。",
     "reasoningOutput": "Reasoning 输出只声明期望输出行为，不会改变 Provider 请求参数。",
     "profileKey": "Agent manifest 中通过 llm.profile 使用。当前映射到 API alias。",
     "llamaCppAlias": "llama.cpp 通常返回当前服务中的模型。需要稳定 Model ID 时请使用 --alias。",

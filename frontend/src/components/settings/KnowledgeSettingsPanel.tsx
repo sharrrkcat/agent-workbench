@@ -578,7 +578,6 @@ function KnowledgeModelsTab({
               <option value="">{t('knowledge:labels.rerankerDisabled')}</option>
               {enabledRerankerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {profile.provider_model_id}</option>)}
             </select>
-            <small>{t('knowledge:hints.rerankerProfileSelection')}</small>
           </label>
           {selectedRerankerMissing ? <p className="settings-warning-text">{t('knowledge:hints.selectedRerankerProfileMissing')}</p> : null}
           <NumberField label={t('knowledge:labels.batchSize')} value={values.reranker_batch_size} onChange={(value) => { if (value !== '') setValues({ ...values, reranker_batch_size: value }); }} />
@@ -934,7 +933,6 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
                 <option value="">{t('knowledge:empty.noProviderSelected')}</option>
                 {embeddingProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
               </select>
-              {!embeddingProviderProfiles.length ? <small>{t('knowledge:empty.noEmbeddingProviderProfiles')}</small> : null}
             </label>
             <label className="config-field settings-config-field">
               <span>{t('llm:labels.chooseFromProvider')}</span>
@@ -942,12 +940,10 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
                 <option value="">{providerModelOptions.length ? t('llm:empty.selectRefreshedModel') : selectedProviderInternal ? t('knowledge:empty.noProviderEmbeddingModels') : t('knowledge:empty.noProviderModels')}</option>
                 {providerModelOptions.map((model) => <option key={model.id} value={model.id} title={model.id}>{providerModelOptionLabel(model)}</option>)}
               </select>
-              <small>{t('llm:help.preferRefreshedModel')}</small>
             </label>
             <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
             <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
           </div>
-          <p className="settings-muted-text">{selectedProviderInternal ? t('knowledge:hints.internalEmbeddingRefsOnly') : t('knowledge:hints.externalEmbeddingModelId')}</p>
           {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
         </section>
         <section className="detail-section">
@@ -1156,7 +1152,6 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
                 <option value="">{t('knowledge:empty.noProviderSelected')}</option>
                 {rerankerProviderProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} / {t(`llm:providers.${profile.provider}`)}</option>)}
               </select>
-              {!rerankerProviderProfiles.length ? <small>{t('knowledge:empty.noRerankerProviderProfiles')}</small> : null}
             </label>
             <label className="config-field settings-config-field">
               <span>{t('llm:labels.chooseFromProvider')}</span>
@@ -1164,11 +1159,9 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
                 <option value="">{providerModelOptions.length ? t('llm:empty.selectRefreshedModel') : t('knowledge:empty.noProviderRerankerModels')}</option>
                 {providerModelOptions.map((model) => <option key={model.id} value={model.id} title={model.id}>{providerModelOptionLabel(model)}</option>)}
               </select>
-              <small>{t('llm:help.preferRefreshedModel')}</small>
             </label>
             <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
           </div>
-          <p className="settings-muted-text">{t('knowledge:hints.internalRerankerRefsOnly')}</p>
           {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
         </section>
         <section className="detail-section">

@@ -1051,7 +1051,6 @@ export function LlmProfileDetail({
                   </option>
                 ))}
               </select>
-              {!draft.provider_profile_id ? <small>{t('llm:empty.selectProviderFirst')}</small> : providerHelperText(draft.provider_profile_id, providerProfiles)}
             </label>
             <label className="config-field settings-config-field">
               <span>{t('llm:labels.chooseFromProvider')}</span>
@@ -1059,12 +1058,10 @@ export function LlmProfileDetail({
                 <option value="">{models.length ? t('llm:empty.selectRefreshedModel') : t('llm:empty.noRefreshedModels')}</option>
                 {models.map((model) => <option key={model.id} value={model.id} title={model.id}>{modelOptionLabel(model)}</option>)}
               </select>
-              <small>{t('llm:help.preferRefreshedModel')}</small>
             </label>
             <label className="config-field settings-config-field">
               <span>{t('llm:labels.manualModelIdOverride')}</span>
               <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy} />
-              <small>{t('llm:help.manualModelId')}</small>
             </label>
             <TextField label={t('llm:labels.notes')} value={draft.notes} onChange={(notes) => updateDraft({ notes })} disabled={busy} textarea />
           </div>

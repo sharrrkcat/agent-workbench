@@ -70,7 +70,6 @@
     "noCapabilities": "No capabilities",
     "noDefaultProfile": "No default model profile selected.",
     "selectProviderProfile": "Select a provider profile",
-    "selectProviderFirst": "Select a provider profile first.",
     "selectRefreshedModel": "Select refreshed model",
     "noRefreshedModels": "No refreshed models",
     "missingProviderProfile": "Missing provider profile"
@@ -81,8 +80,6 @@
     "fallbackOrder": "Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.",
     "defaultModelProfileFallback": "Runtime fallback order: session override, agent override, manifest, default model profile, then legacy/env fallback.",
     "legacyReadonly": "Legacy provider, base URL, and model fields are retained only as readonly fallback config when no model profile is resolved.",
-    "preferRefreshedModel": "Prefer selecting a refreshed provider model when available.",
-    "manualModelId": "Use manual Model ID when the provider is offline, does not support listing models, or when you need a custom alias.",
     "reasoningOutput": "Reasoning output declares expected output behavior only. It does not change provider request parameters.",
     "profileKey": "Used by agent manifests as llm.profile. This currently maps to API alias.",
     "llamaCppAlias": "llama.cpp usually reports the currently served model. Use --alias for a stable model ID if needed.",
