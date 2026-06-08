@@ -32,6 +32,9 @@ embeddings, or session bindings. Full boundary:
 [stateless-inference.md](stateless-inference.md).
 External text embedding serving uses only explicitly allowlisted Embedding Model
 Profiles and identifies them as `embedding:<profile_id>`.
+Multimodal Embedding Model Profiles are separate Stateless Inference profiles;
+Knowledge retrieval, indexing, Intent Routing, and vector comparison do not use
+`multimodal:<profile_id>` or `image_embedding/...` refs.
 
 ## Local Models
 
@@ -40,6 +43,8 @@ Local model directories are:
 - `data/models/llms/<model-folder-or-file>` for internal provider LLM
   inventory.
 - `data/models/embeddings/<model-folder>`
+- `data/models/image_embeddings/<model-folder-or-file>` for Stateless
+  Inference multimodal embedding inventory only.
 - `data/models/rerankers/<model-folder>`
 
 Provider Profiles can list local embedding and reranker inventory using

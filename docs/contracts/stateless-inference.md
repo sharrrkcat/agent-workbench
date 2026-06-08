@@ -1,8 +1,8 @@
 # Stateless Inference Contract
 
-This contract owns the core-owned Stateless Local Inference Service. A2
-implements the first real stateless OpenAI-compatible chat and text embedding
-endpoints.
+This contract owns the core-owned Stateless Local Inference Service. A3 keeps
+A2 real stateless chat/text embedding behavior and adds validation-only
+multimodal/image embedding profile taxonomy.
 
 ## Scope
 
@@ -10,11 +10,12 @@ The service exposes local stateless inference for:
 
 - OpenAI-compatible chat/completions.
 - OpenAI-compatible text embeddings.
+- Workbench-native validation-only multimodal/image embeddings.
 - status and no-load model listing.
 
 The service may later expose:
 
-- Workbench-native multimodal/image embeddings.
+- real Workbench-native multimodal/image embeddings.
 - Workbench-native Florence2 family vision tasks.
 - runtime resource visibility and best-effort unload.
 
@@ -52,7 +53,7 @@ Knowledge indexing, Agent runners, Command runners, or event logging paths.
 Default exposure is localhost-oriented. Any future non-localhost serving,
 reverse proxy use, or CORS expansion must be explicit and documented here.
 
-## A2 API
+## A3 API
 
 OpenAI-compatible:
 
@@ -64,6 +65,7 @@ Workbench-native:
 
 - `GET /api/inference/status`
 - `GET /api/inference/models`
+- `GET/POST/PATCH/DELETE /api/inference/multimodal-embedding-models`
 
 Still registered but not implemented:
 
@@ -71,11 +73,13 @@ Still registered but not implemented:
 - `POST /api/inference/embeddings/multimodal`
 - `POST /api/inference/vision`
 
-Streaming chat completions, `/v1/responses`, `/v1/completions`, multimodal
-embeddings, CLIP/OpenCLIP, SigLIP 2, DINOv2, Florence2, BLIP/JoyCaption,
-text-to-image, operational log persistence, Capability wrappers, new
-multimodal/vision profile tables, and runtime memory target changes are
-deferred.
+`POST /api/inference/embeddings/multimodal` validates request shape and
+allowlisted multimodal profile ids, then returns `INFERENCE_NOT_IMPLEMENTED`.
+Streaming chat completions, `/v1/responses`, `/v1/completions`, real image
+vector generation, image preprocessing, similarity scoring, Florence2,
+BLIP/JoyCaption, text-to-image, operational log persistence, Capability
+wrappers, vision profile tables, runtime cache loading, and runtime memory
+target changes are deferred.
 
 ## Stateless Data Boundary
 
@@ -129,6 +133,11 @@ A2 reuses the existing LLM runtime `chat(messages, model_config, stream=False)`
 and `ai_workbench.core.embedding.embed_texts(...)` directly. It does not use
 session/Agent LLM resolution, Prompt Agent calls, title generation, Knowledge
 retrieval, attachment helpers, or Knowledge indexing.
+
+A3 multimodal validation does not call image embedding runtimes, text embedding
+runtimes, attachment helpers, Knowledge helpers, provider status APIs, optional
+ML imports, or model-loading paths. It does not decode image payloads or load
+model weights.
 
 ## Auth And Exposure
 
@@ -240,45 +249,69 @@ External inference is opt-in per model profile:
 
 - LLM Model Profile: `external_inference_enabled`, default `false`.
 - Embedding Model Profile: `external_inference_enabled`, default `false`.
+- Multimodal Embedding Model Profile: `external_inference_enabled`, default
+  `false`.
 
 The fields are persisted and accepted/returned by profile CRUD APIs. Existing
 profiles default to not externally callable. Disabled profiles and profiles
 whose Provider Profile is disabled are not listed or callable even when
 `external_inference_enabled=true`.
 
-`GET /v1/models` and `GET /api/inference/models` list only:
+`GET /v1/models` lists only:
 
 - enabled LLM Model Profiles with `external_inference_enabled=true`.
 - enabled text Embedding Model Profiles with `external_inference_enabled=true`.
 
-Model listing must not load weights, call provider status/network checks, expose
-API keys, expose absolute paths, expose local directory trees, return raw
-provider payloads, or list disabled/non-allowlisted profiles.
+`GET /api/inference/models` also lists enabled
+MultimodalEmbeddingModelProfiles with `external_inference_enabled=true` and
+type `multimodal_embedding`. Model listing must not load weights, call provider
+status/network checks, expose API keys, expose absolute paths, expose local
+directory trees, return raw provider payloads, or list
+disabled/non-allowlisted profiles.
 
 ## Model Id Policy
 
-A2 returns and accepts only profile-derived ids with explicit type prefixes:
+A3 returns and accepts only profile-derived ids with explicit type prefixes:
 
 - LLM chat models: `llm:<llm_profile_id>`.
 - text embedding models: `embedding:<embedding_model_profile_id>`.
+- multimodal embedding models: `multimodal:<multimodal_profile_id>`.
 
 The exact ids returned by `/v1/models` must be used with `/v1/chat/completions`
-and `/v1/embeddings`. Prefixes make LLM and embedding namespaces separate and
-avoid visible id collisions. A chat request for an embedding id, or an embedding
-request for an LLM id, returns `model_not_allowed`. Unknown ids return
-`model_not_found`.
+and `/v1/embeddings`. Workbench-native multimodal requests must use
+`multimodal:<profile_id>`. Prefixes make model namespaces separate and avoid
+visible id collisions. A request for the wrong model type returns
+`model_not_allowed`. Unknown ids return `model_not_found`.
 
 ## Profile Taxonomy
 
 - Existing LLM Model Profiles serve chat/completions.
 - Existing Embedding Model Profiles serve text embeddings.
-- Future `MultimodalEmbeddingModelProfile` serves CLIP/OpenCLIP, SigLIP 2, and
-  DINOv2 with architecture flags and supported input types.
+- `MultimodalEmbeddingModelProfile` serves future CLIP/OpenCLIP, SigLIP 2, and
+  DINOv2 image embedding runtimes with architecture flags and supported input
+  types. A3 stores taxonomy and validates requests only.
 - Future `VisionTaskModelProfile` serves Florence2 family tasks.
 
-Multimodal embedding profile metadata should include architecture, embedding
-space, dimensions, normalize default, preprocessing signature, pooling strategy,
-and supported input types.
+Multimodal embedding fields:
+
+- `id`, `name`, `description`, `notes`, `enabled`.
+- `external_inference_enabled=false` by default.
+- optional `provider_profile_id`.
+- `provider_model_id` safe ref shaped as `image_embedding/<folder-or-file>`.
+- `architecture`: `clip`, `open_clip`, `siglip2`, or `dinov2`.
+- `backend`: `transformers`, `open_clip`, or `auto`.
+- optional `embedding_space`, positive `dimensions`,
+  `preprocessing_signature`, positive bounded `max_batch_size`, and compact
+  `metadata`.
+- `normalize_default=true`.
+- `supported_input_types`: includes `image`; CLIP/OpenCLIP/SigLIP2 may include
+  `text`; DINOv2 must not include `text`.
+- `pooling_strategy`: `cls`, `mean`, `pooler`, or `model_default`.
+
+`provider_model_id` must not be empty, absolute, contain backslashes,
+traversal, or empty segments. Local refs resolve only under
+`data/models/image_embeddings`; APIs return safe refs and never absolute local
+paths.
 
 DINOv2 is image-only and must reject text input with
 `MODEL_INPUT_TYPE_UNSUPPORTED`.
@@ -290,7 +323,8 @@ future Florence2 runtime wrapper, not to route handlers.
 ## Endpoint Contracts
 
 `GET /v1/models` returns OpenAI-compatible model list data for externally
-servable profiles only. If no profiles are allowlisted, it returns:
+servable LLM/text embedding profiles only. A3 does not list multimodal profiles
+on this OpenAI-compatible endpoint. If no profiles are allowlisted, it returns:
 
 ```json
 {"object":"list","data":[]}
@@ -374,11 +408,11 @@ servable profiles without loading weights.
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.
 
-`POST /api/inference/embeddings/multimodal` future request shape:
+`POST /api/inference/embeddings/multimodal` A3 request shape:
 
 ```json
 {
-  "model": "profile_or_model_id",
+  "model": "multimodal:<profile_id>",
   "inputs": [
     {"type": "image_base64", "data": "..."},
     {"type": "text", "text": "red robot"}
@@ -386,6 +420,13 @@ profile and returns compact outcomes.
   "normalize": true
 }
 ```
+
+A3 validates service guards, JSON shape, model id prefix, enabled profile,
+`external_inference_enabled`, provider enabled state, typed inputs, image
+base64 string presence/size only, and DINOv2 image-only support. It does not
+decode images, save attachments, inspect pixels, preprocess images, generate
+vectors, compare vectors, call providers, or persist payloads/vectors. After
+successful validation it returns `INFERENCE_NOT_IMPLEMENTED`.
 
 `POST /api/inference/vision` future request shape:
 

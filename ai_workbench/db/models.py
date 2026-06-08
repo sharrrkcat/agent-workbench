@@ -296,6 +296,31 @@ class RerankerModelProfileRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class MultimodalEmbeddingModelProfileRecord(SQLModel, table=True):
+    __tablename__ = "multimodal_embedding_model_profiles"
+
+    id: str = Field(primary_key=True)
+    name: str
+    description: str = ""
+    notes: str = ""
+    enabled: bool = True
+    external_inference_enabled: bool = False
+    provider_profile_id: Optional[str] = Field(default=None, index=True)
+    provider_model_id: str = ""
+    architecture: str
+    backend: str = "auto"
+    embedding_space: Optional[str] = None
+    dimensions: Optional[int] = None
+    normalize_default: bool = True
+    supported_input_types_json: str = '["image", "text"]'
+    preprocessing_signature: Optional[str] = None
+    pooling_strategy: str = "model_default"
+    max_batch_size: Optional[int] = None
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class KnowledgeBaseRecord(SQLModel, table=True):
     __tablename__ = "knowledge_bases"
 

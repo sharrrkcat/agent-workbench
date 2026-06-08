@@ -44,6 +44,7 @@ Settings -> Models owns shared model configuration pages:
 - LLM Model Profiles.
 - Embedding Model Profiles.
 - Reranker Model Profiles.
+- Multimodal Embedding Model Profiles.
 
 Provider Profiles can represent external API providers or internal local model
 backends. Internal Provider Profiles use fixed local inventory roots under
@@ -67,6 +68,9 @@ LLM and Embedding Model Profiles also include the backend-owned
 `external_inference_enabled` allowlist flag for the Stateless Inference service;
 it defaults to false and is documented in
 [stateless-inference.md](stateless-inference.md).
+Multimodal Embedding Model Profiles are managed by the backend inference API,
+use safe `image_embedding/...` refs under `data/models/image_embeddings`, and
+are not Knowledge text embedding profiles.
 The primary Embedding Model Profile workflow is Provider Profile plus provider
 model id/ref; legacy local model-path selection is not exposed in the Settings
 UI.

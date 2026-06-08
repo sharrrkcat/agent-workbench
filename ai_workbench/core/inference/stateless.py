@@ -11,6 +11,8 @@ from ai_workbench.core.knowledge_models import KnowledgeModelError
 
 LLM_MODEL_PREFIX = "llm:"
 EMBEDDING_MODEL_PREFIX = "embedding:"
+MULTIMODAL_MODEL_PREFIX = "multimodal:"
+MAX_IMAGE_BASE64_CHARS = 20_000_000
 
 
 class StatelessInferenceError(Exception):
@@ -22,7 +24,8 @@ class StatelessInferenceError(Exception):
 
 
 def openai_model_list(state: Any) -> dict[str, Any]:
-    return {"object": "list", "data": [_openai_model_item(item) for item in list_external_models(state)]}
+    data = [item for item in list_external_models(state) if item["type"] in {"llm", "text_embedding"}]
+    return {"object": "list", "data": [_openai_model_item(item) for item in data]}
 
 
 def workbench_model_list(state: Any) -> dict[str, Any]:
@@ -33,7 +36,7 @@ def workbench_model_list(state: Any) -> dict[str, Any]:
         "summary": {
             "llm_profiles_available": sum(1 for item in data if item["type"] == "llm"),
             "embedding_profiles_available": sum(1 for item in data if item["type"] == "text_embedding"),
-            "multimodal_profiles_available": 0,
+            "multimodal_profiles_available": sum(1 for item in data if item["type"] == "multimodal_embedding"),
             "vision_profiles_available": 0,
         },
     }
@@ -44,6 +47,7 @@ def inference_status_models_summary(state: Any) -> dict[str, int]:
     return {
         "llm_external_enabled_count": sum(1 for item in data if item["type"] == "llm"),
         "embedding_external_enabled_count": sum(1 for item in data if item["type"] == "text_embedding"),
+        "multimodal_external_enabled_count": sum(1 for item in data if item["type"] == "multimodal_embedding"),
     }
 
 
@@ -76,6 +80,25 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
                         "capabilities": ["embeddings"],
                         "profile_id": profile.id,
                         "provider_profile_id": profile.provider_profile_id,
+                        "external_inference_enabled": True,
+                    }
+                )
+    multimodal_profiles = getattr(state, "multimodal_embedding_profiles", None)
+    if multimodal_profiles is not None:
+        for profile in multimodal_profiles.list():
+            if _multimodal_profile_servable(profile, state):
+                models.append(
+                    {
+                        "id": f"{MULTIMODAL_MODEL_PREFIX}{profile.id}",
+                        "type": "multimodal_embedding",
+                        "name": profile.name,
+                        "capabilities": ["multimodal_embeddings"],
+                        "profile_id": profile.id,
+                        "provider_profile_id": profile.provider_profile_id,
+                        "architecture": profile.architecture,
+                        "supported_input_types": profile.supported_input_types,
+                        "dimensions": profile.dimensions,
+                        "embedding_space": profile.embedding_space,
                         "external_inference_enabled": True,
                     }
                 )
@@ -145,6 +168,16 @@ def create_embeddings_response(state: Any, payload: dict[str, Any]) -> dict[str,
     }
 
 
+def validate_multimodal_embedding_request(state: Any, payload: dict[str, Any]) -> None:
+    model_id = _required_model(payload)
+    inputs = _validate_multimodal_inputs(payload.get("inputs"))
+    profile = _resolve_multimodal_profile(state, model_id)
+    if any(item["input_type"] == "text" for item in inputs) and "text" not in profile.supported_input_types:
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
+    if "normalize" in payload and payload["normalize"] is not None and not isinstance(payload["normalize"], bool):
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "normalize must be a boolean when provided.")
+
+
 def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
     return {"id": item["id"], "object": "model", "created": 0, "owned_by": "agent-workbench"}
 
@@ -167,6 +200,15 @@ def _embedding_profile_servable(profile: Any, state: Any) -> bool:
     return bool(profile.enabled and getattr(profile, "external_inference_enabled", False) and has_model and _provider_enabled(state, profile.provider_profile_id))
 
 
+def _multimodal_profile_servable(profile: Any, state: Any) -> bool:
+    return bool(
+        profile.enabled
+        and getattr(profile, "external_inference_enabled", False)
+        and getattr(profile, "provider_model_id", "")
+        and _provider_enabled(state, profile.provider_profile_id)
+    )
+
+
 def _required_model(payload: dict[str, Any]) -> str:
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip():
@@ -176,7 +218,7 @@ def _required_model(payload: dict[str, Any]) -> str:
 
 def _resolve_llm_model_config(state: Any, model_id: str) -> dict[str, Any]:
     if not model_id.startswith(LLM_MODEL_PREFIX):
-        if model_id.startswith(EMBEDDING_MODEL_PREFIX):
+        if model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     profile_id = model_id.removeprefix(LLM_MODEL_PREFIX)
@@ -204,7 +246,7 @@ def _resolve_llm_model_config(state: Any, model_id: str) -> dict[str, Any]:
 
 def _resolve_embedding_profile(state: Any, model_id: str) -> Any:
     if not model_id.startswith(EMBEDDING_MODEL_PREFIX):
-        if model_id.startswith(LLM_MODEL_PREFIX):
+        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     profile_id = model_id.removeprefix(EMBEDDING_MODEL_PREFIX)
@@ -213,6 +255,24 @@ def _resolve_embedding_profile(state: Any, model_id: str) -> Any:
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _embedding_profile_servable(profile, state):
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=403)
+    return profile
+
+
+def _resolve_multimodal_profile(state: Any, model_id: str) -> Any:
+    if not model_id.startswith(MULTIMODAL_MODEL_PREFIX):
+        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(EMBEDDING_MODEL_PREFIX):
+            raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
+    profile_id = model_id.removeprefix(MULTIMODAL_MODEL_PREFIX)
+    store = getattr(state, "multimodal_embedding_profiles", None)
+    if store is None:
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
+    try:
+        profile = store.get(profile_id)
+    except KeyError as exc:
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
+    if not _multimodal_profile_servable(profile, state):
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=403)
     return profile
 
@@ -240,6 +300,32 @@ def _validate_embedding_inputs(value: Any) -> list[str]:
     if not all(isinstance(item, str) for item in value):
         raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
     return list(value)
+
+
+def _validate_multimodal_inputs(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list) or not value:
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "inputs must be a non-empty array.")
+    inputs: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "Each input must be an object.")
+        input_type = item.get("type")
+        if input_type == "image_base64":
+            data = item.get("data")
+            if not isinstance(data, str) or not data:
+                raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "image_base64 inputs require string data.")
+            if len(data) > MAX_IMAGE_BASE64_CHARS:
+                raise StatelessInferenceError(InferenceErrorCode.REQUEST_TOO_LARGE, status_code=413)
+            inputs.append({"input_type": "image"})
+            continue
+        if input_type == "text":
+            text = item.get("text")
+            if not isinstance(text, str):
+                raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "text inputs require string text.")
+            inputs.append({"input_type": "text"})
+            continue
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "Unsupported multimodal input type.")
+    return inputs
 
 
 def _extract_chat_result(raw: Any) -> tuple[str, dict[str, Any] | None, str | None]:

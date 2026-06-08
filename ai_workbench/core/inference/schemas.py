@@ -3,7 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-INFERENCE_A2_VERSION = "a2"
+INFERENCE_A3_VERSION = "a3"
 
 
 def status_response(
@@ -26,13 +26,14 @@ def status_response(
         "capabilities": {
             "llm_chat": "available",
             "text_embeddings": "available",
-            "multimodal_embeddings": "planned",
+            "multimodal_embeddings": "configured",
             "vision_tasks": "planned",
         },
         "models": models or {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0},
         "implementation": {
             "real_inference": True,
-            "version": INFERENCE_A2_VERSION,
+            "real_multimodal_inference": False,
+            "version": INFERENCE_A3_VERSION,
         },
     }
 

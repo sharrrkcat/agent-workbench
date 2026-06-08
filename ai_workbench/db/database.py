@@ -42,6 +42,7 @@ def init_db(engine) -> None:
     ensure_agent_config_columns(engine)
     ensure_llm_profile_columns(engine)
     ensure_embedding_profile_columns(engine)
+    ensure_multimodal_embedding_profile_table(engine)
     ensure_knowledge_settings_columns(engine)
     ensure_knowledge_base_columns(engine)
     ensure_worldbook_settings_columns(engine)
@@ -212,6 +213,40 @@ def ensure_embedding_profile_columns(engine) -> None:
         for column, ddl in additions.items():
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE embedding_model_profiles ADD COLUMN {column} {ddl}"))
+
+
+def ensure_multimodal_embedding_profile_table(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS multimodal_embedding_model_profiles (
+                  id VARCHAR PRIMARY KEY NOT NULL,
+                  name VARCHAR NOT NULL,
+                  description VARCHAR DEFAULT '',
+                  notes VARCHAR DEFAULT '',
+                  enabled BOOLEAN DEFAULT 1,
+                  external_inference_enabled BOOLEAN DEFAULT 0,
+                  provider_profile_id VARCHAR,
+                  provider_model_id VARCHAR NOT NULL DEFAULT '',
+                  architecture VARCHAR NOT NULL,
+                  backend VARCHAR DEFAULT 'auto',
+                  embedding_space VARCHAR,
+                  dimensions INTEGER,
+                  normalize_default BOOLEAN DEFAULT 1,
+                  supported_input_types_json VARCHAR DEFAULT '["image", "text"]',
+                  preprocessing_signature VARCHAR,
+                  pooling_strategy VARCHAR DEFAULT 'model_default',
+                  max_batch_size INTEGER,
+                  metadata_json VARCHAR DEFAULT '{}',
+                  created_at DATETIME,
+                  updated_at DATETIME
+                )
+                """
+            )
+        )
 
 
 def ensure_knowledge_settings_columns(engine) -> None:

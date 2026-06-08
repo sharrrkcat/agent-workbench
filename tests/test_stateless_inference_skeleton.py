@@ -188,10 +188,10 @@ def test_enabled_workbench_skeleton_requires_auth_then_returns_not_implemented(
     assert status.json()["enabled"] is True
     assert status.json()["auth_required"] is True
     assert status.json()["api_key_configured"] is True
-    assert status.json()["implementation"] == {"real_inference": True, "version": "a2"}
+    assert status.json()["implementation"] == {"real_inference": True, "real_multimodal_inference": False, "version": "a3"}
     assert status.json()["capabilities"]["llm_chat"] == "available"
     assert status.json()["capabilities"]["text_embeddings"] == "available"
-    assert status.json()["models"] == {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0}
+    assert status.json()["models"] == {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0, "multimodal_external_enabled_count": 0}
     assert not_implemented.status_code == 501
     assert not_implemented.json()["error"]["code"] == "INFERENCE_NOT_IMPLEMENTED"
     assert not_implemented.json()["error"]["request_id"]

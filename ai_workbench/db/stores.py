@@ -10,6 +10,7 @@ from sqlmodel import select
 from sqlmodel import update
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
+from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
@@ -47,6 +48,7 @@ from ai_workbench.db.models import (
     KnowledgeOriginRecord,
     KnowledgeSettingsRecord,
     KnowledgeSourceRecord,
+    MultimodalEmbeddingModelProfileRecord,
     RerankerModelProfileRecord,
     LLMProfileRecord,
     MessageRecord,
@@ -975,6 +977,58 @@ class SqlAppSettingsStore:
             return next_settings
 
 
+class SqlMultimodalEmbeddingProfileStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def create(self, profile: MultimodalEmbeddingModelProfile) -> MultimodalEmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            if session.get(MultimodalEmbeddingModelProfileRecord, profile.id) is not None:
+                raise ValueError("MULTIMODAL_EMBEDDING_ID_EXISTS")
+            record = _multimodal_embedding_profile_to_record(profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _multimodal_embedding_profile_from_record(record)
+
+    def get(self, profile_id: str) -> MultimodalEmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(MultimodalEmbeddingModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown multimodal embedding profile: {profile_id}")
+            return _multimodal_embedding_profile_from_record(record)
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> MultimodalEmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(MultimodalEmbeddingModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown multimodal embedding profile: {profile_id}")
+            existing = _multimodal_embedding_profile_from_record(record)
+            updated = MultimodalEmbeddingModelProfile.model_validate(
+                existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump()
+            )
+            _apply_multimodal_embedding_profile_to_record(record, updated)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _multimodal_embedding_profile_from_record(record)
+
+    def delete(self, profile_id: str) -> MultimodalEmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(MultimodalEmbeddingModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown multimodal embedding profile: {profile_id}")
+            profile = _multimodal_embedding_profile_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
+    def list(self) -> List[MultimodalEmbeddingModelProfile]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(MultimodalEmbeddingModelProfileRecord).order_by(MultimodalEmbeddingModelProfileRecord.name)).all()
+            return [_multimodal_embedding_profile_from_record(record) for record in records]
+
+
 class SqlLLMDefaultsStore:
     SETTINGS_KEY = "llm_defaults"
 
@@ -1874,6 +1928,51 @@ def _provider_from_record(record: ProviderProfileRecord) -> ProviderProfileSchem
     )
 
 
+def _multimodal_embedding_profile_to_record(profile: MultimodalEmbeddingModelProfile) -> MultimodalEmbeddingModelProfileRecord:
+    data = profile.model_dump()
+    data["supported_input_types_json"] = _dumps(data.pop("supported_input_types", []))
+    data["metadata_json"] = _dumps(data.pop("metadata", {}))
+    return MultimodalEmbeddingModelProfileRecord(**data)
+
+
+def _apply_multimodal_embedding_profile_to_record(
+    record: MultimodalEmbeddingModelProfileRecord,
+    profile: MultimodalEmbeddingModelProfile,
+) -> None:
+    data = profile.model_dump()
+    supported_input_types = data.pop("supported_input_types", [])
+    metadata = data.pop("metadata", {})
+    for key, value in data.items():
+        setattr(record, key, value)
+    record.supported_input_types_json = _dumps(supported_input_types)
+    record.metadata_json = _dumps(metadata)
+
+
+def _multimodal_embedding_profile_from_record(record: MultimodalEmbeddingModelProfileRecord) -> MultimodalEmbeddingModelProfile:
+    return MultimodalEmbeddingModelProfile(
+        id=record.id,
+        name=record.name,
+        description=getattr(record, "description", "") or "",
+        notes=getattr(record, "notes", "") or "",
+        enabled=bool(getattr(record, "enabled", True)),
+        external_inference_enabled=bool(getattr(record, "external_inference_enabled", False)),
+        provider_profile_id=getattr(record, "provider_profile_id", None),
+        provider_model_id=getattr(record, "provider_model_id", "") or "",
+        architecture=record.architecture,
+        backend=getattr(record, "backend", "auto") or "auto",
+        embedding_space=getattr(record, "embedding_space", None),
+        dimensions=getattr(record, "dimensions", None),
+        normalize_default=bool(getattr(record, "normalize_default", True)),
+        supported_input_types=_loads(getattr(record, "supported_input_types_json", "") or "", ["image", "text"]),
+        preprocessing_signature=getattr(record, "preprocessing_signature", None),
+        pooling_strategy=getattr(record, "pooling_strategy", "model_default") or "model_default",
+        max_batch_size=getattr(record, "max_batch_size", None),
+        metadata=_loads(getattr(record, "metadata_json", "") or "", {}),
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
 def _knowledge_settings_from_record(record: KnowledgeSettingsRecord) -> KnowledgeSettings:
     return KnowledgeSettings.model_validate(
         {key: getattr(record, key) for key in KnowledgeSettings.model_fields if hasattr(record, key)}
@@ -2188,3 +2287,4 @@ def _session_knowledge_binding_from_record(
         created_at=ensure_utc(record.created_at),
         knowledge_base=_knowledge_base_from_record(knowledge_base_record) if knowledge_base_record is not None else None,
     )
+    MultimodalEmbeddingModelProfileRecord,
