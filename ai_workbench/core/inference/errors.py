@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 class InferenceErrorCode(str, Enum):
     SERVICE_DISABLED = "INFERENCE_SERVICE_DISABLED"
+    SERVICE_MISCONFIGURED = "INFERENCE_SERVICE_MISCONFIGURED"
     AUTH_REQUIRED = "INFERENCE_AUTH_REQUIRED"
     AUTH_INVALID = "INFERENCE_AUTH_INVALID"
     NOT_IMPLEMENTED = "INFERENCE_NOT_IMPLEMENTED"
@@ -16,6 +17,7 @@ class InferenceErrorCode(str, Enum):
 
 OPENAI_ERROR_CODES = {
     InferenceErrorCode.SERVICE_DISABLED: "inference_service_disabled",
+    InferenceErrorCode.SERVICE_MISCONFIGURED: "inference_service_misconfigured",
     InferenceErrorCode.AUTH_REQUIRED: "inference_auth_required",
     InferenceErrorCode.AUTH_INVALID: "inference_auth_invalid",
     InferenceErrorCode.NOT_IMPLEMENTED: "inference_not_implemented",
@@ -27,6 +29,7 @@ OPENAI_ERROR_CODES = {
 
 DEFAULT_MESSAGES = {
     InferenceErrorCode.SERVICE_DISABLED: "Stateless inference service is disabled.",
+    InferenceErrorCode.SERVICE_MISCONFIGURED: "Stateless inference service is not configured for authenticated access.",
     InferenceErrorCode.AUTH_REQUIRED: "Inference API authentication is required.",
     InferenceErrorCode.AUTH_INVALID: "Inference API authentication is invalid.",
     InferenceErrorCode.NOT_IMPLEMENTED: "Inference endpoint is registered but not implemented yet.",

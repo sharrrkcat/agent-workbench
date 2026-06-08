@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator, model_validator
 
+from ai_workbench.core.config_schema import MASKED_SECRET
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.utility_llm import normalize_utility_backend, normalize_utility_model_path
 from ai_workbench.core.web_prompts import (
@@ -169,6 +170,7 @@ class AppSettings(BaseModel):
     inference_service_enabled: StrictBool = False
     inference_service_require_api_key: StrictBool = True
     inference_service_max_request_mb: int = Field(default=10, ge=1, le=100)
+    inference_service_api_key: StrictStr | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -502,6 +504,7 @@ class AppSettingsPatch(BaseModel):
     inference_service_enabled: StrictBool | None = None
     inference_service_require_api_key: StrictBool | None = None
     inference_service_max_request_mb: int | None = Field(default=None, ge=1, le=100)
+    inference_service_api_key: StrictStr | None = None
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
@@ -749,6 +752,8 @@ class AppSettingsPatch(BaseModel):
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:
     payload = settings.model_dump()
+    payload["inference_service_api_key"] = MASKED_SECRET if settings.inference_service_api_key else None
+    payload["inference_service_api_key_set"] = bool(settings.inference_service_api_key)
     payload["session_title_prompt_default"] = DEFAULT_SESSION_TITLE_PROMPT
     payload["group_transcript_system_instruction_default"] = DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     payload["group_transcript_system_instruction_effective"] = (
@@ -767,9 +772,12 @@ def app_settings_response(settings: AppSettings) -> dict[str, Any]:
 
 def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
     updates = patch.model_dump(exclude_none=True)
+    if updates.get("inference_service_api_key") == MASKED_SECRET:
+        updates.pop("inference_service_api_key", None)
     for key in (
         "group_transcript_system_instruction",
         "command_result_context_instruction",
+        "inference_service_api_key",
         "intent_routing_embedding_model_profile_id",
         "intent_routing_utility_llm_model_profile_id",
         "session_title_model_profile_id",

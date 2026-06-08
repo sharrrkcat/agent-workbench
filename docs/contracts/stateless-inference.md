@@ -1,8 +1,8 @@
 # Stateless Inference Contract
 
 This contract owns the future core-owned Stateless Local Inference Service.
-A1.1 defines the disabled API skeleton and privacy boundary only; it does not
-implement model inference.
+A1.2 defines auth, request-size checks, no-load status, and no-load model
+listing. It does not implement model inference.
 
 ## Scope
 
@@ -39,6 +39,7 @@ The service is disabled by default through General settings:
 - `inference_service_enabled=false`.
 - `inference_service_require_api_key=true`.
 - `inference_service_max_request_mb=10`.
+- `inference_service_api_key=null`.
 
 When disabled, every external inference route returns a stable disabled error
 and must not call LLM runtimes, embedding services, attachment persistence,
@@ -63,8 +64,9 @@ Workbench-native candidates:
 - `POST /api/inference/embeddings/multimodal`
 - `POST /api/inference/vision`
 
-A1.1 registers these routes. If enabled before implementation, they return
-`INFERENCE_NOT_IMPLEMENTED`.
+A1.2 registers these routes. If enabled before inference implementation, model
+listing returns empty no-load lists, status returns compact planned capability
+state, and inference/unload endpoints return `INFERENCE_NOT_IMPLEMENTED`.
 
 ## Stateless Data Boundary
 
@@ -119,19 +121,43 @@ embeddings, image decode/validation, and status/unload.
 
 ## Auth And Exposure
 
-Auth is represented by an API-key guard shape in A1.1. When
-`inference_service_require_api_key=true`, future enabled routes must require an
-Authorization bearer token or equivalent documented key transport. Raw secrets
+A1.2 supports API-key auth for enabled routes through:
+
+- `Authorization: Bearer <key>`.
+- `x-api-key: <key>`.
+
+API keys in query parameters are not supported. If both supported headers are
+present and differ, the request is rejected with `INFERENCE_AUTH_INVALID`.
+Comparisons should use constant-time comparison where practical. Raw secrets
 must never be returned or logged.
 
-A1.1 does not add an API key secret field or migration. Future auth storage must
-use the project's secret masking conventions and keep unknown-field rejection.
+Enabled guard order is:
+
+1. resolve request id/error shape.
+2. read General settings.
+3. reject disabled service before body parsing.
+4. enforce `Content-Length` request size before body parsing.
+5. authenticate before body parsing.
+6. parse/validate body only in future implemented handlers.
+
+When `inference_service_require_api_key=true` and no key is configured, enabled
+routes fail closed with `INFERENCE_SERVICE_MISCONFIGURED`. Missing credentials
+return `INFERENCE_AUTH_REQUIRED`; invalid or conflicting credentials return
+`INFERENCE_AUTH_INVALID`; valid credentials reach the A1.2 skeleton behavior.
+
+`inference_service_api_key` is a backend General setting. Settings GET responses
+return only `null` or the standard `********` marker plus
+`inference_service_api_key_set`; PATCH can set or clear the local key. The raw
+key may exist in local settings storage in this alpha, but it must not appear in
+route responses, logs, metadata, docs examples, or tests.
 
 ## Request Size
 
 `inference_service_max_request_mb` is the General setting owner for external
-inference request size. Future middleware or route guards must reject oversized
-requests with `INFERENCE_REQUEST_TOO_LARGE` before decoding large payloads.
+inference request size. A1.2 route guards use `Content-Length` when present and
+reject oversized requests with `INFERENCE_REQUEST_TOO_LARGE` before body
+parsing. If `Content-Length` is missing, A1.2 does not read the body solely to
+enforce size; streaming/body middleware enforcement is future work.
 
 The existing chat attachment limits do not authorize storing API payloads as
 attachments.
@@ -153,6 +179,7 @@ OpenAI-compatible errors:
 Stable codes:
 
 - `INFERENCE_SERVICE_DISABLED`
+- `INFERENCE_SERVICE_MISCONFIGURED`
 - `INFERENCE_AUTH_REQUIRED`
 - `INFERENCE_AUTH_INVALID`
 - `INFERENCE_NOT_IMPLEMENTED`
@@ -192,7 +219,8 @@ future Florence2 runtime wrapper, not to route handlers.
 ## Future Endpoint Contracts
 
 `GET /v1/models` returns OpenAI-compatible model list data for externally
-servable profiles only.
+servable profiles only. In A1.2 it returns `{"object":"list","data":[]}` after
+auth because no external per-profile allowlist exists yet.
 
 `POST /v1/chat/completions` accepts OpenAI-compatible chat completion requests
 and returns OpenAI-compatible non-streaming responses first. Streaming is
@@ -201,11 +229,15 @@ deferred.
 `POST /v1/embeddings` accepts OpenAI-compatible text embedding requests and
 returns vectors without Knowledge writes.
 
-`GET /api/inference/status` returns compact service, auth, runtime, and cache
-status without secrets or payloads.
+`GET /api/inference/status` returns compact service, auth, runtime, and planned
+capability status without secrets or payloads. A1.2 preserves disabled behavior:
+when the service is disabled, status returns `INFERENCE_SERVICE_DISABLED`.
 
 `GET /api/inference/models` returns Workbench-native model/profile metadata for
-servable profiles without loading weights.
+servable profiles without loading weights. In A1.2 it returns an empty
+externally-callable list with the reason
+`external_model_allowlist_not_implemented`; it must not expose model ids until a
+profile allowlist exists.
 
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.

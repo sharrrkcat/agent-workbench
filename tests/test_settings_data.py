@@ -115,6 +115,8 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert response.json()["inference_service_enabled"] is False
     assert response.json()["inference_service_require_api_key"] is True
     assert response.json()["inference_service_max_request_mb"] == 10
+    assert response.json()["inference_service_api_key"] is None
+    assert response.json()["inference_service_api_key_set"] is False
     assert response.json()["group_transcript_system_instruction_default"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["group_transcript_system_instruction_effective"] == DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     assert response.json()["command_result_context_instruction_default"] == DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
@@ -204,6 +206,7 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
             "inference_service_enabled": True,
             "inference_service_require_api_key": False,
             "inference_service_max_request_mb": 12,
+            "inference_service_api_key": "inference-test-key",
         },
     )
     assert patched.status_code == 200
@@ -292,6 +295,9 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert patched.json()["inference_service_enabled"] is True
     assert patched.json()["inference_service_require_api_key"] is False
     assert patched.json()["inference_service_max_request_mb"] == 12
+    assert patched.json()["inference_service_api_key"] == "********"
+    assert patched.json()["inference_service_api_key_set"] is True
+    assert "inference-test-key" not in str(patched.json())
 
     patched_hf = client.patch(
         "/api/settings/general",
@@ -442,6 +448,11 @@ def test_general_settings_get_patch_validate_and_persist(tmp_path: Path) -> None
     assert restarted.get("/api/settings/general").json()["inference_service_enabled"] is True
     assert restarted.get("/api/settings/general").json()["inference_service_require_api_key"] is False
     assert restarted.get("/api/settings/general").json()["inference_service_max_request_mb"] == 12
+    assert restarted.get("/api/settings/general").json()["inference_service_api_key"] == "********"
+    assert restarted.get("/api/settings/general").json()["inference_service_api_key_set"] is True
+    assert "inference-test-key" not in str(restarted.get("/api/settings/general").json())
+    assert restarted.patch("/api/settings/general", json={"inference_service_api_key": None}).json()["inference_service_api_key"] is None
+    assert restarted.get("/api/settings/general").json()["inference_service_api_key_set"] is False
 
 
 def test_general_settings_ignores_legacy_embedding_path_in_stored_json(tmp_path: Path) -> None:
