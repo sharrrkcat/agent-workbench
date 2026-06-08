@@ -37,6 +37,7 @@ class LLMProfileCreateRequest(BaseModel):
     supports_reasoning: bool = False
     supports_streaming: bool = True
     supports_json_mode: bool = False
+    external_inference_enabled: bool = False
     notes: Optional[str] = None
 
 
@@ -61,6 +62,7 @@ class LLMProfilePatchRequest(BaseModel):
     supports_reasoning: Optional[bool] = None
     supports_streaming: Optional[bool] = None
     supports_json_mode: Optional[bool] = None
+    external_inference_enabled: Optional[bool] = None
     notes: Optional[str] = None
 
 

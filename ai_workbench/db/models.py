@@ -142,6 +142,7 @@ class LLMProfileRecord(SQLModel, table=True):
     supports_reasoning: bool = False
     supports_streaming: bool = True
     supports_json_mode: bool = False
+    external_inference_enabled: bool = False
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -275,6 +276,7 @@ class EmbeddingModelProfileRecord(SQLModel, table=True):
     document_instruction: str = ""
     query_instruction: str = ""
     enabled: bool = True
+    external_inference_enabled: bool = False
     notes: str = ""
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

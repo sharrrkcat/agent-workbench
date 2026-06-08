@@ -59,6 +59,7 @@ class LLMProfileSchema(BaseModel):
     supports_reasoning: bool = False
     supports_streaming: bool = True
     supports_json_mode: bool = False
+    external_inference_enabled: bool = False
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

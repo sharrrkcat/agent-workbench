@@ -82,10 +82,11 @@ Full contract: [contracts/provider-status.md](contracts/provider-status.md).
 
 ## Stateless Inference
 
-The disabled-by-default Stateless Local Inference Service is core-owned and
-registers OpenAI-compatible `/v1/*` and Workbench-native `/api/inference/*`
-skeleton routes. External inference requests must not persist payloads, outputs,
-vectors, attachments, messages, runs, or Knowledge rows.
+The disabled-by-default Stateless Local Inference Service is core-owned. A2
+implements non-streaming OpenAI-compatible chat completions and text embeddings
+for explicitly allowlisted Model Profiles. External inference requests must not
+persist payloads, outputs, vectors, attachments, messages, runs, or Knowledge
+rows.
 
 Full contract:
 [contracts/stateless-inference.md](contracts/stateless-inference.md).

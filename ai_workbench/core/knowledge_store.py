@@ -60,6 +60,7 @@ class EmbeddingModelProfile(BaseModel):
     document_instruction: str = ""
     query_instruction: str = ""
     enabled: StrictBool = True
+    external_inference_enabled: StrictBool = False
     notes: str = ""
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -109,6 +110,7 @@ class EmbeddingModelProfileCreate(BaseModel):
     document_instruction: str = ""
     query_instruction: str = ""
     enabled: StrictBool = True
+    external_inference_enabled: StrictBool = False
     notes: str = ""
 
     @field_validator("name")
@@ -148,6 +150,7 @@ class EmbeddingModelProfilePatch(BaseModel):
     document_instruction: str | None = None
     query_instruction: str | None = None
     enabled: StrictBool | None = None
+    external_inference_enabled: StrictBool | None = None
     notes: str | None = None
 
     @field_validator("name")

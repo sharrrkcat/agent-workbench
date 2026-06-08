@@ -7,8 +7,9 @@ from ai_workbench.core.inference.errors import (
     raise_workbench_inference_error,
 )
 from ai_workbench.core.inference.request_limits import check_content_length
-from ai_workbench.core.inference.schemas import status_response, workbench_models_response
+from ai_workbench.core.inference.schemas import status_response
 from ai_workbench.core.inference.settings import StatelessInferenceSettings, resolve_inference_settings
+from ai_workbench.core.inference.stateless import inference_status_models_summary, workbench_model_list
 
 
 router = APIRouter(prefix="/api/inference", tags=["inference"])
@@ -44,13 +45,14 @@ def get_status(request: Request, state: RuntimeState = Depends(get_state)) -> di
         auth_required=settings.require_api_key,
         api_key_configured=bool(settings.api_key),
         max_request_mb=settings.max_request_mb,
+        models=inference_status_models_summary(state),
     )
 
 
 @router.get("/models")
 def list_models(request: Request, state: RuntimeState = Depends(get_state)) -> dict:
     _guard_workbench_request(request, state)
-    return workbench_models_response()
+    return workbench_model_list(state)
 
 
 @router.post("/unload")

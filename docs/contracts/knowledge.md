@@ -30,6 +30,8 @@ commands; internal Provider Profiles show that local model environment display.
 Stateless external inference must not write Knowledge sources, chunks,
 embeddings, or session bindings. Full boundary:
 [stateless-inference.md](stateless-inference.md).
+External text embedding serving uses only explicitly allowlisted Embedding Model
+Profiles and identifies them as `embedding:<profile_id>`.
 
 ## Local Models
 

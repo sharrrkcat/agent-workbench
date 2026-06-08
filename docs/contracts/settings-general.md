@@ -63,6 +63,10 @@ internal providers with `embedding/...` refs, OpenAI-compatible / LM Studio
 embedding APIs, or Ollama embed APIs. Provider Profiles still own only source
 connection or local inventory details; dimensions, normalization, query
 instruction, and document instruction remain Embedding Model Profile fields.
+LLM and Embedding Model Profiles also include the backend-owned
+`external_inference_enabled` allowlist flag for the Stateless Inference service;
+it defaults to false and is documented in
+[stateless-inference.md](stateless-inference.md).
 The primary Embedding Model Profile workflow is Provider Profile plus provider
 model id/ref; legacy local model-path selection is not exposed in the Settings
 UI.

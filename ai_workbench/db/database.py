@@ -192,6 +192,8 @@ def ensure_llm_profile_columns(engine) -> None:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(llm_profiles)").fetchall()}
         if "provider_profile_id" not in columns:
             connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN provider_profile_id VARCHAR"))
+        if "external_inference_enabled" not in columns:
+            connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN external_inference_enabled BOOLEAN DEFAULT 0"))
 
 
 def ensure_embedding_profile_columns(engine) -> None:
@@ -205,6 +207,7 @@ def ensure_embedding_profile_columns(engine) -> None:
         additions = {
             "provider_profile_id": "VARCHAR",
             "provider_model_id": "VARCHAR DEFAULT ''",
+            "external_inference_enabled": "BOOLEAN DEFAULT 0",
         }
         for column, ddl in additions.items():
             if column not in columns:

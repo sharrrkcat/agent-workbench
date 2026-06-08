@@ -12,7 +12,11 @@ class InferenceErrorCode(str, Enum):
     NOT_IMPLEMENTED = "INFERENCE_NOT_IMPLEMENTED"
     REQUEST_TOO_LARGE = "INFERENCE_REQUEST_TOO_LARGE"
     INVALID_REQUEST = "INFERENCE_INVALID_REQUEST"
+    MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
+    MODEL_NOT_ALLOWED = "MODEL_NOT_ALLOWED"
     MODEL_INPUT_TYPE_UNSUPPORTED = "MODEL_INPUT_TYPE_UNSUPPORTED"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    PROVIDER_ERROR = "PROVIDER_ERROR"
 
 
 OPENAI_ERROR_CODES = {
@@ -23,7 +27,11 @@ OPENAI_ERROR_CODES = {
     InferenceErrorCode.NOT_IMPLEMENTED: "inference_not_implemented",
     InferenceErrorCode.REQUEST_TOO_LARGE: "inference_request_too_large",
     InferenceErrorCode.INVALID_REQUEST: "inference_invalid_request",
+    InferenceErrorCode.MODEL_NOT_FOUND: "model_not_found",
+    InferenceErrorCode.MODEL_NOT_ALLOWED: "model_not_allowed",
     InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED: "model_input_type_unsupported",
+    InferenceErrorCode.PROVIDER_UNAVAILABLE: "provider_unavailable",
+    InferenceErrorCode.PROVIDER_ERROR: "provider_error",
 }
 
 
@@ -35,7 +43,11 @@ DEFAULT_MESSAGES = {
     InferenceErrorCode.NOT_IMPLEMENTED: "Inference endpoint is registered but not implemented yet.",
     InferenceErrorCode.REQUEST_TOO_LARGE: "Inference request is too large.",
     InferenceErrorCode.INVALID_REQUEST: "Inference request is invalid.",
+    InferenceErrorCode.MODEL_NOT_FOUND: "Model was not found.",
+    InferenceErrorCode.MODEL_NOT_ALLOWED: "Model is not enabled for external inference.",
     InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED: "Model does not support this input type.",
+    InferenceErrorCode.PROVIDER_UNAVAILABLE: "Provider is unavailable.",
+    InferenceErrorCode.PROVIDER_ERROR: "Provider request failed.",
 }
 
 

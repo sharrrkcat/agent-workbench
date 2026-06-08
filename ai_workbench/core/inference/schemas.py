@@ -3,11 +3,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-INFERENCE_A12_VERSION = "a1.2"
-MODEL_LIST_ALLOWLIST_REASON = "external_model_allowlist_not_implemented"
+INFERENCE_A2_VERSION = "a2"
 
 
-def status_response(*, enabled: bool, auth_required: bool, api_key_configured: bool, max_request_mb: int) -> dict[str, Any]:
+def status_response(
+    *,
+    enabled: bool,
+    auth_required: bool,
+    api_key_configured: bool,
+    max_request_mb: int,
+    models: dict[str, int] | None = None,
+) -> dict[str, Any]:
     return {
         "enabled": enabled,
         "auth_required": auth_required,
@@ -18,14 +24,15 @@ def status_response(*, enabled: bool, auth_required: bool, api_key_configured: b
             "workbench_native": True,
         },
         "capabilities": {
-            "llm_chat": "planned",
-            "text_embeddings": "planned",
+            "llm_chat": "available",
+            "text_embeddings": "available",
             "multimodal_embeddings": "planned",
             "vision_tasks": "planned",
         },
+        "models": models or {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0},
         "implementation": {
-            "real_inference": False,
-            "version": INFERENCE_A12_VERSION,
+            "real_inference": True,
+            "version": INFERENCE_A2_VERSION,
         },
     }
 
@@ -39,7 +46,6 @@ def workbench_models_response() -> dict[str, Any]:
             "embedding_profiles_available": 0,
             "multimodal_profiles_available": 0,
             "vision_profiles_available": 0,
-            "reason": MODEL_LIST_ALLOWLIST_REASON,
         },
     }
 

@@ -1,18 +1,22 @@
 # Stateless Inference Contract
 
-This contract owns the future core-owned Stateless Local Inference Service.
-A1.2 defines auth, request-size checks, no-load status, and no-load model
-listing. It does not implement model inference.
+This contract owns the core-owned Stateless Local Inference Service. A2
+implements the first real stateless OpenAI-compatible chat and text embedding
+endpoints.
 
 ## Scope
 
-The service may later expose local stateless inference for:
+The service exposes local stateless inference for:
 
 - OpenAI-compatible chat/completions.
 - OpenAI-compatible text embeddings.
+- status and no-load model listing.
+
+The service may later expose:
+
 - Workbench-native multimodal/image embeddings.
 - Workbench-native Florence2 family vision tasks.
-- status, model listing, runtime resource visibility, and best-effort unload.
+- runtime resource visibility and best-effort unload.
 
 The service must remain stateless for external API requests. Request payloads
 and inference outputs are never project data.
@@ -48,25 +52,30 @@ Knowledge indexing, Agent runners, Command runners, or event logging paths.
 Default exposure is localhost-oriented. Any future non-localhost serving,
 reverse proxy use, or CORS expansion must be explicit and documented here.
 
-## API Candidates
+## A2 API
 
-OpenAI-compatible candidates:
+OpenAI-compatible:
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /v1/embeddings`
 
-Workbench-native candidates:
+Workbench-native:
 
 - `GET /api/inference/status`
 - `GET /api/inference/models`
+
+Still registered but not implemented:
+
 - `POST /api/inference/unload`
 - `POST /api/inference/embeddings/multimodal`
 - `POST /api/inference/vision`
 
-A1.2 registers these routes. If enabled before inference implementation, model
-listing returns empty no-load lists, status returns compact planned capability
-state, and inference/unload endpoints return `INFERENCE_NOT_IMPLEMENTED`.
+Streaming chat completions, `/v1/responses`, `/v1/completions`, multimodal
+embeddings, CLIP/OpenCLIP, SigLIP 2, DINOv2, Florence2, BLIP/JoyCaption,
+text-to-image, operational log persistence, Capability wrappers, new
+multimodal/vision profile tables, and runtime memory target changes are
+deferred.
 
 ## Stateless Data Boundary
 
@@ -116,8 +125,10 @@ Unsafe for external inference routes:
 - run, run step, and run event persistence.
 - session Agent state and session Knowledge binding mutation.
 
-Code paths that need wrappers/guards: existing LLM calls, existing text
-embeddings, image decode/validation, and status/unload.
+A2 reuses the existing LLM runtime `chat(messages, model_config, stream=False)`
+and `ai_workbench.core.embedding.embed_texts(...)` directly. It does not use
+session/Agent LLM resolution, Prompt Agent calls, title generation, Knowledge
+retrieval, attachment helpers, or Knowledge indexing.
 
 ## Auth And Exposure
 
@@ -138,7 +149,9 @@ Enabled guard order is:
 3. reject disabled service before body parsing.
 4. enforce `Content-Length` request size before body parsing.
 5. authenticate before body parsing.
-6. parse/validate body only in future implemented handlers.
+6. parse JSON body for implemented POST handlers with a streaming byte limit.
+7. endpoint validation.
+8. runtime call.
 
 When `inference_service_require_api_key=true` and no key is configured, enabled
 routes fail closed with `INFERENCE_SERVICE_MISCONFIGURED`. Missing credentials
@@ -154,10 +167,11 @@ route responses, logs, metadata, docs examples, or tests.
 ## Request Size
 
 `inference_service_max_request_mb` is the General setting owner for external
-inference request size. A1.2 route guards use `Content-Length` when present and
+inference request size. Route guards use `Content-Length` when present and
 reject oversized requests with `INFERENCE_REQUEST_TOO_LARGE` before body
-parsing. If `Content-Length` is missing, A1.2 does not read the body solely to
-enforce size; streaming/body middleware enforcement is future work.
+parsing. Implemented POST handlers also read the body through a bounded stream
+helper and stop once `max_request_mb` is exceeded, so missing `Content-Length`
+does not allow unlimited reads.
 
 The existing chat attachment limits do not authorize storing API payloads as
 attachments.
@@ -186,6 +200,29 @@ Stable codes:
 - `INFERENCE_REQUEST_TOO_LARGE`
 - `INFERENCE_INVALID_REQUEST`
 - `MODEL_INPUT_TYPE_UNSUPPORTED`
+- `MODEL_NOT_FOUND`
+- `MODEL_NOT_ALLOWED`
+- `PROVIDER_UNAVAILABLE`
+- `PROVIDER_ERROR`
+
+OpenAI-compatible lowercase codes include:
+
+- `inference_service_disabled`
+- `inference_service_misconfigured`
+- `inference_auth_required`
+- `inference_auth_invalid`
+- `inference_request_too_large`
+- `inference_invalid_request`
+- `inference_not_implemented`
+- `model_not_found`
+- `model_not_allowed`
+- `model_input_type_unsupported`
+- `provider_unavailable`
+- `provider_error`
+
+Provider errors are normalized to compact errors. Responses must not include API
+keys, raw request bodies, raw provider payloads, raw vectors in metadata, or
+provider secrets.
 
 ## Runtime Cache And Unload
 
@@ -197,7 +234,41 @@ and `vision_task`.
 Status refresh and model listing must not load model weights. Local inventory
 scans must return compact metadata only.
 
-## Future Profile Taxonomy
+## External Inference Allowlist
+
+External inference is opt-in per model profile:
+
+- LLM Model Profile: `external_inference_enabled`, default `false`.
+- Embedding Model Profile: `external_inference_enabled`, default `false`.
+
+The fields are persisted and accepted/returned by profile CRUD APIs. Existing
+profiles default to not externally callable. Disabled profiles and profiles
+whose Provider Profile is disabled are not listed or callable even when
+`external_inference_enabled=true`.
+
+`GET /v1/models` and `GET /api/inference/models` list only:
+
+- enabled LLM Model Profiles with `external_inference_enabled=true`.
+- enabled text Embedding Model Profiles with `external_inference_enabled=true`.
+
+Model listing must not load weights, call provider status/network checks, expose
+API keys, expose absolute paths, expose local directory trees, return raw
+provider payloads, or list disabled/non-allowlisted profiles.
+
+## Model Id Policy
+
+A2 returns and accepts only profile-derived ids with explicit type prefixes:
+
+- LLM chat models: `llm:<llm_profile_id>`.
+- text embedding models: `embedding:<embedding_model_profile_id>`.
+
+The exact ids returned by `/v1/models` must be used with `/v1/chat/completions`
+and `/v1/embeddings`. Prefixes make LLM and embedding namespaces separate and
+avoid visible id collisions. A chat request for an embedding id, or an embedding
+request for an LLM id, returns `model_not_allowed`. Unknown ids return
+`model_not_found`.
+
+## Profile Taxonomy
 
 - Existing LLM Model Profiles serve chat/completions.
 - Existing Embedding Model Profiles serve text embeddings.
@@ -216,28 +287,89 @@ Florence2 public task names are `caption`, `detailed_caption`, `ocr`, and
 `object_detection`. Internal prompt mapping and post-processing belong to the
 future Florence2 runtime wrapper, not to route handlers.
 
-## Future Endpoint Contracts
+## Endpoint Contracts
 
 `GET /v1/models` returns OpenAI-compatible model list data for externally
-servable profiles only. In A1.2 it returns `{"object":"list","data":[]}` after
-auth because no external per-profile allowlist exists yet.
+servable profiles only. If no profiles are allowlisted, it returns:
 
-`POST /v1/chat/completions` accepts OpenAI-compatible chat completion requests
-and returns OpenAI-compatible non-streaming responses first. Streaming is
-deferred.
+```json
+{"object":"list","data":[]}
+```
+
+`POST /v1/chat/completions` accepts a minimal OpenAI-compatible request:
+
+```json
+{
+  "model": "llm:<profile_id>",
+  "messages": [{"role": "user", "content": "hello"}],
+  "temperature": 0.7,
+  "top_p": 1,
+  "max_tokens": 256,
+  "stream": false
+}
+```
+
+Supported roles are `system`, `user`, and `assistant`, with string `content`.
+`stream=true` returns `inference_not_implemented` and must not call the provider
+runtime. Tools/function calling, image input, response format/json mode, chat
+history, Knowledge, Core Memory, Worldbook, Web Context, attachments, and title
+generation are not used.
+
+Responses are normalized to:
+
+```json
+{
+  "id": "chatcmpl_...",
+  "object": "chat.completion",
+  "created": 123,
+  "model": "llm:<profile_id>",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "..."},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+}
+```
 
 `POST /v1/embeddings` accepts OpenAI-compatible text embedding requests and
-returns vectors without Knowledge writes.
+returns vectors without Knowledge writes:
 
-`GET /api/inference/status` returns compact service, auth, runtime, and planned
-capability status without secrets or payloads. A1.2 preserves disabled behavior:
-when the service is disabled, status returns `INFERENCE_SERVICE_DISABLED`.
+```json
+{
+  "model": "embedding:<profile_id>",
+  "input": "hello",
+  "encoding_format": "float"
+}
+```
+
+`input` may be a string or array of strings. Objects, images, nested arrays, and
+binary inputs are rejected. Only `encoding_format="float"` is supported. A
+non-standard optional `purpose` of `query` or `document` may be accepted; default
+is `document`.
+
+Responses are normalized to:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}
+  ],
+  "model": "embedding:<profile_id>",
+  "usage": {"prompt_tokens": 0, "total_tokens": 0}
+}
+```
+
+`GET /api/inference/status` returns compact service, auth, route, capability,
+and allowlisted model counts without loading models, calling providers, or
+exposing secrets. When the service is disabled, status returns
+`INFERENCE_SERVICE_DISABLED`.
 
 `GET /api/inference/models` returns Workbench-native model/profile metadata for
-servable profiles without loading weights. In A1.2 it returns an empty
-externally-callable list with the reason
-`external_model_allowlist_not_implemented`; it must not expose model ids until a
-profile allowlist exists.
+servable profiles without loading weights.
 
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.

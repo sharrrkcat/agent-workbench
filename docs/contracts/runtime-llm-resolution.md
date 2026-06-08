@@ -110,7 +110,9 @@ structured commands.
 
 Stateless external inference routes must not use Prompt Agent calls or create
 Session, Message, Run, Agent, or context persistence. They are owned by
-[stateless-inference.md](stateless-inference.md).
+[stateless-inference.md](stateless-inference.md). External inference uses only
+explicitly allowlisted LLM Model Profiles and identifies them as
+`llm:<profile_id>`.
 
 ## Script Agent Calls
 

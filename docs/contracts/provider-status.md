@@ -157,6 +157,9 @@ internal LLM runtime cache release.
 Future Stateless Inference image embedding and vision task caches must follow
 the same best-effort/no-delete rule and are owned by
 [stateless-inference.md](stateless-inference.md).
+A2 Stateless Inference status and model listing are no-load operations: they
+read enabled allowlisted profiles only and must not call provider
+status/network helpers.
 
 Embedding and reranker local cache release is best-effort and targets
 provider-owned internal caches. The `embedding` target may release
