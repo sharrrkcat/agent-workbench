@@ -282,8 +282,6 @@ See [docs/AGENT_DEVELOPMENT.md](docs/AGENT_DEVELOPMENT.md) for Prompt Agent and 
 
 See [docs/CAPABILITY_DEVELOPMENT.md](docs/CAPABILITY_DEVELOPMENT.md) for Capability templates, command mapping, runtime method checks, `scripts/create_capability.py`, and command-line testing with `scripts/run_command.py`.
 
-The development guides cover output rendering for `text`, `markdown`, `json`, `image`, `image_gallery`, `file_content`, `rich_content`, and interactive form blocks, plus common strict-check failures and a practical CLI debug workflow.
-
 ## File Attachments Alpha
 
 User messages can include image and file attachments from the composer,

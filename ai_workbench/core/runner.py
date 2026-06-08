@@ -268,6 +268,7 @@ class AgentRunner:
         temporary_knowledge_base_ids: list[str] | None = None,
         knowledge_query_override: str | None = None,
         existing_run_id: str = "",
+        resolving_step_id: str = "",
         preparation_step_id: str = "",
         client_message_id: str = "",
     ) -> RunResult:
@@ -454,6 +455,7 @@ class AgentRunner:
                 display_input=display_input,
                 form_id=form_id or "",
                 is_silent_submission=is_silent_submission,
+                resolving_step_id=resolving_step_id,
                 preparation_step_id=preparation_step_id,
             )
         except asyncio.CancelledError:
@@ -594,15 +596,17 @@ class AgentRunner:
         display_input: str = "",
         form_id: str = "",
         is_silent_submission: bool = False,
+        resolving_step_id: str = "",
         preparation_step_id: str = "",
     ) -> RunResult:
-        resolving_agent_step = self.run_lifecycle.start_step(run.run_id, "Resolving agent")
+        resolving_agent_step = None if resolving_step_id else self.run_lifecycle.start_step(run.run_id, "Resolving agent")
         agent_config = self.agent_config_store.get_config(agent.id) if self.agent_config_store is not None else {}
         lifecycle = resolved_model_lifecycle(agent, agent_config)
         run_metadata = dict(self.run_store.get_run(run.run_id).metadata)
         run_metadata["resolved_runtime"] = resolved_agent_settings(agent, agent_config, settings=self._app_settings())["runtime"]
         self.run_store.update_metadata(run.run_id, run_metadata)
-        self.run_lifecycle.complete_step(resolving_agent_step.step_id)
+        if resolving_agent_step is not None:
+            self.run_lifecycle.complete_step(resolving_agent_step.step_id)
         intent_routing = run_metadata.get("intent_routing")
         intent_step = None
         if isinstance(intent_routing, dict):

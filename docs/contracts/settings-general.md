@@ -29,9 +29,13 @@ Settings -> General owns local app settings for:
 - Web Search
 - Utility LLM
 - Intent Routing
+- Stateless Inference service enablement and request limits
 
 It does not own AgentConfig, CapabilityConfig, Provider Profiles, Model Profiles,
 Knowledge settings, Agent manifests, or Capability manifests.
+
+Stateless Inference General settings are backend-owned in A1.1 and default to
+disabled. Full boundary: [stateless-inference.md](stateless-inference.md).
 
 Settings -> Models owns shared model configuration pages:
 

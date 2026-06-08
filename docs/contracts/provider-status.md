@@ -154,6 +154,9 @@ indexes, sessions, settings, attachments, or local user assets. Busy targets are
 not force-released. In this alpha, manual LLM release is limited to provider
 profiles with reliable unload support: LM Studio native unload and best-effort
 internal LLM runtime cache release.
+Future Stateless Inference image embedding and vision task caches must follow
+the same best-effort/no-delete rule and are owned by
+[stateless-inference.md](stateless-inference.md).
 
 Embedding and reranker local cache release is best-effort and targets
 provider-owned internal caches. The `embedding` target may release

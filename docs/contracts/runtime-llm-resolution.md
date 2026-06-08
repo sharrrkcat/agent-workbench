@@ -108,6 +108,10 @@ Prompt Agents let the core build context and call the resolved main LLM.
 Prompt Agents treat model output as assistant content, not provider tool calls or
 structured commands.
 
+Stateless external inference routes must not use Prompt Agent calls or create
+Session, Message, Run, Agent, or context persistence. They are owned by
+[stateless-inference.md](stateless-inference.md).
+
 ## Script Agent Calls
 
 `ctx.llm.text`, `ctx.llm.json`, and `ctx.llm.generate` mark the LLM as used for

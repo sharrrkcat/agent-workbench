@@ -23,7 +23,6 @@ live in [RUNTIME_PROTOCOLS.md](RUNTIME_PROTOCOLS.md) and focused contracts under
 | `context_policy` | all Agents/actions | Core-built context scope. | Action policy can override Agent policy. |
 | `model_lifecycle` | all Agents | Load/unload policy. | Unload is best effort. |
 | `config_schema` | all Agents | User-editable local config fields. | Stored as AgentConfig `user_config`. |
-
 ### Action Fields
 
 | field | meaning | notes |
@@ -270,46 +269,23 @@ Runtime call rules:
 indexing, embedding, reranking, local model backends, or automatic injection.
 Full contract: [contracts/knowledge.md](contracts/knowledge.md).
 
-`runtime` exposes `/free-memory <target>` and runtime memory APIs for best-effort release of `llm`, `comfyui`, `embedding`, `reranker`, or `all`; see [contracts/provider-status.md](contracts/provider-status.md#runtime-memory-release).
+`runtime` exposes `/free-memory <target>` and runtime memory APIs; see
+[contracts/provider-status.md](contracts/provider-status.md#runtime-memory-release).
 
 `comfyui` is a reusable external-service/local-asset Capability for workflow
-submission, polling, fetching images, interrupts, upload, object info, memory
-release, and workflow/preset library operations. Preset YAML is documented in
+submission, polling, fetching images, upload/interrupt/free-memory operations,
+and workflow/preset library access. Preset YAML:
 [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). User-facing generation
 workflow belongs to the Script Agent.
 
-Utility LLM, Intent Routing, General settings, and Knowledge settings are core-owned services; see `contracts/utility-llm.md`, `contracts/intent-routing.md`, and `contracts/settings-general.md`.
+Core-owned services are not Capabilities: Utility LLM, Intent Routing, General
+settings, Knowledge settings, and Stateless Inference. See the matching
+contracts under [contracts/](contracts/).
 
-The built-in `file` Capability exposes only `/read-file <path>`, auto-detects text/image/audio/video into matching Message Parts, keeps one command toggle with per-kind limits, and does not support network reads or media analysis.
-
-The built-in `codec` Capability exposes `/encode` and `/decode` for Base64 text, Base64URL tokens, URL component percent encoding, Unicode escapes, hex UTF-8 text, Base64 data URLs, image attachment encoding, and QR generation with `/encode qr <text>`. QR generation returns an attachment-backed PNG image part. QR decoding is not implemented. It does not fetch URLs, read local paths, transcode media, inspect JWTs, hash content, or inspect arbitrary binaries.
-
-The built-in `http` Capability exposes only `/fetch-url <url>`, auto-detects text/HTML/JSON/image/direct audio/direct video into Message Parts, and keeps one command toggle with separate text/image limits. Direct audio and video use `source: url` and are not downloaded, cached, proxied, or saved locally.
-Streaming media, OCR, ASR, TTS, transcription, and PDF parsing are unsupported.
-
-The built-in `web_search` Capability exposes `/web-search <query>` for SearXNG
-search result discovery. It returns one standardized JSON Message Part with
-`kind: "web_search_results"` and `schema: "web_search.results.v1"` containing
-query, provider, timestamp, filtered normalized results, warnings, and compact
-diagnostics. CapabilityConfig owns SearXNG connection fields plus result quality
-fields: `result_filter_enabled`, `domain_blocklist`, `domain_allowlist`,
-`dedupe_results`, and `dedupe_same_domain_title`. Domain filters accept one
-pattern per line (`example.com`, `.example.com`, or `*.example.com`), apply
-allowlist before blocklist, and match only parsed result URL hosts. Invalid
-patterns warn with `invalid_domain_filter_pattern` and do not fail the search.
-The shared helper also de-duplicates canonical URLs and, when enabled, repeated
-same-domain normalized titles while preserving provider order. It does not fetch
-result page bodies, cache results, rerank, vectorize, or save to Knowledge. The
-`/web-search` command enable setting controls only that explicit command.
-Runtime Web Context may call the same core search helper for eligible Prompt
-Agent context injection when General Web Search is enabled, without using the
-command path. When General Web Search page fetching is enabled, Prompt Agent Web
-Context may separately fetch compact HTML excerpts from top filtered results
-through an internal runtime helper; this is not `/web-search`, not Settings test
-search, and not a Capability command run. Settings exposes
-`POST /api/capability-configs/web_search/test-search` for SearXNG search
-diagnostics using saved or draft CapabilityConfig values; it does not create
-chat messages, runs, command results, or persist config changes.
+The built-in `file`, `codec`, `http`, and `web_search` Capabilities expose
+their documented slash commands and return Message Parts. They must not become
+general-purpose network/download/media-analysis/OCR/ASR/TTS/PDF pipelines, and
+they must not bypass attachment, Knowledge, or Web Context ownership rules.
 
 ## Capability Config
 
@@ -327,8 +303,8 @@ as `content_version=2` plus ordered `parts`; supported part types and rules live
 in [contracts/message-parts.md](contracts/message-parts.md). The frontend renders
 normal messages only from `parts`.
 
-Capability commands declare `output.part_type`: `text`, `json`, `file`,
-`image`, `audio`, `video`, `media_group`, or `parts`. Text declarations may set
+Capability commands declare `output.part_type`: `text`, `json`, `file`, `image`,
+`audio`, `video`, `media_group`, or `parts`. Text declarations may set
 `format: plain|markdown`; file declarations may set `mode: inline_text`; media
 groups may set `layout: gallery`. `output.type` is invalid.
 

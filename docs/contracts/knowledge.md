@@ -27,6 +27,9 @@ arbitrary local path import, file watching, scheduled scan, background reindex,
 chat-time scan/reindex, or Capability-owned retrieval/indexing backends.
 Knowledge Defaults does not own local model environment overview or install
 commands; internal Provider Profiles show that local model environment display.
+Stateless external inference must not write Knowledge sources, chunks,
+embeddings, or session bindings. Full boundary:
+[stateless-inference.md](stateless-inference.md).
 
 ## Local Models
 

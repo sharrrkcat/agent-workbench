@@ -22,6 +22,8 @@ detailed behavior.
 - Knowledge/RAG: [contracts/knowledge.md](contracts/knowledge.md)
 - Utility LLM and session title generation:
   [contracts/utility-llm.md](contracts/utility-llm.md)
+- Stateless inference:
+  [contracts/stateless-inference.md](contracts/stateless-inference.md)
 
 ## Message Streaming
 
@@ -77,6 +79,16 @@ Runtime resources expose cached CPU/RAM/backend memory/GPU availability and
 degrade safely when optional dependencies are unavailable.
 
 Full contract: [contracts/provider-status.md](contracts/provider-status.md).
+
+## Stateless Inference
+
+The disabled-by-default Stateless Local Inference Service is core-owned and
+registers OpenAI-compatible `/v1/*` and Workbench-native `/api/inference/*`
+skeleton routes. External inference requests must not persist payloads, outputs,
+vectors, attachments, messages, runs, or Knowledge rows.
+
+Full contract:
+[contracts/stateless-inference.md](contracts/stateless-inference.md).
 
 ## Attachments And Vision
 

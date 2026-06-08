@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, intent, knowledge, llm_profiles, llm_provider_profiles, messages, pets, runs, runtime, sessions, settings, worldbook
+from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, inference, intent, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
 
 
@@ -74,6 +74,8 @@ def create_app(
     app.include_router(data.router)
     app.include_router(diagnostics.router)
     app.include_router(intent.router)
+    app.include_router(openai_compatible.router)
+    app.include_router(inference.router)
     app.include_router(llm_profiles.router)
     app.include_router(llm_provider_profiles.router)
     app.include_router(knowledge.router)
@@ -136,7 +138,7 @@ def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
 
 def _is_backend_path(path: str) -> bool:
     first_segment = path.split("/", 1)[0]
-    return first_segment in {"api", "docs", "openapi.json", "redoc"}
+    return first_segment in {"api", "v1", "docs", "openapi.json", "redoc"}
 
 
 class LazyApp:

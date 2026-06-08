@@ -81,6 +81,16 @@ status.
 
 Full contract: [contracts/knowledge.md](contracts/knowledge.md).
 
+### Stateless Inference
+
+The Stateless Local Inference Service is core-owned because it touches
+Provider/Model Profiles, runtime caches, settings, OpenAI-compatible routes,
+status, unload, and the external privacy boundary. A future Capability may wrap
+trusted Script Agent helpers only.
+
+Full contract:
+[contracts/stateless-inference.md](contracts/stateless-inference.md).
+
 ### LLM-Assisted Tool Orchestration
 
 Use `ctx.llm.text`, `ctx.llm.json`, or `ctx.llm.stream` when the LLM drafts
@@ -183,6 +193,8 @@ Core-owned configuration:
 - Utility LLM and titles: [contracts/utility-llm.md](contracts/utility-llm.md)
 - Core Memory and Worldbook:
   [contracts/memory-worldbook.md](contracts/memory-worldbook.md)
+- Stateless inference:
+  [contracts/stateless-inference.md](contracts/stateless-inference.md)
 
 ## Data Ownership And Output Rules
 

@@ -31,6 +31,7 @@ class WorkbenchRuntime:
         attachments = attachments or []
         route = self.router.route(session, raw_input)
         early_run = None
+        resolving_step_id = ""
         preparation_step_id = ""
         if route.kind == RouteKind.AGENT and self.agent_runner is not None and self._is_prompt_agent_route(route):
             input_message_id = input_message_id or self._create_agent_user_message(
@@ -49,6 +50,10 @@ class WorkbenchRuntime:
                 run=early_run,
                 parent_id=input_message_id,
             )
+            await flush_realtime_events()
+            resolving_step = self.agent_runner.run_lifecycle.start_step(early_run.run_id, "Resolving agent")
+            resolving_step_id = resolving_step.step_id
+            self.agent_runner.run_lifecycle.complete_step(resolving_step.step_id)
             await flush_realtime_events()
             preparation_step = self.agent_runner.run_lifecycle.start_step(early_run.run_id, "Preparing context tools")
             preparation_step_id = preparation_step.step_id
@@ -117,6 +122,7 @@ class WorkbenchRuntime:
                 client_message_id=client_message_id,
                 create_user_message=False if input_message_id else True,
                 existing_run_id=early_run.run_id if early_run is not None else "",
+                resolving_step_id=resolving_step_id,
                 preparation_step_id=preparation_step_id,
             )
         return RunResult(success=False, run_id="", error=f"Unsupported route kind: {route.kind.value}")

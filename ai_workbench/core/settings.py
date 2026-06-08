@@ -166,6 +166,9 @@ class AppSettings(BaseModel):
     intent_routing_web_query_examples: str = ""
     intent_routing_agent_route_examples: str = ""
     intent_routing_command_like_examples: str = ""
+    inference_service_enabled: StrictBool = False
+    inference_service_require_api_key: StrictBool = True
+    inference_service_max_request_mb: int = Field(default=10, ge=1, le=100)
 
     @model_validator(mode="before")
     @classmethod
@@ -496,6 +499,9 @@ class AppSettingsPatch(BaseModel):
     intent_routing_web_query_examples: str | None = None
     intent_routing_agent_route_examples: str | None = None
     intent_routing_command_like_examples: str | None = None
+    inference_service_enabled: StrictBool | None = None
+    inference_service_require_api_key: StrictBool | None = None
+    inference_service_max_request_mb: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("session_title_prompt", mode="before")
     @classmethod
