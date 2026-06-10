@@ -188,7 +188,7 @@ def test_enabled_workbench_skeleton_requires_auth_then_returns_not_implemented(
     assert status.json()["enabled"] is True
     assert status.json()["auth_required"] is True
     assert status.json()["api_key_configured"] is True
-    assert status.json()["implementation"] == {"real_inference": True, "real_multimodal_inference": False, "version": "a4.1"}
+    assert status.json()["implementation"] == {"real_inference": True, "real_multimodal_inference": True, "version": "a4.2"}
     assert status.json()["capabilities"]["llm_chat"] == "available"
     assert status.json()["capabilities"]["text_embeddings"] == "available"
     assert status.json()["runtime"]["multimodal_embedding_cache"] == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}

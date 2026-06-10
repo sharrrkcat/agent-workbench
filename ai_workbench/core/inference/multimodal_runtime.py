@@ -128,10 +128,12 @@ def embed_multimodal_inputs(
     normalize: bool,
     cache: MultimodalRuntimeCache = DEFAULT_MULTIMODAL_RUNTIME_CACHE,
 ) -> MultimodalEmbeddingResult:
-    runtime = get_multimodal_embedding_runtime(profile, cache=cache)
     try:
+        runtime = get_multimodal_embedding_runtime(profile, cache=cache)
         result = runtime.embed(profile=profile, inputs=inputs, normalize=normalize)
     except MultimodalRuntimeUnavailable:
+        raise
+    except MultimodalRuntimeError:
         raise
     except Exception as exc:
         raise MultimodalRuntimeError("Multimodal embedding runtime failed.") from exc

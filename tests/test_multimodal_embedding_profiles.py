@@ -170,7 +170,7 @@ def test_model_lists_include_multimodal_only_in_workbench_native(tmp_path: Path,
     assert all(not item["id"].startswith("multimodal:") for item in openai["data"])
 
 
-def test_multimodal_route_validates_then_returns_not_implemented_and_is_stateless(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_multimodal_route_validates_then_returns_sanitized_runtime_error_and_is_stateless(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     state = client.app.state.runtime_state
     enable_inference(client, require_api_key=False)
@@ -200,8 +200,8 @@ def test_multimodal_route_validates_then_returns_not_implemented_and_is_stateles
     not_allowed = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{blocked['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]})
     wrong_type = client.post("/api/inference/embeddings/multimodal", json={"model": "embedding:x", "inputs": [{"type": "image_base64", "data": "AAAA"}]})
 
-    assert ok.status_code == 501
-    assert ok.json()["error"]["code"] == "INFERENCE_NOT_IMPLEMENTED"
+    assert ok.status_code == 502
+    assert ok.json()["error"]["code"] == "PROVIDER_ERROR"
     assert "embedding" not in ok.json()
     assert dino_text.status_code == 400
     assert dino_text.json()["error"]["code"] == "MODEL_INPUT_TYPE_UNSUPPORTED"

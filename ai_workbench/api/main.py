@@ -39,6 +39,12 @@ def create_app(
         use_memory=use_memory,
         root=root,
     )
+    from ai_workbench.core.inference.clip_runtime import register_clip_open_clip_runtime_factories
+
+    register_clip_open_clip_runtime_factories(
+        repo_root=app.state.runtime_state.repo_root,
+        provider_profile_store=app.state.runtime_state.provider_profiles,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
