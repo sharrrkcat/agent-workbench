@@ -1,8 +1,9 @@
 # Stateless Inference Contract
 
-This contract owns the core-owned Stateless Local Inference Service. A3 keeps
-A2 real stateless chat/text embedding behavior and adds validation-only
-multimodal/image embedding profile taxonomy.
+This contract owns the core-owned Stateless Local Inference Service. A4.1 keeps
+A2 real stateless chat/text embedding behavior, preserves A3 multimodal profile
+taxonomy, and adds a production-safe multimodal embedding runtime interface,
+cache skeleton, and Workbench-native response schema.
 
 ## Scope
 
@@ -10,12 +11,13 @@ The service exposes local stateless inference for:
 
 - OpenAI-compatible chat/completions.
 - OpenAI-compatible text embeddings.
-- Workbench-native validation-only multimodal/image embeddings.
+- Workbench-native multimodal/image embeddings through a pluggable runtime
+  interface. A4.1 production builds register no real image runtime.
 - status and no-load model listing.
 
 The service may later expose:
 
-- real Workbench-native multimodal/image embeddings.
+- real Workbench-native CLIP/OpenCLIP/SigLIP2/DINOv2 runtimes.
 - Workbench-native Florence2 family vision tasks.
 - runtime resource visibility and best-effort unload.
 
@@ -53,7 +55,7 @@ Knowledge indexing, Agent runners, Command runners, or event logging paths.
 Default exposure is localhost-oriented. Any future non-localhost serving,
 reverse proxy use, or CORS expansion must be explicit and documented here.
 
-## A3 API
+## A4.1 API
 
 OpenAI-compatible:
 
@@ -67,19 +69,34 @@ Workbench-native:
 - `GET /api/inference/models`
 - `GET/POST/PATCH/DELETE /api/inference/multimodal-embedding-models`
 
-Still registered but not implemented:
+Registered:
 
 - `POST /api/inference/unload`
 - `POST /api/inference/embeddings/multimodal`
+
+Still registered but not implemented:
+
 - `POST /api/inference/vision`
 
-`POST /api/inference/embeddings/multimodal` validates request shape and
-allowlisted multimodal profile ids, then returns `INFERENCE_NOT_IMPLEMENTED`.
+`POST /api/inference/embeddings/multimodal` validates request shape, resolves an
+allowlisted Multimodal Embedding Model Profile, then calls the multimodal
+runtime interface only when a runtime factory is registered. A4.1 production
+registers no real runtime, so real configured profiles return
+`INFERENCE_NOT_IMPLEMENTED`. Tests may inject a fake runtime and receive
+vectors through the stable Workbench-native response schema.
+
+`POST /api/inference/unload` clears only the local multimodal embedding runtime
+cache for targets `image_embedding`, `multimodal_embedding`, or `all`. It never
+deletes model files, Knowledge data, attachments, settings, sessions, or
+indexes. Empty or missing JSON bodies use the default unload request; non-object
+JSON bodies such as arrays, strings, numbers, and booleans are rejected with
+`INFERENCE_INVALID_REQUEST` and do not clear cache state.
+
 Streaming chat completions, `/v1/responses`, `/v1/completions`, real image
 vector generation, image preprocessing, similarity scoring, Florence2,
 BLIP/JoyCaption, text-to-image, operational log persistence, Capability
-wrappers, vision profile tables, runtime cache loading, and runtime memory
-target changes are deferred.
+wrappers, vision profile tables, and global `/api/runtime/free-memory`
+multimodal targets are deferred.
 
 ## Stateless Data Boundary
 
@@ -134,10 +151,12 @@ and `ai_workbench.core.embedding.embed_texts(...)` directly. It does not use
 session/Agent LLM resolution, Prompt Agent calls, title generation, Knowledge
 retrieval, attachment helpers, or Knowledge indexing.
 
-A3 multimodal validation does not call image embedding runtimes, text embedding
-runtimes, attachment helpers, Knowledge helpers, provider status APIs, optional
-ML imports, or model-loading paths. It does not decode image payloads or load
-model weights.
+A4.1 multimodal serving calls only the multimodal embedding runtime interface
+after guards, JSON parsing, validation, profile resolution, and allowlist
+checks. It does not call text embedding runtimes, LLM runtimes, attachment
+helpers, Knowledge helpers, provider status APIs, optional ML imports, or
+model-loading paths. It does not decode image payloads, inspect pixels,
+preprocess images, or load model weights.
 
 ## Auth And Exposure
 
@@ -229,16 +248,42 @@ OpenAI-compatible lowercase codes include:
 - `provider_unavailable`
 - `provider_error`
 
-Provider errors are normalized to compact errors. Responses must not include API
-keys, raw request bodies, raw provider payloads, raw vectors in metadata, or
-provider secrets.
+Provider and multimodal runtime errors are normalized to compact errors.
+Responses must not include API keys, raw request bodies, raw provider payloads,
+raw image payloads, base64 data, raw text inputs, raw vectors in metadata,
+absolute paths, or provider secrets.
+Invalid multimodal runtime outputs, including non-numeric vectors, non-finite
+values, wrong vector counts, and ragged vectors, are also normalized to
+`PROVIDER_ERROR` or the equivalent compact provider/runtime error without
+leaking raw values.
 
 ## Runtime Cache And Unload
 
-Future runtime cache release remains best-effort and must never delete model
-files, sessions, settings, attachments, Knowledge data, indexes, or local user
-assets. Existing memory targets may be extended or mapped for `image_embedding`
-and `vision_task`.
+A4.1 owns `ai_workbench.core.inference.multimodal_runtime` as the future image
+embedding runtime boundary. It defines in-memory input/result models, a runtime
+protocol, runtime factory registration for tests/future backends, and a local
+runtime cache.
+
+The multimodal cache key includes profile id plus a compact fingerprint of
+runtime-relevant profile fields such as provider profile id, provider model ref,
+architecture, backend, embedding space, dimensions, normalization default,
+supported input types, preprocessing signature, pooling strategy, max batch
+size, and metadata hash input. Profile changes do not reuse stale runtime
+instances.
+
+Cache operations:
+
+- clear all runtimes.
+- clear all cached runtime instances for one profile id.
+- status returns counts only: runtime count, profile count, and architecture
+  counts.
+
+Cache status must not expose model paths, safe refs, raw configs, request
+payloads, image bytes, base64, raw text, vectors, API keys, or secrets. Cache
+release is best-effort and must never delete model files, sessions, settings,
+attachments, Knowledge data, indexes, or local user assets. A4.1 wires cache
+release only through `POST /api/inference/unload`; global
+`/api/runtime/free-memory` targets are unchanged.
 
 Status refresh and model listing must not load model weights. Local inventory
 scans must return compact metadata only.
@@ -271,7 +316,7 @@ disabled/non-allowlisted profiles.
 
 ## Model Id Policy
 
-A3 returns and accepts only profile-derived ids with explicit type prefixes:
+A4.1 returns and accepts only profile-derived ids with explicit type prefixes:
 
 - LLM chat models: `llm:<llm_profile_id>`.
 - text embedding models: `embedding:<embedding_model_profile_id>`.
@@ -289,7 +334,8 @@ visible id collisions. A request for the wrong model type returns
 - Existing Embedding Model Profiles serve text embeddings.
 - `MultimodalEmbeddingModelProfile` serves future CLIP/OpenCLIP, SigLIP 2, and
   DINOv2 image embedding runtimes with architecture flags and supported input
-  types. A3 stores taxonomy and validates requests only.
+  types. A4.1 stores taxonomy, validates requests, and calls only registered
+  runtime factories.
 - Future `VisionTaskModelProfile` serves Florence2 family tasks.
 
 Multimodal embedding fields:
@@ -323,8 +369,9 @@ future Florence2 runtime wrapper, not to route handlers.
 ## Endpoint Contracts
 
 `GET /v1/models` returns OpenAI-compatible model list data for externally
-servable LLM/text embedding profiles only. A3 does not list multimodal profiles
-on this OpenAI-compatible endpoint. If no profiles are allowlisted, it returns:
+servable LLM/text embedding profiles only. A4.1 does not list multimodal
+profiles on this OpenAI-compatible endpoint. If no profiles are allowlisted, it
+returns:
 
 ```json
 {"object":"list","data":[]}
@@ -408,7 +455,7 @@ servable profiles without loading weights.
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.
 
-`POST /api/inference/embeddings/multimodal` A3 request shape:
+`POST /api/inference/embeddings/multimodal` request shape:
 
 ```json
 {
@@ -421,12 +468,53 @@ profile and returns compact outcomes.
 }
 ```
 
-A3 validates service guards, JSON shape, model id prefix, enabled profile,
+A4.1 validates service guards, JSON shape, model id prefix, enabled profile,
 `external_inference_enabled`, provider enabled state, typed inputs, image
-base64 string presence/size only, and DINOv2 image-only support. It does not
-decode images, save attachments, inspect pixels, preprocess images, generate
-vectors, compare vectors, call providers, or persist payloads/vectors. After
-successful validation it returns `INFERENCE_NOT_IMPLEMENTED`.
+base64 string presence/size only, DINOv2 image-only support, optional normalize
+boolean, and profile `max_batch_size`. Supported input item types are
+`image_base64` and `text`; object inputs, image URLs, paths, nested inputs, and
+unsupported types are rejected. Empty text is rejected.
+
+CLIP/OpenCLIP/SigLIP2 profiles may validate image and text inputs. DINOv2
+profiles reject text with `MODEL_INPUT_TYPE_UNSUPPORTED`. A4.1 does not decode
+images, save attachments, inspect pixels, preprocess images, compare vectors,
+call text embedding runtimes, call LLM runtimes, or persist payloads/vectors.
+
+Successful fake-runtime or future real-runtime responses use:
+
+```json
+{
+  "object": "list",
+  "model": "multimodal:<profile_id>",
+  "profile_id": "<profile_id>",
+  "architecture": "siglip2",
+  "embedding_space": "siglip2/<profile_id>/default",
+  "dimensions": 1152,
+  "normalized": true,
+  "data": [
+    {
+      "object": "embedding",
+      "index": 0,
+      "input_type": "image",
+      "embedding": [0.1, 0.2]
+    },
+    {
+      "object": "embedding",
+      "index": 1,
+      "input_type": "text",
+      "embedding": [0.3, 0.4]
+    }
+  ],
+  "usage": {"input_count": 2}
+}
+```
+
+Vectors are returned only in the HTTP response. Dimensions match runtime vector
+length; when `profile.dimensions` is null, dimensions are derived from runtime
+output for the response only and the profile is not mutated. `embedding_space`
+uses `profile.embedding_space` when set, otherwise
+`<architecture>/<profile_id>/default`. `normalized` reflects the request
+`normalize` value or the profile `normalize_default`.
 
 `POST /api/inference/vision` future request shape:
 

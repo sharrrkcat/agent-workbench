@@ -1391,8 +1391,8 @@ def test_prompt_agent_success_creates_default_run_steps() -> None:
     steps = fixture.runs.list_steps(result.run_id)
 
     assert [step.label for step in steps] == [
-        "Preparing context tools",
         "Resolving agent",
+        "Preparing context tools",
         "Intent semantic routing",
         "Building context",
         "Resolving model",
@@ -1493,13 +1493,14 @@ def test_prompt_agent_broadcasts_draft_and_preparation_steps_before_embedding_lo
     event_types = [event.type for event in events]
     accepted_index = next(index for index, event in enumerate(events) if event.type == "message_updated" and event.payload.get("message", {}).get("role") == "user")
     draft_index = next(index for index, event in enumerate(events) if event.type == "message_started")
+    resolving_index = next(index for index, event in enumerate(events) if event.type == "run_step_created" and event.payload["step"]["label"] == "Resolving agent")
     preparing_index = next(index for index, event in enumerate(events) if event.type == "run_step_created" and event.payload["step"]["label"] == "Preparing context tools")
     embedding_index = next(index for index, event in enumerate(events) if event.type == "run_step_created" and event.payload["step"]["label"] == "Loading embedding model")
     delta_index = next(index for index, event in enumerate(events) if event.type == "message_delta")
     completed = next(event for event in events if event.type == "message_completed")
 
     assert result.success is True
-    assert accepted_index < draft_index < preparing_index < embedding_index < delta_index
+    assert accepted_index < draft_index < resolving_index < preparing_index < embedding_index < delta_index
     assert event_types.count("message_started") == 1
     assert completed.payload["draft_message_id"] == f"draft-{result.run_id}"
 
@@ -1574,7 +1575,7 @@ def test_run_lifecycle_events_include_run_and_step_payloads() -> None:
 
     step_event = next(event for event in fixture.events.list_events() if event.type == "run_step_created")
     run_event = next(event for event in fixture.events.list_events() if event.type == "run_updated")
-    assert step_event.payload["step"]["label"] == "Preparing context tools"
+    assert step_event.payload["step"]["label"] == "Resolving agent"
     assert "parent_step_id" in step_event.payload["step"]
     assert "run_id" in run_event.payload["run"]
 

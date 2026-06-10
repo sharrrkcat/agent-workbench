@@ -188,13 +188,14 @@ def test_enabled_workbench_skeleton_requires_auth_then_returns_not_implemented(
     assert status.json()["enabled"] is True
     assert status.json()["auth_required"] is True
     assert status.json()["api_key_configured"] is True
-    assert status.json()["implementation"] == {"real_inference": True, "real_multimodal_inference": False, "version": "a3"}
+    assert status.json()["implementation"] == {"real_inference": True, "real_multimodal_inference": False, "version": "a4.1"}
     assert status.json()["capabilities"]["llm_chat"] == "available"
     assert status.json()["capabilities"]["text_embeddings"] == "available"
+    assert status.json()["runtime"]["multimodal_embedding_cache"] == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}
     assert status.json()["models"] == {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0, "multimodal_external_enabled_count": 0}
-    assert not_implemented.status_code == 501
-    assert not_implemented.json()["error"]["code"] == "INFERENCE_NOT_IMPLEMENTED"
-    assert not_implemented.json()["error"]["request_id"]
+    assert not_implemented.status_code == 200
+    assert not_implemented.json()["ok"] is True
+    assert not_implemented.json()["results"][0]["target"] == "multimodal_embedding"
 
 
 def test_disabled_stateless_inference_calls_do_not_persist_data(
@@ -329,6 +330,29 @@ def test_enabled_request_size_rejects_before_body_parsing_and_persistence(
     assert_snapshot_unchanged(before, after)
 
 
+def test_enabled_multimodal_route_rejects_oversized_streamed_body_without_content_length(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, max_request_mb=1)
+
+    def chunks():
+        yield b'{"model":"multimodal:missing","inputs":['
+        yield b'{"type":"image_base64","data":"'
+        yield b"A" * (2 * 1024 * 1024)
+        yield b'"}]}'
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        content=chunks(),
+        headers={"content-type": "application/json", **auth_headers()},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "INFERENCE_REQUEST_TOO_LARGE"
+
+
 def test_disabled_route_rejects_before_size_and_auth_checks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 
@@ -397,6 +421,7 @@ def test_enabled_status_and_model_lists_are_no_load_and_secret_free(
     assert status.status_code == 200
     assert status.json()["routes"] == {"openai_compatible": True, "workbench_native": True}
     assert status.json()["capabilities"]["vision_tasks"] == "planned"
+    assert status.json()["runtime"]["multimodal_embedding_cache"] == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}
     assert "test-inference-key" not in str(status.json())
     assert workbench_models.status_code == 200
     assert workbench_models.json()["object"] == "list"

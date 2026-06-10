@@ -5,6 +5,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class StatelessPersistenceSnapshot:
+    sessions: int
     messages: int
     runs: int
     run_steps: int
@@ -19,6 +20,7 @@ class StatelessPersistenceSnapshot:
 
 def capture_stateless_persistence_snapshot(state: Any) -> StatelessPersistenceSnapshot:
     return StatelessPersistenceSnapshot(
+        sessions=len(_list_or_empty(state.sessions, "list_sessions")),
         messages=len(_list_or_empty(state.messages, "list_all_messages")),
         runs=len(_list_or_empty(state.runs, "list_all_runs")),
         run_steps=_count_run_steps(state),

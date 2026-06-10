@@ -6,6 +6,13 @@ import pytest
 from sqlalchemy import text
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.inference.multimodal_runtime import (
+    MultimodalEmbeddingResult,
+    clear_multimodal_embedding_runtime_factories,
+    clear_multimodal_runtime_cache,
+    register_multimodal_embedding_runtime_factory,
+)
+from ai_workbench.core.inference.stateless_guard import assert_snapshot_unchanged, capture_stateless_persistence_snapshot
 from ai_workbench.core.provider_inventory import scan_internal_provider_models
 from ai_workbench.db.database import get_engine, init_db
 from tests.test_prompt_agent_execution import FakeLLMRuntime
@@ -30,6 +37,55 @@ def create_profile(client: TestClient, **overrides) -> dict:
     response = client.post("/api/inference/multimodal-embedding-models", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+class FakeMultimodalRuntime:
+    instances = []
+
+    def __init__(self, profile) -> None:
+        self.profile_id = profile.id
+        self.calls = []
+        self.unloaded = False
+        FakeMultimodalRuntime.instances.append(self)
+
+    def embed(self, *, profile, inputs, normalize: bool):
+        self.calls.append({"profile_id": profile.id, "inputs": [item.input_type for item in inputs], "normalize": normalize})
+        return type("Result", (), {"vectors": [[float(index), float(index + 1)] for index, _ in enumerate(inputs)]})()
+
+    def unload(self) -> None:
+        self.unloaded = True
+
+
+class FailingMultimodalRuntime:
+    def __init__(self, profile) -> None:
+        self.profile_id = profile.id
+
+    def embed(self, *, profile, inputs, normalize: bool):
+        raise RuntimeError("secret=provider-secret payload=AAAA vector=[9.9] path=C:\\models\\fake")
+
+
+class NonNumericMultimodalRuntime(FakeMultimodalRuntime):
+    def embed(self, *, profile, inputs, normalize: bool):
+        super().embed(profile=profile, inputs=inputs, normalize=normalize)
+        return MultimodalEmbeddingResult(vectors=[["not-a-number"] for _ in inputs])
+
+
+class WrongCountMultimodalRuntime(FakeMultimodalRuntime):
+    def embed(self, *, profile, inputs, normalize: bool):
+        super().embed(profile=profile, inputs=inputs, normalize=normalize)
+        return MultimodalEmbeddingResult(vectors=[[1.0, 2.0]])
+
+
+class RaggedMultimodalRuntime(FakeMultimodalRuntime):
+    def embed(self, *, profile, inputs, normalize: bool):
+        super().embed(profile=profile, inputs=inputs, normalize=normalize)
+        return MultimodalEmbeddingResult(vectors=[[1.0, 2.0], [3.0]])
+
+
+def teardown_function() -> None:
+    clear_multimodal_embedding_runtime_factories()
+    clear_multimodal_runtime_cache()
+    FakeMultimodalRuntime.instances.clear()
 
 
 def test_multimodal_profile_table_and_defaults_exist_on_old_db(tmp_path: Path) -> None:
@@ -120,6 +176,7 @@ def test_multimodal_route_validates_then_returns_not_implemented_and_is_stateles
     enable_inference(client, require_api_key=False)
     clip = create_profile(client, architecture="clip", provider_model_id="image_embedding/clip", external_inference_enabled=True)
     dino = create_profile(client, architecture="dinov2", provider_model_id="image_embedding/dino", supported_input_types=["image"], external_inference_enabled=True)
+    limited = create_profile(client, architecture="clip", provider_model_id="image_embedding/limited", external_inference_enabled=True, max_batch_size=1)
     blocked = create_profile(client, architecture="siglip2", provider_model_id="image_embedding/blocked", external_inference_enabled=False)
 
     def fail(*args, **kwargs):
@@ -137,6 +194,8 @@ def test_multimodal_route_validates_then_returns_not_implemented_and_is_stateles
         json={"model": f"multimodal:{clip['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red"}], "normalize": True},
     )
     dino_text = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{dino['id']}", "inputs": [{"type": "text", "text": "red"}]})
+    invalid_type = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{clip['id']}", "inputs": [{"type": "image_url", "url": "https://example.invalid/x.png"}]})
+    batch_too_large = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{limited['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "image_base64", "data": "BBBB"}]})
     unknown = client.post("/api/inference/embeddings/multimodal", json={"model": "multimodal:missing", "inputs": [{"type": "image_base64", "data": "AAAA"}]})
     not_allowed = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{blocked['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]})
     wrong_type = client.post("/api/inference/embeddings/multimodal", json={"model": "embedding:x", "inputs": [{"type": "image_base64", "data": "AAAA"}]})
@@ -146,6 +205,10 @@ def test_multimodal_route_validates_then_returns_not_implemented_and_is_stateles
     assert "embedding" not in ok.json()
     assert dino_text.status_code == 400
     assert dino_text.json()["error"]["code"] == "MODEL_INPUT_TYPE_UNSUPPORTED"
+    assert invalid_type.status_code == 400
+    assert invalid_type.json()["error"]["code"] == "INFERENCE_INVALID_REQUEST"
+    assert batch_too_large.status_code == 400
+    assert batch_too_large.json()["error"]["code"] == "INFERENCE_INVALID_REQUEST"
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "MODEL_NOT_FOUND"
     assert not_allowed.status_code == 403
@@ -154,6 +217,199 @@ def test_multimodal_route_validates_then_returns_not_implemented_and_is_stateles
     assert wrong_type.json()["error"]["code"] == "MODEL_NOT_ALLOWED"
     assert state.messages.list_all_messages() == []
     assert state.runs.list_all_runs() == []
+
+
+def test_multimodal_route_with_fake_runtime_returns_schema_and_does_not_persist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture="siglip2", provider_model_id="image_embedding/fake", external_inference_enabled=True)
+    before = capture_stateless_persistence_snapshot(state)
+    register_multimodal_embedding_runtime_factory("siglip2", FakeMultimodalRuntime)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("multimodal route called an unsafe helper")
+
+    monkeypatch.setattr(state.runtime, "handle_input", fail)
+    monkeypatch.setattr(state.agent_runner, "run", fail, raising=False)
+    monkeypatch.setattr(state.command_runner, "run", fail, raising=False)
+    monkeypatch.setattr("ai_workbench.core.attachments.save_attachment_from_data_url", fail)
+    monkeypatch.setattr("ai_workbench.core.attachments.save_attachment_from_upload", fail)
+    monkeypatch.setattr("ai_workbench.core.knowledge_indexing.upsert_indexed_source", fail, raising=False)
+    monkeypatch.setattr("ai_workbench.core.embedding.embed_texts", fail)
+    monkeypatch.setattr(state.runtimes.get_runtime("llm"), "chat", fail)
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['id']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red robot"}],
+        },
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload == {
+        "object": "list",
+        "model": f"multimodal:{profile['id']}",
+        "profile_id": profile["id"],
+        "architecture": "siglip2",
+        "embedding_space": f"siglip2/{profile['id']}/default",
+        "dimensions": 2,
+        "normalized": True,
+        "data": [
+            {"object": "embedding", "index": 0, "input_type": "image", "embedding": [0.0, 1.0]},
+            {"object": "embedding", "index": 1, "input_type": "text", "embedding": [1.0, 2.0]},
+        ],
+        "usage": {"input_count": 2},
+    }
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
+    assert "AAAA" not in str(payload)
+    assert "red robot" not in str(payload)
+    assert "multimodal" in payload["model"]
+
+
+@pytest.mark.parametrize("architecture", ["clip", "open_clip", "siglip2"])
+def test_clip_family_multimodal_profiles_accept_image_and_text_with_fake_runtime(
+    architecture: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture=architecture, provider_model_id=f"image_embedding/{architecture}", external_inference_enabled=True)
+    register_multimodal_embedding_runtime_factory(architecture, FakeMultimodalRuntime)
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red"}]},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert [item["input_type"] for item in response.json()["data"]] == ["image", "text"]
+
+
+def test_multimodal_unload_clears_runtime_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture="clip", provider_model_id="image_embedding/cache", external_inference_enabled=True)
+    register_multimodal_embedding_runtime_factory("clip", FakeMultimodalRuntime)
+
+    first = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
+    unload = client.post("/api/inference/unload", json={"target": "all"}, headers=auth_headers())
+    second = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
+
+    assert first.status_code == 200
+    assert unload.status_code == 200
+    assert unload.json()["results"][0]["target"] == "multimodal_embedding"
+    assert second.status_code == 200
+
+
+def test_multimodal_unload_rejects_non_object_json_without_clearing_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture="clip", provider_model_id="image_embedding/cache", external_inference_enabled=True)
+    register_multimodal_embedding_runtime_factory("clip", FakeMultimodalRuntime)
+
+    first = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
+    invalid = client.post("/api/inference/unload", content=b"[]", headers={"content-type": "application/json", **auth_headers()})
+    second = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
+
+    assert first.status_code == 200
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "INFERENCE_INVALID_REQUEST"
+    assert second.status_code == 200
+    assert len(FakeMultimodalRuntime.instances) == 1
+
+
+def test_multimodal_unload_rejects_oversized_streamed_body_without_clearing_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False, max_request_mb=1)
+    profile = create_profile(client, architecture="clip", provider_model_id="image_embedding/cache", external_inference_enabled=True)
+    register_multimodal_embedding_runtime_factory("clip", FakeMultimodalRuntime)
+
+    first = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
+
+    def chunks():
+        yield b'{"target":"all","model":"multimodal:'
+        yield b"missing"
+        yield b'"}'
+        yield b"A" * (2 * 1024 * 1024)
+
+    invalid = client.post(
+        "/api/inference/unload",
+        content=chunks(),
+        headers={"content-type": "application/json", **auth_headers()},
+    )
+    second = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
+
+    assert first.status_code == 200
+    assert invalid.status_code == 413
+    assert invalid.json()["error"]["code"] == "INFERENCE_REQUEST_TOO_LARGE"
+    assert second.status_code == 200
+    assert len(FakeMultimodalRuntime.instances) == 1
+
+
+def test_multimodal_runtime_exception_is_normalized_without_payload_leaks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture="clip", provider_model_id="image_embedding/failing", external_inference_enabled=True)
+    register_multimodal_embedding_runtime_factory("clip", FailingMultimodalRuntime)
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]},
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    assert response.status_code == 502
+    assert payload["error"]["code"] == "PROVIDER_ERROR"
+    assert "provider-secret" not in str(payload)
+    assert "AAAA" not in str(payload)
+    assert "9.9" not in str(payload)
+    assert "C:\\models\\fake" not in str(payload)
+
+
+@pytest.mark.parametrize(
+    ("runtime_cls", "expected_code"),
+    [
+        (NonNumericMultimodalRuntime, "PROVIDER_ERROR"),
+        (WrongCountMultimodalRuntime, "PROVIDER_ERROR"),
+        (RaggedMultimodalRuntime, "PROVIDER_ERROR"),
+    ],
+)
+def test_multimodal_invalid_fake_runtime_outputs_are_sanitized(
+    runtime_cls,
+    expected_code: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture="clip", provider_model_id="image_embedding/fake", external_inference_enabled=True)
+    register_multimodal_embedding_runtime_factory("clip", runtime_cls)
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red"}]},
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    rendered = str(payload)
+    assert response.status_code == 502
+    assert payload["error"]["code"] == expected_code
+    assert "not-a-number" not in rendered
+    assert "AAAA" not in rendered
+    assert "red" not in rendered
+    assert "1.0" not in rendered
+    assert "C:\\models\\fake" not in rendered
 
 
 def test_multimodal_route_guards_before_body_parsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

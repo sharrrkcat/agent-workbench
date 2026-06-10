@@ -2,8 +2,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ai_workbench.core.inference.multimodal_runtime import has_multimodal_embedding_runtime_factory, multimodal_runtime_cache_status
 
-INFERENCE_A3_VERSION = "a3"
+
+INFERENCE_A4_VERSION = "a4.1"
 
 
 def status_response(
@@ -29,11 +31,19 @@ def status_response(
             "multimodal_embeddings": "configured",
             "vision_tasks": "planned",
         },
-        "models": models or {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0},
+        "models": models
+        or {
+            "llm_external_enabled_count": 0,
+            "embedding_external_enabled_count": 0,
+            "multimodal_external_enabled_count": 0,
+        },
         "implementation": {
             "real_inference": True,
-            "real_multimodal_inference": False,
-            "version": INFERENCE_A3_VERSION,
+            "real_multimodal_inference": has_multimodal_embedding_runtime_factory(),
+            "version": INFERENCE_A4_VERSION,
+        },
+        "runtime": {
+            "multimodal_embedding_cache": multimodal_runtime_cache_status(),
         },
     }
 
@@ -73,7 +83,7 @@ class OpenAIEmbeddingsRequest(BaseModel):
 class InferenceUnloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target: Literal["llm", "embedding", "image_embedding", "vision_task", "all"] = "all"
+    target: Literal["llm", "embedding", "image_embedding", "multimodal_embedding", "vision_task", "all"] = "all"
     model: str | None = None
 
 
@@ -91,6 +101,29 @@ class MultimodalEmbeddingRequest(BaseModel):
     model: str
     inputs: list[MultimodalEmbeddingInput]
     normalize: bool | None = None
+
+
+class MultimodalEmbeddingResponseItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    object: Literal["embedding"] = "embedding"
+    index: int
+    input_type: Literal["image", "text"]
+    embedding: list[float]
+
+
+class MultimodalEmbeddingResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    object: Literal["list"] = "list"
+    model: str
+    profile_id: str
+    architecture: str
+    embedding_space: str
+    dimensions: int
+    normalized: bool
+    data: list[MultimodalEmbeddingResponseItem]
+    usage: dict[str, int]
 
 
 class VisionRequest(BaseModel):

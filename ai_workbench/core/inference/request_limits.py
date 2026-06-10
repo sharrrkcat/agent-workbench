@@ -31,6 +31,20 @@ async def read_limited_body(request: Request, settings: StatelessInferenceSettin
     return b"".join(chunks)
 
 
+async def read_limited_workbench_body(request: Request, settings: StatelessInferenceSettings) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    limit = settings.max_request_bytes
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            from ai_workbench.core.inference.errors import raise_workbench_inference_error
+
+            raise_workbench_inference_error(413, InferenceErrorCode.REQUEST_TOO_LARGE)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def read_limited_json(request: Request, settings: StatelessInferenceSettings) -> object:
     import json
 
@@ -46,17 +60,7 @@ async def read_limited_json(request: Request, settings: StatelessInferenceSettin
 async def read_limited_workbench_json(request: Request, settings: StatelessInferenceSettings) -> object:
     import json
 
-    chunks: list[bytes] = []
-    total = 0
-    limit = settings.max_request_bytes
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > limit:
-            from ai_workbench.core.inference.errors import raise_workbench_inference_error
-
-            raise_workbench_inference_error(413, InferenceErrorCode.REQUEST_TOO_LARGE)
-        chunks.append(chunk)
-    raw = b"".join(chunks)
+    raw = await read_limited_workbench_body(request, settings)
     try:
         return json.loads(raw.decode("utf-8"))
     except Exception:

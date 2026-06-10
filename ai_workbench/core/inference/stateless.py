@@ -6,6 +6,12 @@ from uuid import uuid4
 
 from ai_workbench.core import embedding as embedding_module
 from ai_workbench.core.inference.errors import InferenceErrorCode
+from ai_workbench.core.inference.multimodal_runtime import (
+    MultimodalEmbeddingInput,
+    MultimodalRuntimeError,
+    MultimodalRuntimeUnavailable,
+    embed_multimodal_inputs,
+)
 from ai_workbench.core.knowledge_models import KnowledgeModelError
 
 
@@ -172,10 +178,59 @@ def validate_multimodal_embedding_request(state: Any, payload: dict[str, Any]) -
     model_id = _required_model(payload)
     inputs = _validate_multimodal_inputs(payload.get("inputs"))
     profile = _resolve_multimodal_profile(state, model_id)
-    if any(item["input_type"] == "text" for item in inputs) and "text" not in profile.supported_input_types:
+    _validate_multimodal_profile_inputs(profile, inputs)
+    _validate_multimodal_normalize(payload, profile)
+
+
+def create_multimodal_embeddings_response(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    model_id = _required_model(payload)
+    inputs = _validate_multimodal_inputs(payload.get("inputs"))
+    profile = _resolve_multimodal_profile(state, model_id)
+    _validate_multimodal_profile_inputs(profile, inputs)
+    normalize = _validate_multimodal_normalize(payload, profile)
+    try:
+        result = embed_multimodal_inputs(profile, inputs, normalize=normalize)
+    except MultimodalRuntimeUnavailable as exc:
+        raise StatelessInferenceError(InferenceErrorCode.NOT_IMPLEMENTED, status_code=501) from exc
+    except MultimodalRuntimeError as exc:
+        raise _multimodal_runtime_exception(exc) from exc
+    vectors = result.vectors
+    dimensions = result.dimensions if result.dimensions is not None else (len(vectors[0]) if vectors else 0)
+    return {
+        "object": "list",
+        "model": model_id,
+        "profile_id": profile.id,
+        "architecture": profile.architecture,
+        "embedding_space": profile.embedding_space or f"{profile.architecture}/{profile.id}/default",
+        "dimensions": dimensions,
+        "normalized": normalize,
+        "data": [
+            {
+                "object": "embedding",
+                "index": index,
+                "input_type": item.input_type,
+                "embedding": vector,
+            }
+            for index, (item, vector) in enumerate(zip(inputs, vectors, strict=False))
+        ],
+        "usage": {"input_count": len(inputs)},
+    }
+
+
+def _validate_multimodal_profile_inputs(profile: Any, inputs: list[MultimodalEmbeddingInput]) -> None:
+    if any(item.input_type == "text" for item in inputs) and "text" not in profile.supported_input_types:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
+    max_batch_size = getattr(profile, "max_batch_size", None)
+    if max_batch_size is not None and len(inputs) > int(max_batch_size):
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "inputs exceed profile max_batch_size.")
+
+
+def _validate_multimodal_normalize(payload: dict[str, Any], profile: Any) -> bool:
     if "normalize" in payload and payload["normalize"] is not None and not isinstance(payload["normalize"], bool):
         raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "normalize must be a boolean when provided.")
+    if "normalize" in payload and payload["normalize"] is not None:
+        return bool(payload["normalize"])
+    return bool(getattr(profile, "normalize_default", True))
 
 
 def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -302,10 +357,10 @@ def _validate_embedding_inputs(value: Any) -> list[str]:
     return list(value)
 
 
-def _validate_multimodal_inputs(value: Any) -> list[dict[str, str]]:
+def _validate_multimodal_inputs(value: Any) -> list[MultimodalEmbeddingInput]:
     if not isinstance(value, list) or not value:
         raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "inputs must be a non-empty array.")
-    inputs: list[dict[str, str]] = []
+    inputs: list[MultimodalEmbeddingInput] = []
     for item in value:
         if not isinstance(item, dict):
             raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "Each input must be an object.")
@@ -316,13 +371,13 @@ def _validate_multimodal_inputs(value: Any) -> list[dict[str, str]]:
                 raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "image_base64 inputs require string data.")
             if len(data) > MAX_IMAGE_BASE64_CHARS:
                 raise StatelessInferenceError(InferenceErrorCode.REQUEST_TOO_LARGE, status_code=413)
-            inputs.append({"input_type": "image"})
+            inputs.append(MultimodalEmbeddingInput(input_type="image", image_base64=data))
             continue
         if input_type == "text":
             text = item.get("text")
-            if not isinstance(text, str):
+            if not isinstance(text, str) or not text.strip():
                 raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "text inputs require string text.")
-            inputs.append({"input_type": "text"})
+            inputs.append(MultimodalEmbeddingInput(input_type="text", text=text))
             continue
         raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "Unsupported multimodal input type.")
     return inputs
@@ -369,3 +424,11 @@ def _embedding_exception(exc: KnowledgeModelError) -> StatelessInferenceError:
     if any(token in lowered for token in ("unavailable", "not_configured", "disabled", "not found")):
         return StatelessInferenceError(InferenceErrorCode.PROVIDER_UNAVAILABLE, status_code=502)
     return StatelessInferenceError(InferenceErrorCode.PROVIDER_ERROR, status_code=502)
+
+
+def _multimodal_runtime_exception(exc: Exception) -> StatelessInferenceError:
+    return StatelessInferenceError(
+        InferenceErrorCode.PROVIDER_ERROR,
+        "Multimodal embedding runtime failed.",
+        status_code=502,
+    )

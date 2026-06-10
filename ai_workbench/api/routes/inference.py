@@ -8,13 +8,14 @@ from ai_workbench.core.inference.errors import (
     InferenceErrorCode,
     raise_workbench_inference_error,
 )
-from ai_workbench.core.inference.request_limits import check_content_length, read_limited_workbench_json
-from ai_workbench.core.inference.schemas import status_response
+from ai_workbench.core.inference.multimodal_runtime import clear_multimodal_runtime_cache
+from ai_workbench.core.inference.request_limits import check_content_length, read_limited_workbench_body, read_limited_workbench_json
+from ai_workbench.core.inference.schemas import InferenceUnloadRequest, status_response
 from ai_workbench.core.inference.settings import StatelessInferenceSettings, resolve_inference_settings
 from ai_workbench.core.inference.stateless import (
     StatelessInferenceError,
+    create_multimodal_embeddings_response,
     inference_status_models_summary,
-    validate_multimodal_embedding_request,
     workbench_model_list,
 )
 from ai_workbench.core.multimodal_profiles import (
@@ -121,12 +122,47 @@ def delete_multimodal_embedding_model(profile_id: str, state: RuntimeState = Dep
 
 
 @router.post("/unload")
-def unload_models(
+async def unload_models(
     request: Request,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
-    _guard_workbench_request(request, state)
-    raise_workbench_inference_error(501, InferenceErrorCode.NOT_IMPLEMENTED)
+    settings = _guard_workbench_request(request, state)
+    raw_body = await read_limited_workbench_body(request, settings)
+    if raw_body.strip():
+        import json
+
+        try:
+            raw = json.loads(raw_body.decode("utf-8"))
+        except Exception:
+            raise_workbench_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
+        if not isinstance(raw, dict):
+            raise_workbench_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
+    else:
+        raw = {}
+    try:
+        payload = InferenceUnloadRequest.model_validate(raw)
+    except ValidationError:
+        raise_workbench_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
+    if payload.target not in {"image_embedding", "multimodal_embedding", "all"}:
+        raise_workbench_inference_error(501, InferenceErrorCode.NOT_IMPLEMENTED)
+    profile_id = None
+    if payload.model:
+        if payload.model.startswith("multimodal:"):
+            profile_id = payload.model.removeprefix("multimodal:")
+        else:
+            raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
+    removed = clear_multimodal_runtime_cache(profile_id)
+    return {
+        "ok": True,
+        "results": [
+            {
+                "target": "multimodal_embedding",
+                "status": "freed" if removed else "skipped",
+                "removed": removed,
+                "message": "Freed." if removed else "No multimodal embedding runtime loaded.",
+            }
+        ],
+    }
 
 
 @router.post("/embeddings/multimodal")
@@ -139,10 +175,9 @@ async def create_multimodal_embeddings(
     if not isinstance(raw, dict):
         raise_workbench_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
     try:
-        validate_multimodal_embedding_request(state, raw)
+        return create_multimodal_embeddings_response(state, raw)
     except StatelessInferenceError as exc:
         raise_workbench_inference_error(exc.status_code, exc.code, exc.message)
-    raise_workbench_inference_error(501, InferenceErrorCode.NOT_IMPLEMENTED)
 
 
 @router.post("/vision")

@@ -110,8 +110,8 @@ Internal providers:
   state where the local cache can be inspected. External reranker providers are
   not supported.
 - Multimodal Embedding Model Profiles may use `image_embedding/...` refs under
-  `data/models/image_embeddings`. A3 status/listing is no-load and does not run
-  real image inference.
+  `data/models/image_embeddings`. A4.1 status/listing is no-load and real image
+  inference is available only when a multimodal runtime factory is registered.
 - Internal provider unload is best-effort cache release only. It may release
   cached `internal_transformers` or `internal_llama_cpp` LLM runtimes, and must
   never delete model files or user data. Unsupported, unavailable, or failed
@@ -160,6 +160,9 @@ internal LLM runtime cache release.
 Future Stateless Inference image embedding and vision task caches must follow
 the same best-effort/no-delete rule and are owned by
 [stateless-inference.md](stateless-inference.md).
+A4.1 `POST /api/inference/unload` owns the multimodal embedding runtime cache
+target names `image_embedding`, `multimodal_embedding`, and `all`; global
+`/api/runtime/free-memory` targets are unchanged.
 A2 Stateless Inference status and model listing are no-load operations: they
 read enabled allowlisted profiles only and must not call provider
 status/network helpers.
