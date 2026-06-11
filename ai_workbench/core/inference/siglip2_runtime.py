@@ -3,15 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ai_workbench.core.inference.multimodal_runtime import (
-    MultimodalEmbeddingInput,
-    MultimodalEmbeddingResult,
-    MultimodalRuntimeError,
-    register_multimodal_embedding_runtime_factory,
-)
-
-from ai_workbench.core.inference.clip_runtime import (
+from ai_workbench.core.inference.image_embedding_runtime_utils import (
     _assign_feature_vectors,
+    _best_effort_collect,
+    _first_token_features,
+    _inference_context,
     _load_image_from_base64,
     _move_batch,
     _normalize_vector,
@@ -19,7 +15,12 @@ from ai_workbench.core.inference.clip_runtime import (
     _resolve_runtime_device,
     _select_torch_device,
     _vectors_to_lists,
-    _best_effort_collect,
+)
+from ai_workbench.core.inference.multimodal_runtime import (
+    MultimodalEmbeddingInput,
+    MultimodalEmbeddingResult,
+    MultimodalRuntimeError,
+    register_multimodal_embedding_runtime_factory,
 )
 
 
@@ -121,13 +122,6 @@ def _extract_feature_vectors(model: Any, batch: Any, feature_kind: str) -> list[
     return _vectors_to_lists(features)
 
 
-def _inference_context(torch: Any) -> Any:
-    inference_mode = getattr(torch, "inference_mode", None)
-    if callable(inference_mode):
-        return inference_mode()
-    return torch.no_grad()
-
-
 def _extract_output_features(output: Any, feature_kind: str) -> Any:
     for key in (f"{feature_kind}_embeds", "pooler_output"):
         if isinstance(output, dict) and key in output:
@@ -145,18 +139,3 @@ def _extract_output_features(output: Any, feature_kind: str) -> Any:
         return output[0]
     return output
 
-
-def _first_token_features(value: Any) -> Any:
-    if hasattr(value, "detach"):
-        value = value.detach()
-    if hasattr(value, "cpu"):
-        value = value.cpu()
-    if hasattr(value, "__getitem__"):
-        try:
-            return value[:, 0, :]
-        except Exception:
-            try:
-                return value[:, 0]
-            except Exception:
-                return value
-    return value

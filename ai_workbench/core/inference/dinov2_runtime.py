@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ai_workbench.core.inference.clip_runtime import (
+from ai_workbench.core.inference.image_embedding_runtime_utils import (
     _assign_feature_vectors,
     _best_effort_collect,
+    _first_token_features,
+    _inference_context,
     _load_image_from_base64,
     _move_batch,
     _normalize_vector,
@@ -20,7 +22,6 @@ from ai_workbench.core.inference.multimodal_runtime import (
     MultimodalRuntimeError,
     register_multimodal_embedding_runtime_factory,
 )
-from ai_workbench.core.inference.siglip2_runtime import _inference_context
 
 
 class Dinov2EmbeddingRuntime:
@@ -118,18 +119,3 @@ def _extract_dinov2_features(output: Any) -> Any:
         return output[0]
     return output
 
-
-def _first_token_features(value: Any) -> Any:
-    if hasattr(value, "detach"):
-        value = value.detach()
-    if hasattr(value, "cpu"):
-        value = value.cpu()
-    if hasattr(value, "__getitem__"):
-        try:
-            return value[:, 0, :]
-        except Exception:
-            try:
-                return value[:, 0]
-            except Exception:
-                return value
-    return value

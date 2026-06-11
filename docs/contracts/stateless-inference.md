@@ -528,6 +528,20 @@ uses `profile.embedding_space` when set, otherwise
 `<architecture>/<profile_id>/default`. `normalized` reflects the request
 `normalize` value or the profile `normalize_default`.
 
+## Manual Smoke Checklist
+
+For a real local smoke test:
+
+1. Place a local model folder under `data/models/image_embeddings/<folder>`.
+2. Create or enable the matching Provider Profile.
+3. Create or enable the Multimodal Embedding Model Profile with
+   `external_inference_enabled=true`.
+4. Use `multimodal:<profile_id>` in `POST /api/inference/embeddings/multimodal`.
+5. Verify `GET /api/inference/status` and `GET /api/inference/models`.
+6. Verify `POST /api/inference/unload` clears cached multimodal runtimes.
+7. Install the optional local ML packages and model files only for smoke tests;
+   automated tests remain fake-backed and do not require them.
+
 `POST /api/inference/vision` future request shape:
 
 ```json
