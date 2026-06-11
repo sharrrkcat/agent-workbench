@@ -14,6 +14,7 @@ from ai_workbench.core.inference.multimodal_runtime import (
 )
 from ai_workbench.core.inference.vision_runtime import (
     VisionRuntimeError,
+    VisionRuntimeInvalidRequest,
     VisionRuntimeInput,
     VisionRuntimeUnavailable,
     run_vision_task,
@@ -253,6 +254,8 @@ def create_vision_response(state: Any, payload: dict[str, Any]) -> dict[str, Any
         result = run_vision_task(profile, task=task, input=vision_input, options=options)
     except VisionRuntimeUnavailable as exc:
         raise StatelessInferenceError(InferenceErrorCode.NOT_IMPLEMENTED, status_code=501) from exc
+    except VisionRuntimeInvalidRequest as exc:
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, str(exc), status_code=400) from exc
     except VisionRuntimeError as exc:
         raise _vision_runtime_exception(exc) from exc
     return {

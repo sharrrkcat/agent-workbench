@@ -191,8 +191,8 @@ def test_enabled_workbench_skeleton_requires_auth_then_returns_not_implemented(
     assert status.json()["implementation"] == {
         "real_inference": True,
         "real_multimodal_inference": True,
-        "real_vision_inference": False,
-        "version": "a5.1",
+        "real_vision_inference": True,
+        "version": "a5.2",
     }
     assert status.json()["capabilities"]["llm_chat"] == "available"
     assert status.json()["capabilities"]["text_embeddings"] == "available"

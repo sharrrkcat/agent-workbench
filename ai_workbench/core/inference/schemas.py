@@ -6,7 +6,7 @@ from ai_workbench.core.inference.multimodal_runtime import has_multimodal_embedd
 from ai_workbench.core.inference.vision_runtime import has_vision_runtime_factory, vision_runtime_cache_status
 
 
-INFERENCE_A4_VERSION = "a5.1"
+INFERENCE_A4_VERSION = "a5.2"
 
 
 def status_response(

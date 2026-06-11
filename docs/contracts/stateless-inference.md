@@ -4,9 +4,9 @@ This contract owns the core-owned Stateless Local Inference Service. A4.4 keeps
 A2 real stateless chat/text embedding behavior, preserves A3 multimodal profile
 taxonomy, and adds lazy local CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding
 runtimes behind the A4.1 runtime interface, cache, and Workbench-native
-response schema. DINOv2 is image-only. A5.1 adds a separate Vision Model
-Profile taxonomy for Florence2-style vision tasks and a production-safe runtime
-skeleton for `/api/inference/vision`.
+response schema. DINOv2 is image-only. A5 adds a separate Vision Model Profile
+taxonomy for Florence2-style vision tasks, and A5.2 registers a lazy local-only
+Florence2 runtime for `/api/inference/vision`.
 
 ## Scope
 
@@ -21,8 +21,6 @@ The service exposes local stateless inference for:
 
 The service may later expose:
 
-- Workbench-native Florence2 family vision tasks through a separate Vision
-  Model Profile and runtime registry.
 - runtime resource visibility and best-effort unload.
 
 The service must remain stateless for external API requests. Request payloads
@@ -80,10 +78,10 @@ Registered:
 
 `POST /api/inference/vision` validates `vision:<profile_id>` requests against
 allowlisted Vision Model Profiles with `architecture=florence2` and supported
-tasks `caption`, `detailed_caption`, `ocr`, and `object_detection`. A5.1 keeps
-real Florence2 loading deferred; production returns a sanitized
-not-implemented/runtime-unavailable error unless tests register a fake runtime
-factory.
+tasks `caption`, `detailed_caption`, `ocr`, and `object_detection`. A5.2
+registers a lazy real Florence2 runtime that uses local model folders only,
+decodes image payloads before loading model weights, and never auto-downloads
+models.
 
 `POST /api/inference/embeddings/multimodal` validates request shape, resolves an
 allowlisted Multimodal Embedding Model Profile, then calls the multimodal
@@ -104,9 +102,9 @@ JSON bodies such as arrays, strings, numbers, and booleans are rejected with
 `INFERENCE_INVALID_REQUEST` and do not clear cache state.
 
 Streaming chat completions, `/v1/responses`, `/v1/completions`, similarity
-scoring, real Florence2 loading, BLIP/JoyCaption, text-to-image, operational
-log persistence, Capability wrappers, and global `/api/runtime/free-memory`
-vision targets are deferred.
+scoring, BLIP/JoyCaption, text-to-image, operational log persistence,
+Capability wrappers, frontend vision UI, OpenAI-compatible vision endpoints,
+and global `/api/runtime/free-memory` vision targets are deferred.
 
 ## Stateless Data Boundary
 
@@ -168,6 +166,14 @@ helpers, Knowledge helpers, provider status APIs, optional ML imports, or
 model-loading paths before runtime execution. CLIP/OpenCLIP/SigLIP2/DINOv2
 runtimes decode images in memory only, preprocess in memory only, and load
 local model weights only during valid embedding calls.
+
+A5.2 vision serving calls only the vision runtime interface after guards, JSON
+parsing, validation, profile resolution, task allowlist checks, and image input
+shape/size checks. The Florence2 runtime decodes and validates the image in
+memory before loading model weights, builds task prompts in memory, generates
+under a no-grad/inference context, normalizes output to the A5.1 response
+shape, and persists none of the prompt, generated text, OCR text, captions,
+detections, or image payload.
 
 ## Auth And Exposure
 
@@ -308,6 +314,7 @@ External inference is opt-in per model profile:
 - Embedding Model Profile: `external_inference_enabled`, default `false`.
 - Multimodal Embedding Model Profile: `external_inference_enabled`, default
   `false`.
+- Vision Model Profile: `external_inference_enabled`, default `false`.
 
 The fields are persisted and accepted/returned by profile CRUD APIs. Existing
 profiles default to not externally callable. Disabled profiles and profiles
@@ -321,9 +328,10 @@ whose Provider Profile is disabled are not listed or callable even when
 
 `GET /api/inference/models` also lists enabled
 MultimodalEmbeddingModelProfiles with `external_inference_enabled=true` and
-type `multimodal_embedding`. Model listing must not load weights, call provider
-status/network checks, expose API keys, expose absolute paths, expose local
-directory trees, return raw provider payloads, or list
+type `multimodal_embedding`, plus enabled VisionModelProfiles with
+`external_inference_enabled=true` and type `vision`. Model listing must not load
+weights, call provider status/network checks, expose API keys, expose absolute
+paths, expose local directory trees, return raw provider payloads, or list
 disabled/non-allowlisted profiles.
 
 ## Model Id Policy
@@ -333,10 +341,12 @@ A4.1 returns and accepts only profile-derived ids with explicit type prefixes:
 - LLM chat models: `llm:<llm_profile_id>`.
 - text embedding models: `embedding:<embedding_model_profile_id>`.
 - multimodal embedding models: `multimodal:<multimodal_profile_id>`.
+- vision task models: `vision:<vision_model_profile_id>`.
 
 The exact ids returned by `/v1/models` must be used with `/v1/chat/completions`
 and `/v1/embeddings`. Workbench-native multimodal requests must use
-`multimodal:<profile_id>`. Prefixes make model namespaces separate and avoid
+`multimodal:<profile_id>`. Workbench-native vision requests must use
+`vision:<profile_id>`. Prefixes make model namespaces separate and avoid
 visible id collisions. A request for the wrong model type returns
 `model_not_allowed`. Unknown ids return `model_not_found`.
 
@@ -380,6 +390,18 @@ DINOv2 is image-only and must reject text input with
 Florence2 public task names are `caption`, `detailed_caption`, `ocr`, and
 `object_detection`. Internal prompt mapping and post-processing belong to the
 vision runtime wrapper, not to route handlers.
+
+Vision model fields mirror other Model Profiles: `id`, `name`, `description`,
+`notes`, `enabled`, `external_inference_enabled=false`, optional
+`provider_profile_id`, `provider_model_id`, `architecture`, `backend`,
+`supported_tasks`, `max_batch_size`, compact `metadata`, and timestamps.
+Florence2 uses `architecture=florence2`, `backend=transformers`, and safe local
+refs shaped as `vision/<folder>` under `data/models/vision`. The runtime uses
+`local_files_only=True` and never auto-downloads. CUDA is optional; `auto`
+prefers CUDA, then MPS, then CPU, while explicit unavailable devices fail with
+a compact provider/runtime error. `metadata.trust_remote_code=true` is the only
+way to opt into local custom model code execution; the default is
+`trust_remote_code=false`.
 
 ## Endpoint Contracts
 
@@ -572,7 +594,14 @@ For a real vision smoke test:
 }
 ```
 
-Vision response shapes are task-specific: captions and OCR return text, and
-object detection returns boxes with labels, scores, and normalized
-coordinates. Raw Florence2 outputs must not be persisted. Vision calls do not
-appear in `/v1/models`.
+`options` may include bounded Florence2 generation controls:
+`max_new_tokens` from 1 to 1024 and `num_beams` from 1 to 8. Unknown generation
+options are rejected with `INFERENCE_INVALID_REQUEST` before image decode or
+model loading.
+
+Vision response shapes are task-specific: captions, detailed captions, and OCR
+return text; object detection returns labels, scores, and normalized
+coordinates in `[0, 1]`. Florence2 prompt tokens, raw generated text, pixel
+boxes, and post-processor internals are not public API and must not be
+persisted. Vision calls do not appear in `/v1/models`; there is no `/v1` vision
+endpoint.

@@ -1,4 +1,6 @@
 from pathlib import Path
+import sys
+from types import ModuleType
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -14,6 +16,7 @@ from ai_workbench.core.inference.multimodal_runtime import (
 )
 from ai_workbench.core.inference.stateless_guard import assert_snapshot_unchanged, capture_stateless_persistence_snapshot
 from ai_workbench.core.inference.vision_runtime import (
+    VisionRuntimeError,
     VisionRuntimeResult,
     clear_vision_runtime_cache,
     clear_vision_runtime_factories,
@@ -43,6 +46,13 @@ def create_vision_profile(client: TestClient, **overrides) -> dict:
     response = client.post("/api/inference/vision-models", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def create_local_vision_folder(client: TestClient, folder: str) -> Path:
+    model_dir = client.app.state.runtime_state.repo_root / "data" / "models" / "vision" / folder
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    return model_dir
 
 
 def create_multimodal_profile(client: TestClient, **overrides) -> dict:
@@ -120,6 +130,87 @@ class FakeMultimodalRuntime:
 
     def unload(self) -> None:
         self.unloaded = True
+
+
+class FakeVisionImage:
+    size = (200, 100)
+
+
+class FakeVisionTensor:
+    def to(self, device):
+        return self
+
+
+class FakeFlorence2Model:
+    def to(self, device):
+        return self
+
+    def eval(self):
+        return None
+
+    def generate(self, **kwargs):
+        return ["generated_ids"]
+
+
+class FakeFlorence2Processor:
+    def __init__(self, *, task_outputs: dict[str, object]) -> None:
+        self.task_outputs = task_outputs
+
+    def __call__(self, *, text, images, return_tensors):
+        return {"input_ids": FakeVisionTensor()}
+
+    def batch_decode(self, generated_ids, skip_special_tokens=False):
+        return ["generated text that must not leak in errors"]
+
+    def post_process_generation(self, generated_text, *, task, image_size):
+        return {task: self.task_outputs[task]}
+
+
+class FakeFlorence2Torch:
+    inference_entries = 0
+    inference_exits = 0
+    active = False
+
+    class cuda:
+        @staticmethod
+        def is_available() -> bool:
+            return False
+
+        @staticmethod
+        def empty_cache() -> None:
+            return None
+
+    class backends:
+        class mps:
+            @staticmethod
+            def is_available() -> bool:
+                return False
+
+    @staticmethod
+    def inference_mode():
+        class Context:
+            def __enter__(self):
+                FakeFlorence2Torch.inference_entries += 1
+                FakeFlorence2Torch.active = True
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                FakeFlorence2Torch.inference_exits += 1
+                FakeFlorence2Torch.active = False
+                return False
+
+        return Context()
+
+    class no_grad:
+        def __enter__(self):
+            FakeFlorence2Torch.inference_entries += 1
+            FakeFlorence2Torch.active = True
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            FakeFlorence2Torch.inference_exits += 1
+            FakeFlorence2Torch.active = False
+            return False
 
 
 def teardown_function() -> None:
@@ -209,8 +300,8 @@ def test_vision_route_validates_allowlist_task_and_input_before_runtime(tmp_path
     unsupported_task = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "ocr", "input": {"type": "image", "image_base64": "AAAA"}})
     text_input = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "caption", "input": {"type": "text", "text": "hello"}})
 
-    assert production.status_code == 501
-    assert production.json()["error"]["code"] == "INFERENCE_NOT_IMPLEMENTED"
+    assert production.status_code == 502
+    assert production.json()["error"]["code"] == "PROVIDER_ERROR"
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "MODEL_NOT_FOUND"
     assert wrong_type.status_code == 404
@@ -340,3 +431,389 @@ def test_status_and_models_do_not_construct_vision_runtime(tmp_path: Path, monke
     assert status.json()["models"]["vision_external_enabled_count"] == 1
     assert models.status_code == 200
     assert models.json()["summary"]["vision_profiles_available"] == 1
+
+
+def install_fake_florence2_backend(monkeypatch: pytest.MonkeyPatch, *, task_outputs: dict[str, object] | None = None) -> dict[str, int]:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    calls = {"load": 0, "decode": 0}
+    outputs = task_outputs or {
+        "<CAPTION>": "a local caption",
+        "<DETAILED_CAPTION>": "a local detailed caption",
+        "<OCR>": "local OCR text",
+        "<OD>": {"labels": ["cat"], "bboxes": [[20.0, 10.0, 100.0, 80.0]], "scores": [0.98]},
+    }
+
+    def fake_load(self):
+        calls["load"] += 1
+        return FakeFlorence2Model(), FakeFlorence2Processor(task_outputs=outputs), FakeFlorence2Torch
+
+    def fake_image(value):
+        calls["decode"] += 1
+        return FakeVisionImage()
+
+    monkeypatch.setattr(Florence2VisionRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", fake_image)
+    FakeFlorence2Torch.inference_entries = 0
+    FakeFlorence2Torch.inference_exits = 0
+    FakeFlorence2Torch.active = False
+    return calls
+
+
+def test_real_florence2_runtime_load_is_lazy_until_valid_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "lazy-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/lazy-florence2", external_inference_enabled=True)
+    calls = install_fake_florence2_backend(monkeypatch)
+
+    status = client.get("/api/inference/status")
+    models = client.get("/api/inference/models")
+
+    assert status.status_code == 200
+    assert models.status_code == 200
+    assert calls == {"load": 0, "decode": 0}
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {"type": "text", "text": "a local caption"}
+    assert calls == {"load": 1, "decode": 1}
+
+
+def test_invalid_florence2_image_fails_before_model_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "bad-image-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/bad-image-florence2", external_inference_enabled=True)
+    calls = {"load": 0}
+
+    def fail_load(self):
+        calls["load"] += 1
+        raise AssertionError("Florence2 _load should not run for invalid image input")
+
+    def invalid_image(value):
+        raise VisionRuntimeError("Invalid image input with fake-secret and AAAA.")
+
+    monkeypatch.setattr(Florence2VisionRuntime, "_load", fail_load)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", invalid_image)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json()).lower()
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert calls["load"] == 0
+    assert "aaaa" not in rendered
+    assert "fake-secret" not in rendered
+    assert "traceback" not in rendered
+
+
+def test_missing_local_florence2_model_folder_returns_sanitized_provider_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_vision_profile(client, provider_model_id="vision/missing-florence2-folder", external_inference_enabled=True)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json()).lower()
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "missing-florence2-folder" not in rendered
+    assert str(tmp_path).lower() not in rendered
+
+
+def test_missing_florence2_optional_dependency_returns_sanitized_provider_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "missing-deps-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/missing-deps-florence2", external_inference_enabled=True)
+
+    def fail_load(self):
+        raise VisionRuntimeError("Florence2 runtime dependencies are not installed: fake-secret-transformers.")
+
+    monkeypatch.setattr(Florence2VisionRuntime, "_load", fail_load)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json()).lower()
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "fake-secret-transformers" not in rendered
+    assert "traceback" not in rendered
+
+
+def test_florence2_trust_remote_code_is_explicit_metadata_opt_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "trust-default")
+    create_local_vision_folder(client, "trust-opt-in")
+    default_profile = create_vision_profile(client, provider_model_id="vision/trust-default")
+    trusted_profile = create_vision_profile(client, provider_model_id="vision/trust-opt-in", metadata={"trust_remote_code": True})
+
+    default_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(default_profile["id"]), repo_root=tmp_path)
+    trusted_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(trusted_profile["id"]), repo_root=tmp_path)
+
+    assert default_runtime.trust_remote_code is False
+    assert trusted_runtime.trust_remote_code is True
+
+
+def test_florence2_load_passes_trust_remote_code_only_during_lazy_local_loading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "trust-load")
+    profile = create_vision_profile(client, provider_model_id="vision/trust-load", external_inference_enabled=True, metadata={"trust_remote_code": True})
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+
+    records: dict[str, list[dict[str, object]]] = {"model": [], "processor": []}
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+    class FakeTransformersModule(ModuleType):
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                records["model"].append({"path": path, "kwargs": kwargs})
+
+                class Model:
+                    def to(self, device):
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                records["processor"].append({"path": path, "kwargs": kwargs})
+
+                class Processor:
+                    pass
+
+                return Processor()
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    model, processor, torch = runtime._load()
+
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    assert records["model"][0]["kwargs"]["local_files_only"] is True
+    assert records["model"][0]["kwargs"]["trust_remote_code"] is True
+    assert records["processor"][0]["kwargs"]["local_files_only"] is True
+    assert records["processor"][0]["kwargs"]["trust_remote_code"] is True
+
+
+@pytest.mark.parametrize(
+    ("task", "expected"),
+    [
+        ("caption", {"type": "text", "text": "a local caption"}),
+        ("detailed_caption", {"type": "text", "text": "a local detailed caption"}),
+        ("ocr", {"type": "text", "text": "local OCR text"}),
+        (
+            "object_detection",
+            {
+                "type": "objects",
+                "objects": [
+                    {
+                        "label": "cat",
+                        "score": 0.98,
+                        "box": {"x_min": 0.1, "y_min": 0.1, "x_max": 0.5, "y_max": 0.8},
+                    }
+                ],
+            },
+        ),
+    ],
+)
+def test_fake_florence2_backend_returns_task_outputs_through_http(
+    task: str,
+    expected: dict,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "fake-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/fake-florence2", external_inference_enabled=True)
+    calls = install_fake_florence2_backend(monkeypatch)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": task, "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == expected
+    assert calls["load"] == 1
+
+
+def test_invalid_florence2_generation_options_are_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "bad-options-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/bad-options-florence2", external_inference_enabled=True)
+    calls = install_fake_florence2_backend(monkeypatch)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={
+            "model": f"vision:{profile['id']}",
+            "task": "caption",
+            "input": {"type": "image", "image_base64": "AAAA"},
+            "options": {"temperature": 1.0},
+        },
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INFERENCE_INVALID_REQUEST"
+    assert calls["load"] == 0
+    assert calls["decode"] == 0
+    rendered = str(response.json()).lower()
+    assert "aaaa" not in rendered
+    assert "traceback" not in rendered
+    assert str(tmp_path).lower() not in rendered
+    assert "generated text" not in rendered
+    assert "ocr text" not in rendered
+    assert "secret" not in rendered
+
+
+def test_invalid_florence2_model_output_is_sanitized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "bad-output-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/bad-output-florence2", external_inference_enabled=True)
+    install_fake_florence2_backend(monkeypatch, task_outputs={"<OD>": {"labels": ["secret-label"], "bboxes": [[1, 2, 3, 4]], "scores": [float("nan")]}})
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "object_detection", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json()).lower()
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "secret-label" not in rendered
+    assert "nan" not in rendered
+    assert "generated text" not in rendered
+
+
+def test_malformed_florence2_object_list_item_is_rejected_and_sanitized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "bad-object-item-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/bad-object-item-florence2", external_inference_enabled=True)
+    install_fake_florence2_backend(monkeypatch, task_outputs={"<OD>": {"objects": ["secret-object"]}})
+    before = capture_stateless_persistence_snapshot(state)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "object_detection", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json()).lower()
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "secret-object" not in rendered
+    assert "generated text" not in rendered
+    assert "aaaa" not in rendered
+    assert "traceback" not in rendered
+    assert str(tmp_path).lower() not in rendered
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
+
+
+def test_florence2_generation_uses_inference_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "inference-context-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/inference-context-florence2", external_inference_enabled=True)
+    install_fake_florence2_backend(monkeypatch)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert FakeFlorence2Torch.inference_entries == 1
+    assert FakeFlorence2Torch.inference_exits == 1
+    assert FakeFlorence2Torch.active is False
+
+
+def test_real_florence2_fake_backend_success_is_stateless_and_unload_clears_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "stateless-florence2")
+    profile = create_vision_profile(client, provider_model_id="vision/stateless-florence2", external_inference_enabled=True)
+    install_fake_florence2_backend(monkeypatch)
+    before = capture_stateless_persistence_snapshot(state)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "ocr", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+    unload = client.post("/api/inference/unload", json={"target": "vision", "model": f"vision:{profile['id']}"}, headers=auth_headers())
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {"type": "text", "text": "local OCR text"}
+    assert unload.status_code == 200
+    assert unload.json()["results"] == [{"target": "vision", "status": "freed", "removed": 1, "message": "Freed."}]
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))

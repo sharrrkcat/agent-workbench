@@ -67,7 +67,7 @@ Internal providers:
 
 - `internal_transformers` and `internal_llama_cpp` are Provider Profile source
   types for local model inventory. They scan fixed roots under `data/models`:
-  `llms`, `embeddings`, `image_embeddings`, and `rerankers`.
+  `llms`, `embeddings`, `image_embeddings`, `vision`, and `rerankers`.
 - Refresh/status checks are filesystem metadata and optional dependency
   availability checks only. They must not load model weights, initialize torch,
   initialize transformers pipelines, or initialize llama-cpp runtimes.
@@ -76,7 +76,7 @@ Internal providers:
   list pure GGUF files as transformers models.
 - `internal_llama_cpp` lists `.gguf` files in the same three purpose roots.
 - Internal model refs use purpose prefixes: `llm/...`, `embedding/...`,
-  `image_embedding/...`, and `reranker/...`. Returned internal metadata may include `model_ref`,
+  `image_embedding/...`, `vision/...`, and `reranker/...`. Returned internal metadata may include `model_ref`,
   `display_name`, `kind`, `source=internal`, `backend`, and safe
   `relative_path`; it must not return absolute paths, file contents, secrets, or
   full directory trees.
@@ -112,6 +112,9 @@ Internal providers:
 - Multimodal Embedding Model Profiles may use `image_embedding/...` refs under
   `data/models/image_embeddings`. A4.1 status/listing is no-load and real image
   inference is available only when a multimodal runtime factory is registered.
+- Vision Model Profiles may use `vision/...` refs under `data/models/vision`.
+  A5 status/listing is no-load and real Florence2 inference is available only
+  when the vision runtime factory is registered.
 - Internal provider unload is best-effort cache release only. It may release
   cached `internal_transformers` or `internal_llama_cpp` LLM runtimes, and must
   never delete model files or user data. Unsupported, unavailable, or failed

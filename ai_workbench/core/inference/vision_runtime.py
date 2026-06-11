@@ -57,6 +57,10 @@ class VisionRuntimeError(Exception):
     pass
 
 
+class VisionRuntimeInvalidRequest(VisionRuntimeError):
+    pass
+
+
 class VisionRuntime(Protocol):
     def run(
         self,
@@ -162,6 +166,8 @@ def run_vision_task(
         runtime = get_vision_runtime(profile, cache=cache)
         result = runtime.run(profile=profile, task=task, input=input, options=options)
     except VisionRuntimeUnavailable:
+        raise
+    except VisionRuntimeInvalidRequest:
         raise
     except VisionRuntimeError:
         raise
