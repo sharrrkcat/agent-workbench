@@ -228,6 +228,24 @@ def install_fake_open_clip_backend(monkeypatch: pytest.MonkeyPatch) -> dict[str,
     return calls
 
 
+def install_fake_siglip2_backend(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
+
+    calls = {"load": 0, "image": 0}
+
+    def fake_load(self):
+        calls["load"] += 1
+        return FakeClipModel(), FakeClipProcessor(), FakeTorch
+
+    def fake_image(value):
+        calls["image"] += 1
+        return object()
+
+    monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.siglip2_runtime._load_image_from_base64", fake_image)
+    return calls
+
+
 def teardown_function() -> None:
     clear_multimodal_embedding_runtime_factories()
     clear_multimodal_runtime_cache()
@@ -426,6 +444,7 @@ def test_status_and_models_do_not_import_heavy_clip_dependencies(tmp_path: Path,
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_profile(client, provider_model_id="image_embedding/no-load", architecture="clip")
+    create_profile(client, provider_model_id="image_embedding/no-load-siglip2", architecture="siglip2")
     original_import = builtins.__import__
     blocked = {"torch", "transformers", "open_clip", "PIL"}
 
@@ -471,6 +490,106 @@ def test_real_clip_runtime_load_is_lazy_until_embedding_request(tmp_path: Path, 
     assert calls == {"load": 1, "image": 1}
 
 
+def test_real_siglip2_runtime_load_is_lazy_until_embedding_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "lazy-siglip2")
+    profile = create_profile(client, provider_model_id="image_embedding/lazy-siglip2", architecture="siglip2")
+    calls = install_fake_siglip2_backend(monkeypatch)
+
+    client.get("/api/inference/status", headers=auth_headers())
+    client.get("/api/inference/models", headers=auth_headers())
+
+    assert calls == {"load": 0, "image": 0}
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['id']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "secret text"}],
+            "normalize": False,
+        },
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload["architecture"] == "siglip2"
+    assert payload["data"] == [
+        {"object": "embedding", "index": 0, "input_type": "image", "embedding": [10.0, 0.0]},
+        {"object": "embedding", "index": 1, "input_type": "text", "embedding": [20.0, 0.0]},
+    ]
+    assert calls == {"load": 1, "image": 1}
+    assert "secret text" not in str(payload)
+
+
+def test_siglip2_feature_extraction_uses_inference_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "siglip2-inference-context")
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/siglip2-inference-context",
+        architecture="siglip2",
+    )
+
+    class RecordingTorch(FakeTorch):
+        active = False
+        enter_count = 0
+        exit_count = 0
+
+        class _InferenceMode:
+            def __enter__(self):
+                RecordingTorch.active = True
+                RecordingTorch.enter_count += 1
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                RecordingTorch.active = False
+                RecordingTorch.exit_count += 1
+                return False
+
+        @staticmethod
+        def inference_mode():
+            return RecordingTorch._InferenceMode()
+
+    class ContextAssertingModel(FakeClipModel):
+        def get_image_features(self, **batch):
+            assert RecordingTorch.active is True
+            return super().get_image_features(**batch)
+
+        def get_text_features(self, **batch):
+            assert RecordingTorch.active is True
+            return super().get_text_features(**batch)
+
+    def fake_load(self):
+        return ContextAssertingModel(), FakeClipProcessor(), RecordingTorch
+
+    monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.siglip2_runtime._load_image_from_base64", lambda value: object())
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['id']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "secret text"}],
+            "normalize": False,
+        },
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert RecordingTorch.enter_count == 2
+    assert RecordingTorch.exit_count == 2
+    assert RecordingTorch.active is False
+    assert response.json()["data"] == [
+        {"object": "embedding", "index": 0, "input_type": "image", "embedding": [10.0, 0.0]},
+        {"object": "embedding", "index": 1, "input_type": "text", "embedding": [20.0, 0.0]},
+    ]
+
+
 def test_missing_clip_optional_dependency_returns_sanitized_provider_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -507,11 +626,48 @@ def test_missing_clip_optional_dependency_returns_sanitized_provider_error(
     assert "traceback" not in rendered.lower()
 
 
+def test_missing_siglip2_optional_dependency_returns_sanitized_provider_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "siglip2-missing-deps")
+    profile = create_profile(client, provider_model_id="image_embedding/siglip2-missing-deps", architecture="siglip2")
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name.split(".", 1)[0] == "transformers":
+            raise ImportError("transformers secret path C:\\models\\fake provider-secret")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(
+        "ai_workbench.core.inference.siglip2_runtime._load_image_from_base64",
+        lambda value: object(),
+    )
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json())
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "provider-secret" not in rendered
+    assert "AAAA" not in rendered
+    assert "C:\\models\\fake" not in rendered
+    assert "traceback" not in rendered.lower()
+
+
 @pytest.mark.parametrize(
     "architecture, model_name, checkpoint_name",
     [
         ("clip", None, None),
         ("open_clip", "ViT-B-32", "model.pt"),
+        ("siglip2", None, None),
     ],
 )
 def test_invalid_image_payloads_do_not_load_runtime(
@@ -544,7 +700,7 @@ def test_invalid_image_payloads_do_not_load_runtime(
             return FakeClipModel(), FakeClipProcessor(), FakeTorch
 
         monkeypatch.setattr(ClipEmbeddingRuntime, "_load", fake_load)
-    else:
+    elif architecture == "open_clip":
         from ai_workbench.core.inference.clip_runtime import OpenClipEmbeddingRuntime
 
         calls = {"load": 0}
@@ -554,6 +710,16 @@ def test_invalid_image_payloads_do_not_load_runtime(
             return FakeOpenClipModel(), (lambda image: FakeTensor([[1.0, 0.0]])), (lambda texts: FakeTensor([[0.0, 0.0] for _ in texts])), FakeTorch
 
         monkeypatch.setattr(OpenClipEmbeddingRuntime, "_load", fake_load)
+    else:
+        from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
+
+        calls = {"load": 0}
+
+        def fake_load(self):
+            calls["load"] += 1
+            return FakeClipModel(), FakeClipProcessor(), FakeTorch
+
+        monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
 
     response = client.post(
         "/api/inference/embeddings/multimodal",
@@ -580,6 +746,8 @@ def test_invalid_image_payloads_do_not_load_runtime(
         ("clip", "AAECAwQFBgcICQ=="),
         ("open_clip", "not-base64-or-image-secret"),
         ("open_clip", "AAECAwQFBgcICQ=="),
+        ("siglip2", "not-base64-or-image-secret"),
+        ("siglip2", "AAECAwQFBgcICQ=="),
     ],
 )
 def test_invalid_image_payloads_do_not_persist_and_do_not_load(
@@ -608,16 +776,22 @@ def test_invalid_image_payloads_do_not_persist_and_do_not_load(
         calls["load"] += 1
         if architecture == "clip":
             return FakeClipModel(), FakeClipProcessor(), FakeTorch
+        if architecture == "siglip2":
+            return FakeClipModel(), FakeClipProcessor(), FakeTorch
         return FakeOpenClipModel(), (lambda image: FakeTensor([[1.0, 0.0]])), (lambda texts: FakeTensor([[0.0, 0.0] for _ in texts])), FakeTorch
 
     if architecture == "clip":
         from ai_workbench.core.inference.clip_runtime import ClipEmbeddingRuntime
 
         monkeypatch.setattr(ClipEmbeddingRuntime, "_load", fake_load)
-    else:
+    elif architecture == "open_clip":
         from ai_workbench.core.inference.clip_runtime import OpenClipEmbeddingRuntime
 
         monkeypatch.setattr(OpenClipEmbeddingRuntime, "_load", fake_load)
+    else:
+        from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
+
+        monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
 
     response = client.post(
         "/api/inference/embeddings/multimodal",
@@ -652,6 +826,28 @@ def test_missing_local_clip_model_folder_returns_sanitized_provider_error(
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "PROVIDER_ERROR"
     assert "missing-folder" not in rendered
+    assert str(tmp_path) not in rendered
+    assert "BASE64-SECRET" not in rendered
+
+
+def test_missing_local_siglip2_model_folder_returns_sanitized_provider_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, provider_model_id="image_embedding/missing-siglip2-folder", architecture="siglip2")
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "BASE64-SECRET"}]},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json())
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "missing-siglip2-folder" not in rendered
     assert str(tmp_path) not in rendered
     assert "BASE64-SECRET" not in rendered
 
@@ -810,7 +1006,47 @@ def test_real_clip_fake_backend_success_is_stateless_and_unload_clears_cache(
     assert "AAAA" not in str(response.json())
 
 
+def test_real_siglip2_fake_backend_success_is_stateless_and_unload_clears_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "stateless-siglip2")
+    profile = create_profile(client, provider_model_id="image_embedding/stateless-siglip2", architecture="siglip2")
+    calls = install_fake_siglip2_backend(monkeypatch)
+    before = capture_stateless_persistence_snapshot(state)
+
+    first = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}], "normalize": False},
+        headers=auth_headers(),
+    )
+    status_loaded = client.get("/api/inference/status", headers=auth_headers())
+    unload = client.post("/api/inference/unload", json={"target": "multimodal_embedding"}, headers=auth_headers())
+    status_unloaded = client.get("/api/inference/status", headers=auth_headers())
+    second = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}], "normalize": False},
+        headers=auth_headers(),
+    )
+
+    assert first.status_code == 200, first.text
+    assert status_loaded.json()["runtime"]["multimodal_embedding_cache"]["runtime_count"] == 1
+    assert unload.status_code == 200
+    assert unload.json()["results"][0]["removed"] == 1
+    assert status_unloaded.json()["runtime"]["multimodal_embedding_cache"]["runtime_count"] == 0
+    assert second.status_code == 200, second.text
+    assert calls["load"] == 2
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
+    assert "AAAA" not in str(first.json())
+    assert "AAAA" not in str(second.json())
+
+
+@pytest.mark.parametrize("architecture", ["clip", "siglip2"])
 def test_text_input_rejected_before_real_runtime_when_profile_image_only(
+    architecture: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -820,10 +1056,10 @@ def test_text_input_rejected_before_real_runtime_when_profile_image_only(
     profile = create_profile(
         client,
         provider_model_id="image_embedding/image-only",
-        architecture="clip",
+        architecture=architecture,
         supported_input_types=["image"],
     )
-    calls = install_fake_clip_backend(monkeypatch)
+    calls = install_fake_siglip2_backend(monkeypatch) if architecture == "siglip2" else install_fake_clip_backend(monkeypatch)
 
     response = client.post(
         "/api/inference/embeddings/multimodal",

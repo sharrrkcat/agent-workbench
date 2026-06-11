@@ -40,8 +40,13 @@ def create_app(
         root=root,
     )
     from ai_workbench.core.inference.clip_runtime import register_clip_open_clip_runtime_factories
+    from ai_workbench.core.inference.siglip2_runtime import register_siglip2_runtime_factory
 
     register_clip_open_clip_runtime_factories(
+        repo_root=app.state.runtime_state.repo_root,
+        provider_profile_store=app.state.runtime_state.provider_profiles,
+    )
+    register_siglip2_runtime_factory(
         repo_root=app.state.runtime_state.repo_root,
         provider_profile_store=app.state.runtime_state.provider_profiles,
     )
