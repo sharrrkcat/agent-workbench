@@ -11,6 +11,7 @@ from sqlmodel import update
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
+from ai_workbench.core.vision_profiles import VisionModelProfile
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
@@ -60,6 +61,7 @@ from ai_workbench.db.models import (
     SessionAgentStateRecord,
     SessionKnowledgeBindingRecord,
     SessionWorldbookBindingRecord,
+    VisionModelProfileRecord,
     WorldbookEntryRecord,
     WorldbookRecord,
     WorldbookSettingsRecord,
@@ -1029,6 +1031,58 @@ class SqlMultimodalEmbeddingProfileStore:
             return [_multimodal_embedding_profile_from_record(record) for record in records]
 
 
+class SqlVisionProfileStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def create(self, profile: VisionModelProfile) -> VisionModelProfile:
+        with DbSession(self.engine) as session:
+            if session.get(VisionModelProfileRecord, profile.id) is not None:
+                raise ValueError("VISION_MODEL_ID_EXISTS")
+            record = _vision_profile_to_record(profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _vision_profile_from_record(record)
+
+    def get(self, profile_id: str) -> VisionModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(VisionModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown vision profile: {profile_id}")
+            return _vision_profile_from_record(record)
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> VisionModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(VisionModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown vision profile: {profile_id}")
+            existing = _vision_profile_from_record(record)
+            updated = VisionModelProfile.model_validate(
+                existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump()
+            )
+            _apply_vision_profile_to_record(record, updated)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _vision_profile_from_record(record)
+
+    def delete(self, profile_id: str) -> VisionModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(VisionModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown vision profile: {profile_id}")
+            profile = _vision_profile_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
+    def list(self) -> List[VisionModelProfile]:
+        with DbSession(self.engine) as session:
+            records = session.exec(select(VisionModelProfileRecord).order_by(VisionModelProfileRecord.name)).all()
+            return [_vision_profile_from_record(record) for record in records]
+
+
 class SqlLLMDefaultsStore:
     SETTINGS_KEY = "llm_defaults"
 
@@ -1968,6 +2022,46 @@ def _multimodal_embedding_profile_from_record(record: MultimodalEmbeddingModelPr
         pooling_strategy=getattr(record, "pooling_strategy", "model_default") or "model_default",
         max_batch_size=getattr(record, "max_batch_size", None),
         metadata=_loads(getattr(record, "metadata_json", "") or "", {}),
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
+def _vision_profile_to_record(profile: VisionModelProfile) -> VisionModelProfileRecord:
+    data = profile.model_dump()
+    data["supported_tasks_json"] = _dumps(data.pop("supported_tasks", []))
+    data["metadata_json"] = _dumps(data.pop("metadata", {}))
+    return VisionModelProfileRecord(**data)
+
+
+def _apply_vision_profile_to_record(
+    record: VisionModelProfileRecord,
+    profile: VisionModelProfile,
+) -> None:
+    data = profile.model_dump()
+    supported_tasks = data.pop("supported_tasks", [])
+    metadata = data.pop("metadata", {})
+    for key, value in data.items():
+        setattr(record, key, value)
+    record.supported_tasks_json = _dumps(supported_tasks)
+    record.metadata_json = _dumps(metadata)
+
+
+def _vision_profile_from_record(record: VisionModelProfileRecord) -> VisionModelProfile:
+    return VisionModelProfile(
+        id=record.id,
+        name=record.name,
+        description=getattr(record, "description", "") or "",
+        notes=getattr(record, "notes", "") or "",
+        enabled=bool(getattr(record, "enabled", True)),
+        external_inference_enabled=bool(getattr(record, "external_inference_enabled", False)),
+        provider_profile_id=getattr(record, "provider_profile_id", None),
+        provider_model_id=getattr(record, "provider_model_id", "") or "",
+        architecture=getattr(record, "architecture", "florence2") or "florence2",
+        backend=getattr(record, "backend", "transformers") or "transformers",
+        supported_tasks=_loads(getattr(record, "supported_tasks_json", "") or "", ["caption", "detailed_caption", "ocr", "object_detection"]),
+        max_batch_size=getattr(record, "max_batch_size", 1),
+        metadata=_loads(getattr(record, "metadata_json", "{}") or "{}", {}),
         created_at=ensure_utc(record.created_at),
         updated_at=ensure_utc(record.updated_at),
     )

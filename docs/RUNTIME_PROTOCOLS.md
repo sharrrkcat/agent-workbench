@@ -88,8 +88,10 @@ for explicitly allowlisted Model Profiles, plus lazy local
 CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding runtimes behind the
 production-safe interface with fake-runtime test support. The multimodal
 runtimes are profile-gated, local-only, cache-managed, and DINOv2 is
-image-only. External inference requests must not persist payloads, outputs,
-vectors, attachments, messages, runs, or Knowledge rows.
+image-only. A5.1 adds a separate Florence2 vision runtime skeleton with the
+same profile-gated, local-only, cache-managed shape. External inference
+requests must not persist payloads, outputs, vectors, attachments, messages,
+runs, or Knowledge rows.
 
 Full contract:
 [contracts/stateless-inference.md](contracts/stateless-inference.md).

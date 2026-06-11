@@ -4,7 +4,9 @@ This contract owns the core-owned Stateless Local Inference Service. A4.4 keeps
 A2 real stateless chat/text embedding behavior, preserves A3 multimodal profile
 taxonomy, and adds lazy local CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding
 runtimes behind the A4.1 runtime interface, cache, and Workbench-native
-response schema. DINOv2 is image-only.
+response schema. DINOv2 is image-only. A5.1 adds a separate Vision Model
+Profile taxonomy for Florence2-style vision tasks and a production-safe runtime
+skeleton for `/api/inference/vision`.
 
 ## Scope
 
@@ -19,7 +21,8 @@ The service exposes local stateless inference for:
 
 The service may later expose:
 
-- Workbench-native Florence2 family vision tasks.
+- Workbench-native Florence2 family vision tasks through a separate Vision
+  Model Profile and runtime registry.
 - runtime resource visibility and best-effort unload.
 
 The service must remain stateless for external API requests. Request payloads
@@ -75,9 +78,12 @@ Registered:
 - `POST /api/inference/unload`
 - `POST /api/inference/embeddings/multimodal`
 
-Still registered but not implemented:
-
-- `POST /api/inference/vision`
+`POST /api/inference/vision` validates `vision:<profile_id>` requests against
+allowlisted Vision Model Profiles with `architecture=florence2` and supported
+tasks `caption`, `detailed_caption`, `ocr`, and `object_detection`. A5.1 keeps
+real Florence2 loading deferred; production returns a sanitized
+not-implemented/runtime-unavailable error unless tests register a fake runtime
+factory.
 
 `POST /api/inference/embeddings/multimodal` validates request shape, resolves an
 allowlisted Multimodal Embedding Model Profile, then calls the multimodal
@@ -98,9 +104,9 @@ JSON bodies such as arrays, strings, numbers, and booleans are rejected with
 `INFERENCE_INVALID_REQUEST` and do not clear cache state.
 
 Streaming chat completions, `/v1/responses`, `/v1/completions`, similarity
-scoring, Florence2, BLIP/JoyCaption, text-to-image, operational log
-persistence, Capability wrappers, vision profile tables, and global
-`/api/runtime/free-memory` multimodal targets are deferred.
+scoring, real Florence2 loading, BLIP/JoyCaption, text-to-image, operational
+log persistence, Capability wrappers, and global `/api/runtime/free-memory`
+vision targets are deferred.
 
 ## Stateless Data Boundary
 
@@ -342,7 +348,7 @@ visible id collisions. A request for the wrong model type returns
   DINOv2 image embedding runtimes with architecture flags and supported input
   types. A4.1 stores taxonomy, validates requests, and calls only registered
   runtime factories.
-- Future `VisionTaskModelProfile` serves Florence2 family tasks.
+- `VisionModelProfile` serves Florence2 family tasks.
 
 Multimodal embedding fields:
 
@@ -373,7 +379,7 @@ DINOv2 is image-only and must reject text input with
 
 Florence2 public task names are `caption`, `detailed_caption`, `ocr`, and
 `object_detection`. Internal prompt mapping and post-processing belong to the
-future Florence2 runtime wrapper, not to route handlers.
+vision runtime wrapper, not to route handlers.
 
 ## Endpoint Contracts
 
@@ -459,7 +465,8 @@ exposing secrets. When the service is disabled, status returns
 `INFERENCE_SERVICE_DISABLED`.
 
 `GET /api/inference/models` returns Workbench-native model/profile metadata for
-servable profiles without loading weights.
+servable profiles without loading weights. It may include `vision` profile
+entries.
 
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.
@@ -542,18 +549,30 @@ For a real local smoke test:
 7. Install the optional local ML packages and model files only for smoke tests;
    automated tests remain fake-backed and do not require them.
 
-`POST /api/inference/vision` future request shape:
+For a real vision smoke test:
+
+1. Place a local model folder under `data/models/vision/<folder>`.
+2. Create or enable the matching Provider Profile.
+3. Create or enable the Vision Model Profile with
+   `external_inference_enabled=true`.
+4. Use `vision:<profile_id>` in `POST /api/inference/vision`.
+5. Verify `GET /api/inference/status`, `GET /api/inference/models`, and
+   `POST /api/inference/unload`.
+6. Install the optional local ML packages and model files only for smoke tests;
+   automated tests remain fake-backed and do not require them.
+
+`POST /api/inference/vision` request shape:
 
 ```json
 {
-  "model": "profile_or_model_id",
+  "model": "vision:<profile_id>",
   "task": "caption",
-  "image_base64": "...",
+  "input": {"type": "image", "image_base64": "..."},
   "options": {}
 }
 ```
 
-Vision response shapes should be task-specific: captions return text plus
-compact metadata, OCR returns text and optional regions, and object detection
-returns boxes with labels, scores, and coordinates. Raw Florence2 outputs must
-not be persisted.
+Vision response shapes are task-specific: captions and OCR return text, and
+object detection returns boxes with labels, scores, and normalized
+coordinates. Raw Florence2 outputs must not be persisted. Vision calls do not
+appear in `/v1/models`.

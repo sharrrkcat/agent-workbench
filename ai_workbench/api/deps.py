@@ -34,6 +34,7 @@ from ai_workbench.core.stores import (
     RunStore,
     SessionStore,
     SessionAgentStateStore,
+    VisionProfileStore,
 )
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.database import get_engine, init_db
@@ -49,6 +50,7 @@ from ai_workbench.db.stores import (
     SqlRunStore,
     SqlSessionStore,
     SqlSessionAgentStateStore,
+    SqlVisionProfileStore,
 )
 
 
@@ -75,6 +77,7 @@ class RuntimeState:
     llm_profiles: Any = None
     provider_profiles: Any = None
     multimodal_embedding_profiles: Any = None
+    vision_profiles: Any = None
     llm_defaults: Any = None
     app_settings: Any = None
     session_agent_states: Any = None
@@ -124,6 +127,7 @@ def build_runtime_state(
         llm_profiles = LLMProfileStore()
         provider_profiles = ProviderProfileStore()
         multimodal_embedding_profiles = MultimodalEmbeddingProfileStore()
+        vision_profiles = VisionProfileStore()
         llm_defaults = LLMDefaultsStore()
         app_settings = AppSettingsStore()
         session_agent_states = SessionAgentStateStore()
@@ -142,6 +146,7 @@ def build_runtime_state(
         llm_profiles = SqlLLMProfileStore(engine)
         provider_profiles = SqlProviderProfileStore(engine)
         multimodal_embedding_profiles = SqlMultimodalEmbeddingProfileStore(engine)
+        vision_profiles = SqlVisionProfileStore(engine)
         llm_defaults = SqlLLMDefaultsStore(engine)
         from ai_workbench.db.database import get_database_url
         from ai_workbench.db.stores import SqlAppSettingsStore, SqlKnowledgeStore, SqlWorldbookStore
@@ -251,6 +256,7 @@ def build_runtime_state(
         llm_profiles=llm_profiles,
         provider_profiles=provider_profiles,
         multimodal_embedding_profiles=multimodal_embedding_profiles,
+        vision_profiles=vision_profiles,
         llm_defaults=llm_defaults,
         app_settings=app_settings,
         session_agent_states=session_agent_states,

@@ -3,9 +3,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.inference.multimodal_runtime import has_multimodal_embedding_runtime_factory, multimodal_runtime_cache_status
+from ai_workbench.core.inference.vision_runtime import has_vision_runtime_factory, vision_runtime_cache_status
 
 
-INFERENCE_A4_VERSION = "a4.4"
+INFERENCE_A4_VERSION = "a5.1"
 
 
 def status_response(
@@ -29,21 +30,24 @@ def status_response(
             "llm_chat": "available",
             "text_embeddings": "available",
             "multimodal_embeddings": "configured",
-            "vision_tasks": "planned",
+            "vision_tasks": "configured",
         },
         "models": models
         or {
             "llm_external_enabled_count": 0,
             "embedding_external_enabled_count": 0,
             "multimodal_external_enabled_count": 0,
+            "vision_external_enabled_count": 0,
         },
         "implementation": {
             "real_inference": True,
             "real_multimodal_inference": has_multimodal_embedding_runtime_factory(),
+            "real_vision_inference": has_vision_runtime_factory(),
             "version": INFERENCE_A4_VERSION,
         },
         "runtime": {
             "multimodal_embedding_cache": multimodal_runtime_cache_status(),
+            "vision_cache": vision_runtime_cache_status(),
         },
     }
 
@@ -83,7 +87,7 @@ class OpenAIEmbeddingsRequest(BaseModel):
 class InferenceUnloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target: Literal["llm", "embedding", "image_embedding", "multimodal_embedding", "vision_task", "all"] = "all"
+    target: Literal["llm", "embedding", "image_embedding", "multimodal_embedding", "vision", "vision_task", "all"] = "all"
     model: str | None = None
 
 
@@ -131,5 +135,5 @@ class VisionRequest(BaseModel):
 
     model: str
     task: Literal["caption", "detailed_caption", "ocr", "object_detection"]
-    image_base64: str
+    input: dict[str, Any]
     options: dict[str, Any] = Field(default_factory=dict)

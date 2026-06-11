@@ -13,6 +13,7 @@ MODEL_KIND_DIRS = {
     "llms": "llm",
     "embeddings": "embedding",
     "image_embeddings": "image_embedding",
+    "vision": "vision",
     "rerankers": "reranker",
 }
 TRANSFORMERS_MARKERS = {
@@ -166,6 +167,25 @@ def resolve_internal_image_embedding_model_ref(provider: str, model_ref: str, ro
     raise ValueError(f"Unsupported internal provider: {provider}")
 
 
+def resolve_internal_vision_model_ref(provider: str, model_ref: str, root: Path | None = None) -> Path:
+    normalized = normalize_internal_vision_model_ref(model_ref)
+    base = models_root_path(root).resolve()
+    vision_root = _safe_child(base, "vision")
+    relative = normalized.removeprefix("vision/")
+    resolved = (vision_root / relative).resolve()
+    if not _is_safe_descendant(resolved, vision_root):
+        raise ValueError("Internal vision model ref must stay inside data/models/vision.")
+    if provider == "internal_llama_cpp":
+        raise ValueError("internal_llama_cpp vision refs are not supported.")
+    if provider == "internal_transformers":
+        if resolved.suffix.casefold() == ".gguf":
+            raise ValueError("internal_transformers vision refs must point to a model directory, not a GGUF file.")
+        if not resolved.is_dir() or resolved.is_symlink() or not _looks_like_transformers_model(resolved):
+            raise FileNotFoundError("Internal transformers vision model directory was not found.")
+        return resolved
+    raise ValueError(f"Unsupported internal provider: {provider}")
+
+
 def normalize_internal_llm_model_ref(model_ref: str) -> str:
     raw = str(model_ref or "").strip()
     if not raw:
@@ -230,6 +250,22 @@ def normalize_internal_image_embedding_model_ref(model_ref: str) -> str:
     return path.as_posix()
 
 
+def normalize_internal_vision_model_ref(model_ref: str) -> str:
+    raw = str(model_ref or "").strip()
+    if not raw:
+        raise ValueError("Internal vision model ref must not be empty.")
+    if "\\" in raw:
+        raise ValueError("Internal vision model ref must use POSIX-style forward slashes.")
+    path = PurePosixPath(raw)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("Internal vision model ref must be a safe relative ref.")
+    if not path.parts or path.parts[0] != "vision":
+        raise ValueError("Internal vision model ref must start with vision/.")
+    if len(path.parts) < 2:
+        raise ValueError("Internal vision model ref must include a model name.")
+    return path.as_posix()
+
+
 def internal_llm_model_ref_exists(provider: str, model_ref: str, root: Path | None = None) -> tuple[bool, str | None]:
     try:
         resolve_internal_llm_model_ref(provider, model_ref, root)
@@ -270,6 +306,16 @@ def internal_image_embedding_model_ref_exists(provider: str, model_ref: str, roo
         return False, "model_ref_invalid"
 
 
+def internal_vision_model_ref_exists(provider: str, model_ref: str, root: Path | None = None) -> tuple[bool, str | None]:
+    try:
+        resolve_internal_vision_model_ref(provider, model_ref, root)
+        return True, None
+    except FileNotFoundError:
+        return False, "model_not_found"
+    except ValueError:
+        return False, "model_ref_invalid"
+
+
 def _ensure_internal_model_roots(root: Path | None = None) -> Path:
     base = models_root_path(root).resolve()
     for dirname in MODEL_KIND_DIRS:
@@ -293,6 +339,8 @@ def _scan_transformers_models(base: Path, provider: str) -> list[dict[str, Any]]
 def _scan_llama_cpp_models(base: Path, provider: str) -> list[dict[str, Any]]:
     models: list[dict[str, Any]] = []
     for dirname, kind in MODEL_KIND_DIRS.items():
+        if kind == "vision":
+            continue
         kind_dir = _safe_child(base, dirname)
         paths: list[Path] = []
         for root, dirs, files in os.walk(kind_dir, followlinks=False):

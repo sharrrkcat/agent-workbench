@@ -157,11 +157,9 @@ indexes, sessions, settings, attachments, or local user assets. Busy targets are
 not force-released. In this alpha, manual LLM release is limited to provider
 profiles with reliable unload support: LM Studio native unload and best-effort
 internal LLM runtime cache release.
-Future Stateless Inference image embedding and vision task caches must follow
-the same best-effort/no-delete rule and are owned by
-[stateless-inference.md](stateless-inference.md).
-A4.1 `POST /api/inference/unload` owns the multimodal embedding runtime cache
-target names `image_embedding`, `multimodal_embedding`, and `all`; global
+A4.1/A5.1 `POST /api/inference/unload` owns the multimodal embedding runtime
+cache target names `image_embedding`, `multimodal_embedding`, and `all`, plus
+the vision task cache target names `vision`, `vision_task`, and `all`; global
 `/api/runtime/free-memory` targets are unchanged.
 A2 Stateless Inference status and model listing are no-load operations: they
 read enabled allowlisted profiles only and must not call provider

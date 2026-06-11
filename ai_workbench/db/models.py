@@ -321,6 +321,26 @@ class MultimodalEmbeddingModelProfileRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class VisionModelProfileRecord(SQLModel, table=True):
+    __tablename__ = "vision_model_profiles"
+
+    id: str = Field(primary_key=True)
+    name: str
+    description: str = ""
+    notes: str = ""
+    enabled: bool = True
+    external_inference_enabled: bool = False
+    provider_profile_id: Optional[str] = Field(default=None, index=True)
+    provider_model_id: str = ""
+    architecture: str = "florence2"
+    backend: str = "transformers"
+    supported_tasks_json: str = '["caption", "detailed_caption", "ocr", "object_detection"]'
+    max_batch_size: Optional[int] = 1
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class KnowledgeBaseRecord(SQLModel, table=True):
     __tablename__ = "knowledge_bases"
 

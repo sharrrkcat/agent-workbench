@@ -8,6 +8,7 @@ from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfi
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
+from ai_workbench.core.vision_profiles import VisionModelProfile
 from ai_workbench.core.session_titles import is_default_session_title
 from ai_workbench.core.session import Session
 from ai_workbench.core.time import utc_now
@@ -672,6 +673,38 @@ class MultimodalEmbeddingProfileStore:
         return existing
 
     def list(self) -> List[MultimodalEmbeddingModelProfile]:
+        return sorted(self._records.values(), key=lambda item: (item.name.lower(), item.created_at))
+
+
+class VisionProfileStore:
+    def __init__(self) -> None:
+        self._records: Dict[str, VisionModelProfile] = {}
+
+    def create(self, profile: VisionModelProfile) -> VisionModelProfile:
+        if profile.id in self._records:
+            raise ValueError(f"Vision profile id already exists: {profile.id}")
+        self._records[profile.id] = profile
+        return profile
+
+    def get(self, profile_id: str) -> VisionModelProfile:
+        try:
+            return self._records[profile_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown vision profile id: {profile_id}") from exc
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> VisionModelProfile:
+        existing = self.get(profile_id)
+        updated = existing.model_copy(update={**values, "updated_at": utc_now()})
+        updated = VisionModelProfile.model_validate(updated.model_dump())
+        self._records[existing.id] = updated
+        return updated
+
+    def delete(self, profile_id: str) -> VisionModelProfile:
+        existing = self.get(profile_id)
+        del self._records[existing.id]
+        return existing
+
+    def list(self) -> List[VisionModelProfile]:
         return sorted(self._records.values(), key=lambda item: (item.name.lower(), item.created_at))
 
 

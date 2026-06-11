@@ -43,6 +43,7 @@ def init_db(engine) -> None:
     ensure_llm_profile_columns(engine)
     ensure_embedding_profile_columns(engine)
     ensure_multimodal_embedding_profile_table(engine)
+    ensure_vision_profile_table(engine)
     ensure_knowledge_settings_columns(engine)
     ensure_knowledge_base_columns(engine)
     ensure_worldbook_settings_columns(engine)
@@ -240,6 +241,35 @@ def ensure_multimodal_embedding_profile_table(engine) -> None:
                   preprocessing_signature VARCHAR,
                   pooling_strategy VARCHAR DEFAULT 'model_default',
                   max_batch_size INTEGER,
+                  metadata_json VARCHAR DEFAULT '{}',
+                  created_at DATETIME,
+                  updated_at DATETIME
+                )
+                """
+            )
+        )
+
+
+def ensure_vision_profile_table(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS vision_model_profiles (
+                  id VARCHAR PRIMARY KEY NOT NULL,
+                  name VARCHAR NOT NULL,
+                  description VARCHAR DEFAULT '',
+                  notes VARCHAR DEFAULT '',
+                  enabled BOOLEAN DEFAULT 1,
+                  external_inference_enabled BOOLEAN DEFAULT 0,
+                  provider_profile_id VARCHAR,
+                  provider_model_id VARCHAR NOT NULL DEFAULT '',
+                  architecture VARCHAR NOT NULL DEFAULT 'florence2',
+                  backend VARCHAR DEFAULT 'transformers',
+                  supported_tasks_json VARCHAR DEFAULT '["caption", "detailed_caption", "ocr", "object_detection"]',
+                  max_batch_size INTEGER DEFAULT 1,
                   metadata_json VARCHAR DEFAULT '{}',
                   created_at DATETIME,
                   updated_at DATETIME

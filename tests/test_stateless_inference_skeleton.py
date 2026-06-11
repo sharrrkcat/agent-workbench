@@ -28,7 +28,7 @@ WORKBENCH_ENDPOINTS = [
         "/api/inference/embeddings/multimodal",
         {"model": "clip", "inputs": [{"type": "text", "text": "red robot"}], "normalize": True},
     ),
-    ("post", "/api/inference/vision", {"model": "florence", "task": "caption", "image_base64": "AAAA", "options": {}}),
+    ("post", "/api/inference/vision", {"model": "vision:florence", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}, "options": {}}),
 ]
 
 
@@ -188,11 +188,23 @@ def test_enabled_workbench_skeleton_requires_auth_then_returns_not_implemented(
     assert status.json()["enabled"] is True
     assert status.json()["auth_required"] is True
     assert status.json()["api_key_configured"] is True
-    assert status.json()["implementation"] == {"real_inference": True, "real_multimodal_inference": True, "version": "a4.4"}
+    assert status.json()["implementation"] == {
+        "real_inference": True,
+        "real_multimodal_inference": True,
+        "real_vision_inference": False,
+        "version": "a5.1",
+    }
     assert status.json()["capabilities"]["llm_chat"] == "available"
     assert status.json()["capabilities"]["text_embeddings"] == "available"
+    assert status.json()["capabilities"]["vision_tasks"] == "configured"
     assert status.json()["runtime"]["multimodal_embedding_cache"] == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}
-    assert status.json()["models"] == {"llm_external_enabled_count": 0, "embedding_external_enabled_count": 0, "multimodal_external_enabled_count": 0}
+    assert status.json()["runtime"]["vision_cache"] == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}
+    assert status.json()["models"] == {
+        "llm_external_enabled_count": 0,
+        "embedding_external_enabled_count": 0,
+        "multimodal_external_enabled_count": 0,
+        "vision_external_enabled_count": 0,
+    }
     assert not_implemented.status_code == 200
     assert not_implemented.json()["ok"] is True
     assert not_implemented.json()["results"][0]["target"] == "multimodal_embedding"
@@ -420,7 +432,7 @@ def test_enabled_status_and_model_lists_are_no_load_and_secret_free(
 
     assert status.status_code == 200
     assert status.json()["routes"] == {"openai_compatible": True, "workbench_native": True}
-    assert status.json()["capabilities"]["vision_tasks"] == "planned"
+    assert status.json()["capabilities"]["vision_tasks"] == "configured"
     assert status.json()["runtime"]["multimodal_embedding_cache"] == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}
     assert "test-inference-key" not in str(status.json())
     assert workbench_models.status_code == 200

@@ -9,12 +9,14 @@ from ai_workbench.core.inference.errors import (
     raise_workbench_inference_error,
 )
 from ai_workbench.core.inference.multimodal_runtime import clear_multimodal_runtime_cache
+from ai_workbench.core.inference.vision_runtime import clear_vision_runtime_cache
 from ai_workbench.core.inference.request_limits import check_content_length, read_limited_workbench_body, read_limited_workbench_json
 from ai_workbench.core.inference.schemas import InferenceUnloadRequest, status_response
 from ai_workbench.core.inference.settings import StatelessInferenceSettings, resolve_inference_settings
 from ai_workbench.core.inference.stateless import (
     StatelessInferenceError,
     create_multimodal_embeddings_response,
+    create_vision_response,
     inference_status_models_summary,
     workbench_model_list,
 )
@@ -23,6 +25,12 @@ from ai_workbench.core.multimodal_profiles import (
     MultimodalEmbeddingModelProfileCreate,
     MultimodalEmbeddingModelProfilePatch,
     multimodal_profile_updates,
+)
+from ai_workbench.core.vision_profiles import (
+    VisionModelProfile,
+    VisionModelProfileCreate,
+    VisionModelProfilePatch,
+    vision_profile_updates,
 )
 
 
@@ -121,6 +129,58 @@ def delete_multimodal_embedding_model(profile_id: str, state: RuntimeState = Dep
         raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id}")
 
 
+@router.get("/vision-models")
+def list_vision_models(state: RuntimeState = Depends(get_state)) -> list[dict]:
+    return [profile.model_dump() for profile in state.vision_profiles.list()]
+
+
+@router.post("/vision-models")
+def create_vision_model(payload: dict, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        request = VisionModelProfileCreate.model_validate(payload)
+        profile = VisionModelProfile.model_validate(request.model_dump(exclude_none=True))
+        return state.vision_profiles.create(profile).model_dump()
+    except ValidationError as exc:
+        _raise_vision_validation(exc)
+    except ValueError as exc:
+        raise_error(422, "INVALID_VISION_MODEL", str(exc))
+
+
+@router.get("/vision-models/{profile_id}")
+def get_vision_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        return state.vision_profiles.get(profile_id).model_dump()
+    except KeyError:
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id}")
+
+
+@router.patch("/vision-models/{profile_id}")
+def patch_vision_model(
+    profile_id: str,
+    payload: dict,
+    state: RuntimeState = Depends(get_state),
+) -> dict:
+    try:
+        request = VisionModelProfilePatch.model_validate(payload)
+        updates = vision_profile_updates(request)
+        return state.vision_profiles.update(profile_id, updates).model_dump()
+    except ValidationError as exc:
+        _raise_vision_validation(exc)
+    except KeyError:
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id}")
+    except ValueError as exc:
+        raise_error(422, "INVALID_VISION_MODEL", str(exc))
+
+
+@router.delete("/vision-models/{profile_id}")
+def delete_vision_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        profile = state.vision_profiles.delete(profile_id)
+        return {"deleted": True, "profile_id": profile.id}
+    except KeyError:
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id}")
+
+
 @router.post("/unload")
 async def unload_models(
     request: Request,
@@ -143,25 +203,45 @@ async def unload_models(
         payload = InferenceUnloadRequest.model_validate(raw)
     except ValidationError:
         raise_workbench_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
-    if payload.target not in {"image_embedding", "multimodal_embedding", "all"}:
+    if payload.target not in {"image_embedding", "multimodal_embedding", "vision", "vision_task", "all"}:
         raise_workbench_inference_error(501, InferenceErrorCode.NOT_IMPLEMENTED)
-    profile_id = None
+    multimodal_profile_id = None
+    vision_profile_id = None
     if payload.model:
         if payload.model.startswith("multimodal:"):
-            profile_id = payload.model.removeprefix("multimodal:")
+            if payload.target in {"vision", "vision_task"}:
+                raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
+            multimodal_profile_id = payload.model.removeprefix("multimodal:")
+        elif payload.model.startswith("vision:"):
+            if payload.target in {"image_embedding", "multimodal_embedding"}:
+                raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
+            vision_profile_id = payload.model.removeprefix("vision:")
         else:
             raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
-    removed = clear_multimodal_runtime_cache(profile_id)
-    return {
-        "ok": True,
-        "results": [
+    results = []
+    if payload.target in {"image_embedding", "multimodal_embedding", "all"} and vision_profile_id is None:
+        removed = clear_multimodal_runtime_cache(multimodal_profile_id)
+        results.append(
             {
                 "target": "multimodal_embedding",
                 "status": "freed" if removed else "skipped",
                 "removed": removed,
                 "message": "Freed." if removed else "No multimodal embedding runtime loaded.",
             }
-        ],
+        )
+    if payload.target in {"vision", "vision_task", "all"} and multimodal_profile_id is None:
+        removed = clear_vision_runtime_cache(vision_profile_id)
+        results.append(
+            {
+                "target": "vision",
+                "status": "freed" if removed else "skipped",
+                "removed": removed,
+                "message": "Freed." if removed else "No vision runtime loaded.",
+            }
+        )
+    return {
+        "ok": True,
+        "results": results,
     }
 
 
@@ -181,17 +261,31 @@ async def create_multimodal_embeddings(
 
 
 @router.post("/vision")
-def run_vision_task(
+async def run_vision_task_route(
     request: Request,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
-    _guard_workbench_request(request, state)
-    raise_workbench_inference_error(501, InferenceErrorCode.NOT_IMPLEMENTED)
+    settings = _guard_workbench_request(request, state)
+    raw = await read_limited_workbench_json(request, settings)
+    if not isinstance(raw, dict):
+        raise_workbench_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
+    try:
+        return create_vision_response(state, raw)
+    except StatelessInferenceError as exc:
+        raise_workbench_inference_error(exc.status_code, exc.code, exc.message)
 
 
 def _raise_multimodal_validation(exc: ValidationError) -> None:
     error = exc.errors()[0] if exc.errors() else {}
     code = "UNKNOWN_MULTIMODAL_EMBEDDING_FIELD" if error.get("type") == "extra_forbidden" else "INVALID_MULTIMODAL_EMBEDDING_MODEL"
+    loc = ".".join(str(item) for item in error.get("loc", []))
+    message = f"{loc}: {error.get('msg', 'Invalid value')}" if loc else str(error.get("msg", "Invalid value"))
+    raise_error(422, code, message)
+
+
+def _raise_vision_validation(exc: ValidationError) -> None:
+    error = exc.errors()[0] if exc.errors() else {}
+    code = "UNKNOWN_VISION_MODEL_FIELD" if error.get("type") == "extra_forbidden" else "INVALID_VISION_MODEL"
     loc = ".".join(str(item) for item in error.get("loc", []))
     message = f"{loc}: {error.get('msg', 'Invalid value')}" if loc else str(error.get("msg", "Invalid value"))
     raise_error(422, code, message)

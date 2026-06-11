@@ -12,12 +12,19 @@ from ai_workbench.core.inference.multimodal_runtime import (
     MultimodalRuntimeUnavailable,
     embed_multimodal_inputs,
 )
+from ai_workbench.core.inference.vision_runtime import (
+    VisionRuntimeError,
+    VisionRuntimeInput,
+    VisionRuntimeUnavailable,
+    run_vision_task,
+)
 from ai_workbench.core.knowledge_models import KnowledgeModelError
 
 
 LLM_MODEL_PREFIX = "llm:"
 EMBEDDING_MODEL_PREFIX = "embedding:"
 MULTIMODAL_MODEL_PREFIX = "multimodal:"
+VISION_MODEL_PREFIX = "vision:"
 MAX_IMAGE_BASE64_CHARS = 20_000_000
 
 
@@ -43,7 +50,7 @@ def workbench_model_list(state: Any) -> dict[str, Any]:
             "llm_profiles_available": sum(1 for item in data if item["type"] == "llm"),
             "embedding_profiles_available": sum(1 for item in data if item["type"] == "text_embedding"),
             "multimodal_profiles_available": sum(1 for item in data if item["type"] == "multimodal_embedding"),
-            "vision_profiles_available": 0,
+            "vision_profiles_available": sum(1 for item in data if item["type"] == "vision"),
         },
     }
 
@@ -54,6 +61,7 @@ def inference_status_models_summary(state: Any) -> dict[str, int]:
         "llm_external_enabled_count": sum(1 for item in data if item["type"] == "llm"),
         "embedding_external_enabled_count": sum(1 for item in data if item["type"] == "text_embedding"),
         "multimodal_external_enabled_count": sum(1 for item in data if item["type"] == "multimodal_embedding"),
+        "vision_external_enabled_count": sum(1 for item in data if item["type"] == "vision"),
     }
 
 
@@ -105,6 +113,23 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
                         "supported_input_types": profile.supported_input_types,
                         "dimensions": profile.dimensions,
                         "embedding_space": profile.embedding_space,
+                        "external_inference_enabled": True,
+                    }
+                )
+    vision_profiles = getattr(state, "vision_profiles", None)
+    if vision_profiles is not None:
+        for profile in vision_profiles.list():
+            if _vision_profile_servable(profile, state):
+                models.append(
+                    {
+                        "id": f"{VISION_MODEL_PREFIX}{profile.id}",
+                        "type": "vision",
+                        "name": profile.name,
+                        "capabilities": ["vision_tasks"],
+                        "profile_id": profile.id,
+                        "provider_profile_id": profile.provider_profile_id,
+                        "architecture": profile.architecture,
+                        "supported_tasks": profile.supported_tasks,
                         "external_inference_enabled": True,
                     }
                 )
@@ -217,6 +242,30 @@ def create_multimodal_embeddings_response(state: Any, payload: dict[str, Any]) -
     }
 
 
+def create_vision_response(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    model_id = _required_model(payload)
+    task = _validate_vision_task(payload.get("task"))
+    vision_input = _validate_vision_input(payload.get("input"))
+    options = _validate_vision_options(payload.get("options", {}))
+    profile = _resolve_vision_profile(state, model_id)
+    _validate_vision_profile_task(profile, task)
+    try:
+        result = run_vision_task(profile, task=task, input=vision_input, options=options)
+    except VisionRuntimeUnavailable as exc:
+        raise StatelessInferenceError(InferenceErrorCode.NOT_IMPLEMENTED, status_code=501) from exc
+    except VisionRuntimeError as exc:
+        raise _vision_runtime_exception(exc) from exc
+    return {
+        "object": "vision_result",
+        "model": model_id,
+        "profile_id": profile.id,
+        "architecture": profile.architecture,
+        "task": task,
+        "data": _vision_result_data_dict(result.data),
+        "usage": {"input_count": 1},
+    }
+
+
 def _validate_multimodal_profile_inputs(profile: Any, inputs: list[MultimodalEmbeddingInput]) -> None:
     if any(item.input_type == "text" for item in inputs) and "text" not in profile.supported_input_types:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
@@ -264,6 +313,15 @@ def _multimodal_profile_servable(profile: Any, state: Any) -> bool:
     )
 
 
+def _vision_profile_servable(profile: Any, state: Any) -> bool:
+    return bool(
+        profile.enabled
+        and getattr(profile, "external_inference_enabled", False)
+        and getattr(profile, "provider_model_id", "")
+        and _provider_enabled(state, profile.provider_profile_id)
+    )
+
+
 def _required_model(payload: dict[str, Any]) -> str:
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip():
@@ -273,7 +331,7 @@ def _required_model(payload: dict[str, Any]) -> str:
 
 def _resolve_llm_model_config(state: Any, model_id: str) -> dict[str, Any]:
     if not model_id.startswith(LLM_MODEL_PREFIX):
-        if model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX):
+        if model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX) or model_id.startswith(VISION_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     profile_id = model_id.removeprefix(LLM_MODEL_PREFIX)
@@ -301,7 +359,7 @@ def _resolve_llm_model_config(state: Any, model_id: str) -> dict[str, Any]:
 
 def _resolve_embedding_profile(state: Any, model_id: str) -> Any:
     if not model_id.startswith(EMBEDDING_MODEL_PREFIX):
-        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX):
+        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX) or model_id.startswith(VISION_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     profile_id = model_id.removeprefix(EMBEDDING_MODEL_PREFIX)
@@ -316,7 +374,7 @@ def _resolve_embedding_profile(state: Any, model_id: str) -> Any:
 
 def _resolve_multimodal_profile(state: Any, model_id: str) -> Any:
     if not model_id.startswith(MULTIMODAL_MODEL_PREFIX):
-        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(EMBEDDING_MODEL_PREFIX):
+        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(VISION_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     profile_id = model_id.removeprefix(MULTIMODAL_MODEL_PREFIX)
@@ -328,6 +386,24 @@ def _resolve_multimodal_profile(state: Any, model_id: str) -> Any:
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _multimodal_profile_servable(profile, state):
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=403)
+    return profile
+
+
+def _resolve_vision_profile(state: Any, model_id: str) -> Any:
+    if not model_id.startswith(VISION_MODEL_PREFIX):
+        if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX):
+            raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
+    profile_id = model_id.removeprefix(VISION_MODEL_PREFIX)
+    store = getattr(state, "vision_profiles", None)
+    if store is None:
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
+    try:
+        profile = store.get(profile_id)
+    except KeyError as exc:
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
+    if not _vision_profile_servable(profile, state):
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=403)
     return profile
 
@@ -383,6 +459,82 @@ def _validate_multimodal_inputs(value: Any) -> list[MultimodalEmbeddingInput]:
     return inputs
 
 
+def _validate_vision_task(value: Any) -> str:
+    if value not in {"caption", "detailed_caption", "ocr", "object_detection"}:
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "Unsupported vision task.")
+    return str(value)
+
+
+def _validate_vision_input(value: Any) -> VisionRuntimeInput:
+    if not isinstance(value, dict):
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "input must be an object.")
+    if value.get("type") != "image":
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
+    data = value.get("image_base64")
+    if not isinstance(data, str) or not data:
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "image input requires image_base64.")
+    if len(data) > MAX_IMAGE_BASE64_CHARS:
+        raise StatelessInferenceError(InferenceErrorCode.REQUEST_TOO_LARGE, status_code=413)
+    return VisionRuntimeInput(image_base64=data)
+
+
+def _validate_vision_options(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "options must be an object.")
+    return dict(value)
+
+
+def _validate_vision_profile_task(profile: Any, task: str) -> None:
+    if task not in set(getattr(profile, "supported_tasks", []) or []):
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
+
+
+def _vision_result_data_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        if value.get("type") == "text":
+            return {"type": "text", "text": value.get("text")}
+        if value.get("type") == "objects":
+            objects = value.get("objects", [])
+            return {
+                "type": "objects",
+                "objects": [
+                    {
+                        "label": item["label"] if isinstance(item, dict) else getattr(item, "label"),
+                        "score": item["score"] if isinstance(item, dict) else getattr(item, "score"),
+                        "box": {
+                            "x_min": item["box"]["x_min"] if isinstance(item, dict) else getattr(item.box, "x_min"),
+                            "y_min": item["box"]["y_min"] if isinstance(item, dict) else getattr(item.box, "y_min"),
+                            "x_max": item["box"]["x_max"] if isinstance(item, dict) else getattr(item.box, "x_max"),
+                            "y_max": item["box"]["y_max"] if isinstance(item, dict) else getattr(item.box, "y_max"),
+                        },
+                    }
+                    for item in objects
+                ],
+            }
+    if getattr(value, "type", None) == "text":
+        return {"type": "text", "text": getattr(value, "text")}
+    if getattr(value, "type", None) == "objects":
+        return {
+            "type": "objects",
+            "objects": [
+                {
+                    "label": item.label,
+                    "score": item.score,
+                    "box": {
+                        "x_min": item.box.x_min,
+                        "y_min": item.box.y_min,
+                        "x_max": item.box.x_max,
+                        "y_max": item.box.y_max,
+                    },
+                }
+                for item in getattr(value, "objects")
+            ],
+        }
+    return dict(value)
+
+
 def _extract_chat_result(raw: Any) -> tuple[str, dict[str, Any] | None, str | None]:
     if isinstance(raw, str):
         return raw, None, None
@@ -430,5 +582,13 @@ def _multimodal_runtime_exception(exc: Exception) -> StatelessInferenceError:
     return StatelessInferenceError(
         InferenceErrorCode.PROVIDER_ERROR,
         "Multimodal embedding runtime failed.",
+        status_code=502,
+    )
+
+
+def _vision_runtime_exception(exc: Exception) -> StatelessInferenceError:
+    return StatelessInferenceError(
+        InferenceErrorCode.PROVIDER_ERROR,
+        "Vision runtime failed.",
         status_code=502,
     )
