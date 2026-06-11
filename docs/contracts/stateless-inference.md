@@ -1,10 +1,10 @@
 # Stateless Inference Contract
 
-This contract owns the core-owned Stateless Local Inference Service. A4.3 keeps
+This contract owns the core-owned Stateless Local Inference Service. A4.4 keeps
 A2 real stateless chat/text embedding behavior, preserves A3 multimodal profile
-taxonomy, and adds lazy local CLIP/OpenCLIP/SigLIP2 multimodal embedding
+taxonomy, and adds lazy local CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding
 runtimes behind the A4.1 runtime interface, cache, and Workbench-native
-response schema.
+response schema. DINOv2 is image-only.
 
 ## Scope
 
@@ -13,13 +13,12 @@ The service exposes local stateless inference for:
 - OpenAI-compatible chat/completions.
 - OpenAI-compatible text embeddings.
 - Workbench-native multimodal/image embeddings through a pluggable runtime
-  interface. A4.3 production builds register lazy local CLIP/OpenCLIP/SigLIP2
-  runtime factories.
+  interface. A4.4 production builds register lazy local
+  CLIP/OpenCLIP/SigLIP2/DINOv2 runtime factories.
 - status and no-load model listing.
 
 The service may later expose:
 
-- real Workbench-native SigLIP2/DINOv2 runtimes.
 - Workbench-native Florence2 family vision tasks.
 - runtime resource visibility and best-effort unload.
 
@@ -57,7 +56,7 @@ Knowledge indexing, Agent runners, Command runners, or event logging paths.
 Default exposure is localhost-oriented. Any future non-localhost serving,
 reverse proxy use, or CORS expansion must be explicit and documented here.
 
-## A4.3 API
+## A4.4 API
 
 OpenAI-compatible:
 
@@ -82,14 +81,14 @@ Still registered but not implemented:
 
 `POST /api/inference/embeddings/multimodal` validates request shape, resolves an
 allowlisted Multimodal Embedding Model Profile, then calls the multimodal
-runtime interface only when a runtime factory is registered. A4.3 production
-registers factories for `architecture=clip`, `architecture=open_clip`, and
-`architecture=siglip2` only. They lazy-load local model files during valid
-embedding requests and never auto-download model files. Missing dependencies,
-missing local files, invalid images, invalid checkpoints, unsupported
-architectures, and runtime failures normalize to compact Workbench-native
-errors. Tests may still inject fake runtimes and receive vectors through the
-stable response schema.
+runtime interface only when a runtime factory is registered. A4.4 production
+registers factories for `architecture=clip`, `architecture=open_clip`,
+`architecture=siglip2`, and image-only `architecture=dinov2`. They lazy-load
+local model files during valid embedding requests and never auto-download model
+files. Missing dependencies, missing local files, invalid images, invalid
+checkpoints, unsupported architectures, and runtime failures normalize to
+compact Workbench-native errors. Tests may still inject fake runtimes and
+receive vectors through the stable response schema.
 
 `POST /api/inference/unload` clears only the local multimodal embedding runtime
 cache for targets `image_embedding`, `multimodal_embedding`, or `all`. It never
@@ -98,10 +97,10 @@ indexes. Empty or missing JSON bodies use the default unload request; non-object
 JSON bodies such as arrays, strings, numbers, and booleans are rejected with
 `INFERENCE_INVALID_REQUEST` and do not clear cache state.
 
-Streaming chat completions, `/v1/responses`, `/v1/completions`, SigLIP2/DINOv2
-real runtimes, similarity scoring, Florence2, BLIP/JoyCaption, text-to-image,
-operational log persistence, Capability wrappers, vision profile tables, and
-global `/api/runtime/free-memory` multimodal targets are deferred.
+Streaming chat completions, `/v1/responses`, `/v1/completions`, similarity
+scoring, Florence2, BLIP/JoyCaption, text-to-image, operational log
+persistence, Capability wrappers, vision profile tables, and global
+`/api/runtime/free-memory` multimodal targets are deferred.
 
 ## Stateless Data Boundary
 
@@ -156,13 +155,13 @@ and `ai_workbench.core.embedding.embed_texts(...)` directly. It does not use
 session/Agent LLM resolution, Prompt Agent calls, title generation, Knowledge
 retrieval, attachment helpers, or Knowledge indexing.
 
-A4.3 multimodal serving calls only the multimodal embedding runtime interface
+A4.4 multimodal serving calls only the multimodal embedding runtime interface
 after guards, JSON parsing, validation, profile resolution, and allowlist
 checks. It does not call text embedding runtimes, LLM runtimes, attachment
 helpers, Knowledge helpers, provider status APIs, optional ML imports, or
-model-loading paths before runtime execution. CLIP/OpenCLIP/SigLIP2 runtimes
-decode images in memory only, preprocess in memory only, and load local model
-weights only during valid embedding calls.
+model-loading paths before runtime execution. CLIP/OpenCLIP/SigLIP2/DINOv2
+runtimes decode images in memory only, preprocess in memory only, and load
+local model weights only during valid embedding calls.
 
 ## Auth And Exposure
 
@@ -268,8 +267,8 @@ leaking raw values.
 A4.1 owns `ai_workbench.core.inference.multimodal_runtime` as the image
 embedding runtime boundary. It defines in-memory input/result models, a runtime
 protocol, runtime factory registration for tests/backends, and a local runtime
-cache. A4.3 registers lazy CLIP/OpenCLIP/SigLIP2 factories from app startup without
-importing optional ML dependencies or loading weights.
+cache. A4.4 registers lazy CLIP/OpenCLIP/SigLIP2/DINOv2 factories from app
+startup without importing optional ML dependencies or loading weights.
 
 The multimodal cache key includes profile id plus a compact fingerprint of
 runtime-relevant profile fields such as provider profile id, provider model ref,
@@ -478,20 +477,20 @@ profile and returns compact outcomes.
 }
 ```
 
-A4.3 validates service guards, JSON shape, model id prefix, enabled profile,
+A4.4 validates service guards, JSON shape, model id prefix, enabled profile,
 `external_inference_enabled`, provider enabled state, typed inputs, image
 base64 string presence/size only, DINOv2 image-only support, optional normalize
 boolean, and profile `max_batch_size`. Supported input item types are
 `image_base64` and `text`; object inputs, image URLs, paths, nested inputs, and
 unsupported types are rejected. Empty text is rejected.
 Malformed image payloads are decoded and validated in memory before any
-CLIP/OpenCLIP/SigLIP2 model weights are loaded.
+CLIP/OpenCLIP/SigLIP2/DINOv2 model weights are loaded.
 
 CLIP/OpenCLIP/SigLIP2 profiles may validate image and text inputs. DINOv2
-profiles reject text with `MODEL_INPUT_TYPE_UNSUPPORTED`. A4.3 implements real
-local runtime execution for CLIP/OpenCLIP/SigLIP2. It decodes and preprocesses
-images in memory only, compares no vectors, calls no text embedding runtimes,
-calls no LLM runtimes, and persists no payloads/vectors.
+profiles reject text with `MODEL_INPUT_TYPE_UNSUPPORTED`. A4.4 implements real
+local runtime execution for CLIP/OpenCLIP/SigLIP2/DINOv2, with DINOv2 image-only.
+It decodes and preprocesses images in memory only, compares no vectors, calls no
+text embedding runtimes, calls no LLM runtimes, and persists no payloads/vectors.
 
 Successful fake-runtime or future real-runtime responses use:
 

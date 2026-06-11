@@ -149,6 +149,17 @@ class FakeOpenClipModel:
         return FakeTensor([[40.0 + index, 0.0] for index, _ in enumerate(tokens.rows)])
 
 
+class FakeDinov2Model:
+    def to(self, device):
+        return self
+
+    def eval(self):
+        return None
+
+    def __call__(self, **batch):
+        return {"pooler_output": FakeTensor([[50.0 + index, 0.0] for index in range(batch["count"])])}
+
+
 def make_profile(**overrides) -> MultimodalEmbeddingModelProfile:
     payload = {
         "id": "runtime-profile",
@@ -243,6 +254,24 @@ def install_fake_siglip2_backend(monkeypatch: pytest.MonkeyPatch) -> dict[str, i
 
     monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
     monkeypatch.setattr("ai_workbench.core.inference.siglip2_runtime._load_image_from_base64", fake_image)
+    return calls
+
+
+def install_fake_dinov2_backend(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    from ai_workbench.core.inference.dinov2_runtime import Dinov2EmbeddingRuntime
+
+    calls = {"load": 0, "image": 0}
+
+    def fake_load(self):
+        calls["load"] += 1
+        return FakeDinov2Model(), FakeClipProcessor(), FakeTorch
+
+    def fake_image(value):
+        calls["image"] += 1
+        return object()
+
+    monkeypatch.setattr(Dinov2EmbeddingRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.dinov2_runtime._load_image_from_base64", fake_image)
     return calls
 
 
@@ -445,6 +474,7 @@ def test_status_and_models_do_not_import_heavy_clip_dependencies(tmp_path: Path,
     enable_inference(client, require_api_key=False)
     create_profile(client, provider_model_id="image_embedding/no-load", architecture="clip")
     create_profile(client, provider_model_id="image_embedding/no-load-siglip2", architecture="siglip2")
+    create_profile(client, provider_model_id="image_embedding/no-load-dinov2", architecture="dinov2", supported_input_types=["image"])
     original_import = builtins.__import__
     blocked = {"torch", "transformers", "open_clip", "PIL"}
 
@@ -523,6 +553,40 @@ def test_real_siglip2_runtime_load_is_lazy_until_embedding_request(tmp_path: Pat
     assert "secret text" not in str(payload)
 
 
+def test_real_dinov2_runtime_load_is_lazy_until_embedding_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "lazy-dinov2")
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/lazy-dinov2",
+        architecture="dinov2",
+        supported_input_types=["image"],
+    )
+    calls = install_fake_dinov2_backend(monkeypatch)
+
+    client.get("/api/inference/status", headers=auth_headers())
+    client.get("/api/inference/models", headers=auth_headers())
+
+    assert calls == {"load": 0, "image": 0}
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['id']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}],
+            "normalize": False,
+        },
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload["architecture"] == "dinov2"
+    assert payload["data"] == [{"object": "embedding", "index": 0, "input_type": "image", "embedding": [50.0, 0.0]}]
+    assert calls == {"load": 1, "image": 1}
+
+
 def test_siglip2_feature_extraction_uses_inference_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
 
@@ -588,6 +652,67 @@ def test_siglip2_feature_extraction_uses_inference_context(tmp_path: Path, monke
         {"object": "embedding", "index": 0, "input_type": "image", "embedding": [10.0, 0.0]},
         {"object": "embedding", "index": 1, "input_type": "text", "embedding": [20.0, 0.0]},
     ]
+
+
+def test_dinov2_feature_extraction_uses_inference_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_workbench.core.inference.dinov2_runtime import Dinov2EmbeddingRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "dinov2-inference-context")
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/dinov2-inference-context",
+        architecture="dinov2",
+        supported_input_types=["image"],
+    )
+
+    class RecordingTorch(FakeTorch):
+        active = False
+        enter_count = 0
+        exit_count = 0
+
+        class _InferenceMode:
+            def __enter__(self):
+                RecordingTorch.active = True
+                RecordingTorch.enter_count += 1
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                RecordingTorch.active = False
+                RecordingTorch.exit_count += 1
+                return False
+
+        @staticmethod
+        def inference_mode():
+            return RecordingTorch._InferenceMode()
+
+    class ContextAssertingDinov2Model(FakeDinov2Model):
+        def __call__(self, **batch):
+            assert RecordingTorch.active is True
+            return super().__call__(**batch)
+
+    def fake_load(self):
+        return ContextAssertingDinov2Model(), FakeClipProcessor(), RecordingTorch
+
+    monkeypatch.setattr(Dinov2EmbeddingRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.dinov2_runtime._load_image_from_base64", lambda value: object())
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['id']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}],
+            "normalize": False,
+        },
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert RecordingTorch.enter_count == 1
+    assert RecordingTorch.exit_count == 1
+    assert RecordingTorch.active is False
+    assert response.json()["data"] == [{"object": "embedding", "index": 0, "input_type": "image", "embedding": [50.0, 0.0]}]
 
 
 def test_missing_clip_optional_dependency_returns_sanitized_provider_error(
@@ -662,12 +787,54 @@ def test_missing_siglip2_optional_dependency_returns_sanitized_provider_error(
     assert "traceback" not in rendered.lower()
 
 
+def test_missing_dinov2_optional_dependency_returns_sanitized_provider_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "dinov2-missing-deps")
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/dinov2-missing-deps",
+        architecture="dinov2",
+        supported_input_types=["image"],
+    )
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name.split(".", 1)[0] == "transformers":
+            raise ImportError("transformers secret path C:\\models\\fake provider-secret")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(
+        "ai_workbench.core.inference.dinov2_runtime._load_image_from_base64",
+        lambda value: object(),
+    )
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json())
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "provider-secret" not in rendered
+    assert "AAAA" not in rendered
+    assert "C:\\models\\fake" not in rendered
+    assert "traceback" not in rendered.lower()
+
+
 @pytest.mark.parametrize(
     "architecture, model_name, checkpoint_name",
     [
         ("clip", None, None),
         ("open_clip", "ViT-B-32", "model.pt"),
         ("siglip2", None, None),
+        ("dinov2", None, None),
     ],
 )
 def test_invalid_image_payloads_do_not_load_runtime(
@@ -688,6 +855,8 @@ def test_invalid_image_payloads_do_not_load_runtime(
         assert model_name is not None and checkpoint_name is not None
         (model_dir / checkpoint_name).write_bytes(b"fake")
         profile_kwargs["metadata"] = {"open_clip_model_name": model_name, "open_clip_checkpoint": checkpoint_name}
+    if architecture == "dinov2":
+        profile_kwargs["supported_input_types"] = ["image"]
     profile = create_profile(client, **profile_kwargs)
 
     if architecture == "clip":
@@ -711,15 +880,26 @@ def test_invalid_image_payloads_do_not_load_runtime(
 
         monkeypatch.setattr(OpenClipEmbeddingRuntime, "_load", fake_load)
     else:
-        from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
+        if architecture == "dinov2":
+            from ai_workbench.core.inference.dinov2_runtime import Dinov2EmbeddingRuntime
 
-        calls = {"load": 0}
+            calls = {"load": 0}
 
-        def fake_load(self):
-            calls["load"] += 1
-            return FakeClipModel(), FakeClipProcessor(), FakeTorch
+            def fake_load(self):
+                calls["load"] += 1
+                return FakeDinov2Model(), FakeClipProcessor(), FakeTorch
 
-        monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
+            monkeypatch.setattr(Dinov2EmbeddingRuntime, "_load", fake_load)
+        else:
+            from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
+
+            calls = {"load": 0}
+
+            def fake_load(self):
+                calls["load"] += 1
+                return FakeClipModel(), FakeClipProcessor(), FakeTorch
+
+            monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
 
     response = client.post(
         "/api/inference/embeddings/multimodal",
@@ -748,6 +928,8 @@ def test_invalid_image_payloads_do_not_load_runtime(
         ("open_clip", "AAECAwQFBgcICQ=="),
         ("siglip2", "not-base64-or-image-secret"),
         ("siglip2", "AAECAwQFBgcICQ=="),
+        ("dinov2", "not-base64-or-image-secret"),
+        ("dinov2", "AAECAwQFBgcICQ=="),
     ],
 )
 def test_invalid_image_payloads_do_not_persist_and_do_not_load(
@@ -767,6 +949,8 @@ def test_invalid_image_payloads_do_not_persist_and_do_not_load(
     if architecture == "open_clip":
         (model_dir / "model.pt").write_bytes(b"fake")
         profile_kwargs["metadata"] = {"open_clip_model_name": "ViT-B-32", "open_clip_checkpoint": "model.pt"}
+    if architecture == "dinov2":
+        profile_kwargs["supported_input_types"] = ["image"]
     profile = create_profile(client, **profile_kwargs)
     before = capture_stateless_persistence_snapshot(state)
 
@@ -778,6 +962,8 @@ def test_invalid_image_payloads_do_not_persist_and_do_not_load(
             return FakeClipModel(), FakeClipProcessor(), FakeTorch
         if architecture == "siglip2":
             return FakeClipModel(), FakeClipProcessor(), FakeTorch
+        if architecture == "dinov2":
+            return FakeDinov2Model(), FakeClipProcessor(), FakeTorch
         return FakeOpenClipModel(), (lambda image: FakeTensor([[1.0, 0.0]])), (lambda texts: FakeTensor([[0.0, 0.0] for _ in texts])), FakeTorch
 
     if architecture == "clip":
@@ -788,10 +974,14 @@ def test_invalid_image_payloads_do_not_persist_and_do_not_load(
         from ai_workbench.core.inference.clip_runtime import OpenClipEmbeddingRuntime
 
         monkeypatch.setattr(OpenClipEmbeddingRuntime, "_load", fake_load)
-    else:
+    elif architecture == "siglip2":
         from ai_workbench.core.inference.siglip2_runtime import Siglip2EmbeddingRuntime
 
         monkeypatch.setattr(Siglip2EmbeddingRuntime, "_load", fake_load)
+    else:
+        from ai_workbench.core.inference.dinov2_runtime import Dinov2EmbeddingRuntime
+
+        monkeypatch.setattr(Dinov2EmbeddingRuntime, "_load", fake_load)
 
     response = client.post(
         "/api/inference/embeddings/multimodal",
@@ -848,6 +1038,33 @@ def test_missing_local_siglip2_model_folder_returns_sanitized_provider_error(
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "PROVIDER_ERROR"
     assert "missing-siglip2-folder" not in rendered
+    assert str(tmp_path) not in rendered
+    assert "BASE64-SECRET" not in rendered
+
+
+def test_missing_local_dinov2_model_folder_returns_sanitized_provider_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/missing-dinov2-folder",
+        architecture="dinov2",
+        supported_input_types=["image"],
+    )
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "BASE64-SECRET"}]},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json())
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_ERROR"
+    assert "missing-dinov2-folder" not in rendered
     assert str(tmp_path) not in rendered
     assert "BASE64-SECRET" not in rendered
 
@@ -917,6 +1134,60 @@ def test_fake_open_clip_backend_returns_image_and_text_vectors_through_endpoint(
         {"object": "embedding", "index": 1, "input_type": "text", "embedding": [40.0, 0.0]},
     ]
     assert "secret text" not in str(payload)
+
+
+def test_fake_dinov2_backend_returns_image_vectors_through_endpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "fake-dinov2")
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/fake-dinov2",
+        architecture="dinov2",
+        supported_input_types=["image"],
+    )
+    install_fake_dinov2_backend(monkeypatch)
+
+    response = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['id']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "image_base64", "data": "BBBB"}],
+            "normalize": False,
+        },
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload["architecture"] == "dinov2"
+    assert payload["data"] == [
+        {"object": "embedding", "index": 0, "input_type": "image", "embedding": [50.0, 0.0]},
+        {"object": "embedding", "index": 1, "input_type": "image", "embedding": [51.0, 0.0]},
+    ]
+    assert payload["dimensions"] == 2
+    assert payload["normalized"] is False
+    assert "AAAA" not in str(payload)
+    assert "BBBB" not in str(payload)
+
+
+def test_dinov2_runtime_rejects_text_if_validation_is_bypassed(tmp_path: Path) -> None:
+    from ai_workbench.core.inference.dinov2_runtime import Dinov2EmbeddingRuntime
+
+    model_dir = tmp_path / "data" / "models" / "image_embeddings" / "dino"
+    model_dir.mkdir(parents=True)
+    profile = make_profile(
+        architecture="dinov2",
+        provider_model_id="image_embedding/dino",
+        supported_input_types=["image"],
+    )
+    runtime = Dinov2EmbeddingRuntime(profile, repo_root=tmp_path)
+
+    with pytest.raises(MultimodalRuntimeError):
+        runtime.embed(profile=profile, inputs=[MultimodalEmbeddingInput(input_type="text", text="secret text")], normalize=False)
 
 
 def test_open_clip_missing_checkpoint_returns_sanitized_provider_error(
@@ -1044,7 +1315,50 @@ def test_real_siglip2_fake_backend_success_is_stateless_and_unload_clears_cache(
     assert "AAAA" not in str(second.json())
 
 
-@pytest.mark.parametrize("architecture", ["clip", "siglip2"])
+def test_real_dinov2_fake_backend_success_is_stateless_and_unload_clears_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    create_local_image_embedding_folder(client, "stateless-dinov2")
+    profile = create_profile(
+        client,
+        provider_model_id="image_embedding/stateless-dinov2",
+        architecture="dinov2",
+        supported_input_types=["image"],
+    )
+    calls = install_fake_dinov2_backend(monkeypatch)
+    before = capture_stateless_persistence_snapshot(state)
+
+    first = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}], "normalize": False},
+        headers=auth_headers(),
+    )
+    status_loaded = client.get("/api/inference/status", headers=auth_headers())
+    unload = client.post("/api/inference/unload", json={"target": "multimodal_embedding"}, headers=auth_headers())
+    status_unloaded = client.get("/api/inference/status", headers=auth_headers())
+    second = client.post(
+        "/api/inference/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}], "normalize": False},
+        headers=auth_headers(),
+    )
+
+    assert first.status_code == 200, first.text
+    assert status_loaded.json()["runtime"]["multimodal_embedding_cache"]["runtime_count"] == 1
+    assert unload.status_code == 200
+    assert unload.json()["results"][0]["removed"] == 1
+    assert status_unloaded.json()["runtime"]["multimodal_embedding_cache"]["runtime_count"] == 0
+    assert second.status_code == 200, second.text
+    assert calls["load"] == 2
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
+    assert "AAAA" not in str(first.json())
+    assert "AAAA" not in str(second.json())
+
+
+@pytest.mark.parametrize("architecture", ["clip", "siglip2", "dinov2"])
 def test_text_input_rejected_before_real_runtime_when_profile_image_only(
     architecture: str,
     tmp_path: Path,
@@ -1059,7 +1373,12 @@ def test_text_input_rejected_before_real_runtime_when_profile_image_only(
         architecture=architecture,
         supported_input_types=["image"],
     )
-    calls = install_fake_siglip2_backend(monkeypatch) if architecture == "siglip2" else install_fake_clip_backend(monkeypatch)
+    if architecture == "siglip2":
+        calls = install_fake_siglip2_backend(monkeypatch)
+    elif architecture == "dinov2":
+        calls = install_fake_dinov2_backend(monkeypatch)
+    else:
+        calls = install_fake_clip_backend(monkeypatch)
 
     response = client.post(
         "/api/inference/embeddings/multimodal",

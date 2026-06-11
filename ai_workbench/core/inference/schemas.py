@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ai_workbench.core.inference.multimodal_runtime import has_multimodal_embedding_runtime_factory, multimodal_runtime_cache_status
 
 
-INFERENCE_A4_VERSION = "a4.3"
+INFERENCE_A4_VERSION = "a4.4"
 
 
 def status_response(

@@ -82,12 +82,13 @@ Full contract: [contracts/provider-status.md](contracts/provider-status.md).
 
 ## Stateless Inference
 
-The disabled-by-default Stateless Local Inference Service is core-owned. A4.3
+The disabled-by-default Stateless Local Inference Service is core-owned. A4.4
 implements non-streaming OpenAI-compatible chat completions and text embeddings
 for explicitly allowlisted Model Profiles, plus lazy local
-CLIP/OpenCLIP/SigLIP2 multimodal embedding runtimes behind the production-safe
-interface with fake-runtime test support. External inference requests must not persist
-payloads, outputs, vectors, attachments, messages, runs, or Knowledge rows.
+CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding runtimes behind the
+production-safe interface with fake-runtime test support. DINOv2 is image-only.
+External inference requests must not persist payloads, outputs, vectors,
+attachments, messages, runs, or Knowledge rows.
 
 Full contract:
 [contracts/stateless-inference.md](contracts/stateless-inference.md).
