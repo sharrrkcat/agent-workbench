@@ -76,7 +76,7 @@ Registered:
 - `POST /api/inference/unload`
 - `POST /api/inference/embeddings/multimodal`
 
-`POST /api/inference/vision` validates `vision:<profile_id>` requests against
+`POST /api/inference/vision` validates `vision:<profile_key_or_id>` requests against
 allowlisted Vision Model Profiles with `architecture=florence2` and supported
 tasks `caption`, `detailed_caption`, `ocr`, and `object_detection`. A5.2
 registers a lazy real Florence2 runtime that uses local model folders only,
@@ -336,18 +336,23 @@ disabled/non-allowlisted profiles.
 
 ## Model Id Policy
 
-A4.1 returns and accepts only profile-derived ids with explicit type prefixes:
+A4.1 returns and accepts profile-derived ids with explicit type prefixes. Model
+ids are alias-first: model listing endpoints return Profile key refs when an
+alias exists, while UUID refs remain accepted for backward compatibility.
 
-- LLM chat models: `llm:<llm_profile_id>`.
-- text embedding models: `embedding:<embedding_model_profile_id>`.
-- multimodal embedding models: `multimodal:<multimodal_profile_id>`.
-- vision task models: `vision:<vision_model_profile_id>`.
+- LLM chat models: `llm:<llm_profile_key_or_id>`.
+- text embedding models: `embedding:<embedding_model_profile_key_or_id>`.
+- multimodal embedding models: `multimodal:<multimodal_profile_key_or_id>`.
+- vision task models: `vision:<vision_model_profile_key_or_id>`.
 
-The exact ids returned by `/v1/models` must be used with `/v1/chat/completions`
-and `/v1/embeddings`. Workbench-native multimodal requests must use
-`multimodal:<profile_id>`. Workbench-native vision requests must use
-`vision:<profile_id>`. Prefixes make model namespaces separate and avoid
-visible id collisions. A request for the wrong model type returns
+The exact alias-first ids returned by `/v1/models` should be used with
+`/v1/chat/completions` and `/v1/embeddings`. Workbench-native multimodal
+requests should use `multimodal:<profile_key>`. Workbench-native vision
+requests should use `vision:<profile_key>`. UUID refs such as
+`vision:<profile_id>` remain valid legacy refs. Raw local safe refs such as
+`image_embedding/<folder>` or `vision/<folder>` are profile configuration
+values, not stateless API model ids. Prefixes make model namespaces separate
+and avoid visible id collisions. A request for the wrong model type returns
 `model_not_allowed`. Unknown ids return `model_not_found`.
 
 ## Profile Taxonomy
@@ -418,7 +423,7 @@ returns:
 
 ```json
 {
-  "model": "llm:<profile_id>",
+  "model": "llm:chat",
   "messages": [{"role": "user", "content": "hello"}],
   "temperature": 0.7,
   "top_p": 1,
@@ -440,7 +445,7 @@ Responses are normalized to:
   "id": "chatcmpl_...",
   "object": "chat.completion",
   "created": 123,
-  "model": "llm:<profile_id>",
+  "model": "llm:chat",
   "choices": [
     {
       "index": 0,
@@ -457,7 +462,7 @@ returns vectors without Knowledge writes:
 
 ```json
 {
-  "model": "embedding:<profile_id>",
+  "model": "embedding:bge-m3",
   "input": "hello",
   "encoding_format": "float"
 }
@@ -476,7 +481,7 @@ Responses are normalized to:
   "data": [
     {"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}
   ],
-  "model": "embedding:<profile_id>",
+  "model": "embedding:bge-m3",
   "usage": {"prompt_tokens": 0, "total_tokens": 0}
 }
 ```
@@ -488,7 +493,9 @@ exposing secrets. When the service is disabled, status returns
 
 `GET /api/inference/models` returns Workbench-native model/profile metadata for
 servable profiles without loading weights. It may include `vision` profile
-entries.
+entries. Each item uses the alias-first stateless ref as `id` and includes
+`profile_id`, `profile_alias`, and `legacy_model_id` for clients that need to
+display or migrate UUID-based refs.
 
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.
@@ -497,7 +504,7 @@ profile and returns compact outcomes.
 
 ```json
 {
-  "model": "multimodal:<profile_id>",
+  "model": "multimodal:siglip-image",
   "inputs": [
     {"type": "image_base64", "data": "..."},
     {"type": "text", "text": "red robot"}
@@ -526,8 +533,9 @@ Successful fake-runtime or future real-runtime responses use:
 ```json
 {
   "object": "list",
-  "model": "multimodal:<profile_id>",
+  "model": "multimodal:siglip-image",
   "profile_id": "<profile_id>",
+  "profile_alias": "siglip-image",
   "architecture": "siglip2",
   "embedding_space": "siglip2/<profile_id>/default",
   "dimensions": 1152,
@@ -565,7 +573,7 @@ For a real local smoke test:
 2. Create or enable the matching Provider Profile.
 3. Create or enable the Multimodal Embedding Model Profile with
    `external_inference_enabled=true`.
-4. Use `multimodal:<profile_id>` in `POST /api/inference/embeddings/multimodal`.
+4. Use `multimodal:<profile_key>` in `POST /api/inference/embeddings/multimodal`.
 5. Verify `GET /api/inference/status` and `GET /api/inference/models`.
 6. Verify `POST /api/inference/unload` clears cached multimodal runtimes.
 7. Install the optional local ML packages and model files only for smoke tests;
@@ -577,7 +585,7 @@ For a real vision smoke test:
 2. Create or enable the matching Provider Profile.
 3. Create or enable the Vision Model Profile with
    `external_inference_enabled=true`.
-4. Use `vision:<profile_id>` in `POST /api/inference/vision`.
+4. Use `vision:<profile_key>` in `POST /api/inference/vision`.
 5. Verify `GET /api/inference/status`, `GET /api/inference/models`, and
    `POST /api/inference/unload`.
 6. Install the optional local ML packages and model files only for smoke tests;
@@ -587,7 +595,7 @@ For a real vision smoke test:
 
 ```json
 {
-  "model": "vision:<profile_id>",
+  "model": "vision:florence2",
   "task": "caption",
   "input": {"type": "image", "image_base64": "..."},
   "options": {}
@@ -599,9 +607,10 @@ For a real vision smoke test:
 options are rejected with `INFERENCE_INVALID_REQUEST` before image decode or
 model loading.
 
-Vision response shapes are task-specific: captions, detailed captions, and OCR
-return text; object detection returns labels, scores, and normalized
-coordinates in `[0, 1]`. Florence2 prompt tokens, raw generated text, pixel
-boxes, and post-processor internals are not public API and must not be
+Vision responses echo the requested `model` and include `profile_id` plus
+`profile_alias`. Response `data` shapes are task-specific: captions, detailed
+captions, and OCR return text; object detection returns labels, scores, and
+normalized coordinates in `[0, 1]`. Florence2 prompt tokens, raw generated text,
+pixel boxes, and post-processor internals are not public API and must not be
 persisted. Vision calls do not appear in `/v1/models`; there is no `/v1` vision
 endpoint.

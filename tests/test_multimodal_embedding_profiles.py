@@ -268,9 +268,14 @@ def test_model_lists_include_multimodal_only_in_workbench_native(tmp_path: Path,
     openai = client.get("/v1/models").json()
 
     ids = {item["id"] for item in workbench["data"]}
-    assert f"multimodal:{allowed['id']}" in ids
-    assert f"multimodal:{blocked['id']}" not in ids
-    assert f"multimodal:{disabled['id']}" not in ids
+    assert f"multimodal:{allowed['alias']}" in ids
+    assert f"multimodal:{allowed['id']}" not in ids
+    assert f"multimodal:{blocked['alias']}" not in ids
+    assert f"multimodal:{disabled['alias']}" not in ids
+    listed = next(item for item in workbench["data"] if item["id"] == f"multimodal:{allowed['alias']}")
+    assert listed["profile_id"] == allowed["id"]
+    assert listed["profile_alias"] == allowed["alias"]
+    assert listed["legacy_model_id"] == f"multimodal:{allowed['id']}"
     assert workbench["summary"]["multimodal_profiles_available"] == 1
     assert all(not item["id"].startswith("multimodal:") for item in openai["data"])
 
@@ -296,7 +301,7 @@ def test_multimodal_route_validates_then_returns_sanitized_runtime_error_and_is_
 
     ok = client.post(
         "/api/inference/embeddings/multimodal",
-        json={"model": f"multimodal:{clip['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red"}], "normalize": True},
+        json={"model": f"multimodal:{clip['alias']}", "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red"}], "normalize": True},
     )
     dino_text = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{dino['id']}", "inputs": [{"type": "text", "text": "red"}]})
     invalid_type = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{clip['id']}", "inputs": [{"type": "image_url", "url": "https://example.invalid/x.png"}]})
@@ -347,7 +352,7 @@ def test_multimodal_route_with_fake_runtime_returns_schema_and_does_not_persist(
     response = client.post(
         "/api/inference/embeddings/multimodal",
         json={
-            "model": f"multimodal:{profile['id']}",
+            "model": f"multimodal:{profile['alias']}",
             "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red robot"}],
         },
         headers=auth_headers(),
@@ -357,8 +362,9 @@ def test_multimodal_route_with_fake_runtime_returns_schema_and_does_not_persist(
     assert response.status_code == 200, response.text
     assert payload == {
         "object": "list",
-        "model": f"multimodal:{profile['id']}",
+        "model": f"multimodal:{profile['alias']}",
         "profile_id": profile["id"],
+        "profile_alias": profile["alias"],
         "architecture": "siglip2",
         "embedding_space": f"siglip2/{profile['id']}/default",
         "dimensions": 2,
@@ -403,10 +409,13 @@ def test_multimodal_unload_clears_runtime_cache(tmp_path: Path, monkeypatch: pyt
     register_multimodal_embedding_runtime_factory("clip", FakeMultimodalRuntime)
 
     first = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
-    unload = client.post("/api/inference/unload", json={"target": "all"}, headers=auth_headers())
+    missing = client.post("/api/inference/unload", json={"target": "multimodal_embedding", "model": "multimodal:missing"}, headers=auth_headers())
+    unload = client.post("/api/inference/unload", json={"target": "multimodal_embedding", "model": f"multimodal:{profile['alias']}"}, headers=auth_headers())
     second = client.post("/api/inference/embeddings/multimodal", json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_base64", "data": "AAAA"}]}, headers=auth_headers())
 
     assert first.status_code == 200
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "MODEL_NOT_FOUND"
     assert unload.status_code == 200
     assert unload.json()["results"][0]["target"] == "multimodal_embedding"
     assert second.status_code == 200

@@ -72,13 +72,16 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
     if llm_profiles is not None:
         for profile in llm_profiles.list():
             if _llm_profile_servable(profile, state):
+                profile_alias = _profile_alias(profile)
                 models.append(
                     {
-                        "id": f"{LLM_MODEL_PREFIX}{profile.id}",
+                        "id": _model_ref(LLM_MODEL_PREFIX, profile),
                         "type": "llm",
                         "name": profile.name,
                         "capabilities": ["chat_completions"],
                         "profile_id": profile.id,
+                        "profile_alias": profile_alias,
+                        "legacy_model_id": _legacy_model_ref(LLM_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "external_inference_enabled": True,
                     }
@@ -87,13 +90,16 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
     if knowledge is not None:
         for profile in knowledge.list_embedding_profiles():
             if _embedding_profile_servable(profile, state):
+                profile_alias = _profile_alias(profile)
                 models.append(
                     {
-                        "id": f"{EMBEDDING_MODEL_PREFIX}{profile.id}",
+                        "id": _model_ref(EMBEDDING_MODEL_PREFIX, profile),
                         "type": "text_embedding",
                         "name": profile.name,
                         "capabilities": ["embeddings"],
                         "profile_id": profile.id,
+                        "profile_alias": profile_alias,
+                        "legacy_model_id": _legacy_model_ref(EMBEDDING_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "external_inference_enabled": True,
                     }
@@ -102,13 +108,16 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
     if multimodal_profiles is not None:
         for profile in multimodal_profiles.list():
             if _multimodal_profile_servable(profile, state):
+                profile_alias = _profile_alias(profile)
                 models.append(
                     {
-                        "id": f"{MULTIMODAL_MODEL_PREFIX}{profile.id}",
+                        "id": _model_ref(MULTIMODAL_MODEL_PREFIX, profile),
                         "type": "multimodal_embedding",
                         "name": profile.name,
                         "capabilities": ["multimodal_embeddings"],
                         "profile_id": profile.id,
+                        "profile_alias": profile_alias,
+                        "legacy_model_id": _legacy_model_ref(MULTIMODAL_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "architecture": profile.architecture,
                         "supported_input_types": profile.supported_input_types,
@@ -121,13 +130,16 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
     if vision_profiles is not None:
         for profile in vision_profiles.list():
             if _vision_profile_servable(profile, state):
+                profile_alias = _profile_alias(profile)
                 models.append(
                     {
-                        "id": f"{VISION_MODEL_PREFIX}{profile.id}",
+                        "id": _model_ref(VISION_MODEL_PREFIX, profile),
                         "type": "vision",
                         "name": profile.name,
                         "capabilities": ["vision_tasks"],
                         "profile_id": profile.id,
+                        "profile_alias": profile_alias,
+                        "legacy_model_id": _legacy_model_ref(VISION_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "architecture": profile.architecture,
                         "supported_tasks": profile.supported_tasks,
@@ -226,6 +238,7 @@ def create_multimodal_embeddings_response(state: Any, payload: dict[str, Any]) -
         "object": "list",
         "model": model_id,
         "profile_id": profile.id,
+        "profile_alias": getattr(profile, "alias", None),
         "architecture": profile.architecture,
         "embedding_space": profile.embedding_space or f"{profile.architecture}/{profile.id}/default",
         "dimensions": dimensions,
@@ -262,6 +275,7 @@ def create_vision_response(state: Any, payload: dict[str, Any]) -> dict[str, Any
         "object": "vision_result",
         "model": model_id,
         "profile_id": profile.id,
+        "profile_alias": getattr(profile, "alias", None),
         "architecture": profile.architecture,
         "task": task,
         "data": _vision_result_data_dict(result.data),
@@ -287,6 +301,22 @@ def _validate_multimodal_normalize(payload: dict[str, Any], profile: Any) -> boo
 
 def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
     return {"id": item["id"], "object": "model", "created": 0, "owned_by": "agent-workbench"}
+
+
+def _profile_alias(profile: Any) -> str | None:
+    alias = getattr(profile, "alias", None)
+    if alias is None:
+        return None
+    text = str(alias).strip()
+    return text or None
+
+
+def _model_ref(prefix: str, profile: Any) -> str:
+    return f"{prefix}{_profile_alias(profile) or profile.id}"
+
+
+def _legacy_model_ref(prefix: str, profile: Any) -> str:
+    return f"{prefix}{profile.id}"
 
 
 def _provider_enabled(state: Any, provider_profile_id: str | None) -> bool:
@@ -337,9 +367,9 @@ def _resolve_llm_model_config(state: Any, model_id: str) -> dict[str, Any]:
         if model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX) or model_id.startswith(VISION_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
-    profile_id = model_id.removeprefix(LLM_MODEL_PREFIX)
+    profile_ref = model_id.removeprefix(LLM_MODEL_PREFIX)
     try:
-        profile = state.llm_profiles.get(profile_id)
+        profile = state.llm_profiles.get_by_id_or_alias(profile_ref)
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _llm_profile_servable(profile, state):
@@ -365,9 +395,13 @@ def _resolve_embedding_profile(state: Any, model_id: str) -> Any:
         if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX) or model_id.startswith(VISION_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
-    profile_id = model_id.removeprefix(EMBEDDING_MODEL_PREFIX)
+    profile_ref = model_id.removeprefix(EMBEDDING_MODEL_PREFIX)
     try:
-        profile = state.knowledge.get_embedding_profile(profile_id)
+        lookup = getattr(state.knowledge, "get_embedding_profile_by_id_or_alias", None)
+        if lookup is not None:
+            profile = lookup(profile_ref)
+        else:
+            profile = _get_embedding_profile_by_id_or_alias_fallback(state.knowledge, profile_ref)
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _embedding_profile_servable(profile, state):
@@ -380,12 +414,12 @@ def _resolve_multimodal_profile(state: Any, model_id: str) -> Any:
         if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(VISION_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
-    profile_id = model_id.removeprefix(MULTIMODAL_MODEL_PREFIX)
+    profile_ref = model_id.removeprefix(MULTIMODAL_MODEL_PREFIX)
     store = getattr(state, "multimodal_embedding_profiles", None)
     if store is None:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     try:
-        profile = store.get(profile_id)
+        profile = store.get_by_id_or_alias(profile_ref)
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _multimodal_profile_servable(profile, state):
@@ -398,17 +432,27 @@ def _resolve_vision_profile(state: Any, model_id: str) -> Any:
         if model_id.startswith(LLM_MODEL_PREFIX) or model_id.startswith(EMBEDDING_MODEL_PREFIX) or model_id.startswith(MULTIMODAL_MODEL_PREFIX):
             raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=404)
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
-    profile_id = model_id.removeprefix(VISION_MODEL_PREFIX)
+    profile_ref = model_id.removeprefix(VISION_MODEL_PREFIX)
     store = getattr(state, "vision_profiles", None)
     if store is None:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404)
     try:
-        profile = store.get(profile_id)
+        profile = store.get_by_id_or_alias(profile_ref)
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _vision_profile_servable(profile, state):
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=403)
     return profile
+
+
+def _get_embedding_profile_by_id_or_alias_fallback(knowledge: Any, profile_id_or_alias: str) -> Any:
+    try:
+        return knowledge.get_embedding_profile(profile_id_or_alias)
+    except KeyError:
+        for profile in knowledge.list_embedding_profiles():
+            if getattr(profile, "alias", None) == profile_id_or_alias:
+                return profile
+        raise
 
 
 def _validate_chat_messages(value: Any) -> list[dict[str, str]]:

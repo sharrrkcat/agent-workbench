@@ -376,9 +376,14 @@ def test_model_lists_include_vision_only_in_workbench_native(tmp_path: Path, mon
     openai = client.get("/v1/models").json()
 
     ids = {item["id"] for item in workbench["data"]}
-    assert f"vision:{allowed['id']}" in ids
-    assert f"vision:{blocked['id']}" not in ids
-    assert f"vision:{disabled['id']}" not in ids
+    assert f"vision:{allowed['alias']}" in ids
+    assert f"vision:{allowed['id']}" not in ids
+    assert f"vision:{blocked['alias']}" not in ids
+    assert f"vision:{disabled['alias']}" not in ids
+    listed = next(item for item in workbench["data"] if item["id"] == f"vision:{allowed['alias']}")
+    assert listed["profile_id"] == allowed["id"]
+    assert listed["profile_alias"] == allowed["alias"]
+    assert listed["legacy_model_id"] == f"vision:{allowed['id']}"
     assert workbench["summary"]["vision_profiles_available"] == 1
     assert all(not item["id"].startswith("vision:") for item in openai["data"])
     assert all(not item["id"].startswith("multimodal:") for item in openai["data"])
@@ -390,7 +395,7 @@ def test_vision_route_validates_allowlist_task_and_input_before_runtime(tmp_path
     allowed = create_vision_profile(client, external_inference_enabled=True, supported_tasks=["caption"])
     blocked = create_vision_profile(client)
 
-    production = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}})
+    production = client.post("/api/inference/vision", json={"model": f"vision:{allowed['alias']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}})
     unknown = client.post("/api/inference/vision", json={"model": "vision:missing", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}})
     wrong_type = client.post("/api/inference/vision", json={"model": "multimodal:x", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}})
     not_allowed = client.post("/api/inference/vision", json={"model": f"vision:{blocked['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}})
@@ -443,7 +448,7 @@ def test_fake_vision_runtime_returns_task_outputs_and_is_stateless(
     response = client.post(
         "/api/inference/vision",
         json={
-            "model": f"vision:{profile['id']}",
+            "model": f"vision:{profile['alias']}",
             "task": task,
             "input": {"type": "image", "image_base64": "AAAA"},
             "options": {"detail": "safe"},
@@ -454,8 +459,9 @@ def test_fake_vision_runtime_returns_task_outputs_and_is_stateless(
     payload = response.json()
     assert response.status_code == 200, response.text
     assert payload["object"] == "vision_result"
-    assert payload["model"] == f"vision:{profile['id']}"
+    assert payload["model"] == f"vision:{profile['alias']}"
     assert payload["profile_id"] == profile["id"]
+    assert payload["profile_alias"] == profile["alias"]
     assert payload["architecture"] == "florence2"
     assert payload["task"] == task
     assert payload["data"]["type"] == expected_type
@@ -908,10 +914,13 @@ def test_real_florence2_fake_backend_success_is_stateless_and_unload_clears_cach
         json={"model": f"vision:{profile['id']}", "task": "ocr", "input": {"type": "image", "image_base64": "AAAA"}},
         headers=auth_headers(),
     )
-    unload = client.post("/api/inference/unload", json={"target": "vision", "model": f"vision:{profile['id']}"}, headers=auth_headers())
+    missing = client.post("/api/inference/unload", json={"target": "vision", "model": "vision:missing"}, headers=auth_headers())
+    unload = client.post("/api/inference/unload", json={"target": "vision", "model": f"vision:{profile['alias']}"}, headers=auth_headers())
 
     assert response.status_code == 200, response.text
     assert response.json()["data"] == {"type": "text", "text": "local OCR text"}
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "MODEL_NOT_FOUND"
     assert unload.status_code == 200
     assert unload.json()["results"] == [{"target": "vision", "status": "freed", "removed": 1, "message": "Freed."}]
     assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))

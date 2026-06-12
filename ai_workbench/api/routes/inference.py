@@ -255,11 +255,11 @@ async def unload_models(
         if payload.model.startswith("multimodal:"):
             if payload.target in {"vision", "vision_task"}:
                 raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
-            multimodal_profile_id = payload.model.removeprefix("multimodal:")
+            multimodal_profile_id = _resolve_multimodal_unload_profile_id(state, payload.model)
         elif payload.model.startswith("vision:"):
             if payload.target in {"image_embedding", "multimodal_embedding"}:
                 raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
-            vision_profile_id = payload.model.removeprefix("vision:")
+            vision_profile_id = _resolve_vision_unload_profile_id(state, payload.model)
         else:
             raise_workbench_inference_error(400, InferenceErrorCode.MODEL_NOT_ALLOWED)
     results = []
@@ -356,3 +356,23 @@ def _next_profile_alias(store, name: object, provider_model_id: object) -> str:
         existing.append(str(getattr(profile, "id", "") or ""))
     base = profile_alias_base(name, provider_model_id, fallback="profile")
     return unique_profile_alias(base, existing)
+
+
+def _resolve_multimodal_unload_profile_id(state: RuntimeState, model: str) -> str:
+    store = getattr(state, "multimodal_embedding_profiles", None)
+    if store is None:
+        raise_workbench_inference_error(404, InferenceErrorCode.MODEL_NOT_FOUND)
+    try:
+        return store.get_by_id_or_alias(model.removeprefix("multimodal:")).id
+    except KeyError:
+        raise_workbench_inference_error(404, InferenceErrorCode.MODEL_NOT_FOUND)
+
+
+def _resolve_vision_unload_profile_id(state: RuntimeState, model: str) -> str:
+    store = getattr(state, "vision_profiles", None)
+    if store is None:
+        raise_workbench_inference_error(404, InferenceErrorCode.MODEL_NOT_FOUND)
+    try:
+        return store.get_by_id_or_alias(model.removeprefix("vision:")).id
+    except KeyError:
+        raise_workbench_inference_error(404, InferenceErrorCode.MODEL_NOT_FOUND)

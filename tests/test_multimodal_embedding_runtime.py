@@ -163,6 +163,7 @@ class FakeDinov2Model:
 def make_profile(**overrides) -> MultimodalEmbeddingModelProfile:
     payload = {
         "id": "runtime-profile",
+        "alias": "runtime-profile",
         "name": "Runtime Profile",
         "provider_model_id": "image_embedding/runtime",
         "architecture": "clip",

@@ -1422,6 +1422,20 @@ class SqlKnowledgeStore:
                 raise KeyError(f"unknown embedding model profile: {profile_id}")
             return _embedding_profile_from_record(record)
 
+    def find_embedding_profile_by_alias(self, alias: str) -> Optional[EmbeddingModelProfile]:
+        with DbSession(self.engine) as session:
+            record = _find_embedding_profile_by_alias(session, alias)
+            return _embedding_profile_from_record(record) if record is not None else None
+
+    def get_embedding_profile_by_id_or_alias(self, profile_id_or_alias: str) -> EmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(EmbeddingModelProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_embedding_profile_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown embedding model profile: {profile_id_or_alias}")
+            return _embedding_profile_from_record(record)
+
     def update_embedding_profile(self, profile_id: str, values: Dict[str, Any]) -> EmbeddingModelProfile:
         with DbSession(self.engine) as session:
             record = session.get(EmbeddingModelProfileRecord, profile_id)

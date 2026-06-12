@@ -5,11 +5,14 @@ from fastapi.testclient import TestClient
 import pytest
 
 from ai_workbench.api.main import create_app
+from ai_workbench.core.knowledge_store import EmbeddingModelProfile, MemoryKnowledgeStore
 from ai_workbench.core.knowledge_models import KnowledgeModelError
 from ai_workbench.core.inference.stateless_guard import (
     assert_snapshot_unchanged,
     capture_stateless_persistence_snapshot,
 )
+from ai_workbench.db.database import get_engine, init_db
+from ai_workbench.db.stores import SqlKnowledgeStore
 from tests.test_prompt_agent_execution import FakeLLMRuntime
 
 
@@ -117,6 +120,26 @@ def create_embedding_profile(client: TestClient, *, external: bool = False, enab
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_embedding_profile_lookup_by_id_or_alias_works_for_memory_and_sql(tmp_path: Path) -> None:
+    memory = MemoryKnowledgeStore()
+    memory_profile = memory.create_embedding_profile(
+        EmbeddingModelProfile(name="Semantic", alias="semantic", provider_model_id="embedding/semantic")
+    )
+    engine = get_engine(f"sqlite:///{tmp_path / 'knowledge-lookup.db'}")
+    init_db(engine)
+    sql = SqlKnowledgeStore(engine)
+    sql_profile = sql.create_embedding_profile(
+        EmbeddingModelProfile(name="Semantic SQL", alias="semantic-sql", provider_model_id="embedding/semantic-sql")
+    )
+
+    assert memory.find_embedding_profile_by_alias("semantic") == memory_profile
+    assert memory.get_embedding_profile_by_id_or_alias(memory_profile.id) == memory_profile
+    assert memory.get_embedding_profile_by_id_or_alias("semantic") == memory_profile
+    assert sql.find_embedding_profile_by_alias("semantic-sql") == sql_profile
+    assert sql.get_embedding_profile_by_id_or_alias(sql_profile.id) == sql_profile
+    assert sql.get_embedding_profile_by_id_or_alias("semantic-sql") == sql_profile
 
 
 @pytest.mark.parametrize(("method", "path", "body"), OPENAI_ENDPOINTS + WORKBENCH_ENDPOINTS)
@@ -462,12 +485,21 @@ def test_external_allowlist_defaults_false_and_lists_only_enabled_profiles(tmp_p
     openai_models = client.get("/v1/models").json()["data"]
     workbench = client.get("/api/inference/models").json()
     ids = {item["id"] for item in openai_models}
-    assert ids == {f"llm:{llm['id']}", f"embedding:{embed['id']}"}
-    assert f"llm:{disabled_llm['id']}" not in ids
-    assert f"embedding:{disabled_embed['id']}" not in ids
+    assert ids == {f"llm:{llm['alias']}", f"embedding:{embed['alias']}"}
+    assert f"llm:{llm['id']}" not in ids
+    assert f"embedding:{embed['id']}" not in ids
+    assert f"llm:{disabled_llm['alias']}" not in ids
+    assert f"embedding:{disabled_embed['alias']}" not in ids
     assert "provider-secret" not in str(openai_models)
     assert str(tmp_path) not in str(openai_models)
     assert {item["id"] for item in workbench["data"]} == ids
+    workbench_by_id = {item["id"]: item for item in workbench["data"]}
+    assert workbench_by_id[f"llm:{llm['alias']}"]["profile_id"] == llm["id"]
+    assert workbench_by_id[f"llm:{llm['alias']}"]["profile_alias"] == llm["alias"]
+    assert workbench_by_id[f"llm:{llm['alias']}"]["legacy_model_id"] == f"llm:{llm['id']}"
+    assert workbench_by_id[f"embedding:{embed['alias']}"]["profile_id"] == embed["id"]
+    assert workbench_by_id[f"embedding:{embed['alias']}"]["profile_alias"] == embed["alias"]
+    assert workbench_by_id[f"embedding:{embed['alias']}"]["legacy_model_id"] == f"embedding:{embed['id']}"
     assert workbench["summary"]["llm_profiles_available"] == 1
     assert workbench["summary"]["embedding_profiles_available"] == 1
 
@@ -482,7 +514,7 @@ def test_chat_completion_allowlisted_profile_calls_llm_runtime_once_and_is_state
     response = client.post(
         "/v1/chat/completions",
         json={
-            "model": f"llm:{profile['id']}",
+            "model": f"llm:{profile['alias']}",
             "messages": [{"role": "system", "content": "brief"}, {"role": "user", "content": "hello"}],
             "temperature": 0.2,
             "top_p": 0.9,
@@ -493,7 +525,7 @@ def test_chat_completion_allowlisted_profile_calls_llm_runtime_once_and_is_state
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["object"] == "chat.completion"
-    assert payload["model"] == f"llm:{profile['id']}"
+    assert payload["model"] == f"llm:{profile['alias']}"
     assert payload["choices"][0]["message"] == {"role": "assistant", "content": "fake response"}
     assert payload["usage"] == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     assert len(llm.calls) == 1
@@ -523,6 +555,22 @@ def test_chat_completion_stream_unknown_and_non_allowlisted_do_not_call_runtime(
     assert llm.calls == []
 
 
+def test_chat_completion_accepts_legacy_uuid_model_ref(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_llm_profile(client, external=True)
+    llm = client.app.state.runtime_state.runtimes.get_runtime("llm")
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={"model": f"llm:{profile['id']}", "messages": [{"role": "user", "content": "hello"}]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["model"] == f"llm:{profile['id']}"
+    assert len(llm.calls) == 1
+
+
 def test_embeddings_allowlisted_profile_returns_vectors_and_is_stateless(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     backend = FakeKnowledgeBackend()
@@ -531,13 +579,15 @@ def test_embeddings_allowlisted_profile_returns_vectors_and_is_stateless(tmp_pat
     profile = create_embedding_profile(client, external=True)
     before = capture_stateless_persistence_snapshot(client.app.state.runtime_state)
 
-    single = client.post("/v1/embeddings", json={"model": f"embedding:{profile['id']}", "input": "hello"})
+    single = client.post("/v1/embeddings", json={"model": f"embedding:{profile['alias']}", "input": "hello"})
     batch = client.post("/v1/embeddings", json={"model": f"embedding:{profile['id']}", "input": ["a", "b"], "purpose": "query"})
 
     assert single.status_code == 200, single.text
     assert single.json()["data"] == [{"object": "embedding", "index": 0, "embedding": [0.0, 1.0]}]
+    assert single.json()["model"] == f"embedding:{profile['alias']}"
     assert batch.status_code == 200, batch.text
     assert [item["embedding"] for item in batch.json()["data"]] == [[0.0, 1.0], [1.0, 1.0]]
+    assert batch.json()["model"] == f"embedding:{profile['id']}"
     assert backend.calls[0]["texts"] == ["hello"]
     assert backend.calls[1]["texts"] == ["a", "b"]
     assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(client.app.state.runtime_state))

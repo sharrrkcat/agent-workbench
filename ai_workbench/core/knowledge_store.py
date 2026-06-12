@@ -509,6 +509,12 @@ class KnowledgeStore:
     def get_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
         raise NotImplementedError
 
+    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None:
+        raise NotImplementedError
+
+    def get_embedding_profile_by_id_or_alias(self, profile_id_or_alias: str) -> EmbeddingModelProfile:
+        raise NotImplementedError
+
     def update_embedding_profile(self, profile_id: str, values: dict[str, Any]) -> EmbeddingModelProfile:
         raise NotImplementedError
 
@@ -635,6 +641,20 @@ class MemoryKnowledgeStore(KnowledgeStore):
             return self._embedding_profiles[profile_id]
         except KeyError as exc:
             raise KeyError(f"unknown embedding model profile: {profile_id}") from exc
+
+    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None:
+        for profile in self._embedding_profiles.values():
+            if profile.alias == alias:
+                return profile
+        return None
+
+    def get_embedding_profile_by_id_or_alias(self, profile_id_or_alias: str) -> EmbeddingModelProfile:
+        if profile_id_or_alias in self._embedding_profiles:
+            return self._embedding_profiles[profile_id_or_alias]
+        profile = self.find_embedding_profile_by_alias(profile_id_or_alias)
+        if profile is not None:
+            return profile
+        raise KeyError(f"unknown embedding model profile: {profile_id_or_alias}")
 
     def update_embedding_profile(self, profile_id: str, values: dict[str, Any]) -> EmbeddingModelProfile:
         existing = self.get_embedding_profile(profile_id)
