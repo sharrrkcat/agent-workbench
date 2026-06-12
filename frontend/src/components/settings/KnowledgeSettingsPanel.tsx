@@ -153,6 +153,7 @@ const defaultEmbeddingProfile: Partial<EmbeddingModelProfile> = {
   document_instruction: '',
   query_instruction: '',
   enabled: true,
+  external_inference_enabled: false,
   notes: '',
 };
 
@@ -716,6 +717,11 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
             </label>
             <TextField label={t('llm:labels.manualModelIdOverride')} value={values.provider_model_id || ''} onChange={(value) => setValues({ ...values, provider_model_id: value })} />
             <NumberField label={t('knowledge:labels.dimension')} value={values.dimension ?? ''} onChange={(value) => setValues({ ...values, dimension: value === '' ? null : Number(value) })} />
+            <label className="config-field settings-config-field boolean-field">
+              <span>{t('settings:externalInference.enabled')}</span>
+              <ToggleSwitch checked={values.external_inference_enabled ?? false} onChange={(external_inference_enabled) => setValues({ ...values, external_inference_enabled })} />
+              <small>{t('settings:externalInference.help')}</small>
+            </label>
           </div>
           {selectedProviderMissing ? <p className="settings-warning-text">{t('knowledge:hints.providerMissing')}</p> : null}
           {selectedProvider && !selectedProvider.enabled ? <p className="settings-warning-text">{t('knowledge:hints.providerDisabled')}</p> : null}
@@ -2546,6 +2552,7 @@ function buildEmbeddingModelPayload(values: Partial<EmbeddingModelProfile>): Emb
     document_instruction: values.document_instruction ?? '',
     query_instruction: values.query_instruction ?? '',
     enabled: values.enabled ?? true,
+    external_inference_enabled: values.external_inference_enabled ?? false,
     notes: values.notes ?? '',
   };
 }

@@ -1061,6 +1061,11 @@ def test_general_settings_context_rendering_fields_are_exposed() -> None:
     types = read_frontend("types.ts")
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
 
+    assert "inference_service_enabled: boolean" in types
+    assert "inference_service_require_api_key: boolean" in types
+    assert "inference_service_max_request_mb: number" in types
+    assert "inference_service_api_key: string | null" in types
+    assert "inference_service_api_key_set: boolean" in types
     assert "group_transcript_system_instruction: string | null" in types
     assert "group_transcript_system_instruction_default: string" in types
     assert "group_transcript_system_instruction_effective: string" in types
@@ -1376,10 +1381,14 @@ def test_general_settings_uses_middle_category_list() -> None:
     console = read_frontend("components/settings/SettingsConsole.tsx")
     object_list = read_frontend("components/settings/SettingsObjectList.tsx")
     panel = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
 
     assert "type GeneralSettingsCategory = 'files' | 'llm_prompts'" in object_list
+    assert "| 'inference_service'" in object_list
     assert "{ id: 'files', name: t('settings:general.files'), description: t('settings:general.filesDescription'), icon: SlidersHorizontal }" in object_list
     assert "{ id: 'llm_prompts', name: t('settings:general.llmPrompts'), description: t('settings:general.llmPromptsDescription'), icon: SlidersHorizontal }" in object_list
+    assert "{ id: 'inference_service', name: t('settings:general.inferenceService'), description: t('settings:general.inferenceServiceDescription'), icon: Activity }" in object_list
     assert "if (section === 'general')" in object_list
     general_branch = object_list[object_list.index("if (section === 'general')") : object_list.index("if (section === 'agents')")]
     assert "<ObjectListHeader title={t('settings:objectList.category')} count={generalCategories.length} />" in general_branch
@@ -1395,10 +1404,36 @@ def test_general_settings_uses_middle_category_list() -> None:
     assert "generalCategory = 'files'" in panel
     assert "<GeneralDetail category={generalCategory} llmProfiles={llmProfiles} llmProviderProfiles={llmProviderProfiles} onDirtyChange={onDirtyChange} onSelectGeneralCategory={onSelectGeneralCategory} />" in panel
     assert "function GeneralFilesSettings" in panel
+    assert "function GeneralInferenceServiceSettings" in panel
     assert "function GeneralPromptSettings" in panel
     assert "category === 'files' ? (" in panel
+    assert "category === 'inference_service' ? t('settings:general.inferenceService')" in panel
+    assert "<GeneralInferenceServiceSettings values={values} setValues={setValues} setNumber={setNumber} />" in panel
+    assert "values.inference_service_enabled" in panel
+    assert "values.inference_service_require_api_key" in panel
+    assert "values.inference_service_api_key" in panel
+    assert "values.inference_service_api_key_set" in panel
+    assert "inference_service_max_request_mb" in panel
+    assert "inference_service_api_key: values.inference_service_api_key || null" in panel
+    assert "POST /v1/chat/completions" in panel
+    assert "POST /v1/embeddings" in panel
+    assert "POST /api/inference/embeddings/multimodal" in panel
+    assert "POST /api/inference/vision" in panel
     assert "DetailTabs" not in panel
     assert "generalTab" not in panel
+
+    for locale in (en_settings, zh_settings):
+        assert '"inferenceService"' in locale
+        assert '"inferenceServiceDescription"' in locale
+        assert '"inferenceServiceEnabled"' in locale
+        assert '"inferenceServiceRequireApiKey"' in locale
+        assert '"inferenceServiceApiKey"' in locale
+        assert '"inferenceServiceMaxRequestMb"' in locale
+        assert '"inferenceServiceEndpoints"' in locale
+        assert '"chatCompletionsEndpoint"' in locale
+        assert '"textEmbeddingsEndpoint"' in locale
+        assert '"multimodalEmbeddingsEndpoint"' in locale
+        assert '"visionEndpoint"' in locale
 
 
 def test_appearance_settings_has_chat_status_panel_category() -> None:
@@ -1514,6 +1549,63 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "/api/inference/vision-models" in client
     assert "listInferenceModelInventory" in client
     assert "/api/inference/model-inventory?kind=${encodeURIComponent(kind)}" in client
+
+
+def test_model_profile_external_inference_settings_contract() -> None:
+    types = read_frontend("types.ts")
+    llm = read_frontend("components/settings/LlmSettingsPanel.tsx")
+    knowledge = read_frontend("components/settings/KnowledgeSettingsPanel.tsx")
+    multimodal = read_frontend("components/settings/MultimodalEmbeddingSettingsPanel.tsx")
+    vision = read_frontend("components/settings/VisionSettingsPanel.tsx")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
+
+    llm_type = types[types.index("export type LlmProfile = {") : types.index("export type LlmDefaults")]
+    embedding_type = types[types.index("export type EmbeddingModelProfile = {") : types.index("export type RerankerModelProfile")]
+    assert "external_inference_enabled: boolean;" in llm_type
+    assert "| 'external_inference_enabled'" in llm_type
+    assert "external_inference_enabled: boolean;" in embedding_type
+    assert "| 'external_inference_enabled'" in embedding_type
+
+    assert "external_inference_enabled: false" in llm
+    assert "external_inference_enabled: Boolean(profile.external_inference_enabled)" in llm
+    assert "external_inference_enabled: false" in knowledge
+    assert "external_inference_enabled: values.external_inference_enabled ?? false" in knowledge
+
+    llm_provider_detail = llm[llm.index("export function LlmProviderProfileDetail") : llm.index("export function LlmProfileDetail")]
+    assert "settings:externalInference.enabled" not in llm_provider_detail
+
+    llm_model_section = llm[llm.index("<h3>{t('llm:sections.model')}</h3>") : llm.index("<h3>{t('llm:sections.generationDefaults')}</h3>")]
+    assert "settings:externalInference.enabled" in llm_model_section
+    assert "settings:externalInference.help" in llm_model_section
+    assert llm.index("settings:externalInference.enabled") < llm.index("<SettingsApiExampleBlock")
+
+    embedding_form = knowledge[knowledge.index("function EmbeddingProfileForm") : knowledge.index("function RerankerModelsEditor")]
+    assert "settings:externalInference.enabled" in embedding_form
+    assert "settings:externalInference.help" in embedding_form
+    assert embedding_form.index("settings:externalInference.enabled") < embedding_form.index("<SettingsApiExampleBlock")
+
+    reranker_form = knowledge[knowledge.index("function RerankerProfileForm") : knowledge.index("function KnowledgeBasesEditor")]
+    assert "settings:externalInference.enabled" not in reranker_form
+
+    multimodal_model_section = multimodal[multimodal.index("settings:multimodal.sections.model") : multimodal.index("settings:multimodal.sections.profile")]
+    multimodal_profile_section = multimodal[multimodal.index("settings:multimodal.sections.profile") : multimodal.index("settings:multimodal.sections.architecture")]
+    assert "settings:externalInference.enabled" in multimodal_model_section
+    assert "settings:externalInference.help" in multimodal_model_section
+    assert "settings:externalInference.enabled" not in multimodal_profile_section
+    assert multimodal.index("settings:externalInference.enabled") < multimodal.index("<SettingsApiExampleBlock")
+
+    vision_model_section = vision[vision.index("settings:vision.sections.model") : vision.index("settings:vision.sections.profile")]
+    vision_profile_section = vision[vision.index("settings:vision.sections.profile") : vision.index("settings:vision.sections.runtime")]
+    assert "settings:externalInference.enabled" in vision_model_section
+    assert "settings:externalInference.help" in vision_model_section
+    assert "settings:externalInference.enabled" not in vision_profile_section
+    assert vision.index("settings:externalInference.enabled") < vision.index("<SettingsApiExampleBlock")
+
+    for locale in (en_settings, zh_settings):
+        assert '"externalInference"' in locale
+        assert '"enabled"' in locale
+        assert '"help"' in locale
 
 
 def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
@@ -1677,6 +1769,7 @@ def test_model_profile_api_examples_contract() -> None:
     assert "/v1/chat/completions" in llm
     assert "llm:<profile_id>" in llm
     assert "apiExamples.llm.chatCompletions" in llm
+    assert "stream: true" not in llm
 
     assert "SettingsApiExampleBlock" in knowledge
     assert "/v1/embeddings" in knowledge

@@ -34,6 +34,7 @@ const profileDefaults: LlmProfileInput = {
   supports_reasoning: false,
   supports_streaming: true,
   supports_json_mode: false,
+  external_inference_enabled: false,
   notes: '',
 };
 const providerDefaults: LlmProviderProfileInput = {
@@ -1045,7 +1046,6 @@ export function LlmProfileDetail({
             content: 'Hello',
           },
         ],
-        stream: true,
       }),
     },
   ];
@@ -1287,6 +1287,11 @@ export function LlmProfileDetail({
               <input type="text" value={String(draft.model_id ?? '')} onChange={(event) => updateDraft({ model_id: event.target.value })} disabled={busy} />
             </label>
             <TextField label={t('llm:labels.notes')} value={draft.notes} onChange={(notes) => updateDraft({ notes })} disabled={busy} textarea />
+            <label className="config-field settings-config-field boolean-field">
+              <span>{t('settings:externalInference.enabled')}</span>
+              <ToggleSwitch checked={Boolean(draft.external_inference_enabled)} onChange={(external_inference_enabled) => updateDraft({ external_inference_enabled })} disabled={busy} />
+              <small>{t('settings:externalInference.help')}</small>
+            </label>
           </div>
           {result ? <p className={result.success ? 'settings-success-text' : 'settings-error-text'}>{result.message}</p> : null}
         </section>
@@ -1511,6 +1516,7 @@ function draftFromProfile(profile: LlmProfile): LlmProfileInput {
     supports_reasoning: Boolean(profile.supports_reasoning),
     supports_streaming: Boolean(profile.supports_streaming),
     supports_json_mode: Boolean(profile.supports_json_mode),
+    external_inference_enabled: Boolean(profile.external_inference_enabled),
     notes: profile.notes || '',
   };
 }

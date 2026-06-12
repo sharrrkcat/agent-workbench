@@ -387,6 +387,11 @@ function MultimodalEmbeddingProfileForm({
               </select>
               <small>{inventoryRoot ? t('settings:multimodal.help.inventoryRoot', { root: inventoryRoot }) : t('settings:multimodal.help.safeRef')}</small>
             </label>
+            <label className="config-field settings-config-field boolean-field">
+              <span>{t('settings:externalInference.enabled')}</span>
+              <ToggleSwitch checked={values.external_inference_enabled ?? false} onChange={(external_inference_enabled) => patchValues({ external_inference_enabled })} disabled={Boolean(busy)} />
+              <small>{t('settings:externalInference.help')}</small>
+            </label>
           </div>
           {!selectedProvider && !selectedProviderMissing ? <p className="settings-warning-text">{t('settings:multimodal.warnings.localProviderRequired')}</p> : null}
           {selectedProviderMissing ? <p className="settings-warning-text">{t('settings:multimodal.warnings.providerMissing')}</p> : null}
@@ -399,10 +404,6 @@ function MultimodalEmbeddingProfileForm({
           <div className="settings-config-form llm-profile-form">
             <TextField label={t('settings:multimodal.labels.description')} value={values.description || ''} onChange={(description) => patchValues({ description })} disabled={Boolean(busy)} textarea />
             <TextField label={t('settings:multimodal.labels.notes')} value={values.notes || ''} onChange={(notes) => patchValues({ notes })} disabled={Boolean(busy)} textarea />
-            <label className="config-field settings-config-field boolean-field">
-              <span>{t('settings:multimodal.labels.externalInferenceEnabled')}</span>
-              <ToggleSwitch checked={values.external_inference_enabled ?? false} onChange={(external_inference_enabled) => patchValues({ external_inference_enabled })} disabled={Boolean(busy)} />
-            </label>
           </div>
         </section>
         <section className="detail-section">

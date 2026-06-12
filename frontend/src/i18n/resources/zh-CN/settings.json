@@ -100,6 +100,10 @@
       "objectDetection": "Object detection 请求"
     }
   },
+  "externalInference": {
+    "enabled": "启用外部推理",
+    "help": "全局推理服务也必须启用。此配置及其 Provider 都启用后，复制的模型 ID 才能在外部应用中工作。"
+  },
   "multimodal": {
     "titles": {
       "newProfile": "新建多模态 Embedding 模型"
@@ -287,6 +291,24 @@
     "llmPromptsDescription": "标题生成和上下文 prompts。",
     "memory": "记忆",
     "memoryDescription": "由用户维护的核心记忆。",
+    "inferenceService": "推理服务",
+    "inferenceServiceDescription": "通过本地外部推理 API 暴露已允许的模型配置。",
+    "inferenceServiceAccess": "服务访问",
+    "inferenceServiceEnabled": "启用推理服务",
+    "inferenceServiceEnabledHelp": "打开允许的模型配置对应的本地外部推理路由。",
+    "inferenceServiceRequireApiKey": "要求 API key",
+    "inferenceServiceRequireApiKeyHelp": "外部推理请求必须提供 Authorization: Bearer 或 x-api-key。",
+    "inferenceServiceApiKey": "推理 API key",
+    "inferenceServiceApiKeyHelp": "保持不变会继续使用已保存的 key。清空并保存会移除 key。",
+    "inferenceServiceApiKeyRequired": "已启用 API key 鉴权，但尚未配置 key。",
+    "inferenceServiceMaxRequestMb": "最大请求大小 (MB)",
+    "inferenceServiceEndpoints": "Endpoints",
+    "inferenceServiceEndpointsHelp": "在其他应用中，OpenAI-compatible 路由的 base URL 使用 http://127.0.0.1:<port>/v1。",
+    "inferenceServiceModelIds": "模型 ID 使用 llm:<profile_id>、embedding:<profile_id>、multimodal:<profile_id> 或 vision:<profile_id>。",
+    "chatCompletionsEndpoint": "Chat completions",
+    "textEmbeddingsEndpoint": "文本 Embedding",
+    "multimodalEmbeddingsEndpoint": "多模态 Embedding",
+    "visionEndpoint": "Vision",
     "utilityLlmDescription": "用于标题和路由提取的内部小模型。",
     "loading": "正在加载通用设置。",
     "uploadLimits": "上传限制",

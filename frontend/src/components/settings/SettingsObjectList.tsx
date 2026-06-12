@@ -1,4 +1,4 @@
-import { Boxes, Gauge, Globe, PawPrint, Plus, SlidersHorizontal, Type } from 'lucide-react';
+import { Activity, Boxes, Gauge, Globe, PawPrint, Plus, SlidersHorizontal, Type } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, VisionModelProfile, Worldbook } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
@@ -9,7 +9,7 @@ import { getResolvedAgentDisplay } from '../../utils/agents';
 import { StatusChip } from '../ui';
 import { getKnowledgeIndexStatusLabel } from '../../i18n/formatters';
 
-export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory' | 'web_search' | 'utility_llm' | 'intent_routing';
+export type GeneralSettingsCategory = 'files' | 'llm_prompts' | 'memory' | 'web_search' | 'utility_llm' | 'intent_routing' | 'inference_service';
 export type AppearanceSettingsCategory = 'pet' | 'fonts' | 'chat_status_panel';
 export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection | 'reranker_models';
 export type WorldbookSettingsCategory = WorldbookSettingsSubsection;
@@ -89,6 +89,7 @@ export function SettingsObjectList({
     { id: 'web_search', name: t('settings:general.webSearch'), description: t('settings:general.webSearchDescription'), icon: Globe },
     { id: 'utility_llm', name: t('settings:general.utilityLlm'), description: t('settings:general.utilityLlmDescription'), icon: SlidersHorizontal },
     { id: 'intent_routing', name: t('settings:general.intentRouting'), description: t('settings:general.intentRoutingDescription'), icon: SlidersHorizontal },
+    { id: 'inference_service', name: t('settings:general.inferenceService'), description: t('settings:general.inferenceServiceDescription'), icon: Activity },
   ];
   const appearanceCategories: { id: AppearanceSettingsCategory; name: string; description: string; icon: typeof PawPrint }[] = [
     { id: 'pet', name: t('settings:appearance.pet'), description: t('settings:appearance.petDescription'), icon: PawPrint },

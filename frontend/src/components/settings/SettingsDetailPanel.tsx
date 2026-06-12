@@ -8,6 +8,7 @@ import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultModelProfileSection, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { SecretInput } from './SecretInput';
 import { getStatusLabel } from '../../i18n/formatters';
 import { ToggleSwitch } from './ToggleSwitch';
 import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues } from './configUtils';
@@ -336,8 +337,8 @@ function GeneralDetail({
   const [saved, setSaved] = useState(false);
   const [defaultModelDirty, setDefaultModelDirty] = useState(false);
   const dirty = Boolean(values && generalSettings && JSON.stringify(values) !== JSON.stringify(generalSettings));
-  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'web_search' ? t('settings:general.webSearch') : category === 'utility_llm' ? t('settings:general.utilityLlm') : category === 'intent_routing' ? t('settings:general.intentRouting') : t('settings:general.llmPrompts');
-  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'web_search' ? t('settings:general.webSearchDescription') : category === 'utility_llm' ? t('settings:general.utilityLlmDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : t('settings:general.llmPromptsDescription');
+  const title = category === 'files' ? t('settings:general.files') : category === 'memory' ? t('settings:general.memory') : category === 'web_search' ? t('settings:general.webSearch') : category === 'utility_llm' ? t('settings:general.utilityLlm') : category === 'intent_routing' ? t('settings:general.intentRouting') : category === 'inference_service' ? t('settings:general.inferenceService') : t('settings:general.llmPrompts');
+  const description = category === 'files' ? t('settings:general.filesDescription') : category === 'memory' ? t('settings:general.memoryDescription') : category === 'web_search' ? t('settings:general.webSearchDescription') : category === 'utility_llm' ? t('settings:general.utilityLlmDescription') : category === 'intent_routing' ? t('settings:general.intentRoutingDescription') : category === 'inference_service' ? t('settings:general.inferenceServiceDescription') : t('settings:general.llmPromptsDescription');
 
   useEffect(() => {
     void refreshGeneralSettings();
@@ -404,7 +405,7 @@ function GeneralDetail({
       <header className="settings-detail-header">
         <div className="settings-detail-title">
           <div className="settings-detail-avatar">
-            {category === 'web_search' ? <Globe size={18} /> : <Settings size={18} />}
+            {category === 'web_search' ? <Globe size={18} /> : category === 'inference_service' ? <Activity size={18} /> : <Settings size={18} />}
           </div>
           <div>
             <h2>{title}</h2>
@@ -433,6 +434,8 @@ function GeneralDetail({
           <GeneralUtilityLlmSettings values={values} llmProfiles={llmProfiles} setValues={setValues} />
         ) : category === 'intent_routing' ? (
           <GeneralIntentRoutingSettings values={values} setValues={setValues} setNumber={setNumber} setString={setString} />
+        ) : category === 'inference_service' ? (
+          <GeneralInferenceServiceSettings values={values} setValues={setValues} setNumber={setNumber} />
         ) : (
           <GeneralPromptSettings
             values={values}
@@ -969,6 +972,63 @@ function GeneralFilesSettings({
           <NumberField label={t('general.maxFileContextPerFile')} value={values.max_file_context_per_file_kb} min={1} max={2048} onChange={(value) => setNumber('max_file_context_per_file_kb', value)} />
           <NumberField label={t('general.maxTotalFileContext')} value={values.max_total_file_context_per_message_kb} min={1} max={8192} onChange={(value) => setNumber('max_total_file_context_per_message_kb', value)} />
         </div>
+      </div>
+    </>
+  );
+}
+
+function GeneralInferenceServiceSettings({
+  values,
+  setValues,
+  setNumber,
+}: {
+  values: GeneralSettings;
+  setValues: (values: GeneralSettings) => void;
+  setNumber: (key: keyof GeneralSettings, value: string) => void;
+}) {
+  const { t } = useTranslation('settings');
+  const apiKeyDraft = values.inference_service_api_key || '';
+  const missingRequiredKey = values.inference_service_require_api_key && !values.inference_service_api_key_set && !apiKeyDraft;
+  return (
+    <>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('general.inferenceServiceAccess')}</h3>
+        </div>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('general.inferenceServiceEnabled')}</span>
+          <ToggleSwitch checked={values.inference_service_enabled} onChange={(checked) => setValues({ ...values, inference_service_enabled: checked })} />
+          <small>{t('general.inferenceServiceEnabledHelp')}</small>
+        </label>
+        <label className="config-field settings-config-field boolean-field">
+          <span>{t('general.inferenceServiceRequireApiKey')}</span>
+          <ToggleSwitch checked={values.inference_service_require_api_key} onChange={(checked) => setValues({ ...values, inference_service_require_api_key: checked })} />
+          <small>{t('general.inferenceServiceRequireApiKeyHelp')}</small>
+        </label>
+        <SecretInput
+          label={t('general.inferenceServiceApiKey')}
+          value={apiKeyDraft}
+          onChange={(value) => setValues({ ...values, inference_service_api_key: value || null })}
+          hasSecret={values.inference_service_api_key_set}
+        />
+        <p className="settings-muted-text">{t('general.inferenceServiceApiKeyHelp')}</p>
+        {missingRequiredKey ? <p className="settings-warning-text">{t('general.inferenceServiceApiKeyRequired')}</p> : null}
+        <div className="settings-detail-grid">
+          <NumberField label={t('general.inferenceServiceMaxRequestMb')} value={values.inference_service_max_request_mb} min={1} max={100} onChange={(value) => setNumber('inference_service_max_request_mb', value)} />
+        </div>
+      </div>
+      <div className="detail-section">
+        <div className="detail-section-heading">
+          <h3>{t('general.inferenceServiceEndpoints')}</h3>
+        </div>
+        <p className="settings-muted-copy">{t('general.inferenceServiceEndpointsHelp')}</p>
+        <dl className="settings-definition-grid">
+          <Metric label={t('general.chatCompletionsEndpoint')} value={<code>POST /v1/chat/completions</code>} wide />
+          <Metric label={t('general.textEmbeddingsEndpoint')} value={<code>POST /v1/embeddings</code>} wide />
+          <Metric label={t('general.multimodalEmbeddingsEndpoint')} value={<code>POST /api/inference/embeddings/multimodal</code>} wide />
+          <Metric label={t('general.visionEndpoint')} value={<code>POST /api/inference/vision</code>} wide />
+        </dl>
+        <p className="settings-muted-copy">{t('general.inferenceServiceModelIds')}</p>
       </div>
     </>
   );
@@ -1786,6 +1846,10 @@ function generalSettingsPatch(values: GeneralSettings): Partial<GeneralSettings>
     max_file_context_per_file_kb: values.max_file_context_per_file_kb,
     max_total_file_context_per_message_kb: values.max_total_file_context_per_message_kb,
     send_text_file_attachments_to_llm: values.send_text_file_attachments_to_llm,
+    inference_service_enabled: values.inference_service_enabled,
+    inference_service_require_api_key: values.inference_service_require_api_key,
+    inference_service_api_key: values.inference_service_api_key || null,
+    inference_service_max_request_mb: values.inference_service_max_request_mb,
     persist_streaming_message_deltas: values.persist_streaming_message_deltas,
     auto_generate_session_titles: values.auto_generate_session_titles,
     session_title_backend: values.session_title_backend,

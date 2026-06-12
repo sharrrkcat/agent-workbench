@@ -279,6 +279,7 @@ export type LlmProfile = {
   supports_reasoning: boolean;
   supports_streaming: boolean;
   supports_json_mode: boolean;
+  external_inference_enabled: boolean;
   notes?: string | null;
   created_at: string;
   updated_at: string;
@@ -398,6 +399,7 @@ export type LlmProfileInput = Partial<
     | 'supports_reasoning'
     | 'supports_streaming'
     | 'supports_json_mode'
+    | 'external_inference_enabled'
     | 'notes'
   >
 >;
@@ -477,6 +479,7 @@ export type EmbeddingModelProfile = {
   document_instruction: string;
   query_instruction: string;
   enabled: boolean;
+  external_inference_enabled: boolean;
   notes: string;
   created_at: string;
   updated_at: string;
@@ -495,6 +498,7 @@ export type EmbeddingModelProfileInput = Partial<
     | 'document_instruction'
     | 'query_instruction'
     | 'enabled'
+    | 'external_inference_enabled'
     | 'notes'
   >
 >;
@@ -1669,6 +1673,11 @@ export type GeneralSettings = {
   max_file_context_per_file_kb: number;
   max_total_file_context_per_message_kb: number;
   send_text_file_attachments_to_llm: boolean;
+  inference_service_enabled: boolean;
+  inference_service_require_api_key: boolean;
+  inference_service_max_request_mb: number;
+  inference_service_api_key: string | null;
+  inference_service_api_key_set: boolean;
   persist_streaming_message_deltas: boolean;
   auto_generate_session_titles: boolean;
   session_title_backend: 'utility_llm' | 'follow_agent_model_profile' | 'specified_model_profile';

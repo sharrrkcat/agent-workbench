@@ -100,6 +100,10 @@
       "objectDetection": "Object detection request"
     }
   },
+  "externalInference": {
+    "enabled": "External inference enabled",
+    "help": "Global Inference Service must also be enabled. This profile and its provider must be enabled before copied model IDs work from external apps."
+  },
   "multimodal": {
     "titles": {
       "newProfile": "New multimodal embedding model"
@@ -289,6 +293,24 @@
     "memoryDescription": "Core Memory maintained by the user.",
     "webSearch": "Web Search",
     "webSearchDescription": "Control whether Prompt Agents receive web search results.",
+    "inferenceService": "Inference Service",
+    "inferenceServiceDescription": "Expose selected model profiles through local external inference APIs.",
+    "inferenceServiceAccess": "Service access",
+    "inferenceServiceEnabled": "Enable Inference Service",
+    "inferenceServiceEnabledHelp": "Turns on local external inference routes for allowed model profiles.",
+    "inferenceServiceRequireApiKey": "Require API key",
+    "inferenceServiceRequireApiKeyHelp": "Require Authorization: Bearer or x-api-key for external inference requests.",
+    "inferenceServiceApiKey": "Inference API key",
+    "inferenceServiceApiKeyHelp": "Leave unchanged to keep the saved key. Clear and save to remove it.",
+    "inferenceServiceApiKeyRequired": "API key authentication is enabled but no key is configured.",
+    "inferenceServiceMaxRequestMb": "Max request size (MB)",
+    "inferenceServiceEndpoints": "Endpoints",
+    "inferenceServiceEndpointsHelp": "Configure other apps with base URL http://127.0.0.1:<port>/v1 for OpenAI-compatible routes.",
+    "inferenceServiceModelIds": "Model IDs use llm:<profile_id>, embedding:<profile_id>, multimodal:<profile_id>, or vision:<profile_id>.",
+    "chatCompletionsEndpoint": "Chat completions",
+    "textEmbeddingsEndpoint": "Text embeddings",
+    "multimodalEmbeddingsEndpoint": "Multimodal embeddings",
+    "visionEndpoint": "Vision",
     "webSearchContext": "Web Search context",
     "enableWebSearchContext": "Enable Web Search context",
     "webSearchContextHelp": "Add live web results to eligible Prompt Agent responses.",
