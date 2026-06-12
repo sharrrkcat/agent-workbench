@@ -25,6 +25,7 @@
     "modelProfiles": "LLM 模型配置",
     "embeddingModels": "Embedding 模型配置",
     "multimodalEmbeddingModels": "图像 / 多模态 Embedding",
+    "visionModels": "Vision 模型",
     "rerankerModels": "Reranker 模型配置",
     "knowledgeBases": "知识库",
     "worldbooks": "世界书"
@@ -44,6 +45,7 @@
     "knowledgeDefaults": "知识库默认值",
     "embeddingModelProfiles": "Embedding 模型配置",
     "multimodalEmbeddingModelProfiles": "图像 / 多模态 Embedding 配置",
+    "visionModelProfiles": "Vision 模型配置",
     "rerankerModelProfiles": "Reranker 模型配置",
     "knowledgeBases": "知识库",
     "worldbookDefaults": "世界书默认值",
@@ -55,6 +57,7 @@
     "noObjects": "此分区暂无对象。",
     "noEmbeddingProfiles": "还没有 Embedding 模型配置。",
     "noMultimodalEmbeddingProfiles": "还没有图像 / 多模态 Embedding 配置。",
+    "noVisionProfiles": "还没有 Vision 模型配置。",
     "noRerankerProfiles": "还没有 Reranker 模型配置。",
     "noKnowledgeBases": "还没有知识库。",
     "noWorldbooks": "还没有世界书。",
@@ -163,6 +166,90 @@
     },
     "confirm": {
       "deleteProfile": "删除多模态 Embedding 配置 \"{{name}}\"？"
+    }
+  },
+  "vision": {
+    "titles": {
+      "newProfile": "新建 Vision 模型"
+    },
+    "sections": {
+      "model": "模型",
+      "profile": "配置",
+      "runtime": "运行时",
+      "tasks": "支持任务",
+      "advanced": "高级 metadata"
+    },
+    "labels": {
+      "name": "名称",
+      "description": "描述",
+      "notes": "备注",
+      "providerProfile": "Provider 配置",
+      "modelRef": "本地模型引用",
+      "missingCurrentRef": "缺失的当前引用：{{ref}}",
+      "externalInferenceEnabled": "启用外部推理",
+      "architecture": "架构",
+      "backend": "后端",
+      "maxBatchSize": "最大批量",
+      "trustRemoteCode": "信任 remote code",
+      "metadataJson": "Metadata JSON"
+    },
+    "actions": {
+      "refreshInventory": "刷新 inventory",
+      "refreshingInventory": "刷新中..."
+    },
+    "architectures": {
+      "florence2": "Florence2"
+    },
+    "backends": {
+      "transformers": "Transformers"
+    },
+    "tasks": {
+      "caption": "Caption",
+      "detailed_caption": "Detailed caption",
+      "ocr": "OCR",
+      "object_detection": "Object detection"
+    },
+    "empty": {
+      "noProfileSelected": "未选择 Vision 模型",
+      "selectProfile": "从列表中选择一个 Vision 模型配置。",
+      "noProfiles": "还没有 Vision 模型配置。",
+      "noModelRef": "没有 Vision 模型引用",
+      "noLocalProviderSelected": "未选择本地 Transformers provider",
+      "selectInventoryRef": "选择扫描到的 Vision 引用",
+      "noInventoryRefs": "没有扫描到 Vision 引用"
+    },
+    "help": {
+      "localProviderOnly": "Vision 模型只能使用 internal Transformers provider 配置。",
+      "safeRef": "扫描 data/models/vision，并保存为 vision/<folder> 引用。",
+      "inventoryRoot": "扫描目录：{{root}}。",
+      "trustRemoteCode": "高级选项，用于选择性允许运行本地自定义模型代码。标准本地 Florence2 文件夹请保持关闭。",
+      "metadataJson": "随此配置保存的高级 metadata。trust remote code 开关会写入这里。"
+    },
+    "warnings": {
+      "localProviderRequired": "保存前请选择 internal Transformers provider 配置。",
+      "providerMissing": "所选 provider 配置缺失，或不是 internal Transformers provider。",
+      "providerDisabled": "所选 provider 配置已禁用。",
+      "modelRefMissing": "当前模型引用未出现在最新 inventory 扫描结果中。",
+      "trustRemoteCode": "模型加载时会执行所选本地模型文件夹中的自定义代码。"
+    },
+    "results": {
+      "inventoryLoaded": "找到 {{count}} 个 Vision 引用。",
+      "profileSaved": "Vision 模型已保存。",
+      "profileDeleted": "Vision 模型已删除。"
+    },
+    "errors": {
+      "inventoryLoadFailed": "加载 Vision 模型 inventory 失败。",
+      "invalidMetadataJson": "Metadata 必须是 JSON 对象。",
+      "localProviderRequired": "需要本地 Transformers provider 配置。",
+      "nameRequired": "名称为必填项。",
+      "modelRefRequired": "本地模型引用为必填项。",
+      "modelRefSafeRefRequired": "本地模型引用必须使用 vision/<folder>。",
+      "supportedTaskRequired": "至少选择一个支持任务。",
+      "saveFailed": "保存 Vision 模型失败。",
+      "deleteFailed": "删除 Vision 模型失败。"
+    },
+    "confirm": {
+      "deleteProfile": "删除 Vision 配置 \"{{name}}\"？"
     }
   },
   "general": {

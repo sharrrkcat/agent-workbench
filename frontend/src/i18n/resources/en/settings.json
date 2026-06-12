@@ -25,6 +25,7 @@
     "modelProfiles": "LLM Model Profiles",
     "embeddingModels": "Embedding Model Profiles",
     "multimodalEmbeddingModels": "Image / Multimodal Embeddings",
+    "visionModels": "Vision Models",
     "rerankerModels": "Reranker Model Profiles",
     "knowledgeBases": "Knowledge Bases",
     "worldbooks": "Worldbooks"
@@ -44,6 +45,7 @@
     "knowledgeDefaults": "Knowledge defaults",
     "embeddingModelProfiles": "Embedding model profiles",
     "multimodalEmbeddingModelProfiles": "Image / multimodal embedding profiles",
+    "visionModelProfiles": "Vision model profiles",
     "rerankerModelProfiles": "Reranker model profiles",
     "knowledgeBases": "Knowledge bases",
     "worldbookDefaults": "Worldbook defaults",
@@ -55,6 +57,7 @@
     "noObjects": "No objects in this section.",
     "noEmbeddingProfiles": "No embedding model profiles yet.",
     "noMultimodalEmbeddingProfiles": "No image / multimodal embedding profiles yet.",
+    "noVisionProfiles": "No vision model profiles yet.",
     "noRerankerProfiles": "No reranker model profiles yet.",
     "noKnowledgeBases": "No knowledge bases yet.",
     "noWorldbooks": "No worldbooks yet.",
@@ -163,6 +166,90 @@
     },
     "confirm": {
       "deleteProfile": "Delete multimodal embedding profile \"{{name}}\"?"
+    }
+  },
+  "vision": {
+    "titles": {
+      "newProfile": "New vision model"
+    },
+    "sections": {
+      "model": "Model",
+      "profile": "Profile",
+      "runtime": "Runtime",
+      "tasks": "Supported tasks",
+      "advanced": "Advanced metadata"
+    },
+    "labels": {
+      "name": "Name",
+      "description": "Description",
+      "notes": "Notes",
+      "providerProfile": "Provider profile",
+      "modelRef": "Local model ref",
+      "missingCurrentRef": "Missing current ref: {{ref}}",
+      "externalInferenceEnabled": "External inference enabled",
+      "architecture": "Architecture",
+      "backend": "Backend",
+      "maxBatchSize": "Max batch size",
+      "trustRemoteCode": "Trust remote code",
+      "metadataJson": "Metadata JSON"
+    },
+    "actions": {
+      "refreshInventory": "Refresh inventory",
+      "refreshingInventory": "Refreshing..."
+    },
+    "architectures": {
+      "florence2": "Florence2"
+    },
+    "backends": {
+      "transformers": "Transformers"
+    },
+    "tasks": {
+      "caption": "Caption",
+      "detailed_caption": "Detailed caption",
+      "ocr": "OCR",
+      "object_detection": "Object detection"
+    },
+    "empty": {
+      "noProfileSelected": "No vision model selected",
+      "selectProfile": "Select a vision model profile from the list.",
+      "noProfiles": "No vision model profiles yet.",
+      "noModelRef": "No vision model ref",
+      "noLocalProviderSelected": "No local Transformers provider selected",
+      "selectInventoryRef": "Select scanned vision ref",
+      "noInventoryRefs": "No scanned vision refs"
+    },
+    "help": {
+      "localProviderOnly": "Only internal Transformers provider profiles are valid for Vision models.",
+      "safeRef": "Scans data/models/vision and saves refs as vision/<folder>.",
+      "inventoryRoot": "Scanned under {{root}}.",
+      "trustRemoteCode": "Advanced opt-in for local custom model code. Leave off for standard local Florence2 folders.",
+      "metadataJson": "Advanced metadata persisted with this profile. The trust remote code toggle is stored here."
+    },
+    "warnings": {
+      "localProviderRequired": "Select an internal Transformers provider profile before saving.",
+      "providerMissing": "The selected provider profile is missing or is not an internal Transformers provider.",
+      "providerDisabled": "The selected provider profile is disabled.",
+      "modelRefMissing": "The current model ref was not returned by the latest inventory scan.",
+      "trustRemoteCode": "This executes custom code from the selected local model folder during model loading."
+    },
+    "results": {
+      "inventoryLoaded": "Found {{count}} vision ref(s).",
+      "profileSaved": "Vision model saved.",
+      "profileDeleted": "Vision model deleted."
+    },
+    "errors": {
+      "inventoryLoadFailed": "Failed to load vision model inventory.",
+      "invalidMetadataJson": "Metadata must be a JSON object.",
+      "localProviderRequired": "A local Transformers provider profile is required.",
+      "nameRequired": "Name is required.",
+      "modelRefRequired": "Local model ref is required.",
+      "modelRefSafeRefRequired": "Local model ref must use vision/<folder>.",
+      "supportedTaskRequired": "Select at least one supported task.",
+      "saveFailed": "Failed to save vision model.",
+      "deleteFailed": "Failed to delete vision model."
+    },
+    "confirm": {
+      "deleteProfile": "Delete vision profile \"{{name}}\"?"
     }
   },
   "general": {

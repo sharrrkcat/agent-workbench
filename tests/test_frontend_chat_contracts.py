@@ -1528,7 +1528,7 @@ def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
     en_knowledge = read_frontend("i18n/resources/en/knowledge.json")
     zh_knowledge = read_frontend("i18n/resources/zh-CN/knowledge.json")
 
-    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'reranker_models';" in nav
+    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'reranker_models';" in nav
     assert "activeLlmSubsection === 'multimodal_embedding_models'" in nav
     assert "onLlmSubsectionChange?.('multimodal_embedding_models')" in nav
     assert "subsections.multimodalEmbeddingModels" in nav
@@ -1590,6 +1590,72 @@ def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
         assert '"multimodal"' in locale
         assert '"safeRef"' in locale
         assert '"providerPolicy"' in locale
+
+
+def test_vision_model_profiles_settings_ui_contract() -> None:
+    nav = read_frontend("components/settings/SettingsNav.tsx")
+    app = read_frontend("App.tsx")
+    console = read_frontend("components/settings/SettingsConsole.tsx")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    detail = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    panel = read_frontend("components/settings/VisionSettingsPanel.tsx")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
+
+    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'reranker_models';" in nav
+    assert "activeLlmSubsection === 'vision_models'" in nav
+    assert "onLlmSubsectionChange?.('vision_models')" in nav
+    assert "subsections.visionModels" in nav
+
+    assert "'vision-models'" in app
+    assert "'vision-model-profiles'" in app
+    assert "'vision_models'" in app
+    assert "target.llmSubsection = 'vision_models'" in app
+
+    assert "VisionModelProfile" in console
+    assert "useState<VisionModelProfile[]>([])" in console
+    assert "selectedVisionItemId" in console
+    assert "api.listVisionModels()" in console
+    assert "refreshVisionProfiles" in console
+    assert "visionProfiles={visionProfiles}" in console
+    assert "onSelectVisionItem={selectVisionItem}" in console
+    assert "onVisionProfilesChanged={refreshVisionProfiles}" in console
+
+    assert "VisionModelProfile" in object_list
+    assert "llmSubsection === 'vision_models'" in object_list
+    assert "VisionProfileListItem" in object_list
+    assert "settings:objectList.noVisionProfiles" in object_list
+    assert "settings:subsections.visionModels" in object_list
+    assert "`arch:${profile.architecture}`" in object_list
+
+    assert "VisionSettingsPanel" in detail
+    assert "llmSubsection === 'vision_models'" in detail
+    assert "selectedProfileId={selectedVisionItemId}" in detail
+    assert "onProfilesChanged={onVisionProfilesChanged" in detail
+
+    assert "api.createVisionModel" in panel
+    assert "api.patchVisionModel" in panel
+    assert "api.deleteVisionModel" in panel
+    assert "api.listInferenceModelInventory('vision')" in panel
+    assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "isVisionRef" in panel
+    assert "vision/" in panel
+    assert "trust_remote_code" in panel
+    assert "`arch:${values.architecture || 'florence2'}`" in panel
+    assert "supportedTaskRequired" in panel
+    assert "listLlmProviderModels" not in panel
+    assert "chooseFromProvider" not in panel
+    assert "manualModelIdOverride" not in panel
+
+    for locale in (en_settings, zh_settings):
+        assert '"visionModels"' in locale
+        assert '"visionModelProfiles"' in locale
+        assert '"noVisionProfiles"' in locale
+        assert '"vision"' in locale
+        assert '"trustRemoteCode"' in locale
+        assert '"supportedTaskRequired"' in locale
+        assert '"modelRefSafeRefRequired"' in locale
 
 
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:

@@ -2,7 +2,7 @@ import { Activity, Bot, BookOpenText, Boxes, BrainCircuit, Code2, Database, Info
 import { useTranslation } from 'react-i18next';
 
 export type SettingsSection = 'general' | 'appearance' | 'models' | 'knowledge' | 'worldbook' | 'agents' | 'capabilities' | 'data' | 'diagnostics' | 'developer' | 'about';
-export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'reranker_models';
+export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'reranker_models';
 export type KnowledgeSettingsSubsection = 'defaults' | 'embedding_models' | 'knowledge_bases';
 export type WorldbookSettingsSubsection = 'defaults' | 'worldbooks';
 export type SettingsInitialTarget = {
@@ -90,6 +90,13 @@ export function SettingsNav({
                   onClick={() => onLlmSubsectionChange?.('multimodal_embedding_models')}
                 >
                   <span>{t('subsections.multimodalEmbeddingModels')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={activeLlmSubsection === 'vision_models' ? 'active' : ''}
+                  onClick={() => onLlmSubsectionChange?.('vision_models')}
+                >
+                  <span>{t('subsections.visionModels')}</span>
                 </button>
                 <button
                   type="button"

@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus, VisionModelProfile } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultModelProfileSection, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -16,6 +16,7 @@ import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSett
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
 import { MultimodalEmbeddingSettingsPanel } from './MultimodalEmbeddingSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
+import { VisionSettingsPanel } from './VisionSettingsPanel';
 import { WorldbookSettingsDetail } from './WorldbookSettingsPanel';
 import { DEFAULT_CODE_FONT, DEFAULT_CODE_FONT_NAME, DEFAULT_MESSAGE_FONT, DEFAULT_MESSAGE_FONT_NAME, DEFAULT_UI_FONT, DEFAULT_UI_FONT_NAME, fontFamilyFor, shortFontName } from '../../utils/fonts';
 
@@ -29,9 +30,11 @@ export function SettingsDetailPanel({
   llmProfiles = [],
   llmProviderProfiles = [],
   multimodalEmbeddingProfiles = [],
+  visionProfiles = [],
   rerankerProfiles = [],
   selectedLlmItemId = 'global',
   selectedMultimodalEmbeddingItemId = '',
+  selectedVisionItemId = '',
   llmSubsection = 'providers',
   generalCategory = 'files',
   appearanceCategory = 'pet',
@@ -41,6 +44,7 @@ export function SettingsDetailPanel({
   selectedWorldbookItemId = 'global',
   onLlmProfilesChanged,
   onMultimodalEmbeddingProfilesChanged,
+  onVisionProfilesChanged,
   onKnowledgeObjectsChanged,
   onWorldbookObjectsChanged,
   onSelectGeneralCategory,
@@ -58,9 +62,11 @@ export function SettingsDetailPanel({
   llmProfiles?: LlmProfile[];
   llmProviderProfiles?: LlmProviderProfile[];
   multimodalEmbeddingProfiles?: MultimodalEmbeddingModelProfile[];
+  visionProfiles?: VisionModelProfile[];
   rerankerProfiles?: RerankerModelProfile[];
   selectedLlmItemId?: string;
   selectedMultimodalEmbeddingItemId?: string;
+  selectedVisionItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
   appearanceCategory?: AppearanceSettingsCategory;
@@ -70,6 +76,7 @@ export function SettingsDetailPanel({
   selectedWorldbookItemId?: string;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onMultimodalEmbeddingProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
+  onVisionProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onWorldbookObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
@@ -145,6 +152,14 @@ export function SettingsDetailPanel({
             providerProfiles={llmProviderProfiles}
             selectedProfileId={selectedMultimodalEmbeddingItemId}
             onProfilesChanged={onMultimodalEmbeddingProfilesChanged || (async () => undefined)}
+            onDirtyChange={onDirtyChange}
+          />
+        ) : llmSubsection === 'vision_models' ? (
+          <VisionSettingsPanel
+            profiles={visionProfiles}
+            providerProfiles={llmProviderProfiles}
+            selectedProfileId={selectedVisionItemId}
+            onProfilesChanged={onVisionProfilesChanged || (async () => undefined)}
             onDirtyChange={onDirtyChange}
           />
         ) : (

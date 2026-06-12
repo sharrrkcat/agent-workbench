@@ -161,6 +161,9 @@ function explicitSettingsTarget(): SettingsInitialTarget {
   if (section === 'models' && ['multimodal-embedding-models', 'multimodal-embedding-model-profiles', 'image-embedding-models', 'image_embedding_models'].includes(subsection)) {
     target.llmSubsection = 'multimodal_embedding_models';
   }
+  if (section === 'models' && ['vision-models', 'vision-model-profiles', 'vision_models'].includes(subsection)) {
+    target.llmSubsection = 'vision_models';
+  }
   if (section === 'models' && ['reranker-models', 'reranker-model-profiles', 'reranker_models'].includes(subsection)) {
     target.llmSubsection = 'reranker_models';
   }
