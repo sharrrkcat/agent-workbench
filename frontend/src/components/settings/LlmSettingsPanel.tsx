@@ -1337,6 +1337,7 @@ export function LlmProfileDetail({
         <SettingsApiExampleBlock
           endpoint="/v1/chat/completions"
           modelId={apiExampleModelId}
+          modelIdHelp={t('settings:apiExamples.modelIdHelp')}
           examples={apiExamples}
         />
       </div>

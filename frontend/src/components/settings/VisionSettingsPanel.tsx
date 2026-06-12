@@ -470,6 +470,7 @@ function VisionProfileForm({
         <SettingsApiExampleBlock
           endpoint="/api/inference/vision"
           modelId={apiExampleModelId}
+          modelIdHelp={t('settings:apiExamples.modelIdHelp')}
           examples={visionApiExamples}
         />
       </div>

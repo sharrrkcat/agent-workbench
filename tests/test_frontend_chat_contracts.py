@@ -1801,21 +1801,26 @@ def test_model_profile_api_examples_contract() -> None:
     assert "requestSnippet(example.body)" in component
     assert "copyModelId" in component
     assert "copyExample" in component
+    assert "modelIdHelp?: string;" in component
+    assert "modelIdHelp ? <span className=\"settings-muted-text\">{modelIdHelp}</span> : null" in component
 
     assert "SettingsApiExampleBlock" in llm
     assert "/v1/chat/completions" in llm
     assert "llm:<profile_key>" in llm
+    assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in llm
     assert "apiExamples.llm.chatCompletions" in llm
     assert "stream: true" not in llm
 
     assert "SettingsApiExampleBlock" in knowledge
     assert "/v1/embeddings" in knowledge
     assert "embedding:<profile_key>" in knowledge
+    assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in knowledge
     assert "apiExamples.embedding.singleInput" in knowledge
 
     assert "SettingsApiExampleBlock" in multimodal
     assert "/api/inference/embeddings/multimodal" in multimodal
     assert "multimodal:<profile_key>" in multimodal
+    assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in multimodal
     assert "type: 'image_base64'" in multimodal
     assert "type: 'text'" in multimodal
     assert "if (supportsText)" in multimodal
@@ -1824,6 +1829,7 @@ def test_model_profile_api_examples_contract() -> None:
     assert "SettingsApiExampleBlock" in vision
     assert "/api/inference/vision" in vision
     assert "vision:<profile_key>" in vision
+    assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in vision
     assert "supportedTasks.includes('object_detection')" in vision
     assert "max_new_tokens: 1024" in vision
     assert "num_beams: 3" in vision
@@ -1831,6 +1837,16 @@ def test_model_profile_api_examples_contract() -> None:
     for locale in (en_settings, zh_settings):
         assert '"apiExamples"' in locale
         assert '"copyModelId"' in locale
+        assert '"modelIdHelp"' in locale
+        assert "Profile key" in locale
+        assert "llm:<profile_key>" in locale
+        assert "embedding:<profile_key>" in locale
+        assert "multimodal:<profile_key>" in locale
+        assert "vision:<profile_key>" in locale
+        assert "llm:<profile_id>" not in locale
+        assert "embedding:<profile_id>" not in locale
+        assert "multimodal:<profile_id>" not in locale
+        assert "vision:<profile_id>" not in locale
         assert '"chatCompletions"' in locale
         assert '"singleInput"' in locale
         assert '"dinov2ImageOnly"' in locale

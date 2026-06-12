@@ -742,6 +742,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
         <SettingsApiExampleBlock
           endpoint="/v1/embeddings"
           modelId={apiExampleModelId}
+          modelIdHelp={t('settings:apiExamples.modelIdHelp')}
           examples={apiExamples}
         />
       </div>

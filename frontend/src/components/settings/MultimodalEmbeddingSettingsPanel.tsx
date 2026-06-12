@@ -474,6 +474,7 @@ function MultimodalEmbeddingProfileForm({
         <SettingsApiExampleBlock
           endpoint="/api/inference/embeddings/multimodal"
           modelId={apiExampleModelId}
+          modelIdHelp={t('settings:apiExamples.modelIdHelp')}
           examples={multimodalApiExamples}
           note={architecture === 'dinov2' ? t('settings:apiExamples.multimodal.dinov2ImageOnly') : undefined}
         />

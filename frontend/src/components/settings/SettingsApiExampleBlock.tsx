@@ -17,12 +17,14 @@ export function SettingsApiExampleBlock({
   endpoint,
   method = 'POST',
   modelId,
+  modelIdHelp,
   examples,
   note,
 }: {
   endpoint: string;
   method?: string;
   modelId: string;
+  modelIdHelp?: string;
   examples: SettingsApiExample[];
   note?: string;
 }) {
@@ -62,6 +64,7 @@ export function SettingsApiExampleBlock({
         <div className="knowledge-command-card-body">
           <strong>{t('apiExamples.modelId')}</strong>
           <code>{modelId}</code>
+          {modelIdHelp ? <span className="settings-muted-text">{modelIdHelp}</span> : null}
         </div>
         <button className="settings-secondary-button" type="button" onClick={() => void copyText('model-id', modelId)} aria-label={t('apiExamples.copyModelId')}>
           {copiedTarget === 'model-id' ? <Check size={14} /> : <Clipboard size={14} />}
