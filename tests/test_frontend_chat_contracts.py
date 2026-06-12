@@ -1516,6 +1516,82 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "/api/inference/model-inventory?kind=${encodeURIComponent(kind)}" in client
 
 
+def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
+    nav = read_frontend("components/settings/SettingsNav.tsx")
+    app = read_frontend("App.tsx")
+    console = read_frontend("components/settings/SettingsConsole.tsx")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    detail = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    panel = read_frontend("components/settings/MultimodalEmbeddingSettingsPanel.tsx")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
+    en_knowledge = read_frontend("i18n/resources/en/knowledge.json")
+    zh_knowledge = read_frontend("i18n/resources/zh-CN/knowledge.json")
+
+    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'reranker_models';" in nav
+    assert "activeLlmSubsection === 'multimodal_embedding_models'" in nav
+    assert "onLlmSubsectionChange?.('multimodal_embedding_models')" in nav
+    assert "subsections.multimodalEmbeddingModels" in nav
+
+    assert "'multimodal-embedding-models'" in app
+    assert "'multimodal-embedding-model-profiles'" in app
+    assert "'image-embedding-models'" in app
+    assert "'image_embedding_models'" in app
+    assert "target.llmSubsection = 'multimodal_embedding_models'" in app
+
+    assert "MultimodalEmbeddingModelProfile" in console
+    assert "useState<MultimodalEmbeddingModelProfile[]>([])" in console
+    assert "selectedMultimodalEmbeddingItemId" in console
+    assert "api.listMultimodalEmbeddingModels()" in console
+    assert "refreshMultimodalEmbeddingProfiles" in console
+    assert "multimodalEmbeddingProfiles={multimodalEmbeddingProfiles}" in console
+    assert "onSelectMultimodalEmbeddingItem={selectMultimodalEmbeddingItem}" in console
+    assert "onMultimodalEmbeddingProfilesChanged={refreshMultimodalEmbeddingProfiles}" in console
+
+    assert "MultimodalEmbeddingModelProfile" in object_list
+    assert "llmSubsection === 'multimodal_embedding_models'" in object_list
+    assert "MultimodalEmbeddingProfileListItem" in object_list
+    assert "settings:objectList.noMultimodalEmbeddingProfiles" in object_list
+    assert "settings:subsections.multimodalEmbeddingModels" in object_list
+    assert "settings:multimodal.architectures" in object_list
+
+    assert "MultimodalEmbeddingSettingsPanel" in detail
+    assert "llmSubsection === 'multimodal_embedding_models'" in detail
+    assert "selectedProfileId={selectedMultimodalEmbeddingItemId}" in detail
+    assert "onProfilesChanged={onMultimodalEmbeddingProfilesChanged" in detail
+
+    assert "api.createMultimodalEmbeddingModel" in panel
+    assert "api.patchMultimodalEmbeddingModel" in panel
+    assert "api.deleteMultimodalEmbeddingModel" in panel
+    assert "api.listInferenceModelInventory('image_embedding')" in panel
+    assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "`arch:${values.architecture || 'clip'}`" in panel
+    assert "isImageEmbeddingRef" in panel
+    assert "image_embedding/" in panel
+    assert "architecture === 'dinov2'" in panel
+    assert "open_clip_model_name" in panel
+    assert "open_clip_checkpoint" in panel
+    assert "INVALID_METADATA_JSON" in panel
+    assert "listLlmProviderModels" not in panel
+    assert "chooseFromProvider" not in panel
+    assert "manualModelIdOverride" not in panel
+
+    for locale in (en_settings, zh_settings):
+        assert '"multimodalEmbeddingModels"' in locale
+        assert '"multimodalEmbeddingModelProfiles"' in locale
+        assert '"noMultimodalEmbeddingProfiles"' in locale
+        assert '"multimodal"' in locale
+        assert '"openClipModelName"' in locale
+        assert '"invalidMetadataJson"' in locale
+        assert '"localProviderRequired"' in locale
+
+    for locale in (en_knowledge, zh_knowledge):
+        assert '"multimodal"' in locale
+        assert '"safeRef"' in locale
+        assert '"providerPolicy"' in locale
+
+
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")

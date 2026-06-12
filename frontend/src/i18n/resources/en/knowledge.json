@@ -8,6 +8,19 @@
   "descriptions": {
     "defaults": "Model profile selection, retrieval, chunking, and context prompt defaults."
   },
+  "multimodal": {
+    "title": "Image / Multimodal Embeddings",
+    "description": "Local image and image-text embedding model profiles.",
+    "labels": {
+      "safeRef": "image_embedding/<folder>",
+      "providerPolicy": "Internal Transformers provider only",
+      "metadataJson": "Metadata JSON"
+    },
+    "warnings": {
+      "dinov2ImageOnly": "DINOv2 is image-only.",
+      "missingCurrentRef": "The current safe ref is not present in inventory."
+    }
+  },
   "sections": {
     "localModels": "Local Models",
     "embedding": "Embedding",

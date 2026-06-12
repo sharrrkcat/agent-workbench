@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, RerankerModelProfile, Worldbook } from '../../types';
+import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, Worldbook } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsInitialTarget, type SettingsSection, type WorldbookSettingsSubsection } from './SettingsNav';
 import { SettingsObjectList, type AppearanceSettingsCategory, type GeneralSettingsCategory } from './SettingsObjectList';
@@ -18,6 +18,8 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   const [selectedLlmItemId, setSelectedLlmItemId] = useState<string>('');
   const [selectedLlmSubsection, setSelectedLlmSubsection] = useState<LlmSettingsSubsection>('providers');
   const [embeddingProfiles, setEmbeddingProfiles] = useState<EmbeddingModelProfile[]>([]);
+  const [multimodalEmbeddingProfiles, setMultimodalEmbeddingProfiles] = useState<MultimodalEmbeddingModelProfile[]>([]);
+  const [selectedMultimodalEmbeddingItemId, setSelectedMultimodalEmbeddingItemId] = useState<string>('');
   const [rerankerProfiles, setRerankerProfiles] = useState<RerankerModelProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
@@ -47,6 +49,9 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
       setSelectedKnowledgeSubsection('embedding_models');
       setSelectedKnowledgeItemId('');
     }
+    if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'multimodal_embedding_models') {
+      setSelectedMultimodalEmbeddingItemId('');
+    }
     if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'reranker_models') {
       setSelectedKnowledgeItemId('');
     }
@@ -68,6 +73,12 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
       void refreshWorldbookObjects().catch(() => undefined);
     }
   }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection === 'models' && selectedLlmSubsection === 'multimodal_embedding_models') {
+      void refreshMultimodalEmbeddingProfiles().catch(() => undefined);
+    }
+  }, [activeSection, selectedLlmSubsection]);
 
   useEffect(() => {
     if (!selectedAgentId && agentConfigs.length) {
@@ -195,6 +206,22 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     }
   }
 
+  async function refreshMultimodalEmbeddingProfiles(nextSelectedId?: string) {
+    const profiles = await api.listMultimodalEmbeddingModels();
+    setMultimodalEmbeddingProfiles(profiles);
+    if (nextSelectedId) {
+      setSelectedMultimodalEmbeddingItemId(nextSelectedId);
+      return;
+    }
+    if (!selectedMultimodalEmbeddingItemId) {
+      setSelectedMultimodalEmbeddingItemId(profiles[0]?.id || '');
+      return;
+    }
+    if (selectedMultimodalEmbeddingItemId !== 'new' && !profiles.some((profile) => profile.id === selectedMultimodalEmbeddingItemId)) {
+      setSelectedMultimodalEmbeddingItemId(profiles[0]?.id || '');
+    }
+  }
+
   async function refreshWorldbookObjects(nextSelectedId?: string) {
     const items = await api.listWorldbooks();
     setWorldbooks(items);
@@ -226,6 +253,9 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     } else if (subsection === 'embedding_models') {
       setSelectedKnowledgeSubsection('embedding_models');
       setSelectedKnowledgeItemId(embeddingProfiles[0]?.id || '');
+    } else if (subsection === 'multimodal_embedding_models') {
+      setSelectedMultimodalEmbeddingItemId(multimodalEmbeddingProfiles[0]?.id || '');
+      void refreshMultimodalEmbeddingProfiles().catch(() => undefined);
     } else if (subsection === 'reranker_models') {
       setSelectedKnowledgeItemId(rerankerProfiles[0]?.id || '');
     }
@@ -277,6 +307,13 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     setSelectedKnowledgeItemId(itemId);
   }
 
+  function selectMultimodalEmbeddingItem(itemId: string) {
+    if (itemId === selectedMultimodalEmbeddingItemId) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedMultimodalEmbeddingItemId(itemId);
+  }
+
   function selectWorldbookItem(itemId: string) {
     if (itemId === selectedWorldbookItemId) return;
     if (!confirmDirtyNavigation()) return;
@@ -320,6 +357,8 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         llmProviderProfiles={llmProviderProfiles}
         selectedLlmItemId={selectedLlmItemId}
         embeddingProfiles={embeddingProfiles}
+        multimodalEmbeddingProfiles={multimodalEmbeddingProfiles}
+        selectedMultimodalEmbeddingItemId={selectedMultimodalEmbeddingItemId}
         rerankerProfiles={rerankerProfiles}
         knowledgeBases={knowledgeBases}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
@@ -330,6 +369,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         onSelectAgent={selectAgent}
         onSelectCapability={selectCapability}
         onSelectLlmItem={selectLlmItem}
+        onSelectMultimodalEmbeddingItem={selectMultimodalEmbeddingItem}
         onSelectKnowledgeItem={selectKnowledgeItem}
         onSelectWorldbookItem={selectWorldbookItem}
       />
@@ -342,8 +382,10 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         health={health}
         llmProfiles={llmProfiles}
         llmProviderProfiles={llmProviderProfiles}
+        multimodalEmbeddingProfiles={multimodalEmbeddingProfiles}
         rerankerProfiles={rerankerProfiles}
         selectedLlmItemId={selectedLlmItemId}
+        selectedMultimodalEmbeddingItemId={selectedMultimodalEmbeddingItemId}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}
         appearanceCategory={appearanceCategory}
@@ -352,6 +394,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         worldbookSubsection={selectedWorldbookSubsection}
         selectedWorldbookItemId={selectedWorldbookItemId}
         onLlmProfilesChanged={refreshLlmProfiles}
+        onMultimodalEmbeddingProfilesChanged={refreshMultimodalEmbeddingProfiles}
         onKnowledgeObjectsChanged={refreshKnowledgeObjects}
         onWorldbookObjectsChanged={refreshWorldbookObjects}
         onSelectGeneralCategory={setGeneralCategory}

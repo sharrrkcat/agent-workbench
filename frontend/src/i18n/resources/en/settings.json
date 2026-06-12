@@ -24,6 +24,7 @@
     "providerProfiles": "Provider Profiles",
     "modelProfiles": "LLM Model Profiles",
     "embeddingModels": "Embedding Model Profiles",
+    "multimodalEmbeddingModels": "Image / Multimodal Embeddings",
     "rerankerModels": "Reranker Model Profiles",
     "knowledgeBases": "Knowledge Bases",
     "worldbooks": "Worldbooks"
@@ -42,6 +43,7 @@
     "appearanceItems": "Appearance items",
     "knowledgeDefaults": "Knowledge defaults",
     "embeddingModelProfiles": "Embedding model profiles",
+    "multimodalEmbeddingModelProfiles": "Image / multimodal embedding profiles",
     "rerankerModelProfiles": "Reranker model profiles",
     "knowledgeBases": "Knowledge bases",
     "worldbookDefaults": "Worldbook defaults",
@@ -52,6 +54,7 @@
     "settingsCategory": "Settings category",
     "noObjects": "No objects in this section.",
     "noEmbeddingProfiles": "No embedding model profiles yet.",
+    "noMultimodalEmbeddingProfiles": "No image / multimodal embedding profiles yet.",
     "noRerankerProfiles": "No reranker model profiles yet.",
     "noKnowledgeBases": "No knowledge bases yet.",
     "noWorldbooks": "No worldbooks yet.",
@@ -65,6 +68,102 @@
     "noModelRef": "No model ref",
     "newKnowledgeBase": "New knowledge base",
     "newWorldbook": "New worldbook"
+  },
+  "multimodal": {
+    "titles": {
+      "newProfile": "New multimodal embedding model"
+    },
+    "sections": {
+      "model": "Model",
+      "profile": "Profile",
+      "architecture": "Architecture",
+      "embedding": "Embedding output",
+      "advanced": "Advanced metadata"
+    },
+    "labels": {
+      "name": "Name",
+      "description": "Description",
+      "notes": "Notes",
+      "providerProfile": "Provider profile",
+      "modelRef": "Local model ref",
+      "missingCurrentRef": "Missing current ref: {{ref}}",
+      "externalInferenceEnabled": "External inference enabled",
+      "architecture": "Architecture",
+      "backend": "Backend",
+      "imageInput": "Image input",
+      "textInput": "Text input",
+      "dimensions": "Dimensions",
+      "normalizeDefault": "Normalize by default",
+      "embeddingSpace": "Embedding space",
+      "preprocessingSignature": "Preprocessing signature",
+      "poolingStrategy": "Pooling strategy",
+      "maxBatchSize": "Max batch size",
+      "openClipModelName": "OpenCLIP model name",
+      "openClipCheckpoint": "OpenCLIP checkpoint",
+      "metadataJson": "Metadata JSON"
+    },
+    "actions": {
+      "refreshInventory": "Refresh inventory",
+      "refreshingInventory": "Refreshing..."
+    },
+    "architectures": {
+      "clip": "CLIP",
+      "open_clip": "OpenCLIP",
+      "siglip2": "SigLIP2",
+      "dinov2": "DINOv2"
+    },
+    "backends": {
+      "auto": "Auto",
+      "transformers": "Transformers",
+      "open_clip": "OpenCLIP"
+    },
+    "pooling": {
+      "model_default": "Model default",
+      "cls": "CLS",
+      "mean": "Mean",
+      "pooler": "Pooler"
+    },
+    "empty": {
+      "noProfileSelected": "No multimodal embedding model selected",
+      "selectProfile": "Select a multimodal embedding profile from the list.",
+      "noProfiles": "No multimodal embedding profiles yet.",
+      "noModelRef": "No image embedding ref",
+      "noLocalProviderSelected": "No local Transformers provider selected",
+      "selectInventoryRef": "Select scanned image embedding ref",
+      "noInventoryRefs": "No scanned image embedding refs"
+    },
+    "help": {
+      "localProviderOnly": "Only internal Transformers provider profiles are valid for image / multimodal embeddings.",
+      "safeRef": "Scans data/models/image_embeddings and saves refs as image_embedding/<folder>.",
+      "inventoryRoot": "Scanned under {{root}}.",
+      "dinov2ImageOnly": "DINOv2 profiles are image-only.",
+      "metadataJson": "Advanced metadata persisted with this profile. OpenCLIP fields above are stored here."
+    },
+    "warnings": {
+      "localProviderRequired": "Select an internal Transformers provider profile before saving.",
+      "providerMissing": "The selected provider profile is missing or is not an internal Transformers provider.",
+      "providerDisabled": "The selected provider profile is disabled.",
+      "modelRefMissing": "The current model ref was not returned by the latest inventory scan."
+    },
+    "results": {
+      "inventoryLoaded": "Found {{count}} image embedding ref(s).",
+      "profileSaved": "Multimodal embedding model saved.",
+      "profileDeleted": "Multimodal embedding model deleted."
+    },
+    "errors": {
+      "inventoryLoadFailed": "Failed to load image embedding inventory.",
+      "invalidMetadataJson": "Metadata must be a JSON object.",
+      "openClipModelNameRequired": "OpenCLIP model name is required.",
+      "localProviderRequired": "A local Transformers provider profile is required.",
+      "nameRequired": "Name is required.",
+      "modelRefRequired": "Local model ref is required.",
+      "modelRefSafeRefRequired": "Local model ref must use image_embedding/<folder>.",
+      "saveFailed": "Failed to save multimodal embedding model.",
+      "deleteFailed": "Failed to delete multimodal embedding model."
+    },
+    "confirm": {
+      "deleteProfile": "Delete multimodal embedding profile \"{{name}}\"?"
+    }
   },
   "general": {
     "files": "Files",

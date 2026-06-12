@@ -8,6 +8,19 @@
   "descriptions": {
     "defaults": "模型配置选择、检索、分块和上下文 prompt 默认值。"
   },
+  "multimodal": {
+    "title": "图像 / 多模态 Embedding",
+    "description": "本地图像和图文 Embedding 模型配置。",
+    "labels": {
+      "safeRef": "image_embedding/<folder>",
+      "providerPolicy": "仅 internal Transformers provider",
+      "metadataJson": "Metadata JSON"
+    },
+    "warnings": {
+      "dinov2ImageOnly": "DINOv2 仅支持图像。",
+      "missingCurrentRef": "当前 safe ref 不在 inventory 中。"
+    }
+  },
   "sections": {
     "localModels": "本地模型",
     "embedding": "Embedding",

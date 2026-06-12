@@ -24,6 +24,7 @@
     "providerProfiles": "Provider 配置",
     "modelProfiles": "LLM 模型配置",
     "embeddingModels": "Embedding 模型配置",
+    "multimodalEmbeddingModels": "图像 / 多模态 Embedding",
     "rerankerModels": "Reranker 模型配置",
     "knowledgeBases": "知识库",
     "worldbooks": "世界书"
@@ -42,6 +43,7 @@
     "appearanceItems": "外观项目",
     "knowledgeDefaults": "知识库默认值",
     "embeddingModelProfiles": "Embedding 模型配置",
+    "multimodalEmbeddingModelProfiles": "图像 / 多模态 Embedding 配置",
     "rerankerModelProfiles": "Reranker 模型配置",
     "knowledgeBases": "知识库",
     "worldbookDefaults": "世界书默认值",
@@ -52,6 +54,7 @@
     "settingsCategory": "设置类别",
     "noObjects": "此分区暂无对象。",
     "noEmbeddingProfiles": "还没有 Embedding 模型配置。",
+    "noMultimodalEmbeddingProfiles": "还没有图像 / 多模态 Embedding 配置。",
     "noRerankerProfiles": "还没有 Reranker 模型配置。",
     "noKnowledgeBases": "还没有知识库。",
     "noWorldbooks": "还没有世界书。",
@@ -65,6 +68,102 @@
     "noModelRef": "没有模型 ref",
     "newKnowledgeBase": "新建知识库",
     "newWorldbook": "新建世界书"
+  },
+  "multimodal": {
+    "titles": {
+      "newProfile": "新建多模态 Embedding 模型"
+    },
+    "sections": {
+      "model": "模型",
+      "profile": "配置",
+      "architecture": "架构",
+      "embedding": "Embedding 输出",
+      "advanced": "高级 metadata"
+    },
+    "labels": {
+      "name": "名称",
+      "description": "描述",
+      "notes": "备注",
+      "providerProfile": "Provider 配置",
+      "modelRef": "本地模型引用",
+      "missingCurrentRef": "缺失的当前引用：{{ref}}",
+      "externalInferenceEnabled": "启用外部推理",
+      "architecture": "架构",
+      "backend": "后端",
+      "imageInput": "图像输入",
+      "textInput": "文本输入",
+      "dimensions": "维度",
+      "normalizeDefault": "默认归一化",
+      "embeddingSpace": "Embedding 空间",
+      "preprocessingSignature": "预处理签名",
+      "poolingStrategy": "Pooling 策略",
+      "maxBatchSize": "最大批量",
+      "openClipModelName": "OpenCLIP 模型名",
+      "openClipCheckpoint": "OpenCLIP checkpoint",
+      "metadataJson": "Metadata JSON"
+    },
+    "actions": {
+      "refreshInventory": "刷新 inventory",
+      "refreshingInventory": "刷新中..."
+    },
+    "architectures": {
+      "clip": "CLIP",
+      "open_clip": "OpenCLIP",
+      "siglip2": "SigLIP2",
+      "dinov2": "DINOv2"
+    },
+    "backends": {
+      "auto": "Auto",
+      "transformers": "Transformers",
+      "open_clip": "OpenCLIP"
+    },
+    "pooling": {
+      "model_default": "模型默认",
+      "cls": "CLS",
+      "mean": "Mean",
+      "pooler": "Pooler"
+    },
+    "empty": {
+      "noProfileSelected": "未选择多模态 Embedding 模型",
+      "selectProfile": "从列表中选择一个多模态 Embedding 配置。",
+      "noProfiles": "还没有多模态 Embedding 配置。",
+      "noModelRef": "没有图像 Embedding 引用",
+      "noLocalProviderSelected": "未选择本地 Transformers provider",
+      "selectInventoryRef": "选择扫描到的图像 Embedding 引用",
+      "noInventoryRefs": "没有扫描到图像 Embedding 引用"
+    },
+    "help": {
+      "localProviderOnly": "图像 / 多模态 Embedding 只能使用 internal Transformers provider 配置。",
+      "safeRef": "扫描 data/models/image_embeddings，并保存为 image_embedding/<folder> 引用。",
+      "inventoryRoot": "扫描目录：{{root}}。",
+      "dinov2ImageOnly": "DINOv2 配置仅支持图像。",
+      "metadataJson": "随此配置保存的高级 metadata。上方 OpenCLIP 字段会写入这里。"
+    },
+    "warnings": {
+      "localProviderRequired": "保存前请选择 internal Transformers provider 配置。",
+      "providerMissing": "所选 provider 配置缺失，或不是 internal Transformers provider。",
+      "providerDisabled": "所选 provider 配置已禁用。",
+      "modelRefMissing": "当前模型引用未出现在最新 inventory 扫描结果中。"
+    },
+    "results": {
+      "inventoryLoaded": "找到 {{count}} 个图像 Embedding 引用。",
+      "profileSaved": "多模态 Embedding 模型已保存。",
+      "profileDeleted": "多模态 Embedding 模型已删除。"
+    },
+    "errors": {
+      "inventoryLoadFailed": "加载图像 Embedding inventory 失败。",
+      "invalidMetadataJson": "Metadata 必须是 JSON 对象。",
+      "openClipModelNameRequired": "OpenCLIP 模型名为必填项。",
+      "localProviderRequired": "需要本地 Transformers provider 配置。",
+      "nameRequired": "名称为必填项。",
+      "modelRefRequired": "本地模型引用为必填项。",
+      "modelRefSafeRefRequired": "本地模型引用必须使用 image_embedding/<folder>。",
+      "saveFailed": "保存多模态 Embedding 模型失败。",
+      "deleteFailed": "删除多模态 Embedding 模型失败。"
+    },
+    "confirm": {
+      "deleteProfile": "删除多模态 Embedding 配置 \"{{name}}\"？"
+    }
   },
   "general": {
     "files": "文件",

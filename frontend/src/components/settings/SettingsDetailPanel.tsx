@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultModelProfileSection, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -14,6 +14,7 @@ import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues 
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
 import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSettingsCategory, WorldbookSettingsCategory } from './SettingsObjectList';
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
+import { MultimodalEmbeddingSettingsPanel } from './MultimodalEmbeddingSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
 import { WorldbookSettingsDetail } from './WorldbookSettingsPanel';
 import { DEFAULT_CODE_FONT, DEFAULT_CODE_FONT_NAME, DEFAULT_MESSAGE_FONT, DEFAULT_MESSAGE_FONT_NAME, DEFAULT_UI_FONT, DEFAULT_UI_FONT_NAME, fontFamilyFor, shortFontName } from '../../utils/fonts';
@@ -27,8 +28,10 @@ export function SettingsDetailPanel({
   health,
   llmProfiles = [],
   llmProviderProfiles = [],
+  multimodalEmbeddingProfiles = [],
   rerankerProfiles = [],
   selectedLlmItemId = 'global',
+  selectedMultimodalEmbeddingItemId = '',
   llmSubsection = 'providers',
   generalCategory = 'files',
   appearanceCategory = 'pet',
@@ -37,6 +40,7 @@ export function SettingsDetailPanel({
   worldbookSubsection = 'defaults',
   selectedWorldbookItemId = 'global',
   onLlmProfilesChanged,
+  onMultimodalEmbeddingProfilesChanged,
   onKnowledgeObjectsChanged,
   onWorldbookObjectsChanged,
   onSelectGeneralCategory,
@@ -53,8 +57,10 @@ export function SettingsDetailPanel({
   health?: HealthDetails;
   llmProfiles?: LlmProfile[];
   llmProviderProfiles?: LlmProviderProfile[];
+  multimodalEmbeddingProfiles?: MultimodalEmbeddingModelProfile[];
   rerankerProfiles?: RerankerModelProfile[];
   selectedLlmItemId?: string;
+  selectedMultimodalEmbeddingItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
   appearanceCategory?: AppearanceSettingsCategory;
@@ -63,6 +69,7 @@ export function SettingsDetailPanel({
   worldbookSubsection?: WorldbookSettingsSubsection;
   selectedWorldbookItemId?: string;
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
+  onMultimodalEmbeddingProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onWorldbookObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
@@ -130,6 +137,14 @@ export function SettingsDetailPanel({
             category="embedding_models"
             selectedItemId={selectedKnowledgeItemId}
             onObjectsChanged={onKnowledgeObjectsChanged}
+            onDirtyChange={onDirtyChange}
+          />
+        ) : llmSubsection === 'multimodal_embedding_models' ? (
+          <MultimodalEmbeddingSettingsPanel
+            profiles={multimodalEmbeddingProfiles}
+            providerProfiles={llmProviderProfiles}
+            selectedProfileId={selectedMultimodalEmbeddingItemId}
+            onProfilesChanged={onMultimodalEmbeddingProfilesChanged || (async () => undefined)}
             onDirtyChange={onDirtyChange}
           />
         ) : (

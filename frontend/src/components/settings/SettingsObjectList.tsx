@@ -1,6 +1,6 @@
 import { Boxes, Gauge, Globe, PawPrint, Plus, SlidersHorizontal, Type } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, RerankerModelProfile, Worldbook } from '../../types';
+import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, Worldbook } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
@@ -29,6 +29,8 @@ export function SettingsObjectList({
   llmProviderProfiles = [],
   selectedLlmItemId = 'global',
   embeddingProfiles = [],
+  multimodalEmbeddingProfiles = [],
+  selectedMultimodalEmbeddingItemId = '',
   rerankerProfiles = [],
   knowledgeBases = [],
   selectedKnowledgeItemId = 'global',
@@ -39,6 +41,7 @@ export function SettingsObjectList({
   onSelectAgent,
   onSelectCapability,
   onSelectLlmItem,
+  onSelectMultimodalEmbeddingItem,
   onSelectKnowledgeItem,
   onSelectWorldbookItem,
 }: {
@@ -56,6 +59,8 @@ export function SettingsObjectList({
   llmProviderProfiles?: LlmProviderProfile[];
   selectedLlmItemId?: string;
   embeddingProfiles?: EmbeddingModelProfile[];
+  multimodalEmbeddingProfiles?: MultimodalEmbeddingModelProfile[];
+  selectedMultimodalEmbeddingItemId?: string;
   rerankerProfiles?: RerankerModelProfile[];
   knowledgeBases?: KnowledgeBase[];
   selectedKnowledgeItemId?: string;
@@ -66,6 +71,7 @@ export function SettingsObjectList({
   onSelectAgent: (agentId: string) => void;
   onSelectCapability: (capabilityId: string) => void;
   onSelectLlmItem?: (itemId: string) => void;
+  onSelectMultimodalEmbeddingItem?: (itemId: string) => void;
   onSelectKnowledgeItem?: (itemId: string) => void;
   onSelectWorldbookItem?: (itemId: string) => void;
 }) {
@@ -331,6 +337,27 @@ export function SettingsObjectList({
         </aside>
       );
     }
+    if (llmSubsection === 'multimodal_embedding_models') {
+      return (
+        <aside className="settings-object-list" aria-label={t('settings:objectList.multimodalEmbeddingModelProfiles')}>
+          <ObjectListHeader title={t('settings:subsections.multimodalEmbeddingModels')} count={multimodalEmbeddingProfiles.length} actionLabel={t('settings:objectList.newModel')} onAction={() => onSelectMultimodalEmbeddingItem?.('new')} />
+          <div className="settings-list-scroll">
+            {multimodalEmbeddingProfiles.length ? (
+              multimodalEmbeddingProfiles.map((profile) => (
+                <MultimodalEmbeddingProfileListItem
+                  key={profile.id}
+                  profile={profile}
+                  active={selectedMultimodalEmbeddingItemId === profile.id}
+                  onClick={() => onSelectMultimodalEmbeddingItem?.(profile.id)}
+                />
+              ))
+            ) : (
+              <div className="settings-empty-state compact">{t('settings:objectList.noMultimodalEmbeddingProfiles')}</div>
+            )}
+          </div>
+        </aside>
+      );
+    }
     if (llmSubsection === 'providers') {
       return (
         <aside className="settings-object-list" aria-label={t('settings:objectList.llmProviderProfiles')}>
@@ -475,6 +502,21 @@ function RerankerProfileListItem({ profile, active, onClick }: { profile: Rerank
       <div className="settings-object-copy">
         <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
         <small>{profile.alias || t('settings:objectList.noProfileKey')} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
+      </div>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
+    </button>
+  );
+}
+
+function MultimodalEmbeddingProfileListItem({ profile, active, onClick }: { profile: MultimodalEmbeddingModelProfile; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation(['common', 'settings']);
+  const architecture = t(`settings:multimodal.architectures.${profile.architecture}`, { defaultValue: profile.architecture });
+  return (
+    <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
+        <small>{architecture} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>
