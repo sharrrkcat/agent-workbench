@@ -370,16 +370,6 @@ function MultimodalEmbeddingProfileForm({
           </div>
           <div className="settings-config-form llm-profile-form">
             <TextField label={t('settings:multimodal.labels.name')} value={values.name || ''} onChange={(name) => patchValues({ name }, { autoAlias: true })} disabled={Boolean(busy)} />
-            <TextField
-              label={t('settings:multimodal.labels.profileKey')}
-              value={values.alias || ''}
-              onChange={(alias) => {
-                setProfileKeyTouched(true);
-                patchValues({ alias: sanitizeProfileKey(alias) });
-              }}
-              disabled={Boolean(busy)}
-              help={t('settings:multimodal.help.profileKey')}
-            />
             <label className="config-field settings-config-field">
               <span>{t('settings:multimodal.labels.providerProfile')}</span>
               <select
@@ -426,7 +416,6 @@ function MultimodalEmbeddingProfileForm({
         <section className="detail-section">
           <h3>{t('settings:multimodal.sections.profile')}</h3>
           <div className="settings-config-form llm-profile-form">
-            <TextField label={t('settings:multimodal.labels.description')} value={values.description || ''} onChange={(description) => patchValues({ description })} disabled={Boolean(busy)} textarea />
             <TextField label={t('settings:multimodal.labels.notes')} value={values.notes || ''} onChange={(notes) => patchValues({ notes })} disabled={Boolean(busy)} textarea />
           </div>
         </section>
@@ -458,6 +447,18 @@ function MultimodalEmbeddingProfileForm({
         </section>
         <section className="detail-section">
           <h3>{t('settings:multimodal.sections.advanced')}</h3>
+          <div className="settings-config-form llm-profile-form">
+            <TextField
+              label={t('settings:multimodal.labels.profileKey')}
+              value={values.alias || ''}
+              onChange={(alias) => {
+                setProfileKeyTouched(true);
+                patchValues({ alias: sanitizeProfileKey(alias) });
+              }}
+              disabled={Boolean(busy)}
+              help={t('settings:multimodal.help.profileKey')}
+            />
+          </div>
           {architecture === 'open_clip' ? (
             <div className="settings-config-form llm-profile-form">
               <TextField label={t('settings:multimodal.labels.openClipModelName')} value={openClipModelName} onChange={(value) => updateMetadataField('open_clip_model_name', value)} disabled={Boolean(busy)} />

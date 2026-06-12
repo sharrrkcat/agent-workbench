@@ -657,7 +657,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
           <div>
             <h2>{values.name || t('knowledge:titles.newEmbeddingModel')}</h2>
             <p>
-              <code>{values.alias || 'profile_key'}</code>
+              <code>{`key:${values.alias || 'profile_key'}`}</code>
               <span>{values.provider_model_id || t('knowledge:empty.noProviderModelSelected')}</span>
             </p>
           </div>
@@ -890,7 +890,7 @@ function RerankerProfileForm({ initial, providerProfiles, isNew, onRefresh, onDi
           <div>
             <h2>{values.name || t('knowledge:titles.newRerankerModel')}</h2>
             <p>
-              <code>{values.alias || t('knowledge:labels.profileKey')}</code>
+              <code>{`key:${values.alias || 'profile_key'}`}</code>
               <span>{values.provider_model_id || t('knowledge:empty.noRerankerRef')}</span>
             </p>
           </div>

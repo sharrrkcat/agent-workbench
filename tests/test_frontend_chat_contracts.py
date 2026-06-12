@@ -1587,30 +1587,51 @@ def test_model_profile_external_inference_settings_contract() -> None:
     assert "settings:externalInference.enabled" not in llm_provider_detail
 
     llm_model_section = llm[llm.index("<h3>{t('llm:sections.model')}</h3>") : llm.index("<h3>{t('llm:sections.generationDefaults')}</h3>")]
+    llm_advanced_section = llm[llm.index("<h3>{t('llm:sections.advanced')}</h3>", llm.index("export function LlmProfileDetail")) : llm.index("<SettingsApiExampleBlock")]
     assert "settings:externalInference.enabled" in llm_model_section
     assert "settings:externalInference.help" in llm_model_section
     assert llm.index("settings:externalInference.enabled") < llm.index("<SettingsApiExampleBlock")
+    assert "llm:labels.profileKey" in llm_advanced_section
+    assert "`key:${String(draft.alias || 'profile_key')}`" in llm
 
     embedding_form = knowledge[knowledge.index("function EmbeddingProfileForm") : knowledge.index("function RerankerModelsEditor")]
+    embedding_advanced_section = embedding_form[embedding_form.index("knowledge:sections.advanced") : embedding_form.index("<SettingsApiExampleBlock")]
     assert "settings:externalInference.enabled" in embedding_form
     assert "settings:externalInference.help" in embedding_form
     assert embedding_form.index("settings:externalInference.enabled") < embedding_form.index("<SettingsApiExampleBlock")
+    assert "knowledge:labels.profileKey" in embedding_advanced_section
+    assert "`key:${values.alias || 'profile_key'}`" in embedding_form
 
     reranker_form = knowledge[knowledge.index("function RerankerProfileForm") : knowledge.index("function KnowledgeBasesEditor")]
+    reranker_advanced_section = reranker_form[reranker_form.index("knowledge:sections.advanced") : reranker_form.index("</form>")]
     assert "settings:externalInference.enabled" not in reranker_form
+    assert "knowledge:labels.profileKey" in reranker_advanced_section
+    assert "`key:${values.alias || 'profile_key'}`" in reranker_form
 
     multimodal_model_section = multimodal[multimodal.index("settings:multimodal.sections.model") : multimodal.index("settings:multimodal.sections.profile")]
     multimodal_profile_section = multimodal[multimodal.index("settings:multimodal.sections.profile") : multimodal.index("settings:multimodal.sections.architecture")]
+    multimodal_advanced_section = multimodal[multimodal.index("settings:multimodal.sections.advanced") : multimodal.index("<SettingsApiExampleBlock")]
     assert "settings:externalInference.enabled" in multimodal_model_section
     assert "settings:externalInference.help" in multimodal_model_section
+    assert "settings:multimodal.labels.profileKey" not in multimodal_model_section
     assert "settings:externalInference.enabled" not in multimodal_profile_section
+    assert "settings:multimodal.labels.description" not in multimodal_profile_section
+    assert "settings:multimodal.labels.notes" in multimodal_profile_section
+    assert "settings:multimodal.labels.profileKey" in multimodal_advanced_section
+    assert "description: values.description ?? ''" in multimodal
     assert multimodal.index("settings:externalInference.enabled") < multimodal.index("<SettingsApiExampleBlock")
 
     vision_model_section = vision[vision.index("settings:vision.sections.model") : vision.index("settings:vision.sections.profile")]
     vision_profile_section = vision[vision.index("settings:vision.sections.profile") : vision.index("settings:vision.sections.runtime")]
+    vision_advanced_section = vision[vision.index("settings:vision.sections.advanced") : vision.index("<SettingsApiExampleBlock")]
     assert "settings:externalInference.enabled" in vision_model_section
     assert "settings:externalInference.help" in vision_model_section
+    assert "settings:vision.labels.profileKey" not in vision_model_section
     assert "settings:externalInference.enabled" not in vision_profile_section
+    assert "settings:vision.labels.description" not in vision_profile_section
+    assert "settings:vision.labels.notes" in vision_profile_section
+    assert "settings:vision.labels.profileKey" in vision_advanced_section
+    assert "description: values.description ?? ''" in vision
     assert vision.index("settings:externalInference.enabled") < vision.index("<SettingsApiExampleBlock")
 
     for locale in (en_settings, zh_settings):

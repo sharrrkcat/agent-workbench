@@ -1209,7 +1209,7 @@ export function LlmProfileDetail({
           <div>
             <h2>{String(draft.name || t('settings:objectList.newModel'))}</h2>
             <p>
-              <code>{String(draft.alias || 'profile_key')}</code>
+              <code>{`key:${String(draft.alias || 'profile_key')}`}</code>
               <span>{providerProfileLabel(String(draft.provider_profile_id || ''), providerProfiles)}</span>
             </p>
           </div>

@@ -368,16 +368,6 @@ function VisionProfileForm({
           </div>
           <div className="settings-config-form llm-profile-form">
             <TextField label={t('settings:vision.labels.name')} value={values.name || ''} onChange={(name) => patchValues({ name }, { autoAlias: true })} disabled={Boolean(busy)} />
-            <TextField
-              label={t('settings:vision.labels.profileKey')}
-              value={values.alias || ''}
-              onChange={(alias) => {
-                setProfileKeyTouched(true);
-                patchValues({ alias: sanitizeProfileKey(alias) });
-              }}
-              disabled={Boolean(busy)}
-              help={t('settings:vision.help.profileKey')}
-            />
             <label className="config-field settings-config-field">
               <span>{t('settings:vision.labels.providerProfile')}</span>
               <select
@@ -425,7 +415,6 @@ function VisionProfileForm({
         <section className="detail-section">
           <h3>{t('settings:vision.sections.profile')}</h3>
           <div className="settings-config-form llm-profile-form">
-            <TextField label={t('settings:vision.labels.description')} value={values.description || ''} onChange={(description) => patchValues({ description })} disabled={Boolean(busy)} textarea />
             <TextField label={t('settings:vision.labels.notes')} value={values.notes || ''} onChange={(notes) => patchValues({ notes })} disabled={Boolean(busy)} textarea />
           </div>
         </section>
@@ -454,6 +443,18 @@ function VisionProfileForm({
         </section>
         <section className="detail-section">
           <h3>{t('settings:vision.sections.advanced')}</h3>
+          <div className="settings-config-form llm-profile-form">
+            <TextField
+              label={t('settings:vision.labels.profileKey')}
+              value={values.alias || ''}
+              onChange={(alias) => {
+                setProfileKeyTouched(true);
+                patchValues({ alias: sanitizeProfileKey(alias) });
+              }}
+              disabled={Boolean(busy)}
+              help={t('settings:vision.help.profileKey')}
+            />
+          </div>
           <label className="config-field settings-config-field boolean-field">
             <span>{t('settings:vision.labels.trustRemoteCode')}</span>
             <ToggleSwitch checked={trustRemoteCode} onChange={setTrustRemoteCode} disabled={Boolean(busy)} />
