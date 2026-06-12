@@ -7,6 +7,7 @@ import type { CapabilityConfig, LlmDefaults, LlmProfile, LlmProfileInput, LlmPro
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import { ConfigForm } from './ConfigForm';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
 import { SecretInput } from './SecretInput';
 import { stableConfigString, type ConfigValues } from './configUtils';
 import { ToggleSwitch } from './ToggleSwitch';
@@ -1031,6 +1032,23 @@ export function LlmProfileDetail({
 
   const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
   const dirty = hydrated && stableConfigString(cleanProfileInput(draft)) !== baselineKey;
+  const apiExampleModelId = selectedProfile?.id ? `llm:${selectedProfile.id}` : 'llm:<profile_id>';
+  const apiExamples: SettingsApiExample[] = [
+    {
+      id: 'chat-completions',
+      title: t('settings:apiExamples.llm.chatCompletions'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        messages: [
+          {
+            role: 'user',
+            content: 'Hello',
+          },
+        ],
+        stream: true,
+      }),
+    },
+  ];
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -1311,6 +1329,11 @@ export function LlmProfileDetail({
             </label>
           </div>
         </section>
+        <SettingsApiExampleBlock
+          endpoint="/v1/chat/completions"
+          modelId={apiExampleModelId}
+          examples={apiExamples}
+        />
       </div>
     </form>
   );

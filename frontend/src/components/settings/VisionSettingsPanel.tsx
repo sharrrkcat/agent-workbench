@@ -14,6 +14,7 @@ import type {
 import { LOCAL_TRANSFORMERS_PROVIDER } from '../../types';
 import { stableConfigString } from './configUtils';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
 import { ToggleSwitch } from './ToggleSwitch';
 
 const ARCHITECTURES: VisionArchitecture[] = ['florence2'];
@@ -121,6 +122,69 @@ function VisionProfileForm({
   const metadataForFields = parsedMetadata.ok ? parsedMetadata.value : values.metadata || {};
   const trustRemoteCode = metadataForFields.trust_remote_code === true;
   const saveDisabled = Boolean(busy) || !selectedProvider;
+  const supportedTasks = values.supported_tasks || [];
+  const apiExampleModelId = values.id ? `vision:${values.id}` : 'vision:<profile_id>';
+  const visionApiExamples: SettingsApiExample[] = [];
+  if (supportedTasks.includes('caption')) {
+    visionApiExamples.push({
+      id: 'vision-caption',
+      title: t('settings:apiExamples.vision.caption'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'caption',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('detailed_caption')) {
+    visionApiExamples.push({
+      id: 'vision-detailed-caption',
+      title: t('settings:apiExamples.vision.detailedCaption'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'detailed_caption',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('ocr')) {
+    visionApiExamples.push({
+      id: 'vision-ocr',
+      title: t('settings:apiExamples.vision.ocr'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'ocr',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('object_detection')) {
+    visionApiExamples.push({
+      id: 'vision-object-detection',
+      title: t('settings:apiExamples.vision.objectDetection'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'object_detection',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+        options: {
+          max_new_tokens: 1024,
+          num_beams: 3,
+        },
+      }),
+    });
+  }
 
   useEffect(() => {
     setValues(initial);
@@ -375,6 +439,11 @@ function VisionProfileForm({
           </label>
           {!parsedMetadata.ok ? <p className="settings-warning-text">{t('settings:vision.errors.invalidMetadataJson')}</p> : null}
         </section>
+        <SettingsApiExampleBlock
+          endpoint="/api/inference/vision"
+          modelId={apiExampleModelId}
+          examples={visionApiExamples}
+        />
       </div>
     </form>
   );

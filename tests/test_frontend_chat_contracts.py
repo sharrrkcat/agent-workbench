@@ -1658,6 +1658,55 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
         assert '"modelRefSafeRefRequired"' in locale
 
 
+def test_model_profile_api_examples_contract() -> None:
+    component = read_frontend("components/settings/SettingsApiExampleBlock.tsx")
+    llm = read_frontend("components/settings/LlmSettingsPanel.tsx")
+    knowledge = read_frontend("components/settings/KnowledgeSettingsPanel.tsx")
+    multimodal = read_frontend("components/settings/MultimodalEmbeddingSettingsPanel.tsx")
+    vision = read_frontend("components/settings/VisionSettingsPanel.tsx")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
+
+    assert "export function SettingsApiExampleBlock" in component
+    assert "navigator.clipboard.writeText" in component
+    assert "requestSnippet(example.body)" in component
+    assert "copyModelId" in component
+    assert "copyExample" in component
+
+    assert "SettingsApiExampleBlock" in llm
+    assert "/v1/chat/completions" in llm
+    assert "llm:<profile_id>" in llm
+    assert "apiExamples.llm.chatCompletions" in llm
+
+    assert "SettingsApiExampleBlock" in knowledge
+    assert "/v1/embeddings" in knowledge
+    assert "embedding:<profile_id>" in knowledge
+    assert "apiExamples.embedding.singleInput" in knowledge
+
+    assert "SettingsApiExampleBlock" in multimodal
+    assert "/api/inference/embeddings/multimodal" in multimodal
+    assert "multimodal:<profile_id>" in multimodal
+    assert "type: 'image_base64'" in multimodal
+    assert "type: 'text'" in multimodal
+    assert "if (supportsText)" in multimodal
+    assert "architecture === 'dinov2' ? t('settings:apiExamples.multimodal.dinov2ImageOnly')" in multimodal
+
+    assert "SettingsApiExampleBlock" in vision
+    assert "/api/inference/vision" in vision
+    assert "vision:<profile_id>" in vision
+    assert "supportedTasks.includes('object_detection')" in vision
+    assert "max_new_tokens: 1024" in vision
+    assert "num_beams: 3" in vision
+
+    for locale in (en_settings, zh_settings):
+        assert '"apiExamples"' in locale
+        assert '"copyModelId"' in locale
+        assert '"chatCompletions"' in locale
+        assert '"singleInput"' in locale
+        assert '"dinov2ImageOnly"' in locale
+        assert '"objectDetection"' in locale
+
+
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:
     source = read_frontend("components/MessageBubble.tsx")
     styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")

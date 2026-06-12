@@ -8,6 +8,7 @@ import { stableConfigString } from './configUtils';
 import { DetailTabs } from './DetailTabs';
 import type { KnowledgeSettingsCategory } from './SettingsObjectList';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
 import { MiniToggle, ToggleSwitch } from './ToggleSwitch';
 import { getKnowledgeIndexStatusLabel, getKnowledgeOriginStatusLabel, getKnowledgeSourceStatusLabel } from '../../i18n/formatters';
 import { AppModal, StatusChip } from '../ui';
@@ -513,7 +514,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
   onRefresh: (selectedItemId?: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const { t } = useTranslation(['knowledge', 'common', 'llm']);
+  const { t } = useTranslation(['knowledge', 'common', 'llm', 'settings']);
   const [values, setValues] = useState<Partial<EmbeddingModelProfile>>(initial);
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
@@ -533,6 +534,17 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
     ? providerModels.filter((model) => isEmbeddingProviderModel(model))
     : providerModels.filter((model) => Boolean(model.id));
   const selectedProviderModelId = providerModelOptions.some((model) => model.id === values.provider_model_id) ? values.provider_model_id || '' : '';
+  const apiExampleModelId = values.id ? `embedding:${values.id}` : 'embedding:<profile_id>';
+  const apiExamples: SettingsApiExample[] = [
+    {
+      id: 'embedding-single-input',
+      title: t('settings:apiExamples.embedding.singleInput'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        input: 'hello world',
+      }),
+    },
+  ];
 
   useEffect(() => {
     setValues(initial);
@@ -721,6 +733,11 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
             <TextField label={t('knowledge:labels.profileKey')} value={values.alias || ''} onChange={(value) => setValues({ ...values, alias: safeProfileKey(value) })} />
           </div>
         </section>
+        <SettingsApiExampleBlock
+          endpoint="/v1/embeddings"
+          modelId={apiExampleModelId}
+          examples={apiExamples}
+        />
       </div>
     </form>
   );

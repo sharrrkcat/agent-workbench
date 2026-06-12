@@ -72,6 +72,34 @@
     "newKnowledgeBase": "New knowledge base",
     "newWorldbook": "New worldbook"
   },
+  "apiExamples": {
+    "title": "API examples",
+    "help": "Use these snippets when connecting this profile from code or another app.",
+    "modelId": "Model ID",
+    "copyModelId": "Copy model ID",
+    "copyExample": "Copy request",
+    "copied": "Copied",
+    "copyFailed": "Could not copy to clipboard.",
+    "noExamples": "No request examples are available for the current profile settings.",
+    "llm": {
+      "chatCompletions": "Chat completions request"
+    },
+    "embedding": {
+      "singleInput": "Single text embedding request"
+    },
+    "multimodal": {
+      "image": "Image embedding request",
+      "text": "Text embedding request",
+      "imageText": "Image and text embedding request",
+      "dinov2ImageOnly": "DINOv2 profiles are image-only, so text examples are hidden."
+    },
+    "vision": {
+      "caption": "Caption request",
+      "detailedCaption": "Detailed caption request",
+      "ocr": "OCR request",
+      "objectDetection": "Object detection request"
+    }
+  },
   "multimodal": {
     "titles": {
       "newProfile": "New multimodal embedding model"

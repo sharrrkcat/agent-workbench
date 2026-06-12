@@ -15,6 +15,7 @@ import type {
 import { LOCAL_TRANSFORMERS_PROVIDER } from '../../types';
 import { stableConfigString } from './configUtils';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
+import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
 import { ToggleSwitch } from './ToggleSwitch';
 
 const ARCHITECTURES: MultimodalEmbeddingArchitecture[] = ['clip', 'open_clip', 'siglip2', 'dinov2'];
@@ -132,6 +133,59 @@ function MultimodalEmbeddingProfileForm({
   const openClipModelName = stringMetadataValue(metadataForFields.open_clip_model_name);
   const openClipCheckpoint = stringMetadataValue(metadataForFields.open_clip_checkpoint);
   const saveDisabled = Boolean(busy) || !selectedProvider;
+  const apiExampleModelId = values.id ? `multimodal:${values.id}` : 'multimodal:<profile_id>';
+  const multimodalApiExamples: SettingsApiExample[] = [
+    {
+      id: 'multimodal-image',
+      title: t('settings:apiExamples.multimodal.image'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        inputs: [
+          {
+            type: 'image_base64',
+            data: '...',
+          },
+        ],
+        normalize: values.normalize_default ?? true,
+      }),
+    },
+  ];
+  if (supportsText) {
+    multimodalApiExamples.push(
+      {
+        id: 'multimodal-text',
+        title: t('settings:apiExamples.multimodal.text'),
+        body: formatApiExampleJson({
+          model: apiExampleModelId,
+          inputs: [
+            {
+              type: 'text',
+              text: 'red robot',
+            },
+          ],
+          normalize: values.normalize_default ?? true,
+        }),
+      },
+      {
+        id: 'multimodal-image-text',
+        title: t('settings:apiExamples.multimodal.imageText'),
+        body: formatApiExampleJson({
+          model: apiExampleModelId,
+          inputs: [
+            {
+              type: 'image_base64',
+              data: '...',
+            },
+            {
+              type: 'text',
+              text: 'red robot',
+            },
+          ],
+          normalize: values.normalize_default ?? true,
+        }),
+      },
+    );
+  }
 
   useEffect(() => {
     setValues(initial);
@@ -392,6 +446,12 @@ function MultimodalEmbeddingProfileForm({
           </label>
           {!parsedMetadata.ok ? <p className="settings-warning-text">{t('settings:multimodal.errors.invalidMetadataJson')}</p> : null}
         </section>
+        <SettingsApiExampleBlock
+          endpoint="/api/inference/embeddings/multimodal"
+          modelId={apiExampleModelId}
+          examples={multimodalApiExamples}
+          note={architecture === 'dinov2' ? t('settings:apiExamples.multimodal.dinov2ImageOnly') : undefined}
+        />
       </div>
     </form>
   );
