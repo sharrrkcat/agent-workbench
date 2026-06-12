@@ -15,6 +15,7 @@ import { LOCAL_TRANSFORMERS_PROVIDER } from '../../types';
 import { stableConfigString } from './configUtils';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
+import { finalSafeRefSegment, sanitizeProfileKey, uniqueProfileKey } from './profileKeyUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
 const ARCHITECTURES: VisionArchitecture[] = ['florence2'];
@@ -24,6 +25,7 @@ const VISION_REF_PREFIX = 'vision/';
 
 const defaultVisionProfile: Partial<VisionModelProfile> = {
   name: '',
+  alias: '',
   description: '',
   notes: '',
   enabled: true,
@@ -67,6 +69,7 @@ export function VisionSettingsPanel({
   return (
     <VisionProfileForm
       initial={initial}
+      profiles={profiles}
       providerProfiles={providerProfiles}
       isNew={isNew}
       onProfilesChanged={onProfilesChanged}
@@ -77,12 +80,14 @@ export function VisionSettingsPanel({
 
 function VisionProfileForm({
   initial,
+  profiles,
   providerProfiles,
   isNew,
   onProfilesChanged,
   onDirtyChange,
 }: {
   initial: Partial<VisionModelProfile>;
+  profiles: VisionModelProfile[];
   providerProfiles: LlmProviderProfile[];
   isNew: boolean;
   onProfilesChanged: (selectedProfileId?: string) => Promise<void>;
@@ -97,6 +102,7 @@ function VisionProfileForm({
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [profileKeyTouched, setProfileKeyTouched] = useState(false);
   const scopeId = isNew ? 'new-vision-model' : initial.id || '';
   const baselineKey = stableConfigString(buildVisionPayload(initial, initial.metadata || {}));
   const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
@@ -123,7 +129,7 @@ function VisionProfileForm({
   const trustRemoteCode = metadataForFields.trust_remote_code === true;
   const saveDisabled = Boolean(busy) || !selectedProvider;
   const supportedTasks = values.supported_tasks || [];
-  const apiExampleModelId = values.id ? `vision:${values.id}` : 'vision:<profile_id>';
+  const apiExampleModelId = values.alias ? `vision:${values.alias}` : 'vision:<profile_key>';
   const visionApiExamples: SettingsApiExample[] = [];
   if (supportedTasks.includes('caption')) {
     visionApiExamples.push({
@@ -197,6 +203,7 @@ function VisionProfileForm({
     setResult('');
     setError(null);
     setInventoryWarnings([]);
+    setProfileKeyTouched(false);
     void refreshInventory();
   }, [scopeId]);
 
@@ -236,6 +243,9 @@ function VisionProfileForm({
       if (!payload.name?.trim()) {
         throw new Error(t('settings:vision.errors.nameRequired'));
       }
+      if (!payload.alias?.trim()) {
+        throw new Error(t('settings:vision.errors.profileKeyRequired'));
+      }
       if (!payload.provider_model_id?.trim()) {
         throw new Error(t('settings:vision.errors.modelRefRequired'));
       }
@@ -273,8 +283,14 @@ function VisionProfileForm({
     }
   }
 
-  function patchValues(patch: Partial<VisionModelProfile>) {
-    setValues((current) => ({ ...current, ...patch }));
+  function patchValues(patch: Partial<VisionModelProfile>, options: { autoAlias?: boolean } = {}) {
+    setValues((current) => {
+      const next = { ...current, ...patch };
+      if (isNew && !profileKeyTouched && options.autoAlias) {
+        next.alias = uniqueProfileKey([next.name, finalSafeRefSegment(next.provider_model_id, VISION_REF_PREFIX)], profiles, next.id);
+      }
+      return next;
+    });
   }
 
   function selectModelRef(ref: string) {
@@ -282,7 +298,7 @@ function VisionProfileForm({
     patchValues({
       provider_model_id: ref,
       name: values.name?.trim() ? values.name : item?.name || values.name || '',
-    });
+    }, { autoAlias: true });
   }
 
   function setTaskEnabled(task: VisionTask, enabled: boolean) {
@@ -311,10 +327,11 @@ function VisionProfileForm({
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
         <div className="settings-detail-title">
-          <div className="settings-detail-avatar">{profileInitials(values.name || currentModelRef || 'VM') || <Eye size={18} />}</div>
+          <div className="settings-detail-avatar">{profileInitials(values.name || values.alias || currentModelRef || 'VM') || <Eye size={18} />}</div>
           <div>
             <h2>{values.name || t('settings:vision.titles.newProfile')}</h2>
             <p>
+              <code>{`key:${values.alias || 'profile_key'}`}</code>
               <code>{`arch:${values.architecture || 'florence2'}`}</code>
               <span>{currentModelRef || t('settings:vision.empty.noModelRef')}</span>
             </p>
@@ -350,7 +367,17 @@ function VisionProfileForm({
             </div>
           </div>
           <div className="settings-config-form llm-profile-form">
-            <TextField label={t('settings:vision.labels.name')} value={values.name || ''} onChange={(name) => patchValues({ name })} disabled={Boolean(busy)} />
+            <TextField label={t('settings:vision.labels.name')} value={values.name || ''} onChange={(name) => patchValues({ name }, { autoAlias: true })} disabled={Boolean(busy)} />
+            <TextField
+              label={t('settings:vision.labels.profileKey')}
+              value={values.alias || ''}
+              onChange={(alias) => {
+                setProfileKeyTouched(true);
+                patchValues({ alias: sanitizeProfileKey(alias) });
+              }}
+              disabled={Boolean(busy)}
+              help={t('settings:vision.help.profileKey')}
+            />
             <label className="config-field settings-config-field">
               <span>{t('settings:vision.labels.providerProfile')}</span>
               <select
@@ -456,12 +483,14 @@ function TextField({
   onChange,
   disabled,
   textarea = false,
+  help,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
   textarea?: boolean;
+  help?: string;
 }) {
   return (
     <label className="config-field settings-config-field">
@@ -471,6 +500,7 @@ function TextField({
       ) : (
         <input type="text" value={value} onChange={(event) => onChange(event.currentTarget.value)} disabled={disabled} />
       )}
+      {help ? <small>{help}</small> : null}
     </label>
   );
 }
@@ -526,6 +556,7 @@ function SelectField({
 function buildVisionPayload(values: Partial<VisionModelProfile>, metadata: Record<string, unknown>): VisionModelProfileInput {
   return {
     name: values.name ?? '',
+    alias: values.alias ?? '',
     description: values.description ?? '',
     notes: values.notes ?? '',
     enabled: values.enabled ?? true,

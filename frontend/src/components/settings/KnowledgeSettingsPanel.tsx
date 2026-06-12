@@ -535,7 +535,7 @@ function EmbeddingProfileForm({ initial, providerProfiles, isNew, onRefresh, onD
     ? providerModels.filter((model) => isEmbeddingProviderModel(model))
     : providerModels.filter((model) => Boolean(model.id));
   const selectedProviderModelId = providerModelOptions.some((model) => model.id === values.provider_model_id) ? values.provider_model_id || '' : '';
-  const apiExampleModelId = values.id ? `embedding:${values.id}` : 'embedding:<profile_id>';
+  const apiExampleModelId = values.alias ? `embedding:${values.alias}` : 'embedding:<profile_key>';
   const apiExamples: SettingsApiExample[] = [
     {
       id: 'embedding-single-input',

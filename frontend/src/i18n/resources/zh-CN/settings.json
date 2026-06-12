@@ -117,6 +117,7 @@
     },
     "labels": {
       "name": "名称",
+      "profileKey": "配置 key",
       "description": "描述",
       "notes": "备注",
       "providerProfile": "Provider 配置",
@@ -169,6 +170,7 @@
     },
     "help": {
       "localProviderOnly": "图像 / 多模态 Embedding 只能使用 internal Transformers provider 配置。",
+      "profileKey": "作为首选 stateless 模型 ID 使用，例如 multimodal:<profile_key>。",
       "safeRef": "扫描 data/models/image_embeddings，并保存为 image_embedding/<folder> 引用。",
       "inventoryRoot": "扫描目录：{{root}}。",
       "dinov2ImageOnly": "DINOv2 配置仅支持图像。",
@@ -191,6 +193,7 @@
       "openClipModelNameRequired": "OpenCLIP 模型名为必填项。",
       "localProviderRequired": "需要本地 Transformers provider 配置。",
       "nameRequired": "名称为必填项。",
+      "profileKeyRequired": "配置 key 为必填项。",
       "modelRefRequired": "本地模型引用为必填项。",
       "modelRefSafeRefRequired": "本地模型引用必须使用 image_embedding/<folder>。",
       "saveFailed": "保存多模态 Embedding 模型失败。",
@@ -213,6 +216,7 @@
     },
     "labels": {
       "name": "名称",
+      "profileKey": "配置 key",
       "description": "描述",
       "notes": "备注",
       "providerProfile": "Provider 配置",
@@ -252,6 +256,7 @@
     },
     "help": {
       "localProviderOnly": "Vision 模型只能使用 internal Transformers provider 配置。",
+      "profileKey": "作为首选 stateless 模型 ID 使用，例如 vision:<profile_key>。",
       "safeRef": "扫描 data/models/vision，并保存为 vision/<folder> 引用。",
       "inventoryRoot": "扫描目录：{{root}}。",
       "trustRemoteCode": "高级选项，用于选择性允许运行本地自定义模型代码。标准本地 Florence2 文件夹请保持关闭。",
@@ -274,6 +279,7 @@
       "invalidMetadataJson": "Metadata 必须是 JSON 对象。",
       "localProviderRequired": "需要本地 Transformers provider 配置。",
       "nameRequired": "名称为必填项。",
+      "profileKeyRequired": "配置 key 为必填项。",
       "modelRefRequired": "本地模型引用为必填项。",
       "modelRefSafeRefRequired": "本地模型引用必须使用 vision/<folder>。",
       "supportedTaskRequired": "至少选择一个支持任务。",

@@ -117,6 +117,7 @@
     },
     "labels": {
       "name": "Name",
+      "profileKey": "Profile key",
       "description": "Description",
       "notes": "Notes",
       "providerProfile": "Provider profile",
@@ -169,6 +170,7 @@
     },
     "help": {
       "localProviderOnly": "Only internal Transformers provider profiles are valid for image / multimodal embeddings.",
+      "profileKey": "Used as the preferred stateless model ID, for example multimodal:<profile_key>.",
       "safeRef": "Scans data/models/image_embeddings and saves refs as image_embedding/<folder>.",
       "inventoryRoot": "Scanned under {{root}}.",
       "dinov2ImageOnly": "DINOv2 profiles are image-only.",
@@ -191,6 +193,7 @@
       "openClipModelNameRequired": "OpenCLIP model name is required.",
       "localProviderRequired": "A local Transformers provider profile is required.",
       "nameRequired": "Name is required.",
+      "profileKeyRequired": "Profile key is required.",
       "modelRefRequired": "Local model ref is required.",
       "modelRefSafeRefRequired": "Local model ref must use image_embedding/<folder>.",
       "saveFailed": "Failed to save multimodal embedding model.",
@@ -213,6 +216,7 @@
     },
     "labels": {
       "name": "Name",
+      "profileKey": "Profile key",
       "description": "Description",
       "notes": "Notes",
       "providerProfile": "Provider profile",
@@ -252,6 +256,7 @@
     },
     "help": {
       "localProviderOnly": "Only internal Transformers provider profiles are valid for Vision models.",
+      "profileKey": "Used as the preferred stateless model ID, for example vision:<profile_key>.",
       "safeRef": "Scans data/models/vision and saves refs as vision/<folder>.",
       "inventoryRoot": "Scanned under {{root}}.",
       "trustRemoteCode": "Advanced opt-in for local custom model code. Leave off for standard local Florence2 folders.",
@@ -274,6 +279,7 @@
       "invalidMetadataJson": "Metadata must be a JSON object.",
       "localProviderRequired": "A local Transformers provider profile is required.",
       "nameRequired": "Name is required.",
+      "profileKeyRequired": "Profile key is required.",
       "modelRefRequired": "Local model ref is required.",
       "modelRefSafeRefRequired": "Local model ref must use vision/<folder>.",
       "supportedTaskRequired": "Select at least one supported task.",

@@ -1509,24 +1509,29 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
 def test_multimodal_and_vision_profile_client_contracts() -> None:
     client = read_frontend("api/client.ts")
     types = read_frontend("types.ts")
+    profile_key_utils = read_frontend("components/settings/profileKeyUtils.ts")
 
     assert "export const LOCAL_TRANSFORMERS_PROVIDER = 'internal_transformers' as const;" in types
     assert "export type MultimodalEmbeddingArchitecture = 'clip' | 'open_clip' | 'siglip2' | 'dinov2';" in types
     assert "export type MultimodalEmbeddingBackend = 'auto' | 'transformers' | 'open_clip';" in types
     assert "export type MultimodalEmbeddingInputType = 'image' | 'text';" in types
     assert "export type MultimodalEmbeddingPoolingStrategy = 'cls' | 'mean' | 'pooler' | 'model_default';" in types
-    assert "export type MultimodalEmbeddingModelProfile = {" in types
-    assert "external_inference_enabled: boolean;" in types
-    assert "provider_model_id: string;" in types
-    assert "supported_input_types: MultimodalEmbeddingInputType[];" in types
-    assert "export type MultimodalEmbeddingModelProfileInput = Partial<" in types
+    multimodal_type = types[types.index("export type MultimodalEmbeddingModelProfile = {") : types.index("export type VisionArchitecture")]
+    assert "alias: string;" in multimodal_type
+    assert "external_inference_enabled: boolean;" in multimodal_type
+    assert "provider_model_id: string;" in multimodal_type
+    assert "supported_input_types: MultimodalEmbeddingInputType[];" in multimodal_type
+    assert "export type MultimodalEmbeddingModelProfileInput = Partial<" in multimodal_type
+    assert "| 'alias'" in multimodal_type
 
     assert "export type VisionArchitecture = 'florence2';" in types
     assert "export type VisionBackend = 'transformers';" in types
     assert "export type VisionTask = 'caption' | 'detailed_caption' | 'ocr' | 'object_detection';" in types
-    assert "export type VisionModelProfile = {" in types
-    assert "supported_tasks: VisionTask[];" in types
-    assert "export type VisionModelProfileInput = Partial<" in types
+    vision_type = types[types.index("export type VisionModelProfile = {") : types.index("export type InferenceModelInventoryKind")]
+    assert "alias: string;" in vision_type
+    assert "supported_tasks: VisionTask[];" in vision_type
+    assert "export type VisionModelProfileInput = Partial<" in vision_type
+    assert "| 'alias'" in vision_type
 
     assert "export type InferenceModelInventoryKind = 'image_embedding' | 'vision';" in types
     assert "export type InferenceModelInventoryItem = {" in types
@@ -1549,6 +1554,12 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "/api/inference/vision-models" in client
     assert "listInferenceModelInventory" in client
     assert "/api/inference/model-inventory?kind=${encodeURIComponent(kind)}" in client
+
+    assert "export function sanitizeProfileKey" in profile_key_utils
+    assert "export function finalSafeRefSegment" in profile_key_utils
+    assert "export function uniqueProfileKey" in profile_key_utils
+    assert "a-z0-9_-" in profile_key_utils
+    assert "`${base}-${index}`" in profile_key_utils
 
 
 def test_model_profile_external_inference_settings_contract() -> None:
@@ -1646,6 +1657,7 @@ def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
     assert "settings:objectList.noMultimodalEmbeddingProfiles" in object_list
     assert "settings:subsections.multimodalEmbeddingModels" in object_list
     assert "settings:multimodal.architectures" in object_list
+    assert "profile.alias || t('settings:objectList.noProfileKey')" in object_list
 
     assert "MultimodalEmbeddingSettingsPanel" in detail
     assert "llmSubsection === 'multimodal_embedding_models'" in detail
@@ -1658,6 +1670,16 @@ def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
     assert "api.listInferenceModelInventory('image_embedding')" in panel
     assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
     assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "profileKeyTouched" in panel
+    assert "sanitizeProfileKey" in panel
+    assert "uniqueProfileKey" in panel
+    assert "finalSafeRefSegment" in panel
+    assert "settings:multimodal.labels.profileKey" in panel
+    assert "settings:multimodal.help.profileKey" in panel
+    assert "settings:multimodal.errors.profileKeyRequired" in panel
+    assert "alias: values.alias ?? ''" in panel
+    assert "multimodal:<profile_key>" in panel
+    assert "`key:${values.alias || 'profile_key'}`" in panel
     assert "`arch:${values.architecture || 'clip'}`" in panel
     assert "isImageEmbeddingRef" in panel
     assert "image_embedding/" in panel
@@ -1677,6 +1699,8 @@ def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
         assert '"openClipModelName"' in locale
         assert '"invalidMetadataJson"' in locale
         assert '"localProviderRequired"' in locale
+        assert '"profileKey"' in locale
+        assert '"profileKeyRequired"' in locale
 
     for locale in (en_knowledge, zh_knowledge):
         assert '"multimodal"' in locale
@@ -1718,6 +1742,7 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     assert "VisionProfileListItem" in object_list
     assert "settings:objectList.noVisionProfiles" in object_list
     assert "settings:subsections.visionModels" in object_list
+    assert "profile.alias || t('settings:objectList.noProfileKey')" in object_list
     assert "`arch:${profile.architecture}`" in object_list
 
     assert "VisionSettingsPanel" in detail
@@ -1731,6 +1756,16 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     assert "api.listInferenceModelInventory('vision')" in panel
     assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
     assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "profileKeyTouched" in panel
+    assert "sanitizeProfileKey" in panel
+    assert "uniqueProfileKey" in panel
+    assert "finalSafeRefSegment" in panel
+    assert "settings:vision.labels.profileKey" in panel
+    assert "settings:vision.help.profileKey" in panel
+    assert "settings:vision.errors.profileKeyRequired" in panel
+    assert "alias: values.alias ?? ''" in panel
+    assert "vision:<profile_key>" in panel
+    assert "`key:${values.alias || 'profile_key'}`" in panel
     assert "isVisionRef" in panel
     assert "vision/" in panel
     assert "trust_remote_code" in panel
@@ -1748,6 +1783,8 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
         assert '"trustRemoteCode"' in locale
         assert '"supportedTaskRequired"' in locale
         assert '"modelRefSafeRefRequired"' in locale
+        assert '"profileKey"' in locale
+        assert '"profileKeyRequired"' in locale
 
 
 def test_model_profile_api_examples_contract() -> None:
@@ -1767,18 +1804,18 @@ def test_model_profile_api_examples_contract() -> None:
 
     assert "SettingsApiExampleBlock" in llm
     assert "/v1/chat/completions" in llm
-    assert "llm:<profile_id>" in llm
+    assert "llm:<profile_key>" in llm
     assert "apiExamples.llm.chatCompletions" in llm
     assert "stream: true" not in llm
 
     assert "SettingsApiExampleBlock" in knowledge
     assert "/v1/embeddings" in knowledge
-    assert "embedding:<profile_id>" in knowledge
+    assert "embedding:<profile_key>" in knowledge
     assert "apiExamples.embedding.singleInput" in knowledge
 
     assert "SettingsApiExampleBlock" in multimodal
     assert "/api/inference/embeddings/multimodal" in multimodal
-    assert "multimodal:<profile_id>" in multimodal
+    assert "multimodal:<profile_key>" in multimodal
     assert "type: 'image_base64'" in multimodal
     assert "type: 'text'" in multimodal
     assert "if (supportsText)" in multimodal
@@ -1786,7 +1823,7 @@ def test_model_profile_api_examples_contract() -> None:
 
     assert "SettingsApiExampleBlock" in vision
     assert "/api/inference/vision" in vision
-    assert "vision:<profile_id>" in vision
+    assert "vision:<profile_key>" in vision
     assert "supportedTasks.includes('object_detection')" in vision
     assert "max_new_tokens: 1024" in vision
     assert "num_beams: 3" in vision

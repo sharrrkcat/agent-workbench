@@ -1033,7 +1033,7 @@ export function LlmProfileDetail({
 
   const hydrated = draftReady.scopeId === scopeId && draftReady.baselineKey === baselineKey;
   const dirty = hydrated && stableConfigString(cleanProfileInput(draft)) !== baselineKey;
-  const apiExampleModelId = selectedProfile?.id ? `llm:${selectedProfile.id}` : 'llm:<profile_id>';
+  const apiExampleModelId = draft.alias ? `llm:${draft.alias}` : 'llm:<profile_key>';
   const apiExamples: SettingsApiExample[] = [
     {
       id: 'chat-completions',

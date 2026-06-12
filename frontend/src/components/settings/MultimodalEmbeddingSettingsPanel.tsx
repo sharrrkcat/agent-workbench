@@ -16,6 +16,7 @@ import { LOCAL_TRANSFORMERS_PROVIDER } from '../../types';
 import { stableConfigString } from './configUtils';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
+import { finalSafeRefSegment, sanitizeProfileKey, uniqueProfileKey } from './profileKeyUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
 const ARCHITECTURES: MultimodalEmbeddingArchitecture[] = ['clip', 'open_clip', 'siglip2', 'dinov2'];
@@ -25,6 +26,7 @@ const IMAGE_EMBEDDING_REF_PREFIX = 'image_embedding/';
 
 const defaultMultimodalEmbeddingProfile: Partial<MultimodalEmbeddingModelProfile> = {
   name: '',
+  alias: '',
   description: '',
   notes: '',
   enabled: true,
@@ -106,6 +108,7 @@ function MultimodalEmbeddingProfileForm({
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState('');
   const [error, setError] = useState<SettingsErrorValue | null>(null);
+  const [profileKeyTouched, setProfileKeyTouched] = useState(false);
   const scopeId = isNew ? 'new-multimodal-embedding' : initial.id || '';
   const baselineKey = stableConfigString(buildMultimodalEmbeddingPayload(initial, initial.metadata || {}));
   const [draftReady, setDraftReady] = useState(() => ({ scopeId, baselineKey }));
@@ -133,7 +136,7 @@ function MultimodalEmbeddingProfileForm({
   const openClipModelName = stringMetadataValue(metadataForFields.open_clip_model_name);
   const openClipCheckpoint = stringMetadataValue(metadataForFields.open_clip_checkpoint);
   const saveDisabled = Boolean(busy) || !selectedProvider;
-  const apiExampleModelId = values.id ? `multimodal:${values.id}` : 'multimodal:<profile_id>';
+  const apiExampleModelId = values.alias ? `multimodal:${values.alias}` : 'multimodal:<profile_key>';
   const multimodalApiExamples: SettingsApiExample[] = [
     {
       id: 'multimodal-image',
@@ -198,6 +201,7 @@ function MultimodalEmbeddingProfileForm({
     setResult('');
     setError(null);
     setInventoryWarnings([]);
+    setProfileKeyTouched(false);
     void refreshInventory();
   }, [scopeId]);
 
@@ -241,6 +245,9 @@ function MultimodalEmbeddingProfileForm({
       if (!payload.name?.trim()) {
         throw new Error(t('settings:multimodal.errors.nameRequired'));
       }
+      if (!payload.alias?.trim()) {
+        throw new Error(t('settings:multimodal.errors.profileKeyRequired'));
+      }
       if (!payload.provider_model_id?.trim()) {
         throw new Error(t('settings:multimodal.errors.modelRefRequired'));
       }
@@ -275,8 +282,14 @@ function MultimodalEmbeddingProfileForm({
     }
   }
 
-  function patchValues(patch: Partial<MultimodalEmbeddingModelProfile>) {
-    setValues((current) => ({ ...current, ...patch }));
+  function patchValues(patch: Partial<MultimodalEmbeddingModelProfile>, options: { autoAlias?: boolean } = {}) {
+    setValues((current) => {
+      const next = { ...current, ...patch };
+      if (isNew && !profileKeyTouched && options.autoAlias) {
+        next.alias = uniqueProfileKey([next.name, finalSafeRefSegment(next.provider_model_id, IMAGE_EMBEDDING_REF_PREFIX)], profiles, next.id);
+      }
+      return next;
+    });
   }
 
   function setArchitecture(architecture: MultimodalEmbeddingArchitecture) {
@@ -296,7 +309,7 @@ function MultimodalEmbeddingProfileForm({
     patchValues({
       provider_model_id: ref,
       name: values.name?.trim() ? values.name : item?.name || values.name || '',
-    });
+    }, { autoAlias: true });
   }
 
   function updateMetadataField(key: 'open_clip_model_name' | 'open_clip_checkpoint', value: string) {
@@ -316,10 +329,11 @@ function MultimodalEmbeddingProfileForm({
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
         <div className="settings-detail-title">
-          <div className="settings-detail-avatar">{profileInitials(values.name || currentModelRef || 'ME') || <Image size={18} />}</div>
+          <div className="settings-detail-avatar">{profileInitials(values.name || values.alias || currentModelRef || 'ME') || <Image size={18} />}</div>
           <div>
             <h2>{values.name || t('settings:multimodal.titles.newProfile')}</h2>
             <p>
+              <code>{`key:${values.alias || 'profile_key'}`}</code>
               <code>{`arch:${values.architecture || 'clip'}`}</code>
               <span>{currentModelRef || t('settings:multimodal.empty.noModelRef')}</span>
             </p>
@@ -355,7 +369,17 @@ function MultimodalEmbeddingProfileForm({
             </div>
           </div>
           <div className="settings-config-form llm-profile-form">
-            <TextField label={t('settings:multimodal.labels.name')} value={values.name || ''} onChange={(name) => patchValues({ name })} disabled={Boolean(busy)} />
+            <TextField label={t('settings:multimodal.labels.name')} value={values.name || ''} onChange={(name) => patchValues({ name }, { autoAlias: true })} disabled={Boolean(busy)} />
+            <TextField
+              label={t('settings:multimodal.labels.profileKey')}
+              value={values.alias || ''}
+              onChange={(alias) => {
+                setProfileKeyTouched(true);
+                patchValues({ alias: sanitizeProfileKey(alias) });
+              }}
+              disabled={Boolean(busy)}
+              help={t('settings:multimodal.help.profileKey')}
+            />
             <label className="config-field settings-config-field">
               <span>{t('settings:multimodal.labels.providerProfile')}</span>
               <select
@@ -464,12 +488,14 @@ function TextField({
   onChange,
   disabled,
   textarea = false,
+  help,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
   textarea?: boolean;
+  help?: string;
 }) {
   return (
     <label className="config-field settings-config-field">
@@ -479,6 +505,7 @@ function TextField({
       ) : (
         <input type="text" value={value} onChange={(event) => onChange(event.currentTarget.value)} disabled={disabled} />
       )}
+      {help ? <small>{help}</small> : null}
     </label>
   );
 }
@@ -535,6 +562,7 @@ function buildMultimodalEmbeddingPayload(values: Partial<MultimodalEmbeddingMode
   const architecture = values.architecture || 'clip';
   return {
     name: values.name ?? '',
+    alias: values.alias ?? '',
     description: values.description ?? '',
     notes: values.notes ?? '',
     enabled: values.enabled ?? true,

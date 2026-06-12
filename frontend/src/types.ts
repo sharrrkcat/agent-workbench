@@ -534,6 +534,7 @@ export type MultimodalEmbeddingPoolingStrategy = 'cls' | 'mean' | 'pooler' | 'mo
 
 export type MultimodalEmbeddingModelProfile = {
   id: string;
+  alias: string;
   name: string;
   description: string;
   notes: string;
@@ -559,6 +560,7 @@ export type MultimodalEmbeddingModelProfileInput = Partial<
   Pick<
     MultimodalEmbeddingModelProfile,
     | 'name'
+    | 'alias'
     | 'description'
     | 'notes'
     | 'enabled'
@@ -584,6 +586,7 @@ export type VisionTask = 'caption' | 'detailed_caption' | 'ocr' | 'object_detect
 
 export type VisionModelProfile = {
   id: string;
+  alias: string;
   name: string;
   description: string;
   notes: string;
@@ -604,6 +607,7 @@ export type VisionModelProfileInput = Partial<
   Pick<
     VisionModelProfile,
     | 'name'
+    | 'alias'
     | 'description'
     | 'notes'
     | 'enabled'

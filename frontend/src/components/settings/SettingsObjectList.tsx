@@ -544,7 +544,7 @@ function MultimodalEmbeddingProfileListItem({ profile, active, onClick }: { prof
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
       <div className="settings-object-copy">
         <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
-        <small>{architecture} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
+        <small>{profile.alias || t('settings:objectList.noProfileKey')} / {architecture} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>
@@ -558,7 +558,7 @@ function VisionProfileListItem({ profile, active, onClick }: { profile: VisionMo
       <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
       <div className="settings-object-copy">
         <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
-        <small>{`arch:${profile.architecture}`} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
+        <small>{profile.alias || t('settings:objectList.noProfileKey')} / {`arch:${profile.architecture}`} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>
