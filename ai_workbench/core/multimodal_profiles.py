@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
+from ai_workbench.core.profile_aliases import validate_profile_alias
 from ai_workbench.core.time import utc_now
 
 
@@ -43,6 +44,7 @@ class MultimodalEmbeddingModelProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(default_factory=lambda: str(uuid4()))
+    alias: str
     name: str
     description: str = ""
     notes: str = ""
@@ -70,6 +72,11 @@ class MultimodalEmbeddingModelProfile(BaseModel):
         if not text:
             raise ValueError("Name must not be empty.")
         return text
+
+    @field_validator("alias")
+    @classmethod
+    def _alias(cls, value: str) -> str:
+        return validate_profile_alias(value)
 
     @field_validator("description", "notes", mode="before")
     @classmethod
@@ -141,6 +148,7 @@ class MultimodalEmbeddingModelProfileCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    alias: str | None = None
     description: str = ""
     notes: str = ""
     enabled: StrictBool = True
@@ -158,11 +166,17 @@ class MultimodalEmbeddingModelProfileCreate(BaseModel):
     max_batch_size: int | None = Field(default=None, ge=1, le=MAX_MULTIMODAL_BATCH_SIZE)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("alias")
+    @classmethod
+    def _alias(cls, value: str | None) -> str | None:
+        return validate_profile_alias(value) if value is not None else None
+
 
 class MultimodalEmbeddingModelProfilePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = None
+    alias: str | None = None
     description: str | None = None
     notes: str | None = None
     enabled: StrictBool | None = None
@@ -179,3 +193,8 @@ class MultimodalEmbeddingModelProfilePatch(BaseModel):
     pooling_strategy: MultimodalEmbeddingPoolingStrategy | None = None
     max_batch_size: int | None = Field(default=None, ge=1, le=MAX_MULTIMODAL_BATCH_SIZE)
     metadata: dict[str, Any] | None = None
+
+    @field_validator("alias")
+    @classmethod
+    def _alias(cls, value: str | None) -> str | None:
+        return validate_profile_alias(value) if value is not None else None

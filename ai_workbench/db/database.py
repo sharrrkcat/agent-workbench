@@ -10,6 +10,7 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
+from ai_workbench.core.profile_aliases import profile_alias_base, unique_profile_alias, validate_profile_alias
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.models import AppMetadataRecord, LLMProfileRecord, ProviderProfileRecord
 
@@ -225,6 +226,7 @@ def ensure_multimodal_embedding_profile_table(engine) -> None:
                 """
                 CREATE TABLE IF NOT EXISTS multimodal_embedding_model_profiles (
                   id VARCHAR PRIMARY KEY NOT NULL,
+                  alias VARCHAR NOT NULL,
                   name VARCHAR NOT NULL,
                   description VARCHAR DEFAULT '',
                   notes VARCHAR DEFAULT '',
@@ -248,6 +250,11 @@ def ensure_multimodal_embedding_profile_table(engine) -> None:
                 """
             )
         )
+        _ensure_profile_alias_column(
+            connection,
+            table_name="multimodal_embedding_model_profiles",
+            index_name="ix_multimodal_embedding_model_profiles_alias",
+        )
 
 
 def ensure_vision_profile_table(engine) -> None:
@@ -259,6 +266,7 @@ def ensure_vision_profile_table(engine) -> None:
                 """
                 CREATE TABLE IF NOT EXISTS vision_model_profiles (
                   id VARCHAR PRIMARY KEY NOT NULL,
+                  alias VARCHAR NOT NULL,
                   name VARCHAR NOT NULL,
                   description VARCHAR DEFAULT '',
                   notes VARCHAR DEFAULT '',
@@ -277,6 +285,35 @@ def ensure_vision_profile_table(engine) -> None:
                 """
             )
         )
+        _ensure_profile_alias_column(
+            connection,
+            table_name="vision_model_profiles",
+            index_name="ix_vision_model_profiles_alias",
+        )
+
+
+def _ensure_profile_alias_column(connection, *, table_name: str, index_name: str) -> None:
+    columns = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
+    if "alias" not in columns:
+        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN alias VARCHAR DEFAULT ''"))
+    rows = connection.exec_driver_sql(
+        f"SELECT id, name, provider_model_id, alias FROM {table_name} ORDER BY COALESCE(created_at, ''), id"
+    ).fetchall()
+    used: set[str] = set()
+    for row in rows:
+        current = str(row[3] or "").strip().lower()
+        try:
+            current = validate_profile_alias(current) if current else ""
+        except ValueError:
+            current = ""
+        if current and current not in used:
+            used.add(current)
+            continue
+        base = profile_alias_base(row[1], row[2], fallback="profile")
+        alias = unique_profile_alias(base, used)
+        used.add(alias)
+        connection.execute(text(f"UPDATE {table_name} SET alias = :alias WHERE id = :id"), {"alias": alias, "id": row[0]})
+    connection.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} (alias)"))
 
 
 def ensure_knowledge_settings_columns(engine) -> None:

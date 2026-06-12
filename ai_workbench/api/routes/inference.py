@@ -20,6 +20,7 @@ from ai_workbench.core.inference.stateless import (
     inference_status_models_summary,
     workbench_model_list,
 )
+from ai_workbench.core.profile_aliases import profile_alias_base, unique_profile_alias
 from ai_workbench.core.multimodal_profiles import (
     MultimodalEmbeddingModelProfile,
     MultimodalEmbeddingModelProfileCreate,
@@ -117,47 +118,53 @@ def list_multimodal_embedding_models(state: RuntimeState = Depends(get_state)) -
 def create_multimodal_embedding_model(payload: dict, state: RuntimeState = Depends(get_state)) -> dict:
     try:
         request = MultimodalEmbeddingModelProfileCreate.model_validate(payload)
-        profile = MultimodalEmbeddingModelProfile.model_validate(request.model_dump(exclude_none=True))
+        values = request.model_dump(exclude_none=True)
+        values["alias"] = values.get("alias") or _next_profile_alias(
+            state.multimodal_embedding_profiles,
+            values.get("name"),
+            values.get("provider_model_id"),
+        )
+        profile = MultimodalEmbeddingModelProfile.model_validate(values)
         return state.multimodal_embedding_profiles.create(profile).model_dump()
     except ValidationError as exc:
         _raise_multimodal_validation(exc)
     except ValueError as exc:
-        raise_error(422, "INVALID_MULTIMODAL_EMBEDDING_MODEL", str(exc))
+        _raise_multimodal_value_error(exc)
 
 
-@router.get("/multimodal-embedding-models/{profile_id}")
-def get_multimodal_embedding_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+@router.get("/multimodal-embedding-models/{profile_id_or_alias}")
+def get_multimodal_embedding_model(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        return state.multimodal_embedding_profiles.get(profile_id).model_dump()
+        return state.multimodal_embedding_profiles.get_by_id_or_alias(profile_id_or_alias).model_dump()
     except KeyError:
-        raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id}")
+        raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id_or_alias}")
 
 
-@router.patch("/multimodal-embedding-models/{profile_id}")
+@router.patch("/multimodal-embedding-models/{profile_id_or_alias}")
 def patch_multimodal_embedding_model(
-    profile_id: str,
+    profile_id_or_alias: str,
     payload: dict,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
     try:
         request = MultimodalEmbeddingModelProfilePatch.model_validate(payload)
         updates = multimodal_profile_updates(request)
-        return state.multimodal_embedding_profiles.update(profile_id, updates).model_dump()
+        return state.multimodal_embedding_profiles.update(profile_id_or_alias, updates).model_dump()
     except ValidationError as exc:
         _raise_multimodal_validation(exc)
     except KeyError:
-        raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id}")
+        raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id_or_alias}")
     except ValueError as exc:
-        raise_error(422, "INVALID_MULTIMODAL_EMBEDDING_MODEL", str(exc))
+        _raise_multimodal_value_error(exc)
 
 
-@router.delete("/multimodal-embedding-models/{profile_id}")
-def delete_multimodal_embedding_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+@router.delete("/multimodal-embedding-models/{profile_id_or_alias}")
+def delete_multimodal_embedding_model(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        profile = state.multimodal_embedding_profiles.delete(profile_id)
+        profile = state.multimodal_embedding_profiles.delete(profile_id_or_alias)
         return {"deleted": True, "profile_id": profile.id}
     except KeyError:
-        raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id}")
+        raise_error(404, "MULTIMODAL_EMBEDDING_MODEL_NOT_FOUND", f"Multimodal embedding model profile not found: {profile_id_or_alias}")
 
 
 @router.get("/vision-models")
@@ -169,47 +176,53 @@ def list_vision_models(state: RuntimeState = Depends(get_state)) -> list[dict]:
 def create_vision_model(payload: dict, state: RuntimeState = Depends(get_state)) -> dict:
     try:
         request = VisionModelProfileCreate.model_validate(payload)
-        profile = VisionModelProfile.model_validate(request.model_dump(exclude_none=True))
+        values = request.model_dump(exclude_none=True)
+        values["alias"] = values.get("alias") or _next_profile_alias(
+            state.vision_profiles,
+            values.get("name"),
+            values.get("provider_model_id"),
+        )
+        profile = VisionModelProfile.model_validate(values)
         return state.vision_profiles.create(profile).model_dump()
     except ValidationError as exc:
         _raise_vision_validation(exc)
     except ValueError as exc:
-        raise_error(422, "INVALID_VISION_MODEL", str(exc))
+        _raise_vision_value_error(exc)
 
 
-@router.get("/vision-models/{profile_id}")
-def get_vision_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+@router.get("/vision-models/{profile_id_or_alias}")
+def get_vision_model(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        return state.vision_profiles.get(profile_id).model_dump()
+        return state.vision_profiles.get_by_id_or_alias(profile_id_or_alias).model_dump()
     except KeyError:
-        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id}")
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id_or_alias}")
 
 
-@router.patch("/vision-models/{profile_id}")
+@router.patch("/vision-models/{profile_id_or_alias}")
 def patch_vision_model(
-    profile_id: str,
+    profile_id_or_alias: str,
     payload: dict,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
     try:
         request = VisionModelProfilePatch.model_validate(payload)
         updates = vision_profile_updates(request)
-        return state.vision_profiles.update(profile_id, updates).model_dump()
+        return state.vision_profiles.update(profile_id_or_alias, updates).model_dump()
     except ValidationError as exc:
         _raise_vision_validation(exc)
     except KeyError:
-        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id}")
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id_or_alias}")
     except ValueError as exc:
-        raise_error(422, "INVALID_VISION_MODEL", str(exc))
+        _raise_vision_value_error(exc)
 
 
-@router.delete("/vision-models/{profile_id}")
-def delete_vision_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+@router.delete("/vision-models/{profile_id_or_alias}")
+def delete_vision_model(profile_id_or_alias: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        profile = state.vision_profiles.delete(profile_id)
+        profile = state.vision_profiles.delete(profile_id_or_alias)
         return {"deleted": True, "profile_id": profile.id}
     except KeyError:
-        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id}")
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id_or_alias}")
 
 
 @router.post("/unload")
@@ -314,9 +327,32 @@ def _raise_multimodal_validation(exc: ValidationError) -> None:
     raise_error(422, code, message)
 
 
+def _raise_multimodal_value_error(exc: ValueError) -> None:
+    message = str(exc)
+    if message == "MULTIMODAL_EMBEDDING_ALIAS_EXISTS":
+        raise_error(409, "MULTIMODAL_EMBEDDING_ALIAS_EXISTS", "Multimodal embedding model alias already exists.")
+    raise_error(422, "INVALID_MULTIMODAL_EMBEDDING_MODEL", message)
+
+
 def _raise_vision_validation(exc: ValidationError) -> None:
     error = exc.errors()[0] if exc.errors() else {}
     code = "UNKNOWN_VISION_MODEL_FIELD" if error.get("type") == "extra_forbidden" else "INVALID_VISION_MODEL"
     loc = ".".join(str(item) for item in error.get("loc", []))
     message = f"{loc}: {error.get('msg', 'Invalid value')}" if loc else str(error.get("msg", "Invalid value"))
     raise_error(422, code, message)
+
+
+def _raise_vision_value_error(exc: ValueError) -> None:
+    message = str(exc)
+    if message == "VISION_MODEL_ALIAS_EXISTS":
+        raise_error(409, "VISION_MODEL_ALIAS_EXISTS", "Vision model alias already exists.")
+    raise_error(422, "INVALID_VISION_MODEL", message)
+
+
+def _next_profile_alias(store, name: object, provider_model_id: object) -> str:
+    existing: list[str] = []
+    for profile in store.list():
+        existing.append(str(getattr(profile, "alias", "") or ""))
+        existing.append(str(getattr(profile, "id", "") or ""))
+    base = profile_alias_base(name, provider_model_id, fallback="profile")
+    return unique_profile_alias(base, existing)

@@ -228,21 +228,85 @@ def test_vision_profile_table_defaults_and_safe_refs(tmp_path: Path, monkeypatch
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE appmetadatarecord (key VARCHAR PRIMARY KEY NOT NULL, value VARCHAR NOT NULL, updated_at DATETIME)"))
         connection.execute(text("INSERT INTO appmetadatarecord (key, value) VALUES ('schema_version', '1')"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE vision_model_profiles (
+                  id VARCHAR PRIMARY KEY NOT NULL,
+                  name VARCHAR NOT NULL,
+                  description VARCHAR DEFAULT '',
+                  notes VARCHAR DEFAULT '',
+                  enabled BOOLEAN DEFAULT 1,
+                  external_inference_enabled BOOLEAN DEFAULT 0,
+                  provider_profile_id VARCHAR,
+                  provider_model_id VARCHAR NOT NULL DEFAULT '',
+                  architecture VARCHAR NOT NULL DEFAULT 'florence2',
+                  backend VARCHAR DEFAULT 'transformers',
+                  supported_tasks_json VARCHAR DEFAULT '["caption", "detailed_caption", "ocr", "object_detection"]',
+                  max_batch_size INTEGER DEFAULT 1,
+                  metadata_json VARCHAR DEFAULT '{}',
+                  created_at DATETIME,
+                  updated_at DATETIME
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO vision_model_profiles "
+                "(id, name, provider_model_id, architecture, created_at, updated_at) VALUES "
+                "('v1', 'Florence2 Vision', 'vision/florence-a', 'florence2', '2024-01-01', '2024-01-01'), "
+                "('v2', 'Florence2 Vision', 'vision/florence-b', 'florence2', '2024-01-02', '2024-01-02')"
+            )
+        )
 
     init_db(engine)
     with engine.begin() as connection:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(vision_model_profiles)").fetchall()}
-    assert {"id", "provider_model_id", "architecture", "external_inference_enabled", "supported_tasks_json"} <= columns
+        rows = [tuple(row) for row in connection.exec_driver_sql("SELECT id, alias FROM vision_model_profiles ORDER BY id").fetchall()]
+    assert {"id", "alias", "provider_model_id", "architecture", "external_inference_enabled", "supported_tasks_json"} <= columns
+    assert rows == [("v1", "florence2-vision"), ("v2", "florence2-vision-2")]
 
     client = make_client(tmp_path, monkeypatch)
     profile = create_vision_profile(client, provider_model_id="vision/florence")
     assert profile["external_inference_enabled"] is False
+    assert profile["alias"] == "florence2-vision"
     assert profile["architecture"] == "florence2"
     assert profile["supported_tasks"] == ["caption", "detailed_caption", "ocr", "object_detection"]
+    assert client.get(f"/api/inference/vision-models/{profile['alias']}").json()["id"] == profile["id"]
+    invalid_alias = client.post("/api/inference/vision-models", json={"name": "Bad", "alias": "Bad Alias", "provider_model_id": "vision/x"})
+    assert invalid_alias.status_code == 422
+    duplicate_alias = client.post("/api/inference/vision-models", json={"name": "Duplicate", "alias": profile["alias"], "provider_model_id": "vision/duplicate"})
+    assert duplicate_alias.status_code == 409
+    assert duplicate_alias.json()["error"]["code"] == "VISION_MODEL_ALIAS_EXISTS"
+    renamed = client.patch(f"/api/inference/vision-models/{profile['alias']}", json={"alias": "florence-renamed"}).json()
+    assert renamed["alias"] == "florence-renamed"
+    second = create_vision_profile(client, name="Second Vision", alias="second-vision", provider_model_id="vision/second")
+    duplicate_patch = client.patch(f"/api/inference/vision-models/{renamed['id']}", json={"alias": second["alias"]})
+    assert duplicate_patch.status_code == 409
+    assert duplicate_patch.json()["error"]["code"] == "VISION_MODEL_ALIAS_EXISTS"
+    deleted_by_alias = client.delete(f"/api/inference/vision-models/{second['alias']}").json()
+    assert deleted_by_alias == {"deleted": True, "profile_id": second["id"]}
     assert client.post("/api/inference/vision-models", json={"name": "Bad", "provider_model_id": "../x"}).status_code == 422
     assert client.post("/api/inference/vision-models", json={"name": "Bad", "provider_model_id": "C:\\x"}).status_code == 422
     assert client.post("/api/inference/vision-models", json={"name": "Bad", "provider_model_id": "image_embedding/x"}).status_code == 422
     assert client.post("/api/inference/vision-models", json={"name": "Bad", "provider_model_id": "vision/x", "unknown": True}).json()["error"]["code"] == "UNKNOWN_VISION_MODEL_FIELD"
+
+
+def test_vision_profile_aliases_work_with_sql_store(tmp_path: Path) -> None:
+    db_url = f"sqlite:///{tmp_path / 'vision.db'}"
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), root=tmp_path, database_url=db_url))
+    profile = create_vision_profile(client, alias="sql-vision", provider_model_id="vision/sql-model")
+
+    duplicate = client.post(
+        "/api/inference/vision-models",
+        json={"name": "Duplicate", "alias": "sql-vision", "provider_model_id": "vision/other"},
+    )
+    restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), root=tmp_path, database_url=db_url))
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "VISION_MODEL_ALIAS_EXISTS"
+    assert restarted.get("/api/inference/vision-models/sql-vision").json()["id"] == profile["id"]
 
 
 def test_vision_inventory_returns_safe_refs_without_optional_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -987,6 +987,11 @@ class SqlMultimodalEmbeddingProfileStore:
         with DbSession(self.engine) as session:
             if session.get(MultimodalEmbeddingModelProfileRecord, profile.id) is not None:
                 raise ValueError("MULTIMODAL_EMBEDDING_ID_EXISTS")
+            if (
+                _find_multimodal_embedding_profile_by_alias(session, profile.alias) is not None
+                or session.get(MultimodalEmbeddingModelProfileRecord, profile.alias) is not None
+            ):
+                raise ValueError("MULTIMODAL_EMBEDDING_ALIAS_EXISTS")
             record = _multimodal_embedding_profile_to_record(profile)
             session.add(record)
             session.commit()
@@ -1000,12 +1005,34 @@ class SqlMultimodalEmbeddingProfileStore:
                 raise KeyError(f"unknown multimodal embedding profile: {profile_id}")
             return _multimodal_embedding_profile_from_record(record)
 
+    def find_by_alias(self, alias: str) -> Optional[MultimodalEmbeddingModelProfile]:
+        with DbSession(self.engine) as session:
+            record = _find_multimodal_embedding_profile_by_alias(session, alias)
+            return _multimodal_embedding_profile_from_record(record) if record is not None else None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> MultimodalEmbeddingModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(MultimodalEmbeddingModelProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_multimodal_embedding_profile_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown multimodal embedding profile: {profile_id_or_alias}")
+            return _multimodal_embedding_profile_from_record(record)
+
     def update(self, profile_id: str, values: Dict[str, Any]) -> MultimodalEmbeddingModelProfile:
         with DbSession(self.engine) as session:
             record = session.get(MultimodalEmbeddingModelProfileRecord, profile_id)
             if record is None:
+                record = _find_multimodal_embedding_profile_by_alias(session, profile_id)
+            if record is None:
                 raise KeyError(f"unknown multimodal embedding profile: {profile_id}")
             existing = _multimodal_embedding_profile_from_record(record)
+            alias = values.get("alias")
+            if alias is not None:
+                conflict = _find_multimodal_embedding_profile_by_alias(session, str(alias))
+                id_conflict = session.get(MultimodalEmbeddingModelProfileRecord, str(alias))
+                if (conflict is not None and conflict.id != existing.id) or (id_conflict is not None and id_conflict.id != existing.id):
+                    raise ValueError("MULTIMODAL_EMBEDDING_ALIAS_EXISTS")
             updated = MultimodalEmbeddingModelProfile.model_validate(
                 existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump()
             )
@@ -1019,6 +1046,8 @@ class SqlMultimodalEmbeddingProfileStore:
         with DbSession(self.engine) as session:
             record = session.get(MultimodalEmbeddingModelProfileRecord, profile_id)
             if record is None:
+                record = _find_multimodal_embedding_profile_by_alias(session, profile_id)
+            if record is None:
                 raise KeyError(f"unknown multimodal embedding profile: {profile_id}")
             profile = _multimodal_embedding_profile_from_record(record)
             session.delete(record)
@@ -1027,7 +1056,12 @@ class SqlMultimodalEmbeddingProfileStore:
 
     def list(self) -> List[MultimodalEmbeddingModelProfile]:
         with DbSession(self.engine) as session:
-            records = session.exec(select(MultimodalEmbeddingModelProfileRecord).order_by(MultimodalEmbeddingModelProfileRecord.name)).all()
+            records = session.exec(
+                select(MultimodalEmbeddingModelProfileRecord).order_by(
+                    MultimodalEmbeddingModelProfileRecord.alias,
+                    MultimodalEmbeddingModelProfileRecord.created_at,
+                )
+            ).all()
             return [_multimodal_embedding_profile_from_record(record) for record in records]
 
 
@@ -1039,6 +1073,8 @@ class SqlVisionProfileStore:
         with DbSession(self.engine) as session:
             if session.get(VisionModelProfileRecord, profile.id) is not None:
                 raise ValueError("VISION_MODEL_ID_EXISTS")
+            if _find_vision_profile_by_alias(session, profile.alias) is not None or session.get(VisionModelProfileRecord, profile.alias) is not None:
+                raise ValueError("VISION_MODEL_ALIAS_EXISTS")
             record = _vision_profile_to_record(profile)
             session.add(record)
             session.commit()
@@ -1052,12 +1088,34 @@ class SqlVisionProfileStore:
                 raise KeyError(f"unknown vision profile: {profile_id}")
             return _vision_profile_from_record(record)
 
+    def find_by_alias(self, alias: str) -> Optional[VisionModelProfile]:
+        with DbSession(self.engine) as session:
+            record = _find_vision_profile_by_alias(session, alias)
+            return _vision_profile_from_record(record) if record is not None else None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> VisionModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(VisionModelProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_vision_profile_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown vision profile: {profile_id_or_alias}")
+            return _vision_profile_from_record(record)
+
     def update(self, profile_id: str, values: Dict[str, Any]) -> VisionModelProfile:
         with DbSession(self.engine) as session:
             record = session.get(VisionModelProfileRecord, profile_id)
             if record is None:
+                record = _find_vision_profile_by_alias(session, profile_id)
+            if record is None:
                 raise KeyError(f"unknown vision profile: {profile_id}")
             existing = _vision_profile_from_record(record)
+            alias = values.get("alias")
+            if alias is not None:
+                conflict = _find_vision_profile_by_alias(session, str(alias))
+                id_conflict = session.get(VisionModelProfileRecord, str(alias))
+                if (conflict is not None and conflict.id != existing.id) or (id_conflict is not None and id_conflict.id != existing.id):
+                    raise ValueError("VISION_MODEL_ALIAS_EXISTS")
             updated = VisionModelProfile.model_validate(
                 existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump()
             )
@@ -1071,6 +1129,8 @@ class SqlVisionProfileStore:
         with DbSession(self.engine) as session:
             record = session.get(VisionModelProfileRecord, profile_id)
             if record is None:
+                record = _find_vision_profile_by_alias(session, profile_id)
+            if record is None:
                 raise KeyError(f"unknown vision profile: {profile_id}")
             profile = _vision_profile_from_record(record)
             session.delete(record)
@@ -1079,7 +1139,12 @@ class SqlVisionProfileStore:
 
     def list(self) -> List[VisionModelProfile]:
         with DbSession(self.engine) as session:
-            records = session.exec(select(VisionModelProfileRecord).order_by(VisionModelProfileRecord.name)).all()
+            records = session.exec(
+                select(VisionModelProfileRecord).order_by(
+                    VisionModelProfileRecord.alias,
+                    VisionModelProfileRecord.created_at,
+                )
+            ).all()
             return [_vision_profile_from_record(record) for record in records]
 
 
@@ -2005,6 +2070,7 @@ def _apply_multimodal_embedding_profile_to_record(
 def _multimodal_embedding_profile_from_record(record: MultimodalEmbeddingModelProfileRecord) -> MultimodalEmbeddingModelProfile:
     return MultimodalEmbeddingModelProfile(
         id=record.id,
+        alias=getattr(record, "alias", "") or "",
         name=record.name,
         description=getattr(record, "description", "") or "",
         notes=getattr(record, "notes", "") or "",
@@ -2050,6 +2116,7 @@ def _apply_vision_profile_to_record(
 def _vision_profile_from_record(record: VisionModelProfileRecord) -> VisionModelProfile:
     return VisionModelProfile(
         id=record.id,
+        alias=getattr(record, "alias", "") or "",
         name=record.name,
         description=getattr(record, "description", "") or "",
         notes=getattr(record, "notes", "") or "",
@@ -2149,6 +2216,14 @@ def _find_embedding_profile_by_alias(session: DbSession, alias: str) -> Optional
 
 def _find_reranker_profile_by_alias(session: DbSession, alias: str) -> Optional[RerankerModelProfileRecord]:
     return session.exec(select(RerankerModelProfileRecord).where(RerankerModelProfileRecord.alias == alias)).first()
+
+
+def _find_multimodal_embedding_profile_by_alias(session: DbSession, alias: str) -> Optional[MultimodalEmbeddingModelProfileRecord]:
+    return session.exec(select(MultimodalEmbeddingModelProfileRecord).where(MultimodalEmbeddingModelProfileRecord.alias == alias)).first()
+
+
+def _find_vision_profile_by_alias(session: DbSession, alias: str) -> Optional[VisionModelProfileRecord]:
+    return session.exec(select(VisionModelProfileRecord).where(VisionModelProfileRecord.alias == alias)).first()
 
 
 def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> EmbeddingModelProfile:

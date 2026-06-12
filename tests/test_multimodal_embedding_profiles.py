@@ -94,12 +94,50 @@ def test_multimodal_profile_table_and_defaults_exist_on_old_db(tmp_path: Path) -
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE appmetadatarecord (key VARCHAR PRIMARY KEY NOT NULL, value VARCHAR NOT NULL, updated_at DATETIME)"))
         connection.execute(text("INSERT INTO appmetadatarecord (key, value) VALUES ('schema_version', '1')"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE multimodal_embedding_model_profiles (
+                  id VARCHAR PRIMARY KEY NOT NULL,
+                  name VARCHAR NOT NULL,
+                  description VARCHAR DEFAULT '',
+                  notes VARCHAR DEFAULT '',
+                  enabled BOOLEAN DEFAULT 1,
+                  external_inference_enabled BOOLEAN DEFAULT 0,
+                  provider_profile_id VARCHAR,
+                  provider_model_id VARCHAR NOT NULL DEFAULT '',
+                  architecture VARCHAR NOT NULL,
+                  backend VARCHAR DEFAULT 'auto',
+                  embedding_space VARCHAR,
+                  dimensions INTEGER,
+                  normalize_default BOOLEAN DEFAULT 1,
+                  supported_input_types_json VARCHAR DEFAULT '["image", "text"]',
+                  preprocessing_signature VARCHAR,
+                  pooling_strategy VARCHAR DEFAULT 'model_default',
+                  max_batch_size INTEGER,
+                  metadata_json VARCHAR DEFAULT '{}',
+                  created_at DATETIME,
+                  updated_at DATETIME
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO multimodal_embedding_model_profiles "
+                "(id, name, provider_model_id, architecture, created_at, updated_at) VALUES "
+                "('m1', 'CLIP Model', 'image_embedding/clip-a', 'clip', '2024-01-01', '2024-01-01'), "
+                "('m2', 'CLIP Model', 'image_embedding/clip-b', 'clip', '2024-01-02', '2024-01-02')"
+            )
+        )
 
     init_db(engine)
 
     with engine.begin() as connection:
         columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(multimodal_embedding_model_profiles)").fetchall()}
-    assert {"id", "provider_model_id", "architecture", "external_inference_enabled", "supported_input_types_json"} <= columns
+        rows = [tuple(row) for row in connection.exec_driver_sql("SELECT id, alias FROM multimodal_embedding_model_profiles ORDER BY id").fetchall()]
+    assert {"id", "alias", "provider_model_id", "architecture", "external_inference_enabled", "supported_input_types_json"} <= columns
+    assert rows == [("m1", "clip-model"), ("m2", "clip-model-2")]
 
 
 def test_crud_validates_architecture_refs_unknown_fields_and_delete_keeps_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,23 +147,53 @@ def test_crud_validates_architecture_refs_unknown_fields_and_delete_keeps_files(
     (model_dir / "config.json").write_text("{}", encoding="utf-8")
 
     clip = create_profile(client, name="OpenCLIP", architecture="open_clip", provider_model_id="image_embedding/clip-a", external_inference_enabled=True)
-    siglip = create_profile(client, name="SigLIP2", architecture="siglip2", provider_model_id="image_embedding/siglip")
+    siglip = create_profile(client, name="SigLIP2", alias="siglip-profile", architecture="siglip2", provider_model_id="image_embedding/siglip")
     dinov2 = create_profile(client, name="DINOv2", architecture="dinov2", provider_model_id="image_embedding/dino", supported_input_types=["image"])
 
+    assert clip["alias"] == "openclip"
+    assert siglip["alias"] == "siglip-profile"
     assert clip["enabled"] is True
     assert siglip["external_inference_enabled"] is False
     assert dinov2["supported_input_types"] == ["image"]
+    assert client.get(f"/api/inference/multimodal-embedding-models/{siglip['alias']}").json()["id"] == siglip["id"]
+    assert client.post("/api/inference/multimodal-embedding-models", json={"name": "Bad", "alias": "Bad Alias", "architecture": "clip", "provider_model_id": "image_embedding/x"}).status_code == 422
+    duplicate_alias = client.post("/api/inference/multimodal-embedding-models", json={"name": "Duplicate", "alias": siglip["alias"], "architecture": "clip", "provider_model_id": "image_embedding/duplicate"})
+    assert duplicate_alias.status_code == 409
+    assert duplicate_alias.json()["error"]["code"] == "MULTIMODAL_EMBEDDING_ALIAS_EXISTS"
     assert client.post("/api/inference/multimodal-embedding-models", json={**dinov2, "id": "x", "supported_input_types": ["image", "text"]}).status_code == 422
     assert client.post("/api/inference/multimodal-embedding-models", json={"name": "Bad", "architecture": "bad", "provider_model_id": "image_embedding/x"}).status_code == 422
     assert client.post("/api/inference/multimodal-embedding-models", json={"name": "Bad", "architecture": "clip", "provider_model_id": "../x"}).status_code == 422
     assert client.post("/api/inference/multimodal-embedding-models", json={"name": "Bad", "architecture": "clip", "provider_model_id": "C:\\x"}).status_code == 422
     assert client.post("/api/inference/multimodal-embedding-models", json={"name": "Bad", "architecture": "clip", "provider_model_id": "image_embedding/x", "unknown": True}).json()["error"]["code"] == "UNKNOWN_MULTIMODAL_EMBEDDING_FIELD"
 
-    patched = client.patch(f"/api/inference/multimodal-embedding-models/{siglip['id']}", json={"external_inference_enabled": True}).json()
+    renamed = client.patch(f"/api/inference/multimodal-embedding-models/{siglip['alias']}", json={"alias": "siglip-renamed"}).json()
+    assert renamed["alias"] == "siglip-renamed"
+    duplicate_patch = client.patch(f"/api/inference/multimodal-embedding-models/{renamed['id']}", json={"alias": dinov2["alias"]})
+    assert duplicate_patch.status_code == 409
+    assert duplicate_patch.json()["error"]["code"] == "MULTIMODAL_EMBEDDING_ALIAS_EXISTS"
+    patched = client.patch(f"/api/inference/multimodal-embedding-models/{renamed['id']}", json={"external_inference_enabled": True}).json()
     assert patched["external_inference_enabled"] is True
     deleted = client.delete(f"/api/inference/multimodal-embedding-models/{clip['id']}").json()
     assert deleted == {"deleted": True, "profile_id": clip["id"]}
+    deleted_by_alias = client.delete(f"/api/inference/multimodal-embedding-models/{dinov2['alias']}").json()
+    assert deleted_by_alias == {"deleted": True, "profile_id": dinov2["id"]}
     assert model_dir.exists()
+
+
+def test_multimodal_profile_aliases_work_with_sql_store(tmp_path: Path) -> None:
+    db_url = f"sqlite:///{tmp_path / 'multimodal.db'}"
+    client = TestClient(create_app(llm_runtime=FakeLLMRuntime(), root=tmp_path, database_url=db_url))
+    profile = create_profile(client, alias="sql-multimodal", provider_model_id="image_embedding/sql-model")
+
+    duplicate = client.post(
+        "/api/inference/multimodal-embedding-models",
+        json={"name": "Duplicate", "alias": "sql-multimodal", "architecture": "clip", "provider_model_id": "image_embedding/other"},
+    )
+    restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), root=tmp_path, database_url=db_url))
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "MULTIMODAL_EMBEDDING_ALIAS_EXISTS"
+    assert restarted.get("/api/inference/multimodal-embedding-models/sql-multimodal").json()["id"] == profile["id"]
 
 
 def test_image_embedding_inventory_returns_safe_refs_and_no_optional_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

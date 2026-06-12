@@ -651,6 +651,8 @@ class MultimodalEmbeddingProfileStore:
     def create(self, profile: MultimodalEmbeddingModelProfile) -> MultimodalEmbeddingModelProfile:
         if profile.id in self._records:
             raise ValueError(f"Multimodal embedding profile id already exists: {profile.id}")
+        if self.find_by_alias(profile.alias) is not None or profile.alias in self._records:
+            raise ValueError("MULTIMODAL_EMBEDDING_ALIAS_EXISTS")
         self._records[profile.id] = profile
         return profile
 
@@ -660,20 +662,39 @@ class MultimodalEmbeddingProfileStore:
         except KeyError as exc:
             raise KeyError(f"unknown multimodal embedding profile id: {profile_id}") from exc
 
+    def find_by_alias(self, alias: str) -> Optional[MultimodalEmbeddingModelProfile]:
+        for profile in self._records.values():
+            if profile.alias == alias:
+                return profile
+        return None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> MultimodalEmbeddingModelProfile:
+        if profile_id_or_alias in self._records:
+            return self._records[profile_id_or_alias]
+        profile = self.find_by_alias(profile_id_or_alias)
+        if profile is not None:
+            return profile
+        raise KeyError(f"unknown multimodal embedding profile: {profile_id_or_alias}")
+
     def update(self, profile_id: str, values: Dict[str, Any]) -> MultimodalEmbeddingModelProfile:
-        existing = self.get(profile_id)
+        existing = self.get_by_id_or_alias(profile_id)
+        alias = values.get("alias")
+        if alias is not None:
+            conflict = self.find_by_alias(str(alias))
+            if (conflict is not None and conflict.id != existing.id) or (str(alias) in self._records and str(alias) != existing.id):
+                raise ValueError("MULTIMODAL_EMBEDDING_ALIAS_EXISTS")
         updated = existing.model_copy(update={**values, "updated_at": utc_now()})
         updated = MultimodalEmbeddingModelProfile.model_validate(updated.model_dump())
         self._records[existing.id] = updated
         return updated
 
     def delete(self, profile_id: str) -> MultimodalEmbeddingModelProfile:
-        existing = self.get(profile_id)
+        existing = self.get_by_id_or_alias(profile_id)
         del self._records[existing.id]
         return existing
 
     def list(self) -> List[MultimodalEmbeddingModelProfile]:
-        return sorted(self._records.values(), key=lambda item: (item.name.lower(), item.created_at))
+        return sorted(self._records.values(), key=lambda item: (item.alias, item.created_at))
 
 
 class VisionProfileStore:
@@ -683,6 +704,8 @@ class VisionProfileStore:
     def create(self, profile: VisionModelProfile) -> VisionModelProfile:
         if profile.id in self._records:
             raise ValueError(f"Vision profile id already exists: {profile.id}")
+        if self.find_by_alias(profile.alias) is not None or profile.alias in self._records:
+            raise ValueError("VISION_MODEL_ALIAS_EXISTS")
         self._records[profile.id] = profile
         return profile
 
@@ -692,20 +715,39 @@ class VisionProfileStore:
         except KeyError as exc:
             raise KeyError(f"unknown vision profile id: {profile_id}") from exc
 
+    def find_by_alias(self, alias: str) -> Optional[VisionModelProfile]:
+        for profile in self._records.values():
+            if profile.alias == alias:
+                return profile
+        return None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> VisionModelProfile:
+        if profile_id_or_alias in self._records:
+            return self._records[profile_id_or_alias]
+        profile = self.find_by_alias(profile_id_or_alias)
+        if profile is not None:
+            return profile
+        raise KeyError(f"unknown vision profile: {profile_id_or_alias}")
+
     def update(self, profile_id: str, values: Dict[str, Any]) -> VisionModelProfile:
-        existing = self.get(profile_id)
+        existing = self.get_by_id_or_alias(profile_id)
+        alias = values.get("alias")
+        if alias is not None:
+            conflict = self.find_by_alias(str(alias))
+            if (conflict is not None and conflict.id != existing.id) or (str(alias) in self._records and str(alias) != existing.id):
+                raise ValueError("VISION_MODEL_ALIAS_EXISTS")
         updated = existing.model_copy(update={**values, "updated_at": utc_now()})
         updated = VisionModelProfile.model_validate(updated.model_dump())
         self._records[existing.id] = updated
         return updated
 
     def delete(self, profile_id: str) -> VisionModelProfile:
-        existing = self.get(profile_id)
+        existing = self.get_by_id_or_alias(profile_id)
         del self._records[existing.id]
         return existing
 
     def list(self) -> List[VisionModelProfile]:
-        return sorted(self._records.values(), key=lambda item: (item.name.lower(), item.created_at))
+        return sorted(self._records.values(), key=lambda item: (item.alias, item.created_at))
 
 
 class LLMDefaultsStore:

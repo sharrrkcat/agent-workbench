@@ -300,6 +300,7 @@ class MultimodalEmbeddingModelProfileRecord(SQLModel, table=True):
     __tablename__ = "multimodal_embedding_model_profiles"
 
     id: str = Field(primary_key=True)
+    alias: str = Field(index=True, unique=True)
     name: str
     description: str = ""
     notes: str = ""
@@ -325,6 +326,7 @@ class VisionModelProfileRecord(SQLModel, table=True):
     __tablename__ = "vision_model_profiles"
 
     id: str = Field(primary_key=True)
+    alias: str = Field(index=True, unique=True)
     name: str
     description: str = ""
     notes: str = ""
