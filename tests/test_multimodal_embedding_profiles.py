@@ -152,6 +152,43 @@ def test_image_embedding_inventory_returns_safe_refs_and_no_optional_imports(tmp
     assert "open_clip" not in checked_specs
 
 
+def test_image_embedding_model_inventory_endpoint_returns_internal_transformers_safe_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    models_root = tmp_path / "data" / "models"
+    image_dir = models_root / "image_embeddings" / "clip-local"
+    image_dir.mkdir(parents=True)
+    (image_dir / "config.json").write_text("{}", encoding="utf-8")
+    (models_root / "image_embeddings" / "gguf-file.gguf").write_text("", encoding="utf-8")
+    llm_dir = models_root / "llms" / "qwen"
+    llm_dir.mkdir(parents=True)
+    (llm_dir / "config.json").write_text("{}", encoding="utf-8")
+    reranker_dir = models_root / "rerankers" / "ranker"
+    reranker_dir.mkdir(parents=True)
+    (reranker_dir / "config.json").write_text("{}", encoding="utf-8")
+    vision_dir = models_root / "vision" / "florence"
+    vision_dir.mkdir(parents=True)
+    (vision_dir / "config.json").write_text("{}", encoding="utf-8")
+
+    response = client.get("/api/inference/model-inventory?kind=image_embedding")
+    invalid = client.get("/api/inference/model-inventory?kind=llm")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["kind"] == "image_embedding"
+    assert payload["models_root"] == "data/models"
+    assert payload["items"] == [
+        {
+            "ref": "image_embedding/clip-local",
+            "name": "clip-local",
+            "kind": "image_embedding",
+            "relative_path": "image_embeddings/clip-local",
+        }
+    ]
+    assert str(tmp_path) not in str(payload)
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "INVALID_MODEL_INVENTORY_KIND"
+
+
 def test_model_lists_include_multimodal_only_in_workbench_native(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)

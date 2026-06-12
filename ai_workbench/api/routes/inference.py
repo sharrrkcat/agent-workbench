@@ -32,6 +32,7 @@ from ai_workbench.core.vision_profiles import (
     VisionModelProfilePatch,
     vision_profile_updates,
 )
+from ai_workbench.core.provider_inventory import scan_internal_provider_models
 
 
 router = APIRouter(prefix="/api/inference", tags=["inference"])
@@ -75,6 +76,36 @@ def get_status(request: Request, state: RuntimeState = Depends(get_state)) -> di
 def list_models(request: Request, state: RuntimeState = Depends(get_state)) -> dict:
     _guard_workbench_request(request, state)
     return workbench_model_list(state)
+
+
+@router.get("/model-inventory")
+def list_model_inventory(kind: str, state: RuntimeState = Depends(get_state)) -> dict:
+    if kind not in {"image_embedding", "vision"}:
+        raise_error(422, "INVALID_MODEL_INVENTORY_KIND", "Model inventory kind must be image_embedding or vision.")
+    inventory = scan_internal_provider_models("internal_transformers", state.repo_root)
+    items = []
+    for item in inventory["models"]:
+        if item.get("kind") != kind:
+            continue
+        if item.get("source") != "internal" or item.get("backend") != "internal_transformers":
+            continue
+        ref = str(item.get("model_ref") or item.get("id") or "")
+        if not ref.startswith(f"{kind}/"):
+            continue
+        items.append(
+            {
+                "ref": ref,
+                "name": str(item.get("name") or item.get("display_name") or ref.removeprefix(f"{kind}/")),
+                "kind": kind,
+                "relative_path": item.get("relative_path"),
+            }
+        )
+    return {
+        "kind": kind,
+        "models_root": inventory["models_root"],
+        "items": items,
+        "warnings": inventory["warnings"],
+    }
 
 
 @router.get("/multimodal-embedding-models")

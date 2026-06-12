@@ -361,6 +361,8 @@ export type LlmProviderStatusRefreshResponse = {
   providers: LlmProviderStatus[];
 };
 
+export const LOCAL_TRANSFORMERS_PROVIDER = 'internal_transformers' as const;
+
 export type LlmProviderProfile = {
   id: string;
   name: string;
@@ -520,6 +522,113 @@ export type RerankerModelProfileInput = Partial<
     | 'notes'
   >
 >;
+
+export type MultimodalEmbeddingArchitecture = 'clip' | 'open_clip' | 'siglip2' | 'dinov2';
+export type MultimodalEmbeddingBackend = 'auto' | 'transformers' | 'open_clip';
+export type MultimodalEmbeddingInputType = 'image' | 'text';
+export type MultimodalEmbeddingPoolingStrategy = 'cls' | 'mean' | 'pooler' | 'model_default';
+
+export type MultimodalEmbeddingModelProfile = {
+  id: string;
+  name: string;
+  description: string;
+  notes: string;
+  enabled: boolean;
+  external_inference_enabled: boolean;
+  provider_profile_id?: string | null;
+  provider_model_id: string;
+  architecture: MultimodalEmbeddingArchitecture;
+  backend: MultimodalEmbeddingBackend;
+  embedding_space?: string | null;
+  dimensions?: number | null;
+  normalize_default: boolean;
+  supported_input_types: MultimodalEmbeddingInputType[];
+  preprocessing_signature?: string | null;
+  pooling_strategy: MultimodalEmbeddingPoolingStrategy;
+  max_batch_size?: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MultimodalEmbeddingModelProfileInput = Partial<
+  Pick<
+    MultimodalEmbeddingModelProfile,
+    | 'name'
+    | 'description'
+    | 'notes'
+    | 'enabled'
+    | 'external_inference_enabled'
+    | 'provider_profile_id'
+    | 'provider_model_id'
+    | 'architecture'
+    | 'backend'
+    | 'embedding_space'
+    | 'dimensions'
+    | 'normalize_default'
+    | 'supported_input_types'
+    | 'preprocessing_signature'
+    | 'pooling_strategy'
+    | 'max_batch_size'
+    | 'metadata'
+  >
+>;
+
+export type VisionArchitecture = 'florence2';
+export type VisionBackend = 'transformers';
+export type VisionTask = 'caption' | 'detailed_caption' | 'ocr' | 'object_detection';
+
+export type VisionModelProfile = {
+  id: string;
+  name: string;
+  description: string;
+  notes: string;
+  enabled: boolean;
+  external_inference_enabled: boolean;
+  provider_profile_id?: string | null;
+  provider_model_id: string;
+  architecture: VisionArchitecture;
+  backend: VisionBackend;
+  supported_tasks: VisionTask[];
+  max_batch_size?: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type VisionModelProfileInput = Partial<
+  Pick<
+    VisionModelProfile,
+    | 'name'
+    | 'description'
+    | 'notes'
+    | 'enabled'
+    | 'external_inference_enabled'
+    | 'provider_profile_id'
+    | 'provider_model_id'
+    | 'architecture'
+    | 'backend'
+    | 'supported_tasks'
+    | 'max_batch_size'
+    | 'metadata'
+  >
+>;
+
+export type InferenceModelInventoryKind = 'image_embedding' | 'vision';
+
+export type InferenceModelInventoryItem = {
+  ref: string;
+  name: string;
+  kind: InferenceModelInventoryKind;
+  relative_path?: string;
+};
+
+export type InferenceModelInventoryResponse = {
+  kind: InferenceModelInventoryKind;
+  models_root: string;
+  items: InferenceModelInventoryItem[];
+  warnings: string[];
+};
 
 export type KnowledgeBase = {
   id: string;

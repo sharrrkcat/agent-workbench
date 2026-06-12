@@ -1428,7 +1428,7 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "'knowledge'" in nav
     assert "labelKey: 'sections.knowledge'" in nav
     assert "export type KnowledgeSettingsCategory = KnowledgeSettingsSubsection" in object_list
-    assert "export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'knowledge_bases'" in read_frontend("types.ts")
+    assert "export type KnowledgeSettingsCategory = 'defaults' | 'embedding_models' | 'reranker_models' | 'knowledge_bases'" in read_frontend("types.ts")
     assert "settings:subsections.defaults" in object_list
     assert "settings:subsections.embeddingModels" in object_list
     assert "settings:subsections.knowledgeBases" in object_list
@@ -1440,16 +1440,15 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "onKnowledgeSubsectionChange={changeKnowledgeSubsection}" in console
     assert "<KnowledgeSettingsDetail" in panel
 
-    assert "knowledge:sections.localModels" in knowledge
     assert "knowledge:sections.embedding" in knowledge
     assert "knowledge:sections.reranker" in knowledge
     assert "t('sections.retrieval')" in knowledge
     assert "t('sections.chunking')" in knowledge
     assert "t('sections.indexLimits')" in knowledge
     assert "t('sections.contextInjection')" in knowledge
-    assert "knowledge:actions.scanLocalModels" in knowledge
     assert "knowledge:actions.testReranker" in knowledge
     assert "knowledge:actions.test" in knowledge
+    assert "llm:actions.refreshModels" in knowledge
     assert "empty.noEmbeddingProfiles" in knowledge
     assert "empty.noKnowledgeBases" in knowledge
     assert "empty.noKnowledgeBases" in knowledge
@@ -1459,12 +1458,9 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "api.createPastedKnowledgeSource" in knowledge
     assert "api.deleteKnowledgeSource" in knowledge
     assert "api.reindexKnowledgeSource" in knowledge
-    assert "api.scanKnowledgeModels()" in knowledge
     assert "api.updateKnowledgeSettings" in knowledge
     assert "api.testEmbeddingModel" in knowledge
     assert "api.rerankKnowledge" in knowledge
-    assert "backendLabel(scan?.backend, t)" in knowledge
-    assert "knowledge:backend.unavailableOptionalDeps" in knowledge
 
     assert "/api/knowledge/settings" in client
     assert "/api/knowledge/models/scan" in client
@@ -1473,6 +1469,51 @@ def test_knowledge_settings_uses_three_column_console_and_api_wiring() -> None:
     assert "/api/knowledge/bases/${knowledgeBaseId}/sources" in client
     assert "/api/knowledge/sources/${sourceId}/reindex" in client
     assert "/api/knowledge/rerank" in client
+
+
+def test_multimodal_and_vision_profile_client_contracts() -> None:
+    client = read_frontend("api/client.ts")
+    types = read_frontend("types.ts")
+
+    assert "export const LOCAL_TRANSFORMERS_PROVIDER = 'internal_transformers' as const;" in types
+    assert "export type MultimodalEmbeddingArchitecture = 'clip' | 'open_clip' | 'siglip2' | 'dinov2';" in types
+    assert "export type MultimodalEmbeddingBackend = 'auto' | 'transformers' | 'open_clip';" in types
+    assert "export type MultimodalEmbeddingInputType = 'image' | 'text';" in types
+    assert "export type MultimodalEmbeddingPoolingStrategy = 'cls' | 'mean' | 'pooler' | 'model_default';" in types
+    assert "export type MultimodalEmbeddingModelProfile = {" in types
+    assert "external_inference_enabled: boolean;" in types
+    assert "provider_model_id: string;" in types
+    assert "supported_input_types: MultimodalEmbeddingInputType[];" in types
+    assert "export type MultimodalEmbeddingModelProfileInput = Partial<" in types
+
+    assert "export type VisionArchitecture = 'florence2';" in types
+    assert "export type VisionBackend = 'transformers';" in types
+    assert "export type VisionTask = 'caption' | 'detailed_caption' | 'ocr' | 'object_detection';" in types
+    assert "export type VisionModelProfile = {" in types
+    assert "supported_tasks: VisionTask[];" in types
+    assert "export type VisionModelProfileInput = Partial<" in types
+
+    assert "export type InferenceModelInventoryKind = 'image_embedding' | 'vision';" in types
+    assert "export type InferenceModelInventoryItem = {" in types
+    assert "ref: string;" in types
+    assert "kind: InferenceModelInventoryKind;" in types
+    assert "export type InferenceModelInventoryResponse = {" in types
+
+    assert "MultimodalEmbeddingModelProfile," in client
+    assert "VisionModelProfile," in client
+    assert "InferenceModelInventoryKind," in client
+    assert "listMultimodalEmbeddingModels" in client
+    assert "createMultimodalEmbeddingModel" in client
+    assert "patchMultimodalEmbeddingModel" in client
+    assert "deleteMultimodalEmbeddingModel" in client
+    assert "/api/inference/multimodal-embedding-models" in client
+    assert "listVisionModels" in client
+    assert "createVisionModel" in client
+    assert "patchVisionModel" in client
+    assert "deleteVisionModel" in client
+    assert "/api/inference/vision-models" in client
+    assert "listInferenceModelInventory" in client
+    assert "/api/inference/model-inventory?kind=${encodeURIComponent(kind)}" in client
 
 
 def test_mode_changed_separator_renders_like_model_changed_separator() -> None:

@@ -267,6 +267,40 @@ def test_vision_inventory_returns_safe_refs_without_optional_imports(tmp_path: P
     assert "PIL" not in checked_specs
 
 
+def test_vision_model_inventory_endpoint_returns_internal_transformers_safe_refs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    models_root = tmp_path / "data" / "models"
+    vision_dir = models_root / "vision" / "florence-local"
+    vision_dir.mkdir(parents=True)
+    (vision_dir / "config.json").write_text("{}", encoding="utf-8")
+    (models_root / "vision" / "not-a-directory.gguf").write_text("", encoding="utf-8")
+    image_dir = models_root / "image_embeddings" / "clip-local"
+    image_dir.mkdir(parents=True)
+    (image_dir / "config.json").write_text("{}", encoding="utf-8")
+    embedding_dir = models_root / "embeddings" / "bge"
+    embedding_dir.mkdir(parents=True)
+    (embedding_dir / "config.json").write_text("{}", encoding="utf-8")
+    reranker_dir = models_root / "rerankers" / "ranker"
+    reranker_dir.mkdir(parents=True)
+    (reranker_dir / "config.json").write_text("{}", encoding="utf-8")
+
+    response = client.get("/api/inference/model-inventory?kind=vision")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["kind"] == "vision"
+    assert payload["models_root"] == "data/models"
+    assert payload["items"] == [
+        {
+            "ref": "vision/florence-local",
+            "name": "florence-local",
+            "kind": "vision",
+            "relative_path": "vision/florence-local",
+        }
+    ]
+    assert str(tmp_path) not in str(payload)
+
+
 def test_model_lists_include_vision_only_in_workbench_native(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)

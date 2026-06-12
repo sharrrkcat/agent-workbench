@@ -32,6 +32,12 @@ import type {
   EmbeddingModelProfileInput,
   RerankerModelProfile,
   RerankerModelProfileInput,
+  MultimodalEmbeddingModelProfile,
+  MultimodalEmbeddingModelProfileInput,
+  VisionModelProfile,
+  VisionModelProfileInput,
+  InferenceModelInventoryKind,
+  InferenceModelInventoryResponse,
   KnowledgeBase,
   KnowledgeBaseInput,
   KnowledgeOrigin,
@@ -325,6 +331,34 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  listMultimodalEmbeddingModels: () => request<MultimodalEmbeddingModelProfile[]>('/api/inference/multimodal-embedding-models'),
+  createMultimodalEmbeddingModel: (profile: MultimodalEmbeddingModelProfileInput) =>
+    request<MultimodalEmbeddingModelProfile>('/api/inference/multimodal-embedding-models', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchMultimodalEmbeddingModel: (profileId: string, patch: MultimodalEmbeddingModelProfileInput) =>
+    request<MultimodalEmbeddingModelProfile>(`/api/inference/multimodal-embedding-models/${profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteMultimodalEmbeddingModel: (profileId: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/inference/multimodal-embedding-models/${profileId}`, { method: 'DELETE' }),
+  listVisionModels: () => request<VisionModelProfile[]>('/api/inference/vision-models'),
+  createVisionModel: (profile: VisionModelProfileInput) =>
+    request<VisionModelProfile>('/api/inference/vision-models', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchVisionModel: (profileId: string, patch: VisionModelProfileInput) =>
+    request<VisionModelProfile>(`/api/inference/vision-models/${profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteVisionModel: (profileId: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/inference/vision-models/${profileId}`, { method: 'DELETE' }),
+  listInferenceModelInventory: (kind: InferenceModelInventoryKind) =>
+    request<InferenceModelInventoryResponse>(`/api/inference/model-inventory?kind=${encodeURIComponent(kind)}`),
   rerankKnowledge: (payload: { query: string; documents: { id: string; text: string }[] }) =>
     request<{ ok: boolean; model_path?: string; model_profile_id?: string; results: { id: string; score: number }[] }>('/api/knowledge/rerank', {
       method: 'POST',
