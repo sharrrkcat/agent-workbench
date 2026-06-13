@@ -12,6 +12,17 @@ from fastapi.exceptions import RequestValidationError
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
 from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, inference, intent, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
+from ai_workbench.core.inference.observability import (
+    REQUEST_ID_HEADER,
+    elapsed_ms,
+    is_inference_observability_path,
+    log_access_event,
+    log_unhandled_exception,
+    monotonic_time,
+    reset_current_request_id,
+    resolve_request_id,
+    set_current_request_id,
+)
 
 
 @asynccontextmanager
@@ -72,10 +83,48 @@ def create_app(
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def inference_observability_middleware(request, call_next):
+        path = request.url.path
+        if not is_inference_observability_path(path):
+            return await call_next(request)
+
+        repo_root = getattr(app.state.runtime_state, "repo_root", None)
+        request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+        token = set_current_request_id(request_id)
+        request.state.inference_request_id = request_id
+        start = monotonic_time()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            response.headers[REQUEST_ID_HEADER] = request_id
+            return response
+        except Exception as exc:
+            log_unhandled_exception(
+                repo_root=repo_root,
+                method=request.method,
+                path=path,
+                exception=exc,
+            )
+            raise
+        finally:
+            log_access_event(
+                repo_root=repo_root,
+                method=request.method,
+                path=path,
+                status_code=status_code,
+                duration_ms=elapsed_ms(start),
+                error_code=getattr(request.state, "inference_error_code", None),
+            )
+            reset_current_request_id(token)
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request, exc: HTTPException):
         if isinstance(exc.detail, dict) and "error" in exc.detail:
+            _record_inference_error_code(request, exc.detail)
             return JSONResponse(status_code=exc.status_code, content=exc.detail)
+        _record_inference_error_code(request, {"error": {"code": "HTTP_ERROR"}})
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": "HTTP_ERROR", "message": str(exc.detail)}},
@@ -85,6 +134,7 @@ def create_app(
     async def validation_exception_handler(request, exc: RequestValidationError):
         message = str(exc.errors()[0].get("msg", "Invalid request")) if exc.errors() else "Invalid request"
         code = "INVALID_USER_CONFIG" if "user_config" in str(exc.errors()) else "VALIDATION_ERROR"
+        _record_inference_error_code(request, {"error": {"code": code}})
         return JSONResponse(status_code=422, content={"error": {"code": code, "message": message}})
 
     app.include_router(agents.router)
@@ -160,6 +210,18 @@ def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
 def _is_backend_path(path: str) -> bool:
     first_segment = path.split("/", 1)[0]
     return first_segment in {"api", "v1", "docs", "openapi.json", "redoc"}
+
+
+def _record_inference_error_code(request, detail: dict) -> None:
+    try:
+        if not is_inference_observability_path(request.url.path):
+            return
+        error = detail.get("error") if isinstance(detail, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        if code:
+            request.state.inference_error_code = str(code)
+    except Exception:
+        return
 
 
 class LazyApp:

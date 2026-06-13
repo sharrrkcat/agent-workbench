@@ -27,8 +27,8 @@ The service must remain stateless for external API requests. Request payloads
 and inference outputs are never project data.
 
 Deferred features: Jina CLIP v2, BLIP, JoyCaption, text-to-image, vector
-database / image search hosting, multi-tenant billing, and a generic
-Triton-style tensor protocol.
+database / image search hosting, multi-tenant billing, frontend log viewing,
+and a generic Triton-style tensor protocol.
 
 ## Ownership
 
@@ -53,6 +53,9 @@ The service is disabled by default through General settings:
 When disabled, every external inference route returns a stable disabled error
 and must not call LLM runtimes, embedding services, attachment persistence,
 Knowledge indexing, Agent runners, Command runners, or event logging paths.
+Disabled requests may still emit privacy-safe operational file logs for request
+id correlation; these logs are not Sessions, Messages, Runs, RunEvents, or
+EventBus persistence.
 
 Default exposure is localhost-oriented. Any future non-localhost serving,
 reverse proxy use, or CORS expansion must be explicit and documented here.
@@ -102,9 +105,9 @@ JSON bodies such as arrays, strings, numbers, and booleans are rejected with
 `INFERENCE_INVALID_REQUEST` and do not clear cache state.
 
 Streaming chat completions, `/v1/responses`, `/v1/completions`, similarity
-scoring, BLIP/JoyCaption, text-to-image, operational log persistence,
-Capability wrappers, frontend vision UI, OpenAI-compatible vision endpoints,
-and global `/api/runtime/free-memory` vision targets are deferred.
+scoring, BLIP/JoyCaption, text-to-image, Capability wrappers, frontend log
+viewing, OpenAI-compatible vision endpoints, and global
+`/api/runtime/free-memory` vision targets are deferred.
 
 ## Stateless Data Boundary
 
@@ -120,15 +123,16 @@ captions/OCR/boxes, complete request bodies, complete response bodies,
 API-uploaded images as chat attachments, or API results as messages, runs,
 Knowledge rows, session state, or Agent state.
 
-Allowed compact operational metadata, if implemented later: request id,
-endpoint, status, duration, model profile id, architecture, input counts, input
-byte sizes, vector dimensions, error code, warning code, timestamp, API key id
-hash or caller label, runtime status/cache state, and best-effort unload
+Allowed compact operational file log metadata: request id, endpoint, status,
+duration, model profile id, architecture, task name, input counts, input byte
+sizes, vector dimensions, error code, warning code, timestamp, API key id hash
+or caller label, runtime status/cache state, safe exception class names,
+sanitized cause chains, compact relative stack frames, and best-effort unload
 outcomes.
 
 Forbidden logs and metadata include raw text, raw output, vectors, raw image
 bytes, base64, data URLs, full request bodies, full response bodies, API keys,
-and provider secrets.
+provider secrets, and full absolute local paths.
 
 ## Safe And Unsafe Paths
 
@@ -273,6 +277,30 @@ Invalid multimodal runtime outputs, including non-numeric vectors, non-finite
 values, wrong vector counts, and ragged vectors, are also normalized to
 `PROVIDER_ERROR` or the equivalent compact provider/runtime error without
 leaking raw values.
+
+## Request IDs And Local Logs
+
+External inference routes emit an `X-Request-ID` response header. A short safe
+incoming `X-Request-ID` header is preserved; unsafe or missing values are
+replaced with a generated UUID. Workbench-native error bodies use the same
+request id as the response header. OpenAI-compatible error bodies keep their
+OpenAI-style shape and should be correlated through the response header.
+
+Operational logs are JSONL files under `data/logs/inference/inference.jsonl`
+with local rotation. These logs are intended for local troubleshooting and must
+not be written to Sessions, Messages, Runs, RunSteps, RunEvents, Knowledge,
+attachments, or EventBus streams. Each access event records compact request
+metadata such as request id, method, path, status, duration, route family, and
+error code when available. Runtime/provider failures may additionally record
+safe context such as model ref, task, input counts, exception class names,
+sanitized cause chains, and compact relative stack frames.
+
+Logs must not contain raw request bodies, raw response bodies, prompts, raw text
+inputs, generated text, OCR/caption text, object labels from model output,
+vectors, image bytes, base64 payloads, data URLs, API keys, provider secrets,
+or full absolute local paths. Uvicorn access logs intentionally remain
+unchanged; request id correlation belongs to the response header and local
+inference JSONL logs.
 
 ## Runtime Cache And Unload
 

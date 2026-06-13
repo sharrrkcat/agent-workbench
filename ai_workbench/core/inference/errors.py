@@ -3,6 +3,8 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from ai_workbench.core.inference.observability import current_request_id
+
 
 class InferenceErrorCode(str, Enum):
     SERVICE_DISABLED = "INFERENCE_SERVICE_DISABLED"
@@ -52,7 +54,7 @@ DEFAULT_MESSAGES = {
 
 
 def request_id() -> str:
-    return str(uuid4())
+    return current_request_id() or str(uuid4())
 
 
 def workbench_error_payload(
