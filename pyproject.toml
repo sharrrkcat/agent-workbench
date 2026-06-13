@@ -19,8 +19,21 @@ dependencies = [
 
 [project.optional-dependencies]
 knowledge = [
+    "einops>=0.8",
+    "Pillow>=10",
     "sentence-transformers>=3.0",
+    "timm>=1.0",
     "torch>=2.2",
+    "torchvision>=0.17",
+    "transformers>=4.40",
+]
+knowledge-cuda128 = [
+    "einops>=0.8",
+    "Pillow>=10",
+    "sentence-transformers>=3.0",
+    "timm>=1.0",
+    "torch>=2.2",
+    "torchvision>=0.17",
     "transformers>=4.40",
 ]
 
@@ -32,3 +45,24 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "knowledge" },
+        { extra = "knowledge-cuda128" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", extra = "knowledge-cuda128" },
+]
+torchvision = [
+    { index = "pytorch-cu128", extra = "knowledge-cuda128" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

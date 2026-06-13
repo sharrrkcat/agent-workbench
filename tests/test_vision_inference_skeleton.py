@@ -17,10 +17,12 @@ from ai_workbench.core.inference.multimodal_runtime import (
 from ai_workbench.core.inference.stateless_guard import assert_snapshot_unchanged, capture_stateless_persistence_snapshot
 from ai_workbench.core.inference.vision_runtime import (
     VisionRuntimeError,
+    VisionRuntimeInvalidRequest,
     VisionRuntimeResult,
     clear_vision_runtime_cache,
     clear_vision_runtime_factories,
     register_vision_runtime_factory,
+    vision_runtime_cache_status,
 )
 from ai_workbench.core.provider_inventory import scan_internal_provider_models
 from ai_workbench.db.database import get_engine, init_db
@@ -564,11 +566,111 @@ def install_fake_florence2_backend(monkeypatch: pytest.MonkeyPatch, *, task_outp
     return calls
 
 
+def install_fake_florence2_transformers_modules(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    config_error: Exception | None = None,
+    processor_error: Exception | None = None,
+    model_error: Exception | None = None,
+) -> dict[str, object]:
+    calls: dict[str, object] = {"config": 0, "model": 0, "processor": 0, "unloaded": 0}
+
+    torch_module = ModuleType("torch")
+
+    class cuda:
+        @staticmethod
+        def is_available() -> bool:
+            return False
+
+        @staticmethod
+        def empty_cache() -> None:
+            calls["unloaded"] = int(calls["unloaded"]) + 1
+
+    class backends:
+        class mps:
+            @staticmethod
+            def is_available() -> bool:
+                return False
+
+    torch_module.cuda = cuda
+    torch_module.backends = backends
+
+    transformers_module = ModuleType("transformers")
+    transformers_module.__version__ = "5.0.0-test"
+
+    class PretrainedConfig:
+        pass
+
+    class PreTrainedModel:
+        pass
+
+    class PreTrainedTokenizerBase:
+        pass
+
+    class AutoConfig:
+        @staticmethod
+        def from_pretrained(path, **kwargs):
+            calls["config"] = int(calls["config"]) + 1
+            calls["config_kwargs"] = kwargs
+            if config_error is not None:
+                raise config_error
+            return PretrainedConfig()
+
+    class AutoModelForCausalLM:
+        @staticmethod
+        def from_pretrained(path, **kwargs):
+            calls["model"] = int(calls["model"]) + 1
+            calls["model_kwargs"] = kwargs
+            if model_error is not None:
+                raise model_error
+
+            class Model(PreTrainedModel):
+                def to(self, device):
+                    return self
+
+                def eval(self):
+                    return None
+
+            return Model()
+
+    class AutoProcessor:
+        @staticmethod
+        def from_pretrained(path, **kwargs):
+            calls["processor"] = int(calls["processor"]) + 1
+            calls["processor_kwargs"] = kwargs
+            if processor_error is not None:
+                raise processor_error
+
+            class Tokenizer(PreTrainedTokenizerBase):
+                def __init__(self) -> None:
+                    self.extra_special_tokens = {"image_token": "<image>"}
+                    calls["observed_additional_special_tokens"] = self.additional_special_tokens
+
+            class Processor:
+                def __init__(self) -> None:
+                    self.tokenizer = Tokenizer()
+
+            return Processor()
+
+    transformers_module.PretrainedConfig = PretrainedConfig
+    transformers_module.PreTrainedModel = PreTrainedModel
+    transformers_module.PreTrainedTokenizerBase = PreTrainedTokenizerBase
+    transformers_module.AutoConfig = AutoConfig
+    transformers_module.AutoModelForCausalLM = AutoModelForCausalLM
+    transformers_module.AutoProcessor = AutoProcessor
+
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    monkeypatch.setitem(sys.modules, "PIL", ModuleType("PIL"))
+    monkeypatch.setitem(sys.modules, "transformers", transformers_module)
+    calls["tokenizer_base_cls"] = PreTrainedTokenizerBase
+    return calls
+
+
 def test_real_florence2_runtime_load_is_lazy_until_valid_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "lazy-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/lazy-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/lazy-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     calls = install_fake_florence2_backend(monkeypatch)
 
     status = client.get("/api/inference/status")
@@ -595,7 +697,7 @@ def test_invalid_florence2_image_fails_before_model_load(tmp_path: Path, monkeyp
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "bad-image-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/bad-image-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/bad-image-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     calls = {"load": 0}
 
     def fail_load(self):
@@ -626,7 +728,7 @@ def test_invalid_florence2_image_fails_before_model_load(tmp_path: Path, monkeyp
 def test_missing_local_florence2_model_folder_returns_sanitized_provider_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
-    profile = create_vision_profile(client, provider_model_id="vision/missing-florence2-folder", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/missing-florence2-folder", external_inference_enabled=True, metadata={"trust_remote_code": True})
     monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
 
     response = client.post(
@@ -648,7 +750,7 @@ def test_missing_florence2_optional_dependency_returns_sanitized_provider_error(
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "missing-deps-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/missing-deps-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/missing-deps-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
 
     def fail_load(self):
         raise VisionRuntimeError("Florence2 runtime dependencies are not installed: fake-secret-transformers.")
@@ -683,6 +785,60 @@ def test_florence2_trust_remote_code_is_explicit_metadata_opt_in(tmp_path: Path,
 
     assert default_runtime.trust_remote_code is False
     assert trusted_runtime.trust_remote_code is True
+
+
+def test_florence2_runtime_fails_fast_without_trust_remote_code_before_model_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "trust-required")
+    profile = create_vision_profile(client, provider_model_id="vision/trust-required", external_inference_enabled=True)
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    calls = install_fake_florence2_transformers_modules(monkeypatch)
+
+    with pytest.raises(VisionRuntimeInvalidRequest) as exc_info:
+        runtime._load()
+
+    assert "metadata.trust_remote_code=true" in str(exc_info.value)
+    assert calls["model"] == 0
+    assert calls["processor"] == 0
+
+
+def test_florence2_http_returns_invalid_request_when_trust_remote_code_is_false(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "trust-http")
+    profile = create_vision_profile(client, provider_model_id="vision/trust-http", external_inference_enabled=True)
+    calls = {"load": 0}
+
+    def fail_load(self):
+        calls["load"] += 1
+        raise AssertionError("AutoModelForCausalLM.from_pretrained must not run")
+
+    monkeypatch.setattr(Florence2VisionRuntime, "_load", fail_load)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    rendered = str(response.json()).lower()
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INFERENCE_INVALID_REQUEST"
+    assert "metadata.trust_remote_code=true" in response.json()["error"]["message"]
+    assert calls["load"] == 0
+    assert "aaaa" not in rendered
+    assert "traceback" not in rendered
 
 
 def test_florence2_load_passes_trust_remote_code_only_during_lazy_local_loading(
@@ -721,6 +877,9 @@ def test_florence2_load_passes_trust_remote_code_only_during_lazy_local_loading(
             self.backends = backends
 
     class FakeTransformersModule(ModuleType):
+        class PretrainedConfig:
+            pass
+
         class AutoModelForCausalLM:
             @staticmethod
             def from_pretrained(path, **kwargs):
@@ -755,8 +914,850 @@ def test_florence2_load_passes_trust_remote_code_only_during_lazy_local_loading(
     assert torch is not None
     assert records["model"][0]["kwargs"]["local_files_only"] is True
     assert records["model"][0]["kwargs"]["trust_remote_code"] is True
+    assert records["model"][0]["kwargs"]["attn_implementation"] == "eager"
     assert records["processor"][0]["kwargs"]["local_files_only"] is True
     assert records["processor"][0]["kwargs"]["trust_remote_code"] is True
+    assert records["processor"][0]["kwargs"]["attn_implementation"] == "eager"
+
+
+def test_florence2_generation_casts_float_inputs_to_model_dtype(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "dtype-cast")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/dtype-cast",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    records: dict[str, object] = {}
+
+    class Tensor:
+        def __init__(self, *, dtype: str, floating: bool) -> None:
+            self.dtype = dtype
+            self.floating = floating
+            self.to_calls: list[dict[str, object]] = []
+
+        def is_floating_point(self) -> bool:
+            return self.floating
+
+        def to(self, *args, **kwargs):
+            self.to_calls.append({"args": args, "kwargs": kwargs})
+            if args:
+                self.device = args[0]
+            if "device" in kwargs:
+                self.device = kwargs["device"]
+            if "dtype" in kwargs:
+                self.dtype = kwargs["dtype"]
+            elif len(args) > 1:
+                self.dtype = args[1]
+            return self
+
+    class BatchEncoding:
+        def __init__(self) -> None:
+            self.pixel_values = Tensor(dtype="float32", floating=True)
+            self.input_ids = Tensor(dtype="int64", floating=False)
+
+        def items(self):
+            return {"pixel_values": self.pixel_values, "input_ids": self.input_ids}.items()
+
+    class Model:
+        dtype = "float16"
+
+        def generate(self, **kwargs):
+            records["pixel_values"] = kwargs["pixel_values"]
+            records["input_ids"] = kwargs["input_ids"]
+            return ["generated_ids"]
+
+    class Processor:
+        def __init__(self) -> None:
+            self.batch = BatchEncoding()
+
+        def __call__(self, *, text, images, return_tensors):
+            return self.batch
+
+        def batch_decode(self, generated_ids, skip_special_tokens=False):
+            return ["generated text"]
+
+        def post_process_generation(self, generated_text, *, task, image_size):
+            return {task: "typed caption"}
+
+    class Torch:
+        float16 = "float16"
+        float32 = "float32"
+
+        @staticmethod
+        def inference_mode():
+            class Context:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return False
+
+            return Context()
+
+    processor = Processor()
+
+    def fake_load(self):
+        self.device = "cuda"
+        return Model(), processor, Torch
+
+    monkeypatch.setattr(Florence2VisionRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
+
+    result = runtime.run(
+        profile=client.app.state.runtime_state.vision_profiles.get(profile["id"]),
+        task="caption",
+        input=type("Input", (), {"image_base64": "AAAA"})(),
+        options={},
+    )
+
+    assert result.data == {"type": "text", "text": "typed caption"}
+    assert records["pixel_values"].dtype == "float16"
+    assert records["input_ids"].dtype == "int64"
+    assert processor.batch.pixel_values.to_calls[-1]["kwargs"] == {"device": "cuda", "dtype": "float16"}
+    assert processor.batch.input_ids.to_calls[-1]["kwargs"] == {"device": "cuda"}
+
+
+def test_florence2_load_converts_low_precision_cpu_model_to_float32(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "cpu-float32")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/cpu-float32",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+
+    class FakeTorchModule(ModuleType):
+        float16 = "float16"
+        float32 = "float32"
+        half = "float16"
+
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+    class FakeTransformersModule(ModuleType):
+        class PretrainedConfig:
+            pass
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Model:
+                    def __init__(self) -> None:
+                        self.dtype = "float16"
+                        self.to_device = None
+                        self.float_called = False
+
+                    def to(self, device):
+                        self.to_device = device
+                        return self
+
+                    def float(self):
+                        self.float_called = True
+                        self.dtype = "float32"
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Processor:
+                    pass
+
+                return Processor()
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    model, processor, torch = runtime._load()
+
+    assert model.to_device == "cpu"
+    assert model.float_called is True
+    assert model.dtype == "float32"
+    assert processor is not None
+    assert torch is not None
+
+
+def test_florence2_load_shims_missing_tokenizer_additional_special_tokens_and_restores_class(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "transformers5-tokenizer")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/transformers5-tokenizer",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    calls = install_fake_florence2_transformers_modules(monkeypatch)
+    tokenizer_base_cls = calls["tokenizer_base_cls"]
+
+    assert not hasattr(tokenizer_base_cls, "additional_special_tokens")
+
+    model, processor, torch = runtime._load()
+
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    assert calls["observed_additional_special_tokens"] == ["<image>"]
+    assert not hasattr(tokenizer_base_cls, "additional_special_tokens")
+
+
+def test_florence2_load_shims_missing_legacy_transformers_config_attrs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime, LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "transformers5-load")
+    profile = create_vision_profile(client, provider_model_id="vision/transformers5-load", external_inference_enabled=True, metadata={"trust_remote_code": True})
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+    class FakeTransformersModule(ModuleType):
+        class PretrainedConfig:
+            pass
+
+        class Florence2LanguageConfig(PretrainedConfig):
+            def __init__(self) -> None:
+                self.observed_forced_bos_token_id = self.forced_bos_token_id
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                config = FakeTransformersModule.PretrainedConfig()
+                config.language_config = FakeTransformersModule.Florence2LanguageConfig()
+
+                class Model:
+                    def __init__(self) -> None:
+                        self.config = config
+
+                    def to(self, device):
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                config = FakeTransformersModule.PretrainedConfig()
+                config.text_config = FakeTransformersModule.Florence2LanguageConfig()
+
+                class Processor:
+                    def __init__(self) -> None:
+                        self.config = config
+
+                return Processor()
+
+    for attr in LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS:
+        assert not hasattr(FakeTransformersModule.PretrainedConfig, attr)
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    model, processor, torch = runtime._load()
+
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    for attr, default in LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS.items():
+        assert not hasattr(FakeTransformersModule.PretrainedConfig, attr)
+        assert getattr(model.config, attr) is default
+        assert getattr(model.config.language_config, attr) is default
+        assert getattr(processor.config, attr) is default
+        assert getattr(processor.config.text_config, attr) is default
+    assert model.config.language_config.observed_forced_bos_token_id is None
+    assert processor.config.text_config.observed_forced_bos_token_id is None
+
+
+def test_florence2_generation_shims_legacy_config_attrs_constructed_during_generate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime, LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "transformers5-generate")
+    profile = create_vision_profile(client, provider_model_id="vision/transformers5-generate", external_inference_enabled=True, metadata={"trust_remote_code": True})
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    calls: dict[str, object] = {}
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+        @staticmethod
+        def inference_mode():
+            class Context:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return False
+
+            return Context()
+
+    class FakeTransformersModule(ModuleType):
+        class PretrainedConfig:
+            pass
+
+        class Florence2LanguageConfig(PretrainedConfig):
+            def __init__(self) -> None:
+                calls["constructed_forced_bos_token_id"] = self.forced_bos_token_id
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                config = FakeTransformersModule.PretrainedConfig()
+                config.language_config = FakeTransformersModule.Florence2LanguageConfig()
+
+                class Model:
+                    def __init__(self) -> None:
+                        self.config = config
+
+                    def to(self, device):
+                        return self
+
+                    def eval(self):
+                        return None
+
+                    def generate(self, **kwargs):
+                        calls["class_attr_available_during_generate"] = hasattr(
+                            FakeTransformersModule.Florence2LanguageConfig,
+                            "forced_bos_token_id",
+                        )
+                        FakeTransformersModule.Florence2LanguageConfig()
+                        return ["generated_ids"]
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Processor:
+                    def __call__(self, *, text, images, return_tensors):
+                        return {"input_ids": FakeVisionTensor()}
+
+                    def batch_decode(self, generated_ids, skip_special_tokens=False):
+                        return ["generated text"]
+
+                    def post_process_generation(self, generated_text, *, task, image_size):
+                        return {task: "generated caption"}
+
+                return Processor()
+
+    for attr in LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS:
+        assert not hasattr(FakeTransformersModule.PretrainedConfig, attr)
+        assert not hasattr(FakeTransformersModule.Florence2LanguageConfig, attr)
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
+
+    result = runtime.run(
+        profile=client.app.state.runtime_state.vision_profiles.get(profile["id"]),
+        task="caption",
+        input=type("Input", (), {"image_base64": "AAAA"})(),
+        options={},
+    )
+
+    assert result.data == {"type": "text", "text": "generated caption"}
+    assert calls["class_attr_available_during_generate"] is True
+    assert calls["constructed_forced_bos_token_id"] is None
+    for attr in LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS:
+        assert not hasattr(FakeTransformersModule.PretrainedConfig, attr)
+        assert not hasattr(FakeTransformersModule.Florence2LanguageConfig, attr)
+
+
+def test_florence2_generation_disables_transformers5_cache_objects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "transformers5-cache")
+    profile = create_vision_profile(client, provider_model_id="vision/transformers5-cache", external_inference_enabled=True, metadata={"trust_remote_code": True})
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    records: dict[str, object] = {}
+
+    class Model:
+        def generate(self, **kwargs):
+            records["use_cache"] = kwargs.get("use_cache")
+            if kwargs.get("use_cache") is not False:
+                raise TypeError("'EncoderDecoderCache' object is not subscriptable")
+            return ["generated_ids"]
+
+    class Processor:
+        def __call__(self, *, text, images, return_tensors):
+            return {"input_ids": FakeVisionTensor()}
+
+        def batch_decode(self, generated_ids, skip_special_tokens=False):
+            return ["generated text"]
+
+        def post_process_generation(self, generated_text, *, task, image_size):
+            return {task: "cache-safe caption"}
+
+    class Torch:
+        @staticmethod
+        def inference_mode():
+            class Context:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return False
+
+            return Context()
+
+    def fake_load(self):
+        self.device = "cpu"
+        return Model(), Processor(), Torch
+
+    monkeypatch.setattr(Florence2VisionRuntime, "_load", fake_load)
+    monkeypatch.setattr("ai_workbench.core.inference.florence2_runtime._load_image_from_base64", lambda value: FakeVisionImage())
+
+    result = runtime.run(
+        profile=client.app.state.runtime_state.vision_profiles.get(profile["id"]),
+        task="caption",
+        input=type("Input", (), {"image_base64": "AAAA"})(),
+        options={},
+    )
+
+    assert result.data == {"type": "text", "text": "cache-safe caption"}
+    assert records["use_cache"] is False
+
+
+def test_florence2_load_shims_missing_legacy_transformers_model_attrs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime, LEGACY_TRANSFORMERS_MODEL_ATTR_DEFAULTS
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "transformers5-model-attrs")
+    profile = create_vision_profile(client, provider_model_id="vision/transformers5-model-attrs", external_inference_enabled=True, metadata={"trust_remote_code": True})
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+    class FakeTransformersModule(ModuleType):
+        class PretrainedConfig:
+            pass
+
+        class PreTrainedModel:
+            pass
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Florence2ForConditionalGeneration(FakeTransformersModule.PreTrainedModel):
+                    def __init__(self) -> None:
+                        self.observed_model_attrs = {attr: getattr(self, attr) for attr in LEGACY_TRANSFORMERS_MODEL_ATTR_DEFAULTS}
+
+                    def to(self, device):
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Florence2ForConditionalGeneration()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Processor:
+                    pass
+
+                return Processor()
+
+    for attr in LEGACY_TRANSFORMERS_MODEL_ATTR_DEFAULTS:
+        assert not hasattr(FakeTransformersModule.PreTrainedModel, attr)
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    model, processor, torch = runtime._load()
+
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    for attr, default in LEGACY_TRANSFORMERS_MODEL_ATTR_DEFAULTS.items():
+        assert not hasattr(FakeTransformersModule.PreTrainedModel, attr)
+        assert model.observed_model_attrs[attr] is default
+        assert getattr(model, attr) is default
+
+
+def test_florence2_load_repairs_transformers5_tied_language_weights(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "transformers5-tied-weights")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/transformers5-tied-weights",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    records: dict[str, object] = {}
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+    class Weight:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def data_ptr(self) -> int:
+            return id(self)
+
+    class WeightHolder:
+        def __init__(self, weight: Weight) -> None:
+            self.weight = weight
+
+    class FakeTransformersModule(ModuleType):
+        class PretrainedConfig:
+            pass
+
+        class PreTrainedModel:
+            pass
+
+        class PreTrainedTokenizerBase:
+            pass
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Model(FakeTransformersModule.PreTrainedModel):
+                    def __init__(self) -> None:
+                        shared = Weight("shared")
+                        self.language_model = type("LanguageModel", (), {})()
+                        self.language_model.model = type("LanguageInnerModel", (), {})()
+                        self.language_model.model.shared = WeightHolder(shared)
+                        self.language_model.model.encoder = type("Encoder", (), {})()
+                        self.language_model.model.encoder.embed_tokens = WeightHolder(Weight("encoder"))
+                        self.language_model.model.decoder = type("Decoder", (), {})()
+                        self.language_model.model.decoder.embed_tokens = WeightHolder(Weight("decoder"))
+                        self.language_model.lm_head = WeightHolder(Weight("lm_head"))
+                        records["shared_weight"] = shared
+                        records["encoder_was_shared_before_repair"] = (
+                            self.language_model.model.encoder.embed_tokens.weight is shared
+                        )
+
+                    def to(self, device):
+                        records["encoder_shared_during_to"] = (
+                            self.language_model.model.encoder.embed_tokens.weight
+                            is self.language_model.model.shared.weight
+                        )
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Processor:
+                    pass
+
+                return Processor()
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    model, processor, torch = runtime._load()
+
+    shared = records["shared_weight"]
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    assert records["encoder_was_shared_before_repair"] is False
+    assert records["encoder_shared_during_to"] is True
+    assert model.language_model.model.encoder.embed_tokens.weight is shared
+    assert model.language_model.model.decoder.embed_tokens.weight is shared
+    assert model.language_model.lm_head.weight is shared
+
+
+def test_florence2_preflight_missing_profile_returns_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post("/api/inference/vision-models/missing/preflight", json={"load_model": False})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "VISION_MODEL_NOT_FOUND"
+
+
+def test_florence2_preflight_reports_trust_remote_code_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "preflight-trust")
+    profile = create_vision_profile(client, provider_model_id="vision/preflight-trust", external_inference_enabled=True)
+
+    response = client.post(f"/api/inference/vision-models/{profile['alias']}/preflight", json={"load_model": False})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert payload["ok"] is False
+    assert payload["load_model"] is False
+    assert checks["trust_remote_code"]["status"] == "fail"
+    assert "metadata.trust_remote_code=true" in checks["trust_remote_code"]["message"]
+    assert str(tmp_path).lower() not in str(payload).lower()
+
+
+def test_florence2_preflight_constructs_processor_with_tokenizer_compat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "preflight-tokenizer")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/preflight-tokenizer",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    calls = install_fake_florence2_transformers_modules(monkeypatch)
+    tokenizer_base_cls = calls["tokenizer_base_cls"]
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert payload["ok"] is True
+    assert payload["runtime"]["transformers_version"] == "5.0.0-test"
+    assert payload["runtime"]["torch_available"] is True
+    assert checks["config"]["status"] == "pass"
+    assert checks["processor_tokenizer"]["status"] == "pass"
+    assert calls["observed_additional_special_tokens"] == ["<image>"]
+    assert not hasattr(tokenizer_base_cls, "additional_special_tokens")
+
+
+def test_florence2_preflight_load_model_loads_and_unloads_without_global_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "preflight-load")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/preflight-load",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    calls = install_fake_florence2_transformers_modules(monkeypatch)
+    original_unload = Florence2VisionRuntime.unload
+
+    def record_unload(self):
+        calls["runtime_unload"] = int(calls.get("runtime_unload", 0)) + 1
+        return original_unload(self)
+
+    monkeypatch.setattr(Florence2VisionRuntime, "unload", record_unload)
+    before = vision_runtime_cache_status()
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight", json={"load_model": True})
+
+    after = vision_runtime_cache_status()
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert response.status_code == 200, response.text
+    assert payload["ok"] is True
+    assert payload["load_model"] is True
+    assert checks["model_load"]["status"] == "pass"
+    assert calls["model"] == 1
+    assert calls["processor"] == 2
+    assert calls["runtime_unload"] == 1
+    assert before == {"runtime_count": 0, "profile_count": 0, "architecture_counts": {}}
+    assert after == before
+
+
+def test_florence2_preflight_reports_unavailable_configured_cuda_before_model_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "preflight-cuda-unavailable")
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": "Internal CUDA",
+            "provider": "internal_transformers",
+            "metadata": {"local_runtime_device": "cuda"},
+        },
+    ).json()
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/preflight-cuda-unavailable",
+        provider_profile_id=provider["id"],
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    calls = install_fake_florence2_transformers_modules(monkeypatch)
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight", json={"load_model": True})
+
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert response.status_code == 200, response.text
+    assert payload["ok"] is False
+    assert payload["runtime"]["cuda_available"] is False
+    assert checks["device"]["status"] == "fail"
+    assert checks["model_load"]["status"] == "fail"
+    assert calls["model"] == 0
+
+
+def test_florence2_preflight_failure_response_is_sanitized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "preflight-sanitized")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/preflight-sanitized",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    install_fake_florence2_transformers_modules(
+        monkeypatch,
+        processor_error=RuntimeError(f"secret-token at {tmp_path} with traceback and AAAA"),
+    )
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight", json={"load_model": False})
+
+    rendered = str(response.json()).lower()
+    checks = {item["id"]: item for item in response.json()["checks"]}
+    assert response.status_code == 200, response.text
+    assert response.json()["ok"] is False
+    assert checks["processor_tokenizer"]["status"] == "fail"
+    assert "secret-token" not in rendered
+    assert str(tmp_path).lower() not in rendered
+    assert "traceback" not in rendered
+    assert "aaaa" not in rendered
 
 
 @pytest.mark.parametrize(
@@ -789,7 +1790,7 @@ def test_fake_florence2_backend_returns_task_outputs_through_http(
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "fake-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/fake-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/fake-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     calls = install_fake_florence2_backend(monkeypatch)
 
     response = client.post(
@@ -838,7 +1839,7 @@ def test_invalid_florence2_model_output_is_sanitized(tmp_path: Path, monkeypatch
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "bad-output-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/bad-output-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/bad-output-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     install_fake_florence2_backend(monkeypatch, task_outputs={"<OD>": {"labels": ["secret-label"], "bboxes": [[1, 2, 3, 4]], "scores": [float("nan")]}})
 
     response = client.post(
@@ -860,7 +1861,7 @@ def test_malformed_florence2_object_list_item_is_rejected_and_sanitized(tmp_path
     state = client.app.state.runtime_state
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "bad-object-item-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/bad-object-item-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/bad-object-item-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     install_fake_florence2_backend(monkeypatch, task_outputs={"<OD>": {"objects": ["secret-object"]}})
     before = capture_stateless_persistence_snapshot(state)
 
@@ -885,7 +1886,7 @@ def test_florence2_generation_uses_inference_context(tmp_path: Path, monkeypatch
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "inference-context-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/inference-context-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/inference-context-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     install_fake_florence2_backend(monkeypatch)
 
     response = client.post(
@@ -905,7 +1906,7 @@ def test_real_florence2_fake_backend_success_is_stateless_and_unload_clears_cach
     state = client.app.state.runtime_state
     enable_inference(client, require_api_key=False)
     create_local_vision_folder(client, "stateless-florence2")
-    profile = create_vision_profile(client, provider_model_id="vision/stateless-florence2", external_inference_enabled=True)
+    profile = create_vision_profile(client, provider_model_id="vision/stateless-florence2", external_inference_enabled=True, metadata={"trust_remote_code": True})
     install_fake_florence2_backend(monkeypatch)
     before = capture_stateless_persistence_snapshot(state)
 

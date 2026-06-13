@@ -78,13 +78,21 @@ Registered:
 
 - `POST /api/inference/unload`
 - `POST /api/inference/embeddings/multimodal`
+- `POST /api/inference/vision-models/{profile_id_or_alias}/preflight`
 
 `POST /api/inference/vision` validates `vision:<profile_key_or_id>` requests against
 allowlisted Vision Model Profiles with `architecture=florence2` and supported
 tasks `caption`, `detailed_caption`, `ocr`, and `object_detection`. A5.2
 registers a lazy real Florence2 runtime that uses local model folders only,
 decodes image payloads before loading model weights, and never auto-downloads
-models.
+models. Florence2 runs through a runtime-local transformers compatibility layer
+for transformers 5-era changes to legacy Florence2 remote code. The compat
+layer is active only while Florence2 load/preflight constructs config, model,
+processor, or tokenizer objects; after model load it also rebinds legacy
+Florence2 language shared embeddings and `lm_head` when transformers 5 cannot
+infer the old tied-weight layout. It must not affect CLIP, DINOv2, SigLIP2, or
+Utility LLM runtimes. Florence2 never auto-enables local custom code execution:
+`metadata.trust_remote_code=true` is required on the Vision Model Profile.
 
 `POST /api/inference/embeddings/multimodal` validates request shape, resolves an
 allowlisted Multimodal Embedding Model Profile, then calls the multimodal
@@ -177,7 +185,9 @@ shape/size checks. The Florence2 runtime decodes and validates the image in
 memory before loading model weights, builds task prompts in memory, generates
 under a no-grad/inference context, normalizes output to the A5.1 response
 shape, and persists none of the prompt, generated text, OCR text, captions,
-detections, or image payload.
+detections, or image payload. If `metadata.trust_remote_code` is not exactly
+`true`, Florence2 fails before model loading with
+`INFERENCE_INVALID_REQUEST`; it does not silently opt into remote code.
 
 ## Auth And Exposure
 
@@ -434,7 +444,12 @@ refs shaped as `vision/<folder>` under `data/models/vision`. The runtime uses
 prefers CUDA, then MPS, then CPU, while explicit unavailable devices fail with
 a compact provider/runtime error. `metadata.trust_remote_code=true` is the only
 way to opt into local custom model code execution; the default is
-`trust_remote_code=false`.
+`trust_remote_code=false`. Real Florence2 local loading requires the local ML
+extra, currently including `torch`, `torchvision`, `transformers`, `einops`,
+`timm`, and `Pillow`. CPU/default installs use `uv sync --extra knowledge`.
+CUDA 12.8 installs use `uv sync --extra knowledge-cuda128`, which routes both
+`torch` and `torchvision` through the PyTorch cu128 wheel index. The CPU/default
+and CUDA extras are mutually exclusive installation modes.
 
 ## Endpoint Contracts
 
@@ -528,6 +543,46 @@ display or migrate UUID-based refs.
 `POST /api/inference/unload` requests best-effort cache release for a target or
 profile and returns compact outcomes.
 
+`POST /api/inference/vision-models/{profile_id_or_alias}/preflight` diagnoses a
+configured Vision Model Profile before real inference. The request body is
+optional:
+
+```json
+{"load_model": false}
+```
+
+`load_model=false` is the default. It checks Florence2 dependencies, the safe
+local model directory, explicit `metadata.trust_remote_code=true`, and whether
+transformers can construct the config plus processor/tokenizer without loading
+weights. It also checks the configured local runtime device, so a Provider
+Profile with `metadata.local_runtime_device=cuda` fails preflight when the
+installed torch build cannot see CUDA. `load_model=true` additionally
+constructs a temporary Florence2 runtime, loads weights once, then immediately
+unloads it without adding anything to the global vision runtime cache.
+Preflight returns HTTP 200 with `ok=false` for diagnosable profile/runtime
+failures and HTTP 404 only when the profile is missing. Responses must not
+include absolute paths, raw images, base64 input, tracebacks, provider secrets,
+raw generated text, or raw model output.
+
+```json
+{
+  "ok": true,
+  "profile_id": "...",
+  "architecture": "florence2",
+  "load_model": false,
+  "checks": [
+    {"id": "trust_remote_code", "status": "pass", "message": "..."}
+  ],
+  "runtime": {
+    "transformers_version": "...",
+    "torch_available": true,
+    "torch_version": "...",
+    "cuda_available": true,
+    "torch_cuda_version": "..."
+  }
+}
+```
+
 `POST /api/inference/embeddings/multimodal` request shape:
 
 ```json
@@ -605,19 +660,33 @@ For a real local smoke test:
 5. Verify `GET /api/inference/status` and `GET /api/inference/models`.
 6. Verify `POST /api/inference/unload` clears cached multimodal runtimes.
 7. Install the optional local ML packages and model files only for smoke tests;
-   automated tests remain fake-backed and do not require them.
+   automated tests remain fake-backed and do not require them. Use
+   `uv sync --extra knowledge` for CPU/default installs, or
+   `uv sync --extra knowledge-cuda128` for CUDA 12.8 installs.
 
 For a real vision smoke test:
 
 1. Place a local model folder under `data/models/vision/<folder>`.
 2. Create or enable the matching Provider Profile.
 3. Create or enable the Vision Model Profile with
-   `external_inference_enabled=true`.
-4. Use `vision:<profile_key>` in `POST /api/inference/vision`.
-5. Verify `GET /api/inference/status`, `GET /api/inference/models`, and
+   `external_inference_enabled=true` and `metadata.trust_remote_code=true`.
+4. Run `POST /api/inference/vision-models/{profile_id_or_alias}/preflight`
+   with `{"load_model": false}` first, then `{"load_model": true}` when ready
+   to validate local weights.
+5. Use `vision:<profile_key>` in `POST /api/inference/vision`.
+6. Verify `GET /api/inference/status`, `GET /api/inference/models`, and
    `POST /api/inference/unload`.
-6. Install the optional local ML packages and model files only for smoke tests;
-   automated tests remain fake-backed and do not require them.
+7. Install the optional local ML packages and model files only for smoke tests.
+   Florence2 custom model code requires `einops`, `timm`, `Pillow`, `torch`,
+   and `torchvision`; automated tests remain fake-backed and do not require
+   them. Use `uv sync --extra knowledge` for CPU/default installs. Use
+   `uv sync --extra knowledge-cuda128` for CUDA 12.8 installs so `torch` and
+   `torchvision` resolve from the PyTorch cu128 index in one sync step. A plain
+   `uv sync --extra knowledge` resolves torch from the configured/default
+   indexes and may replace a manually installed CUDA wheel such as
+   `torch==...+cu128` with the CPU wheel. Do not combine CPU and CUDA extras in
+   the same environment; they are declared as mutually exclusive installation
+   modes.
 
 `POST /api/inference/vision` request shape:
 

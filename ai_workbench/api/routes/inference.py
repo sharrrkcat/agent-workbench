@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError
 
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.deps import RuntimeState, get_state
@@ -8,6 +8,7 @@ from ai_workbench.core.inference.errors import (
     InferenceErrorCode,
     raise_workbench_inference_error,
 )
+from ai_workbench.core.inference.florence2_runtime import preflight_florence2_runtime
 from ai_workbench.core.inference.multimodal_runtime import clear_multimodal_runtime_cache
 from ai_workbench.core.inference.observability import log_inference_failure
 from ai_workbench.core.inference.vision_runtime import clear_vision_runtime_cache
@@ -38,6 +39,12 @@ from ai_workbench.core.provider_inventory import scan_internal_provider_models
 
 
 router = APIRouter(prefix="/api/inference", tags=["inference"])
+
+
+class VisionModelPreflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    load_model: StrictBool = False
 
 
 def _guard_workbench_request(request: Request, state: RuntimeState) -> StatelessInferenceSettings:
@@ -189,6 +196,28 @@ def create_vision_model(payload: dict, state: RuntimeState = Depends(get_state))
         _raise_vision_validation(exc)
     except ValueError as exc:
         _raise_vision_value_error(exc)
+
+
+@router.post("/vision-models/{profile_id_or_alias}/preflight")
+def preflight_vision_model(
+    profile_id_or_alias: str,
+    payload: dict | None = None,
+    state: RuntimeState = Depends(get_state),
+) -> dict:
+    try:
+        request = VisionModelPreflightRequest.model_validate(payload or {})
+    except ValidationError as exc:
+        _raise_vision_preflight_validation(exc)
+    try:
+        profile = state.vision_profiles.get_by_id_or_alias(profile_id_or_alias)
+    except KeyError:
+        raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id_or_alias}")
+    return preflight_florence2_runtime(
+        profile,
+        repo_root=state.repo_root,
+        provider_profile_store=state.provider_profiles,
+        load_model=request.load_model,
+    )
 
 
 @router.get("/vision-models/{profile_id_or_alias}")
@@ -360,6 +389,13 @@ def _raise_vision_value_error(exc: ValueError) -> None:
     if message == "VISION_MODEL_ALIAS_EXISTS":
         raise_error(409, "VISION_MODEL_ALIAS_EXISTS", "Vision model alias already exists.")
     raise_error(422, "INVALID_VISION_MODEL", message)
+
+
+def _raise_vision_preflight_validation(exc: ValidationError) -> None:
+    error = exc.errors()[0] if exc.errors() else {}
+    loc = ".".join(str(item) for item in error.get("loc", []))
+    message = f"{loc}: {error.get('msg', 'Invalid value')}" if loc else str(error.get("msg", "Invalid value"))
+    raise_error(422, "INVALID_VISION_PREFLIGHT_REQUEST", message)
 
 
 def _next_profile_alias(store, name: object, provider_model_id: object) -> str:
