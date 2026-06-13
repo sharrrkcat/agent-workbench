@@ -82,7 +82,8 @@ Registered:
 
 `POST /api/inference/vision` validates `vision:<profile_key_or_id>` requests against
 allowlisted Vision Model Profiles with `architecture=florence2` and supported
-tasks `caption`, `detailed_caption`, `ocr`, and `object_detection`. A5.2
+tasks `caption`, `detailed_caption`, `more_detailed_caption`, `ocr`, and
+`object_detection`. A5.2
 registers a lazy real Florence2 runtime that uses local model folders only,
 decodes image payloads before loading model weights, and never auto-downloads
 models. Florence2 runs through a runtime-local transformers compatibility layer
@@ -182,11 +183,13 @@ local model weights only during valid embedding calls.
 A5.2 vision serving calls only the vision runtime interface after guards, JSON
 parsing, validation, profile resolution, task allowlist checks, and image input
 shape/size checks. The Florence2 runtime decodes and validates the image in
-memory before loading model weights, builds task prompts in memory, generates
-under a no-grad/inference context, normalizes output to the A5.1 response
-shape, and persists none of the prompt, generated text, OCR text, captions,
-detections, or image payload. If `metadata.trust_remote_code` is not exactly
-`true`, Florence2 fails before model loading with
+memory before loading model weights, square-pads non-square images in memory for
+Florence2 remote-code feature-map constraints, resizes the processor input to
+the Florence2-safe `768x768` size, builds task prompts in memory, generates
+under a no-grad/inference context, normalizes output to the A5.1 response shape,
+and persists none of the prompt, generated text, OCR text, captions, detections,
+or image payload. If `metadata.trust_remote_code` is not exactly `true`,
+Florence2 fails before model loading with
 `INFERENCE_INVALID_REQUEST`; it does not silently opt into remote code.
 
 ## Auth And Exposure
@@ -430,9 +433,14 @@ defaults such as `open_clip_pytorch_model.bin` or `model.pt`.
 DINOv2 is image-only and must reject text input with
 `MODEL_INPUT_TYPE_UNSUPPORTED`.
 
-Florence2 public task names are `caption`, `detailed_caption`, `ocr`, and
-`object_detection`. Internal prompt mapping and post-processing belong to the
-vision runtime wrapper, not to route handlers.
+Florence2 public task names are `caption`, `detailed_caption`,
+`more_detailed_caption`, `ocr`, and `object_detection`. Internal prompt mapping
+and post-processing belong to the vision runtime wrapper, not to route handlers.
+`caption` maps to `<CAPTION>`, `detailed_caption` maps to
+`<DETAILED_CAPTION>`, and `more_detailed_caption` maps to
+`<MORE_DETAILED_CAPTION>` for richer Florence2 descriptions. Existing Vision
+Model Profiles that were saved before `more_detailed_caption` was added are not
+silently migrated; users must explicitly enable and save that task.
 
 Vision model fields mirror other Model Profiles: `id`, `name`, `description`,
 `notes`, `enabled`, `external_inference_enabled=false`, optional
@@ -702,12 +710,20 @@ For a real vision smoke test:
 `options` may include bounded Florence2 generation controls:
 `max_new_tokens` from 1 to 1024 and `num_beams` from 1 to 8. Unknown generation
 options are rejected with `INFERENCE_INVALID_REQUEST` before image decode or
-model loading.
+model loading. Defaults are task-specific: `caption` uses 64,
+`detailed_caption` uses 256, `more_detailed_caption` uses 512, and OCR/object
+detection use 1024. For higher-quality descriptions prefer
+`more_detailed_caption` with `max_new_tokens=512`; reduce `num_beams` or token
+count first when accelerator memory is tight. CUDA device-side assert, illegal
+memory access, and out-of-memory failures are treated as fatal accelerator
+failures for the cached Florence2 runtime; the runtime unloads model references
+before returning the provider error, though the process may still require a
+backend restart if CUDA remains poisoned.
 
 Vision responses echo the requested `model` and include `profile_id` plus
 `profile_alias`. Response `data` shapes are task-specific: captions, detailed
-captions, and OCR return text; object detection returns labels, scores, and
-normalized coordinates in `[0, 1]`. Florence2 prompt tokens, raw generated text,
-pixel boxes, and post-processor internals are not public API and must not be
-persisted. Vision calls do not appear in `/v1/models`; there is no `/v1` vision
-endpoint.
+captions, more detailed captions, and OCR return text; object detection returns
+labels, scores, and normalized coordinates in `[0, 1]`. Florence2 prompt tokens,
+raw generated text, pixel boxes, and post-processor internals are not public API
+and must not be persisted. Vision calls do not appear in `/v1/models`; there is
+no `/v1` vision endpoint.

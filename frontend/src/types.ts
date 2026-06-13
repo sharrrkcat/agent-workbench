@@ -582,7 +582,7 @@ export type MultimodalEmbeddingModelProfileInput = Partial<
 
 export type VisionArchitecture = 'florence2';
 export type VisionBackend = 'transformers';
-export type VisionTask = 'caption' | 'detailed_caption' | 'ocr' | 'object_detection';
+export type VisionTask = 'caption' | 'detailed_caption' | 'more_detailed_caption' | 'ocr' | 'object_detection';
 
 export type VisionModelProfile = {
   id: string;

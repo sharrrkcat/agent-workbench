@@ -20,7 +20,7 @@ import { ToggleSwitch } from './ToggleSwitch';
 
 const ARCHITECTURES: VisionArchitecture[] = ['florence2'];
 const BACKENDS: VisionBackend[] = ['transformers'];
-const VISION_TASKS: VisionTask[] = ['caption', 'detailed_caption', 'ocr', 'object_detection'];
+const VISION_TASKS: VisionTask[] = ['caption', 'detailed_caption', 'more_detailed_caption', 'ocr', 'object_detection'];
 const VISION_REF_PREFIX = 'vision/';
 
 const defaultVisionProfile: Partial<VisionModelProfile> = {
@@ -34,7 +34,7 @@ const defaultVisionProfile: Partial<VisionModelProfile> = {
   provider_model_id: '',
   architecture: 'florence2',
   backend: 'transformers',
-  supported_tasks: ['caption', 'detailed_caption', 'ocr', 'object_detection'],
+  supported_tasks: ['caption', 'detailed_caption', 'more_detailed_caption', 'ocr', 'object_detection'],
   max_batch_size: null,
   metadata: {},
 };
@@ -155,6 +155,24 @@ function VisionProfileForm({
         input: {
           type: 'image',
           image_base64: '...',
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('more_detailed_caption')) {
+    visionApiExamples.push({
+      id: 'vision-more-detailed-caption',
+      title: t('settings:apiExamples.vision.moreDetailedCaption'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'more_detailed_caption',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+        options: {
+          max_new_tokens: 512,
+          num_beams: 3,
         },
       }),
     });

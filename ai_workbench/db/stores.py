@@ -2140,7 +2140,10 @@ def _vision_profile_from_record(record: VisionModelProfileRecord) -> VisionModel
         provider_model_id=getattr(record, "provider_model_id", "") or "",
         architecture=getattr(record, "architecture", "florence2") or "florence2",
         backend=getattr(record, "backend", "transformers") or "transformers",
-        supported_tasks=_loads(getattr(record, "supported_tasks_json", "") or "", ["caption", "detailed_caption", "ocr", "object_detection"]),
+        supported_tasks=_loads(
+            getattr(record, "supported_tasks_json", "") or "",
+            ["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"],
+        ),
         max_batch_size=getattr(record, "max_batch_size", 1),
         metadata=_loads(getattr(record, "metadata_json", "{}") or "{}", {}),
         created_at=ensure_utc(record.created_at),

@@ -97,6 +97,7 @@
     "vision": {
       "caption": "Caption request",
       "detailedCaption": "Detailed caption request",
+      "moreDetailedCaption": "More detailed caption request",
       "ocr": "OCR request",
       "objectDetection": "Object detection request"
     }
@@ -243,6 +244,7 @@
     "tasks": {
       "caption": "Caption",
       "detailed_caption": "Detailed caption",
+      "more_detailed_caption": "More detailed caption",
       "ocr": "OCR",
       "object_detection": "Object detection"
     },

@@ -1526,7 +1526,7 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
 
     assert "export type VisionArchitecture = 'florence2';" in types
     assert "export type VisionBackend = 'transformers';" in types
-    assert "export type VisionTask = 'caption' | 'detailed_caption' | 'ocr' | 'object_detection';" in types
+    assert "export type VisionTask = 'caption' | 'detailed_caption' | 'more_detailed_caption' | 'ocr' | 'object_detection';" in types
     vision_type = types[types.index("export type VisionModelProfile = {") : types.index("export type InferenceModelInventoryKind")]
     assert "alias: string;" in vision_type
     assert "supported_tasks: VisionTask[];" in vision_type
@@ -1851,7 +1851,9 @@ def test_model_profile_api_examples_contract() -> None:
     assert "/api/inference/vision" in vision
     assert "vision:<profile_key>" in vision
     assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in vision
+    assert "supportedTasks.includes('more_detailed_caption')" in vision
     assert "supportedTasks.includes('object_detection')" in vision
+    assert "max_new_tokens: 512" in vision
     assert "max_new_tokens: 1024" in vision
     assert "num_beams: 3" in vision
 
@@ -1871,6 +1873,7 @@ def test_model_profile_api_examples_contract() -> None:
         assert '"chatCompletions"' in locale
         assert '"singleInput"' in locale
         assert '"dinov2ImageOnly"' in locale
+        assert '"moreDetailedCaption"' in locale
         assert '"objectDetection"' in locale
 
 

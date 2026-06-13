@@ -5,6 +5,7 @@ import importlib.metadata
 import importlib.util
 import math
 from pathlib import Path
+import re
 import sys
 import threading
 from typing import Any
@@ -31,15 +32,21 @@ from ai_workbench.core.vision_profiles import normalize_vision_model_ref
 FLORENCE2_TASK_PROMPTS = {
     "caption": "<CAPTION>",
     "detailed_caption": "<DETAILED_CAPTION>",
+    "more_detailed_caption": "<MORE_DETAILED_CAPTION>",
     "ocr": "<OCR>",
     "object_detection": "<OD>",
 }
 DEFAULT_MAX_NEW_TOKENS = {
     "caption": 64,
     "detailed_caption": 256,
+    "more_detailed_caption": 512,
     "ocr": 1024,
     "object_detection": 1024,
 }
+FLORENCE2_TEXT_TASKS = {"caption", "detailed_caption", "more_detailed_caption", "ocr"}
+FLORENCE2_CAPTION_TEXT_TASKS = {"caption", "detailed_caption", "more_detailed_caption"}
+MIN_VISION_IMAGE_EDGE_PX = 16
+FLORENCE2_PROCESSOR_IMAGE_SIZE_PX = 768
 MAX_TEXT_OUTPUT_CHARS = 100_000
 FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE = "Florence2 runtime requires metadata.trust_remote_code=true."
 LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS = {
@@ -63,6 +70,9 @@ FLORENCE2_TIED_LANGUAGE_WEIGHT_PATHS = (
 _LEGACY_CONFIG_PATCH_LOCK = threading.RLock()
 _LEGACY_MODEL_PATCH_LOCK = threading.RLock()
 _LEGACY_TOKENIZER_PATCH_LOCK = threading.RLock()
+_FLORENCE2_TASK_TOKEN_RE = re.compile(r"<(?:CAPTION|DETAILED_CAPTION|MORE_DETAILED_CAPTION|OCR)>")
+_FLORENCE2_LOC_TOKEN_RE = re.compile(r"<loc_\d+>")
+_WHITESPACE_RE = re.compile(r"\s+")
 _MISSING = object()
 
 
@@ -91,11 +101,13 @@ class Florence2VisionRuntime:
         self._ensure_trust_remote_code()
         image = _load_vision_image(input.image_base64)
         image_size = _image_size(image)
+        _validate_vision_image_size(image_size)
+        processor_image, padding, post_process_image_size = _prepare_florence2_processor_image(image)
 
         model, processor, torch = self._load()
         prompt = FLORENCE2_TASK_PROMPTS[task]
         try:
-            batch = processor(text=prompt, images=image, return_tensors="pt")
+            batch = processor(text=prompt, images=processor_image, return_tensors="pt")
             batch = _move_florence2_batch(batch, device=self.device, model=model, torch=torch)
             with _temporary_florence2_runtime_config_attrs(model, processor):
                 with _inference_context(torch):
@@ -109,13 +121,16 @@ class Florence2VisionRuntime:
                     )
                 decoded = processor.batch_decode(generated_ids, skip_special_tokens=False)
                 generated_text = decoded[0] if isinstance(decoded, list) and decoded else str(decoded)
-                parsed = _post_process(processor, generated_text, prompt, image_size)
-            return VisionRuntimeResult(data=_normalize_task_output(task, prompt, parsed, image_size))
+                parsed = _post_process(processor, generated_text, prompt, post_process_image_size)
+            return VisionRuntimeResult(data=_normalize_task_output(task, prompt, parsed, image_size, padding))
         except VisionRuntimeInvalidRequest:
             raise
         except VisionRuntimeError:
             raise
         except Exception as exc:
+            if _is_fatal_accelerator_error(exc):
+                self.unload()
+                raise VisionRuntimeError("Florence2 runtime failed after a fatal accelerator error.") from exc
             raise VisionRuntimeError("Florence2 runtime failed.") from exc
 
     def unload(self) -> None:
@@ -832,6 +847,93 @@ def _image_size(image: Any) -> tuple[int, int]:
     return (1, 1)
 
 
+def _validate_vision_image_size(image_size: tuple[int, int]) -> None:
+    width, height = image_size
+    if width < MIN_VISION_IMAGE_EDGE_PX or height < MIN_VISION_IMAGE_EDGE_PX:
+        raise VisionRuntimeInvalidRequest("image dimensions must be at least 16x16 pixels.")
+
+
+def _prepare_florence2_processor_image(image: Any) -> tuple[Any, dict[str, int] | None, tuple[int, int]]:
+    image_size = _image_size(image)
+    padded_image, padding = _square_pad_florence2_image(image)
+    post_process_image_size = (padding["padded_width"], padding["padded_height"]) if padding is not None else image_size
+    processor_image = _resize_florence2_processor_image(padded_image)
+    return processor_image, padding, post_process_image_size
+
+
+def _square_pad_florence2_image(image: Any) -> tuple[Any, dict[str, int] | None]:
+    width, height = _image_size(image)
+    if width == height:
+        return image, None
+    try:
+        from PIL import Image as PILImage  # type: ignore
+    except Exception:
+        return image, None
+    if not isinstance(image, PILImage.Image):
+        return image, None
+    side = max(width, height)
+    left = (side - width) // 2
+    top = (side - height) // 2
+    try:
+        canvas = PILImage.new(image.mode or "RGB", (side, side), color=_padding_color(image))
+        canvas.paste(image, (left, top))
+    except Exception as exc:
+        raise VisionRuntimeError("Florence2 image preprocessing failed.") from exc
+    return canvas, {
+        "left": left,
+        "top": top,
+        "original_width": width,
+        "original_height": height,
+        "padded_width": side,
+        "padded_height": side,
+    }
+
+
+def _resize_florence2_processor_image(image: Any) -> Any:
+    target_size = (FLORENCE2_PROCESSOR_IMAGE_SIZE_PX, FLORENCE2_PROCESSOR_IMAGE_SIZE_PX)
+    if _image_size(image) == target_size:
+        return image
+    try:
+        from PIL import Image as PILImage  # type: ignore
+    except Exception:
+        return image
+    if not isinstance(image, PILImage.Image):
+        return image
+    resize = getattr(image, "resize", None)
+    if not callable(resize):
+        return image
+    resample = _florence2_resize_resample(PILImage)
+    try:
+        return resize(target_size, resample=resample)
+    except TypeError:
+        try:
+            return resize(target_size)
+        except Exception as exc:
+            raise VisionRuntimeError("Florence2 image preprocessing failed.") from exc
+    except Exception as exc:
+        raise VisionRuntimeError("Florence2 image preprocessing failed.") from exc
+
+
+def _florence2_resize_resample(PILImage: Any) -> Any:
+    resampling = getattr(PILImage, "Resampling", PILImage)
+    return getattr(resampling, "BICUBIC", getattr(PILImage, "BICUBIC", 3))
+
+
+def _padding_color(image: Any) -> Any:
+    getpixel = getattr(image, "getpixel", None)
+    if callable(getpixel):
+        try:
+            return getpixel((0, 0))
+        except Exception:
+            pass
+    mode = str(getattr(image, "mode", "") or "RGB")
+    if mode == "RGBA":
+        return (0, 0, 0, 0)
+    if mode == "RGB":
+        return (0, 0, 0)
+    return 0
+
+
 def _validate_generation_options(task: str, options: dict[str, Any]) -> dict[str, int]:
     allowed = {"max_new_tokens", "num_beams"}
     unknown = set(options) - allowed
@@ -853,19 +955,81 @@ def _post_process(processor: Any, generated_text: str, prompt: str, image_size: 
     return {prompt: generated_text}
 
 
-def _normalize_task_output(task: str, prompt: str, parsed: Any, image_size: tuple[int, int]) -> dict[str, Any]:
+def _normalize_task_output(task: str, prompt: str, parsed: Any, image_size: tuple[int, int], padding: dict[str, int] | None = None) -> dict[str, Any]:
     raw = _unwrap_prompt_result(parsed, prompt)
-    if task in {"caption", "detailed_caption", "ocr"}:
+    if task in FLORENCE2_TEXT_TASKS:
         if isinstance(raw, dict):
             text = raw.get(task) or raw.get(prompt) or raw.get("text")
         else:
             text = raw
         if not isinstance(text, str) or len(text) > MAX_TEXT_OUTPUT_CHARS:
             raise VisionRuntimeError("Florence2 runtime returned invalid text output.")
-        return {"type": "text", "text": text}
+        return {"type": "text", "text": _clean_florence2_text_output(task, text)}
     if task == "object_detection":
-        return {"type": "objects", "objects": _normalize_objects(raw, image_size)}
+        return {"type": "objects", "objects": _normalize_objects(raw, image_size, padding)}
     raise VisionRuntimeInvalidRequest("Unsupported vision task.")
+
+
+def _clean_florence2_text_output(task: str, text: str) -> str:
+    cleaned = _FLORENCE2_TASK_TOKEN_RE.sub("", text)
+    if task in FLORENCE2_CAPTION_TEXT_TASKS:
+        cleaned = _FLORENCE2_LOC_TOKEN_RE.sub("", cleaned)
+    cleaned = _WHITESPACE_RE.sub(" ", cleaned).strip()
+    if task in FLORENCE2_CAPTION_TEXT_TASKS:
+        cleaned = _dedupe_leading_caption_fragment(cleaned)
+    return cleaned
+
+
+def _dedupe_leading_caption_fragment(text: str) -> str:
+    for word in ("There", "This", "The", "An", "In", "A"):
+        doubled_length = len(word) * 2
+        if text[:doubled_length].lower() != (word + word).lower():
+            continue
+        remainder = text[doubled_length:]
+        if not remainder or remainder[0].isspace() or remainder[0] in ".,;:!?":
+            return text[: len(word)] + remainder
+    return text
+
+
+def _is_accelerator_out_of_memory(exc: BaseException) -> bool:
+    return _exception_chain_contains(
+        exc,
+        lambda text: "cudaerrormemoryallocation" in text
+        or ("outofmemory" in text and any(marker in text for marker in ("cuda", "mps", "accelerator", "torch")))
+        or ("out of memory" in text and any(marker in text for marker in ("cuda", "mps", "accelerator", "torch"))),
+    )
+
+
+def _is_fatal_accelerator_error(exc: BaseException) -> bool:
+    return _is_accelerator_out_of_memory(exc) or _exception_chain_contains(
+        exc,
+        lambda text: "cudaerrorassert" in text
+        or ("device-side assert" in text and "cuda" in text)
+        or "cudaerrorillegaladdress" in text
+        or ("illegal memory access" in text and "cuda" in text)
+        or ("unspecified launch failure" in text and "cuda" in text),
+    )
+
+
+def _exception_chain_contains(exc: BaseException, predicate: Any) -> bool:
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        current = stack.pop()
+        current_id = id(current)
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+        text = f"{type(current).__name__} {current}".lower()
+        if predicate(text):
+            return True
+        cause = getattr(current, "__cause__", None)
+        context = getattr(current, "__context__", None)
+        if isinstance(cause, BaseException):
+            stack.append(cause)
+        if isinstance(context, BaseException):
+            stack.append(context)
+    return False
 
 
 def _unwrap_prompt_result(value: Any, prompt: str) -> Any:
@@ -877,7 +1041,7 @@ def _unwrap_prompt_result(value: Any, prompt: str) -> Any:
     return value
 
 
-def _normalize_objects(raw: Any, image_size: tuple[int, int]) -> list[dict[str, Any]]:
+def _normalize_objects(raw: Any, image_size: tuple[int, int], padding: dict[str, int] | None = None) -> list[dict[str, Any]]:
     if isinstance(raw, dict):
         labels = raw.get("labels") or raw.get("classes") or raw.get("class_names")
         boxes = raw.get("bboxes") or raw.get("boxes")
@@ -886,32 +1050,32 @@ def _normalize_objects(raw: Any, image_size: tuple[int, int]) -> list[dict[str, 
             score_values = scores if isinstance(scores, list) else [1.0] * len(labels)
             if len(labels) != len(boxes) or len(score_values) != len(labels):
                 raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
-            return [_normalize_object(label, score, box, image_size) for label, score, box in zip(labels, score_values, boxes, strict=True)]
+            return [_normalize_object(label, score, box, image_size, padding) for label, score, box in zip(labels, score_values, boxes, strict=True)]
         objects = raw.get("objects")
         if isinstance(objects, list):
-            return [_normalize_object_from_mapping(item, image_size) for item in objects]
+            return [_normalize_object_from_mapping(item, image_size, padding) for item in objects]
     if isinstance(raw, list):
-        return [_normalize_object_from_mapping(item, image_size) for item in raw]
+        return [_normalize_object_from_mapping(item, image_size, padding) for item in raw]
     raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
 
 
-def _normalize_object_from_mapping(item: Any, image_size: tuple[int, int]) -> dict[str, Any]:
+def _normalize_object_from_mapping(item: Any, image_size: tuple[int, int], padding: dict[str, int] | None = None) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
-    return _normalize_object(item.get("label"), item.get("score", 1.0), item.get("box") or item.get("bbox"), image_size)
+    return _normalize_object(item.get("label"), item.get("score", 1.0), item.get("box") or item.get("bbox"), image_size, padding)
 
 
-def _normalize_object(label: Any, score: Any, box: Any, image_size: tuple[int, int]) -> dict[str, Any]:
+def _normalize_object(label: Any, score: Any, box: Any, image_size: tuple[int, int], padding: dict[str, int] | None = None) -> dict[str, Any]:
     if not isinstance(label, str):
         raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
     parsed_score = float(score)
     if not math.isfinite(parsed_score) or parsed_score < 0 or parsed_score > 1:
         raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
-    parsed_box = _normalize_box(box, image_size)
+    parsed_box = _normalize_box(box, image_size, padding)
     return {"label": label, "score": parsed_score, "box": parsed_box}
 
 
-def _normalize_box(value: Any, image_size: tuple[int, int]) -> dict[str, float]:
+def _normalize_box(value: Any, image_size: tuple[int, int], padding: dict[str, int] | None = None) -> dict[str, float]:
     if isinstance(value, dict):
         coords = [value.get("x_min"), value.get("y_min"), value.get("x_max"), value.get("y_max")]
     elif isinstance(value, (list, tuple)) and len(value) == 4:
@@ -923,6 +1087,8 @@ def _normalize_box(value: Any, image_size: tuple[int, int]) -> dict[str, float]:
         raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
     width, height = image_size
     if max(x_min, y_min, x_max, y_max) > 1.0:
+        if padding is not None:
+            x_min, y_min, x_max, y_max = _unpad_absolute_box((x_min, y_min, x_max, y_max), padding)
         x_min /= width
         x_max /= width
         y_min /= height
@@ -936,6 +1102,24 @@ def _normalize_box(value: Any, image_size: tuple[int, int]) -> dict[str, float]:
     if normalized["x_max"] < normalized["x_min"] or normalized["y_max"] < normalized["y_min"]:
         raise VisionRuntimeError("Florence2 runtime returned invalid object output.")
     return normalized
+
+
+def _unpad_absolute_box(box: tuple[float, float, float, float], padding: dict[str, int]) -> tuple[float, float, float, float]:
+    left = float(padding["left"])
+    top = float(padding["top"])
+    width = float(padding["original_width"])
+    height = float(padding["original_height"])
+    x_min, y_min, x_max, y_max = box
+    return (
+        _clamp_range(x_min - left, 0.0, width),
+        _clamp_range(y_min - top, 0.0, height),
+        _clamp_range(x_max - left, 0.0, width),
+        _clamp_range(y_max - top, 0.0, height),
+    )
+
+
+def _clamp_range(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
 
 
 def _clamp_unit(value: float) -> float:

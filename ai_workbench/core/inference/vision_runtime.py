@@ -222,7 +222,7 @@ def _best_effort_unload(runtime: VisionRuntime) -> None:
 
 def _validate_result_data(task: str, value: Any) -> VisionResultData:
     raw = _dataclass_to_dict(value)
-    if task in {"caption", "detailed_caption", "ocr"}:
+    if task in {"caption", "detailed_caption", "more_detailed_caption", "ocr"}:
         if not isinstance(raw, dict) or raw.get("type") != "text" or not isinstance(raw.get("text"), str):
             raise VisionRuntimeError("Vision runtime returned invalid text output.")
         return VisionTextData(type="text", text=raw["text"])

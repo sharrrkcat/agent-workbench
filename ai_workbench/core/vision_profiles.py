@@ -13,10 +13,11 @@ from ai_workbench.core.time import utc_now
 
 VisionArchitecture = Literal["florence2"]
 VisionBackend = Literal["transformers"]
-VisionTask = Literal["caption", "detailed_caption", "ocr", "object_detection"]
+VisionTask = Literal["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]
 
 MAX_VISION_BATCH_SIZE = 64
-VISION_TASKS: set[str] = {"caption", "detailed_caption", "ocr", "object_detection"}
+DEFAULT_VISION_TASKS: tuple[VisionTask, ...] = ("caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection")
+VISION_TASKS: set[str] = set(DEFAULT_VISION_TASKS)
 
 
 def normalize_vision_model_ref(value: Any) -> str:
@@ -53,7 +54,7 @@ class VisionModelProfile(BaseModel):
     provider_model_id: str
     architecture: VisionArchitecture = "florence2"
     backend: VisionBackend = "transformers"
-    supported_tasks: list[VisionTask] = Field(default_factory=lambda: ["caption", "detailed_caption", "ocr", "object_detection"])
+    supported_tasks: list[VisionTask] = Field(default_factory=lambda: list(DEFAULT_VISION_TASKS))
     max_batch_size: int | None = Field(default=1, ge=1, le=MAX_VISION_BATCH_SIZE)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -94,7 +95,7 @@ class VisionModelProfile(BaseModel):
     @classmethod
     def _supported_tasks(cls, value: Any) -> list[str]:
         if value is None:
-            return ["caption", "detailed_caption", "ocr", "object_detection"]
+            return list(DEFAULT_VISION_TASKS)
         if not isinstance(value, list):
             raise ValueError("supported_tasks must be an array.")
         result: list[str] = []

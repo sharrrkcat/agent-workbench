@@ -276,7 +276,7 @@ def ensure_vision_profile_table(engine) -> None:
                   provider_model_id VARCHAR NOT NULL DEFAULT '',
                   architecture VARCHAR NOT NULL DEFAULT 'florence2',
                   backend VARCHAR DEFAULT 'transformers',
-                  supported_tasks_json VARCHAR DEFAULT '["caption", "detailed_caption", "ocr", "object_detection"]',
+                  supported_tasks_json VARCHAR DEFAULT '["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]',
                   max_batch_size INTEGER DEFAULT 1,
                   metadata_json VARCHAR DEFAULT '{}',
                   created_at DATETIME,

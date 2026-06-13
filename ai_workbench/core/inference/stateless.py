@@ -20,6 +20,7 @@ from ai_workbench.core.inference.vision_runtime import (
     run_vision_task,
 )
 from ai_workbench.core.knowledge_models import KnowledgeModelError
+from ai_workbench.core.vision_profiles import VISION_TASKS
 
 
 LLM_MODEL_PREFIX = "llm:"
@@ -507,7 +508,7 @@ def _validate_multimodal_inputs(value: Any) -> list[MultimodalEmbeddingInput]:
 
 
 def _validate_vision_task(value: Any) -> str:
-    if value not in {"caption", "detailed_caption", "ocr", "object_detection"}:
+    if value not in VISION_TASKS:
         raise StatelessInferenceError(InferenceErrorCode.INVALID_REQUEST, "Unsupported vision task.")
     return str(value)
 

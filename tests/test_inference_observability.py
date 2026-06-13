@@ -65,7 +65,7 @@ def create_vision_profile(client: TestClient, *, alias: str = "obs-vision") -> d
             "provider_model_id": "vision/observable",
             "architecture": "florence2",
             "backend": "transformers",
-            "supported_tasks": ["caption", "detailed_caption", "ocr", "object_detection"],
+            "supported_tasks": ["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"],
             "external_inference_enabled": True,
         },
     )
