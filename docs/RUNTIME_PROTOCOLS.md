@@ -24,6 +24,10 @@ detailed behavior.
   [contracts/utility-llm.md](contracts/utility-llm.md)
 - Stateless inference:
   [contracts/stateless-inference.md](contracts/stateless-inference.md)
+- Stateless multimodal embeddings:
+  [contracts/stateless-multimodal-embeddings.md](contracts/stateless-multimodal-embeddings.md)
+- Stateless vision models:
+  [contracts/stateless-vision-models.md](contracts/stateless-vision-models.md)
 
 ## Message Streaming
 
@@ -82,19 +86,21 @@ Full contract: [contracts/provider-status.md](contracts/provider-status.md).
 
 ## Stateless Inference
 
-The disabled-by-default Stateless Local Inference Service is core-owned. A4.4
+The disabled-by-default Stateless Local Inference Service is core-owned. It
 implements non-streaming OpenAI-compatible chat completions and text embeddings
-for explicitly allowlisted Model Profiles, plus lazy local
-CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding runtimes behind the
-production-safe interface with fake-runtime test support. The multimodal
-runtimes are profile-gated, local-only, cache-managed, and DINOv2 is
-image-only. A5.2 adds a separate Florence2 vision runtime with the same
-profile-gated, local-only, cache-managed shape. External inference requests
-must not persist payloads, outputs, vectors, attachments, messages, runs, or
-Knowledge rows.
+for explicitly allowlisted Model Profiles, lazy local
+CLIP/OpenCLIP/SigLIP2/DINOv2 multimodal embedding runtimes, and local
+Florence2/Florence2 PromptGen vision task runtimes. Multimodal and vision
+runtimes are profile-gated, local-only, cache-managed, and fake-runtime testable.
+External inference requests must not persist payloads, outputs, vectors,
+attachments, messages, runs, or Knowledge rows.
 
 Full contract:
 [contracts/stateless-inference.md](contracts/stateless-inference.md).
+Multimodal details:
+[contracts/stateless-multimodal-embeddings.md](contracts/stateless-multimodal-embeddings.md).
+Vision details:
+[contracts/stateless-vision-models.md](contracts/stateless-vision-models.md).
 
 ## Attachments And Vision
 

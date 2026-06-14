@@ -10,9 +10,13 @@ from ai_workbench.core.inference.errors import (
 )
 from ai_workbench.core.inference.florence2_runtime import preflight_florence2_runtime
 from ai_workbench.core.inference.multimodal_runtime import clear_multimodal_runtime_cache
-from ai_workbench.core.inference.observability import log_inference_failure
 from ai_workbench.core.inference.vision_runtime import clear_vision_runtime_cache
 from ai_workbench.core.inference.request_limits import check_content_length, read_limited_workbench_body, read_limited_workbench_json
+from ai_workbench.core.inference.route_context import (
+    log_stateless_failure,
+    multimodal_failure_context,
+    vision_failure_context,
+)
 from ai_workbench.core.inference.schemas import InferenceUnloadRequest, status_response
 from ai_workbench.core.inference.settings import StatelessInferenceSettings, resolve_inference_settings
 from ai_workbench.core.inference.stateless import (
@@ -331,11 +335,11 @@ async def create_multimodal_embeddings(
     try:
         return create_multimodal_embeddings_response(state, raw)
     except StatelessInferenceError as exc:
-        _log_stateless_failure(
+        log_stateless_failure(
             state,
             endpoint="/api/inference/embeddings/multimodal",
             exc=exc,
-            context=_multimodal_failure_context(raw),
+            context=multimodal_failure_context(raw),
         )
         raise_workbench_inference_error(exc.status_code, exc.code, exc.message)
 
@@ -352,11 +356,11 @@ async def run_vision_task_route(
     try:
         return create_vision_response(state, raw)
     except StatelessInferenceError as exc:
-        _log_stateless_failure(
+        log_stateless_failure(
             state,
             endpoint="/api/inference/vision",
             exc=exc,
-            context=_vision_failure_context(raw),
+            context=vision_failure_context(raw),
         )
         raise_workbench_inference_error(exc.status_code, exc.code, exc.message)
 
@@ -425,44 +429,3 @@ def _resolve_vision_unload_profile_id(state: RuntimeState, model: str) -> str:
         return store.get_by_id_or_alias(model.removeprefix("vision:")).id
     except KeyError:
         raise_workbench_inference_error(404, InferenceErrorCode.MODEL_NOT_FOUND)
-
-
-def _log_stateless_failure(
-    state: RuntimeState,
-    *,
-    endpoint: str,
-    exc: StatelessInferenceError,
-    context: dict,
-) -> None:
-    log_inference_failure(
-        repo_root=getattr(state, "repo_root", None),
-        endpoint=endpoint,
-        status_code=exc.status_code,
-        error_code=getattr(exc.code, "value", str(exc.code)),
-        exception=exc,
-        context=context,
-    )
-
-
-def _multimodal_failure_context(payload: dict) -> dict:
-    inputs = payload.get("inputs")
-    input_types = []
-    if isinstance(inputs, list):
-        for item in inputs:
-            if isinstance(item, dict) and isinstance(item.get("type"), str):
-                input_types.append(item["type"])
-    return {
-        "model": payload.get("model") if isinstance(payload.get("model"), str) else None,
-        "input_count": len(inputs) if isinstance(inputs, list) else None,
-        "input_types": input_types,
-        "normalize_present": "normalize" in payload,
-    }
-
-
-def _vision_failure_context(payload: dict) -> dict:
-    options = payload.get("options")
-    return {
-        "model": payload.get("model") if isinstance(payload.get("model"), str) else None,
-        "task": payload.get("task") if isinstance(payload.get("task"), str) else None,
-        "option_keys": sorted(str(key) for key in options) if isinstance(options, dict) else [],
-    }

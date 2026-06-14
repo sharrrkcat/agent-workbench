@@ -1417,8 +1417,8 @@ def test_general_settings_uses_middle_category_list() -> None:
     assert "inference_service_api_key: values.inference_service_api_key || null" in panel
     assert "POST /v1/chat/completions" in panel
     assert "POST /v1/embeddings" in panel
-    assert "POST /api/inference/embeddings/multimodal" in panel
-    assert "POST /api/inference/vision" in panel
+    assert "POST /v1/embeddings/multimodal" in panel
+    assert "POST /v1/vision" in panel
     assert "DetailTabs" not in panel
     assert "generalTab" not in panel
 
@@ -1853,7 +1853,7 @@ def test_model_profile_api_examples_contract() -> None:
     assert "apiExamples.embedding.singleInput" in knowledge
 
     assert "SettingsApiExampleBlock" in multimodal
-    assert "/api/inference/embeddings/multimodal" in multimodal
+    assert "/v1/embeddings/multimodal" in multimodal
     assert "multimodal:<profile_key>" in multimodal
     assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in multimodal
     assert "type: 'image_base64'" in multimodal
@@ -1862,7 +1862,7 @@ def test_model_profile_api_examples_contract() -> None:
     assert "architecture === 'dinov2' ? t('settings:apiExamples.multimodal.dinov2ImageOnly')" in multimodal
 
     assert "SettingsApiExampleBlock" in vision
-    assert "/api/inference/vision" in vision
+    assert "/v1/vision" in vision
     assert "vision:<profile_key>" in vision
     assert "modelIdHelp={t('settings:apiExamples.modelIdHelp')}" in vision
     assert "supportedTasks.includes('more_detailed_caption')" in vision

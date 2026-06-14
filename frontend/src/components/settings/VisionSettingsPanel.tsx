@@ -604,7 +604,7 @@ function VisionProfileForm({
           {!parsedMetadata.ok ? <p className="settings-warning-text">{t('settings:vision.errors.invalidMetadataJson')}</p> : null}
         </section>
         <SettingsApiExampleBlock
-          endpoint="/api/inference/vision"
+          endpoint="/v1/vision"
           modelId={apiExampleModelId}
           modelIdHelp={t('settings:apiExamples.modelIdHelp')}
           examples={visionApiExamples}

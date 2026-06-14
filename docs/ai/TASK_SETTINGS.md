@@ -12,6 +12,12 @@ map, not a requirement to read every file in full.
 - `../contracts/memory-worldbook.md` for Core Memory or Worldbook settings.
 - `../contracts/runtime-llm-resolution.md` for Model Profile runtime behavior.
 - `../contracts/provider-status.md` for Provider/Profile status behavior.
+- `../contracts/stateless-inference.md` for external inference allowlist,
+  model id policy, and stateless settings boundaries.
+- `../contracts/stateless-multimodal-embeddings.md` for Multimodal Embedding
+  Model Profile fields and settings workflow.
+- `../contracts/stateless-vision-models.md` for Vision Model Profile fields,
+  Florence2/PromptGen metadata, and settings workflow.
 - `../EXTENSION_API.md#agent-overrides`
 - `../EXTENSION_API.md#capability-config`
 - `../EXTENSION_API.md#config-schema-fields`

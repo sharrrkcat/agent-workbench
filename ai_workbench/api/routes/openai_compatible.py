@@ -6,12 +6,20 @@ from ai_workbench.core.inference.errors import (
     InferenceErrorCode,
     raise_openai_inference_error,
 )
-from ai_workbench.core.inference.observability import log_inference_failure
 from ai_workbench.core.inference.request_limits import check_content_length, read_limited_json
+from ai_workbench.core.inference.route_context import (
+    chat_failure_context,
+    embedding_failure_context,
+    log_stateless_failure,
+    multimodal_failure_context,
+    vision_failure_context,
+)
 from ai_workbench.core.inference.stateless import (
     StatelessInferenceError,
     create_chat_completion_response,
     create_embeddings_response,
+    create_multimodal_embeddings_response,
+    create_vision_response,
     openai_model_list,
 )
 from ai_workbench.core.inference.settings import resolve_inference_settings
@@ -60,11 +68,11 @@ async def create_chat_completion(
     try:
         return create_chat_completion_response(state, payload)
     except StatelessInferenceError as exc:
-        _log_stateless_failure(
+        log_stateless_failure(
             state,
             endpoint="/v1/chat/completions",
             exc=exc,
-            context=_chat_failure_context(payload),
+            context=chat_failure_context(payload),
         )
         raise_openai_inference_error(exc.status_code, exc.code, exc.message)
 
@@ -81,50 +89,52 @@ async def create_embedding(
     try:
         return create_embeddings_response(state, payload)
     except StatelessInferenceError as exc:
-        _log_stateless_failure(
+        log_stateless_failure(
             state,
             endpoint="/v1/embeddings",
             exc=exc,
-            context=_embedding_failure_context(payload),
+            context=embedding_failure_context(payload),
         )
         raise_openai_inference_error(exc.status_code, exc.code, exc.message)
 
 
-def _log_stateless_failure(
-    state: RuntimeState,
-    *,
-    endpoint: str,
-    exc: StatelessInferenceError,
-    context: dict,
-) -> None:
-    log_inference_failure(
-        repo_root=getattr(state, "repo_root", None),
-        endpoint=endpoint,
-        status_code=exc.status_code,
-        error_code=getattr(exc.code, "value", str(exc.code)),
-        exception=exc,
-        context=context,
-    )
+@router.post("/embeddings/multimodal")
+async def create_multimodal_embedding(
+    request: Request,
+    state: RuntimeState = Depends(get_state),
+) -> dict:
+    settings = _guard_openai_request(request, state)
+    payload = await read_limited_json(request, settings)
+    if not isinstance(payload, dict):
+        raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
+    try:
+        return create_multimodal_embeddings_response(state, payload)
+    except StatelessInferenceError as exc:
+        log_stateless_failure(
+            state,
+            endpoint="/v1/embeddings/multimodal",
+            exc=exc,
+            context=multimodal_failure_context(payload),
+        )
+        raise_openai_inference_error(exc.status_code, exc.code, exc.message)
 
 
-def _chat_failure_context(payload: dict) -> dict:
-    messages = payload.get("messages")
-    return {
-        "model": payload.get("model") if isinstance(payload.get("model"), str) else None,
-        "message_count": len(messages) if isinstance(messages, list) else None,
-        "stream": payload.get("stream") is True,
-    }
-
-
-def _embedding_failure_context(payload: dict) -> dict:
-    input_value = payload.get("input")
-    input_count = None
-    if isinstance(input_value, str):
-        input_count = 1
-    elif isinstance(input_value, list):
-        input_count = len(input_value)
-    return {
-        "model": payload.get("model") if isinstance(payload.get("model"), str) else None,
-        "input_count": input_count,
-        "encoding_format": payload.get("encoding_format") if isinstance(payload.get("encoding_format"), str) else None,
-    }
+@router.post("/vision")
+async def run_vision_task(
+    request: Request,
+    state: RuntimeState = Depends(get_state),
+) -> dict:
+    settings = _guard_openai_request(request, state)
+    payload = await read_limited_json(request, settings)
+    if not isinstance(payload, dict):
+        raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
+    try:
+        return create_vision_response(state, payload)
+    except StatelessInferenceError as exc:
+        log_stateless_failure(
+            state,
+            endpoint="/v1/vision",
+            exc=exc,
+            context=vision_failure_context(payload),
+        )
+        raise_openai_inference_error(exc.status_code, exc.code, exc.message)

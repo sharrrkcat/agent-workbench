@@ -257,7 +257,7 @@ def test_image_embedding_model_inventory_endpoint_returns_internal_transformers_
     assert invalid.json()["error"]["code"] == "INVALID_MODEL_INVENTORY_KIND"
 
 
-def test_model_lists_include_multimodal_only_in_workbench_native(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_model_lists_include_multimodal_in_workbench_native_and_v1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     allowed = create_profile(client, name="Allowed", architecture="clip", provider_model_id="image_embedding/allowed", external_inference_enabled=True)
@@ -277,7 +277,17 @@ def test_model_lists_include_multimodal_only_in_workbench_native(tmp_path: Path,
     assert listed["profile_alias"] == allowed["alias"]
     assert listed["legacy_model_id"] == f"multimodal:{allowed['id']}"
     assert workbench["summary"]["multimodal_profiles_available"] == 1
-    assert all(not item["id"].startswith("multimodal:") for item in openai["data"])
+    openai_by_id = {item["id"]: item for item in openai["data"]}
+    assert set(openai_by_id) == {f"multimodal:{allowed['alias']}"}
+    listed_openai = openai_by_id[f"multimodal:{allowed['alias']}"]
+    assert listed_openai["object"] == "model"
+    assert listed_openai["type"] == "multimodal_embedding"
+    assert listed_openai["capabilities"] == ["multimodal_embeddings"]
+    assert listed_openai["profile_id"] == allowed["id"]
+    assert listed_openai["profile_alias"] == allowed["alias"]
+    assert listed_openai["legacy_model_id"] == f"multimodal:{allowed['id']}"
+    assert listed_openai["architecture"] == "clip"
+    assert listed_openai["supported_input_types"] == ["image", "text"]
 
 
 def test_multimodal_route_validates_then_returns_sanitized_runtime_error_and_is_stateless(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -379,6 +389,39 @@ def test_multimodal_route_with_fake_runtime_returns_schema_and_does_not_persist(
     assert "AAAA" not in str(payload)
     assert "red robot" not in str(payload)
     assert "multimodal" in payload["model"]
+
+
+def test_v1_multimodal_route_with_fake_runtime_returns_schema_and_openai_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    profile = create_profile(client, architecture="siglip2", provider_model_id="image_embedding/v1-fake", external_inference_enabled=True)
+    before = capture_stateless_persistence_snapshot(state)
+    register_multimodal_embedding_runtime_factory("siglip2", FakeMultimodalRuntime)
+
+    response = client.post(
+        "/v1/embeddings/multimodal",
+        json={
+            "model": f"multimodal:{profile['alias']}",
+            "inputs": [{"type": "image_base64", "data": "AAAA"}, {"type": "text", "text": "red robot"}],
+        },
+    )
+    invalid = client.post(
+        "/v1/embeddings/multimodal",
+        json={"model": f"multimodal:{profile['id']}", "inputs": [{"type": "image_url", "url": "https://example.invalid/x.png"}]},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload["object"] == "list"
+    assert payload["model"] == f"multimodal:{profile['alias']}"
+    assert payload["profile_id"] == profile["id"]
+    assert payload["profile_alias"] == profile["alias"]
+    assert [item["input_type"] for item in payload["data"]] == ["image", "text"]
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "inference_invalid_request"
+    assert invalid.json()["error"]["type"] == "invalid_request_error"
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
 
 
 @pytest.mark.parametrize("architecture", ["clip", "open_clip", "siglip2"])

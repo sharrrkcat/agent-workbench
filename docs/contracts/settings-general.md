@@ -45,6 +45,7 @@ Settings -> Models owns shared model configuration pages:
 - Embedding Model Profiles.
 - Reranker Model Profiles.
 - Multimodal Embedding Model Profiles.
+- Vision Model Profiles.
 
 Provider Profiles can represent external API providers or internal local model
 backends. Internal Provider Profiles use fixed local inventory roots under
@@ -70,7 +71,12 @@ it defaults to false and is documented in
 [stateless-inference.md](stateless-inference.md).
 Multimodal Embedding Model Profiles are managed by the backend inference API,
 use safe `image_embedding/...` refs under `data/models/image_embeddings`, and
-are not Knowledge text embedding profiles.
+are not Knowledge text embedding profiles. Full behavior:
+[stateless-multimodal-embeddings.md](stateless-multimodal-embeddings.md).
+Vision Model Profiles are managed by the backend inference API, use safe
+`vision/...` refs under `data/models/vision`, and serve Florence2-family vision
+tasks instead of Prompt Agent attachment vision. Full behavior:
+[stateless-vision-models.md](stateless-vision-models.md).
 The primary Embedding Model Profile workflow is Provider Profile plus provider
 model id/ref; legacy local model-path selection is not exposed in the Settings
 UI.
@@ -451,6 +457,10 @@ Settings changes must update the owning contract:
 - AgentConfig/CapabilityConfig schema: [../EXTENSION_API.md](../EXTENSION_API.md).
 - Provider/Model Profiles and runtime LLM behavior:
   [runtime-llm-resolution.md](runtime-llm-resolution.md).
+- Stateless Inference allowlists, multimodal profiles, and vision profiles:
+  [stateless-inference.md](stateless-inference.md),
+  [stateless-multimodal-embeddings.md](stateless-multimodal-embeddings.md),
+  and [stateless-vision-models.md](stateless-vision-models.md).
 - Knowledge settings: [knowledge.md](knowledge.md).
 - Core Memory/Worldbook settings: [memory-worldbook.md](memory-worldbook.md).
 

@@ -20,6 +20,12 @@ OPENAI_ENDPOINTS = [
     ("get", "/v1/models", None),
     ("post", "/v1/chat/completions", {"model": "local", "messages": [{"role": "user", "content": "hello"}]}),
     ("post", "/v1/embeddings", {"model": "embed", "input": "hello"}),
+    (
+        "post",
+        "/v1/embeddings/multimodal",
+        {"model": "clip", "inputs": [{"type": "text", "text": "red robot"}], "normalize": True},
+    ),
+    ("post", "/v1/vision", {"model": "vision:florence", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}, "options": {}}),
 ]
 
 WORKBENCH_ENDPOINTS = [
@@ -263,7 +269,7 @@ def test_disabled_stateless_inference_post_routes_do_not_validate_payload_before
 
 @pytest.mark.parametrize(
     "path",
-    ["/v1/chat/completions", "/v1/embeddings"],
+    ["/v1/chat/completions", "/v1/embeddings", "/v1/embeddings/multimodal", "/v1/vision"],
 )
 def test_disabled_openai_routes_reject_malformed_json_before_body_parsing(
     path: str,
@@ -308,6 +314,8 @@ def test_disabled_workbench_routes_reject_malformed_json_before_body_parsing(
     [
         ("/v1/chat/completions", "inference_auth_required"),
         ("/v1/embeddings", "inference_auth_required"),
+        ("/v1/embeddings/multimodal", "inference_auth_required"),
+        ("/v1/vision", "inference_auth_required"),
         ("/api/inference/embeddings/multimodal", "INFERENCE_AUTH_REQUIRED"),
         ("/api/inference/vision", "INFERENCE_AUTH_REQUIRED"),
     ],
@@ -335,6 +343,8 @@ def test_enabled_auth_failure_rejects_malformed_json_before_body_parsing(
     [
         ("/v1/chat/completions", "inference_request_too_large"),
         ("/v1/embeddings", "inference_request_too_large"),
+        ("/v1/embeddings/multimodal", "inference_request_too_large"),
+        ("/v1/vision", "inference_request_too_large"),
         ("/api/inference/embeddings/multimodal", "INFERENCE_REQUEST_TOO_LARGE"),
         ("/api/inference/vision", "INFERENCE_REQUEST_TOO_LARGE"),
     ],
@@ -365,7 +375,16 @@ def test_enabled_request_size_rejects_before_body_parsing_and_persistence(
     assert_snapshot_unchanged(before, after)
 
 
+@pytest.mark.parametrize(
+    ("path", "expected_code"),
+    [
+        ("/v1/embeddings/multimodal", "inference_request_too_large"),
+        ("/api/inference/embeddings/multimodal", "INFERENCE_REQUEST_TOO_LARGE"),
+    ],
+)
 def test_enabled_multimodal_route_rejects_oversized_streamed_body_without_content_length(
+    path: str,
+    expected_code: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -379,13 +398,13 @@ def test_enabled_multimodal_route_rejects_oversized_streamed_body_without_conten
         yield b'"}]}'
 
     response = client.post(
-        "/api/inference/embeddings/multimodal",
+        path,
         content=chunks(),
         headers={"content-type": "application/json", **auth_headers()},
     )
 
     assert response.status_code == 413
-    assert response.json()["error"]["code"] == "INFERENCE_REQUEST_TOO_LARGE"
+    assert response.json()["error"]["code"] == expected_code
 
 
 def test_disabled_route_rejects_before_size_and_auth_checks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -638,7 +657,14 @@ def test_disabled_stateless_inference_routes_do_not_call_unsafe_helpers(
         response = getattr(client, method)(path, json=body) if body is not None else getattr(client, method)(path)
         assert response.status_code == 503
 
-    for path in ("/v1/chat/completions", "/v1/embeddings", "/api/inference/embeddings/multimodal", "/api/inference/vision"):
+    for path in (
+        "/v1/chat/completions",
+        "/v1/embeddings",
+        "/v1/embeddings/multimodal",
+        "/v1/vision",
+        "/api/inference/embeddings/multimodal",
+        "/api/inference/vision",
+    ):
         response = client.post(path, content=b'{"malformed"', headers={"content-type": "application/json"})
         assert response.status_code == 503
 

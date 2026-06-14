@@ -6,7 +6,7 @@ from ai_workbench.core.inference.multimodal_runtime import has_multimodal_embedd
 from ai_workbench.core.inference.vision_runtime import has_vision_runtime_factory, vision_runtime_cache_status
 
 
-INFERENCE_A4_VERSION = "a5.2"
+STATELESS_INFERENCE_IMPLEMENTATION_VERSION = "a5.2"
 
 
 def status_response(
@@ -43,7 +43,7 @@ def status_response(
             "real_inference": True,
             "real_multimodal_inference": has_multimodal_embedding_runtime_factory(),
             "real_vision_inference": has_vision_runtime_factory(),
-            "version": INFERENCE_A4_VERSION,
+            "version": STATELESS_INFERENCE_IMPLEMENTATION_VERSION,
         },
         "runtime": {
             "multimodal_embedding_cache": multimodal_runtime_cache_status(),

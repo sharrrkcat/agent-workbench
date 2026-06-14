@@ -423,7 +423,7 @@ def test_vision_model_inventory_endpoint_returns_internal_transformers_safe_refs
     assert str(tmp_path) not in str(payload)
 
 
-def test_model_lists_include_vision_only_in_workbench_native(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_model_lists_include_vision_in_workbench_native_and_v1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     allowed = create_vision_profile(client, external_inference_enabled=True)
@@ -443,8 +443,17 @@ def test_model_lists_include_vision_only_in_workbench_native(tmp_path: Path, mon
     assert listed["profile_alias"] == allowed["alias"]
     assert listed["legacy_model_id"] == f"vision:{allowed['id']}"
     assert workbench["summary"]["vision_profiles_available"] == 1
-    assert all(not item["id"].startswith("vision:") for item in openai["data"])
-    assert all(not item["id"].startswith("multimodal:") for item in openai["data"])
+    openai_by_id = {item["id"]: item for item in openai["data"]}
+    assert set(openai_by_id) == {f"vision:{allowed['alias']}"}
+    listed_openai = openai_by_id[f"vision:{allowed['alias']}"]
+    assert listed_openai["object"] == "model"
+    assert listed_openai["type"] == "vision"
+    assert listed_openai["capabilities"] == ["vision_tasks"]
+    assert listed_openai["profile_id"] == allowed["id"]
+    assert listed_openai["profile_alias"] == allowed["alias"]
+    assert listed_openai["legacy_model_id"] == f"vision:{allowed['id']}"
+    assert listed_openai["architecture"] == "florence2"
+    assert listed_openai["supported_tasks"] == ["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]
 
 
 def test_vision_route_validates_allowlist_task_and_input_before_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -541,6 +550,41 @@ def test_fake_vision_runtime_returns_task_outputs_and_is_stateless(
     assert payload["data"]["type"] == expected_type
     assert payload["usage"] == {"input_count": 1}
     assert "AAAA" not in str(payload)
+    assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
+
+
+def test_v1_vision_route_with_fake_runtime_returns_schema_and_openai_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    state = client.app.state.runtime_state
+    enable_inference(client, require_api_key=False)
+    profile = create_vision_profile(client, external_inference_enabled=True, supported_tasks=["caption"])
+    register_vision_runtime_factory("florence2", FakeVisionRuntime)
+    before = capture_stateless_persistence_snapshot(state)
+
+    response = client.post(
+        "/v1/vision",
+        json={
+            "model": f"vision:{profile['alias']}",
+            "task": "caption",
+            "input": {"type": "image", "image_base64": "AAAA"},
+            "options": {"detail": "safe"},
+        },
+    )
+    invalid = client.post(
+        "/v1/vision",
+        json={"model": f"vision:{profile['id']}", "task": "ocr", "input": {"type": "image", "image_base64": "AAAA"}},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload["object"] == "vision_result"
+    assert payload["model"] == f"vision:{profile['alias']}"
+    assert payload["profile_id"] == profile["id"]
+    assert payload["profile_alias"] == profile["alias"]
+    assert payload["data"] == {"type": "text", "text": "a short caption"}
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "model_input_type_unsupported"
+    assert invalid.json()["error"]["type"] == "invalid_request_error"
     assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
 
 

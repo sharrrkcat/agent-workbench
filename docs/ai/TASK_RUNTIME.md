@@ -10,6 +10,12 @@ map, not a requirement to read every file in full.
 - `../contracts/runtime-llm-resolution.md` for main LLM resolution.
 - `../contracts/provider-status.md` for Provider/Profile status and memory release.
 - `../contracts/attachments-vision.md` for attachments and vision.
+- `../contracts/stateless-inference.md` for external inference service guards,
+  model ids, errors, and logs.
+- `../contracts/stateless-multimodal-embeddings.md` for multimodal embedding
+  routes, profiles, and runtime cache behavior.
+- `../contracts/stateless-vision-models.md` for Vision Model Profiles,
+  Florence2/PromptGen, preflight, and vision runtime behavior.
 - `../contracts/utility-llm.md` for session title or Utility LLM behavior.
 - `../contracts/intent-routing.md` for Intent Routing behavior.
 - `../contracts/knowledge.md` for Knowledge context injection.

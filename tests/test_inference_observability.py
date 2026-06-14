@@ -205,3 +205,63 @@ def test_vision_provider_error_logs_sanitized_root_cause_and_keeps_response_safe
         assert forbidden.lower() not in rendered_response
         assert forbidden not in rendered_log
     assert "RuntimeError" in rendered_log
+
+
+def test_v1_multimodal_failure_logs_openai_route_family(tmp_path: Path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+
+    response = client.post(
+        "/v1/embeddings/multimodal",
+        json={"model": "multimodal:missing", "inputs": [{"type": "image_base64", "data": "AAAA"}]},
+    )
+
+    assert response.status_code == 404
+    request_id = response.headers["x-request-id"]
+    assert response.json()["error"]["code"] == "model_not_found"
+    failure = next(event for event in read_log_events(tmp_path) if event["event"] == "inference_failure" and event["request_id"] == request_id)
+    assert failure["endpoint"] == "/v1/embeddings/multimodal"
+    assert failure["route_family"] == "openai_compatible"
+    assert failure["status_code"] == 404
+    assert failure["error_code"] == "MODEL_NOT_FOUND"
+    assert failure["context"]["model"] == "multimodal:missing"
+    assert "AAAA" not in log_text(tmp_path)
+
+
+def test_v1_vision_provider_error_logs_openai_route_family(tmp_path: Path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_vision_profile(client, alias="v1-obs-vision")
+
+    class ExplodingVisionRuntime:
+        def __init__(self, profile) -> None:
+            self.profile = profile
+
+        def run(self, *, profile, task: str, input, options: dict) -> VisionRuntimeResult:
+            raise RuntimeError(f"fake-secret in {tmp_path} with AAAA and generated text that must not leak")
+
+    register_vision_runtime_factory("florence2", ExplodingVisionRuntime)
+
+    response = client.post(
+        "/v1/vision",
+        json={
+            "model": f"vision:{profile['alias']}",
+            "task": "caption",
+            "input": {"type": "image", "image_base64": "AAAA"},
+            "options": {"max_new_tokens": 64},
+        },
+    )
+
+    assert response.status_code == 502
+    request_id = response.headers["x-request-id"]
+    assert response.json()["error"]["code"] == "provider_error"
+    failure = next(event for event in read_log_events(tmp_path) if event["event"] == "inference_failure" and event["request_id"] == request_id)
+    assert failure["endpoint"] == "/v1/vision"
+    assert failure["route_family"] == "openai_compatible"
+    assert failure["status_code"] == 502
+    assert failure["error_code"] == "PROVIDER_ERROR"
+    assert failure["context"]["model"] == f"vision:{profile['alias']}"
+    assert failure["context"]["task"] == "caption"
+    rendered_log = log_text(tmp_path)
+    for forbidden in ("fake-secret", "AAAA", "generated text", str(tmp_path)):
+        assert forbidden not in rendered_log

@@ -473,7 +473,7 @@ function MultimodalEmbeddingProfileForm({
           {!parsedMetadata.ok ? <p className="settings-warning-text">{t('settings:multimodal.errors.invalidMetadataJson')}</p> : null}
         </section>
         <SettingsApiExampleBlock
-          endpoint="/api/inference/embeddings/multimodal"
+          endpoint="/v1/embeddings/multimodal"
           modelId={apiExampleModelId}
           modelIdHelp={t('settings:apiExamples.modelIdHelp')}
           examples={multimodalApiExamples}

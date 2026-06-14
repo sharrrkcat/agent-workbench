@@ -39,7 +39,7 @@ class StatelessInferenceError(Exception):
 
 
 def openai_model_list(state: Any) -> dict[str, Any]:
-    data = [item for item in list_external_models(state) if item["type"] in {"llm", "text_embedding"}]
+    data = list_external_models(state)
     return {"object": "list", "data": [_openai_model_item(item) for item in data]}
 
 
@@ -301,7 +301,22 @@ def _validate_multimodal_normalize(payload: dict[str, Any], profile: Any) -> boo
 
 
 def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
-    return {"id": item["id"], "object": "model", "created": 0, "owned_by": "agent-workbench"}
+    model = {"id": item["id"], "object": "model", "created": 0, "owned_by": "agent-workbench"}
+    for key in (
+        "type",
+        "capabilities",
+        "profile_id",
+        "profile_alias",
+        "legacy_model_id",
+        "architecture",
+        "supported_input_types",
+        "dimensions",
+        "embedding_space",
+        "supported_tasks",
+    ):
+        if key in item and item[key] is not None:
+            model[key] = item[key]
+    return model
 
 
 def _profile_alias(profile: Any) -> str | None:

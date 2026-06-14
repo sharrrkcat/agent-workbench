@@ -37,6 +37,15 @@
   ownership boundaries, unknown field rejection, and settings/i18n ownership.
 - `../contracts/memory-worldbook.md`: Core Memory and Worldbook settings, APIs,
   matching, bindings, runtime injection, and compact metadata.
+- `../contracts/stateless-inference.md`: Stateless Inference service guards,
+  auth, request limits, model id policy, model listing, common errors, logs, and
+  persistence boundary.
+- `../contracts/stateless-multimodal-embeddings.md`: Multimodal Embedding Model
+  Profiles, CLIP/OpenCLIP/SigLIP2/DINOv2 routes, local refs, response shape,
+  runtime cache, and smoke tests.
+- `../contracts/stateless-vision-models.md`: Vision Model Profiles,
+  Florence2/PromptGen routes, transformers compatibility, preflight, generation
+  options, dependencies, and smoke tests.
 
 ## Soft Line Limits
 

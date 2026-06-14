@@ -1025,8 +1025,8 @@ function GeneralInferenceServiceSettings({
         <dl className="settings-definition-grid">
           <Metric label={t('general.chatCompletionsEndpoint')} value={<code>POST /v1/chat/completions</code>} wide />
           <Metric label={t('general.textEmbeddingsEndpoint')} value={<code>POST /v1/embeddings</code>} wide />
-          <Metric label={t('general.multimodalEmbeddingsEndpoint')} value={<code>POST /api/inference/embeddings/multimodal</code>} wide />
-          <Metric label={t('general.visionEndpoint')} value={<code>POST /api/inference/vision</code>} wide />
+          <Metric label={t('general.multimodalEmbeddingsEndpoint')} value={<code>POST /v1/embeddings/multimodal</code>} wide />
+          <Metric label={t('general.visionEndpoint')} value={<code>POST /v1/vision</code>} wide />
         </dl>
         <p className="settings-muted-copy">{t('general.inferenceServiceModelIds')}</p>
       </div>

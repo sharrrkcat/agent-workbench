@@ -110,11 +110,14 @@ Internal providers:
   state where the local cache can be inspected. External reranker providers are
   not supported.
 - Multimodal Embedding Model Profiles may use `image_embedding/...` refs under
-  `data/models/image_embeddings`. A4.1 status/listing is no-load and real image
+  `data/models/image_embeddings`. Status/listing is no-load and real image
   inference is available only when a multimodal runtime factory is registered.
+  Full behavior:
+  [stateless-multimodal-embeddings.md](stateless-multimodal-embeddings.md).
 - Vision Model Profiles may use `vision/...` refs under `data/models/vision`.
-  A5 status/listing is no-load and real Florence2 inference is available only
-  when the vision runtime factory is registered.
+  Status/listing is no-load and real Florence2 inference is available only when
+  the vision runtime factory is registered. Full behavior:
+  [stateless-vision-models.md](stateless-vision-models.md).
 - Internal provider unload is best-effort cache release only. It may release
   cached `internal_transformers` or `internal_llama_cpp` LLM runtimes, and must
   never delete model files or user data. Unsupported, unavailable, or failed
@@ -160,9 +163,9 @@ indexes, sessions, settings, attachments, or local user assets. Busy targets are
 not force-released. In this alpha, manual LLM release is limited to provider
 profiles with reliable unload support: LM Studio native unload and best-effort
 internal LLM runtime cache release.
-A4.1/A5.1 `POST /api/inference/unload` owns the multimodal embedding runtime
-cache target names `image_embedding`, `multimodal_embedding`, and `all`, plus
-the vision task cache target names `vision`, `vision_task`, and `all`; global
+`POST /api/inference/unload` owns the multimodal embedding runtime cache target
+names `image_embedding`, `multimodal_embedding`, and `all`, plus the vision task
+cache target names `vision`, `vision_task`, and `all`; global
 `/api/runtime/free-memory` targets are unchanged.
 A2 Stateless Inference status and model listing are no-load operations: they
 read enabled allowlisted profiles only and must not call provider

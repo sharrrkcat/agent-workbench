@@ -12,7 +12,7 @@ def _toml_array_block(text: str, key: str) -> str:
 
 def test_florence2_local_runtime_dependencies_are_declared_and_documented() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    contract = (ROOT / "docs" / "contracts" / "stateless-inference.md").read_text(encoding="utf-8")
+    contract = (ROOT / "docs" / "contracts" / "stateless-vision-models.md").read_text(encoding="utf-8")
 
     for extra_name in ("knowledge", "knowledge-cuda128"):
         extra = _toml_array_block(pyproject, extra_name)
