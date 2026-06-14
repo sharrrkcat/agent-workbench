@@ -99,6 +99,10 @@ class FakeVisionRuntime:
             "caption": "a short caption",
             "detailed_caption": "a detailed caption",
             "more_detailed_caption": "a more detailed caption",
+            "generate_tags": "tag_one, tag_two",
+            "analyze": "image composition analysis",
+            "mixed_caption": "mixed caption tags",
+            "mixed_caption_plus": "mixed caption plus analysis",
             "ocr": "OCR text",
         }[task]
         return VisionRuntimeResult(data={"type": "text", "text": text})
@@ -283,6 +287,23 @@ def test_vision_profile_table_defaults_and_safe_refs(tmp_path: Path, monkeypatch
     assert profile["alias"] == "florence2-vision"
     assert profile["architecture"] == "florence2"
     assert profile["supported_tasks"] == ["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]
+    promptgen = create_vision_profile(
+        client,
+        name="PromptGen Vision",
+        alias="promptgen-vision",
+        provider_model_id="vision/promptgen",
+        architecture="florence2_promptgen",
+    )
+    assert promptgen["architecture"] == "florence2_promptgen"
+    assert promptgen["supported_tasks"] == [
+        "caption",
+        "detailed_caption",
+        "more_detailed_caption",
+        "generate_tags",
+        "analyze",
+        "mixed_caption",
+        "mixed_caption_plus",
+    ]
     legacy = create_vision_profile(
         client,
         name="Legacy Vision",
@@ -291,6 +312,25 @@ def test_vision_profile_table_defaults_and_safe_refs(tmp_path: Path, monkeypatch
         supported_tasks=["caption", "detailed_caption", "ocr", "object_detection"],
     )
     assert legacy["supported_tasks"] == ["caption", "detailed_caption", "ocr", "object_detection"]
+    explicit_promptgen = create_vision_profile(
+        client,
+        name="Explicit PromptGen Vision",
+        alias="explicit-promptgen",
+        provider_model_id="vision/explicit-promptgen",
+        architecture="florence2_promptgen",
+        supported_tasks=["caption"],
+    )
+    assert explicit_promptgen["supported_tasks"] == ["caption"]
+    invalid_promptgen_task = client.post(
+        "/api/inference/vision-models",
+        json={
+            "name": "Bad PromptGen",
+            "provider_model_id": "vision/bad-promptgen",
+            "architecture": "florence2_promptgen",
+            "supported_tasks": ["object_detection"],
+        },
+    )
+    assert invalid_promptgen_task.status_code == 422
     assert client.get(f"/api/inference/vision-models/{profile['alias']}").json()["id"] == profile["id"]
     invalid_alias = client.post("/api/inference/vision-models", json={"name": "Bad", "alias": "Bad Alias", "provider_model_id": "vision/x"})
     assert invalid_alias.status_code == 422
@@ -411,6 +451,13 @@ def test_vision_route_validates_allowlist_task_and_input_before_runtime(tmp_path
     client = make_client(tmp_path, monkeypatch)
     enable_inference(client, require_api_key=False)
     allowed = create_vision_profile(client, external_inference_enabled=True, supported_tasks=["caption"])
+    promptgen_allowed = create_vision_profile(
+        client,
+        alias="promptgen-caption-only",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        supported_tasks=["caption"],
+    )
     blocked = create_vision_profile(client)
 
     production = client.post("/api/inference/vision", json={"model": f"vision:{allowed['alias']}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}})
@@ -420,6 +467,7 @@ def test_vision_route_validates_allowlist_task_and_input_before_runtime(tmp_path
     bad_task = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "classify", "input": {"type": "image", "image_base64": "AAAA"}})
     unsupported_task = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "ocr", "input": {"type": "image", "image_base64": "AAAA"}})
     unsupported_more_detailed = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "more_detailed_caption", "input": {"type": "image", "image_base64": "AAAA"}})
+    unsupported_promptgen_task = client.post("/api/inference/vision", json={"model": f"vision:{promptgen_allowed['id']}", "task": "generate_tags", "input": {"type": "image", "image_base64": "AAAA"}})
     text_input = client.post("/api/inference/vision", json={"model": f"vision:{allowed['id']}", "task": "caption", "input": {"type": "text", "text": "hello"}})
 
     assert production.status_code == 502
@@ -436,6 +484,8 @@ def test_vision_route_validates_allowlist_task_and_input_before_runtime(tmp_path
     assert unsupported_task.json()["error"]["code"] == "MODEL_INPUT_TYPE_UNSUPPORTED"
     assert unsupported_more_detailed.status_code == 400
     assert unsupported_more_detailed.json()["error"]["code"] == "MODEL_INPUT_TYPE_UNSUPPORTED"
+    assert unsupported_promptgen_task.status_code == 400
+    assert unsupported_promptgen_task.json()["error"]["code"] == "MODEL_INPUT_TYPE_UNSUPPORTED"
     assert text_input.status_code == 400
     assert text_input.json()["error"]["code"] == "MODEL_INPUT_TYPE_UNSUPPORTED"
 
@@ -492,6 +542,39 @@ def test_fake_vision_runtime_returns_task_outputs_and_is_stateless(
     assert payload["usage"] == {"input_count": 1}
     assert "AAAA" not in str(payload)
     assert_snapshot_unchanged(before, capture_stateless_persistence_snapshot(state))
+
+
+@pytest.mark.parametrize("task", ["generate_tags", "analyze", "mixed_caption", "mixed_caption_plus"])
+def test_fake_promptgen_vision_runtime_returns_new_text_tasks(
+    task: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_vision_profile(
+        client,
+        alias="promptgen-runtime",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+    )
+    register_vision_runtime_factory("florence2_promptgen", FakeVisionRuntime)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={
+            "model": f"vision:{profile['alias']}",
+            "task": task,
+            "input": {"type": "image", "image_base64": "AAAA"},
+        },
+        headers=auth_headers(),
+    )
+
+    payload = response.json()
+    assert response.status_code == 200, response.text
+    assert payload["architecture"] == "florence2_promptgen"
+    assert payload["task"] == task
+    assert payload["data"]["type"] == "text"
 
 
 def test_invalid_fake_vision_output_is_sanitized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -569,6 +652,10 @@ def install_fake_florence2_backend(monkeypatch: pytest.MonkeyPatch, *, task_outp
         "<CAPTION>": "a local caption",
         "<DETAILED_CAPTION>": "a local detailed caption",
         "<MORE_DETAILED_CAPTION>": "a local more detailed caption",
+        "<GENERATE_TAGS>": "local, promptgen, tags",
+        "<ANALYZE>": "local promptgen analysis",
+        "<MIXED_CAPTION>": "local mixed promptgen caption",
+        "<MIXED_CAPTION_PLUS>": "local mixed promptgen caption plus",
         "<OCR>": "local OCR text",
         "<OD>": {"labels": ["cat"], "bboxes": [[20.0, 10.0, 100.0, 80.0]], "scores": [0.98]},
     }
@@ -595,6 +682,7 @@ def install_fake_florence2_transformers_modules(
     config_error: Exception | None = None,
     processor_error: Exception | None = None,
     model_error: Exception | None = None,
+    cuda_available: bool = False,
 ) -> dict[str, object]:
     calls: dict[str, object] = {"config": 0, "model": 0, "processor": 0, "unloaded": 0}
 
@@ -603,7 +691,7 @@ def install_fake_florence2_transformers_modules(
     class cuda:
         @staticmethod
         def is_available() -> bool:
-            return False
+            return cuda_available
 
         @staticmethod
         def empty_cache() -> None:
@@ -617,6 +705,8 @@ def install_fake_florence2_transformers_modules(
 
     torch_module.cuda = cuda
     torch_module.backends = backends
+    torch_module.float16 = "float16"
+    torch_module.float32 = "float32"
 
     transformers_module = ModuleType("transformers")
     transformers_module.__version__ = "5.0.0-test"
@@ -625,7 +715,13 @@ def install_fake_florence2_transformers_modules(
         pass
 
     class PreTrainedModel:
-        pass
+        _tied_weights_keys = None
+
+        def get_expanded_tied_weights_keys(self, all_submodels: bool = False) -> dict:
+            tied_mapping = self._tied_weights_keys
+            if tied_mapping is None:
+                return {}
+            return {key: value for key, value in tied_mapping.items()}
 
     class PreTrainedTokenizerBase:
         pass
@@ -1839,6 +1935,362 @@ def test_florence2_load_repairs_transformers5_tied_language_weights(
     assert model.language_model.lm_head.weight is shared
 
 
+def test_promptgen_load_shims_legacy_list_tied_weights_only_for_promptgen(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "promptgen-list-tied-weights")
+    original_profile = create_vision_profile(
+        client,
+        alias="original-list-tied-weights",
+        provider_model_id="vision/promptgen-list-tied-weights",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    promptgen_profile = create_vision_profile(
+        client,
+        alias="promptgen-list-tied-weights",
+        provider_model_id="vision/promptgen-list-tied-weights",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    records: dict[str, object] = {"model_calls": 0}
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+
+    class FakeTransformersModule(ModuleType):
+        class GenerationMixin:
+            def generate(self, **kwargs):
+                return ["patched_ids"]
+
+        class GenerationConfig:
+            @classmethod
+            def from_model_config(cls, config):
+                instance = cls()
+                instance.source_config = config
+                return instance
+
+        class PretrainedConfig:
+            pass
+
+        class PreTrainedTokenizerBase:
+            pass
+
+        class PreTrainedModel:
+            def get_expanded_tied_weights_keys(self, all_submodels: bool = False) -> dict:
+                return {key: value for key, value in self._tied_weights_keys.items()}
+
+            def get_parameter(self, path: str):
+                value = self
+                for part in path.split("."):
+                    if not hasattr(value, part):
+                        raise AttributeError(f"{self.__class__.__name__} has no attribute `{part}`")
+                    value = getattr(value, part)
+                return value
+
+            def mark_tied_weights_as_initialized(self) -> None:
+                for path in self.all_tied_weights_keys:
+                    self.get_parameter(path)
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                records["model_calls"] = int(records["model_calls"]) + 1
+
+                class WeightHolder:
+                    def __init__(self, name: str) -> None:
+                        self.weight = object()
+
+                class LanguageModel(FakeTransformersModule.PreTrainedModel):
+                    def __init__(self) -> None:
+                        self.config = FakeTransformersModule.PretrainedConfig()
+                        self._tied_weights_keys = [
+                            "encoder.embed_tokens.weight",
+                            "decoder.embed_tokens.weight",
+                            "lm_head.weight",
+                        ]
+                        self.model = type("LanguageInnerModel", (), {})()
+                        self.model.shared = WeightHolder("shared")
+                        self.model.encoder = type("Encoder", (), {})()
+                        self.model.encoder.embed_tokens = WeightHolder("encoder")
+                        self.model.decoder = type("Decoder", (), {})()
+                        self.model.decoder.embed_tokens = WeightHolder("decoder")
+                        self.lm_head = WeightHolder("lm_head")
+                        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys()
+                        records["language_tied_weights"] = self.all_tied_weights_keys
+                        self.mark_tied_weights_as_initialized()
+
+                    def prepare_inputs_for_generation(self, *args, **kwargs):
+                        return {}
+
+                class Model(FakeTransformersModule.PreTrainedModel):
+                    def __init__(self) -> None:
+                        self.language_model = LanguageModel()
+                        self._tied_weights_keys = [f"language_model.{key}" for key in self.language_model._tied_weights_keys]
+                        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys()
+                        records["expanded_tied_weights"] = self.all_tied_weights_keys
+                        self.mark_tied_weights_as_initialized()
+
+                    def to(self, device):
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Processor:
+                    pass
+
+                return Processor()
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    original_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(original_profile["id"]), repo_root=tmp_path)
+    with pytest.raises(VisionRuntimeError):
+        original_runtime._load()
+
+    promptgen_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(promptgen_profile["id"]), repo_root=tmp_path)
+    model, processor, torch = promptgen_runtime._load()
+
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    assert records["language_tied_weights"] == {
+        "model.encoder.embed_tokens.weight": "model.shared.weight",
+        "model.decoder.embed_tokens.weight": "model.shared.weight",
+        "lm_head.weight": "model.shared.weight",
+    }
+    assert records["expanded_tied_weights"] == {
+        "language_model.model.encoder.embed_tokens.weight": "language_model.model.shared.weight",
+        "language_model.model.decoder.embed_tokens.weight": "language_model.model.shared.weight",
+        "language_model.lm_head.weight": "language_model.model.shared.weight",
+    }
+    restored = FakeTransformersModule.PreTrainedModel()
+    restored._tied_weights_keys = ["x"]
+    with pytest.raises(AttributeError):
+        restored.get_expanded_tied_weights_keys()
+
+
+def test_promptgen_load_adds_generation_mixin_to_legacy_language_model_only_for_promptgen(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "promptgen-generation-mixin")
+    original_profile = create_vision_profile(
+        client,
+        alias="original-generation-mixin",
+        provider_model_id="vision/promptgen-generation-mixin",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    promptgen_profile = create_vision_profile(
+        client,
+        alias="promptgen-generation-mixin",
+        provider_model_id="vision/promptgen-generation-mixin",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    records: dict[str, object] = {}
+
+    class FakeTorchModule(ModuleType):
+        def __init__(self) -> None:
+            super().__init__("torch")
+
+            class cuda:
+                @staticmethod
+                def is_available() -> bool:
+                    return False
+
+                @staticmethod
+                def empty_cache() -> None:
+                    return None
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_available() -> bool:
+                        return False
+
+            self.cuda = cuda
+            self.backends = backends
+            self.float16 = "float16"
+            self.float32 = "float32"
+
+    class FakeTransformersModule(ModuleType):
+        class GenerationMixin:
+            def generate(self, **kwargs):
+                records["mixin_generate_kwargs"] = kwargs
+                return ["patched_ids"]
+
+        class GenerationConfig:
+            @classmethod
+            def from_model_config(cls, config):
+                instance = cls()
+                instance.source_config = config
+                return instance
+
+        class PretrainedConfig:
+            pass
+
+        class PreTrainedTokenizerBase:
+            pass
+
+        class PreTrainedModel:
+            pass
+
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class LanguageModel(FakeTransformersModule.PreTrainedModel):
+                    def __init__(self) -> None:
+                        self.config = FakeTransformersModule.PretrainedConfig()
+
+                    def prepare_inputs_for_generation(self, *args, **kwargs):
+                        return {}
+
+                class Model(FakeTransformersModule.PreTrainedModel):
+                    def __init__(self) -> None:
+                        self.language_model = LanguageModel()
+
+                    def generate(self, **kwargs):
+                        return self.language_model.generate(**kwargs)
+
+                    def to(self, device):
+                        return self
+
+                    def eval(self):
+                        return None
+
+                return Model()
+
+        class AutoProcessor:
+            @staticmethod
+            def from_pretrained(path, **kwargs):
+                class Processor:
+                    pass
+
+                return Processor()
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    monkeypatch.setitem(sys.modules, "transformers", FakeTransformersModule("transformers"))
+
+    original_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(original_profile["id"]), repo_root=tmp_path)
+    original_model, _, _ = original_runtime._load()
+    assert not hasattr(original_model.language_model, "generate")
+
+    promptgen_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(promptgen_profile["id"]), repo_root=tmp_path)
+    promptgen_model, _, _ = promptgen_runtime._load()
+
+    assert isinstance(promptgen_model.language_model, FakeTransformersModule.GenerationMixin)
+    assert isinstance(promptgen_model.language_model.generation_config, FakeTransformersModule.GenerationConfig)
+    assert promptgen_model.language_model.generation_config.source_config is promptgen_model.language_model.config
+    assert promptgen_model.generate(input_ids=None, inputs_embeds="embeds") == ["patched_ids"]
+    assert records["mixin_generate_kwargs"] == {"input_ids": None, "inputs_embeds": "embeds"}
+
+
+def test_promptgen_load_uses_half_precision_on_accelerator_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "promptgen-half")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/promptgen-half",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(profile["id"]), repo_root=tmp_path)
+    calls = install_fake_florence2_transformers_modules(monkeypatch, cuda_available=True)
+
+    model, processor, torch = runtime._load()
+
+    assert model is not None
+    assert processor is not None
+    assert torch is not None
+    assert runtime.device == "cuda"
+    assert calls["model_kwargs"]["torch_dtype"] == "float16"
+    assert "torch_dtype" not in calls["processor_kwargs"]
+
+
+def test_promptgen_load_can_disable_half_precision_and_cpu_ignores_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai_workbench.core.inference.florence2_runtime import Florence2VisionRuntime
+
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "promptgen-no-half")
+    no_half = create_vision_profile(
+        client,
+        alias="promptgen-no-half",
+        provider_model_id="vision/promptgen-no-half",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True, "use_half_precision": False},
+    )
+    runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(no_half["id"]), repo_root=tmp_path)
+    calls = install_fake_florence2_transformers_modules(monkeypatch, cuda_available=True)
+
+    runtime._load()
+
+    assert runtime.device == "cuda"
+    assert "torch_dtype" not in calls["model_kwargs"]
+
+    create_local_vision_folder(client, "promptgen-cpu-half-default")
+    cpu_profile = create_vision_profile(
+        client,
+        alias="promptgen-cpu-half-default",
+        provider_model_id="vision/promptgen-cpu-half-default",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    cpu_runtime = Florence2VisionRuntime(client.app.state.runtime_state.vision_profiles.get(cpu_profile["id"]), repo_root=tmp_path)
+    cpu_calls = install_fake_florence2_transformers_modules(monkeypatch, cuda_available=False)
+
+    cpu_runtime._load()
+
+    assert cpu_runtime.device == "cpu"
+    assert "torch_dtype" not in cpu_calls["model_kwargs"]
+
+
 def test_florence2_preflight_missing_profile_returns_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 
@@ -1892,6 +2344,33 @@ def test_florence2_preflight_constructs_processor_with_tokenizer_compat(
     assert checks["processor_tokenizer"]["status"] == "pass"
     assert calls["observed_additional_special_tokens"] == ["<image>"]
     assert not hasattr(tokenizer_base_cls, "additional_special_tokens")
+
+
+def test_promptgen_preflight_constructs_processor_with_variant_compat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    create_local_vision_folder(client, "preflight-promptgen")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/preflight-promptgen",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    calls = install_fake_florence2_transformers_modules(monkeypatch)
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight")
+
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert response.status_code == 200, response.text
+    assert payload["ok"] is True
+    assert payload["architecture"] == "florence2_promptgen"
+    assert checks["architecture"]["status"] == "pass"
+    assert checks["processor_tokenizer"]["status"] == "pass"
+    assert calls["processor"] == 1
 
 
 def test_florence2_preflight_load_model_loads_and_unloads_without_global_cache(
@@ -2037,6 +2516,45 @@ def test_fake_florence2_backend_returns_task_outputs_through_http(
     )
 
     assert response.status_code == 200, response.text
+    assert response.json()["data"] == expected
+    assert calls["load"] == 1
+
+
+@pytest.mark.parametrize(
+    ("task", "expected"),
+    [
+        ("generate_tags", {"type": "text", "text": "local, promptgen, tags"}),
+        ("analyze", {"type": "text", "text": "local promptgen analysis"}),
+        ("mixed_caption", {"type": "text", "text": "local mixed promptgen caption"}),
+        ("mixed_caption_plus", {"type": "text", "text": "local mixed promptgen caption plus"}),
+    ],
+)
+def test_fake_promptgen_backend_maps_new_tasks_to_prompt_tokens(
+    task: str,
+    expected: dict,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    create_local_vision_folder(client, "fake-promptgen")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/fake-promptgen",
+        architecture="florence2_promptgen",
+        external_inference_enabled=True,
+        metadata={"trust_remote_code": True},
+    )
+    calls = install_fake_florence2_backend(monkeypatch)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['id']}", "task": task, "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["architecture"] == "florence2_promptgen"
     assert response.json()["data"] == expected
     assert calls["load"] == 1
 

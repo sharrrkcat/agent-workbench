@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 import importlib.metadata
 import importlib.util
 import math
@@ -29,26 +30,46 @@ from ai_workbench.core.knowledge_models import models_root_path
 from ai_workbench.core.vision_profiles import normalize_vision_model_ref
 
 
-FLORENCE2_TASK_PROMPTS = {
+FLORENCE2_TASK_PROMPTS: dict[str, str] = {
     "caption": "<CAPTION>",
     "detailed_caption": "<DETAILED_CAPTION>",
     "more_detailed_caption": "<MORE_DETAILED_CAPTION>",
     "ocr": "<OCR>",
     "object_detection": "<OD>",
 }
-DEFAULT_MAX_NEW_TOKENS = {
+FLORENCE2_PROMPTGEN_TASK_PROMPTS: dict[str, str] = {
+    "caption": "<CAPTION>",
+    "detailed_caption": "<DETAILED_CAPTION>",
+    "more_detailed_caption": "<MORE_DETAILED_CAPTION>",
+    "generate_tags": "<GENERATE_TAGS>",
+    "analyze": "<ANALYZE>",
+    "mixed_caption": "<MIXED_CAPTION>",
+    "mixed_caption_plus": "<MIXED_CAPTION_PLUS>",
+}
+DEFAULT_MAX_NEW_TOKENS: dict[str, int] = {
     "caption": 64,
     "detailed_caption": 256,
     "more_detailed_caption": 512,
     "ocr": 1024,
     "object_detection": 1024,
 }
+PROMPTGEN_DEFAULT_MAX_NEW_TOKENS: dict[str, int] = {
+    "caption": 64,
+    "detailed_caption": 256,
+    "more_detailed_caption": 512,
+    "generate_tags": 512,
+    "analyze": 512,
+    "mixed_caption": 512,
+    "mixed_caption_plus": 768,
+}
 FLORENCE2_TEXT_TASKS = {"caption", "detailed_caption", "more_detailed_caption", "ocr"}
 FLORENCE2_CAPTION_TEXT_TASKS = {"caption", "detailed_caption", "more_detailed_caption"}
+FLORENCE2_PROMPTGEN_TEXT_TASKS = set(FLORENCE2_PROMPTGEN_TASK_PROMPTS)
 MIN_VISION_IMAGE_EDGE_PX = 16
 FLORENCE2_PROCESSOR_IMAGE_SIZE_PX = 768
 MAX_TEXT_OUTPUT_CHARS = 100_000
 FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE = "Florence2 runtime requires metadata.trust_remote_code=true."
+FLORENCE2_PROMPTGEN_TRUST_REMOTE_CODE_REQUIRED_MESSAGE = "Florence2 PromptGen runtime requires metadata.trust_remote_code=true."
 LEGACY_TRANSFORMERS_CONFIG_ATTR_DEFAULTS = {
     "forced_bos_token_id": None,
     "forced_eos_token_id": None,
@@ -70,19 +91,63 @@ FLORENCE2_TIED_LANGUAGE_WEIGHT_PATHS = (
 _LEGACY_CONFIG_PATCH_LOCK = threading.RLock()
 _LEGACY_MODEL_PATCH_LOCK = threading.RLock()
 _LEGACY_TOKENIZER_PATCH_LOCK = threading.RLock()
-_FLORENCE2_TASK_TOKEN_RE = re.compile(r"<(?:CAPTION|DETAILED_CAPTION|MORE_DETAILED_CAPTION|OCR)>")
+_PROMPTGEN_TIED_WEIGHTS_PATCH_LOCK = threading.RLock()
+_FLORENCE2_TASK_TOKEN_RE = re.compile(r"<(?:CAPTION|DETAILED_CAPTION|MORE_DETAILED_CAPTION|OCR|GENERATE_TAGS|ANALYZE|MIXED_CAPTION|MIXED_CAPTION_PLUS)>")
 _FLORENCE2_LOC_TOKEN_RE = re.compile(r"<loc_\d+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 _MISSING = object()
+
+
+@dataclass(frozen=True)
+class Florence2RuntimeVariant:
+    architecture: str
+    label: str
+    task_prompts: dict[str, str]
+    default_max_new_tokens: dict[str, int]
+    text_tasks: set[str]
+    loc_cleanup_tasks: set[str]
+    trust_remote_code_message: str
+    repair_tied_language_weights: bool = True
+    promptgen_tied_weights_compat: bool = False
+    promptgen_generation_mixin_compat: bool = False
+    half_precision_default: bool = False
+
+
+FLORENCE2_RUNTIME_VARIANTS: dict[str, Florence2RuntimeVariant] = {
+    "florence2": Florence2RuntimeVariant(
+        architecture="florence2",
+        label="Florence2",
+        task_prompts=FLORENCE2_TASK_PROMPTS,
+        default_max_new_tokens=DEFAULT_MAX_NEW_TOKENS,
+        text_tasks=FLORENCE2_TEXT_TASKS,
+        loc_cleanup_tasks=FLORENCE2_CAPTION_TEXT_TASKS,
+        trust_remote_code_message=FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE,
+    ),
+    "florence2_promptgen": Florence2RuntimeVariant(
+        architecture="florence2_promptgen",
+        label="Florence2 PromptGen",
+        task_prompts=FLORENCE2_PROMPTGEN_TASK_PROMPTS,
+        default_max_new_tokens=PROMPTGEN_DEFAULT_MAX_NEW_TOKENS,
+        text_tasks=FLORENCE2_PROMPTGEN_TEXT_TASKS,
+        loc_cleanup_tasks=FLORENCE2_PROMPTGEN_TEXT_TASKS,
+        trust_remote_code_message=FLORENCE2_PROMPTGEN_TRUST_REMOTE_CODE_REQUIRED_MESSAGE,
+        repair_tied_language_weights=False,
+        promptgen_tied_weights_compat=True,
+        promptgen_generation_mixin_compat=True,
+        half_precision_default=True,
+    ),
+}
 
 
 class Florence2VisionRuntime:
     def __init__(self, profile: Any, *, repo_root: Path | None = None, provider_profile_store: Any = None) -> None:
         self.repo_root = repo_root
         self.provider_profile_store = provider_profile_store
+        self.variant = _runtime_variant_for_profile(profile)
         self.model_dir = _resolve_vision_model_dir(profile, repo_root)
         self.device = _resolve_runtime_device(profile, provider_profile_store)
         self.trust_remote_code = _metadata_bool(profile, "trust_remote_code")
+        self.use_half_precision = _metadata_bool_default(profile, "use_half_precision", self.variant.half_precision_default)
         self._model: Any = None
         self._processor: Any = None
         self._torch: Any = None
@@ -95,9 +160,9 @@ class Florence2VisionRuntime:
         input: VisionRuntimeInput,
         options: dict[str, Any],
     ) -> VisionRuntimeResult:
-        if task not in FLORENCE2_TASK_PROMPTS:
+        if task not in self.variant.task_prompts:
             raise VisionRuntimeInvalidRequest("Unsupported vision task.")
-        generation_options = _validate_generation_options(task, options)
+        generation_options = _validate_generation_options(task, options, self.variant)
         self._ensure_trust_remote_code()
         image = _load_vision_image(input.image_base64)
         image_size = _image_size(image)
@@ -105,7 +170,7 @@ class Florence2VisionRuntime:
         processor_image, padding, post_process_image_size = _prepare_florence2_processor_image(image)
 
         model, processor, torch = self._load()
-        prompt = FLORENCE2_TASK_PROMPTS[task]
+        prompt = self.variant.task_prompts[task]
         try:
             batch = processor(text=prompt, images=processor_image, return_tensors="pt")
             batch = _move_florence2_batch(batch, device=self.device, model=model, torch=torch)
@@ -122,7 +187,7 @@ class Florence2VisionRuntime:
                 decoded = processor.batch_decode(generated_ids, skip_special_tokens=False)
                 generated_text = decoded[0] if isinstance(decoded, list) and decoded else str(decoded)
                 parsed = _post_process(processor, generated_text, prompt, post_process_image_size)
-            return VisionRuntimeResult(data=_normalize_task_output(task, prompt, parsed, image_size, padding))
+            return VisionRuntimeResult(data=_normalize_task_output(task, prompt, parsed, image_size, padding, self.variant))
         except VisionRuntimeInvalidRequest:
             raise
         except VisionRuntimeError:
@@ -163,16 +228,33 @@ class Florence2VisionRuntime:
                 "trust_remote_code": self.trust_remote_code,
                 "attn_implementation": "eager",
             }
-            with _temporary_florence2_transformers_compat(PretrainedConfig, PreTrainedModel, PreTrainedTokenizerBase):
-                model = AutoModelForCausalLM.from_pretrained(str(self.model_dir), **load_kwargs)
+            model_load_kwargs = dict(load_kwargs)
+            load_dtype = _resolve_model_load_dtype(self.variant, use_half_precision=self.use_half_precision, device=resolved_device, torch=torch)
+            if load_dtype is not None:
+                model_load_kwargs["torch_dtype"] = load_dtype
+            with _temporary_florence2_transformers_compat(
+                PretrainedConfig,
+                PreTrainedModel,
+                PreTrainedTokenizerBase,
+                promptgen_tied_weights_compat=self.variant.promptgen_tied_weights_compat,
+            ):
+                model = AutoModelForCausalLM.from_pretrained(str(self.model_dir), **model_load_kwargs)
                 processor = AutoProcessor.from_pretrained(str(self.model_dir), **load_kwargs)
             _materialize_legacy_transformers_config_attrs(model, processor)
             _materialize_legacy_transformers_model_attrs(model)
-            _repair_florence2_tied_language_weights(model)
+            if self.variant.promptgen_generation_mixin_compat:
+                _materialize_promptgen_generation_mixin(
+                    model,
+                    _resolve_transformers_generation_mixin(),
+                    _resolve_transformers_generation_config(),
+                )
+            if self.variant.repair_tied_language_weights:
+                _repair_florence2_tied_language_weights(model)
             if hasattr(model, "to"):
                 model = model.to(resolved_device)
             model = _normalize_florence2_model_dtype(model, device=resolved_device, torch=torch)
-            _validate_florence2_tied_language_weights(model)
+            if self.variant.repair_tied_language_weights:
+                _validate_florence2_tied_language_weights(model)
             if hasattr(model, "eval"):
                 model.eval()
             self.device = resolved_device
@@ -189,14 +271,19 @@ class Florence2VisionRuntime:
 
     def _ensure_trust_remote_code(self) -> None:
         if not self.trust_remote_code:
-            raise VisionRuntimeInvalidRequest(FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE)
+            raise VisionRuntimeInvalidRequest(self.variant.trust_remote_code_message)
 
 
 def register_florence2_runtime_factory(*, repo_root: Path | None = None, provider_profile_store: Any = None) -> None:
-    register_vision_runtime_factory(
-        "florence2",
-        lambda profile: Florence2VisionRuntime(profile, repo_root=repo_root, provider_profile_store=provider_profile_store),
-    )
+    for architecture in FLORENCE2_RUNTIME_VARIANTS:
+        register_vision_runtime_factory(
+            architecture,
+            lambda profile, *, _repo_root=repo_root, _provider_profile_store=provider_profile_store: Florence2VisionRuntime(
+                profile,
+                repo_root=_repo_root,
+                provider_profile_store=_provider_profile_store,
+            ),
+        )
 
 
 def preflight_florence2_runtime(
@@ -209,12 +296,13 @@ def preflight_florence2_runtime(
     checks: list[dict[str, str]] = []
     profile_id = str(getattr(profile, "id", ""))
     architecture = str(getattr(profile, "architecture", ""))
+    variant = FLORENCE2_RUNTIME_VARIANTS.get(architecture)
 
     def add_check(check_id: str, status: str, message: str) -> None:
         checks.append({"id": check_id, "status": status, "message": message})
 
-    if architecture == "florence2":
-        add_check("architecture", "pass", "Vision profile uses the Florence2 architecture.")
+    if variant is not None:
+        add_check("architecture", "pass", f"Vision profile uses the {variant.label} architecture.")
     else:
         add_check("architecture", "fail", "Vision profile architecture is not supported by this preflight.")
 
@@ -230,14 +318,18 @@ def preflight_florence2_runtime(
     if trust_remote_code:
         add_check("trust_remote_code", "pass", "metadata.trust_remote_code=true is set.")
     else:
-        add_check("trust_remote_code", "fail", FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE)
+        add_check(
+            "trust_remote_code",
+            "fail",
+            variant.trust_remote_code_message if variant is not None else FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE,
+        )
 
     device_ok = True
     if dependencies_ok:
         device_ok = _preflight_device_available(profile, provider_profile_store, add_check)
 
-    if architecture == "florence2" and dependencies_ok and model_dir is not None and trust_remote_code:
-        _preflight_transformers_objects(model_dir, add_check)
+    if variant is not None and dependencies_ok and model_dir is not None and trust_remote_code:
+        _preflight_transformers_objects(model_dir, add_check, variant)
         if load_model and device_ok:
             _preflight_model_load(profile, repo_root=repo_root, provider_profile_store=provider_profile_store, add_check=add_check)
         elif load_model:
@@ -269,17 +361,28 @@ def _resolve_vision_model_dir(profile: Any, repo_root: Path | None) -> Path:
     return resolved
 
 
+def _runtime_variant_for_profile(profile: Any) -> Florence2RuntimeVariant:
+    architecture = str(getattr(profile, "architecture", "") or "florence2")
+    variant = FLORENCE2_RUNTIME_VARIANTS.get(architecture)
+    if variant is None:
+        raise VisionRuntimeInvalidRequest("Unsupported vision architecture.")
+    return variant
+
+
 @contextmanager
 def _temporary_florence2_transformers_compat(
     pretrained_config_cls: Any,
     pretrained_model_cls: Any,
     tokenizer_base_cls: Any,
+    *,
+    promptgen_tied_weights_compat: bool = False,
 ):
-    with (
-        _temporary_legacy_transformers_config_attrs(pretrained_config_cls),
-        _temporary_legacy_transformers_model_attrs(pretrained_model_cls),
-        _temporary_legacy_transformers_tokenizer_attrs(tokenizer_base_cls),
-    ):
+    with ExitStack() as stack:
+        stack.enter_context(_temporary_legacy_transformers_config_attrs(pretrained_config_cls))
+        stack.enter_context(_temporary_legacy_transformers_model_attrs(pretrained_model_cls))
+        stack.enter_context(_temporary_legacy_transformers_tokenizer_attrs(tokenizer_base_cls))
+        if promptgen_tied_weights_compat:
+            stack.enter_context(_temporary_promptgen_tied_weights_keys_compat(pretrained_model_cls))
         yield
 
 
@@ -339,6 +442,170 @@ def _temporary_legacy_transformers_model_attrs(pretrained_model_cls: Any):
                         setattr(pretrained_model_cls, attr, original)
                 except AttributeError:
                     continue
+
+
+@contextmanager
+def _temporary_promptgen_tied_weights_keys_compat(pretrained_model_cls: Any):
+    if pretrained_model_cls is None:
+        yield
+        return
+    attr = "get_expanded_tied_weights_keys"
+    original = getattr(pretrained_model_cls, attr, None)
+    if not callable(original):
+        yield
+        return
+
+    def patched(self: Any, *args: Any, **kwargs: Any) -> Any:
+        tied_keys = _safe_getattr(self, "_tied_weights_keys")
+        if not isinstance(tied_keys, list):
+            return original(self, *args, **kwargs)
+        replacement = _legacy_tied_weights_list_to_mapping(self, tied_keys)
+        try:
+            setattr(self, "_tied_weights_keys", replacement)
+            return original(self, *args, **kwargs)
+        finally:
+            try:
+                setattr(self, "_tied_weights_keys", tied_keys)
+            except Exception:
+                pass
+
+    with _PROMPTGEN_TIED_WEIGHTS_PATCH_LOCK:
+        setattr(pretrained_model_cls, attr, patched)
+        try:
+            yield
+        finally:
+            try:
+                setattr(pretrained_model_cls, attr, original)
+            except Exception:
+                pass
+
+
+def _legacy_tied_weights_list_to_mapping(model: Any, value: list[Any]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for item in value:
+        if not isinstance(item, str) or not item:
+            continue
+        target = _normalize_legacy_florence2_tied_weight_target(model, item)
+        source = _legacy_florence2_tied_weight_source(model, target)
+        if target is not None and source is not None:
+            mapping[target] = source
+    return mapping
+
+
+def _normalize_legacy_florence2_tied_weight_target(model: Any, value: str) -> str | None:
+    candidates = [value]
+    if value.startswith(("encoder.", "decoder.")):
+        candidates.append(f"model.{value}")
+        candidates.append(f"language_model.model.{value}")
+    elif value.startswith(("language_model.encoder.", "language_model.decoder.")):
+        candidates.append(value.replace("language_model.", "language_model.model.", 1))
+    for candidate in candidates:
+        if _get_nested_attr(model, candidate) is not _MISSING:
+            return candidate
+    return None
+
+
+def _legacy_florence2_tied_weight_source(model: Any, target: str | None) -> str | None:
+    if target is None:
+        return None
+    source_candidates: list[str] = []
+    if target.startswith(("encoder.", "decoder.")):
+        source_candidates.append("shared.weight")
+    elif target.startswith(("model.encoder.", "model.decoder.", "lm_head.")):
+        source_candidates.append("model.shared.weight")
+    elif target.startswith(("language_model.model.encoder.", "language_model.model.decoder.", "language_model.lm_head.")):
+        source_candidates.append("language_model.model.shared.weight")
+    for candidate in source_candidates:
+        if _get_nested_attr(model, candidate) is not _MISSING:
+            return candidate
+    return None
+
+
+def _resolve_transformers_generation_mixin() -> Any:
+    try:
+        from transformers import GenerationMixin  # type: ignore
+
+        return GenerationMixin
+    except Exception:
+        try:
+            from transformers.generation.utils import GenerationMixin  # type: ignore
+
+            return GenerationMixin
+        except Exception:
+            return None
+
+
+def _resolve_transformers_generation_config() -> Any:
+    try:
+        from transformers import GenerationConfig  # type: ignore
+
+        return GenerationConfig
+    except Exception:
+        try:
+            from transformers.generation import GenerationConfig  # type: ignore
+
+            return GenerationConfig
+        except Exception:
+            return None
+
+
+def _materialize_promptgen_generation_mixin(model: Any, generation_mixin_cls: Any, generation_config_cls: Any) -> None:
+    language_model = _safe_getattr(model, "language_model")
+    if language_model is None:
+        return
+    if callable(_safe_getattr(language_model, "generate")):
+        _materialize_promptgen_generation_config(language_model, generation_config_cls)
+        return
+    if not callable(_safe_getattr(language_model, "prepare_inputs_for_generation")):
+        raise VisionRuntimeError("Florence2 PromptGen language model generation is not compatible with this transformers version.")
+    if generation_mixin_cls is None:
+        raise VisionRuntimeError("Florence2 PromptGen generation compatibility requires transformers GenerationMixin.")
+
+    try:
+        if isinstance(language_model, generation_mixin_cls):
+            _materialize_promptgen_generation_config(language_model, generation_config_cls)
+            return
+    except TypeError:
+        pass
+
+    original_cls = language_model.__class__
+    try:
+        if issubclass(original_cls, generation_mixin_cls):
+            _materialize_promptgen_generation_config(language_model, generation_config_cls)
+            return
+    except TypeError:
+        pass
+
+    patched_cls = type(
+        f"{original_cls.__name__}WithGenerationMixin",
+        (original_cls, generation_mixin_cls),
+        {"__module__": original_cls.__module__, "__doc__": original_cls.__doc__},
+    )
+    try:
+        language_model.__class__ = patched_cls
+    except TypeError as exc:
+        raise VisionRuntimeError("Florence2 PromptGen generation compatibility could not be enabled.") from exc
+
+    if not callable(_safe_getattr(language_model, "generate")):
+        raise VisionRuntimeError("Florence2 PromptGen generation compatibility could not be enabled.")
+    _materialize_promptgen_generation_config(language_model, generation_config_cls)
+
+
+def _materialize_promptgen_generation_config(language_model: Any, generation_config_cls: Any) -> None:
+    if _safe_getattr(language_model, "generation_config") is not None:
+        return
+    model_config = _safe_getattr(language_model, "config")
+    if model_config is None:
+        raise VisionRuntimeError("Florence2 PromptGen generation config is not available.")
+    if generation_config_cls is None:
+        raise VisionRuntimeError("Florence2 PromptGen generation compatibility requires transformers GenerationConfig.")
+    from_model_config = getattr(generation_config_cls, "from_model_config", None)
+    try:
+        generation_config = from_model_config(model_config) if callable(from_model_config) else generation_config_cls()
+        setattr(language_model, "generation_config", generation_config)
+    except Exception as exc:
+        raise VisionRuntimeError("Florence2 PromptGen generation config could not be initialized.") from exc
+    _materialize_config_object(_safe_getattr(language_model, "generation_config"), set())
 
 
 @contextmanager
@@ -605,7 +872,7 @@ def _preflight_device_available(profile: Any, provider_profile_store: Any, add_c
         return False
 
 
-def _preflight_transformers_objects(model_dir: Path, add_check: Any) -> None:
+def _preflight_transformers_objects(model_dir: Path, add_check: Any, variant: Florence2RuntimeVariant) -> None:
     try:
         from transformers import AutoConfig, AutoProcessor, PretrainedConfig  # type: ignore
         try:
@@ -621,23 +888,33 @@ def _preflight_transformers_objects(model_dir: Path, add_check: Any) -> None:
         return
 
     try:
-        with _temporary_florence2_transformers_compat(PretrainedConfig, PreTrainedModel, PreTrainedTokenizerBase):
+        with _temporary_florence2_transformers_compat(
+            PretrainedConfig,
+            PreTrainedModel,
+            PreTrainedTokenizerBase,
+            promptgen_tied_weights_compat=variant.promptgen_tied_weights_compat,
+        ):
             AutoConfig.from_pretrained(str(model_dir), local_files_only=True, trust_remote_code=True)
-        add_check("config", "pass", "Florence2 config is constructable.")
+        add_check("config", "pass", f"{variant.label} config is constructable.")
     except Exception:
-        add_check("config", "fail", "Florence2 config could not be constructed.")
+        add_check("config", "fail", f"{variant.label} config could not be constructed.")
 
     try:
-        with _temporary_florence2_transformers_compat(PretrainedConfig, PreTrainedModel, PreTrainedTokenizerBase):
+        with _temporary_florence2_transformers_compat(
+            PretrainedConfig,
+            PreTrainedModel,
+            PreTrainedTokenizerBase,
+            promptgen_tied_weights_compat=variant.promptgen_tied_weights_compat,
+        ):
             AutoProcessor.from_pretrained(
                 str(model_dir),
                 local_files_only=True,
                 trust_remote_code=True,
                 attn_implementation="eager",
             )
-        add_check("processor_tokenizer", "pass", "Florence2 processor and tokenizer are constructable.")
+        add_check("processor_tokenizer", "pass", f"{variant.label} processor and tokenizer are constructable.")
     except Exception:
-        add_check("processor_tokenizer", "fail", "Florence2 processor or tokenizer could not be constructed.")
+        add_check("processor_tokenizer", "fail", f"{variant.label} processor or tokenizer could not be constructed.")
 
 
 def _preflight_model_load(profile: Any, *, repo_root: Path | None, provider_profile_store: Any, add_check: Any) -> None:
@@ -645,11 +922,18 @@ def _preflight_model_load(profile: Any, *, repo_root: Path | None, provider_prof
     try:
         runtime = Florence2VisionRuntime(profile, repo_root=repo_root, provider_profile_store=provider_profile_store)
         runtime._load()
-        add_check("model_load", "pass", "Florence2 model weights loaded successfully.")
+        add_check("model_load", "pass", f"{runtime.variant.label} model weights loaded successfully.")
     except VisionRuntimeInvalidRequest:
-        add_check("model_load", "fail", FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE)
+        variant = FLORENCE2_RUNTIME_VARIANTS.get(str(getattr(profile, "architecture", "")))
+        add_check(
+            "model_load",
+            "fail",
+            variant.trust_remote_code_message if variant is not None else FLORENCE2_TRUST_REMOTE_CODE_REQUIRED_MESSAGE,
+        )
     except Exception:
-        add_check("model_load", "fail", "Florence2 model weights could not be loaded.")
+        variant = FLORENCE2_RUNTIME_VARIANTS.get(str(getattr(profile, "architecture", "")))
+        label = variant.label if variant is not None else "Florence2"
+        add_check("model_load", "fail", f"{label} model weights could not be loaded.")
     finally:
         if runtime is not None:
             runtime.unload()
@@ -743,6 +1027,20 @@ def _move_tensor(value: Any, *, device: str, dtype: Any | None) -> Any:
         return moved.to(dtype=dtype)
     except TypeError:
         return moved
+
+
+def _resolve_model_load_dtype(
+    variant: Florence2RuntimeVariant,
+    *,
+    use_half_precision: bool,
+    device: str,
+    torch: Any,
+) -> Any | None:
+    if not variant.half_precision_default or not use_half_precision:
+        return None
+    if _device_kind(device) == "cpu":
+        return None
+    return getattr(torch, "float16", None)
 
 
 def _normalize_florence2_model_dtype(model: Any, *, device: str, torch: Any) -> Any:
@@ -934,12 +1232,12 @@ def _padding_color(image: Any) -> Any:
     return 0
 
 
-def _validate_generation_options(task: str, options: dict[str, Any]) -> dict[str, int]:
+def _validate_generation_options(task: str, options: dict[str, Any], variant: Florence2RuntimeVariant) -> dict[str, int]:
     allowed = {"max_new_tokens", "num_beams"}
     unknown = set(options) - allowed
     if unknown:
         raise VisionRuntimeInvalidRequest("Unsupported vision generation option.")
-    max_new_tokens = options.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS[task])
+    max_new_tokens = options.get("max_new_tokens", variant.default_max_new_tokens[task])
     num_beams = options.get("num_beams", 3)
     if not isinstance(max_new_tokens, int) or isinstance(max_new_tokens, bool) or max_new_tokens < 1 or max_new_tokens > 1024:
         raise VisionRuntimeInvalidRequest("max_new_tokens must be an integer from 1 to 1024.")
@@ -955,27 +1253,36 @@ def _post_process(processor: Any, generated_text: str, prompt: str, image_size: 
     return {prompt: generated_text}
 
 
-def _normalize_task_output(task: str, prompt: str, parsed: Any, image_size: tuple[int, int], padding: dict[str, int] | None = None) -> dict[str, Any]:
+def _normalize_task_output(
+    task: str,
+    prompt: str,
+    parsed: Any,
+    image_size: tuple[int, int],
+    padding: dict[str, int] | None = None,
+    variant: Florence2RuntimeVariant | None = None,
+) -> dict[str, Any]:
+    variant = variant or FLORENCE2_RUNTIME_VARIANTS["florence2"]
     raw = _unwrap_prompt_result(parsed, prompt)
-    if task in FLORENCE2_TEXT_TASKS:
+    if task in variant.text_tasks:
         if isinstance(raw, dict):
             text = raw.get(task) or raw.get(prompt) or raw.get("text")
         else:
             text = raw
         if not isinstance(text, str) or len(text) > MAX_TEXT_OUTPUT_CHARS:
             raise VisionRuntimeError("Florence2 runtime returned invalid text output.")
-        return {"type": "text", "text": _clean_florence2_text_output(task, text)}
+        return {"type": "text", "text": _clean_florence2_text_output(task, text, variant)}
     if task == "object_detection":
         return {"type": "objects", "objects": _normalize_objects(raw, image_size, padding)}
     raise VisionRuntimeInvalidRequest("Unsupported vision task.")
 
 
-def _clean_florence2_text_output(task: str, text: str) -> str:
+def _clean_florence2_text_output(task: str, text: str, variant: Florence2RuntimeVariant | None = None) -> str:
+    variant = variant or FLORENCE2_RUNTIME_VARIANTS["florence2"]
     cleaned = _FLORENCE2_TASK_TOKEN_RE.sub("", text)
-    if task in FLORENCE2_CAPTION_TEXT_TASKS:
+    if task in variant.loc_cleanup_tasks:
         cleaned = _FLORENCE2_LOC_TOKEN_RE.sub("", cleaned)
     cleaned = _WHITESPACE_RE.sub(" ", cleaned).strip()
-    if task in FLORENCE2_CAPTION_TEXT_TASKS:
+    if task in variant.loc_cleanup_tasks:
         cleaned = _dedupe_leading_caption_fragment(cleaned)
     return cleaned
 
@@ -1131,3 +1438,10 @@ def _clamp_unit(value: float) -> float:
 def _metadata_bool(profile: Any, key: str) -> bool:
     metadata = getattr(profile, "metadata", {}) or {}
     return bool(isinstance(metadata, dict) and metadata.get(key) is True)
+
+
+def _metadata_bool_default(profile: Any, key: str, default: bool) -> bool:
+    metadata = getattr(profile, "metadata", {}) or {}
+    if not isinstance(metadata, dict) or key not in metadata:
+        return default
+    return metadata.get(key) is True

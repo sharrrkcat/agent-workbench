@@ -98,6 +98,10 @@
       "caption": "Caption request",
       "detailedCaption": "Detailed caption request",
       "moreDetailedCaption": "More detailed caption request",
+      "generateTags": "Generate tags request",
+      "analyze": "Analyze request",
+      "mixedCaption": "Mixed caption request",
+      "mixedCaptionPlus": "Mixed caption plus request",
       "ocr": "OCR request",
       "objectDetection": "Object detection request"
     }
@@ -229,6 +233,7 @@
       "backend": "Backend",
       "maxBatchSize": "Max batch size",
       "trustRemoteCode": "Trust remote code",
+      "useHalfPrecision": "Use half precision",
       "metadataJson": "Metadata JSON"
     },
     "actions": {
@@ -236,7 +241,8 @@
       "refreshingInventory": "Refreshing..."
     },
     "architectures": {
-      "florence2": "Florence2"
+      "florence2": "Florence2",
+      "florence2_promptgen": "Florence2 PromptGen"
     },
     "backends": {
       "transformers": "Transformers"
@@ -245,6 +251,10 @@
       "caption": "Caption",
       "detailed_caption": "Detailed caption",
       "more_detailed_caption": "More detailed caption",
+      "generate_tags": "Generate tags",
+      "analyze": "Analyze",
+      "mixed_caption": "Mixed caption",
+      "mixed_caption_plus": "Mixed caption plus",
       "ocr": "OCR",
       "object_detection": "Object detection"
     },
@@ -263,6 +273,7 @@
       "safeRef": "Scans data/models/vision and saves refs as vision/<folder>.",
       "inventoryRoot": "Scanned under {{root}}.",
       "trustRemoteCode": "Advanced opt-in for local custom model code. Leave off for standard local Florence2 folders.",
+      "useHalfPrecision": "PromptGen defaults to float16 on accelerator devices to reduce VRAM use. CPU loads stay float32.",
       "metadataJson": "Advanced metadata persisted with this profile. The trust remote code toggle is stored here."
     },
     "warnings": {

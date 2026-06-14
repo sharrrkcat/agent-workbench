@@ -134,6 +134,16 @@ class VisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str
-    task: Literal["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]
+    task: Literal[
+        "caption",
+        "detailed_caption",
+        "more_detailed_caption",
+        "ocr",
+        "object_detection",
+        "generate_tags",
+        "analyze",
+        "mixed_caption",
+        "mixed_caption_plus",
+    ]
     input: dict[str, Any]
     options: dict[str, Any] = Field(default_factory=dict)

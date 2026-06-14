@@ -18,9 +18,18 @@ import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample 
 import { finalSafeRefSegment, sanitizeProfileKey, uniqueProfileKey } from './profileKeyUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
-const ARCHITECTURES: VisionArchitecture[] = ['florence2'];
+const ARCHITECTURES: VisionArchitecture[] = ['florence2', 'florence2_promptgen'];
 const BACKENDS: VisionBackend[] = ['transformers'];
-const VISION_TASKS: VisionTask[] = ['caption', 'detailed_caption', 'more_detailed_caption', 'ocr', 'object_detection'];
+const FLORENCE2_TASKS: VisionTask[] = ['caption', 'detailed_caption', 'more_detailed_caption', 'ocr', 'object_detection'];
+const FLORENCE2_PROMPTGEN_TASKS: VisionTask[] = [
+  'caption',
+  'detailed_caption',
+  'more_detailed_caption',
+  'generate_tags',
+  'analyze',
+  'mixed_caption',
+  'mixed_caption_plus',
+];
 const VISION_REF_PREFIX = 'vision/';
 
 const defaultVisionProfile: Partial<VisionModelProfile> = {
@@ -126,7 +135,11 @@ function VisionProfileForm({
   const currentRefMissing = Boolean(isVisionRef(currentModelRef) && !inventoryOptions.some((item) => item.ref === currentModelRef));
   const currentRefInvalid = Boolean(currentModelRef && !isVisionRef(currentModelRef));
   const metadataForFields = parsedMetadata.ok ? parsedMetadata.value : values.metadata || {};
+  const currentArchitecture = (values.architecture || 'florence2') as VisionArchitecture;
+  const availableVisionTasks = visionTasksForArchitecture(currentArchitecture);
+  const promptGenProfile = currentArchitecture === 'florence2_promptgen';
   const trustRemoteCode = metadataForFields.trust_remote_code === true;
+  const useHalfPrecision = promptGenProfile ? metadataForFields.use_half_precision !== false : false;
   const saveDisabled = Boolean(busy) || !selectedProvider;
   const supportedTasks = values.supported_tasks || [];
   const apiExampleModelId = values.alias ? `vision:${values.alias}` : 'vision:<profile_key>';
@@ -172,6 +185,78 @@ function VisionProfileForm({
         },
         options: {
           max_new_tokens: 512,
+          num_beams: 3,
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('generate_tags')) {
+    visionApiExamples.push({
+      id: 'vision-generate-tags',
+      title: t('settings:apiExamples.vision.generateTags'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'generate_tags',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+        options: {
+          max_new_tokens: 512,
+          num_beams: 3,
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('analyze')) {
+    visionApiExamples.push({
+      id: 'vision-analyze',
+      title: t('settings:apiExamples.vision.analyze'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'analyze',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+        options: {
+          max_new_tokens: 512,
+          num_beams: 3,
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('mixed_caption')) {
+    visionApiExamples.push({
+      id: 'vision-mixed-caption',
+      title: t('settings:apiExamples.vision.mixedCaption'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'mixed_caption',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+        options: {
+          max_new_tokens: 512,
+          num_beams: 3,
+        },
+      }),
+    });
+  }
+  if (supportedTasks.includes('mixed_caption_plus')) {
+    visionApiExamples.push({
+      id: 'vision-mixed-caption-plus',
+      title: t('settings:apiExamples.vision.mixedCaptionPlus'),
+      body: formatApiExampleJson({
+        model: apiExampleModelId,
+        task: 'mixed_caption_plus',
+        input: {
+          type: 'image',
+          image_base64: '...',
+        },
+        options: {
+          max_new_tokens: 768,
           num_beams: 3,
         },
       }),
@@ -326,7 +411,25 @@ function VisionProfileForm({
     } else {
       current.delete(task);
     }
-    patchValues({ supported_tasks: VISION_TASKS.filter((item) => current.has(item)) });
+    patchValues({ supported_tasks: availableVisionTasks.filter((item) => current.has(item)) });
+  }
+
+  function setArchitecture(architecture: string) {
+    const nextArchitecture = architecture as VisionArchitecture;
+    const nextMetadata = parsedMetadata.ok ? { ...parsedMetadata.value } : { ...(values.metadata || {}) };
+    if (nextArchitecture === 'florence2_promptgen') {
+      if (nextMetadata.use_half_precision === undefined) {
+        nextMetadata.use_half_precision = true;
+      }
+    } else {
+      delete nextMetadata.use_half_precision;
+    }
+    patchValues({
+      architecture: nextArchitecture,
+      supported_tasks: defaultVisionTasks(nextArchitecture),
+      metadata: nextMetadata,
+    });
+    setMetadataText(formatMetadata(nextMetadata));
   }
 
   function setTrustRemoteCode(enabled: boolean) {
@@ -341,6 +444,13 @@ function VisionProfileForm({
     setMetadataText(formatMetadata(next));
   }
 
+  function setUseHalfPrecision(enabled: boolean) {
+    const source = parsedMetadata.ok ? parsedMetadata.value : values.metadata || {};
+    const next = { ...source, use_half_precision: enabled };
+    patchValues({ metadata: next });
+    setMetadataText(formatMetadata(next));
+  }
+
   return (
     <form className="settings-detail-form" onSubmit={save}>
       <header className="settings-detail-header">
@@ -350,7 +460,7 @@ function VisionProfileForm({
             <h2>{values.name || t('settings:vision.titles.newProfile')}</h2>
             <p>
               <code>{`key:${values.alias || 'profile_key'}`}</code>
-              <code>{`arch:${values.architecture || 'florence2'}`}</code>
+              <code>{`arch:${currentArchitecture}`}</code>
               <span>{currentModelRef || t('settings:vision.empty.noModelRef')}</span>
             </p>
           </div>
@@ -439,7 +549,7 @@ function VisionProfileForm({
         <section className="detail-section">
           <h3>{t('settings:vision.sections.runtime')}</h3>
           <div className="settings-config-form llm-profile-form">
-            <SelectField label={t('settings:vision.labels.architecture')} value={values.architecture || 'florence2'} options={ARCHITECTURES} labelPrefix="settings:vision.architectures" onChange={() => undefined} disabled />
+            <SelectField label={t('settings:vision.labels.architecture')} value={currentArchitecture} options={ARCHITECTURES} labelPrefix="settings:vision.architectures" onChange={setArchitecture} disabled={Boolean(busy)} />
             <SelectField label={t('settings:vision.labels.backend')} value={values.backend || 'transformers'} options={BACKENDS} labelPrefix="settings:vision.backends" onChange={() => undefined} disabled />
             <NumberField label={t('settings:vision.labels.maxBatchSize')} value={values.max_batch_size ?? null} onChange={(max_batch_size) => patchValues({ max_batch_size })} disabled={Boolean(busy)} />
           </div>
@@ -447,7 +557,7 @@ function VisionProfileForm({
         <section className="detail-section">
           <h3>{t('settings:vision.sections.tasks')}</h3>
           <div className="llm-profile-flags">
-            {VISION_TASKS.map((task) => (
+            {availableVisionTasks.map((task) => (
               <ToggleSwitch
                 key={task}
                 checked={(values.supported_tasks || []).includes(task)}
@@ -479,6 +589,13 @@ function VisionProfileForm({
             <small>{t('settings:vision.help.trustRemoteCode')}</small>
           </label>
           {trustRemoteCode ? <p className="settings-warning-text">{t('settings:vision.warnings.trustRemoteCode')}</p> : null}
+          {promptGenProfile ? (
+            <label className="config-field settings-config-field boolean-field">
+              <span>{t('settings:vision.labels.useHalfPrecision')}</span>
+              <ToggleSwitch checked={useHalfPrecision} onChange={setUseHalfPrecision} disabled={Boolean(busy)} />
+              <small>{t('settings:vision.help.useHalfPrecision')}</small>
+            </label>
+          ) : null}
           <label className="config-field settings-config-field">
             <span>{t('settings:vision.labels.metadataJson')}</span>
             <textarea rows={8} value={metadataText} onChange={(event) => setMetadataText(event.currentTarget.value)} disabled={Boolean(busy)} />
@@ -574,6 +691,11 @@ function SelectField({
 }
 
 function buildVisionPayload(values: Partial<VisionModelProfile>, metadata: Record<string, unknown>): VisionModelProfileInput {
+  const architecture = (values.architecture || 'florence2') as VisionArchitecture;
+  const payloadMetadata = { ...metadata };
+  if (architecture === 'florence2_promptgen' && payloadMetadata.use_half_precision === undefined) {
+    payloadMetadata.use_half_precision = true;
+  }
   return {
     name: values.name ?? '',
     alias: values.alias ?? '',
@@ -583,24 +705,28 @@ function buildVisionPayload(values: Partial<VisionModelProfile>, metadata: Recor
     external_inference_enabled: values.external_inference_enabled ?? false,
     provider_profile_id: values.provider_profile_id || null,
     provider_model_id: values.provider_model_id ?? '',
-    architecture: 'florence2',
+    architecture,
     backend: 'transformers',
-    supported_tasks: normalizeTasks(values.supported_tasks),
+    supported_tasks: normalizeTasks(values.supported_tasks, architecture),
     max_batch_size: parseOptionalInteger(values.max_batch_size, 'Max batch size'),
-    metadata,
+    metadata: payloadMetadata,
   };
 }
 
-function normalizeTasks(tasks: VisionTask[] | undefined): VisionTask[] {
+function normalizeTasks(tasks: VisionTask[] | undefined, architecture: VisionArchitecture): VisionTask[] {
   if (!tasks) {
-    return defaultVisionTasks();
+    return defaultVisionTasks(architecture);
   }
   const selected = new Set(tasks);
-  return VISION_TASKS.filter((task) => selected.has(task));
+  return visionTasksForArchitecture(architecture).filter((task) => selected.has(task));
 }
 
-function defaultVisionTasks(): VisionTask[] {
-  return [...VISION_TASKS];
+function defaultVisionTasks(architecture: VisionArchitecture = 'florence2'): VisionTask[] {
+  return [...visionTasksForArchitecture(architecture)];
+}
+
+function visionTasksForArchitecture(architecture: VisionArchitecture): VisionTask[] {
+  return architecture === 'florence2_promptgen' ? FLORENCE2_PROMPTGEN_TASKS : FLORENCE2_TASKS;
 }
 
 function parseOptionalInteger(value: number | string | null | undefined, label: string): number | null {

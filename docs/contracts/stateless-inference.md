@@ -442,19 +442,31 @@ and post-processing belong to the vision runtime wrapper, not to route handlers.
 Model Profiles that were saved before `more_detailed_caption` was added are not
 silently migrated; users must explicitly enable and save that task.
 
+Florence2 PromptGen fine-tunes use the separate
+`architecture=florence2_promptgen` profile variant. PromptGen defaults to
+caption/tag/prompt tasks only: `caption`, `detailed_caption`,
+`more_detailed_caption`, `generate_tags`, `analyze`, `mixed_caption`, and
+`mixed_caption_plus`. The PromptGen-only tasks map to `<GENERATE_TAGS>`,
+`<ANALYZE>`, `<MIXED_CAPTION>`, and `<MIXED_CAPTION_PLUS>`. PromptGen profiles
+do not default to OCR or object detection; use a standard `florence2` profile
+for those tasks.
+
 Vision model fields mirror other Model Profiles: `id`, `name`, `description`,
 `notes`, `enabled`, `external_inference_enabled=false`, optional
 `provider_profile_id`, `provider_model_id`, `architecture`, `backend`,
 `supported_tasks`, `max_batch_size`, compact `metadata`, and timestamps.
-Florence2 uses `architecture=florence2`, `backend=transformers`, and safe local
-refs shaped as `vision/<folder>` under `data/models/vision`. The runtime uses
+Florence2 and Florence2 PromptGen use `backend=transformers` and safe local refs
+shaped as `vision/<folder>` under `data/models/vision`. The runtime uses
 `local_files_only=True` and never auto-downloads. CUDA is optional; `auto`
 prefers CUDA, then MPS, then CPU, while explicit unavailable devices fail with
 a compact provider/runtime error. `metadata.trust_remote_code=true` is the only
 way to opt into local custom model code execution; the default is
-`trust_remote_code=false`. Real Florence2 local loading requires the local ML
-extra, currently including `torch`, `torchvision`, `transformers`, `einops`,
-`timm`, and `Pillow`. CPU/default installs use `uv sync --extra knowledge`.
+`trust_remote_code=false`. PromptGen profiles additionally support
+`metadata.use_half_precision`; the settings UI defaults it to `true`, which
+loads model weights as float16 on accelerator devices while CPU loads remain
+float32. Real Florence2 local loading requires the local ML extra, currently
+including `torch`, `torchvision`, `transformers`, `einops`, `timm`, and
+`Pillow`. CPU/default installs use `uv sync --extra knowledge`.
 CUDA 12.8 installs use `uv sync --extra knowledge-cuda128`, which routes both
 `torch` and `torchvision` through the PyTorch cu128 wheel index. The CPU/default
 and CUDA extras are mutually exclusive installation modes.
@@ -559,14 +571,15 @@ optional:
 {"load_model": false}
 ```
 
-`load_model=false` is the default. It checks Florence2 dependencies, the safe
-local model directory, explicit `metadata.trust_remote_code=true`, and whether
-transformers can construct the config plus processor/tokenizer without loading
-weights. It also checks the configured local runtime device, so a Provider
-Profile with `metadata.local_runtime_device=cuda` fails preflight when the
-installed torch build cannot see CUDA. `load_model=true` additionally
-constructs a temporary Florence2 runtime, loads weights once, then immediately
-unloads it without adding anything to the global vision runtime cache.
+`load_model=false` is the default. It checks Florence2/PromptGen dependencies,
+the safe local model directory, explicit `metadata.trust_remote_code=true`, and
+whether transformers can construct the config plus processor/tokenizer without
+loading weights. It also checks the configured local runtime device, so a
+Provider Profile with `metadata.local_runtime_device=cuda` fails preflight when
+the installed torch build cannot see CUDA. `load_model=true` additionally
+constructs a temporary Florence2 or PromptGen runtime, loads weights once, then
+immediately unloads it without adding anything to the global vision runtime
+cache.
 Preflight returns HTTP 200 with `ok=false` for diagnosable profile/runtime
 failures and HTTP 404 only when the profile is missing. Responses must not
 include absolute paths, raw images, base64 input, tracebacks, provider secrets,
@@ -712,18 +725,21 @@ For a real vision smoke test:
 options are rejected with `INFERENCE_INVALID_REQUEST` before image decode or
 model loading. Defaults are task-specific: `caption` uses 64,
 `detailed_caption` uses 256, `more_detailed_caption` uses 512, and OCR/object
-detection use 1024. For higher-quality descriptions prefer
-`more_detailed_caption` with `max_new_tokens=512`; reduce `num_beams` or token
-count first when accelerator memory is tight. CUDA device-side assert, illegal
-memory access, and out-of-memory failures are treated as fatal accelerator
-failures for the cached Florence2 runtime; the runtime unloads model references
-before returning the provider error, though the process may still require a
-backend restart if CUDA remains poisoned.
+detection use 1024. PromptGen also uses 512 for `generate_tags`, `analyze`, and
+`mixed_caption`, and 768 for `mixed_caption_plus`. For higher-quality
+descriptions prefer `more_detailed_caption` or PromptGen-specific tasks with
+the default token counts; reduce `num_beams` or token count first when
+accelerator memory is tight. CUDA device-side assert, illegal memory access,
+and out-of-memory failures are treated as fatal accelerator failures for the
+cached Florence2 runtime; the runtime unloads model references before returning
+the provider error, though the process may still require a backend restart if
+CUDA remains poisoned.
 
 Vision responses echo the requested `model` and include `profile_id` plus
 `profile_alias`. Response `data` shapes are task-specific: captions, detailed
-captions, more detailed captions, and OCR return text; object detection returns
-labels, scores, and normalized coordinates in `[0, 1]`. Florence2 prompt tokens,
-raw generated text, pixel boxes, and post-processor internals are not public API
-and must not be persisted. Vision calls do not appear in `/v1/models`; there is
-no `/v1` vision endpoint.
+captions, more detailed captions, OCR, and PromptGen text/tag/prompt tasks
+return text; object detection returns labels, scores, and normalized
+coordinates in `[0, 1]`. Florence2 prompt tokens, raw generated text, pixel
+boxes, and post-processor internals are not public API and must not be
+persisted. Vision calls do not appear in `/v1/models`; there is no `/v1` vision
+endpoint.

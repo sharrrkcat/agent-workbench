@@ -7,6 +7,8 @@ import math
 import threading
 from typing import Any, Callable, Literal, Protocol
 
+from ai_workbench.core.vision_profiles import VISION_TASKS_BY_ARCHITECTURE
+
 
 @dataclass(frozen=True)
 class VisionRuntimeInput:
@@ -222,7 +224,8 @@ def _best_effort_unload(runtime: VisionRuntime) -> None:
 
 def _validate_result_data(task: str, value: Any) -> VisionResultData:
     raw = _dataclass_to_dict(value)
-    if task in {"caption", "detailed_caption", "more_detailed_caption", "ocr"}:
+    text_tasks = set(VISION_TASKS_BY_ARCHITECTURE["florence2_promptgen"]) | {"caption", "detailed_caption", "more_detailed_caption", "ocr"}
+    if task in text_tasks:
         if not isinstance(raw, dict) or raw.get("type") != "text" or not isinstance(raw.get("text"), str):
             raise VisionRuntimeError("Vision runtime returned invalid text output.")
         return VisionTextData(type="text", text=raw["text"])

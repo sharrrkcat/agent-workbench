@@ -11,13 +11,41 @@ from ai_workbench.core.profile_aliases import validate_profile_alias
 from ai_workbench.core.time import utc_now
 
 
-VisionArchitecture = Literal["florence2"]
+VisionArchitecture = Literal["florence2", "florence2_promptgen"]
 VisionBackend = Literal["transformers"]
-VisionTask = Literal["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]
+VisionTask = Literal[
+    "caption",
+    "detailed_caption",
+    "more_detailed_caption",
+    "ocr",
+    "object_detection",
+    "generate_tags",
+    "analyze",
+    "mixed_caption",
+    "mixed_caption_plus",
+]
 
 MAX_VISION_BATCH_SIZE = 64
-DEFAULT_VISION_TASKS: tuple[VisionTask, ...] = ("caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection")
-VISION_TASKS: set[str] = set(DEFAULT_VISION_TASKS)
+FLORENCE2_VISION_TASKS: tuple[VisionTask, ...] = ("caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection")
+FLORENCE2_PROMPTGEN_VISION_TASKS: tuple[VisionTask, ...] = (
+    "caption",
+    "detailed_caption",
+    "more_detailed_caption",
+    "generate_tags",
+    "analyze",
+    "mixed_caption",
+    "mixed_caption_plus",
+)
+DEFAULT_VISION_TASKS: tuple[VisionTask, ...] = FLORENCE2_VISION_TASKS
+VISION_TASKS_BY_ARCHITECTURE: dict[str, tuple[VisionTask, ...]] = {
+    "florence2": FLORENCE2_VISION_TASKS,
+    "florence2_promptgen": FLORENCE2_PROMPTGEN_VISION_TASKS,
+}
+VISION_TASKS: set[str] = {task for tasks in VISION_TASKS_BY_ARCHITECTURE.values() for task in tasks}
+
+
+def default_vision_tasks_for_architecture(architecture: Any) -> list[VisionTask]:
+    return list(VISION_TASKS_BY_ARCHITECTURE.get(str(architecture or "florence2"), DEFAULT_VISION_TASKS))
 
 
 def normalize_vision_model_ref(value: Any) -> str:
@@ -59,6 +87,15 @@ class VisionModelProfile(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_architecture_defaults(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("supported_tasks") is None:
+            values = dict(data)
+            values["supported_tasks"] = default_vision_tasks_for_architecture(values.get("architecture", "florence2"))
+            return values
+        return data
 
     @field_validator("name")
     @classmethod
@@ -122,6 +159,9 @@ class VisionModelProfile(BaseModel):
     def _model_rules(self) -> "VisionModelProfile":
         if not self.supported_tasks:
             raise ValueError("supported_tasks must not be empty.")
+        allowed = set(default_vision_tasks_for_architecture(self.architecture))
+        if any(task not in allowed for task in self.supported_tasks):
+            raise ValueError("supported_tasks contains a task unsupported by the selected architecture.")
         return self
 
 

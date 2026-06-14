@@ -98,6 +98,10 @@
       "caption": "Caption 请求",
       "detailedCaption": "Detailed caption 请求",
       "moreDetailedCaption": "More detailed caption 请求",
+      "generateTags": "Generate tags 请求",
+      "analyze": "Analyze 请求",
+      "mixedCaption": "Mixed caption 请求",
+      "mixedCaptionPlus": "Mixed caption plus 请求",
       "ocr": "OCR 请求",
       "objectDetection": "Object detection 请求"
     }
@@ -229,6 +233,7 @@
       "backend": "后端",
       "maxBatchSize": "最大批量",
       "trustRemoteCode": "信任 remote code",
+      "useHalfPrecision": "启用半精度",
       "metadataJson": "Metadata JSON"
     },
     "actions": {
@@ -236,7 +241,8 @@
       "refreshingInventory": "刷新中..."
     },
     "architectures": {
-      "florence2": "Florence2"
+      "florence2": "Florence2",
+      "florence2_promptgen": "Florence2 PromptGen"
     },
     "backends": {
       "transformers": "Transformers"
@@ -245,6 +251,10 @@
       "caption": "Caption",
       "detailed_caption": "Detailed caption",
       "more_detailed_caption": "More detailed caption",
+      "generate_tags": "Generate tags",
+      "analyze": "Analyze",
+      "mixed_caption": "Mixed caption",
+      "mixed_caption_plus": "Mixed caption plus",
       "ocr": "OCR",
       "object_detection": "Object detection"
     },
@@ -263,6 +273,7 @@
       "safeRef": "扫描 data/models/vision，并保存为 vision/<folder> 引用。",
       "inventoryRoot": "扫描目录：{{root}}。",
       "trustRemoteCode": "高级选项，用于选择性允许运行本地自定义模型代码。标准本地 Florence2 文件夹请保持关闭。",
+      "useHalfPrecision": "PromptGen 在加速设备上默认使用 float16 以降低显存占用；CPU 加载仍保持 float32。",
       "metadataJson": "随此配置保存的高级 metadata。trust remote code 开关会写入这里。"
     },
     "warnings": {

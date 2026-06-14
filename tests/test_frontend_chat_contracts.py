@@ -1524,9 +1524,12 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "export type MultimodalEmbeddingModelProfileInput = Partial<" in multimodal_type
     assert "| 'alias'" in multimodal_type
 
-    assert "export type VisionArchitecture = 'florence2';" in types
+    assert "export type VisionArchitecture = 'florence2' | 'florence2_promptgen';" in types
     assert "export type VisionBackend = 'transformers';" in types
-    assert "export type VisionTask = 'caption' | 'detailed_caption' | 'more_detailed_caption' | 'ocr' | 'object_detection';" in types
+    assert "| 'generate_tags'" in types
+    assert "| 'analyze'" in types
+    assert "| 'mixed_caption'" in types
+    assert "| 'mixed_caption_plus'" in types
     vision_type = types[types.index("export type VisionModelProfile = {") : types.index("export type InferenceModelInventoryKind")]
     assert "alias: string;" in vision_type
     assert "supported_tasks: VisionTask[];" in vision_type
@@ -1776,7 +1779,12 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     assert "api.deleteVisionModel" in panel
     assert "api.listInferenceModelInventory('vision')" in panel
     assert "supported_tasks: defaultVisionTasks()" in panel
-    assert "return defaultVisionTasks();" in panel
+    assert "return defaultVisionTasks(architecture);" in panel
+    assert "const ARCHITECTURES: VisionArchitecture[] = ['florence2', 'florence2_promptgen'];" in panel
+    assert "const FLORENCE2_PROMPTGEN_TASKS: VisionTask[]" in panel
+    assert "setArchitecture" in panel
+    assert "setUseHalfPrecision" in panel
+    assert "use_half_precision" in panel
     assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
     assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
     assert "profileKeyTouched" in panel
@@ -1792,7 +1800,7 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     assert "isVisionRef" in panel
     assert "vision/" in panel
     assert "trust_remote_code" in panel
-    assert "`arch:${values.architecture || 'florence2'}`" in panel
+    assert "`arch:${currentArchitecture}`" in panel
     assert "supportedTaskRequired" in panel
     assert "listLlmProviderModels" not in panel
     assert "chooseFromProvider" not in panel
@@ -1804,6 +1812,10 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
         assert '"noVisionProfiles"' in locale
         assert '"vision"' in locale
         assert '"trustRemoteCode"' in locale
+        assert '"useHalfPrecision"' in locale
+        assert '"florence2_promptgen"' in locale
+        assert '"generate_tags"' in locale
+        assert '"mixed_caption_plus"' in locale
         assert '"supportedTaskRequired"' in locale
         assert '"modelRefSafeRefRequired"' in locale
         assert '"profileKey"' in locale

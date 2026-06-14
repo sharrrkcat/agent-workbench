@@ -580,9 +580,18 @@ export type MultimodalEmbeddingModelProfileInput = Partial<
   >
 >;
 
-export type VisionArchitecture = 'florence2';
+export type VisionArchitecture = 'florence2' | 'florence2_promptgen';
 export type VisionBackend = 'transformers';
-export type VisionTask = 'caption' | 'detailed_caption' | 'more_detailed_caption' | 'ocr' | 'object_detection';
+export type VisionTask =
+  | 'caption'
+  | 'detailed_caption'
+  | 'more_detailed_caption'
+  | 'ocr'
+  | 'object_detection'
+  | 'generate_tags'
+  | 'analyze'
+  | 'mixed_caption'
+  | 'mixed_caption_plus';
 
 export type VisionModelProfile = {
   id: string;
