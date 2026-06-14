@@ -1775,6 +1775,8 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     assert "api.patchVisionModel" in panel
     assert "api.deleteVisionModel" in panel
     assert "api.listInferenceModelInventory('vision')" in panel
+    assert "supported_tasks: defaultVisionTasks()" in panel
+    assert "return defaultVisionTasks();" in panel
     assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
     assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
     assert "profileKeyTouched" in panel

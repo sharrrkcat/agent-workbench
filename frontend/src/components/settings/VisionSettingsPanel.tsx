@@ -34,7 +34,7 @@ const defaultVisionProfile: Partial<VisionModelProfile> = {
   provider_model_id: '',
   architecture: 'florence2',
   backend: 'transformers',
-  supported_tasks: ['caption', 'detailed_caption', 'more_detailed_caption', 'ocr', 'object_detection'],
+  supported_tasks: defaultVisionTasks(),
   max_batch_size: null,
   metadata: {},
 };
@@ -592,8 +592,15 @@ function buildVisionPayload(values: Partial<VisionModelProfile>, metadata: Recor
 }
 
 function normalizeTasks(tasks: VisionTask[] | undefined): VisionTask[] {
-  const selected = new Set(tasks || []);
+  if (!tasks) {
+    return defaultVisionTasks();
+  }
+  const selected = new Set(tasks);
   return VISION_TASKS.filter((task) => selected.has(task));
+}
+
+function defaultVisionTasks(): VisionTask[] {
+  return [...VISION_TASKS];
 }
 
 function parseOptionalInteger(value: number | string | null | undefined, label: string): number | null {
