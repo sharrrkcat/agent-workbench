@@ -11,6 +11,7 @@ from ai_workbench.core.inference.errors import (
 from ai_workbench.core.inference.florence2_runtime import preflight_florence2_runtime
 from ai_workbench.core.inference.multimodal_runtime import clear_multimodal_runtime_cache
 from ai_workbench.core.inference.vision_runtime import clear_vision_runtime_cache
+from ai_workbench.core.inference.wd14_runtime import preflight_wd14_runtime
 from ai_workbench.core.inference.request_limits import check_content_length, read_limited_workbench_body, read_limited_workbench_json
 from ai_workbench.core.inference.route_context import (
     log_stateless_failure,
@@ -37,6 +38,7 @@ from ai_workbench.core.vision_profiles import (
     VisionModelProfile,
     VisionModelProfileCreate,
     VisionModelProfilePatch,
+    vision_provider_compatibility_error,
     vision_profile_updates,
 )
 from ai_workbench.core.provider_inventory import scan_internal_provider_models
@@ -95,29 +97,38 @@ def list_models(request: Request, state: RuntimeState = Depends(get_state)) -> d
 def list_model_inventory(kind: str, state: RuntimeState = Depends(get_state)) -> dict:
     if kind not in {"image_embedding", "vision"}:
         raise_error(422, "INVALID_MODEL_INVENTORY_KIND", "Model inventory kind must be image_embedding or vision.")
-    inventory = scan_internal_provider_models("internal_transformers", state.repo_root)
+    providers = ["internal_transformers", "internal_onnxruntime"] if kind == "vision" else ["internal_transformers"]
     items = []
-    for item in inventory["models"]:
-        if item.get("kind") != kind:
-            continue
-        if item.get("source") != "internal" or item.get("backend") != "internal_transformers":
-            continue
-        ref = str(item.get("model_ref") or item.get("id") or "")
-        if not ref.startswith(f"{kind}/"):
-            continue
-        items.append(
-            {
-                "ref": ref,
-                "name": str(item.get("name") or item.get("display_name") or ref.removeprefix(f"{kind}/")),
-                "kind": kind,
-                "relative_path": item.get("relative_path"),
-            }
-        )
+    warnings: list[str] = []
+    models_root = "data/models"
+    for provider in providers:
+        inventory = scan_internal_provider_models(provider, state.repo_root)
+        models_root = inventory["models_root"]
+        for warning in inventory["warnings"]:
+            if warning not in warnings:
+                warnings.append(warning)
+        for item in inventory["models"]:
+            if item.get("kind") != kind:
+                continue
+            if item.get("source") != "internal" or item.get("backend") != provider:
+                continue
+            ref = str(item.get("model_ref") or item.get("id") or "")
+            if not ref.startswith(f"{kind}/"):
+                continue
+            items.append(
+                {
+                    "ref": ref,
+                    "name": str(item.get("name") or item.get("display_name") or ref.removeprefix(f"{kind}/")),
+                    "kind": kind,
+                    "relative_path": item.get("relative_path"),
+                    "backend": provider,
+                }
+            )
     return {
         "kind": kind,
-        "models_root": inventory["models_root"],
+        "models_root": models_root,
         "items": items,
-        "warnings": inventory["warnings"],
+        "warnings": warnings,
     }
 
 
@@ -195,6 +206,7 @@ def create_vision_model(payload: dict, state: RuntimeState = Depends(get_state))
             values.get("provider_model_id"),
         )
         profile = VisionModelProfile.model_validate(values)
+        _validate_vision_provider_profile(profile, state)
         return state.vision_profiles.create(profile).model_dump()
     except ValidationError as exc:
         _raise_vision_validation(exc)
@@ -216,6 +228,13 @@ def preflight_vision_model(
         profile = state.vision_profiles.get_by_id_or_alias(profile_id_or_alias)
     except KeyError:
         raise_error(404, "VISION_MODEL_NOT_FOUND", f"Vision model profile not found: {profile_id_or_alias}")
+    if profile.architecture == "wd14":
+        return preflight_wd14_runtime(
+            profile,
+            repo_root=state.repo_root,
+            provider_profile_store=state.provider_profiles,
+            load_model=request.load_model,
+        )
     return preflight_florence2_runtime(
         profile,
         repo_root=state.repo_root,
@@ -241,6 +260,9 @@ def patch_vision_model(
     try:
         request = VisionModelProfilePatch.model_validate(payload)
         updates = vision_profile_updates(request)
+        existing = state.vision_profiles.get_by_id_or_alias(profile_id_or_alias)
+        candidate = VisionModelProfile.model_validate({**existing.model_dump(), **updates})
+        _validate_vision_provider_profile(candidate, state)
         return state.vision_profiles.update(profile_id_or_alias, updates).model_dump()
     except ValidationError as exc:
         _raise_vision_validation(exc)
@@ -400,6 +422,12 @@ def _raise_vision_preflight_validation(exc: ValidationError) -> None:
     loc = ".".join(str(item) for item in error.get("loc", []))
     message = f"{loc}: {error.get('msg', 'Invalid value')}" if loc else str(error.get("msg", "Invalid value"))
     raise_error(422, "INVALID_VISION_PREFLIGHT_REQUEST", message)
+
+
+def _validate_vision_provider_profile(profile: VisionModelProfile, state: RuntimeState) -> None:
+    error = vision_provider_compatibility_error(profile, state.provider_profiles)
+    if error is not None:
+        raise ValueError(error)
 
 
 def _next_profile_alias(store, name: object, provider_model_id: object) -> str:

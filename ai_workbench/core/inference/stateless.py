@@ -20,7 +20,7 @@ from ai_workbench.core.inference.vision_runtime import (
     run_vision_task,
 )
 from ai_workbench.core.knowledge_models import KnowledgeModelError
-from ai_workbench.core.vision_profiles import VISION_TASKS
+from ai_workbench.core.vision_profiles import VISION_TASKS, vision_provider_compatibility_error
 
 
 LLM_MODEL_PREFIX = "llm:"
@@ -368,6 +368,7 @@ def _vision_profile_servable(profile: Any, state: Any) -> bool:
         and getattr(profile, "external_inference_enabled", False)
         and getattr(profile, "provider_model_id", "")
         and _provider_enabled(state, profile.provider_profile_id)
+        and vision_provider_compatibility_error(profile, getattr(state, "provider_profiles", None)) is None
     )
 
 
@@ -457,7 +458,7 @@ def _resolve_vision_profile(state: Any, model_id: str) -> Any:
     except KeyError as exc:
         raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_FOUND, status_code=404) from exc
     if not _vision_profile_servable(profile, state):
-        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, status_code=403)
+        raise StatelessInferenceError(InferenceErrorCode.MODEL_NOT_ALLOWED, _vision_model_not_allowed_message(profile, state), status_code=403)
     return profile
 
 
@@ -552,6 +553,12 @@ def _validate_vision_options(value: Any) -> dict[str, Any]:
 def _validate_vision_profile_task(profile: Any, task: str) -> None:
     if task not in set(getattr(profile, "supported_tasks", []) or []):
         raise StatelessInferenceError(InferenceErrorCode.MODEL_INPUT_TYPE_UNSUPPORTED)
+
+
+def _vision_model_not_allowed_message(profile: Any, state: Any) -> str | None:
+    if profile.enabled and getattr(profile, "external_inference_enabled", False) and getattr(profile, "provider_model_id", ""):
+        return vision_provider_compatibility_error(profile, getattr(state, "provider_profiles", None))
+    return None
 
 
 def _vision_result_data_dict(value: Any) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from importlib.machinery import ModuleSpec
 from types import ModuleType
 from uuid import uuid4
 
@@ -35,8 +36,21 @@ def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, use_memory: 
     return TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=use_memory, root=tmp_path))
 
 
+def create_provider_profile(client: TestClient, provider: str = "internal_transformers", **overrides) -> dict:
+    payload = {
+        "name": f"{provider} provider {uuid4().hex[:8]}",
+        "provider": provider,
+        "enabled": True,
+    }
+    payload.update(overrides)
+    response = client.post("/api/llm-provider-profiles", json=payload)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def create_vision_profile(client: TestClient, **overrides) -> dict:
     folder = overrides.pop("folder", f"vision-{uuid4().hex[:8]}")
+    explicit_backend = "backend" in overrides
     payload = {
         "name": "Florence2 Vision",
         "provider_model_id": f"vision/{folder}",
@@ -44,6 +58,11 @@ def create_vision_profile(client: TestClient, **overrides) -> dict:
         "backend": "transformers",
     }
     payload.update(overrides)
+    if not explicit_backend:
+        payload["backend"] = "onnxruntime" if payload.get("architecture") == "wd14" else "transformers"
+    if "provider_profile_id" not in payload:
+        provider_type = "internal_onnxruntime" if payload.get("architecture") == "wd14" else "internal_transformers"
+        payload["provider_profile_id"] = create_provider_profile(client, provider_type)["id"]
     response = client.post("/api/inference/vision-models", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
@@ -53,6 +72,13 @@ def create_local_vision_folder(client: TestClient, folder: str) -> Path:
     model_dir = client.app.state.runtime_state.repo_root / "data" / "models" / "vision" / folder
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    return model_dir
+
+
+def create_local_wd14_folder(client: TestClient, folder: str) -> Path:
+    model_dir = client.app.state.runtime_state.repo_root / "data" / "models" / "vision" / folder
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "model.onnx").write_bytes(b"")
     return model_dir
 
 
@@ -334,7 +360,15 @@ def test_vision_profile_table_defaults_and_safe_refs(tmp_path: Path, monkeypatch
     assert client.get(f"/api/inference/vision-models/{profile['alias']}").json()["id"] == profile["id"]
     invalid_alias = client.post("/api/inference/vision-models", json={"name": "Bad", "alias": "Bad Alias", "provider_model_id": "vision/x"})
     assert invalid_alias.status_code == 422
-    duplicate_alias = client.post("/api/inference/vision-models", json={"name": "Duplicate", "alias": profile["alias"], "provider_model_id": "vision/duplicate"})
+    duplicate_alias = client.post(
+        "/api/inference/vision-models",
+        json={
+            "name": "Duplicate",
+            "alias": profile["alias"],
+            "provider_model_id": "vision/duplicate",
+            "provider_profile_id": create_provider_profile(client)["id"],
+        },
+    )
     assert duplicate_alias.status_code == 409
     assert duplicate_alias.json()["error"]["code"] == "VISION_MODEL_ALIAS_EXISTS"
     renamed = client.patch(f"/api/inference/vision-models/{profile['alias']}", json={"alias": "florence-renamed"}).json()
@@ -358,13 +392,211 @@ def test_vision_profile_aliases_work_with_sql_store(tmp_path: Path) -> None:
 
     duplicate = client.post(
         "/api/inference/vision-models",
-        json={"name": "Duplicate", "alias": "sql-vision", "provider_model_id": "vision/other"},
+        json={
+            "name": "Duplicate",
+            "alias": "sql-vision",
+            "provider_model_id": "vision/other",
+            "provider_profile_id": create_provider_profile(client)["id"],
+        },
     )
     restarted = TestClient(create_app(llm_runtime=FakeLLMRuntime(), root=tmp_path, database_url=db_url))
 
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["code"] == "VISION_MODEL_ALIAS_EXISTS"
     assert restarted.get("/api/inference/vision-models/sql-vision").json()["id"] == profile["id"]
+
+
+def test_wd14_vision_profile_schema_and_provider_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    onnx_provider = create_provider_profile(client, "internal_onnxruntime")
+    transformers_provider = create_provider_profile(client, "internal_transformers")
+
+    profile = create_vision_profile(
+        client,
+        name="WD14 Vision",
+        alias="wd14-vision",
+        provider_model_id="vision/wd14-local",
+        architecture="wd14",
+        provider_profile_id=onnx_provider["id"],
+    )
+    invalid_task = client.post(
+        "/api/inference/vision-models",
+        json={
+            "name": "Bad WD14 Task",
+            "provider_model_id": "vision/bad-wd14-task",
+            "architecture": "wd14",
+            "provider_profile_id": onnx_provider["id"],
+            "supported_tasks": ["caption"],
+        },
+    )
+    invalid_backend = client.post(
+        "/api/inference/vision-models",
+        json={
+            "name": "Bad WD14 Backend",
+            "provider_model_id": "vision/bad-wd14-backend",
+            "architecture": "wd14",
+            "backend": "transformers",
+            "provider_profile_id": onnx_provider["id"],
+        },
+    )
+    invalid_wd14_provider = client.post(
+        "/api/inference/vision-models",
+        json={
+            "name": "Bad WD14 Provider",
+            "provider_model_id": "vision/bad-wd14-provider",
+            "architecture": "wd14",
+            "provider_profile_id": transformers_provider["id"],
+        },
+    )
+    invalid_florence_provider = client.post(
+        "/api/inference/vision-models",
+        json={
+            "name": "Bad Florence Provider",
+            "provider_model_id": "vision/bad-florence-provider",
+            "architecture": "florence2",
+            "backend": "transformers",
+            "provider_profile_id": onnx_provider["id"],
+        },
+    )
+    invalid_patch = client.patch(f"/api/inference/vision-models/{profile['id']}", json={"architecture": "florence2"})
+
+    assert profile["architecture"] == "wd14"
+    assert profile["backend"] == "onnxruntime"
+    assert profile["supported_tasks"] == ["generate_tags"]
+    assert invalid_task.status_code == 422
+    assert invalid_backend.status_code == 422
+    assert invalid_wd14_provider.status_code == 422
+    assert invalid_wd14_provider.json()["error"]["code"] == "INVALID_VISION_MODEL"
+    assert "internal_onnxruntime" in invalid_wd14_provider.json()["error"]["message"]
+    assert invalid_florence_provider.status_code == 422
+    assert "internal_transformers" in invalid_florence_provider.json()["error"]["message"]
+    assert invalid_patch.status_code == 422
+
+
+def test_legacy_vision_profile_without_provider_lists_but_fails_preflight_and_stateless(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai_workbench.core.vision_profiles import VisionModelProfile
+
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    state = client.app.state.runtime_state
+    legacy = state.vision_profiles.create(
+        VisionModelProfile(
+            name="Legacy Vision",
+            alias="legacy-empty-provider",
+            provider_model_id="vision/legacy-empty-provider",
+            architecture="florence2",
+            backend="transformers",
+            external_inference_enabled=True,
+            metadata={"trust_remote_code": True},
+        )
+    )
+    create_local_vision_folder(client, "legacy-empty-provider")
+    register_vision_runtime_factory("florence2", FakeVisionRuntime)
+
+    listed = client.get("/api/inference/vision-models").json()
+    preflight = client.post(f"/api/inference/vision-models/{legacy.alias}/preflight")
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{legacy.alias}", "task": "caption", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    assert any(item["id"] == legacy.id for item in listed)
+    assert preflight.status_code == 200, preflight.text
+    checks = {item["id"]: item for item in preflight.json()["checks"]}
+    assert checks["provider"]["status"] == "fail"
+    assert "internal_transformers" in checks["provider"]["message"]
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "MODEL_NOT_ALLOWED"
+    assert "internal_transformers" in response.json()["error"]["message"]
+    assert not FakeVisionRuntime.instances
+
+
+def test_wd14_preflight_skeleton_checks_onnx_runtime_and_model_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    provider = create_provider_profile(client, "internal_onnxruntime", metadata={"onnx_execution_provider": "cuda"})
+    create_local_wd14_folder(client, "wd14-preflight")
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/wd14-preflight",
+        architecture="wd14",
+        provider_profile_id=provider["id"],
+        external_inference_enabled=True,
+    )
+    runtime = ModuleType("onnxruntime")
+    runtime.get_available_providers = lambda: ["CPUExecutionProvider"]  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "onnxruntime", runtime)
+    original_find_spec = __import__("importlib").util.find_spec
+
+    def fake_find_spec(name: str, *args, **kwargs):
+        if name == "onnxruntime":
+            return ModuleSpec("onnxruntime", loader=None)
+        return original_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr("importlib.util.find_spec", fake_find_spec)
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert payload["architecture"] == "wd14"
+    assert payload["runtime"]["onnxruntime_available"] is True
+    assert payload["runtime"]["cuda_available"] is False
+    assert checks["architecture"]["status"] == "pass"
+    assert checks["backend"]["status"] == "pass"
+    assert checks["provider"]["status"] == "pass"
+    assert checks["dependencies"]["status"] == "pass"
+    assert checks["execution_provider"]["status"] == "fail"
+    assert checks["model_file"]["status"] == "pass"
+
+
+def test_wd14_preflight_reports_missing_dependency_model_file_and_unimplemented_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    provider = create_provider_profile(client, "internal_onnxruntime")
+    model_dir = client.app.state.runtime_state.repo_root / "data" / "models" / "vision" / "wd14-missing-file"
+    model_dir.mkdir(parents=True)
+    profile = create_vision_profile(
+        client,
+        provider_model_id="vision/wd14-missing-file",
+        architecture="wd14",
+        provider_profile_id=provider["id"],
+    )
+    original_find_spec = __import__("importlib").util.find_spec
+
+    def fake_find_spec(name: str, *args, **kwargs):
+        if name == "onnxruntime":
+            return None
+        return original_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr("importlib.util.find_spec", fake_find_spec)
+
+    response = client.post(f"/api/inference/vision-models/{profile['id']}/preflight", json={"load_model": True})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    checks = {item["id"]: item for item in payload["checks"]}
+    assert payload["ok"] is False
+    assert payload["load_model"] is True
+    assert checks["dependencies"]["status"] == "fail"
+    assert checks["model_file"]["status"] == "fail"
+    assert checks["model_load"]["status"] == "fail"
+    assert "not implemented" in checks["model_load"]["message"]
+
+
+def test_wd14_stateless_generate_tags_returns_not_implemented_until_runtime_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    enable_inference(client, require_api_key=False)
+    profile = create_vision_profile(client, architecture="wd14", external_inference_enabled=True)
+
+    response = client.post(
+        "/api/inference/vision",
+        json={"model": f"vision:{profile['alias']}", "task": "generate_tags", "input": {"type": "image", "image_base64": "AAAA"}},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 501
+    assert response.json()["error"]["code"] == "INFERENCE_NOT_IMPLEMENTED"
 
 
 def test_vision_inventory_returns_safe_refs_without_optional_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -395,6 +627,9 @@ def test_vision_model_inventory_endpoint_returns_internal_transformers_safe_refs
     vision_dir = models_root / "vision" / "florence-local"
     vision_dir.mkdir(parents=True)
     (vision_dir / "config.json").write_text("{}", encoding="utf-8")
+    wd14_dir = models_root / "vision" / "wd14-local"
+    wd14_dir.mkdir(parents=True)
+    (wd14_dir / "model.onnx").write_bytes(b"")
     (models_root / "vision" / "not-a-directory.gguf").write_text("", encoding="utf-8")
     image_dir = models_root / "image_embeddings" / "clip-local"
     image_dir.mkdir(parents=True)
@@ -418,6 +653,14 @@ def test_vision_model_inventory_endpoint_returns_internal_transformers_safe_refs
             "name": "florence-local",
             "kind": "vision",
             "relative_path": "vision/florence-local",
+            "backend": "internal_transformers",
+        },
+        {
+            "ref": "vision/wd14-local",
+            "name": "wd14-local",
+            "kind": "vision",
+            "relative_path": "vision/wd14-local",
+            "backend": "internal_onnxruntime",
         }
     ]
     assert str(tmp_path) not in str(payload)

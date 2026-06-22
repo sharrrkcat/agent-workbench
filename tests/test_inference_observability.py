@@ -56,12 +56,27 @@ def log_text(tmp_path: Path) -> str:
     return log_path(tmp_path).read_text(encoding="utf-8")
 
 
+def create_provider_profile(client: TestClient) -> dict:
+    response = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": "Observable Transformers Provider",
+            "provider": "internal_transformers",
+            "enabled": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def create_vision_profile(client: TestClient, *, alias: str = "obs-vision") -> dict:
+    provider = create_provider_profile(client)
     response = client.post(
         "/api/inference/vision-models",
         json={
             "name": "Observable Vision",
             "alias": alias,
+            "provider_profile_id": provider["id"],
             "provider_model_id": "vision/observable",
             "architecture": "florence2",
             "backend": "transformers",

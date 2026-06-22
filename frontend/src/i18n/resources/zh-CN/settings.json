@@ -245,10 +245,12 @@
     },
     "architectures": {
       "florence2": "Florence2",
-      "florence2_promptgen": "Florence2 PromptGen"
+      "florence2_promptgen": "Florence2 PromptGen",
+      "wd14": "WD14"
     },
     "backends": {
-      "transformers": "Transformers"
+      "transformers": "Transformers",
+      "onnxruntime": "ONNX Runtime"
     },
     "tasks": {
       "caption": "Caption",
@@ -266,12 +268,12 @@
       "selectProfile": "从列表中选择一个 Vision 模型配置。",
       "noProfiles": "还没有 Vision 模型配置。",
       "noModelRef": "没有 Vision 模型引用",
-      "noLocalProviderSelected": "未选择本地 Transformers provider",
+      "noLocalProviderSelected": "未选择兼容的本地 provider",
       "selectInventoryRef": "选择扫描到的 Vision 引用",
       "noInventoryRefs": "没有扫描到 Vision 引用"
     },
     "help": {
-      "localProviderOnly": "Vision 模型只能使用 internal Transformers provider 配置。",
+      "localProviderOnly": "Florence2 配置需要 internal Transformers provider；WD14 配置需要 internal ONNX Runtime provider。",
       "profileKey": "作为首选 stateless 模型 ID 使用，例如 vision:<profile_key>。",
       "safeRef": "扫描 data/models/vision，并保存为 vision/<folder> 引用。",
       "inventoryRoot": "扫描目录：{{root}}。",
@@ -280,8 +282,8 @@
       "metadataJson": "随此配置保存的高级 metadata。trust remote code 开关会写入这里。"
     },
     "warnings": {
-      "localProviderRequired": "保存前请选择 internal Transformers provider 配置。",
-      "providerMissing": "所选 provider 配置缺失，或不是 internal Transformers provider。",
+      "localProviderRequired": "保存前请选择兼容的本地 provider 配置。",
+      "providerMissing": "所选 provider 配置缺失，或与当前架构不匹配。",
       "providerDisabled": "所选 provider 配置已禁用。",
       "modelRefMissing": "当前模型引用未出现在最新 inventory 扫描结果中。",
       "trustRemoteCode": "模型加载时会执行所选本地模型文件夹中的自定义代码。"
@@ -294,7 +296,7 @@
     "errors": {
       "inventoryLoadFailed": "加载 Vision 模型 inventory 失败。",
       "invalidMetadataJson": "Metadata 必须是 JSON 对象。",
-      "localProviderRequired": "需要本地 Transformers provider 配置。",
+      "localProviderRequired": "需要兼容的本地 provider 配置。",
       "nameRequired": "名称为必填项。",
       "profileKeyRequired": "配置 key 为必填项。",
       "modelRefRequired": "本地模型引用为必填项。",

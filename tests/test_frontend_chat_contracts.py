@@ -1512,6 +1512,7 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     profile_key_utils = read_frontend("components/settings/profileKeyUtils.ts")
 
     assert "export const LOCAL_TRANSFORMERS_PROVIDER = 'internal_transformers' as const;" in types
+    assert "export const LOCAL_ONNXRUNTIME_PROVIDER = 'internal_onnxruntime' as const;" in types
     assert "export type MultimodalEmbeddingArchitecture = 'clip' | 'open_clip' | 'siglip2' | 'dinov2';" in types
     assert "export type MultimodalEmbeddingBackend = 'auto' | 'transformers' | 'open_clip';" in types
     assert "export type MultimodalEmbeddingInputType = 'image' | 'text';" in types
@@ -1524,8 +1525,8 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "export type MultimodalEmbeddingModelProfileInput = Partial<" in multimodal_type
     assert "| 'alias'" in multimodal_type
 
-    assert "export type VisionArchitecture = 'florence2' | 'florence2_promptgen';" in types
-    assert "export type VisionBackend = 'transformers';" in types
+    assert "export type VisionArchitecture = 'florence2' | 'florence2_promptgen' | 'wd14';" in types
+    assert "export type VisionBackend = 'transformers' | 'onnxruntime';" in types
     assert "| 'generate_tags'" in types
     assert "| 'analyze'" in types
     assert "| 'mixed_caption'" in types
@@ -1540,6 +1541,7 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "export type InferenceModelInventoryItem = {" in types
     assert "ref: string;" in types
     assert "kind: InferenceModelInventoryKind;" in types
+    assert "backend?: string;" in types
     assert "export type InferenceModelInventoryResponse = {" in types
 
     assert "MultimodalEmbeddingModelProfile," in client
@@ -1807,13 +1809,22 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     assert "api.listInferenceModelInventory('vision')" in panel
     assert "supported_tasks: defaultVisionTasks()" in panel
     assert "return defaultVisionTasks(architecture);" in panel
-    assert "const ARCHITECTURES: VisionArchitecture[] = ['florence2', 'florence2_promptgen'];" in panel
+    assert "const ARCHITECTURES: VisionArchitecture[] = ['florence2', 'florence2_promptgen', 'wd14'];" in panel
+    assert "const BACKENDS: VisionBackend[] = ['transformers', 'onnxruntime'];" in panel
     assert "const FLORENCE2_PROMPTGEN_TASKS: VisionTask[]" in panel
+    assert "const WD14_TASKS: VisionTask[] = ['generate_tags'];" in panel
     assert "setArchitecture" in panel
     assert "setUseHalfPrecision" in panel
     assert "use_half_precision" in panel
-    assert "profile.provider === LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "profile.provider === expectedProvider" in panel
     assert "LOCAL_TRANSFORMERS_PROVIDER" in panel
+    assert "LOCAL_ONNXRUNTIME_PROVIDER" in panel
+    assert "visionProviderForArchitecture" in panel
+    assert "visionBackendForArchitecture" in panel
+    assert "(item.backend || LOCAL_TRANSFORMERS_PROVIDER) === expectedProvider" in panel
+    assert "currentArchitecture === 'wd14'" in panel
+    assert "delete nextMetadata.trust_remote_code" in panel
+    assert "delete nextMetadata.use_half_precision" in panel
     assert "profileKeyTouched" in panel
     assert "sanitizeProfileKey" in panel
     assert "uniqueProfileKey" in panel
@@ -1841,6 +1852,8 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
         assert '"trustRemoteCode"' in locale
         assert '"useHalfPrecision"' in locale
         assert '"florence2_promptgen"' in locale
+        assert '"wd14"' in locale
+        assert '"onnxruntime"' in locale
         assert '"generate_tags"' in locale
         assert '"mixed_caption_plus"' in locale
         assert '"supportedTaskRequired"' in locale

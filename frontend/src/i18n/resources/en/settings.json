@@ -245,10 +245,12 @@
     },
     "architectures": {
       "florence2": "Florence2",
-      "florence2_promptgen": "Florence2 PromptGen"
+      "florence2_promptgen": "Florence2 PromptGen",
+      "wd14": "WD14"
     },
     "backends": {
-      "transformers": "Transformers"
+      "transformers": "Transformers",
+      "onnxruntime": "ONNX Runtime"
     },
     "tasks": {
       "caption": "Caption",
@@ -266,12 +268,12 @@
       "selectProfile": "Select a vision model profile from the list.",
       "noProfiles": "No vision model profiles yet.",
       "noModelRef": "No vision model ref",
-      "noLocalProviderSelected": "No local Transformers provider selected",
+      "noLocalProviderSelected": "No compatible local provider selected",
       "selectInventoryRef": "Select scanned vision ref",
       "noInventoryRefs": "No scanned vision refs"
     },
     "help": {
-      "localProviderOnly": "Only internal Transformers provider profiles are valid for Vision models.",
+      "localProviderOnly": "Florence2 profiles require internal Transformers providers. WD14 profiles require internal ONNX Runtime providers.",
       "profileKey": "Used as the preferred stateless model ID, for example vision:<profile_key>.",
       "safeRef": "Scans data/models/vision and saves refs as vision/<folder>.",
       "inventoryRoot": "Scanned under {{root}}.",
@@ -280,8 +282,8 @@
       "metadataJson": "Advanced metadata persisted with this profile. The trust remote code toggle is stored here."
     },
     "warnings": {
-      "localProviderRequired": "Select an internal Transformers provider profile before saving.",
-      "providerMissing": "The selected provider profile is missing or is not an internal Transformers provider.",
+      "localProviderRequired": "Select a compatible local provider profile before saving.",
+      "providerMissing": "The selected provider profile is missing or does not match the selected architecture.",
       "providerDisabled": "The selected provider profile is disabled.",
       "modelRefMissing": "The current model ref was not returned by the latest inventory scan.",
       "trustRemoteCode": "This executes custom code from the selected local model folder during model loading."
@@ -294,7 +296,7 @@
     "errors": {
       "inventoryLoadFailed": "Failed to load vision model inventory.",
       "invalidMetadataJson": "Metadata must be a JSON object.",
-      "localProviderRequired": "A local Transformers provider profile is required.",
+      "localProviderRequired": "A compatible local provider profile is required.",
       "nameRequired": "Name is required.",
       "profileKeyRequired": "Profile key is required.",
       "modelRefRequired": "Local model ref is required.",

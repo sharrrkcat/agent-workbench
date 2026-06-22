@@ -250,6 +250,7 @@ def test_image_embedding_model_inventory_endpoint_returns_internal_transformers_
             "name": "clip-local",
             "kind": "image_embedding",
             "relative_path": "image_embeddings/clip-local",
+            "backend": "internal_transformers",
         }
     ]
     assert str(tmp_path) not in str(payload)

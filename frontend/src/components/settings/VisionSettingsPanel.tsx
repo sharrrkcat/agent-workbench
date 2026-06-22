@@ -11,15 +11,15 @@ import type {
   VisionModelProfileInput,
   VisionTask,
 } from '../../types';
-import { LOCAL_TRANSFORMERS_PROVIDER } from '../../types';
+import { LOCAL_ONNXRUNTIME_PROVIDER, LOCAL_TRANSFORMERS_PROVIDER } from '../../types';
 import { stableConfigString } from './configUtils';
 import { SettingsApiError, toSettingsError, type SettingsErrorValue } from './SettingsApiError';
 import { SettingsApiExampleBlock, formatApiExampleJson, type SettingsApiExample } from './SettingsApiExampleBlock';
 import { finalSafeRefSegment, sanitizeProfileKey, uniqueProfileKey } from './profileKeyUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
-const ARCHITECTURES: VisionArchitecture[] = ['florence2', 'florence2_promptgen'];
-const BACKENDS: VisionBackend[] = ['transformers'];
+const ARCHITECTURES: VisionArchitecture[] = ['florence2', 'florence2_promptgen', 'wd14'];
+const BACKENDS: VisionBackend[] = ['transformers', 'onnxruntime'];
 const FLORENCE2_TASKS: VisionTask[] = ['caption', 'detailed_caption', 'more_detailed_caption', 'ocr', 'object_detection'];
 const FLORENCE2_PROMPTGEN_TASKS: VisionTask[] = [
   'caption',
@@ -30,6 +30,7 @@ const FLORENCE2_PROMPTGEN_TASKS: VisionTask[] = [
   'mixed_caption',
   'mixed_caption_plus',
 ];
+const WD14_TASKS: VisionTask[] = ['generate_tags'];
 const VISION_REF_PREFIX = 'vision/';
 
 const defaultVisionProfile: Partial<VisionModelProfile> = {
@@ -127,17 +128,20 @@ function VisionProfileForm({
     }
   }, [baselineKey, hydrated, parsedMetadata, values]);
 
-  const localProviderProfiles = providerProfiles.filter((profile) => profile.provider === LOCAL_TRANSFORMERS_PROVIDER);
+  const currentArchitecture = (values.architecture || 'florence2') as VisionArchitecture;
+  const currentBackend = visionBackendForArchitecture(currentArchitecture);
+  const expectedProvider = visionProviderForArchitecture(currentArchitecture);
+  const localProviderProfiles = providerProfiles.filter((profile) => profile.provider === expectedProvider);
   const selectedProvider = localProviderProfiles.find((profile) => profile.id === values.provider_profile_id);
   const selectedProviderMissing = Boolean(values.provider_profile_id && !selectedProvider);
-  const inventoryOptions = inventoryItems.filter((item) => item.kind === 'vision' && isVisionRef(item.ref));
+  const inventoryOptions = inventoryItems.filter((item) => item.kind === 'vision' && isVisionRef(item.ref) && (item.backend || LOCAL_TRANSFORMERS_PROVIDER) === expectedProvider);
   const currentModelRef = String(values.provider_model_id || '');
   const currentRefMissing = Boolean(isVisionRef(currentModelRef) && !inventoryOptions.some((item) => item.ref === currentModelRef));
   const currentRefInvalid = Boolean(currentModelRef && !isVisionRef(currentModelRef));
   const metadataForFields = parsedMetadata.ok ? parsedMetadata.value : values.metadata || {};
-  const currentArchitecture = (values.architecture || 'florence2') as VisionArchitecture;
   const availableVisionTasks = visionTasksForArchitecture(currentArchitecture);
   const promptGenProfile = currentArchitecture === 'florence2_promptgen';
+  const wd14Profile = currentArchitecture === 'wd14';
   const trustRemoteCode = metadataForFields.trust_remote_code === true;
   const useHalfPrecision = promptGenProfile ? metadataForFields.use_half_precision !== false : false;
   const saveDisabled = Boolean(busy) || !selectedProvider;
@@ -201,10 +205,7 @@ function VisionProfileForm({
           type: 'image',
           image_base64: '...',
         },
-        options: {
-          max_new_tokens: 512,
-          num_beams: 3,
-        },
+        ...(wd14Profile ? {} : { options: { max_new_tokens: 512, num_beams: 3 } }),
       }),
     });
   }
@@ -417,15 +418,23 @@ function VisionProfileForm({
   function setArchitecture(architecture: string) {
     const nextArchitecture = architecture as VisionArchitecture;
     const nextMetadata = parsedMetadata.ok ? { ...parsedMetadata.value } : { ...(values.metadata || {}) };
+    const currentProvider = visionProviderForArchitecture(currentArchitecture);
+    const nextProvider = visionProviderForArchitecture(nextArchitecture);
     if (nextArchitecture === 'florence2_promptgen') {
       if (nextMetadata.use_half_precision === undefined) {
         nextMetadata.use_half_precision = true;
       }
+    } else if (nextArchitecture === 'wd14') {
+      delete nextMetadata.trust_remote_code;
+      delete nextMetadata.use_half_precision;
     } else {
       delete nextMetadata.use_half_precision;
     }
     patchValues({
       architecture: nextArchitecture,
+      backend: visionBackendForArchitecture(nextArchitecture),
+      provider_profile_id: currentProvider === nextProvider ? values.provider_profile_id : null,
+      provider_model_id: currentProvider === nextProvider ? values.provider_model_id : '',
       supported_tasks: defaultVisionTasks(nextArchitecture),
       metadata: nextMetadata,
     });
@@ -550,7 +559,7 @@ function VisionProfileForm({
           <h3>{t('settings:vision.sections.runtime')}</h3>
           <div className="settings-config-form llm-profile-form">
             <SelectField label={t('settings:vision.labels.architecture')} value={currentArchitecture} options={ARCHITECTURES} labelPrefix="settings:vision.architectures" onChange={setArchitecture} disabled={Boolean(busy)} />
-            <SelectField label={t('settings:vision.labels.backend')} value={values.backend || 'transformers'} options={BACKENDS} labelPrefix="settings:vision.backends" onChange={() => undefined} disabled />
+            <SelectField label={t('settings:vision.labels.backend')} value={currentBackend} options={BACKENDS} labelPrefix="settings:vision.backends" onChange={() => undefined} disabled />
             <NumberField label={t('settings:vision.labels.maxBatchSize')} value={values.max_batch_size ?? null} onChange={(max_batch_size) => patchValues({ max_batch_size })} disabled={Boolean(busy)} />
           </div>
         </section>
@@ -583,12 +592,16 @@ function VisionProfileForm({
               help={t('settings:vision.help.profileKey')}
             />
           </div>
-          <label className="config-field settings-config-field boolean-field">
-            <span>{t('settings:vision.labels.trustRemoteCode')}</span>
-            <ToggleSwitch checked={trustRemoteCode} onChange={setTrustRemoteCode} disabled={Boolean(busy)} />
-            <small>{t('settings:vision.help.trustRemoteCode')}</small>
-          </label>
-          {trustRemoteCode ? <p className="settings-warning-text">{t('settings:vision.warnings.trustRemoteCode')}</p> : null}
+          {!wd14Profile ? (
+            <>
+              <label className="config-field settings-config-field boolean-field">
+                <span>{t('settings:vision.labels.trustRemoteCode')}</span>
+                <ToggleSwitch checked={trustRemoteCode} onChange={setTrustRemoteCode} disabled={Boolean(busy)} />
+                <small>{t('settings:vision.help.trustRemoteCode')}</small>
+              </label>
+              {trustRemoteCode ? <p className="settings-warning-text">{t('settings:vision.warnings.trustRemoteCode')}</p> : null}
+            </>
+          ) : null}
           {promptGenProfile ? (
             <label className="config-field settings-config-field boolean-field">
               <span>{t('settings:vision.labels.useHalfPrecision')}</span>
@@ -695,6 +708,9 @@ function buildVisionPayload(values: Partial<VisionModelProfile>, metadata: Recor
   const payloadMetadata = { ...metadata };
   if (architecture === 'florence2_promptgen' && payloadMetadata.use_half_precision === undefined) {
     payloadMetadata.use_half_precision = true;
+  } else if (architecture === 'wd14') {
+    delete payloadMetadata.trust_remote_code;
+    delete payloadMetadata.use_half_precision;
   }
   return {
     name: values.name ?? '',
@@ -706,7 +722,7 @@ function buildVisionPayload(values: Partial<VisionModelProfile>, metadata: Recor
     provider_profile_id: values.provider_profile_id || null,
     provider_model_id: values.provider_model_id ?? '',
     architecture,
-    backend: 'transformers',
+    backend: visionBackendForArchitecture(architecture),
     supported_tasks: normalizeTasks(values.supported_tasks, architecture),
     max_batch_size: parseOptionalInteger(values.max_batch_size, 'Max batch size'),
     metadata: payloadMetadata,
@@ -726,7 +742,16 @@ function defaultVisionTasks(architecture: VisionArchitecture = 'florence2'): Vis
 }
 
 function visionTasksForArchitecture(architecture: VisionArchitecture): VisionTask[] {
+  if (architecture === 'wd14') return WD14_TASKS;
   return architecture === 'florence2_promptgen' ? FLORENCE2_PROMPTGEN_TASKS : FLORENCE2_TASKS;
+}
+
+function visionBackendForArchitecture(architecture: VisionArchitecture): VisionBackend {
+  return architecture === 'wd14' ? 'onnxruntime' : 'transformers';
+}
+
+function visionProviderForArchitecture(architecture: VisionArchitecture): string {
+  return architecture === 'wd14' ? LOCAL_ONNXRUNTIME_PROVIDER : LOCAL_TRANSFORMERS_PROVIDER;
 }
 
 function parseOptionalInteger(value: number | string | null | undefined, label: string): number | null {

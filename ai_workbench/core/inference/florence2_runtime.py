@@ -27,7 +27,7 @@ from ai_workbench.core.inference.vision_runtime import (
     register_vision_runtime_factory,
 )
 from ai_workbench.core.knowledge_models import models_root_path
-from ai_workbench.core.vision_profiles import normalize_vision_model_ref
+from ai_workbench.core.vision_profiles import normalize_vision_model_ref, vision_provider_compatibility_error
 
 
 FLORENCE2_TASK_PROMPTS: dict[str, str] = {
@@ -306,6 +306,19 @@ def preflight_florence2_runtime(
     else:
         add_check("architecture", "fail", "Vision profile architecture is not supported by this preflight.")
 
+    backend_ok = str(getattr(profile, "backend", "")) == "transformers"
+    if backend_ok:
+        add_check("backend", "pass", "Vision profile uses the Transformers backend.")
+    else:
+        add_check("backend", "fail", "Florence2 requires the Transformers backend.")
+
+    provider_error = vision_provider_compatibility_error(profile, provider_profile_store)
+    provider_ok = provider_error is None
+    if provider_ok:
+        add_check("provider", "pass", "Vision profile uses an internal Transformers provider profile.")
+    else:
+        add_check("provider", "fail", provider_error)
+
     dependencies_ok = _preflight_dependencies_available(add_check)
     model_dir: Path | None = None
     try:
@@ -325,10 +338,10 @@ def preflight_florence2_runtime(
         )
 
     device_ok = True
-    if dependencies_ok:
+    if dependencies_ok and provider_ok:
         device_ok = _preflight_device_available(profile, provider_profile_store, add_check)
 
-    if variant is not None and dependencies_ok and model_dir is not None and trust_remote_code:
+    if variant is not None and backend_ok and provider_ok and dependencies_ok and model_dir is not None and trust_remote_code:
         _preflight_transformers_objects(model_dir, add_check, variant)
         if load_model and device_ok:
             _preflight_model_load(profile, repo_root=repo_root, provider_profile_store=provider_profile_store, add_check=add_check)

@@ -582,8 +582,8 @@ export type MultimodalEmbeddingModelProfileInput = Partial<
   >
 >;
 
-export type VisionArchitecture = 'florence2' | 'florence2_promptgen';
-export type VisionBackend = 'transformers';
+export type VisionArchitecture = 'florence2' | 'florence2_promptgen' | 'wd14';
+export type VisionBackend = 'transformers' | 'onnxruntime';
 export type VisionTask =
   | 'caption'
   | 'detailed_caption'
@@ -743,6 +743,7 @@ export type InferenceModelInventoryItem = {
   name: string;
   kind: InferenceModelInventoryKind;
   relative_path?: string;
+  backend?: string;
 };
 
 export type InferenceModelInventoryResponse = {
