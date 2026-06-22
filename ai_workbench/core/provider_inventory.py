@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
 from pathlib import Path, PurePosixPath
@@ -8,7 +9,7 @@ from typing import Any
 from ai_workbench.core.knowledge_models import models_root_path
 
 
-INTERNAL_PROVIDERS = {"internal_transformers", "internal_llama_cpp"}
+INTERNAL_PROVIDERS = {"internal_transformers", "internal_llama_cpp", "internal_onnxruntime"}
 MODEL_KIND_DIRS = {
     "llms": "llm",
     "embeddings": "embedding",
@@ -40,8 +41,10 @@ def scan_internal_provider_models(provider: str, root: Path | None = None) -> di
     warnings = _legacy_warnings(base)
     if provider == "internal_transformers":
         models = _scan_transformers_models(base, provider)
-    else:
+    elif provider == "internal_llama_cpp":
         models = _scan_llama_cpp_models(base, provider)
+    else:
+        models = _scan_onnxruntime_models(base, provider)
     return {
         "models_root": "data/models",
         "provider": provider,
@@ -71,6 +74,23 @@ def internal_provider_backend_status(provider: str) -> dict[str, Any]:
         return {
             "available": llama_cpp_available,
             "llama_cpp_available": llama_cpp_available,
+        }
+    if provider == "internal_onnxruntime":
+        onnxruntime_available = importlib.util.find_spec("onnxruntime") is not None
+        available_providers: list[str] = []
+        if onnxruntime_available:
+            try:
+                runtime = importlib.import_module("onnxruntime")
+                raw_providers = getattr(runtime, "get_available_providers", lambda: [])()
+                if isinstance(raw_providers, (list, tuple)):
+                    available_providers = [str(item) for item in raw_providers]
+            except Exception:
+                available_providers = []
+        return {
+            "available": onnxruntime_available,
+            "onnxruntime_available": onnxruntime_available,
+            "available_providers": available_providers,
+            "cuda_available": "CUDAExecutionProvider" in available_providers,
         }
     return {"available": False}
 
@@ -182,6 +202,10 @@ def resolve_internal_vision_model_ref(provider: str, model_ref: str, root: Path 
             raise ValueError("internal_transformers vision refs must point to a model directory, not a GGUF file.")
         if not resolved.is_dir() or resolved.is_symlink() or not _looks_like_transformers_model(resolved):
             raise FileNotFoundError("Internal transformers vision model directory was not found.")
+        return resolved
+    if provider == "internal_onnxruntime":
+        if not resolved.is_dir() or resolved.is_symlink() or not _looks_like_onnx_model(resolved):
+            raise FileNotFoundError("Internal ONNX Runtime vision model directory was not found.")
         return resolved
     raise ValueError(f"Unsupported internal provider: {provider}")
 
@@ -361,6 +385,18 @@ def _scan_llama_cpp_models(base: Path, provider: str) -> list[dict[str, Any]]:
     return models
 
 
+def _scan_onnxruntime_models(base: Path, provider: str) -> list[dict[str, Any]]:
+    models: list[dict[str, Any]] = []
+    vision_dir = _safe_child(base, "vision")
+    for child in sorted(vision_dir.iterdir(), key=lambda item: item.name.lower()):
+        if not child.is_dir() or child.is_symlink() or not _is_safe_descendant(child, base):
+            continue
+        if _looks_like_onnx_model(child):
+            ref = f"vision/{child.name}"
+            models.append(_model_item(ref, child.name, "vision", provider, _relative_to_models(child, base)))
+    return models
+
+
 def _looks_like_transformers_model(path: Path) -> bool:
     try:
         children = [child for child in path.iterdir() if not child.is_symlink()]
@@ -378,6 +414,14 @@ def _looks_like_transformers_model(path: Path) -> bool:
     if any(child.is_dir() and child.name.endswith("_Pooling") for child in children):
         return True
     return False
+
+
+def _looks_like_onnx_model(path: Path) -> bool:
+    try:
+        children = [child for child in path.iterdir() if not child.is_symlink()]
+    except OSError:
+        return False
+    return any(child.is_file() and child.name.lower().endswith(".onnx") for child in children)
 
 
 def _is_llama_cpp_auxiliary_gguf(filename: str) -> bool:

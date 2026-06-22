@@ -41,6 +41,11 @@ image-generation = [
     "Pillow>=10",
     "safetensors>=0.4",
 ]
+onnx = [
+    "onnxruntime-gpu>=1.17,<1.24",
+    "numpy>=1.24",
+    "Pillow>=10",
+]
 
 [dependency-groups]
 dev = [

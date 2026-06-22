@@ -319,6 +319,73 @@ def test_internal_provider_refresh_models_scans_safe_inventory(monkeypatch, tmp_
     assert not llm.model_calls
 
 
+def test_internal_onnxruntime_provider_profile_scans_vision_models(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    from types import ModuleType
+
+    import ai_workbench.core.provider_inventory as inventory_module
+
+    models_root = tmp_path / "data" / "models"
+    wd14_dir = models_root / "vision" / "wd14"
+    wd14_dir.mkdir(parents=True)
+    (wd14_dir / "model.onnx").write_bytes(b"fake")
+    (models_root / "vision" / "not-onnx").mkdir()
+    (models_root / "vision" / "not-onnx" / "config.json").write_text("{}", encoding="utf-8")
+    (models_root / "vision" / "direct.onnx").write_bytes(b"fake")
+    try:
+        (models_root / "vision" / "linked").symlink_to(wd14_dir, target_is_directory=True)
+    except OSError:
+        pass
+    module = ModuleType("onnxruntime")
+    module.get_available_providers = lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"]  # type: ignore[attr-defined]
+    client = TestClient(create_app(llm_runtime=ProviderModelRuntime(), use_memory=True))
+    monkeypatch.setitem(sys.modules, "onnxruntime", module)
+    monkeypatch.setattr(inventory_module, "models_root_path", lambda root=None: models_root)
+    original_find_spec = inventory_module.importlib.util.find_spec
+    monkeypatch.setattr(
+        inventory_module.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "onnxruntime" else original_find_spec(name),
+    )
+
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": "Local ONNX Runtime",
+            "provider": "internal_onnxruntime",
+            "metadata": {
+                "onnx_execution_provider": "cuda",
+                "local_runtime_device": "mps",
+                "llama_cpp_gpu_layers": -1,
+            },
+        },
+    ).json()
+    assert provider["metadata"] == {"onnx_execution_provider": "cuda"}
+
+    patched = client.patch(
+        f"/api/llm-provider-profiles/{provider['id']}",
+        json={"metadata": {"onnx_execution_provider": "metal", "local_runtime_device": "cuda"}},
+    ).json()
+    assert patched["metadata"] == {"onnx_execution_provider": "auto"}
+
+    duplicated = client.post(f"/api/llm-provider-profiles/{provider['id']}/duplicate")
+    assert duplicated.status_code == 200
+
+    test_payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/test").json()
+    refresh_payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/refresh-models").json()
+
+    assert test_payload["success"] is True
+    assert test_payload["backend"]["onnxruntime_available"] is True
+    assert test_payload["backend"]["cuda_available"] is True
+    assert test_payload["backend"]["available_providers"] == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert [item["id"] for item in refresh_payload["models"]] == ["vision/wd14"]
+    assert refresh_payload["models"][0]["kind"] == "vision"
+    assert refresh_payload["models"][0]["type"] == "vision"
+    assert refresh_payload["models"][0]["backend"] == "internal_onnxruntime"
+    assert refresh_payload["models"][0]["relative_path"] == "vision/wd14"
+    assert str(tmp_path) not in str(refresh_payload)
+
+
 def test_builtin_llm_runtime_model_listing_provider_urls(monkeypatch) -> None:
     from capabilities.llm import CapabilityRuntime
     import capabilities.llm as llm_module

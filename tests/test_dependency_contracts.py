@@ -41,3 +41,21 @@ def test_florence2_local_runtime_dependencies_are_declared_and_documented() -> N
     assert "uv sync --extra knowledge" in contract
     assert "uv sync --extra knowledge-cuda128" in contract
     assert "CUDA 12.8" in contract
+
+
+def test_onnxruntime_provider_dependencies_are_declared_and_documented() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    contract = (ROOT / "docs" / "contracts" / "stateless-vision-models.md").read_text(encoding="utf-8")
+
+    extra = _toml_array_block(pyproject, "onnx")
+    for dependency in (
+        '"onnxruntime-gpu>=1.17,<1.24"',
+        '"numpy>=1.24"',
+        '"Pillow>=10"',
+    ):
+        assert dependency in extra
+
+    assert "internal_onnxruntime" in contract
+    assert "data/models/vision/<folder>" in contract
+    assert "uv sync --extra onnx" in contract
+    assert "`onnx` extra includes `onnxruntime-gpu>=1.17,<1.24`, `numpy`, and `Pillow`" in contract

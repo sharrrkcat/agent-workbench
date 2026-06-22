@@ -176,6 +176,21 @@ as `torch==...+cu128` with the CPU wheel. Do not combine CPU and CUDA extras in
 the same environment; they are declared as mutually exclusive installation
 modes.
 
+ONNX Runtime vision providers use `internal_onnxruntime` Provider Profiles and
+scan `data/models/vision/<folder>` directories containing `.onnx` files. The
+runtime dependency extra is:
+
+```bash
+uv sync --extra onnx
+```
+
+The `onnx` extra includes `onnxruntime-gpu>=1.17,<1.24`, `numpy`, and `Pillow`.
+The upper bound keeps the extra installable on the project's Python 3.10+
+runtime while newer ONNX Runtime GPU wheels target newer Python versions. ONNX
+model execution is wired in later Vision architecture support; this provider
+layer only owns local inventory, dependency checks, and execution-provider
+selection.
+
 ## Request
 
 `POST /v1/vision` request shape:

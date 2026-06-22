@@ -503,6 +503,10 @@ def _refresh_internal_provider(provider: ProviderProfileSchema, model_profiles: 
             warnings.append("internal_provider_mps_unavailable")
     if provider.provider == "internal_llama_cpp" and int(runtime_settings.get("llama_cpp_gpu_layers") or 0) != 0:
         warnings.append("internal_provider_gpu_layers_configured_backend_unverified")
+    if provider.provider == "internal_onnxruntime":
+        selected_provider = runtime_settings.get("onnx_execution_provider")
+        if selected_provider == "cuda" and not inventory["backend"].get("cuda_available"):
+            warnings.append("internal_provider_cuda_unavailable")
     payload = _provider_payload(
         provider=provider,
         reachable=True,

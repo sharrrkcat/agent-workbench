@@ -1565,6 +1565,33 @@ def test_multimodal_and_vision_profile_client_contracts() -> None:
     assert "`${base}-${index}`" in profile_key_utils
 
 
+def test_onnxruntime_provider_profile_frontend_contract() -> None:
+    types = read_frontend("types.ts")
+    llm = read_frontend("components/settings/LlmSettingsPanel.tsx")
+    en_llm = read_frontend("i18n/resources/en/llm.json")
+    zh_llm = read_frontend("i18n/resources/zh-CN/llm.json")
+
+    assert "export const LOCAL_ONNXRUNTIME_PROVIDER = 'internal_onnxruntime' as const;" in types
+    assert "internal_onnxruntime" in types
+    assert "onnx_execution_provider?: 'auto' | 'cuda' | 'cpu' | string;" in types
+    assert "'internal_onnxruntime'] as const" in llm
+    llm_profile_provider_options = llm[llm.index("const llmProfileProviderOptions") : llm.index("const internalProviderOptions")]
+    assert "internal_onnxruntime" not in llm_profile_provider_options
+    assert "new Set<string>(['internal_transformers', 'internal_llama_cpp', 'internal_onnxruntime'])" in llm
+    assert "const onnxExecutionProviderOptions = ['auto', 'cuda', 'cpu'] as const;" in llm
+    assert "onnx_execution_provider: onnxExecutionProviderValue" in llm
+    assert "llm:labels.onnxExecutionProvider" in llm
+    assert "llm:help.onnxExecutionProvider" in llm
+    assert "uv sync --extra onnx" in llm
+
+    assert '"internal_onnxruntime": "Internal ONNX Runtime"' in en_llm
+    assert '"internal_onnxruntime": "内部 ONNX Runtime"' in zh_llm
+    assert '"onnxExecutionProvider"' in en_llm
+    assert '"onnxExecutionProvider"' in zh_llm
+    assert '"onnx": "ONNX Runtime GPU install"' in en_llm
+    assert '"onnx": "ONNX Runtime GPU 安装"' in zh_llm
+
+
 def test_model_profile_external_inference_settings_contract() -> None:
     types = read_frontend("types.ts")
     llm = read_frontend("components/settings/LlmSettingsPanel.tsx")

@@ -28,7 +28,8 @@
     "custom": "Custom",
     "ollama": "Ollama",
     "internal_transformers": "Internal transformers",
-    "internal_llama_cpp": "Internal llama.cpp"
+    "internal_llama_cpp": "Internal llama.cpp",
+    "internal_onnxruntime": "Internal ONNX Runtime"
   },
   "labels": {
     "currentModelCapabilities": "Current model capabilities",
@@ -48,6 +49,8 @@
     "backend": "Backend",
     "runtimeDevice": "Runtime device",
     "gpuLayers": "GPU layers",
+    "onnxExecutionProvider": "ONNX execution provider",
+    "availableProviders": "Available providers",
     "localModelsRoot": "Local models root",
     "availableModels": "Available models",
     "defaultModelProfile": "Default model profile",
@@ -93,7 +96,8 @@
     "internalProviderRoot": "Scans data/models/llms, data/models/embeddings, and data/models/rerankers locally. Base URL and API key are not used.",
     "internalLlmProfilesOnly": "LLM Model Profiles can select only refs under llm/ from this internal provider.",
     "runtimeDevice": "Uses torch / transformers / sentence-transformers device semantics for internal transformers models. GPU availability depends on the installed torch backend.",
-    "gpuLayers": "Uses llama.cpp GPU layer offload semantics, which are separate from torch devices. Use 0 for CPU only, -1 to offload as much as possible, or a positive layer count."
+    "gpuLayers": "Uses llama.cpp GPU layer offload semantics, which are separate from torch devices. Use 0 for CPU only, -1 to offload as much as possible, or a positive layer count.",
+    "onnxExecutionProvider": "Uses ONNX Runtime execution providers for local ONNX vision models. Auto prefers CUDA when ONNX Runtime reports it."
   },
   "runtimeDevices": {
     "auto": "Auto",
@@ -101,11 +105,17 @@
     "cuda": "CUDA",
     "mps": "MPS"
   },
+  "onnxExecutionProviders": {
+    "auto": "Auto",
+    "cuda": "CUDA",
+    "cpu": "CPU"
+  },
   "install": {
     "title": "Install commands",
     "commands": {
       "basicCpu": "Basic / CPU install",
-      "cuda128": "CUDA 12.8 example"
+      "cuda128": "CUDA 12.8 example",
+      "onnx": "ONNX Runtime GPU install"
     }
   },
   "results": {

@@ -12,9 +12,9 @@ import { SecretInput } from './SecretInput';
 import { stableConfigString, type ConfigValues } from './configUtils';
 import { ToggleSwitch } from './ToggleSwitch';
 
-const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'ollama', 'internal_transformers', 'internal_llama_cpp'] as const;
+const providerOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'ollama', 'internal_transformers', 'internal_llama_cpp', 'internal_onnxruntime'] as const;
 const llmProfileProviderOptions = ['openai_compatible', 'lm_studio', 'llama_cpp', 'custom', 'internal_transformers', 'internal_llama_cpp'] as const;
-const internalProviderOptions = new Set<string>(['internal_transformers', 'internal_llama_cpp']);
+const internalProviderOptions = new Set<string>(['internal_transformers', 'internal_llama_cpp', 'internal_onnxruntime']);
 const profileDefaults: LlmProfileInput = {
   alias: '',
   name: '',
@@ -55,8 +55,12 @@ const internalProviderInstallCommands = {
     { key: 'basicCpu', command: 'uv pip install llama-cpp-python' },
     { key: 'cuda128', command: 'CMAKE_ARGS="-DGGML_CUDA=on" uv pip install llama-cpp-python --force-reinstall --no-cache-dir' },
   ],
+  internal_onnxruntime: [
+    { key: 'onnx', command: 'uv sync --extra onnx' },
+  ],
 } as const;
 const localRuntimeDeviceOptions = ['auto', 'cpu', 'cuda', 'mps'] as const;
+const onnxExecutionProviderOptions = ['auto', 'cuda', 'cpu'] as const;
 
 function providerMetadata(draft: LlmProviderProfileInput): Record<string, unknown> {
   return { ...(draft.metadata || {}) };
@@ -75,6 +79,11 @@ function gpuLayersValue(draft: LlmProviderProfileInput): number {
   const raw = providerMetadata(draft).llama_cpp_gpu_layers;
   const parsed = typeof raw === 'number' ? raw : Number.parseInt(String(raw ?? '0'), 10);
   return Number.isFinite(parsed) && parsed >= -1 ? parsed : 0;
+}
+
+function onnxExecutionProviderValue(draft: LlmProviderProfileInput): string {
+  const value = String(providerMetadata(draft).onnx_execution_provider || 'auto');
+  return onnxExecutionProviderOptions.includes(value as (typeof onnxExecutionProviderOptions)[number]) ? value : 'auto';
 }
 
 export function LlmSettingsPanel({
@@ -790,7 +799,9 @@ export function LlmProviderProfileDetail({
                     ? { local_runtime_device: runtimeDeviceValue(draft) }
                     : provider === 'internal_llama_cpp'
                       ? { llama_cpp_gpu_layers: gpuLayersValue(draft) }
-                      : {};
+                      : provider === 'internal_onnxruntime'
+                        ? { onnx_execution_provider: onnxExecutionProviderValue(draft) }
+                        : {};
                   setDraft({
                     ...draft,
                     provider,
@@ -888,6 +899,21 @@ function InternalProviderRuntimeSettings({
       </label>
     );
   }
+  if (provider === 'internal_onnxruntime') {
+    return (
+      <label className="config-field settings-config-field">
+        <span>{t('llm:labels.onnxExecutionProvider')}</span>
+        <select
+          value={onnxExecutionProviderValue(draft)}
+          onChange={(event) => setDraft(updateProviderMetadata(draft, { onnx_execution_provider: event.target.value }))}
+          disabled={busy}
+        >
+          {onnxExecutionProviderOptions.map((providerName) => <option key={providerName} value={providerName}>{t(`llm:onnxExecutionProviders.${providerName}`)}</option>)}
+        </select>
+        <small>{t('llm:help.onnxExecutionProvider')}</small>
+      </label>
+    );
+  }
   return null;
 }
 
@@ -903,7 +929,12 @@ function InternalProviderEnvironment({
   const { t } = useTranslation(['llm', 'status']);
   const dependencyKeys = provider === 'internal_llama_cpp'
     ? ['llama_cpp_available']
-    : ['sentence_transformers_available', 'transformers_available', 'torch_available'];
+    : provider === 'internal_onnxruntime'
+      ? ['onnxruntime_available']
+      : ['sentence_transformers_available', 'transformers_available', 'torch_available'];
+  const availableProviders = Array.isArray(backend?.available_providers)
+    ? backend.available_providers.map((item) => String(item))
+    : null;
   return (
     <section className="detail-section">
       <div className="detail-section-heading">
@@ -930,6 +961,12 @@ function InternalProviderEnvironment({
             <dd>{formatInternalProviderStatus(backend?.cuda_available, t)}</dd>
           </div>
         ) : null}
+        {availableProviders ? (
+          <div>
+            <dt>{t('llm:labels.availableProviders')}</dt>
+            <dd>{availableProviders.length ? availableProviders.join(', ') : t('status:common.unset')}</dd>
+          </div>
+        ) : null}
         {'mps_available' in (backend || {}) ? (
           <div>
             <dt>MPS</dt>
@@ -951,7 +988,9 @@ function InternalProviderInstallCommands({
   const { t } = useTranslation('llm');
   const commands = provider === 'internal_llama_cpp'
     ? internalProviderInstallCommands.internal_llama_cpp
-    : internalProviderInstallCommands.internal_transformers;
+    : provider === 'internal_onnxruntime'
+      ? internalProviderInstallCommands.internal_onnxruntime
+      : internalProviderInstallCommands.internal_transformers;
   return (
     <section className="detail-section">
       <div className="detail-section-heading">
@@ -1558,6 +1597,8 @@ function cleanProviderInput(input: LlmProviderProfileInput): LlmProviderProfileI
     normalized.metadata = { local_runtime_device: runtimeDeviceValue(normalized) };
   } else if (normalized.provider === 'internal_llama_cpp') {
     normalized.metadata = { llama_cpp_gpu_layers: gpuLayersValue(normalized) };
+  } else if (normalized.provider === 'internal_onnxruntime') {
+    normalized.metadata = { onnx_execution_provider: onnxExecutionProviderValue(normalized) };
   }
   const entries = Object.entries(normalized).filter(([key, value]) => {
     if (value === undefined) return false;

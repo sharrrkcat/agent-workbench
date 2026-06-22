@@ -57,7 +57,9 @@
     "modelsRoot": "模型根目录",
     "backend": "Backend",
     "runtimeDevice": "Runtime device",
-    "gpuLayers": "GPU layers"
+    "gpuLayers": "GPU layers",
+    "onnxExecutionProvider": "ONNX execution provider",
+    "availableProviders": "可用 provider"
   },
   "empty": {
     "noConfigFields": "此 Capability 没有可配置字段。",
@@ -84,13 +86,19 @@
     "internalProviderRoot": "本地扫描 data/models/llms、data/models/embeddings 和 data/models/rerankers。Base URL 和 API key 不会使用。",
     "internalLlmProfilesOnly": "LLM Model Profiles 只能选择此内部 provider 下的 llm/ 模型 ref。",
     "runtimeDevice": "internal transformers 使用 torch / transformers / sentence-transformers 的 device 语义。GPU 是否可用取决于已安装的 torch 后端。",
-    "gpuLayers": "internal llama.cpp 使用 llama.cpp GPU layer offload 语义，和 torch device 不同。0 表示 CPU only，-1 表示尽量 offload，正整数表示指定层数。"
+    "gpuLayers": "internal llama.cpp 使用 llama.cpp GPU layer offload 语义，和 torch device 不同。0 表示 CPU only，-1 表示尽量 offload，正整数表示指定层数。",
+    "onnxExecutionProvider": "internal ONNX Runtime 使用 ONNX Runtime execution provider 运行本地 ONNX vision 模型。Auto 会在 ONNX Runtime 报告 CUDA 可用时优先使用 CUDA。"
   },
   "runtimeDevices": {
     "auto": "Auto",
     "cpu": "CPU",
     "cuda": "CUDA",
     "mps": "MPS"
+  },
+  "onnxExecutionProviders": {
+    "auto": "Auto",
+    "cuda": "CUDA",
+    "cpu": "CPU"
   },
   "results": {
     "providerReturnedNoModels": "Provider 没有返回模型。",
@@ -108,13 +116,15 @@
     "custom": "自定义",
     "internal_transformers": "内部 transformers",
     "internal_llama_cpp": "内部 llama.cpp",
+    "internal_onnxruntime": "内部 ONNX Runtime",
     "ollama": "Ollama"
   },
   "install": {
     "title": "安装命令",
     "commands": {
       "basicCpu": "Basic / CPU 安装",
-      "cuda128": "CUDA 12.8 示例"
+      "cuda128": "CUDA 12.8 示例",
+      "onnx": "ONNX Runtime GPU 安装"
     }
   },
   "errors": {

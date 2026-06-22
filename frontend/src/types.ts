@@ -353,6 +353,7 @@ export type LlmProviderStatus = {
   runtime_settings?: {
     local_runtime_device?: 'auto' | 'cpu' | 'cuda' | 'mps' | string;
     llama_cpp_gpu_layers?: number;
+    onnx_execution_provider?: 'auto' | 'cuda' | 'cpu' | string;
     warnings?: string[];
   };
   error?: { code?: string; message?: string; raw?: string };
@@ -363,11 +364,12 @@ export type LlmProviderStatusRefreshResponse = {
 };
 
 export const LOCAL_TRANSFORMERS_PROVIDER = 'internal_transformers' as const;
+export const LOCAL_ONNXRUNTIME_PROVIDER = 'internal_onnxruntime' as const;
 
 export type LlmProviderProfile = {
   id: string;
   name: string;
-  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'ollama' | 'internal_transformers' | 'internal_llama_cpp';
+  provider: 'openai_compatible' | 'lm_studio' | 'llama_cpp' | 'custom' | 'ollama' | 'internal_transformers' | 'internal_llama_cpp' | 'internal_onnxruntime';
   base_url: string;
   api_key: string;
   api_key_set?: boolean;

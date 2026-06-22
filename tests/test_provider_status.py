@@ -392,6 +392,76 @@ def test_internal_provider_status_uses_local_inventory(monkeypatch, tmp_path: Pa
     assert str(tmp_path) not in str(payload)
 
 
+def test_internal_onnxruntime_status_warns_when_dependency_missing(monkeypatch, tmp_path: Path) -> None:
+    import ai_workbench.core.provider_inventory as inventory_module
+
+    models_root = tmp_path / "data" / "models"
+    monkeypatch.setattr(inventory_module, "models_root_path", lambda root=None: models_root)
+    original_find_spec = inventory_module.importlib.util.find_spec
+    monkeypatch.setattr(
+        inventory_module.importlib.util,
+        "find_spec",
+        lambda name: None if name == "onnxruntime" else original_find_spec(name),
+    )
+    client = TestClient(create_app(use_memory=True))
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={"name": "ONNX Runtime", "provider": "internal_onnxruntime"},
+    ).json()
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["provider"] == "internal_onnxruntime"
+    assert payload["reachable"] is True
+    assert payload["mode"] == "internal_onnxruntime"
+    assert payload["backend"]["available"] is False
+    assert payload["backend"]["onnxruntime_available"] is False
+    assert payload["backend"]["available_providers"] == []
+    assert payload["backend"]["cuda_available"] is False
+    assert "internal_provider_dependency_unavailable" in payload["warnings"]
+
+
+def test_internal_onnxruntime_status_reports_execution_providers_and_cuda_warning(monkeypatch, tmp_path: Path) -> None:
+    import sys
+    from types import ModuleType
+
+    import ai_workbench.core.provider_inventory as inventory_module
+
+    models_root = tmp_path / "data" / "models"
+    vision_dir = models_root / "vision" / "wd14"
+    vision_dir.mkdir(parents=True)
+    (vision_dir / "model.onnx").write_bytes(b"fake")
+    module = ModuleType("onnxruntime")
+    module.get_available_providers = lambda: ["CPUExecutionProvider"]  # type: ignore[attr-defined]
+    client = TestClient(create_app(use_memory=True))
+    monkeypatch.setitem(sys.modules, "onnxruntime", module)
+    monkeypatch.setattr(inventory_module, "models_root_path", lambda root=None: models_root)
+    original_find_spec = inventory_module.importlib.util.find_spec
+    monkeypatch.setattr(
+        inventory_module.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "onnxruntime" else original_find_spec(name),
+    )
+    provider = client.post(
+        "/api/llm-provider-profiles",
+        json={
+            "name": "ONNX Runtime",
+            "provider": "internal_onnxruntime",
+            "metadata": {"onnx_execution_provider": "cuda"},
+        },
+    ).json()
+
+    payload = client.post(f"/api/llm-provider-profiles/{provider['id']}/status/refresh").json()["providers"][0]
+
+    assert payload["backend"]["available"] is True
+    assert payload["backend"]["onnxruntime_available"] is True
+    assert payload["backend"]["available_providers"] == ["CPUExecutionProvider"]
+    assert payload["backend"]["cuda_available"] is False
+    assert payload["runtime_settings"]["onnx_execution_provider"] == "cuda"
+    assert payload["models"][0]["id"] == "vision/wd14"
+    assert "internal_provider_cuda_unavailable" in payload["warnings"]
+
+
 def test_unload_unsupported_provider_returns_structured_error() -> None:
     provider = ProviderProfileSchema(id="provider", name="OpenAI", provider="openai_compatible", base_url="http://openai/v1")
     result = unload_model(provider, [], model_id="model-a")

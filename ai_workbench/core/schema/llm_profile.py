@@ -25,7 +25,17 @@ PROVIDER_PROFILE_PROVIDERS = (
     "ollama",
     "internal_transformers",
     "internal_llama_cpp",
+    "internal_onnxruntime",
 )
+LLMProfileProvider = Literal[
+    "openai_compatible",
+    "lm_studio",
+    "llama_cpp",
+    "custom",
+    "ollama",
+    "internal_transformers",
+    "internal_llama_cpp",
+]
 ProviderProfileProvider = Literal[
     "openai_compatible",
     "lm_studio",
@@ -34,6 +44,7 @@ ProviderProfileProvider = Literal[
     "ollama",
     "internal_transformers",
     "internal_llama_cpp",
+    "internal_onnxruntime",
 ]
 
 
@@ -44,7 +55,7 @@ class LLMProfileSchema(BaseModel):
     alias: str
     name: str
     provider_profile_id: Optional[str] = None
-    provider: ProviderProfileProvider = "openai_compatible"
+    provider: LLMProfileProvider = "openai_compatible"
     base_url: str = ""
     api_key: str = ""
     model_id: str = ""
