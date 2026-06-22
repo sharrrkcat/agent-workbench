@@ -7,6 +7,7 @@ from ai_workbench.core.message_parts import make_text_part, validate_message_par
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
+from ai_workbench.core.image_generation.profiles import ImageModelProfile
 from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
 from ai_workbench.core.vision_profiles import VisionModelProfile
 from ai_workbench.core.session_titles import is_default_session_title
@@ -747,6 +748,59 @@ class VisionProfileStore:
         return existing
 
     def list(self) -> List[VisionModelProfile]:
+        return sorted(self._records.values(), key=lambda item: (item.alias, item.created_at))
+
+
+class ImageGenerationProfileStore:
+    def __init__(self) -> None:
+        self._records: Dict[str, ImageModelProfile] = {}
+
+    def create(self, profile: ImageModelProfile) -> ImageModelProfile:
+        if profile.id in self._records:
+            raise ValueError(f"Image generation profile id already exists: {profile.id}")
+        if self.find_by_alias(profile.alias) is not None or profile.alias in self._records:
+            raise ValueError("IMAGE_GENERATION_MODEL_ALIAS_EXISTS")
+        self._records[profile.id] = profile
+        return profile
+
+    def get(self, profile_id: str) -> ImageModelProfile:
+        try:
+            return self._records[profile_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown image generation profile id: {profile_id}") from exc
+
+    def find_by_alias(self, alias: str) -> Optional[ImageModelProfile]:
+        for profile in self._records.values():
+            if profile.alias == alias:
+                return profile
+        return None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> ImageModelProfile:
+        if profile_id_or_alias in self._records:
+            return self._records[profile_id_or_alias]
+        profile = self.find_by_alias(profile_id_or_alias)
+        if profile is not None:
+            return profile
+        raise KeyError(f"unknown image generation profile: {profile_id_or_alias}")
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> ImageModelProfile:
+        existing = self.get_by_id_or_alias(profile_id)
+        alias = values.get("alias")
+        if alias is not None:
+            conflict = self.find_by_alias(str(alias))
+            if (conflict is not None and conflict.id != existing.id) or (str(alias) in self._records and str(alias) != existing.id):
+                raise ValueError("IMAGE_GENERATION_MODEL_ALIAS_EXISTS")
+        updated = existing.model_copy(update={**values, "updated_at": utc_now()})
+        updated = ImageModelProfile.model_validate(updated.model_dump())
+        self._records[existing.id] = updated
+        return updated
+
+    def delete(self, profile_id: str) -> ImageModelProfile:
+        existing = self.get_by_id_or_alias(profile_id)
+        del self._records[existing.id]
+        return existing
+
+    def list(self) -> List[ImageModelProfile]:
         return sorted(self._records.values(), key=lambda item: (item.alias, item.created_at))
 
 

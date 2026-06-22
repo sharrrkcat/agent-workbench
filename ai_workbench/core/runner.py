@@ -129,7 +129,16 @@ class ActiveRunRegistry:
         task = self._tasks.get(run_id)
         if task is None or task.done():
             return False
-        task.cancel()
+        try:
+            task_loop = task.get_loop()
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+            task_loop = task.get_loop()
+        if current_loop is task_loop:
+            task.cancel()
+        else:
+            task_loop.call_soon_threadsafe(task.cancel)
         return True
 
     def active_count(self) -> int:
@@ -240,6 +249,7 @@ class AgentRunner:
                 session_agent_state_store=session_agent_state_store,
                 app_settings_store=app_settings_store,
                 run_lifecycle=self.run_lifecycle,
+                active_runs=self.active_runs,
                 knowledge_store=knowledge_store,
                 knowledge_model_backend=knowledge_model_backend,
                 worldbook_store=worldbook_store,

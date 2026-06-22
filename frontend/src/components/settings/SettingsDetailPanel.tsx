@@ -3,7 +3,7 @@ import { FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus, VisionModelProfile } from '../../types';
+import type { Agent, AgentConfig, CapabilityConfig, Command, Diagnostics, EmbeddingModelProfile, FontAsset, FontFamilyAsset, FontSource, GeneralSettings, HealthDetails, ImageGenerationModelProfile, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, SemanticRouterStatus, StorageStats, UtilityLlmStatus, VisionModelProfile } from '../../types';
 import { AgentDetail } from './AgentDetail';
 import { CapabilityDetail } from './CapabilityDetail';
 import { LlmDefaultModelProfileSection, LlmProfileDetail, LlmProviderProfileDetail, LlmSettingsPanel } from './LlmSettingsPanel';
@@ -15,6 +15,7 @@ import { buildUserConfig, initialConfigValues, isConfigDirty, type ConfigValues 
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
 import type { AppearanceSettingsCategory, GeneralSettingsCategory, KnowledgeSettingsCategory, WorldbookSettingsCategory } from './SettingsObjectList';
 import { KnowledgeSettingsDetail } from './KnowledgeSettingsPanel';
+import { ImageGenerationSettingsPanel } from './ImageGenerationSettingsPanel';
 import { MultimodalEmbeddingSettingsPanel } from './MultimodalEmbeddingSettingsPanel';
 import { PetSettingsDetail } from './PetSettingsPanel';
 import { VisionSettingsPanel } from './VisionSettingsPanel';
@@ -32,10 +33,12 @@ export function SettingsDetailPanel({
   llmProviderProfiles = [],
   multimodalEmbeddingProfiles = [],
   visionProfiles = [],
+  imageGenerationProfiles = [],
   rerankerProfiles = [],
   selectedLlmItemId = 'global',
   selectedMultimodalEmbeddingItemId = '',
   selectedVisionItemId = '',
+  selectedImageGenerationItemId = '',
   llmSubsection = 'providers',
   generalCategory = 'files',
   appearanceCategory = 'pet',
@@ -46,6 +49,7 @@ export function SettingsDetailPanel({
   onLlmProfilesChanged,
   onMultimodalEmbeddingProfilesChanged,
   onVisionProfilesChanged,
+  onImageGenerationProfilesChanged,
   onKnowledgeObjectsChanged,
   onWorldbookObjectsChanged,
   onSelectGeneralCategory,
@@ -64,10 +68,12 @@ export function SettingsDetailPanel({
   llmProviderProfiles?: LlmProviderProfile[];
   multimodalEmbeddingProfiles?: MultimodalEmbeddingModelProfile[];
   visionProfiles?: VisionModelProfile[];
+  imageGenerationProfiles?: ImageGenerationModelProfile[];
   rerankerProfiles?: RerankerModelProfile[];
   selectedLlmItemId?: string;
   selectedMultimodalEmbeddingItemId?: string;
   selectedVisionItemId?: string;
+  selectedImageGenerationItemId?: string;
   llmSubsection?: LlmSettingsSubsection;
   generalCategory?: GeneralSettingsCategory;
   appearanceCategory?: AppearanceSettingsCategory;
@@ -78,6 +84,7 @@ export function SettingsDetailPanel({
   onLlmProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onMultimodalEmbeddingProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onVisionProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
+  onImageGenerationProfilesChanged?: (selectedProfileId?: string) => Promise<void>;
   onKnowledgeObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onWorldbookObjectsChanged?: (selectedItemId?: string) => Promise<void>;
   onSelectGeneralCategory?: (category: GeneralSettingsCategory) => void;
@@ -161,6 +168,13 @@ export function SettingsDetailPanel({
             providerProfiles={llmProviderProfiles}
             selectedProfileId={selectedVisionItemId}
             onProfilesChanged={onVisionProfilesChanged || (async () => undefined)}
+            onDirtyChange={onDirtyChange}
+          />
+        ) : llmSubsection === 'image_generation_models' ? (
+          <ImageGenerationSettingsPanel
+            profiles={imageGenerationProfiles}
+            selectedProfileId={selectedImageGenerationItemId}
+            onProfilesChanged={onImageGenerationProfilesChanged || (async () => undefined)}
             onDirtyChange={onDirtyChange}
           />
         ) : (

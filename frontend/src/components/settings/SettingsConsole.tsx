@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, VisionModelProfile, Worldbook } from '../../types';
+import type { EmbeddingModelProfile, ImageGenerationModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, VisionModelProfile, Worldbook } from '../../types';
 import { SettingsDetailPanel } from './SettingsDetailPanel';
 import { SettingsNav, type KnowledgeSettingsSubsection, type LlmSettingsSubsection, type SettingsInitialTarget, type SettingsSection, type WorldbookSettingsSubsection } from './SettingsNav';
 import { SettingsObjectList, type AppearanceSettingsCategory, type GeneralSettingsCategory } from './SettingsObjectList';
@@ -22,6 +22,8 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   const [selectedMultimodalEmbeddingItemId, setSelectedMultimodalEmbeddingItemId] = useState<string>('');
   const [visionProfiles, setVisionProfiles] = useState<VisionModelProfile[]>([]);
   const [selectedVisionItemId, setSelectedVisionItemId] = useState<string>('');
+  const [imageGenerationProfiles, setImageGenerationProfiles] = useState<ImageGenerationModelProfile[]>([]);
+  const [selectedImageGenerationItemId, setSelectedImageGenerationItemId] = useState<string>('');
   const [rerankerProfiles, setRerankerProfiles] = useState<RerankerModelProfile[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKnowledgeSubsection, setSelectedKnowledgeSubsection] = useState<KnowledgeSettingsSubsection>('defaults');
@@ -57,6 +59,9 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'vision_models') {
       setSelectedVisionItemId('');
     }
+    if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'image_generation_models') {
+      setSelectedImageGenerationItemId('');
+    }
     if (initialTarget?.section === 'models' && initialTarget.llmSubsection === 'reranker_models') {
       setSelectedKnowledgeItemId('');
     }
@@ -88,6 +93,12 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
   useEffect(() => {
     if (activeSection === 'models' && selectedLlmSubsection === 'vision_models') {
       void refreshVisionProfiles().catch(() => undefined);
+    }
+  }, [activeSection, selectedLlmSubsection]);
+
+  useEffect(() => {
+    if (activeSection === 'models' && selectedLlmSubsection === 'image_generation_models') {
+      void refreshImageGenerationProfiles().catch(() => undefined);
     }
   }, [activeSection, selectedLlmSubsection]);
 
@@ -249,6 +260,22 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     }
   }
 
+  async function refreshImageGenerationProfiles(nextSelectedId?: string) {
+    const profiles = await api.listImageGenerationModels();
+    setImageGenerationProfiles(profiles);
+    if (nextSelectedId) {
+      setSelectedImageGenerationItemId(nextSelectedId);
+      return;
+    }
+    if (!selectedImageGenerationItemId) {
+      setSelectedImageGenerationItemId(profiles[0]?.id || '');
+      return;
+    }
+    if (selectedImageGenerationItemId !== 'new' && !profiles.some((profile) => profile.id === selectedImageGenerationItemId)) {
+      setSelectedImageGenerationItemId(profiles[0]?.id || '');
+    }
+  }
+
   async function refreshWorldbookObjects(nextSelectedId?: string) {
     const items = await api.listWorldbooks();
     setWorldbooks(items);
@@ -286,6 +313,9 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     } else if (subsection === 'vision_models') {
       setSelectedVisionItemId(visionProfiles[0]?.id || '');
       void refreshVisionProfiles().catch(() => undefined);
+    } else if (subsection === 'image_generation_models') {
+      setSelectedImageGenerationItemId(imageGenerationProfiles[0]?.id || '');
+      void refreshImageGenerationProfiles().catch(() => undefined);
     } else if (subsection === 'reranker_models') {
       setSelectedKnowledgeItemId(rerankerProfiles[0]?.id || '');
     }
@@ -351,6 +381,13 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
     setSelectedVisionItemId(itemId);
   }
 
+  function selectImageGenerationItem(itemId: string) {
+    if (itemId === selectedImageGenerationItemId) return;
+    if (!confirmDirtyNavigation()) return;
+    setDetailDirty(false);
+    setSelectedImageGenerationItemId(itemId);
+  }
+
   function selectWorldbookItem(itemId: string) {
     if (itemId === selectedWorldbookItemId) return;
     if (!confirmDirtyNavigation()) return;
@@ -398,6 +435,8 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         selectedMultimodalEmbeddingItemId={selectedMultimodalEmbeddingItemId}
         visionProfiles={visionProfiles}
         selectedVisionItemId={selectedVisionItemId}
+        imageGenerationProfiles={imageGenerationProfiles}
+        selectedImageGenerationItemId={selectedImageGenerationItemId}
         rerankerProfiles={rerankerProfiles}
         knowledgeBases={knowledgeBases}
         selectedKnowledgeItemId={selectedKnowledgeItemId}
@@ -410,6 +449,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         onSelectLlmItem={selectLlmItem}
         onSelectMultimodalEmbeddingItem={selectMultimodalEmbeddingItem}
         onSelectVisionItem={selectVisionItem}
+        onSelectImageGenerationItem={selectImageGenerationItem}
         onSelectKnowledgeItem={selectKnowledgeItem}
         onSelectWorldbookItem={selectWorldbookItem}
       />
@@ -424,10 +464,12 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         llmProviderProfiles={llmProviderProfiles}
         multimodalEmbeddingProfiles={multimodalEmbeddingProfiles}
         visionProfiles={visionProfiles}
+        imageGenerationProfiles={imageGenerationProfiles}
         rerankerProfiles={rerankerProfiles}
         selectedLlmItemId={selectedLlmItemId}
         selectedMultimodalEmbeddingItemId={selectedMultimodalEmbeddingItemId}
         selectedVisionItemId={selectedVisionItemId}
+        selectedImageGenerationItemId={selectedImageGenerationItemId}
         llmSubsection={selectedLlmSubsection}
         generalCategory={generalCategory}
         appearanceCategory={appearanceCategory}
@@ -438,6 +480,7 @@ export function SettingsConsole({ initialSection = 'general', initialTarget }: {
         onLlmProfilesChanged={refreshLlmProfiles}
         onMultimodalEmbeddingProfilesChanged={refreshMultimodalEmbeddingProfiles}
         onVisionProfilesChanged={refreshVisionProfiles}
+        onImageGenerationProfilesChanged={refreshImageGenerationProfiles}
         onKnowledgeObjectsChanged={refreshKnowledgeObjects}
         onWorldbookObjectsChanged={refreshWorldbookObjects}
         onSelectGeneralCategory={setGeneralCategory}

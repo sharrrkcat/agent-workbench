@@ -36,6 +36,12 @@ import type {
   MultimodalEmbeddingModelProfileInput,
   VisionModelProfile,
   VisionModelProfileInput,
+  ImageGenerationModelProfile,
+  ImageGenerationModelProfileInput,
+  ImageGenerationModelInventoryKind,
+  ImageGenerationModelInventoryResponse,
+  ImageGenerationRuntimeStatus,
+  ImageGenerationUnloadResult,
   InferenceModelInventoryKind,
   InferenceModelInventoryResponse,
   KnowledgeBase,
@@ -357,6 +363,27 @@ export const api = {
     }),
   deleteVisionModel: (profileId: string) =>
     request<{ deleted: boolean; profile_id: string }>(`/api/inference/vision-models/${profileId}`, { method: 'DELETE' }),
+  getImageGenerationStatus: () => request<ImageGenerationRuntimeStatus>('/api/image-generation/status'),
+  listImageGenerationModels: () => request<ImageGenerationModelProfile[]>('/api/image-generation/model-profiles'),
+  createImageGenerationModel: (profile: ImageGenerationModelProfileInput) =>
+    request<ImageGenerationModelProfile>('/api/image-generation/model-profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  patchImageGenerationModel: (profileIdOrAlias: string, patch: ImageGenerationModelProfileInput) =>
+    request<ImageGenerationModelProfile>(`/api/image-generation/model-profiles/${profileIdOrAlias}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  deleteImageGenerationModel: (profileIdOrAlias: string) =>
+    request<{ deleted: boolean; profile_id: string }>(`/api/image-generation/model-profiles/${profileIdOrAlias}`, { method: 'DELETE' }),
+  listImageGenerationModelInventory: (kind: ImageGenerationModelInventoryKind) =>
+    request<ImageGenerationModelInventoryResponse>(`/api/image-generation/model-inventory?kind=${encodeURIComponent(kind)}`),
+  unloadImageGeneration: (profileIdOrAlias?: string | null) =>
+    request<ImageGenerationUnloadResult>('/api/image-generation/unload', {
+      method: 'POST',
+      body: JSON.stringify({ profile_id_or_alias: profileIdOrAlias || null }),
+    }),
   listInferenceModelInventory: (kind: InferenceModelInventoryKind) =>
     request<InferenceModelInventoryResponse>(`/api/inference/model-inventory?kind=${encodeURIComponent(kind)}`),
   rerankKnowledge: (payload: { query: string; documents: { id: string; text: string }[] }) =>

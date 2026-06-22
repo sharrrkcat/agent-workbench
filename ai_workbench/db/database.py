@@ -45,6 +45,7 @@ def init_db(engine) -> None:
     ensure_embedding_profile_columns(engine)
     ensure_multimodal_embedding_profile_table(engine)
     ensure_vision_profile_table(engine)
+    ensure_image_generation_profile_table(engine)
     ensure_knowledge_settings_columns(engine)
     ensure_knowledge_base_columns(engine)
     ensure_worldbook_settings_columns(engine)
@@ -292,12 +293,51 @@ def ensure_vision_profile_table(engine) -> None:
         )
 
 
-def _ensure_profile_alias_column(connection, *, table_name: str, index_name: str) -> None:
+def ensure_image_generation_profile_table(engine) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS image_generation_model_profiles (
+                  id VARCHAR PRIMARY KEY NOT NULL,
+                  alias VARCHAR NOT NULL,
+                  name VARCHAR NOT NULL,
+                  description VARCHAR DEFAULT '',
+                  notes VARCHAR DEFAULT '',
+                  enabled BOOLEAN DEFAULT 1,
+                  architecture VARCHAR NOT NULL DEFAULT 'sdxl',
+                  variant VARCHAR DEFAULT 'base',
+                  checkpoint_ref VARCHAR NOT NULL DEFAULT '',
+                  vae_ref VARCHAR,
+                  dtype VARCHAR DEFAULT 'auto',
+                  device VARCHAR DEFAULT 'auto',
+                  clip_skip INTEGER,
+                  supported_tasks_json VARCHAR DEFAULT '["txt2img"]',
+                  metadata_json VARCHAR DEFAULT '{}',
+                  created_at DATETIME,
+                  updated_at DATETIME
+                )
+                """
+            )
+        )
+        _ensure_profile_alias_column(
+            connection,
+            table_name="image_generation_model_profiles",
+            index_name="ix_image_generation_model_profiles_alias",
+            identity_column="checkpoint_ref",
+        )
+
+
+def _ensure_profile_alias_column(connection, *, table_name: str, index_name: str, identity_column: str = "provider_model_id") -> None:
     columns = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
     if "alias" not in columns:
         connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN alias VARCHAR DEFAULT ''"))
+    if identity_column not in columns:
+        identity_column = "id"
     rows = connection.exec_driver_sql(
-        f"SELECT id, name, provider_model_id, alias FROM {table_name} ORDER BY COALESCE(created_at, ''), id"
+        f"SELECT id, name, {identity_column}, alias FROM {table_name} ORDER BY COALESCE(created_at, ''), id"
     ).fetchall()
     used: set[str] = set()
     for row in rows:

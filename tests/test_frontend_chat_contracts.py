@@ -1655,7 +1655,7 @@ def test_multimodal_embedding_profiles_settings_ui_contract() -> None:
     en_knowledge = read_frontend("i18n/resources/en/knowledge.json")
     zh_knowledge = read_frontend("i18n/resources/zh-CN/knowledge.json")
 
-    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'reranker_models';" in nav
+    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'image_generation_models' | 'reranker_models';" in nav
     assert "activeLlmSubsection === 'multimodal_embedding_models'" in nav
     assert "onLlmSubsectionChange?.('multimodal_embedding_models')" in nav
     assert "subsections.multimodalEmbeddingModels" in nav
@@ -1742,7 +1742,7 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
     en_settings = read_frontend("i18n/resources/en/settings.json")
     zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
 
-    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'reranker_models';" in nav
+    assert "export type LlmSettingsSubsection = 'providers' | 'models' | 'embedding_models' | 'multimodal_embedding_models' | 'vision_models' | 'image_generation_models' | 'reranker_models';" in nav
     assert "activeLlmSubsection === 'vision_models'" in nav
     assert "onLlmSubsectionChange?.('vision_models')" in nav
     assert "subsections.visionModels" in nav
@@ -1820,6 +1820,124 @@ def test_vision_model_profiles_settings_ui_contract() -> None:
         assert '"modelRefSafeRefRequired"' in locale
         assert '"profileKey"' in locale
         assert '"profileKeyRequired"' in locale
+
+
+def test_image_generation_model_profiles_settings_ui_contract() -> None:
+    nav = read_frontend("components/settings/SettingsNav.tsx")
+    app = read_frontend("App.tsx")
+    console = read_frontend("components/settings/SettingsConsole.tsx")
+    object_list = read_frontend("components/settings/SettingsObjectList.tsx")
+    detail = read_frontend("components/settings/SettingsDetailPanel.tsx")
+    panel = read_frontend("components/settings/ImageGenerationSettingsPanel.tsx")
+    types = read_frontend("types.ts")
+    client = read_frontend("api/client.ts")
+    en_settings = read_frontend("i18n/resources/en/settings.json")
+    zh_settings = read_frontend("i18n/resources/zh-CN/settings.json")
+
+    assert "export type ImageGenerationArchitecture = 'sd15' | 'sdxl' | 'z_image';" in types
+    assert "export type ImageGenerationVariant = 'base' | 'pony' | 'illustrious' | 'noobai' | 'custom';" in types
+    assert "export type ImageGenerationDtype = 'auto' | 'fp16' | 'bf16' | 'fp32';" in types
+    assert "export type ImageGenerationDevice = 'auto' | 'cuda' | 'cpu';" in types
+    assert "export type ImageGenerationTask = 'txt2img';" in types
+    assert "export type ImageGenerationModelProfile = {" in types
+    assert "checkpoint_ref: string;" in types
+    assert "vae_ref?: string | null;" in types
+    assert "supported_tasks: ImageGenerationTask[];" in types
+    assert "export type ImageGenerationModelInventoryKind = 'checkpoint' | 'vae' | 'lora';" in types
+    assert "export type ImageGenerationRuntimeStatus = {" in types
+    assert "export type ImageGenerationUnloadResult = {" in types
+
+    assert "getImageGenerationStatus" in client
+    assert "listImageGenerationModels" in client
+    assert "createImageGenerationModel" in client
+    assert "patchImageGenerationModel" in client
+    assert "deleteImageGenerationModel" in client
+    assert "listImageGenerationModelInventory" in client
+    assert "unloadImageGeneration" in client
+    assert "/api/image-generation/model-profiles" in client
+    assert "/api/image-generation/model-inventory?kind=${encodeURIComponent(kind)}" in client
+    assert "/api/image-generation/unload" in client
+
+    assert "activeLlmSubsection === 'image_generation_models'" in nav
+    assert "onLlmSubsectionChange?.('image_generation_models')" in nav
+    assert "subsections.imageGenerationModels" in nav
+
+    assert "'image-generation-models'" in app
+    assert "'image-generation-model-profiles'" in app
+    assert "'txt2img-models'" in app
+    assert "target.llmSubsection = 'image_generation_models'" in app
+
+    assert "ImageGenerationModelProfile" in console
+    assert "useState<ImageGenerationModelProfile[]>([])" in console
+    assert "selectedImageGenerationItemId" in console
+    assert "api.listImageGenerationModels()" in console
+    assert "refreshImageGenerationProfiles" in console
+    assert "imageGenerationProfiles={imageGenerationProfiles}" in console
+    assert "onSelectImageGenerationItem={selectImageGenerationItem}" in console
+    assert "onImageGenerationProfilesChanged={refreshImageGenerationProfiles}" in console
+
+    assert "ImageGenerationModelProfile" in object_list
+    assert "llmSubsection === 'image_generation_models'" in object_list
+    assert "ImageGenerationProfileListItem" in object_list
+    assert "settings:objectList.noImageGenerationProfiles" in object_list
+    assert "settings:subsections.imageGenerationModels" in object_list
+    assert "settings:imageGeneration.architectures" in object_list
+    assert "profile.checkpoint_ref || t('settings:objectList.noModelRef')" in object_list
+
+    assert "ImageGenerationSettingsPanel" in detail
+    assert "llmSubsection === 'image_generation_models'" in detail
+    assert "selectedProfileId={selectedImageGenerationItemId}" in detail
+    assert "onProfilesChanged={onImageGenerationProfilesChanged" in detail
+
+    assert "api.createImageGenerationModel" in panel
+    assert "api.patchImageGenerationModel" in panel
+    assert "api.deleteImageGenerationModel" in panel
+    assert "api.listImageGenerationModelInventory('checkpoint')" in panel
+    assert "api.listImageGenerationModelInventory('vae')" in panel
+    assert "api.getImageGenerationStatus()" in panel
+    assert "api.unloadImageGeneration" in panel
+    assert "supported_tasks: ['txt2img']" in panel
+    assert "const ARCHITECTURES: ImageGenerationArchitecture[] = ['sd15', 'sdxl', 'z_image'];" in panel
+    assert "const VARIANTS: ImageGenerationVariant[] = ['base', 'pony', 'illustrious', 'noobai', 'custom'];" in panel
+    assert "const SDXL_ONLY_VARIANTS: ImageGenerationVariant[] = ['pony', 'illustrious', 'noobai'];" in panel
+    assert "setArchitecture" in panel
+    assert "setVariant" in panel
+    assert "SDXL_ONLY_VARIANTS.includes(nextVariant) ? 'sdxl'" in panel
+    assert "isCheckpointRef" in panel
+    assert "isVaeRef" in panel
+    assert "image_generation/checkpoints/" in panel
+    assert "image_generation/vae/" in panel
+    assert "profileKeyTouched" in panel
+    assert "sanitizeProfileKey" in panel
+    assert "uniqueProfileKey" in panel
+    assert "finalSafeRefSegment" in panel
+    assert "settings:imageGeneration.labels.profileKey" in panel
+    assert "settings:imageGeneration.help.profileKey" in panel
+    assert "settings:imageGeneration.errors.profileKeyRequired" in panel
+    assert "settings:imageGeneration.errors.sdxlVariantRequired" in panel
+    assert "settings:imageGeneration.help.fakeRuntime" in panel
+    assert "INVALID_METADATA_JSON" in panel
+    assert "SettingsApiExampleBlock" not in panel
+    assert "/v1/images" not in panel
+    assert "positive_prompt" not in panel
+    assert "negative_prompt" not in panel
+    assert "listInferenceModelInventory" not in panel
+    assert "LOCAL_TRANSFORMERS_PROVIDER" not in panel
+
+    for locale in (en_settings, zh_settings):
+        assert '"imageGenerationModels"' in locale
+        assert '"imageGenerationModelProfiles"' in locale
+        assert '"noImageGenerationProfiles"' in locale
+        assert '"imageGeneration"' in locale
+        assert '"checkpointRef"' in locale
+        assert '"vaeRef"' in locale
+        assert '"z_image"' in locale
+        assert '"noobai"' in locale
+        assert '"txt2img"' in locale
+        assert '"unloadCache"' in locale
+        assert '"fakeRuntime"' in locale
+        assert '"checkpointRefSafeRefRequired"' in locale
+        assert '"sdxlVariantRequired"' in locale
 
 
 def test_model_profile_api_examples_contract() -> None:

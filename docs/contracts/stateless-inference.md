@@ -24,8 +24,12 @@ Messages, Runs, RunSteps, RunEvents, attachments, Knowledge rows, indexes, or
 Agent state.
 
 Deferred features include streaming chat completions, `/v1/responses`,
-`/v1/completions`, similarity scoring, text-to-image, frontend log viewing,
-generic tensor serving, and Capability-owned external inference routes.
+`/v1/completions`, similarity scoring, external stateless text-to-image,
+frontend log viewing, generic tensor serving, and Capability-owned external
+inference routes. Project-native image generation profiles, the internal
+generation Capability, and drawing Agents are owned by
+[image-generation.md](image-generation.md), not by this external stateless
+service.
 
 ## Ownership
 

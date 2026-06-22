@@ -10,6 +10,7 @@ from sqlmodel import select
 from sqlmodel import update
 
 from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
+from ai_workbench.core.image_generation.profiles import ImageModelProfile
 from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
 from ai_workbench.core.vision_profiles import VisionModelProfile
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
@@ -49,6 +50,7 @@ from ai_workbench.db.models import (
     KnowledgeOriginRecord,
     KnowledgeSettingsRecord,
     KnowledgeSourceRecord,
+    ImageGenerationModelProfileRecord,
     MultimodalEmbeddingModelProfileRecord,
     RerankerModelProfileRecord,
     LLMProfileRecord,
@@ -1148,6 +1150,92 @@ class SqlVisionProfileStore:
             return [_vision_profile_from_record(record) for record in records]
 
 
+class SqlImageGenerationProfileStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def create(self, profile: ImageModelProfile) -> ImageModelProfile:
+        with DbSession(self.engine) as session:
+            if session.get(ImageGenerationModelProfileRecord, profile.id) is not None:
+                raise ValueError("IMAGE_GENERATION_MODEL_ID_EXISTS")
+            if (
+                _find_image_generation_profile_by_alias(session, profile.alias) is not None
+                or session.get(ImageGenerationModelProfileRecord, profile.alias) is not None
+            ):
+                raise ValueError("IMAGE_GENERATION_MODEL_ALIAS_EXISTS")
+            record = _image_generation_profile_to_record(profile)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _image_generation_profile_from_record(record)
+
+    def get(self, profile_id: str) -> ImageModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(ImageGenerationModelProfileRecord, profile_id)
+            if record is None:
+                raise KeyError(f"unknown image generation profile: {profile_id}")
+            return _image_generation_profile_from_record(record)
+
+    def find_by_alias(self, alias: str) -> Optional[ImageModelProfile]:
+        with DbSession(self.engine) as session:
+            record = _find_image_generation_profile_by_alias(session, alias)
+            return _image_generation_profile_from_record(record) if record is not None else None
+
+    def get_by_id_or_alias(self, profile_id_or_alias: str) -> ImageModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(ImageGenerationModelProfileRecord, profile_id_or_alias)
+            if record is None:
+                record = _find_image_generation_profile_by_alias(session, profile_id_or_alias)
+            if record is None:
+                raise KeyError(f"unknown image generation profile: {profile_id_or_alias}")
+            return _image_generation_profile_from_record(record)
+
+    def update(self, profile_id: str, values: Dict[str, Any]) -> ImageModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(ImageGenerationModelProfileRecord, profile_id)
+            if record is None:
+                record = _find_image_generation_profile_by_alias(session, profile_id)
+            if record is None:
+                raise KeyError(f"unknown image generation profile: {profile_id}")
+            existing = _image_generation_profile_from_record(record)
+            alias = values.get("alias")
+            if alias is not None:
+                conflict = _find_image_generation_profile_by_alias(session, str(alias))
+                id_conflict = session.get(ImageGenerationModelProfileRecord, str(alias))
+                if (conflict is not None and conflict.id != existing.id) or (id_conflict is not None and id_conflict.id != existing.id):
+                    raise ValueError("IMAGE_GENERATION_MODEL_ALIAS_EXISTS")
+            updated = ImageModelProfile.model_validate(
+                existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump()
+            )
+            _apply_image_generation_profile_to_record(record, updated)
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return _image_generation_profile_from_record(record)
+
+    def delete(self, profile_id: str) -> ImageModelProfile:
+        with DbSession(self.engine) as session:
+            record = session.get(ImageGenerationModelProfileRecord, profile_id)
+            if record is None:
+                record = _find_image_generation_profile_by_alias(session, profile_id)
+            if record is None:
+                raise KeyError(f"unknown image generation profile: {profile_id}")
+            profile = _image_generation_profile_from_record(record)
+            session.delete(record)
+            session.commit()
+            return profile
+
+    def list(self) -> List[ImageModelProfile]:
+        with DbSession(self.engine) as session:
+            records = session.exec(
+                select(ImageGenerationModelProfileRecord).order_by(
+                    ImageGenerationModelProfileRecord.alias,
+                    ImageGenerationModelProfileRecord.created_at,
+                )
+            ).all()
+            return [_image_generation_profile_from_record(record) for record in records]
+
+
 class SqlLLMDefaultsStore:
     SETTINGS_KEY = "llm_defaults"
 
@@ -2151,6 +2239,48 @@ def _vision_profile_from_record(record: VisionModelProfileRecord) -> VisionModel
     )
 
 
+def _image_generation_profile_to_record(profile: ImageModelProfile) -> ImageGenerationModelProfileRecord:
+    data = profile.model_dump()
+    data["supported_tasks_json"] = _dumps(data.pop("supported_tasks", []))
+    data["metadata_json"] = _dumps(data.pop("metadata", {}))
+    return ImageGenerationModelProfileRecord(**data)
+
+
+def _apply_image_generation_profile_to_record(
+    record: ImageGenerationModelProfileRecord,
+    profile: ImageModelProfile,
+) -> None:
+    data = profile.model_dump()
+    supported_tasks = data.pop("supported_tasks", [])
+    metadata = data.pop("metadata", {})
+    for key, value in data.items():
+        setattr(record, key, value)
+    record.supported_tasks_json = _dumps(supported_tasks)
+    record.metadata_json = _dumps(metadata)
+
+
+def _image_generation_profile_from_record(record: ImageGenerationModelProfileRecord) -> ImageModelProfile:
+    return ImageModelProfile(
+        id=record.id,
+        alias=getattr(record, "alias", "") or "",
+        name=record.name,
+        description=getattr(record, "description", "") or "",
+        notes=getattr(record, "notes", "") or "",
+        enabled=bool(getattr(record, "enabled", True)),
+        architecture=getattr(record, "architecture", "sdxl") or "sdxl",
+        variant=getattr(record, "variant", "base") or "base",
+        checkpoint_ref=getattr(record, "checkpoint_ref", "") or "",
+        vae_ref=getattr(record, "vae_ref", None),
+        dtype=getattr(record, "dtype", "auto") or "auto",
+        device=getattr(record, "device", "auto") or "auto",
+        clip_skip=getattr(record, "clip_skip", None),
+        supported_tasks=_loads(getattr(record, "supported_tasks_json", '["txt2img"]') or "", ["txt2img"]),
+        metadata=_loads(getattr(record, "metadata_json", "{}") or "{}", {}),
+        created_at=ensure_utc(record.created_at),
+        updated_at=ensure_utc(record.updated_at),
+    )
+
+
 def _knowledge_settings_from_record(record: KnowledgeSettingsRecord) -> KnowledgeSettings:
     return KnowledgeSettings.model_validate(
         {key: getattr(record, key) for key in KnowledgeSettings.model_fields if hasattr(record, key)}
@@ -2241,6 +2371,10 @@ def _find_multimodal_embedding_profile_by_alias(session: DbSession, alias: str) 
 
 def _find_vision_profile_by_alias(session: DbSession, alias: str) -> Optional[VisionModelProfileRecord]:
     return session.exec(select(VisionModelProfileRecord).where(VisionModelProfileRecord.alias == alias)).first()
+
+
+def _find_image_generation_profile_by_alias(session: DbSession, alias: str) -> Optional[ImageGenerationModelProfileRecord]:
+    return session.exec(select(ImageGenerationModelProfileRecord).where(ImageGenerationModelProfileRecord.alias == alias)).first()
 
 
 def _embedding_profile_from_record(record: EmbeddingModelProfileRecord) -> EmbeddingModelProfile:

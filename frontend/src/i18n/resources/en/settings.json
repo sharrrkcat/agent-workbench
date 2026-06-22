@@ -26,6 +26,7 @@
     "embeddingModels": "Embedding Model Profiles",
     "multimodalEmbeddingModels": "Image / Multimodal Embeddings",
     "visionModels": "Vision Models",
+    "imageGenerationModels": "Image Generation Models",
     "rerankerModels": "Reranker Model Profiles",
     "knowledgeBases": "Knowledge Bases",
     "worldbooks": "Worldbooks"
@@ -46,6 +47,7 @@
     "embeddingModelProfiles": "Embedding model profiles",
     "multimodalEmbeddingModelProfiles": "Image / multimodal embedding profiles",
     "visionModelProfiles": "Vision model profiles",
+    "imageGenerationModelProfiles": "Image generation model profiles",
     "rerankerModelProfiles": "Reranker model profiles",
     "knowledgeBases": "Knowledge bases",
     "worldbookDefaults": "Worldbook defaults",
@@ -58,6 +60,7 @@
     "noEmbeddingProfiles": "No embedding model profiles yet.",
     "noMultimodalEmbeddingProfiles": "No image / multimodal embedding profiles yet.",
     "noVisionProfiles": "No vision model profiles yet.",
+    "noImageGenerationProfiles": "No image generation model profiles yet.",
     "noRerankerProfiles": "No reranker model profiles yet.",
     "noKnowledgeBases": "No knowledge bases yet.",
     "noWorldbooks": "No worldbooks yet.",
@@ -302,6 +305,127 @@
     },
     "confirm": {
       "deleteProfile": "Delete vision profile \"{{name}}\"?"
+    }
+  },
+  "imageGeneration": {
+    "titles": {
+      "newProfile": "New image generation model"
+    },
+    "sections": {
+      "model": "Model",
+      "profile": "Profile",
+      "runtime": "Runtime",
+      "tasks": "Supported tasks",
+      "status": "Runtime status",
+      "advanced": "Advanced metadata"
+    },
+    "labels": {
+      "name": "Name",
+      "profileKey": "Profile key",
+      "notes": "Notes",
+      "checkpointRef": "Checkpoint ref",
+      "vaeRef": "VAE ref",
+      "missingCurrentRef": "Missing current ref: {{ref}}",
+      "architecture": "Architecture",
+      "variant": "Variant",
+      "dtype": "Dtype",
+      "device": "Device",
+      "clipSkip": "CLIP skip",
+      "metadataJson": "Metadata JSON"
+    },
+    "actions": {
+      "refreshInventory": "Refresh inventory",
+      "refreshingInventory": "Refreshing...",
+      "refreshStatus": "Refresh status",
+      "refreshingStatus": "Refreshing...",
+      "unloadCache": "Unload cache",
+      "unloadProfileCache": "Unload profile cache"
+    },
+    "architectures": {
+      "sd15": "SD 1.5",
+      "sdxl": "SDXL",
+      "z_image": "Z-Image"
+    },
+    "variants": {
+      "base": "Base",
+      "pony": "Pony",
+      "illustrious": "Illustrious",
+      "noobai": "NoobAI",
+      "custom": "Custom"
+    },
+    "dtypes": {
+      "auto": "Auto",
+      "fp16": "FP16",
+      "bf16": "BF16",
+      "fp32": "FP32"
+    },
+    "devices": {
+      "auto": "Auto",
+      "cuda": "CUDA",
+      "cpu": "CPU"
+    },
+    "tasks": {
+      "txt2img": "Text to image"
+    },
+    "empty": {
+      "noProfileSelected": "No image generation model selected",
+      "selectProfile": "Select an image generation model profile from the list.",
+      "noProfiles": "No image generation model profiles yet.",
+      "noCheckpointRef": "No checkpoint ref",
+      "selectCheckpointRef": "Select scanned checkpoint ref",
+      "noCheckpointRefs": "No scanned checkpoint refs",
+      "noVaeOverride": "No VAE override",
+      "noVaeRefs": "No scanned VAE refs"
+    },
+    "help": {
+      "checkpointSafeRef": "Scans data/models/image_generation/checkpoints and saves safe refs.",
+      "vaeSafeRef": "Optional. Saves safe refs under image_generation/vae.",
+      "inventoryRoot": "Scanned under {{root}}.",
+      "tasksReadOnly": "Current internal image generation supports txt2img only.",
+      "fakeRuntime": "Current backend is fake-backed and does not load real checkpoints.",
+      "profileKey": "Used by the image_generator Agent form and internal Capability calls.",
+      "metadataJson": "Advanced metadata persisted with this profile. Do not store secrets here."
+    },
+    "warnings": {
+      "checkpointRefMissing": "The current checkpoint ref was not returned by the latest inventory scan.",
+      "vaeRefMissing": "The current VAE ref was not returned by the latest inventory scan."
+    },
+    "status": {
+      "backend": "Backend",
+      "realGeneration": "Real generation",
+      "profiles": "Profiles",
+      "enabledCount": "{{enabled}} / {{total}} enabled",
+      "queue": "Active / queued",
+      "cache": "Cached profiles"
+    },
+    "unloadStatus": {
+      "freed": "Image generation runtime cache was unloaded.",
+      "skipped": "No image generation runtime cache was loaded.",
+      "busy": "Image generation is busy.",
+      "not_found": "Image generation model profile was not found.",
+      "unavailable": "Image generation service is unavailable."
+    },
+    "results": {
+      "inventoryLoaded": "Found {{count}} image generation ref(s).",
+      "profileSaved": "Image generation model saved.",
+      "profileDeleted": "Image generation model deleted."
+    },
+    "errors": {
+      "inventoryLoadFailed": "Failed to load image generation inventory.",
+      "statusLoadFailed": "Failed to load image generation status.",
+      "unloadFailed": "Failed to unload image generation cache.",
+      "invalidMetadataJson": "Metadata must be a JSON object.",
+      "nameRequired": "Name is required.",
+      "profileKeyRequired": "Profile key is required.",
+      "checkpointRefRequired": "Checkpoint ref is required.",
+      "checkpointRefSafeRefRequired": "Checkpoint ref must use image_generation/checkpoints/<name>.",
+      "vaeRefSafeRefRequired": "VAE ref must use image_generation/vae/<name>.",
+      "sdxlVariantRequired": "Pony, Illustrious, and NoobAI variants require SDXL.",
+      "saveFailed": "Failed to save image generation model.",
+      "deleteFailed": "Failed to delete image generation model."
+    },
+    "confirm": {
+      "deleteProfile": "Delete image generation profile \"{{name}}\"?"
     }
   },
   "general": {

@@ -136,6 +136,52 @@ def write_script_agent(tmp_path: Path, agent_id: str, code: str, entry: str = "a
     return registry
 
 
+def test_script_agent_active_run_cancel_finishes_placeholder(tmp_path: Path) -> None:
+    agents = write_script_agent(
+        tmp_path,
+        "slow_script",
+        """
+import asyncio
+
+async def run(ctx):
+    await asyncio.sleep(30)
+    await ctx.reply_markdown("done")
+""",
+    )
+    fixture = ScriptRuntimeFixture(agents=agents)
+    session = fixture.sessions.create_session(default_agent_id="slow_script")
+
+    async def scenario() -> None:
+        task = asyncio.create_task(fixture.runtime.handle_input(session, "start"))
+        run_record = None
+        for _ in range(200):
+            runs = fixture.runs.list_runs(session.session_id)
+            if runs:
+                run_record = runs[0]
+                if fixture.agent_runner.active_runs.active_count() == 1:
+                    break
+            await asyncio.sleep(0.01)
+        assert run_record is not None
+        fixture.agent_runner.run_lifecycle.request_cancel(run_record.run_id)
+        assert fixture.agent_runner.active_runs.cancel(run_record.run_id) is True
+
+        result = await task
+        cancelled = fixture.runs.get_run(run_record.run_id)
+        message = fixture.messages.get_message(cancelled.metadata["message_id"])
+        event_types = [event.type for event in fixture.events.list_events()]
+
+        assert result.success is False
+        assert result.error_code == "RUN_CANCELLED"
+        assert cancelled.status == RunStatus.CANCELLED
+        assert "run_cancel_requested" in event_types
+        assert "run_cancelled" in event_types
+        assert message.metadata["streaming"] is False
+        assert message.metadata["placeholder"] is False
+        assert message.metadata["cancelled"] is True
+
+    asyncio.run(scenario())
+
+
 def configure_llm_profile(fixture: ScriptRuntimeFixture, supports_streaming: bool = True):
     provider = fixture.provider_profiles.create(
         ProviderProfileSchema(id="provider", name="Studio", provider="lm_studio", base_url="http://studio/v1")

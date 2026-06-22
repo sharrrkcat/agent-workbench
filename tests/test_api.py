@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 from pathlib import Path
 import asyncio
+import threading
+import time
 
 import pytest
 
@@ -109,6 +111,24 @@ def register_temp_agent(
             "actions": [{"id": "default", "description": "Default"}],
             "context_policy": {"mode": "current_message"},
             "model_lifecycle": {"load": "on_demand", "unload": "never", "unload_failure": "warn"},
+        }
+    )
+    client.app.state.runtime_state.agents.register(agent, agent_dir=agent_dir)
+
+
+def register_temp_script_agent(client: TestClient, tmp_path: Path, agent_id: str, code: str) -> None:
+    agent_dir = tmp_path / agent_id
+    agent_dir.mkdir()
+    (agent_dir / "agent.py").write_text(code, encoding="utf-8")
+    agent = AgentSchema.model_validate(
+        {
+            "id": agent_id,
+            "name": agent_id.replace("_", " ").title(),
+            "type": "script",
+            "entry": "agent.py",
+            "actions": [{"id": "default", "description": "Default"}],
+            "context_policy": {"mode": "current_message"},
+            "model_lifecycle": {"load": "on_demand", "unload": "manual", "unload_failure": "warn"},
         }
     )
     client.app.state.runtime_state.agents.register(agent, agent_dir=agent_dir)
@@ -1908,6 +1928,63 @@ def test_cancel_run_records_run_cancelled_event() -> None:
 
     assert response.status_code == 200
     assert "run_cancelled" in [event["type"] for event in response.json()]
+
+
+def test_cancel_running_script_agent_via_api_cancels_task(tmp_path: Path) -> None:
+    app = create_app(llm_runtime=FakeLLMRuntime(), use_memory=True)
+    client = TestClient(app)
+    register_temp_script_agent(
+        client,
+        tmp_path,
+        "slow_api_script",
+        "import asyncio\n\n"
+        "async def run(ctx):\n"
+        "    await asyncio.sleep(30)\n"
+        "    await ctx.reply_markdown('done')\n",
+    )
+    session = create_session(client, default_agent_id="slow_api_script")
+    state = app.state.runtime_state
+    response_holder: dict[str, object] = {}
+
+    def send_message() -> None:
+        response_holder["response"] = client.post(
+            f"/api/sessions/{session['session_id']}/messages",
+            json={"content": "start"},
+        )
+
+    thread = threading.Thread(target=send_message)
+    thread.start()
+    run_record = None
+    for _ in range(200):
+        runs = state.runs.list_runs(session["session_id"])
+        if runs:
+            run_record = runs[0]
+            if state.active_runs.active_count() == 1:
+                break
+        time.sleep(0.01)
+    assert run_record is not None
+
+    cancel_response = client.post(f"/api/runs/{run_record.run_id}/cancel")
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["task_cancelled"] is True
+
+    message_response = response_holder["response"]
+    assert message_response.status_code == 400
+    assert message_response.json()["error"]["code"] == "RUN_CANCELLED"
+
+    cancelled = state.runs.get_run(run_record.run_id)
+    message = state.messages.get_message(cancelled.metadata["message_id"])
+    event_types = [event["type"] for event in client.get(f"/api/runs/{run_record.run_id}/events").json()]
+
+    assert cancelled.status == RunStatus.CANCELLED
+    assert "run_cancel_requested" in event_types
+    assert "run_cancelled" in event_types
+    assert message.metadata["streaming"] is False
+    assert message.metadata["placeholder"] is False
+    assert message.metadata["cancelled"] is True
 
 
 def test_session_messages_include_run_steps_after_prompt_run() -> None:

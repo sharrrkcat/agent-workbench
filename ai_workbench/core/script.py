@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import inspect
 import json
@@ -1151,6 +1152,7 @@ class AgentContext:
                 capability_config = {}
         return {
             "session_id": self.session.session_id,
+            "run_id": self.run_id,
             "capability_id": capability_id,
             "capability_config": capability_config,
             "attachments": list(self.input.attachments or []),
@@ -1193,6 +1195,7 @@ class ScriptAgentRunner:
         session_agent_state_store=None,
         app_settings_store=None,
         run_lifecycle: RunLifecycle = None,
+        active_runs: Any = None,
         knowledge_store=None,
         knowledge_model_backend=None,
         worldbook_store=None,
@@ -1214,6 +1217,7 @@ class ScriptAgentRunner:
         self.session_agent_state_store = session_agent_state_store
         self.app_settings_store = app_settings_store
         self.run_lifecycle = run_lifecycle or RunLifecycle(run_store, event_bus)
+        self.active_runs = active_runs
         self.knowledge_store = knowledge_store
         self.knowledge_model_backend = knowledge_model_backend
         self.worldbook_store = worldbook_store
@@ -1440,8 +1444,29 @@ class ScriptAgentRunner:
             utility_llm_service=self.utility_llm_service,
         )
 
+        registered_active_run = False
+        current_task = asyncio.current_task()
+        if self.active_runs is not None and current_task is not None:
+            self.active_runs.register(run.run_id, current_task)
+            registered_active_run = True
         try:
             script_result = await script_run(ctx)
+        except asyncio.CancelledError:
+            self.run_lifecycle.fail_step(running_step.step_id, error_code="RUN_CANCELLED", error_message="Run was cancelled.")
+            try:
+                await ctx.output.finish(
+                    final_content={"code": "RUN_CANCELLED", "message": "Run was cancelled."},
+                    parts=[make_error_part("Run was cancelled.", code="RUN_CANCELLED")],
+                    metadata={"success": False, "cancelled": True, "error": {"code": "RUN_CANCELLED", "message": "Run was cancelled."}},
+                    agent_id=agent.id,
+                    action_id=action_id,
+                    parent_message_id=parent_id,
+                )
+            except Exception:
+                pass
+            cancelled_run = self.run_lifecycle.cancel_run(run.run_id)
+            apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
+            return RunResult(success=False, run_id=cancelled_run.run_id, error="Run was cancelled.", error_code="RUN_CANCELLED")
         except Exception as exc:
             self.run_lifecycle.fail_step(running_step.step_id, error_message=str(exc) or "Script agent failed.")
             if ctx.output.has_content:
@@ -1462,6 +1487,9 @@ class ScriptAgentRunner:
             self._apply_model_lifecycle(ctx, lifecycle)
             apply_deferred_title_model_unload(self.run_store, run.run_id, self._unload_model_for_title_generation, self.session_store)
             return result
+        finally:
+            if registered_active_run and self.active_runs is not None:
+                self.active_runs.unregister(run.run_id)
         self.run_lifecycle.complete_step(running_step.step_id)
 
         final_run = self.run_store.get_run(run.run_id)

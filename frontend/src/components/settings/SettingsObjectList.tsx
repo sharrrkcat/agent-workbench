@@ -1,6 +1,6 @@
 import { Activity, Boxes, Gauge, Globe, PawPrint, Plus, SlidersHorizontal, Type } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, VisionModelProfile, Worldbook } from '../../types';
+import type { AgentConfig, CapabilityConfig, EmbeddingModelProfile, ImageGenerationModelProfile, KnowledgeBase, LlmProfile, LlmProviderProfile, MultimodalEmbeddingModelProfile, RerankerModelProfile, VisionModelProfile, Worldbook } from '../../types';
 import { AgentAvatar } from '../AgentAvatar';
 import { capabilitiesFromProfile, ModelCapabilityIcons } from '../ModelCapabilityIcons';
 import type { KnowledgeSettingsSubsection, LlmSettingsSubsection, SettingsSection, WorldbookSettingsSubsection } from './SettingsNav';
@@ -33,6 +33,8 @@ export function SettingsObjectList({
   selectedMultimodalEmbeddingItemId = '',
   visionProfiles = [],
   selectedVisionItemId = '',
+  imageGenerationProfiles = [],
+  selectedImageGenerationItemId = '',
   rerankerProfiles = [],
   knowledgeBases = [],
   selectedKnowledgeItemId = 'global',
@@ -45,6 +47,7 @@ export function SettingsObjectList({
   onSelectLlmItem,
   onSelectMultimodalEmbeddingItem,
   onSelectVisionItem,
+  onSelectImageGenerationItem,
   onSelectKnowledgeItem,
   onSelectWorldbookItem,
 }: {
@@ -66,6 +69,8 @@ export function SettingsObjectList({
   selectedMultimodalEmbeddingItemId?: string;
   visionProfiles?: VisionModelProfile[];
   selectedVisionItemId?: string;
+  imageGenerationProfiles?: ImageGenerationModelProfile[];
+  selectedImageGenerationItemId?: string;
   rerankerProfiles?: RerankerModelProfile[];
   knowledgeBases?: KnowledgeBase[];
   selectedKnowledgeItemId?: string;
@@ -78,6 +83,7 @@ export function SettingsObjectList({
   onSelectLlmItem?: (itemId: string) => void;
   onSelectMultimodalEmbeddingItem?: (itemId: string) => void;
   onSelectVisionItem?: (itemId: string) => void;
+  onSelectImageGenerationItem?: (itemId: string) => void;
   onSelectKnowledgeItem?: (itemId: string) => void;
   onSelectWorldbookItem?: (itemId: string) => void;
 }) {
@@ -386,6 +392,27 @@ export function SettingsObjectList({
         </aside>
       );
     }
+    if (llmSubsection === 'image_generation_models') {
+      return (
+        <aside className="settings-object-list" aria-label={t('settings:objectList.imageGenerationModelProfiles')}>
+          <ObjectListHeader title={t('settings:subsections.imageGenerationModels')} count={imageGenerationProfiles.length} actionLabel={t('settings:objectList.newModel')} onAction={() => onSelectImageGenerationItem?.('new')} />
+          <div className="settings-list-scroll">
+            {imageGenerationProfiles.length ? (
+              imageGenerationProfiles.map((profile) => (
+                <ImageGenerationProfileListItem
+                  key={profile.id}
+                  profile={profile}
+                  active={selectedImageGenerationItemId === profile.id}
+                  onClick={() => onSelectImageGenerationItem?.(profile.id)}
+                />
+              ))
+            ) : (
+              <div className="settings-empty-state compact">{t('settings:objectList.noImageGenerationProfiles')}</div>
+            )}
+          </div>
+        </aside>
+      );
+    }
     if (llmSubsection === 'providers') {
       return (
         <aside className="settings-object-list" aria-label={t('settings:objectList.llmProviderProfiles')}>
@@ -559,6 +586,23 @@ function VisionProfileListItem({ profile, active, onClick }: { profile: VisionMo
       <div className="settings-object-copy">
         <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
         <small>{profile.alias || t('settings:objectList.noProfileKey')} / {`arch:${profile.architecture}`} / {profile.provider_model_id || t('settings:objectList.noModelRef')}</small>
+      </div>
+      <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
+    </button>
+  );
+}
+
+function ImageGenerationProfileListItem({ profile, active, onClick }: { profile: ImageGenerationModelProfile; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation(['common', 'settings']);
+  const architecture = t(`settings:imageGeneration.architectures.${profile.architecture}`, { defaultValue: profile.architecture });
+  const variant = t(`settings:imageGeneration.variants.${profile.variant}`, { defaultValue: profile.variant });
+  return (
+    <button type="button" className={`settings-object-row ${active ? 'active' : ''} ${profile.enabled ? '' : 'disabled'}`} onClick={onClick}>
+      <div className="settings-object-avatar">{initials(profile.name) || <SlidersHorizontal size={16} />}</div>
+      <div className="settings-object-copy">
+        <strong>{profile.name || t('settings:objectList.untitledModel')}</strong>
+        <small>{profile.alias || t('settings:objectList.noProfileKey')} / {architecture} / {variant}</small>
+        <small>{profile.checkpoint_ref || t('settings:objectList.noModelRef')}</small>
       </div>
       <span className={`settings-status-dot ${profile.enabled ? 'enabled' : ''}`}>{profile.enabled ? t('enabled') : t('disabled')}</span>
     </button>

@@ -18,6 +18,8 @@ map, not a requirement to read every file in full.
   Model Profile fields and settings workflow.
 - `../contracts/stateless-vision-models.md` for Vision Model Profile fields,
   Florence2/PromptGen metadata, and settings workflow.
+- `../contracts/image-generation.md` for Image Generation Model Profile fields,
+  safe refs, fake runtime status, and Settings -> Models workflow.
 - `../EXTENSION_API.md#agent-overrides`
 - `../EXTENSION_API.md#capability-config`
 - `../EXTENSION_API.md#config-schema-fields`

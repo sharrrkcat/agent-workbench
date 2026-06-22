@@ -1,0 +1,33 @@
+id: image_generator
+name: Image Generator
+type: script
+description: Form-driven internal text-to-image generation agent.
+entry: agent.py
+
+capabilities:
+  - image_generation
+
+actions:
+  - id: default
+    label: Draw
+    description: Show the text-to-image form, using the current message as the initial positive prompt when present.
+  - id: form
+    label: Image Form
+    description: Show the text-to-image generation form.
+  - id: generate_from_form
+    label: Generate Image
+    description: Generate images from submitted form values.
+    callable: false
+  - id: status
+    label: Status
+    description: Show internal image generation runtime status.
+
+context_policy:
+  mode: current_message
+  max_messages: 1
+  max_chars: 4000
+
+model_lifecycle:
+  load: on_demand
+  unload: manual
+  unload_failure: warn

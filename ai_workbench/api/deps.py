@@ -11,6 +11,7 @@ from ai_workbench.core.capability_runtime import CapabilityRuntimeRegistry
 from ai_workbench.core.command_registry import CommandRegistry
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.font_assets import ensure_fonts_directory
+from ai_workbench.core.image_generation.generation import ImageGenerationService
 from ai_workbench.core.router import Router
 from ai_workbench.core.runner import ActiveRunRegistry, AgentRunner, CommandRunner
 from ai_workbench.core.runtime import WorkbenchRuntime
@@ -25,6 +26,7 @@ from ai_workbench.core.worldbook import MemoryWorldbookStore
 from ai_workbench.core.stores import (
     AgentConfigStore,
     CapabilityConfigStore,
+    ImageGenerationProfileStore,
     LLMDefaultsStore,
     LLMProfileStore,
     MessageStore,
@@ -41,6 +43,7 @@ from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.db.stores import (
     SqlAgentConfigStore,
     SqlCapabilityConfigStore,
+    SqlImageGenerationProfileStore,
     SqlLLMProfileStore,
     SqlLLMDefaultsStore,
     SqlMessageStore,
@@ -78,6 +81,8 @@ class RuntimeState:
     provider_profiles: Any = None
     multimodal_embedding_profiles: Any = None
     vision_profiles: Any = None
+    image_generation_profiles: Any = None
+    image_generation_service: Any = None
     llm_defaults: Any = None
     app_settings: Any = None
     session_agent_states: Any = None
@@ -128,6 +133,7 @@ def build_runtime_state(
         provider_profiles = ProviderProfileStore()
         multimodal_embedding_profiles = MultimodalEmbeddingProfileStore()
         vision_profiles = VisionProfileStore()
+        image_generation_profiles = ImageGenerationProfileStore()
         llm_defaults = LLMDefaultsStore()
         app_settings = AppSettingsStore()
         session_agent_states = SessionAgentStateStore()
@@ -147,6 +153,7 @@ def build_runtime_state(
         provider_profiles = SqlProviderProfileStore(engine)
         multimodal_embedding_profiles = SqlMultimodalEmbeddingProfileStore(engine)
         vision_profiles = SqlVisionProfileStore(engine)
+        image_generation_profiles = SqlImageGenerationProfileStore(engine)
         llm_defaults = SqlLLMDefaultsStore(engine)
         from ai_workbench.db.database import get_database_url
         from ai_workbench.db.stores import SqlAppSettingsStore, SqlKnowledgeStore, SqlWorldbookStore
@@ -158,6 +165,7 @@ def build_runtime_state(
         resolved_database_url = get_database_url(database_url)
         interrupted_run_ids = runs.interrupt_unfinished_runs()
         sessions.clear_interrupted_waiting_runs(interrupted_run_ids)
+    image_generation_service = ImageGenerationService(profile_store=image_generation_profiles, repo_root=repo_root)
     events = EventBus(run_event_store=run_events, app_settings_store=app_settings)
     active_runs = ActiveRunRegistry()
     router = Router(agent_registry=agents, command_registry=commands)
@@ -186,6 +194,13 @@ def build_runtime_state(
         configure = getattr(knowledge_runtime, "configure", None)
         if callable(configure):
             configure(knowledge_store=knowledge, model_backend=knowledge_model_backend)
+    except KeyError:
+        pass
+    try:
+        image_generation_runtime = runtimes.get_runtime("image_generation")
+        configure = getattr(image_generation_runtime, "configure", None)
+        if callable(configure):
+            configure(service=image_generation_service)
     except KeyError:
         pass
     agent_runner = AgentRunner(
@@ -257,6 +272,8 @@ def build_runtime_state(
         provider_profiles=provider_profiles,
         multimodal_embedding_profiles=multimodal_embedding_profiles,
         vision_profiles=vision_profiles,
+        image_generation_profiles=image_generation_profiles,
+        image_generation_service=image_generation_service,
         llm_defaults=llm_defaults,
         app_settings=app_settings,
         session_agent_states=session_agent_states,

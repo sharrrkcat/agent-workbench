@@ -343,6 +343,28 @@ class VisionModelProfileRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ImageGenerationModelProfileRecord(SQLModel, table=True):
+    __tablename__ = "image_generation_model_profiles"
+
+    id: str = Field(primary_key=True)
+    alias: str = Field(index=True, unique=True)
+    name: str
+    description: str = ""
+    notes: str = ""
+    enabled: bool = True
+    architecture: str = "sdxl"
+    variant: str = "base"
+    checkpoint_ref: str = ""
+    vae_ref: Optional[str] = None
+    dtype: str = "auto"
+    device: str = "auto"
+    clip_skip: Optional[int] = None
+    supported_tasks_json: str = '["txt2img"]'
+    metadata_json: str = "{}"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class KnowledgeBaseRecord(SQLModel, table=True):
     __tablename__ = "knowledge_bases"
 

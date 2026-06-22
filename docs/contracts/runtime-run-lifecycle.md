@@ -267,6 +267,8 @@ Cancellation is best effort:
 
 - The Cancel API sets `cancel_requested` before terminal cancellation when
   possible.
+- Prompt Agent and Script Agent executions that are actively running in-process
+  must register their asyncio task so cancellation can interrupt local work.
 - Non-streaming provider calls may finish before cancellation is observed.
 - If an external service supports cancel/interrupt, the Capability should expose
   it and the Agent may call it.

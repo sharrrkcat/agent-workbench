@@ -46,6 +46,7 @@ Settings -> Models owns shared model configuration pages:
 - Reranker Model Profiles.
 - Multimodal Embedding Model Profiles.
 - Vision Model Profiles.
+- Image Generation Model Profiles.
 
 Provider Profiles can represent external API providers or internal local model
 backends. Internal Provider Profiles use fixed local inventory roots under
@@ -77,6 +78,13 @@ Vision Model Profiles are managed by the backend inference API, use safe
 `vision/...` refs under `data/models/vision`, and serve Florence2-family vision
 tasks instead of Prompt Agent attachment vision. Full behavior:
 [stateless-vision-models.md](stateless-vision-models.md).
+Image Generation Model Profiles are managed by the project-native internal
+image generation service, use safe `image_generation/checkpoints/...` and
+`image_generation/vae/...` refs under `data/models/image_generation`, and are
+used by the drawing Agent rather than by the external stateless inference
+service. Settings may show fake runtime status and release process-local cache,
+but it must not launch image generation. Full behavior:
+[image-generation.md](image-generation.md).
 The primary Embedding Model Profile workflow is Provider Profile plus provider
 model id/ref; legacy local model-path selection is not exposed in the Settings
 UI.

@@ -167,6 +167,9 @@ internal LLM runtime cache release.
 names `image_embedding`, `multimodal_embedding`, and `all`, plus the vision task
 cache target names `vision`, `vision_task`, and `all`; global
 `/api/runtime/free-memory` targets are unchanged.
+Project-native image generation cache release is owned by the internal
+`image_generation` Capability `unload` method and does not add a global runtime
+memory target in the current round.
 A2 Stateless Inference status and model listing are no-load operations: they
 read enabled allowlisted profiles only and must not call provider
 status/network helpers.

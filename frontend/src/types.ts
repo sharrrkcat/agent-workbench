@@ -631,6 +631,109 @@ export type VisionModelProfileInput = Partial<
   >
 >;
 
+export type ImageGenerationArchitecture = 'sd15' | 'sdxl' | 'z_image';
+export type ImageGenerationVariant = 'base' | 'pony' | 'illustrious' | 'noobai' | 'custom';
+export type ImageGenerationDtype = 'auto' | 'fp16' | 'bf16' | 'fp32';
+export type ImageGenerationDevice = 'auto' | 'cuda' | 'cpu';
+export type ImageGenerationTask = 'txt2img';
+
+export type ImageGenerationModelProfile = {
+  id: string;
+  alias: string;
+  name: string;
+  description: string;
+  notes: string;
+  enabled: boolean;
+  architecture: ImageGenerationArchitecture;
+  variant: ImageGenerationVariant;
+  checkpoint_ref: string;
+  vae_ref?: string | null;
+  dtype: ImageGenerationDtype;
+  device: ImageGenerationDevice;
+  clip_skip?: number | null;
+  supported_tasks: ImageGenerationTask[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ImageGenerationModelProfileInput = Partial<
+  Pick<
+    ImageGenerationModelProfile,
+    | 'name'
+    | 'alias'
+    | 'description'
+    | 'notes'
+    | 'enabled'
+    | 'architecture'
+    | 'variant'
+    | 'checkpoint_ref'
+    | 'vae_ref'
+    | 'dtype'
+    | 'device'
+    | 'clip_skip'
+    | 'supported_tasks'
+    | 'metadata'
+  >
+>;
+
+export type ImageGenerationModelInventoryKind = 'checkpoint' | 'vae' | 'lora';
+
+export type ImageGenerationModelInventoryItem = {
+  ref: string;
+  name: string;
+  kind: ImageGenerationModelInventoryKind;
+  relative_path?: string;
+};
+
+export type ImageGenerationModelInventoryResponse = {
+  kind: ImageGenerationModelInventoryKind;
+  models_root: string;
+  items: ImageGenerationModelInventoryItem[];
+  warnings: string[];
+};
+
+export type ImageGenerationRuntimeStatus = {
+  ok: boolean;
+  service: 'internal' | string;
+  profiles_total: number;
+  profiles_enabled: number;
+  supported_tasks: ImageGenerationTask[];
+  supported_architectures: ImageGenerationArchitecture[];
+  runtime: {
+    available: boolean;
+    status: string;
+    backend?: string;
+    real_generation?: boolean;
+    supports_queue?: boolean;
+    supports_cancel?: boolean;
+    supports_unload?: boolean;
+  };
+  queue?: {
+    max_concurrent: number;
+    active_count: number;
+    queued_count: number;
+  };
+  cache?: {
+    backend?: string;
+    real_generation?: boolean;
+    cached_profiles?: number;
+    profile_ids?: string[];
+  };
+};
+
+export type ImageGenerationUnloadResult = {
+  ok: boolean;
+  target: 'image_generation' | string;
+  status: 'freed' | 'skipped' | 'busy' | 'not_found' | 'unavailable' | string;
+  profile_id?: string | null;
+  profile_alias?: string | null;
+  profile_id_or_alias?: string | null;
+  active_count?: number;
+  removed: number;
+  message: string;
+};
+
 export type InferenceModelInventoryKind = 'image_embedding' | 'vision';
 
 export type InferenceModelInventoryItem = {

@@ -40,6 +40,9 @@ full project contract.
   chat rendering, settings panels, i18n, or frontend contract wiring.
 - [ComfyUI tasks](ai/TASK_COMFYUI.md): change ComfyUI Capability, ComfyUI Agent,
   workflow/preset library behavior, or preset YAML.
+- [Image Generation tasks](ai/TASK_IMAGE_GENERATION.md): change internal image
+  generation profiles, model inventory, generation runtime, Capability, or
+  drawing Agents, including Settings UI for image model profiles.
 - [Docs maintenance](ai/DOCS_MAINTENANCE.md): maintain document ownership,
   line-count limits, and report requirements.
 - [Docs refactor plan](ai/DOCS_REFACTOR_PLAN.md): current duplication audit and

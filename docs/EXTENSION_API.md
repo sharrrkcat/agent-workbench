@@ -264,19 +264,19 @@ Runtime call rules:
 
 ## Built-In Capability Summaries
 
-`knowledge` is a thin wrapper over core Knowledge services and may expose
-`list_bases`, `stats`, `search`, and `/kb-search`. It does not own retrieval,
-indexing, embedding, reranking, local model backends, or automatic injection.
-Full contract: [contracts/knowledge.md](contracts/knowledge.md).
+`knowledge` wraps core Knowledge services and may expose `list_bases`, `stats`,
+`search`, and `/kb-search`; see [contracts/knowledge.md](contracts/knowledge.md).
 
 `runtime` exposes `/free-memory <target>` and runtime memory APIs; see
 [contracts/provider-status.md](contracts/provider-status.md#runtime-memory-release).
 
-`comfyui` is a reusable external-service/local-asset Capability for workflow
-submission, polling, fetching images, upload/interrupt/free-memory operations,
-and workflow/preset library access. Preset YAML:
-[COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md). User-facing generation
-workflow belongs to the Script Agent.
+`image_generation` is a trusted internal Capability for status, profiles,
+validation, fake-backed `txt2img`, queue/cancel, and unload. It has no slash commands;
+`image_generator` owns the form workflow; see [contracts/image-generation.md](contracts/image-generation.md).
+
+`comfyui` is an external-service/local-asset Capability for workflow submission,
+polling, fetching images, upload/interrupt/free-memory, and workflow/preset
+library access. Preset YAML: [COMFYUI_PRESET_SCHEMA.md](COMFYUI_PRESET_SCHEMA.md).
 
 Core-owned services are not Capabilities: Utility LLM, Intent Routing, General
 settings, Knowledge settings, and Stateless Inference. See the matching

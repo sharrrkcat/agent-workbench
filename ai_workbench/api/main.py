@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, inference, intent, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
+from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, image_generation, inference, intent, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
 from ai_workbench.core.inference.observability import (
     REQUEST_ID_HEADER,
@@ -144,6 +144,7 @@ def create_app(
     app.include_router(configs.router)
     app.include_router(data.router)
     app.include_router(diagnostics.router)
+    app.include_router(image_generation.router)
     app.include_router(intent.router)
     app.include_router(openai_compatible.router)
     app.include_router(inference.router)

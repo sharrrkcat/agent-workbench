@@ -164,6 +164,9 @@ function explicitSettingsTarget(): SettingsInitialTarget {
   if (section === 'models' && ['vision-models', 'vision-model-profiles', 'vision_models'].includes(subsection)) {
     target.llmSubsection = 'vision_models';
   }
+  if (section === 'models' && ['image-generation-models', 'image-generation-model-profiles', 'txt2img-models', 'image_generation_models'].includes(subsection)) {
+    target.llmSubsection = 'image_generation_models';
+  }
   if (section === 'models' && ['reranker-models', 'reranker-model-profiles', 'reranker_models'].includes(subsection)) {
     target.llmSubsection = 'reranker_models';
   }
