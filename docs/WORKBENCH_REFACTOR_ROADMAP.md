@@ -1,6 +1,6 @@
 # Agent Workbench 架构精简与重构路线图
 
-> 状态：设计冻结，尚未开始实施
+> 状态：设计冻结，Phase 0 已完成（2026-09-04）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口
 
@@ -276,12 +276,12 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：建立安全边界和迁移工具，不改变用户可见行为。
 
-- [ ] 将本路线图作为重构任务的 read-first 文档。
-- [ ] 确认 dist/ 不是用户数据后删除或移出。
-- [ ] 修复 stateless inference skeleton 的真实 data 目录泄漏，桩模型全部使用临时根目录。
-- [ ] 引入 Alembic，为当前 27 张表生成可复现 baseline。
-- [ ] 明确 data/models、data/runtimes、附件和日志目录的所有权与备份策略。
-- [ ] 冻结新增 capability、script agent、intent、image generation 功能。
+- [x] 将本路线图作为重构任务的 read-first 文档。
+- [x] 确认 dist/ 不是用户数据后删除或移出。
+- [x] 修复 stateless inference skeleton 的真实 data 目录泄漏，桩模型全部使用临时根目录。
+- [x] 引入 Alembic，为当前 27 张表生成可复现 baseline。
+- [x] 明确 data/models、data/runtimes、附件和日志目录的所有权与备份策略。
+- [x] 冻结新增 capability、script agent、intent、image generation 功能。
 
 验收：
 
@@ -551,14 +551,24 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - [x] 确认模型文件继续由用户手动放入，不做模型下载。
 - [x] 确认 Alembic baseline 纳入 Phase 0。
 - [x] 新建本路线图文档。
-- [ ] Phase 0 实施。
+- [x] Phase 0 实施：静态 Alembic baseline、旧库安全接管、测试隔离、数据目录文档和只读审计脚本已完成。
 - [ ] Phase 1 实施。
 - [ ] Phase 2a/2b 实施。
 - [ ] Phase 3 Persona 数据化。
 - [ ] Phase 4 harness。
 - [ ] Phase 5 文档和前端收尾。
 
-路线图完成不代表源码行为已经改变；Phase 0 开始前，仓库仍是旧架构，现有 contracts 仍以当前实现为准。
+Phase 0 只建立迁移与卫生边界，没有删除旧 Agent、Capability、Intent、ComfyUI、diffusers 或旧表，也没有改变 HTTP API、设置、消息 part、事件或用户工作流。后续阶段仍须以本路线图的冻结决策为准。
+
+### Phase 0 实施记录（2026-09-04）
+
+- 数据库 `data/agent_workbench.db` 已由无版本旧库安全接管并标记为 `0001_current_schema`；当前 27 张业务表、FTS5 `kb_chunk_fts` 和 46 个显式索引均通过校验。
+- 迁移前备份保存在 `data/backups/database/agent_workbench.pre-baseline-20260904T041013Z.db`，对应 manifest 记录 SHA-256、完整性检查和关键表行数；此前的预检查备份也保留。备份目录不提交版本库。
+- baseline 是静态、可复现的 SQL，保留 `messagerecord.content_json` 与 `output_type` 历史列；旧消息写入同时填充兼容列，不改变 MessageSchema/API 表现。
+- `dist/` 已确认是可重建的旧 portable 快照并删除；`data/models/embeddings` 下 176 个仅含 `{}` 的精确 `a2-embed-*` 测试桩已删除，`bge-m3` 及其他用户数据保留。
+- `tests/test_stateless_inference_skeleton.py` 已传入临时 root；`tests/conftest.py` 会比较仓库 `data/models` 普通文件的路径、大小和 SHA-256，防止回归泄漏。
+- 验证命令：`uv run pytest tests/test_phase0_migrations.py tests/test_stateless_inference_skeleton.py -q`（54 passed）；`uv run pytest tests/test_persistence.py -q`（通过）；`uv run python scripts/phase0_audit.py --check`（通过）。全量套件为 1451 passed、23 failed，失败属于既有旧 MessageSchema/Intent 测试契约、可选依赖提示和 Knowledge 分块数量契约，不是 Phase 0 迁移路径。
+- API、设置、消息 parts、事件和用户工作流未作有意变更；旧架构减法留待 Phase 1。
 
 ## 13. 决策变更记录
 
@@ -566,3 +576,4 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 |---|---|
 | 2026-09-04 | 初版：将 Claude Code 对话中的目标、证据、最终决策、目标架构、迁移阶段和交接规则冻结为文档。 |
 | 2026-09-04 | 记录最终覆盖关系：受管 worker、llama-server、手动放模型、Pet 在 app settings、ComfyUI 当前移除、reranker 保留但公共 API defer、Alembic 纳入 Phase 0。 |
+| 2026-09-04 | 完成 Phase 0：静态 baseline、旧库备份/校验/stamp、测试模型目录隔离、`DATA_LAYOUT.md` 与只读审计脚本；未改变 API 或用户工作流。 |

@@ -274,6 +274,8 @@ Developer docs: [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md),
 [docs/RUNTIME_PROTOCOLS.md](docs/RUNTIME_PROTOCOLS.md), and
 [docs/generated/REGISTRY.md](docs/generated/REGISTRY.md).
 
+Refactor checklist: [roadmap](docs/WORKBENCH_REFACTOR_ROADMAP.md); data ownership and backup boundaries: [DATA_LAYOUT](docs/DATA_LAYOUT.md).
+
 ## Script Agents
 
 Script Agents are local trusted Python code. They can call core helpers through `AgentContext`, including LLM helpers and Capabilities, but they are not sandboxed as untrusted code.
@@ -340,11 +342,5 @@ This is a local trusted-user alpha. File, HTTP, and Web Search capabilities are 
 
 ## Current Limitations
 
-Technical Alpha, local-first only. No auth, roles, Alembic migrations, secret
-encryption, user-facing external app workflows, function calling, MCP, automatic
-tool selection, attachment thumbnails, cloud upload, file search/editing, OCR,
-PDF/Office/archive parsing, historical image resend, model pool, GPU scheduling,
-or advanced lifecycle management. File/HTTP allowlists are not a full sandbox.
-Script Agent visible streaming is not implemented yet. Thought display is
-read-only. WebSocket unavailable mode falls back to final HTTP refresh, and
-non-streaming run cancellation remains best effort.
+Technical Alpha, local-first only. No auth, roles, secret encryption, user-facing external app workflows, function calling, MCP, automatic tool selection, attachment thumbnails, cloud upload, file search/editing, OCR, PDF/Office/archive parsing, historical image resend, model pool, GPU scheduling, or advanced lifecycle management. File/HTTP allowlists are not a full sandbox.
+Script Agent visible streaming is not implemented; Thought display is read-only. WebSocket unavailable mode falls back to final HTTP refresh, and non-streaming run cancellation remains best effort.

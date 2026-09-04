@@ -13,6 +13,7 @@ from uuid import uuid4
 from ai_workbench.core.profile_aliases import profile_alias_base, unique_profile_alias, validate_profile_alias
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.models import AppMetadataRecord, LLMProfileRecord, ProviderProfileRecord
+from ai_workbench.db import migrations
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/agent_workbench.db"
@@ -33,7 +34,13 @@ def get_engine(database_url: Optional[str] = None):
     return create_engine(resolved_url)
 
 
-def init_db(engine) -> None:
+def _legacy_init_db_schema(engine) -> None:
+    """Create/patch the pre-Alembic schema for an unversioned database.
+
+    This function is intentionally kept as a compatibility bootstrap.  It is
+    never used for a database that already has an Alembic revision; versioned
+    databases are changed only by migrations.
+    """
     SQLModel.metadata.create_all(engine)
     ensure_knowledge_index_tables(engine)
     ensure_knowledge_origin_columns(engine)
@@ -51,8 +58,86 @@ def init_db(engine) -> None:
     ensure_worldbook_settings_columns(engine)
     ensure_session_knowledge_binding_columns(engine)
     ensure_run_lifecycle_columns(engine)
+
+
+def init_db(engine) -> None:
+    """Initialize the database through Alembic with a safe legacy handoff.
+
+    New databases are created by the static baseline.  A pre-Phase-0 database
+    is backed up, brought up to the current compatibility union by the legacy
+    bootstrap, validated, and only then stamped.  Once versioned, startup no
+    longer calls ``create_all``.
+    """
+    if engine.dialect.name != "sqlite":
+        # The application currently uses SQLite.  Keep the old behavior for a
+        # non-SQLite caller rather than silently attempting SQLite migrations.
+        _legacy_init_db_schema(engine)
+        migrate_llm_provider_profiles(engine)
+        ensure_schema_version(engine)
+        return
+
+    if migrations.has_alembic_version(engine):
+        revision = migrations.current_revision(engine)
+        if not revision:
+            # Alembic keeps an empty version table after a deliberate
+            # downgrade-to-base.  It is safe to recreate the schema only when
+            # no business tables remain; an empty marker on a populated DB is
+            # treated as an interrupted/invalid migration.
+            if migrations.is_empty_database(engine):
+                migrations.upgrade(engine, "head")
+                _validate_versioned_database(engine)
+                ensure_schema_version(engine)
+                return
+            raise RuntimeError("ALEMBIC_VERSION_INVALID: empty alembic_version")
+        if revision != migrations.BASELINE_REVISION:
+            _backup_before_migration(engine, reason="upgrade")
+            migrations.upgrade(engine, "head")
+        _validate_versioned_database(engine)
+        ensure_schema_version(engine)
+        return
+
+    if migrations.is_empty_database(engine):
+        migrations.upgrade(engine, "head")
+        _validate_versioned_database(engine)
+        ensure_schema_version(engine)
+        return
+
+    # A database without a version table is a legacy or partially initialized
+    # database.  Do all potentially mutating compatibility work only after a
+    # verified backup exists, and stamp only after validation succeeds.
+    _backup_before_migration(engine, reason="baseline")
+    _legacy_init_db_schema(engine)
+    migrations.ensure_additive_compatibility(engine)
+    migrations.validate_baseline_compatibility(engine)
     migrate_llm_provider_profiles(engine)
     ensure_schema_version(engine)
+    migrations.stamp(engine, migrations.BASELINE_REVISION)
+
+
+def _validate_versioned_database(engine) -> str:
+    """Validate only the schema shape owned by the current baseline.
+
+    Future revisions may intentionally remove legacy tables or columns during
+    Phase 1 and later.  Applying the Phase 0 baseline shape check to those
+    revisions would reject valid migrations at startup.  We still require a
+    non-empty Alembic revision, and retain the detailed baseline check while
+    the database is on the baseline itself.
+    """
+    revision = migrations.current_revision(engine)
+    if not revision:
+        raise RuntimeError("ALEMBIC_VERSION_INVALID: empty alembic_version")
+    if revision == migrations.BASELINE_REVISION:
+        migrations.validate_baseline_compatibility(engine)
+    return revision
+
+
+def _backup_before_migration(engine, *, reason: str):
+    """Create and require a backup for a persistent SQLite database."""
+    manifest = migrations.backup_sqlite_database(engine, reason=reason)
+    source_path = migrations.sqlite_database_path(engine)
+    if source_path is not None and source_path.exists() and source_path.stat().st_size > 0 and manifest is None:
+        raise RuntimeError("DATABASE_BACKUP_REQUIRED: migration was not started")
+    return manifest
 
 
 def ensure_knowledge_index_tables(engine) -> None:

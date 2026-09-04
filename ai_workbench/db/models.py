@@ -25,6 +25,11 @@ class MessageRecord(SQLModel, table=True):
     message_id: str = Field(primary_key=True)
     session_id: str = Field(index=True)
     role: str
+    # Retained for compatibility with databases created before Message Parts
+    # v2.  New code uses ``parts_json``; keeping populated values here lets an
+    # old NOT NULL schema continue accepting writes during the Phase 0 handoff.
+    content_json: str = ""
+    output_type: str = ""
     speaker_type: Optional[str] = None
     speaker_id: Optional[str] = None
     speaker_name: Optional[str] = None

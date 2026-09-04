@@ -277,6 +277,10 @@ class SqlMessageStore:
             message_id=str(uuid4()),
             session_id=session_id,
             role=role,
+            # Keep the two legacy columns populated while old databases are
+            # still in service.  They are not exposed by MessageSchema.
+            content_json=_dumps(content),
+            output_type="parts" if validated_parts else "text",
             speaker_type=speaker["speaker_type"],
             speaker_id=speaker["speaker_id"],
             speaker_name=speaker["speaker_name"],
@@ -313,6 +317,8 @@ class SqlMessageStore:
             record = session.get(MessageRecord, message.message_id)
             if record is None:
                 raise KeyError(f"unknown message id: {message.message_id}")
+            record.content_json = _dumps(message.parts)
+            record.output_type = "parts"
             record.speaker_type = message.speaker_type
             record.speaker_id = message.speaker_id
             record.speaker_name = message.speaker_name

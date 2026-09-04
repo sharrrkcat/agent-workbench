@@ -43,7 +43,7 @@ WORKBENCH_ENDPOINTS = [
 
 def make_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
-    return TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True))
+    return TestClient(create_app(llm_runtime=FakeLLMRuntime(), use_memory=True, root=tmp_path))
 
 
 def enable_inference(client: TestClient, *, require_api_key: bool = True, api_key: str | None = "test-inference-key", max_request_mb: int = 10) -> None:
