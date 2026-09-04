@@ -117,9 +117,6 @@ def _event_message(event: Event) -> str:
         "run_cancel_requested": "Run cancellation requested.",
         "run_completed": "Run completed.",
         "run_step": "Run step.",
-        "action_invoked": "Action invoked.",
-        "message_done": "Message completed.",
-        "run_done": "Run completed.",
         "run_failed": "Run failed.",
         "run_cancelled": "Run cancelled.",
     }

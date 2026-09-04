@@ -10,7 +10,6 @@ class StatelessPersistenceSnapshot:
     runs: int
     run_steps: int
     run_events: int
-    session_agent_state: int
     knowledge_sources: int
     knowledge_chunks: int
     knowledge_embeddings: int
@@ -25,7 +24,6 @@ def capture_stateless_persistence_snapshot(state: Any) -> StatelessPersistenceSn
         runs=len(_list_or_empty(state.runs, "list_all_runs")),
         run_steps=_count_run_steps(state),
         run_events=_count_run_events(state),
-        session_agent_state=_count_session_agent_state(state),
         knowledge_sources=_count_knowledge_sources(state),
         knowledge_chunks=_count_knowledge_chunks(state),
         knowledge_embeddings=_count_knowledge_embeddings(state),
@@ -57,14 +55,6 @@ def _count_run_events(state: Any) -> int:
     if not hasattr(store, "list_events"):
         return 0
     return sum(len(store.list_events(run.run_id)) for run in runs)
-
-
-def _count_session_agent_state(state: Any) -> int:
-    store = getattr(state, "session_agent_states", None)
-    records = getattr(store, "_records", None)
-    if isinstance(records, dict):
-        return len(records)
-    return 0
 
 
 def _count_knowledge_sources(state: Any) -> int:

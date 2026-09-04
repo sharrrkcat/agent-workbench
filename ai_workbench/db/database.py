@@ -1,23 +1,19 @@
+"""Database engine and Phase 1 schema bootstrap."""
+
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import create_engine
 
-import hashlib
-import json
-from datetime import datetime
-from uuid import uuid4
-
-from ai_workbench.core.profile_aliases import profile_alias_base, unique_profile_alias, validate_profile_alias
-from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import AppMetadataRecord, LLMProfileRecord, ProviderProfileRecord
 from ai_workbench.db import migrations
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/agent_workbench.db"
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 def get_database_url(database_url: Optional[str] = None) -> str:
@@ -25,125 +21,51 @@ def get_database_url(database_url: Optional[str] = None) -> str:
 
 
 def get_engine(database_url: Optional[str] = None):
-    resolved_url = get_database_url(database_url)
-    if resolved_url.startswith("sqlite:///"):
-        db_path = resolved_url.replace("sqlite:///", "", 1)
-        if db_path != ":memory:":
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        return create_engine(resolved_url, connect_args={"check_same_thread": False})
-    return create_engine(resolved_url)
-
-
-def _legacy_init_db_schema(engine) -> None:
-    """Create/patch the pre-Alembic schema for an unversioned database.
-
-    This function is intentionally kept as a compatibility bootstrap.  It is
-    never used for a database that already has an Alembic revision; versioned
-    databases are changed only by migrations.
-    """
-    SQLModel.metadata.create_all(engine)
-    ensure_knowledge_index_tables(engine)
-    ensure_knowledge_origin_columns(engine)
-    ensure_knowledge_source_origin_columns(engine)
-    ensure_session_model_columns(engine)
-    ensure_message_speaker_columns(engine)
-    ensure_agent_config_columns(engine)
-    ensure_llm_profile_columns(engine)
-    ensure_embedding_profile_columns(engine)
-    ensure_multimodal_embedding_profile_table(engine)
-    ensure_vision_profile_table(engine)
-    ensure_image_generation_profile_table(engine)
-    ensure_knowledge_settings_columns(engine)
-    ensure_knowledge_base_columns(engine)
-    ensure_worldbook_settings_columns(engine)
-    ensure_session_knowledge_binding_columns(engine)
-    ensure_run_lifecycle_columns(engine)
+    resolved = get_database_url(database_url)
+    if resolved.startswith("sqlite:///"):
+        database = resolved.removeprefix("sqlite:///")
+        if database != ":memory:":
+            Path(database).parent.mkdir(parents=True, exist_ok=True)
+        return create_engine(resolved, connect_args={"check_same_thread": False})
+    return create_engine(resolved)
 
 
 def init_db(engine) -> None:
-    """Initialize the database through Alembic with a safe legacy handoff.
+    """Bring a database to the Phase 1 head.
 
-    New databases are created by the static baseline.  A pre-Phase-0 database
-    is backed up, brought up to the current compatibility union by the legacy
-    bootstrap, validated, and only then stamped.  Once versioned, startup no
-    longer calls ``create_all``.
+    An unversioned database is stamped as the known baseline and immediately
+    upgraded. The next revision intentionally drops and recreates affected
+    tables, so no application-level data migration is attempted.
     """
     if engine.dialect.name != "sqlite":
-        # The application currently uses SQLite.  Keep the old behavior for a
-        # non-SQLite caller rather than silently attempting SQLite migrations.
-        _legacy_init_db_schema(engine)
-        migrate_llm_provider_profiles(engine)
-        ensure_schema_version(engine)
+        from sqlmodel import SQLModel
+        import ai_workbench.db.models  # noqa: F401
+
+        SQLModel.metadata.create_all(engine)
         return
 
-    if migrations.has_alembic_version(engine):
+    if not migrations.has_alembic_version(engine):
+        if not migrations.is_empty_database(engine):
+            migrations.stamp(engine, migrations.BASELINE_REVISION)
+        migrations.upgrade(engine, "head")
+    else:
         revision = migrations.current_revision(engine)
         if not revision:
-            # Alembic keeps an empty version table after a deliberate
-            # downgrade-to-base.  It is safe to recreate the schema only when
-            # no business tables remain; an empty marker on a populated DB is
-            # treated as an interrupted/invalid migration.
             if migrations.is_empty_database(engine):
                 migrations.upgrade(engine, "head")
-                _validate_versioned_database(engine)
-                ensure_schema_version(engine)
-                return
-            raise RuntimeError("ALEMBIC_VERSION_INVALID: empty alembic_version")
-        if revision != migrations.BASELINE_REVISION:
-            _backup_before_migration(engine, reason="upgrade")
+            else:
+                raise RuntimeError("ALEMBIC_VERSION_INVALID: empty alembic_version")
+        elif revision != migrations.HEAD_REVISION:
             migrations.upgrade(engine, "head")
-        _validate_versioned_database(engine)
-        ensure_schema_version(engine)
-        return
 
-    if migrations.is_empty_database(engine):
-        migrations.upgrade(engine, "head")
-        _validate_versioned_database(engine)
-        ensure_schema_version(engine)
-        return
-
-    # A database without a version table is a legacy or partially initialized
-    # database.  Do all potentially mutating compatibility work only after a
-    # verified backup exists, and stamp only after validation succeeds.
-    _backup_before_migration(engine, reason="baseline")
-    _legacy_init_db_schema(engine)
-    migrations.ensure_additive_compatibility(engine)
-    migrations.validate_baseline_compatibility(engine)
-    migrate_llm_provider_profiles(engine)
+    ensure_knowledge_index_tables(engine)
     ensure_schema_version(engine)
-    migrations.stamp(engine, migrations.BASELINE_REVISION)
-
-
-def _validate_versioned_database(engine) -> str:
-    """Validate only the schema shape owned by the current baseline.
-
-    Future revisions may intentionally remove legacy tables or columns during
-    Phase 1 and later.  Applying the Phase 0 baseline shape check to those
-    revisions would reject valid migrations at startup.  We still require a
-    non-empty Alembic revision, and retain the detailed baseline check while
-    the database is on the baseline itself.
-    """
-    revision = migrations.current_revision(engine)
-    if not revision:
-        raise RuntimeError("ALEMBIC_VERSION_INVALID: empty alembic_version")
-    if revision == migrations.BASELINE_REVISION:
-        migrations.validate_baseline_compatibility(engine)
-    return revision
-
-
-def _backup_before_migration(engine, *, reason: str):
-    """Create and require a backup for a persistent SQLite database."""
-    manifest = migrations.backup_sqlite_database(engine, reason=reason)
-    source_path = migrations.sqlite_database_path(engine)
-    if source_path is not None and source_path.exists() and source_path.stat().st_size > 0 and manifest is None:
-        raise RuntimeError("DATABASE_BACKUP_REQUIRED: migration was not started")
-    return manifest
 
 
 def ensure_knowledge_index_tables(engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
     with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
         connection.execute(
             text(
                 """
@@ -163,446 +85,16 @@ def ensure_knowledge_index_tables(engine) -> None:
         )
 
 
-def ensure_knowledge_origin_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "kb_origins" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(kb_origins)").fetchall()}
-        additions = {
-            "include_globs": "VARCHAR DEFAULT '**/*'",
-            "exclude_globs": "VARCHAR DEFAULT ''",
-            "default_chunk_profile": "VARCHAR",
-            "last_scan_at": "DATETIME",
-            "last_import_at": "DATETIME",
-            "status": "VARCHAR DEFAULT 'ready'",
-            "error": "VARCHAR",
-            "metadata_json": "VARCHAR DEFAULT '{}'",
-            "created_at": "DATETIME",
-            "updated_at": "DATETIME",
-        }
-        for column, ddl in additions.items():
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE kb_origins ADD COLUMN {column} {ddl}"))
-
-
-def ensure_knowledge_source_origin_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "kb_sources" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(kb_sources)").fetchall()}
-        additions = {
-            "origin_id": "VARCHAR",
-            "relative_path": "VARCHAR DEFAULT ''",
-            "virtual_path": "VARCHAR DEFAULT ''",
-            "folder_path": "VARCHAR DEFAULT ''",
-            "file_name": "VARCHAR DEFAULT ''",
-            "extension": "VARCHAR DEFAULT ''",
-            "path_depth": "INTEGER DEFAULT 0",
-            "file_status": "VARCHAR DEFAULT 'ready'",
-            "source_mtime": "DATETIME",
-            "source_size_bytes": "INTEGER DEFAULT 0",
-        }
-        for column, ddl in additions.items():
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE kb_sources ADD COLUMN {column} {ddl}"))
-
-
-def ensure_session_model_columns(engine) -> None:
-    with engine.begin() as connection:
-        dialect = connection.dialect.name
-        if dialect != "sqlite":
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(sessionrecord)").fetchall()}
-        if "context_mode" not in columns:
-            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN context_mode VARCHAR DEFAULT 'single_assistant'"))
-        if "llm_profile_id" not in columns:
-            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN llm_profile_id VARCHAR"))
-        if "last_announced_llm_profile_id" not in columns:
-            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN last_announced_llm_profile_id VARCHAR"))
-        if "title_generation_state" not in columns:
-            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN title_generation_state VARCHAR DEFAULT 'pending'"))
-        if "title_generation_metadata_json" not in columns:
-            connection.execute(text("ALTER TABLE sessionrecord ADD COLUMN title_generation_metadata_json VARCHAR DEFAULT '{}'"))
-
-
-def ensure_session_knowledge_binding_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "session_knowledge_bindings" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(session_knowledge_bindings)").fetchall()}
-        if "sort_order" not in columns:
-            connection.execute(text("ALTER TABLE session_knowledge_bindings ADD COLUMN sort_order INTEGER DEFAULT 0"))
-
-
-def ensure_message_speaker_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "messagerecord" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(messagerecord)").fetchall()}
-        for column in ("speaker_type", "speaker_id", "speaker_name", "origin"):
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE messagerecord ADD COLUMN {column} VARCHAR"))
-        if "content_version" not in columns:
-            connection.execute(text("ALTER TABLE messagerecord ADD COLUMN content_version INTEGER"))
-        if "parts_json" not in columns:
-            connection.execute(text("ALTER TABLE messagerecord ADD COLUMN parts_json VARCHAR DEFAULT '[]'"))
-
-
-def ensure_agent_config_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(agentconfigrecord)").fetchall()}
-        if "display_json" not in columns:
-            connection.execute(text("ALTER TABLE agentconfigrecord ADD COLUMN display_json VARCHAR DEFAULT '{}'"))
-        if "runtime_json" not in columns:
-            connection.execute(text("ALTER TABLE agentconfigrecord ADD COLUMN runtime_json VARCHAR DEFAULT '{}'"))
-
-
-def ensure_llm_profile_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "llm_profiles" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(llm_profiles)").fetchall()}
-        if "provider_profile_id" not in columns:
-            connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN provider_profile_id VARCHAR"))
-        if "external_inference_enabled" not in columns:
-            connection.execute(text("ALTER TABLE llm_profiles ADD COLUMN external_inference_enabled BOOLEAN DEFAULT 0"))
-
-
-def ensure_embedding_profile_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "embedding_model_profiles" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(embedding_model_profiles)").fetchall()}
-        additions = {
-            "provider_profile_id": "VARCHAR",
-            "provider_model_id": "VARCHAR DEFAULT ''",
-            "external_inference_enabled": "BOOLEAN DEFAULT 0",
-        }
-        for column, ddl in additions.items():
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE embedding_model_profiles ADD COLUMN {column} {ddl}"))
-
-
-def ensure_multimodal_embedding_profile_table(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        connection.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS multimodal_embedding_model_profiles (
-                  id VARCHAR PRIMARY KEY NOT NULL,
-                  alias VARCHAR NOT NULL,
-                  name VARCHAR NOT NULL,
-                  description VARCHAR DEFAULT '',
-                  notes VARCHAR DEFAULT '',
-                  enabled BOOLEAN DEFAULT 1,
-                  external_inference_enabled BOOLEAN DEFAULT 0,
-                  provider_profile_id VARCHAR,
-                  provider_model_id VARCHAR NOT NULL DEFAULT '',
-                  architecture VARCHAR NOT NULL,
-                  backend VARCHAR DEFAULT 'auto',
-                  embedding_space VARCHAR,
-                  dimensions INTEGER,
-                  normalize_default BOOLEAN DEFAULT 1,
-                  supported_input_types_json VARCHAR DEFAULT '["image", "text"]',
-                  preprocessing_signature VARCHAR,
-                  pooling_strategy VARCHAR DEFAULT 'model_default',
-                  max_batch_size INTEGER,
-                  metadata_json VARCHAR DEFAULT '{}',
-                  created_at DATETIME,
-                  updated_at DATETIME
-                )
-                """
-            )
-        )
-        _ensure_profile_alias_column(
-            connection,
-            table_name="multimodal_embedding_model_profiles",
-            index_name="ix_multimodal_embedding_model_profiles_alias",
-        )
-
-
-def ensure_vision_profile_table(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        connection.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS vision_model_profiles (
-                  id VARCHAR PRIMARY KEY NOT NULL,
-                  alias VARCHAR NOT NULL,
-                  name VARCHAR NOT NULL,
-                  description VARCHAR DEFAULT '',
-                  notes VARCHAR DEFAULT '',
-                  enabled BOOLEAN DEFAULT 1,
-                  external_inference_enabled BOOLEAN DEFAULT 0,
-                  provider_profile_id VARCHAR,
-                  provider_model_id VARCHAR NOT NULL DEFAULT '',
-                  architecture VARCHAR NOT NULL DEFAULT 'florence2',
-                  backend VARCHAR DEFAULT 'transformers',
-                  supported_tasks_json VARCHAR DEFAULT '["caption", "detailed_caption", "more_detailed_caption", "ocr", "object_detection"]',
-                  max_batch_size INTEGER DEFAULT 1,
-                  metadata_json VARCHAR DEFAULT '{}',
-                  created_at DATETIME,
-                  updated_at DATETIME
-                )
-                """
-            )
-        )
-        _ensure_profile_alias_column(
-            connection,
-            table_name="vision_model_profiles",
-            index_name="ix_vision_model_profiles_alias",
-        )
-
-
-def ensure_image_generation_profile_table(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        connection.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS image_generation_model_profiles (
-                  id VARCHAR PRIMARY KEY NOT NULL,
-                  alias VARCHAR NOT NULL,
-                  name VARCHAR NOT NULL,
-                  description VARCHAR DEFAULT '',
-                  notes VARCHAR DEFAULT '',
-                  enabled BOOLEAN DEFAULT 1,
-                  architecture VARCHAR NOT NULL DEFAULT 'sdxl',
-                  variant VARCHAR DEFAULT 'base',
-                  checkpoint_ref VARCHAR NOT NULL DEFAULT '',
-                  vae_ref VARCHAR,
-                  dtype VARCHAR DEFAULT 'auto',
-                  device VARCHAR DEFAULT 'auto',
-                  clip_skip INTEGER,
-                  supported_tasks_json VARCHAR DEFAULT '["txt2img"]',
-                  metadata_json VARCHAR DEFAULT '{}',
-                  created_at DATETIME,
-                  updated_at DATETIME
-                )
-                """
-            )
-        )
-        _ensure_profile_alias_column(
-            connection,
-            table_name="image_generation_model_profiles",
-            index_name="ix_image_generation_model_profiles_alias",
-            identity_column="checkpoint_ref",
-        )
-
-
-def _ensure_profile_alias_column(connection, *, table_name: str, index_name: str, identity_column: str = "provider_model_id") -> None:
-    columns = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
-    if "alias" not in columns:
-        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN alias VARCHAR DEFAULT ''"))
-    if identity_column not in columns:
-        identity_column = "id"
-    rows = connection.exec_driver_sql(
-        f"SELECT id, name, {identity_column}, alias FROM {table_name} ORDER BY COALESCE(created_at, ''), id"
-    ).fetchall()
-    used: set[str] = set()
-    for row in rows:
-        current = str(row[3] or "").strip().lower()
-        try:
-            current = validate_profile_alias(current) if current else ""
-        except ValueError:
-            current = ""
-        if current and current not in used:
-            used.add(current)
-            continue
-        base = profile_alias_base(row[1], row[2], fallback="profile")
-        alias = unique_profile_alias(base, used)
-        used.add(alias)
-        connection.execute(text(f"UPDATE {table_name} SET alias = :alias WHERE id = :id"), {"alias": alias, "id": row[0]})
-    connection.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} (alias)"))
-
-
-def ensure_knowledge_settings_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "knowledge_settings" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(knowledge_settings)").fetchall()}
-        additions = {
-            "min_score_threshold": "FLOAT",
-            "retrieval_max_chunks_per_source": "INTEGER",
-            "retrieval_max_chunks_per_knowledge_base": "INTEGER",
-            "query_expansion_enabled": "BOOLEAN DEFAULT 0",
-            "query_expansion_max_variants": "INTEGER DEFAULT 3",
-            "query_expansion_prompt": (
-                "VARCHAR DEFAULT 'Generate up to {max_variants} short search query variants for the user''s query.\n"
-                "Use the same language when useful.\n"
-                "Return only a JSON array of strings.\n\n"
-                "User query:\n"
-                "{query}'"
-            ),
-            "unload_embedding_model_after_use": "BOOLEAN DEFAULT 0",
-            "unload_reranker_model_after_use": "BOOLEAN DEFAULT 0",
-            "reranker_profile_id": "VARCHAR",
-            "default_chunk_profile": "VARCHAR",
-        }
-        for column, ddl in additions.items():
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE knowledge_settings ADD COLUMN {column} {ddl}"))
-
-
-def ensure_knowledge_base_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "knowledge_bases" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(knowledge_bases)").fetchall()}
-        if "aliases_text" not in columns:
-            connection.execute(text("ALTER TABLE knowledge_bases ADD COLUMN aliases_text VARCHAR DEFAULT ''"))
-        if "default_chunk_profile" not in columns:
-            connection.execute(text("ALTER TABLE knowledge_bases ADD COLUMN default_chunk_profile VARCHAR"))
-
-
-def ensure_worldbook_settings_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "worldbook_settings" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(worldbook_settings)").fetchall()}
-        additions = {
-            "worldbook_recursion_depth": "INTEGER DEFAULT 0",
-            "worldbook_case_sensitive": "BOOLEAN DEFAULT 0",
-            "worldbook_whole_words": "BOOLEAN DEFAULT 1",
-        }
-        for column, ddl in additions.items():
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE worldbook_settings ADD COLUMN {column} {ddl}"))
-
-
-def ensure_run_lifecycle_columns(engine) -> None:
-    with engine.begin() as connection:
-        if connection.dialect.name != "sqlite":
-            return
-        tables = {row[0] for row in connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "runrecord" not in tables:
-            return
-        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(runrecord)").fetchall()}
-        additions = {
-            "stage": "VARCHAR DEFAULT ''",
-            "progress_message": "VARCHAR DEFAULT ''",
-            "progress_current": "INTEGER",
-            "progress_total": "INTEGER",
-            "cancel_requested": "BOOLEAN DEFAULT 0",
-            "started_at": "DATETIME",
-            "finished_at": "DATETIME",
-            "error_code": "VARCHAR",
-            "error_message": "VARCHAR",
-        }
-        for column, ddl in additions.items():
-            if column not in columns:
-                connection.execute(text(f"ALTER TABLE runrecord ADD COLUMN {column} {ddl}"))
-        if "runsteprecord" not in tables:
-            return
-        step_columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(runsteprecord)").fetchall()}
-        if "parent_step_id" not in step_columns:
-            connection.execute(text("ALTER TABLE runsteprecord ADD COLUMN parent_step_id VARCHAR"))
-
-
-def migrate_llm_provider_profiles(engine) -> None:
-    with Session(engine) as session:
-        profiles = session.exec(select(LLMProfileRecord)).all()
-        changed = False
-        for profile in profiles:
-            if profile.provider_profile_id:
-                continue
-            if not (profile.provider or profile.base_url or profile.api_key or profile.timeout):
-                continue
-            provider = _find_or_create_provider_profile(session, profile)
-            profile.provider_profile_id = provider.id
-            profile.updated_at = utc_now()
-            session.add(profile)
-            changed = True
-        if changed:
-            session.commit()
-
-
-def _find_or_create_provider_profile(session: Session, profile: LLMProfileRecord) -> ProviderProfileRecord:
-    fingerprint = _api_key_fingerprint(profile.api_key)
-    timeout = profile.timeout if profile.timeout is not None else 60
-    providers = session.exec(select(ProviderProfileRecord)).all()
-    for provider in providers:
-        if (
-            provider.provider == profile.provider
-            and provider.base_url == profile.base_url
-            and provider.timeout_seconds == timeout
-            and _api_key_fingerprint(provider.api_key) == fingerprint
-        ):
-            return provider
-    provider = ProviderProfileRecord(
-        id=str(uuid4()),
-        name=_provider_profile_name(profile.provider, profile.base_url),
-        provider=profile.provider or "openai_compatible",
-        base_url=profile.base_url or "",
-        api_key=profile.api_key or "",
-        timeout_seconds=timeout,
-        enabled=True,
-        metadata_json=json.dumps({"migrated_from": "llm_profiles"}),
-    )
-    session.add(provider)
-    session.flush()
-    return provider
-
-
-def _api_key_fingerprint(api_key: str) -> str:
-    if not api_key:
-        return ""
-    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
-
-
-def _provider_profile_name(provider: str, base_url: str) -> str:
-    if provider == "lm_studio":
-        return "LM Studio local"
-    if provider == "llama_cpp":
-        return "llama.cpp local"
-    if provider == "openai_compatible":
-        return "OpenAI compatible"
-    return provider.replace("_", " ").title() if provider else (base_url or "Provider profile")
-
-
 def ensure_schema_version(engine, expected_version: str = SCHEMA_VERSION) -> None:
+    from sqlmodel import Session
+    from ai_workbench.db.models import AppMetadataRecord
+
     with Session(engine) as session:
-        record = session.get(AppMetadataRecord, "schema_version")
-        if record is None:
+        row = session.get(AppMetadataRecord, "schema_version")
+        if row is None:
             session.add(AppMetadataRecord(key="schema_version", value=expected_version))
             session.commit()
-            return
-        if record.value != expected_version:
-            raise RuntimeError(
-                "SCHEMA_VERSION_MISMATCH: "
-                f"expected schema_version {expected_version}, found {record.value}"
-            )
+        elif row.value != expected_version:
+            row.value = expected_version
+            session.add(row)
+            session.commit()

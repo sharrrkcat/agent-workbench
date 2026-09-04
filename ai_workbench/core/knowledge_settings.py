@@ -2,30 +2,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
-DEFAULT_KNOWLEDGE_CONTEXT_INSTRUCTION = """\
-The following snippets were retrieved from active session knowledge bases.
+
+DEFAULT_KNOWLEDGE_CONTEXT_INSTRUCTION = """The following snippets were retrieved from active session knowledge bases.
 Use them only when relevant.
 If the snippets do not contain enough evidence, say so.
 Cite snippets as [K1], [K2]."""
-
-DEFAULT_KNOWLEDGE_CONTEXT_SNIPPET_TEMPLATE = """\
-[{index}]
+DEFAULT_KNOWLEDGE_CONTEXT_SNIPPET_TEMPLATE = """[{index}]
 Knowledge base: {knowledge_base_name}
 Source: {source_title}
 Section: {heading_path}
 Content:
 {content}"""
-
-DEFAULT_QUERY_EXPANSION_PROMPT = """\
-Generate up to {max_variants} short search query variants for the user's query.
-Use the same language when useful.
-Return only a JSON array of strings.
-
-User query:
-{query}"""
-
-ChunkProfile = Literal["plain_text", "markdown_document", "markdown_collection", "markdown_auto"]
-VALID_CHUNK_PROFILES: set[str] = {"plain_text", "markdown_document", "markdown_collection", "markdown_auto"}
 
 
 class KnowledgeSettings(BaseModel):
@@ -36,14 +23,9 @@ class KnowledgeSettings(BaseModel):
     local_model_device: Literal["auto", "cpu", "cuda"] = "auto"
     embedding_batch_size: int = Field(default=16, ge=1, le=1024)
     embedding_timeout_seconds: int = Field(default=60, ge=1, le=3600)
-    unload_embedding_model_after_use: StrictBool = False
     reranker_enabled: StrictBool = False
-    reranker_profile_id: str | None = None
-    reranker_model_path: str | None = None
-    reranker_batch_size: int = Field(default=16, ge=1, le=1024)
-    reranker_timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    reranker_model_profile_id: str | None = None
     reranker_candidate_limit: int = Field(default=50, ge=1, le=1000)
-    unload_reranker_model_after_use: StrictBool = False
     hybrid_search_enabled: StrictBool = True
     default_vector_candidate_k: int = Field(default=20, ge=1, le=1000)
     default_keyword_candidate_k: int = Field(default=20, ge=1, le=1000)
@@ -53,54 +35,36 @@ class KnowledgeSettings(BaseModel):
     min_score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
     retrieval_max_chunks_per_source: int | None = Field(default=None, ge=1, le=100)
     retrieval_max_chunks_per_knowledge_base: int | None = Field(default=None, ge=1, le=100)
-    query_expansion_enabled: StrictBool = False
-    query_expansion_max_variants: int = Field(default=3, ge=1, le=10)
-    query_expansion_prompt: str = DEFAULT_QUERY_EXPANSION_PROMPT
     rrf_k: int = Field(default=60, ge=1, le=1000)
     default_chunk_size: int = Field(default=1000, ge=100, le=10000)
     default_chunk_overlap: int = Field(default=150, ge=0, le=5000)
-    default_chunk_profile: ChunkProfile | None = None
     max_source_size_bytes: int = Field(default=2097152, ge=1024, le=104857600)
     max_chunks_per_source: int = Field(default=500, ge=1, le=100000)
     max_total_index_chars_per_source: int = Field(default=200000, ge=1000, le=10000000)
     knowledge_context_instruction: str = DEFAULT_KNOWLEDGE_CONTEXT_INSTRUCTION
     knowledge_context_snippet_template: str = DEFAULT_KNOWLEDGE_CONTEXT_SNIPPET_TEMPLATE
 
-    @field_validator("default_chunk_profile")
+    @field_validator("reranker_model_profile_id", mode="before")
     @classmethod
-    def _default_chunk_profile(cls, value: str | None) -> str | None:
-        if value is not None and value not in VALID_CHUNK_PROFILES:
-            raise ValueError("Default chunk profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.")
-        return value
-
-    @field_validator("reranker_profile_id", "reranker_model_path", mode="before")
-    @classmethod
-    def _normalize_optional_text(cls, value: Any) -> str | None:
+    def normalize_optional_id(cls, value: Any) -> str | None:
         if value is None:
             return None
-        text = str(value).strip()
-        return text or None
+        value = str(value).strip()
+        return value or None
 
-    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template", "query_expansion_prompt", mode="before")
+    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template")
     @classmethod
-    def _non_empty_text(cls, value: Any) -> str:
-        text = str(value or "").strip()
-        if not text:
+    def non_empty(cls, value: str) -> str:
+        value = str(value or "").strip()
+        if not value:
             raise ValueError("Knowledge prompt fields must not be empty.")
-        return text
+        return value
 
     @field_validator("knowledge_context_snippet_template")
     @classmethod
-    def _template_contains_content(cls, value: str) -> str:
+    def contains_content(cls, value: str) -> str:
         if "{content}" not in value:
             raise ValueError("Knowledge context snippet template must include {content}.")
-        return value
-
-    @field_validator("query_expansion_prompt")
-    @classmethod
-    def _query_expansion_prompt_variables(cls, value: str) -> str:
-        if "{query}" not in value or "{max_variants}" not in value:
-            raise ValueError("Query expansion prompt must include {query} and {max_variants}.")
         return value
 
 
@@ -110,14 +74,9 @@ class KnowledgeSettingsPatch(BaseModel):
     local_model_device: Literal["auto", "cpu", "cuda"] | None = None
     embedding_batch_size: int | None = Field(default=None, ge=1, le=1024)
     embedding_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
-    unload_embedding_model_after_use: StrictBool | None = None
     reranker_enabled: StrictBool | None = None
-    reranker_profile_id: str | None = None
-    reranker_model_path: str | None = None
-    reranker_batch_size: int | None = Field(default=None, ge=1, le=1024)
-    reranker_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
+    reranker_model_profile_id: str | None = None
     reranker_candidate_limit: int | None = Field(default=None, ge=1, le=1000)
-    unload_reranker_model_after_use: StrictBool | None = None
     hybrid_search_enabled: StrictBool | None = None
     default_vector_candidate_k: int | None = Field(default=None, ge=1, le=1000)
     default_keyword_candidate_k: int | None = Field(default=None, ge=1, le=1000)
@@ -127,63 +86,15 @@ class KnowledgeSettingsPatch(BaseModel):
     min_score_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
     retrieval_max_chunks_per_source: int | None = Field(default=None, ge=1, le=100)
     retrieval_max_chunks_per_knowledge_base: int | None = Field(default=None, ge=1, le=100)
-    query_expansion_enabled: StrictBool | None = None
-    query_expansion_max_variants: int | None = Field(default=None, ge=1, le=10)
-    query_expansion_prompt: str | None = None
     rrf_k: int | None = Field(default=None, ge=1, le=1000)
     default_chunk_size: int | None = Field(default=None, ge=100, le=10000)
     default_chunk_overlap: int | None = Field(default=None, ge=0, le=5000)
-    default_chunk_profile: ChunkProfile | None = None
     max_source_size_bytes: int | None = Field(default=None, ge=1024, le=104857600)
     max_chunks_per_source: int | None = Field(default=None, ge=1, le=100000)
     max_total_index_chars_per_source: int | None = Field(default=None, ge=1000, le=10000000)
     knowledge_context_instruction: str | None = None
     knowledge_context_snippet_template: str | None = None
 
-    @field_validator("default_chunk_profile")
-    @classmethod
-    def _default_chunk_profile(cls, value: str | None) -> str | None:
-        if value is not None and value not in VALID_CHUNK_PROFILES:
-            raise ValueError("Default chunk profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.")
-        return value
-
-    @field_validator("reranker_profile_id", "reranker_model_path", mode="before")
-    @classmethod
-    def _normalize_optional_text(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
-
-    @field_validator("knowledge_context_instruction", "knowledge_context_snippet_template", "query_expansion_prompt", mode="before")
-    @classmethod
-    def _non_empty_text(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            raise ValueError("Knowledge prompt fields must not be empty.")
-        return text
-
-    @field_validator("knowledge_context_snippet_template")
-    @classmethod
-    def _template_contains_content(cls, value: str | None) -> str | None:
-        if value is not None and "{content}" not in value:
-            raise ValueError("Knowledge context snippet template must include {content}.")
-        return value
-
-    @field_validator("query_expansion_prompt")
-    @classmethod
-    def _query_expansion_prompt_variables(cls, value: str | None) -> str | None:
-        if value is not None and ("{query}" not in value or "{max_variants}" not in value):
-            raise ValueError("Query expansion prompt must include {query} and {max_variants}.")
-        return value
-
 
 def knowledge_settings_patch_updates(patch: KnowledgeSettingsPatch) -> dict[str, Any]:
-    updates = patch.model_dump(exclude_unset=True)
-    if "reranker_profile_id" in patch.model_fields_set and not patch.reranker_profile_id:
-        updates["reranker_profile_id"] = None
-    if "reranker_model_path" in patch.model_fields_set and not patch.reranker_model_path:
-        updates["reranker_model_path"] = None
-    return updates
+    return patch.model_dump(exclude_unset=True)

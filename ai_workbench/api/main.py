@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import agents, assets, attachments, commands, configs, data, diagnostics, health, image_generation, inference, intent, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
+from ai_workbench.api.routes import assets, attachments, data, health, inference, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
 from ai_workbench.core.inference.observability import (
     REQUEST_ID_HEADER,
@@ -137,15 +137,9 @@ def create_app(
         _record_inference_error_code(request, {"error": {"code": code}})
         return JSONResponse(status_code=422, content={"error": {"code": code, "message": message}})
 
-    app.include_router(agents.router)
     app.include_router(assets.router)
     app.include_router(attachments.router)
-    app.include_router(commands.router)
-    app.include_router(configs.router)
     app.include_router(data.router)
-    app.include_router(diagnostics.router)
-    app.include_router(image_generation.router)
-    app.include_router(intent.router)
     app.include_router(openai_compatible.router)
     app.include_router(inference.router)
     app.include_router(llm_profiles.router)
@@ -210,7 +204,18 @@ def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
 
 def _is_backend_path(path: str) -> bool:
     first_segment = path.split("/", 1)[0]
-    return first_segment in {"api", "v1", "docs", "openapi.json", "redoc"}
+    # Retired command URLs must not be swallowed by the SPA fallback. They
+    # intentionally return an ordinary 404 after the Phase 1 hard cut.
+    return first_segment in {
+        "api",
+        "v1",
+        "docs",
+        "openapi.json",
+        "redoc",
+        "pet",
+        "base64",
+        "base64-decode",
+    }
 
 
 def _record_inference_error_code(request, detail: dict) -> None:

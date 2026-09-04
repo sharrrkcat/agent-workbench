@@ -45,6 +45,7 @@ class RunLifecycle:
     def start_step(
         self,
         run_id: str,
+        kind: str,
         label: str,
         message: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
@@ -52,6 +53,7 @@ class RunLifecycle:
     ) -> RunStepSchema:
         step = self.run_store.create_step(
             run_id=run_id,
+            kind=kind,
             label=label,
             message=message,
             metadata=metadata,

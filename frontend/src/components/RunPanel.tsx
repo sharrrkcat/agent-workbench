@@ -1,72 +1,29 @@
+import { ChevronDown, Square } from 'lucide-react';
 import { useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Run } from '../types';
-import { formatMessageTime } from '../utils/time';
+import type { Run, RunStep } from '../types';
 
-export function RunPanel() {
-  const { runs, runEvents, runEventLoading, loadRunEvents } = useWorkbenchStore();
-  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
-
-  async function toggleRun(run: Run) {
-    const next = expandedRunId === run.run_id ? null : run.run_id;
-    setExpandedRunId(next);
-    if (next && !runEvents[run.run_id]) {
-      await loadRunEvents(run.run_id);
-    }
-  }
-
+export function RunPanel({ run }: { run: Run }) {
+  const cancel = useWorkbenchStore((state) => state.cancelRun);
+  const steps = useWorkbenchStore((state) => state.stepsByRunId[run.run_id] || run.steps || []);
+  const [expanded, setExpanded] = useState(true);
+  const active = ['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status);
   return (
-    <aside className="run-panel">
-      <div className="panel-title">
-        <Activity size={16} />
-        Runs
+    <div className={`run-panel run-${run.status.toLowerCase()}`}>
+      <div className="run-panel-header">
+        <button type="button" className="run-expand" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}><ChevronDown size={15} className={expanded ? 'open' : ''} /> <strong>{statusLabel(run.status)}</strong></button>
+        {active ? <button type="button" className="icon-button danger" title="Cancel" aria-label="Cancel" onClick={() => void cancel(run.run_id)}><Square size={14} /></button> : null}
       </div>
-      <div className="run-list">
-        {runs.length === 0 ? (
-          <p className="muted">No runs yet.</p>
-        ) : (
-          runs
-            .slice()
-            .reverse()
-            .map((run) => {
-              const expanded = expandedRunId === run.run_id;
-              const events = runEvents[run.run_id] || [];
-              return (
-                <div className={`run-row ${run.status.toLowerCase()}`} key={run.run_id}>
-                  <button className="run-summary" type="button" onClick={() => void toggleRun(run)}>
-                    {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    <strong>{run.target_id}</strong>
-                    <span>{run.status}</span>
-                  </button>
-                  {run.action_id ? <small>{run.action_id}</small> : null}
-                  {run.current_step ? <em>{run.current_step}</em> : null}
-                  {run.error ? <p>{run.error}</p> : null}
-                  {expanded ? (
-                    <div className="run-timeline">
-                      {runEventLoading === run.run_id ? (
-                        <div className="timeline-loading">
-                          <Loader2 size={13} className="spin" />
-                          Loading timeline
-                        </div>
-                      ) : events.length === 0 ? (
-                        <p className="muted">No timeline events.</p>
-                      ) : (
-                        events.map((event) => (
-                          <div className="timeline-event" key={event.event_id}>
-                            <time>{formatMessageTime(event.created_at)}</time>
-                            <strong>{event.type}</strong>
-                            {event.message ? <span>{event.message}</span> : null}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
-        )}
-      </div>
-    </aside>
+      {run.error ? <p className="run-error">{run.error_code ? `${run.error_code}: ` : ''}{run.error}</p> : null}
+      {expanded ? <div className="run-steps">{steps.length ? steps.sort((a, b) => a.order - b.order).map((step) => <StepRow key={step.step_id} step={step} />) : <span className="run-muted">Preparing…</span>}</div> : null}
+    </div>
   );
+}
+
+function StepRow({ step }: { step: RunStep }) {
+  return <div className={`run-step step-${step.status}`} data-kind={step.kind}><span className="step-kind">{step.kind}</span><span className="step-label">{step.label || step.kind}</span><span className="step-status">{step.status}</span>{step.error_message ? <small>{step.error_message}</small> : null}</div>;
+}
+
+function statusLabel(status: Run['status']): string {
+  return ({ PENDING: 'Queued', RUNNING: 'Running', CANCELLING: 'Cancelling', WAITING_FOR_USER: 'Waiting for confirmation', DONE: 'Done', FAILED: 'Failed', CANCELLED: 'Cancelled', INTERRUPTED: 'Interrupted' } as Record<Run['status'], string>)[status];
 }

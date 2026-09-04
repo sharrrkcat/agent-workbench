@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends
-from pydantic import ValidationError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.settings import app_settings_response, settings_validation_message
+from ai_workbench.core.settings import AppSettingsPatch, app_settings_patch_updates, app_settings_response, settings_validation_message
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -16,13 +17,11 @@ def get_general_settings(state: RuntimeState = Depends(get_state)) -> dict:
 
 
 @router.patch("/general")
-def patch_general_settings(payload: dict, state: RuntimeState = Depends(get_state)) -> dict:
+def patch_general_settings(payload: AppSettingsPatch, state: RuntimeState = Depends(get_state)) -> dict:
     try:
-        return app_settings_response(state.app_settings.patch(payload))
+        return app_settings_response(state.app_settings.patch(app_settings_patch_updates(payload)))
     except ValidationError as exc:
-        error_type = exc.errors()[0].get("type") if exc.errors() else ""
-        code = "UNKNOWN_SETTING_FIELD" if error_type == "extra_forbidden" else "INVALID_SETTING_VALUE"
-        raise_error(422, code, settings_validation_message(exc))
+        _raise_settings_validation(exc)
 
 
 class LLMDefaultsPatch(BaseModel):
@@ -38,12 +37,17 @@ def get_llm_defaults(state: RuntimeState = Depends(get_state)) -> dict:
 
 @router.patch("/llm-defaults")
 def patch_llm_defaults(payload: LLMDefaultsPatch, state: RuntimeState = Depends(get_state)) -> dict:
-    profile_id = payload.default_model_profile_id
-    if profile_id:
+    if payload.default_model_profile_id:
         try:
-            profile = state.llm_profiles.get_by_id_or_alias(profile_id)
+            profile = state.llm_profiles.get_by_id_or_alias(payload.default_model_profile_id)
         except KeyError:
-            raise_error(404, "LLM_PROFILE_NOT_FOUND", f"Model profile not found: {profile_id}")
+            raise_error(404, "LLM_PROFILE_NOT_FOUND", f"Model profile not found: {payload.default_model_profile_id}")
         if not profile.enabled:
             raise_error(400, "LLM_PROFILE_DISABLED", f"Model profile is disabled: {profile.alias}")
     return state.llm_defaults.patch(payload.model_dump())
+
+
+def _raise_settings_validation(exc: ValidationError) -> None:
+    error = exc.errors()[0] if exc.errors() else {}
+    code = "UNKNOWN_SETTING_FIELD" if error.get("type") == "extra_forbidden" else "INVALID_SETTING_VALUE"
+    raise_error(422, code, settings_validation_message(exc))

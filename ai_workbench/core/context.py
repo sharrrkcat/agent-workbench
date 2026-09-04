@@ -1,558 +1,117 @@
+"""Conversation context projection for the single chat path."""
+
+from __future__ import annotations
+
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.settings import DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION, DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
-from ai_workbench.core.stores import MessageStore
+from ai_workbench.core.settings import DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
 
 
 class ContextBuildResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-    messages: List[Dict[str, str]]
-    warnings: List[str] = Field(default_factory=list)
+    messages: list[dict[str, str]]
+    warnings: list[str] = Field(default_factory=list)
 
 
 class LLMContextError(Exception):
     def __init__(self, message: str, code: str = "LLM_CONTEXT_INVALID") -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
+        super().__init__(message); self.code=code; self.message=message
 
 
 class ContextBuilder:
-    def __init__(self, message_store: MessageStore) -> None:
-        self.message_store = message_store
+    def __init__(self, message_store: Any) -> None: self.message_store=message_store
 
-    def build(
-        self,
-        session_id: str,
-        args: str,
-        policy: ContextPolicy,
-        source_message_id: Optional[str] = None,
-        current_message_id: Optional[str] = None,
-        context_mode: str = "single_assistant",
-        current_agent_id: Optional[str] = None,
-        current_agent_name: Optional[str] = None,
-        command_result_context_instruction: Optional[str] = None,
-    ) -> ContextBuildResult:
-        command_instruction = command_result_context_instruction or DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION
-        if policy.mode == "none":
-            return ContextBuildResult(messages=[])
-
-        if policy.mode == "current_message":
-            current_text = self._current_text(args, current_message_id)
-            if context_mode == "group_transcript":
-                return ContextBuildResult(messages=[_group_transcript_user_message([], current_text, current_agent_id, current_agent_name, policy.max_chars, command_instruction)])
-            return ContextBuildResult(messages=[{"role": "user", "content": current_text}])
-
-        if policy.mode == "selected_message":
+    def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *, source_message_id: str | None = None, current_message_id: str | None = None, context_mode: str = "single_assistant") -> ContextBuildResult:
+        policy=policy or ContextPolicy(mode="session"); current=self._current_text(text,current_message_id); warnings=[]
+        history=[item for item in self.message_store.list_messages(session_id) if item.message_id!=current_message_id and _eligible(item)]
+        if policy.mode in {"none","current_message"}: selected=[]
+        elif policy.mode=="selected_message":
+            selected=[]
             if source_message_id:
-                source = self.message_store.get_message(source_message_id)
-                selected_messages = []
-                messages: List[Dict[str, str]] = []
-                warnings: List[str] = []
+                try: selected=[self.message_store.get_message(source_message_id)]
+                except KeyError: warnings.append("selected message was not found")
+            else: warnings.append("selected message context requested without a source message")
+        else:
+            selected=history
+            if policy.max_messages is not None: selected=selected[-policy.max_messages:]
+        if context_mode=="group_transcript":
+            transcript="\n".join(_transcript_line(item) for item in selected if _transcript_line(item)); content=f"<conversation_transcript>\n{transcript}\n</conversation_transcript>\n\n<current_user_message>\n{current}\n</current_user_message>"
+            messages=[{"role":"system","content":DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION},{"role":"user","content":content}]
+        else:
+            messages=[item for item in (_project(message) for message in selected) if item is not None]
+            messages.append({"role":"user","content":current})
+        messages=_limit_chars(messages,policy.max_chars)
+        return ContextBuildResult(messages=validate_llm_context_messages(messages),warnings=warnings)
 
-                if policy.include_original_user_message:
-                    if source.parent_message_id:
-                        try:
-                            parent = self.message_store.get_message(source.parent_message_id)
-                            selected_messages.append(parent)
-                            projected = _message_to_llm(parent, command_result_context_instruction=command_instruction)
-                            if projected is not None:
-                                messages.append(projected)
-                        except KeyError:
-                            warnings.append("original user message was referenced but could not be found")
-                    else:
-                        warnings.append("source message has no parent_message_id for original user message")
-
-                if policy.include_last_agent_message:
-                    selected_messages.append(source)
-                    projected = _message_to_llm(source, command_result_context_instruction=command_instruction)
-                    if projected is not None:
-                        messages.append(projected)
-
-                if not messages:
-                    selected_messages.append(source)
-                    projected = _message_to_llm(source, command_result_context_instruction=command_instruction)
-                    if projected is not None:
-                        messages.append(projected)
-
-                current_text = self._current_text(args, current_message_id)
-                if context_mode == "group_transcript":
-                    return ContextBuildResult(
-                        messages=[_group_transcript_user_message(selected_messages, current_text, current_agent_id, current_agent_name, policy.max_chars, command_instruction)],
-                        warnings=warnings,
-                    )
-                if args:
-                    messages.append({"role": "user", "content": current_text})
-
-                return ContextBuildResult(messages=validate_llm_context_messages(messages), warnings=warnings)
-            current_text = self._current_text(args, current_message_id)
-            if context_mode == "group_transcript":
-                return ContextBuildResult(
-                    messages=[_group_transcript_user_message([], current_text, current_agent_id, current_agent_name, policy.max_chars, command_instruction)],
-                    warnings=["selected_message context requested without source_message_id; used current_message fallback"],
-                )
-            return ContextBuildResult(
-                messages=[{"role": "user", "content": current_text}],
-                warnings=["selected_message context requested without source_message_id; used current_message fallback"],
-            )
-
-        history_messages = [
-            message
-            for message in self.message_store.list_messages(session_id)
-            if message.message_id != current_message_id and _message_can_enter_context(message)
-        ]
-        max_messages = policy.max_messages if policy.mode in {"recent_messages", "session"} else None
-        if context_mode == "group_transcript":
-            history = _messages_to_pair_aware_messages(history_messages, policy.max_chars, max_messages, command_instruction)
-            current_text = self._current_text(args, current_message_id)
-            return ContextBuildResult(
-                messages=validate_llm_context_messages([_group_transcript_user_message(history, current_text, current_agent_id, current_agent_name, policy.max_chars, command_instruction)])
-            )
-        history = _messages_to_pair_aware_llm(history_messages, policy.max_chars, max_messages, command_instruction)
-
-        history.append({"role": "user", "content": self._current_text(args, current_message_id)})
-        return ContextBuildResult(messages=validate_llm_context_messages(history))
-
-    def _current_text(self, args: str, current_message_id: Optional[str]) -> str:
-        if args:
-            return args
-        if current_message_id:
-            try:
-                message = self.message_store.get_message(current_message_id)
-            except KeyError:
-                return args
-            return _message_text_for_context(message)
-        return args
-
-
-def _message_to_llm(message, max_command_chars: Optional[int] = None, command_result_context_instruction: Optional[str] = None) -> Dict[str, str] | None:
-    role = getattr(message, "role", "")
-    if _is_command_result_message(message):
-        return {"role": "assistant", "content": _command_result_text_for_context(message, max_command_chars, command_result_context_instruction)}
-    content = _message_text_for_context(message)
-    if role in {"assistant", "agent"}:
-        return {"role": "assistant", "content": content}
-    if role == "system":
-        return {"role": "system", "content": content}
-    if role in {"tool", "command", "function"}:
-        return None
-    return {"role": "user", "content": content}
-
-
-def validate_llm_context_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    allowed = {"system", "user", "assistant"}
-    validated: List[Dict[str, Any]] = []
-    for index, message in enumerate(messages):
-        role = message.get("role")
-        if role not in allowed:
-            raise LLMContextError(f"Illegal LLM context role at index {index}: {role!r}")
-        validated.append(message)
-    return validated
-
-
-def group_transcript_identity_instruction(agent_name: Optional[str], agent_id: Optional[str] = None, instruction: Optional[str] = None) -> str:
-    name = agent_name or agent_id or "the current agent"
-    return _render_instruction_template(
-        instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION,
-        {
-            "agent_name": name,
-            "agent_id": agent_id or "",
-            "user_label": "User",
-        },
-    )
-
-
-def _messages_to_pair_aware_llm(messages: list, max_chars: Optional[int], max_messages: Optional[int] = None, command_result_context_instruction: Optional[str] = None) -> List[Dict[str, str]]:
-    by_id = {message.message_id: message for message in messages}
-    consumed: set[str] = set()
-    units: List[List[Dict[str, str]]] = []
-    for index, message in enumerate(messages):
-        if message.message_id in consumed:
-            continue
-        if _is_command_result_message(message):
-            source = _source_user_for_command_result(message, by_id, messages, index)
-            if source is None or source.message_id in consumed:
-                continue
-            source_projected = _message_to_llm(source, command_result_context_instruction=command_result_context_instruction)
-            result_projected = _message_to_llm(message, max_chars, command_result_context_instruction)
-            if source_projected is not None and result_projected is not None:
-                units.append([source_projected, result_projected])
-                consumed.add(source.message_id)
-                consumed.add(message.message_id)
-            continue
-        result = _paired_command_result_after(message, messages, index)
-        if result is not None and result.message_id not in consumed:
-            source_projected = _message_to_llm(message, command_result_context_instruction=command_result_context_instruction)
-            result_projected = _message_to_llm(result, max_chars, command_result_context_instruction)
-            if source_projected is not None and result_projected is not None:
-                units.append([source_projected, result_projected])
-                consumed.add(message.message_id)
-                consumed.add(result.message_id)
-                continue
-        projected = _message_to_llm(message, command_result_context_instruction=command_result_context_instruction)
-        if projected is not None:
-            units.append([projected])
-        consumed.add(message.message_id)
-    limited_units = _limit_units(units, max_chars)
-    if max_messages is not None:
-        kept_reversed: List[List[Dict[str, str]]] = []
-        total = 0
-        for unit in reversed(limited_units):
-            unit_count = len(unit)
-            if kept_reversed and total + unit_count > max_messages:
-                break
-            kept_reversed.append(unit)
-            total += unit_count
-        limited_units = list(reversed(kept_reversed))
-    return [item for unit in limited_units for item in unit]
-
-
-def _messages_to_pair_aware_messages(messages: list, max_chars: Optional[int], max_messages: Optional[int] = None, command_result_context_instruction: Optional[str] = None) -> list:
-    by_id = {message.message_id: message for message in messages}
-    consumed: set[str] = set()
-    units: list[list] = []
-    for index, message in enumerate(messages):
-        if message.message_id in consumed:
-            continue
-        if _is_command_result_message(message):
-            source = _source_user_for_command_result(message, by_id, messages, index)
-            if source is None or source.message_id in consumed:
-                continue
-            units.append([source, message])
-            consumed.add(source.message_id)
-            consumed.add(message.message_id)
-            continue
-        result = _paired_command_result_after(message, messages, index)
-        if result is not None and result.message_id not in consumed:
-            units.append([message, result])
-            consumed.add(message.message_id)
-            consumed.add(result.message_id)
-            continue
-        units.append([message])
-        consumed.add(message.message_id)
-    limited_units = _limit_message_units(units, max_chars, command_result_context_instruction)
-    if max_messages is not None:
-        kept_reversed: list[list] = []
-        total = 0
-        for unit in reversed(limited_units):
-            unit_count = len(unit)
-            if kept_reversed and total + unit_count > max_messages:
-                break
-            kept_reversed.append(unit)
-            total += unit_count
-        limited_units = list(reversed(kept_reversed))
-    return [item for unit in limited_units for item in unit]
-
-
-def _limit_message_units(units: list[list], max_chars: Optional[int], command_result_context_instruction: Optional[str] = None) -> list[list]:
-    if max_chars is None:
-        return units
-    total = 0
-    kept_reversed: list[list] = []
-    for unit in reversed(units):
-        unit_len = sum(len(_group_message_text(message, max_chars, command_result_context_instruction)) for message in unit)
-        if kept_reversed and total + unit_len > max_chars:
-            break
-        kept_reversed.append(unit)
-        total += unit_len
-    return list(reversed(kept_reversed))
-
-
-def _group_transcript_user_message(history: list, current_text: str, current_agent_id: Optional[str], current_agent_name: Optional[str], max_chars: Optional[int], command_result_context_instruction: Optional[str] = None) -> Dict[str, str]:
-    transcript = _render_group_transcript(history, current_agent_id, current_agent_name, max_chars, command_result_context_instruction)
-    return {
-        "role": "user",
-        "content": (
-            "<conversation_transcript>\n"
-            f"{transcript}\n"
-            "</conversation_transcript>\n\n"
-            "<current_user_message>\n"
-            f"{current_text}\n"
-            "</current_user_message>"
-        ),
-    }
-
-
-def _render_group_transcript(messages: list, current_agent_id: Optional[str], current_agent_name: Optional[str], max_chars: Optional[int], command_result_context_instruction: Optional[str] = None) -> str:
-    rendered: list[str] = []
-    for message in messages:
-        if not _message_can_enter_context(message):
-            continue
-        if _is_skippable_system_message(message):
-            continue
-        if _is_command_result_message(message):
-            rendered.append(_command_result_text_for_context(message, max_chars, command_result_context_instruction))
-            continue
-        label = _speaker_label(message, current_agent_id, current_agent_name)
-        text = _message_text_for_context(message)
-        if label or text:
-            rendered.append(f"{label} {text}".rstrip())
-    return "\n".join(rendered)
-
-
-def _speaker_label(message, current_agent_id: Optional[str], current_agent_name: Optional[str]) -> str:
-    identity = _speaker_identity(message)
-    speaker_type = identity["speaker_type"]
-    speaker_id = identity["speaker_id"]
-    speaker_name = identity["speaker_name"]
-    if speaker_type == "user":
-        return "[User]"
-    if speaker_type == "agent":
-        name = speaker_name or speaker_id or "Assistant"
-        if _same_agent(speaker_id, current_agent_id, name, current_agent_name):
-            return f"[{name} (you)]"
-        return f"[{name}]"
-    if speaker_type == "system":
-        return "[System note]"
-    return f"[{speaker_name or 'Assistant'}]"
-
-
-def _speaker_identity(message) -> dict[str, Optional[str]]:
-    metadata = getattr(message, "metadata", {}) or {}
-    speaker_type = getattr(message, "speaker_type", None)
-    speaker_id = getattr(message, "speaker_id", None)
-    speaker_name = getattr(message, "speaker_name", None)
-    if speaker_type:
-        return {"speaker_type": speaker_type, "speaker_id": speaker_id, "speaker_name": speaker_name}
-    role = getattr(message, "role", "")
-    if role == "user":
-        return {"speaker_type": "user", "speaker_id": "local_user", "speaker_name": "User"}
-    if _is_command_result_message(message):
-        return {
-            "speaker_type": "capability",
-            "speaker_id": metadata.get("capability_id"),
-            "speaker_name": metadata.get("capability_name") or getattr(message, "command_name", None) or "Command result",
-        }
-    if role in {"assistant", "agent"}:
-        agent_id = getattr(message, "agent_id", None) or metadata.get("agent_id")
-        return {"speaker_type": "agent", "speaker_id": agent_id, "speaker_name": metadata.get("agent_name") or agent_id or "Assistant"}
-    if role == "system":
-        return {"speaker_type": "system", "speaker_id": None, "speaker_name": "System"}
-    return {"speaker_type": None, "speaker_id": None, "speaker_name": None}
-
-
-def _same_agent(speaker_id: Optional[str], current_agent_id: Optional[str], speaker_name: str, current_agent_name: Optional[str]) -> bool:
-    if speaker_id and current_agent_id:
-        return speaker_id == current_agent_id
-    return bool(current_agent_name and speaker_name == current_agent_name)
-
-
-def _group_message_text(message, max_command_chars: Optional[int] = None, command_result_context_instruction: Optional[str] = None) -> str:
-    if _is_command_result_message(message):
-        return _command_result_text_for_context(message, max_command_chars, command_result_context_instruction)
-    return _message_text_for_context(message)
-
-
-def _is_skippable_system_message(message) -> bool:
-    if getattr(message, "role", "") != "system":
-        return False
-    metadata = getattr(message, "metadata", {}) or {}
-    origin = getattr(message, "origin", None) or metadata.get("event_type")
-    return origin in {"separator", "model_changed", "context_mode_changed", "system_notice"}
-
-
-def _limit_units(units: List[List[Dict[str, str]]], max_chars: Optional[int]) -> List[List[Dict[str, str]]]:
-    if max_chars is None:
-        return units
-    total = 0
-    kept_reversed: List[List[Dict[str, str]]] = []
-    for unit in reversed(units):
-        unit_len = sum(len(str(message.get("content") or "")) for message in unit)
-        if kept_reversed and total + unit_len > max_chars:
-            break
-        kept_reversed.append(unit)
-        total += unit_len
-    return list(reversed(kept_reversed))
-
-
-def _is_command_result_message(message) -> bool:
-    metadata = getattr(message, "metadata", {}) or {}
-    if metadata.get("kind") == "command_result" or metadata.get("producer") == "capability":
-        return True
-    return bool(getattr(message, "command_name", None)) or getattr(message, "role", "") == "command"
-
-
-def _source_user_for_command_result(message, by_id: dict, messages: list, index: int):
-    metadata = getattr(message, "metadata", {}) or {}
-    for key in ("source_user_message_id", "parent_message_id", "input_message_id"):
-        value = metadata.get(key)
-        if value and getattr(by_id.get(str(value)), "role", "") == "user":
-            return by_id[str(value)]
-    parent_id = getattr(message, "parent_message_id", None)
-    if parent_id and getattr(by_id.get(str(parent_id)), "role", "") == "user":
-        return by_id[str(parent_id)]
-    for previous in reversed(messages[:index]):
-        if getattr(previous, "role", "") == "user" and _message_text_for_context(previous).lstrip().startswith("/"):
-            return previous
-    return None
-
-
-def _paired_command_result_after(message, messages: list, index: int):
-    if getattr(message, "role", "") != "user" or not _message_text_for_context(message).lstrip().startswith("/"):
-        return None
-    for candidate in messages[index + 1 :]:
-        if getattr(candidate, "role", "") == "user":
-            return None
-        if not _is_command_result_message(candidate):
-            continue
-        source = _source_user_for_command_result(candidate, {item.message_id: item for item in messages}, messages, messages.index(candidate))
-        if source is None or source.message_id == message.message_id:
-            return candidate
-    return None
-
-
-def _message_can_enter_context(message) -> bool:
-    if any(isinstance(part, dict) and part.get("type") == "error" for part in (getattr(message, "parts", None) or [])):
-        return False
-    metadata = getattr(message, "metadata", {}) or {}
-    if metadata.get("success") is False:
-        return False
-    if metadata.get("event_type"):
-        return False
-    return True
-
-
-def _message_text_for_context(message) -> str:
-    parts_text = _parts_text_for_context(getattr(message, "parts", None))
-    if parts_text.strip():
-        return parts_text
-    attachments = _image_attachments(message)
-    if attachments:
-        count = len(attachments)
-        suffix = "s" if count != 1 else ""
-        return f"User attached {count} image{suffix}."
-    return ""
-
-
-def _command_result_text_for_context(message, max_chars: Optional[int] = None, command_result_context_instruction: Optional[str] = None) -> str:
-    metadata = getattr(message, "metadata", {}) or {}
-    command = str(metadata.get("command") or getattr(message, "command_name", None) or "command")
-    capability_id = str(metadata.get("capability_id") or "")
-    capability = str(metadata.get("capability_name") or capability_id or "capability")
-    output_part_type = str(metadata.get("output_part_type") or "parts")
-    instruction = _render_instruction_template(
-        command_result_context_instruction or DEFAULT_COMMAND_RESULT_CONTEXT_INSTRUCTION,
-        {
-            "command": command,
-            "capability_name": capability,
-            "capability_id": capability_id,
-            "output_part_type": output_part_type,
-        },
-    )
-    body, truncated = _command_result_body(message, max_chars)
-    return (
-        f"[Command result: {command}]\n"
-        f"Source: {capability}\n"
-        f"Output part type: {output_part_type}\n"
-        f"{instruction}\n\n"
-        f"{body if body else _placeholder_for_output(message)}"
-        f"{_truncation_note(truncated)}"
-    )
-
-
-def _render_instruction_template(template: str, values: dict[str, str]) -> str:
-    rendered = template
-    for key, value in values.items():
-        rendered = rendered.replace("{" + key + "}", value)
-    return rendered
-
-
-def _command_result_body(message, max_chars: Optional[int]) -> tuple[str, bool]:
-    parts_text = _parts_text_for_context(getattr(message, "parts", None))
-    if parts_text.strip():
-        text, truncated = _bounded_text(parts_text, max_chars)
-        return f'<command_output type="parts" truncated="{str(truncated).lower()}">\n{text}\n</command_output>', truncated
-    return _placeholder_for_output(message), False
-
-
-def _parts_text_for_context(parts: Any) -> str:
-    if not isinstance(parts, list):
+    def _current_text(self, text: str, message_id: str | None) -> str:
+        if text: return text
+        if message_id:
+            try: return message_text(self.message_store.get_message(message_id))
+            except KeyError: pass
         return ""
-    rendered: list[str] = []
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        part_type = part.get("type")
-        if part_type == "text":
-            rendered.append(str(part.get("text") or ""))
-        elif part_type == "json":
-            rendered.append(json.dumps(part.get("data"), ensure_ascii=False, indent=2, default=str))
-        elif part_type == "file":
-            rendered.append(str(part.get("content") or part.get("filename") or ""))
-        elif part_type == "image":
-            rendered.append("[image]" + (" " + str(part.get("alt")) if part.get("alt") else ""))
-        elif part_type == "audio":
-            name = part.get("title") or part.get("filename") or part.get("mime_type") or "audio"
-            rendered.append(f"[audio attachment: {name}]")
-        elif part_type == "video":
-            name = part.get("title") or part.get("filename") or part.get("mime_type") or "video"
-            rendered.append(f"[video attachment: {name}]")
-        elif part_type == "media_group":
-            items = part.get("items") if isinstance(part.get("items"), list) else []
-            rendered.append(f"[image gallery: {len(items)} image(s)]")
-        elif part_type == "form":
-            rendered.append("[form] " + str(part.get("title") or part.get("form_id") or ""))
-        elif part_type == "command_buttons":
-            buttons = part.get("buttons") if isinstance(part.get("buttons"), list) else []
-            rendered.append("\n".join(f"{button.get('label')}: {button.get('message')}" for button in buttons if isinstance(button, dict)))
-        elif part_type == "notice":
-            rendered.append(str(part.get("text") or ""))
-        elif part_type == "error":
-            rendered.append(str(part.get("message") or part.get("code") or ""))
-    return "\n\n".join(item for item in rendered if item)
 
 
-def _placeholder_for_output(message) -> str:
-    command = getattr(message, "command_name", None) or "command"
-    return f"[Command result: {command} had no text-renderable message parts.]"
+def validate_llm_context_messages(messages: list[dict[str,Any]]) -> list[dict[str,Any]]:
+    for index,item in enumerate(messages):
+        if item.get("role") not in {"system","user","assistant"}: raise LLMContextError(f"Illegal LLM context role at index {index}: {item.get('role')!r}")
+        if not isinstance(item.get("content"),str): raise LLMContextError(f"Illegal LLM context content at index {index}")
+    return messages
 
 
-def _image_placeholder(content: dict) -> str:
-    name = content.get("title") or content.get("alt") or content.get("filename") or content.get("mime_type") or "image"
-    return f"[Command result returned 1 image: {name}. Image data is not resent in text context.]"
+def group_transcript_identity_instruction(instruction: str | None = None) -> str: return instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
 
 
-def _bounded_text(text: str, max_chars: Optional[int]) -> tuple[str, bool]:
-    if max_chars is None or len(text) <= max_chars:
-        return text, False
-    return text[: max(0, max_chars)], True
+def message_text(message: Any) -> str:
+    rendered=[]
+    for part in getattr(message,"parts",[]) or []:
+        if not isinstance(part,dict): continue
+        kind=part.get("type")
+        if kind=="text": rendered.append(str(part.get("text") or ""))
+        elif kind=="json": rendered.append(json.dumps(part.get("data"),ensure_ascii=False,indent=2,default=str))
+        elif kind=="file": rendered.append(str(part.get("content") or part.get("filename") or "[file]"))
+        elif kind=="image": rendered.append(f"[image{': '+str(part.get('alt')) if part.get('alt') else ''}]")
+        elif kind in {"audio","video"}: rendered.append(f"[{kind} attachment]")
+        elif kind=="media_group": rendered.append(f"[image gallery: {len(part.get('items') or [])} image(s)]")
+        elif kind=="notice": rendered.append(str(part.get("text") or ""))
+    attachments=(getattr(message,"metadata",{}) or {}).get("attachments")
+    if isinstance(attachments,list):
+        for item in attachments:
+            if not isinstance(item,dict): continue
+            context_text=item.get("context_text") or item.get("text")
+            if context_text: rendered.append(f"[Attachment: {item.get('name') or item.get('id') or 'file'}]\n{context_text}")
+            elif item.get("type") in {"image","file"}: rendered.append(f"[{item.get('type')} attachment: {item.get('name') or item.get('id') or ''}]")
+    return "\n\n".join(part for part in rendered if part)
 
 
-def _truncation_note(truncated: bool) -> str:
-    return "\n\n[Command result truncated for LLM context.]" if truncated else ""
+def _project(message: Any) -> dict[str,str] | None:
+    role=getattr(message,"role","")
+    if role not in {"system","user","assistant"}: return None
+    text=message_text(message)
+    if not text and role!="system": return None
+    return {"role":role,"content":text}
 
 
-def _escape_attr(value: Any) -> str:
-    return str(value or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+def _eligible(message: Any) -> bool:
+    if getattr(message,"role","") not in {"system","user","assistant"}: return False
+    if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
+    metadata=getattr(message,"metadata",{}) or {}
+    return not bool(metadata.get("event_type"))
 
 
-def _image_attachments(message) -> list:
-    metadata = getattr(message, "metadata", {}) or {}
-    attachments = metadata.get("attachments")
-    if not isinstance(attachments, list):
-        return []
-    return [
-        attachment
-        for attachment in attachments
-        if isinstance(attachment, dict) and attachment.get("type") == "image"
-    ]
+def _transcript_line(message: Any) -> str:
+    role=getattr(message,"role",""); label="User" if role=="user" else getattr(message,"speaker_name",None) or ("System" if role=="system" else "Assistant"); text=message_text(message)
+    return f"[{label}] {text}".rstrip()
 
 
-def _limit_chars(messages: List[Dict[str, str]], max_chars: Optional[int]) -> List[Dict[str, str]]:
-    if max_chars is None:
-        return messages
-
-    total = 0
-    kept_reversed: List[Dict[str, str]] = []
-    for message in reversed(messages):
-        content_len = len(message["content"])
-        if kept_reversed and total + content_len > max_chars:
-            break
-        kept_reversed.append(message)
-        total += content_len
-    return list(reversed(kept_reversed))
+def _limit_chars(messages: list[dict[str,str]], limit: int | None) -> list[dict[str,str]]:
+    if limit is None: return messages
+    kept=[]; used=0
+    for item in reversed(messages):
+        content=item["content"]
+        if kept and used+len(content)>limit: break
+        kept.append(item); used+=len(content)
+    return list(reversed(kept))

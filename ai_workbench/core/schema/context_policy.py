@@ -11,6 +11,3 @@ class ContextPolicy(BaseModel):
     max_chars: Optional[int] = None
     include_system_prompt: bool = True
     include_attachments: Literal["none", "explicit"] = "none"
-    include_last_agent_message: bool = False
-    include_original_user_message: bool = False
-

@@ -40,7 +40,7 @@ export function resolveAvatarUrlFromBase(base: string, value: string | null | un
   if (!trimmed) return '';
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,[a-z0-9+/=\s]+$/i.test(trimmed)) return trimmed;
-  if (/^\/api\/agents\/.+/i.test(trimmed) || /^\/agents\/.+/i.test(trimmed)) return joinApiUrl(base, trimmed);
+  if (/^\/api\/pets\/.+\/spritesheet\.webp$/i.test(trimmed) || /^\/pets\/.+\/spritesheet\.webp$/i.test(trimmed)) return joinApiUrl(base, trimmed);
   return '';
 }
 

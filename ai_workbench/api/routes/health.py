@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends
 
 from ai_workbench import __version__
@@ -11,26 +13,27 @@ router = APIRouter(tags=["health"])
 
 @router.get("/api/health")
 def health(state: RuntimeState = Depends(get_state)) -> dict:
-    status = _database_status(state)
+    database = _database_status(state)
     return {
-        "status": "ok" if status["status"] == "ok" else "degraded",
+        "status": "ok" if database["status"] == "ok" else "degraded",
         "version": __version__,
-        "database": status["status"],
+        "database": database["status"],
         "schema_version": SCHEMA_VERSION,
     }
 
 
 @router.get("/api/health/details")
 def health_details(state: RuntimeState = Depends(get_state)) -> dict:
-    details = {
+    database = _database_status(state)
+    llm = _llm_status(state)
+    return {
+        "status": "ok" if database["status"] == "ok" and llm["status"] == "ok" else "degraded",
         "version": __version__,
-        "database": _database_status(state),
+        "database": database,
         "schema_version": SCHEMA_VERSION,
-        "registries": _registry_counts(state),
-        "llm": _llm_status(state),
+        "llm": llm,
+        "runs": {"active_count": state.active_runs.active_count()},
     }
-    degraded = _has_degraded(details)
-    return {"status": "degraded" if degraded else "ok", **details}
 
 
 def _database_status(state: RuntimeState) -> dict:
@@ -41,33 +44,13 @@ def _database_status(state: RuntimeState) -> dict:
         return {"status": "degraded", "error": str(exc) or "database unavailable"}
 
 
-def _registry_counts(state: RuntimeState) -> dict:
-    return {
-        "agents": len(state.agents.list()),
-        "capabilities": len(state.capabilities.list()),
-        "commands": len(state.commands.list()),
-    }
-
-
 def _llm_status(state: RuntimeState) -> dict:
     try:
-        capability = state.capabilities.get("llm")
-        capability_config = state.capability_configs.get_config("llm")
-        resolved = resolve_llm_config(
-            capability_schema=capability,
-            capability_config=capability_config,
+        config = resolve_llm_config(
             llm_profile_store=state.llm_profiles,
             provider_profile_store=state.provider_profiles,
             llm_defaults_store=state.llm_defaults,
         )
-        return {"status": "ok", **public_llm_config_status(resolved)}
+        return {"status": "ok", **public_llm_config_status(config)}
     except Exception as exc:
         return {"status": "degraded", "error": str(exc) or "LLM config unavailable"}
-
-
-def _has_degraded(details: dict) -> bool:
-    return any(
-        value.get("status") == "degraded"
-        for value in details.values()
-        if isinstance(value, dict)
-    )

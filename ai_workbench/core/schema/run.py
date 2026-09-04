@@ -26,15 +26,18 @@ class RunStepStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+RunKind = Literal["chat", "resume"]
+RunStepKind = Literal["context", "model", "save", "approval", "tool"]
+
+
 class RunSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
     session_id: str
-    kind: Literal["agent", "command", "action", "resume"]
+    kind: RunKind
     status: RunStatus = RunStatus.PENDING
-    target_id: str
-    action_id: Optional[str] = None
+    target: str = "chat"
     current_step: str = ""
     stage: str = ""
     progress_message: str = ""
@@ -60,8 +63,9 @@ class RunStepSchema(BaseModel):
 
     step_id: str
     run_id: str
+    kind: RunStepKind
     parent_step_id: Optional[str] = None
-    label: str
+    label: str = ""
     status: RunStepStatus = RunStepStatus.PENDING
     message: str = ""
     order: int = 0

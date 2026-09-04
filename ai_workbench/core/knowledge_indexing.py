@@ -1,3 +1,5 @@
+"""Deterministic source preparation and single-profile chunking."""
+
 from __future__ import annotations
 
 import hashlib
@@ -12,19 +14,13 @@ from uuid import uuid4
 from ai_workbench.core.attachments import read_attachment_text, resolve_attachment_uri
 from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.knowledge_models import KnowledgeModelError, knowledge_sources_path
-from ai_workbench.core.knowledge_settings import ChunkProfile, KnowledgeSettings, VALID_CHUNK_PROFILES
+from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
-
-
-KnowledgeSourceType = Literal["pasted_text", "attachment_text", "origin_file"]
 
 
 class KnowledgeIndexError(Exception):
     def __init__(self, code: str, message: str, details: dict[str, Any] | None = None) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.details = details or {}
+        super().__init__(message); self.code=code; self.message=message; self.details=details or {}
 
 
 @dataclass(frozen=True)
@@ -42,7 +38,7 @@ class ChunkDraft:
 @dataclass(frozen=True)
 class SourceText:
     source_id: str
-    source_type: KnowledgeSourceType
+    source_type: Literal["pasted_text", "attachment_text", "file"]
     title: str
     text: str
     uri: str
@@ -50,7 +46,6 @@ class SourceText:
     size_bytes: int
     content_hash: str
     metadata: dict[str, Any]
-    origin_id: str | None = None
     relative_path: str = ""
     virtual_path: str = ""
     folder_path: str = ""
@@ -60,972 +55,77 @@ class SourceText:
     source_mtime: Any = None
 
 
-def source_content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def source_content_hash(text: str) -> str: return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def prepare_pasted_text_source(*, root: Path, title: str, text: str, source_id: str | None = None) -> SourceText:
-    source_id = source_id or str(uuid4())
-    clean_title = title.strip() or "Pasted text"
-    content = text or ""
-    size_bytes = len(content.encode("utf-8"))
-    target = knowledge_sources_path(root) / f"{source_id}.txt"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    return SourceText(
-        source_id=source_id,
-        source_type="pasted_text",
-        title=clean_title,
-        text=content,
-        uri=f"data/knowledge/sources/{source_id}.txt",
-        mime_type="text/plain",
-        size_bytes=size_bytes,
-        content_hash=source_content_hash(content),
-        metadata={},
-    )
+    source_id=source_id or str(uuid4()); content=text or ""; target=knowledge_sources_path(root)/(source_id+".txt"); target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content,encoding="utf-8")
+    return SourceText(source_id=source_id,source_type="pasted_text",title=title.strip() or "Pasted text",text=content,uri=f"data/knowledge/sources/{source_id}.txt",mime_type="text/plain",size_bytes=len(content.encode()),content_hash=source_content_hash(content),metadata={})
 
 
-def with_source_overrides(source: SourceText, *, folder_path: str = "", chunk_profile: str | None = None) -> SourceText:
-    folder = _normalize_virtual_folder_path(folder_path)
-    file_name = source.file_name or _safe_virtual_file_name(source.title, ".txt")
-    virtual_path = f"{folder}/{file_name}" if folder else file_name
-    metadata = {
-        **source.metadata,
-        "virtual_path": virtual_path,
-        "folder_path": folder,
-        "file_name": file_name,
-        "path_depth": len([part for part in virtual_path.split("/") if part]),
-    }
-    if chunk_profile:
-        _validate_profile(chunk_profile, "Source chunk profile")
-        metadata["chunk_profile_override"] = chunk_profile
-    return SourceText(
-        **{
-            **source.__dict__,
-            "virtual_path": virtual_path,
-            "folder_path": folder,
-            "file_name": file_name,
-            "path_depth": metadata["path_depth"],
-            "metadata": metadata,
-        }
-    )
+def with_source_overrides(source: SourceText, *, folder_path: str = "") -> SourceText:
+    folder="/".join(part.strip() for part in folder_path.replace("\\","/").split("/") if part.strip() not in {".",".."}); name=source.file_name or re.sub(r"[^A-Za-z0-9._ -]+","-",Path(source.title).name).strip() or "source.txt"; virtual=f"{folder}/{name}" if folder else name
+    return SourceText(**{**source.__dict__,"folder_path":folder,"file_name":name,"virtual_path":virtual,"path_depth":len([p for p in virtual.split("/") if p]),"metadata":{**source.metadata,"virtual_path":virtual,"folder_path":folder,"file_name":name}})
 
 
 def prepare_attachment_text_source(*, attachment_id: str) -> SourceText:
-    filename = attachment_id.strip()
-    try:
-        path = resolve_attachment_uri(filename)
-    except ValueError as exc:
-        raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND", "Attachment was not found or is not a local attachment.") from exc
-    if not path.is_file():
-        raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND", "Attachment file was not found.")
-    mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    attachment = {
-        "id": path.stem,
-        "type": "file",
-        "mime_type": mime_type,
-        "name": path.name,
-        "size": path.stat().st_size,
-        "uri": f"local://attachments/{path.name}",
-    }
-    try:
-        payload = read_attachment_text(attachment)
-    except ValueError as exc:
-        raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_TEXT", "Only text attachments can be indexed.") from exc
-    text = str(payload["content"])
-    return SourceText(
-        source_id=str(uuid4()),
-        source_type="attachment_text",
-        title=str(payload.get("filename") or path.name),
-        text=text,
-        uri=f"local://attachments/{path.name}",
-        mime_type=str(payload.get("mime_type") or mime_type),
-        size_bytes=int(payload.get("size") or len(text.encode("utf-8"))),
-        content_hash=source_content_hash(text),
-        metadata={"attachment_id": path.name, "truncated": bool(payload.get("truncated"))},
-    )
+    try: path=resolve_attachment_uri(attachment_id)
+    except ValueError as exc: raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND","Attachment was not found.") from exc
+    if not path.is_file(): raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND","Attachment file was not found.")
+    mime=mimetypes.guess_type(path.name)[0] or "text/plain"; payload=read_attachment_text({"id":path.stem,"type":"file","mime_type":mime,"name":path.name,"size":path.stat().st_size,"uri":f"local://attachments/{path.name}"}); text=str(payload["content"])
+    return SourceText(source_id=str(uuid4()),source_type="attachment_text",title=path.name,text=text,uri=f"local://attachments/{path.name}",mime_type=mime,size_bytes=len(text.encode()),content_hash=source_content_hash(text),metadata={"attachment_id":attachment_id})
 
 
-def prepare_origin_file_source(
-    *,
-    origin_id: str,
-    path: Path,
-    root: Path,
-    uri_prefix: str,
-    source_id: str | None = None,
-) -> SourceText:
-    try:
-        resolved = path.resolve()
-        origin_root = root.resolve()
-        relative = resolved.relative_to(origin_root)
-    except ValueError as exc:
-        raise KnowledgeIndexError("KNOWLEDGE_ORIGIN_PATH_INVALID", "Origin file path must stay inside the origin root.") from exc
-    if not resolved.is_file():
-        raise KnowledgeIndexError("KNOWLEDGE_ORIGIN_FILE_NOT_FOUND", "Origin file was not found.")
-    text = resolved.read_text(encoding="utf-8")
-    stat = resolved.stat()
-    relative_path = relative.as_posix()
-    folder_path = relative.parent.as_posix() if str(relative.parent) != "." else ""
-    file_name = relative.name
-    extension = resolved.suffix.lower()
-    uri = f"{uri_prefix.rstrip('/')}/{relative_path}"
-    return SourceText(
-        source_id=source_id or str(uuid4()),
-        source_type="origin_file",
-        title=relative_path,
-        text=text,
-        uri=uri,
-        mime_type=mimetypes.guess_type(resolved.name)[0] or "text/plain",
-        size_bytes=stat.st_size,
-        content_hash=source_content_hash(text),
-        metadata={
-            "origin_id": origin_id,
-            "relative_path": relative_path,
-            "virtual_path": relative_path,
-            "folder_path": folder_path,
-            "file_name": file_name,
-            "extension": extension,
-            "path_depth": len(relative.parts),
-        },
-        origin_id=origin_id,
-        relative_path=relative_path,
-        virtual_path=relative_path,
-        folder_path=folder_path,
-        file_name=file_name,
-        extension=extension,
-        path_depth=len(relative.parts),
-        source_mtime=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-    )
+def prepare_file_source(*, path: Path, root: Path, source_id: str | None = None) -> SourceText:
+    resolved=path.resolve(); base=root.resolve()
+    try: relative=resolved.relative_to(base)
+    except ValueError as exc: raise KnowledgeIndexError("KNOWLEDGE_FILE_PATH_INVALID","Source path must stay inside the workspace.") from exc
+    if not resolved.is_file(): raise KnowledgeIndexError("KNOWLEDGE_FILE_NOT_FOUND","Source file was not found.")
+    text=resolved.read_text(encoding="utf-8"); stat=resolved.stat(); rel=relative.as_posix()
+    return SourceText(source_id=source_id or str(uuid4()),source_type="file",title=rel,text=text,uri=rel,mime_type=mimetypes.guess_type(resolved.name)[0] or "text/plain",size_bytes=stat.st_size,content_hash=source_content_hash(text),metadata={},relative_path=rel,virtual_path=rel,file_name=resolved.name,folder_path=relative.parent.as_posix() if str(relative.parent)!="." else "",extension=resolved.suffix.lower(),path_depth=len(relative.parts),source_mtime=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc))
 
 
 def validate_source_limits(text: str, size_bytes: int, settings: KnowledgeSettings) -> None:
-    if size_bytes > settings.max_source_size_bytes:
-        raise KnowledgeIndexError(
-            "KNOWLEDGE_SOURCE_TOO_LARGE",
-            "Source text exceeds max_source_size_bytes.",
-            {"size_bytes": size_bytes, "limit": settings.max_source_size_bytes},
-        )
-    if len(text) > settings.max_total_index_chars_per_source:
-        raise KnowledgeIndexError(
-            "KNOWLEDGE_INDEX_LIMIT_EXCEEDED",
-            "Source text exceeds max_total_index_chars_per_source.",
-            {"chars": len(text), "limit": settings.max_total_index_chars_per_source},
-        )
+    if size_bytes > settings.max_source_size_bytes: raise KnowledgeIndexError("KNOWLEDGE_SOURCE_TOO_LARGE","Source exceeds the configured size limit.")
+    if len(text) > settings.max_total_index_chars_per_source: raise KnowledgeIndexError("KNOWLEDGE_SOURCE_TOO_LARGE","Source exceeds the configured character limit.")
 
 
-ENTITY_TYPE_BY_CATEGORY = {
-    "characters": "Character",
-    "people": "Person",
-    "locations": "Location",
-    "planets": "Planet",
-    "factions": "Faction",
-    "species": "Species",
-    "organizations": "Organization",
-    "items": "Item",
-    "concepts": "Concept",
-    "events": "Event",
-    "episodes": "Episode",
-    "quests": "Quest",
-}
-
-DOCUMENT_SECTION_HEADINGS = {
-    "summary",
-    "overview",
-    "history",
-    "relationships",
-    "abilities",
-    "notes",
-    "background",
-    "role",
-    "role in fallen order",
-    "details",
-}
-COLLECTION_CATEGORY_HEADINGS = set(ENTITY_TYPE_BY_CATEGORY)
-
-
-@dataclass(frozen=True)
-class MarkdownHeading:
-    level: int
-    title: str
-    char_start: int
-    char_end: int
-    line_start: int
-    line_end: int
-    path: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class MarkdownParseResult:
-    frontmatter: dict[str, str]
-    body_start_char: int
-    headings: list[MarkdownHeading]
-    line_starts: list[int]
-
-
-@dataclass(frozen=True)
-class MarkdownSection:
-    heading: MarkdownHeading | None
-    heading_path: str
-    char_start: int
-    char_end: int
-    line_start: int
-    line_end: int
-    content: str
-
-
-@dataclass(frozen=True)
-class ProfileDecision:
-    requested: str
-    effective: str
-    confidence: float
-    document_score: int
-    collection_score: int
-    profile_source: str
-    entity_level: int | None = None
-
-
-def chunk_source_text(
-    text: str,
-    *,
-    settings: KnowledgeSettings,
-    knowledge_base: KnowledgeBase,
-    source_title: str = "",
-    source_uri: str = "",
-    source_chunk_profile: str | None = None,
-    origin_default_chunk_profile: str | None = None,
-) -> list[ChunkDraft]:
-    chunk_size = knowledge_base.chunk_size_override or settings.default_chunk_size
-    chunk_overlap = knowledge_base.chunk_overlap_override if knowledge_base.chunk_overlap_override is not None else settings.default_chunk_overlap
-    if chunk_overlap >= chunk_size:
-        raise KnowledgeIndexError("KNOWLEDGE_INVALID_CHUNKING", "Chunk overlap must be smaller than chunk size.")
-    parse = parse_markdown(text)
-    requested, profile_source = _requested_chunk_profile(
-        parse,
-        source_title=source_title,
-        source_uri=source_uri,
-        text=text,
-        source_chunk_profile=source_chunk_profile,
-        origin_default_chunk_profile=origin_default_chunk_profile,
-        knowledge_base_default_chunk_profile=knowledge_base.default_chunk_profile,
-    )
-    if requested == "plain_text":
-        return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings, profile_source=profile_source)
-    chunks = _markdown_chunks(
-        text,
-        parse=parse,
-        requested_profile=requested,
-        profile_source=profile_source,
-        source_title=source_title,
-        source_uri=source_uri,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        settings=settings,
-    )
-    if chunks:
-        return chunks
-    if parse.headings or parse.frontmatter:
-        return chunks
-    return _plain_text_chunks(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap, settings=settings, profile_source="fallback")
-
-
-def _plain_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int, settings: KnowledgeSettings, profile_source: str = "fallback") -> list[ChunkDraft]:
-    chunks: list[ChunkDraft] = []
-    start = 0
-    text_length = len(text)
-    while start < text_length:
-        end = min(start + chunk_size, text_length)
-        content = text[start:end]
-        chunks.append(
-            ChunkDraft(
-                chunk_index=len(chunks),
-                heading_path="",
-                content=content,
-                char_start=start,
-                char_end=end,
-                token_count=max(1, round(len(content) / 4)),
-                content_hash=source_content_hash(content),
-                metadata={
-                    "chunk_profile_requested": "plain_text",
-                    "chunk_profile_effective": "plain_text",
-                    "chunk_profile_confidence": 1.0,
-                    "profile_source": profile_source,
-                },
-            )
-        )
-        if end >= text_length:
-            break
-        start = end - chunk_overlap
-    if len(chunks) > settings.max_chunks_per_source:
-        raise KnowledgeIndexError(
-            "KNOWLEDGE_TOO_MANY_CHUNKS",
-            "Source text produced too many chunks.",
-            {"chunks": len(chunks), "limit": settings.max_chunks_per_source},
-        )
+def chunk_source_text(text: str, *, settings: KnowledgeSettings, knowledge_base: KnowledgeBase, source_title: str = "", source_uri: str = "") -> list[ChunkDraft]:
+    size = settings.default_chunk_size
+    overlap = settings.default_chunk_overlap
+    if overlap >= size: raise KnowledgeIndexError("KNOWLEDGE_INVALID_CHUNKING","Chunk overlap must be smaller than chunk size.")
+    chunks=[]; start=0
+    while start < len(text):
+        end=min(len(text),start+size); content=text[start:end]; heading=_heading_at(text,start)
+        chunks.append(ChunkDraft(len(chunks),heading,content,start,end,max(1,round(len(content)/4)),source_content_hash(content),{"chunk_size":size,"chunk_overlap":overlap}))
+        if end>=len(text): break
+        start=end-overlap
+    if len(chunks)>settings.max_chunks_per_source: raise KnowledgeIndexError("KNOWLEDGE_TOO_MANY_CHUNKS","Source text produced too many chunks.",{"chunks":len(chunks)})
     return chunks
 
 
-def parse_markdown(text: str) -> MarkdownParseResult:
-    frontmatter: dict[str, str] = {}
-    body_start_char = 0
-    lines = text.splitlines(keepends=True)
-    line_starts: list[int] = []
-    offset = 0
-    for line in lines:
-        line_starts.append(offset)
-        offset += len(line)
-    if text and (not lines or offset < len(text)):
-        line_starts.append(offset)
-
-    if lines and lines[0].strip() == "---":
-        fm_end_index: int | None = None
-        for index in range(1, len(lines)):
-            if lines[index].strip() in {"---", "..."}:
-                fm_end_index = index
-                break
-        if fm_end_index is not None:
-            raw_frontmatter = "".join(lines[1:fm_end_index])
-            frontmatter = _parse_simple_frontmatter(raw_frontmatter)
-            body_start_char = sum(len(line) for line in lines[: fm_end_index + 1])
-
-    headings: list[MarkdownHeading] = []
-    stack: list[MarkdownHeading] = []
-    in_fence = False
-    fence_marker = ""
-    fence_re = re.compile(r"^[ \t]{0,3}(```+|~~~+)")
-    heading_re = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
-    for line_number, line in enumerate(lines, start=1):
-        char_start = line_starts[line_number - 1]
-        if char_start < body_start_char:
-            continue
-        stripped = line.rstrip("\r\n")
-        fence_match = fence_re.match(stripped)
-        if fence_match:
-            marker = fence_match.group(1)
-            marker_kind = marker[0]
-            if not in_fence:
-                in_fence = True
-                fence_marker = marker_kind
-            elif marker_kind == fence_marker:
-                in_fence = False
-                fence_marker = ""
-            continue
-        if in_fence:
-            continue
-        match = heading_re.match(stripped)
-        if not match:
-            continue
-        level = len(match.group(1))
-        title = _clean_heading_title(match.group(2))
-        if not title:
-            continue
-        while stack and stack[-1].level >= level:
-            stack.pop()
-        path = tuple([item.title for item in stack] + [title])
-        heading = MarkdownHeading(
-            level=level,
-            title=title,
-            char_start=char_start,
-            char_end=char_start + len(line),
-            line_start=line_number,
-            line_end=line_number,
-            path=path,
-        )
-        headings.append(heading)
-        stack.append(heading)
-    return MarkdownParseResult(frontmatter=frontmatter, body_start_char=body_start_char, headings=headings, line_starts=line_starts)
-
-
-def _parse_simple_frontmatter(raw: str) -> dict[str, str]:
-    data: dict[str, str] = {}
-    for line in raw.splitlines():
-        if ":" not in line or line.lstrip().startswith("#"):
-            continue
-        key, value = line.split(":", 1)
-        clean_key = key.strip()
-        if not clean_key:
-            continue
-        clean_value = value.strip().strip("\"'")
-        data[clean_key] = clean_value
-    return data
-
-
-def _markdown_chunks(
-    text: str,
-    *,
-    parse: MarkdownParseResult,
-    requested_profile: str,
-    profile_source: str,
-    source_title: str,
-    source_uri: str,
-    chunk_size: int,
-    chunk_overlap: int,
-    settings: KnowledgeSettings,
-) -> list[ChunkDraft]:
-    decision = _profile_decision(requested_profile, parse=parse, source_title=source_title, source_uri=source_uri, profile_source=profile_source)
-    document_title = _document_title(parse=parse, source_title=source_title)
-    source_path = _source_path(source_title=source_title, source_uri=source_uri)
-    if decision.effective == "markdown_collection":
-        entity_level = _collection_entity_level(parse.headings)
-        decision = ProfileDecision(
-            requested=decision.requested,
-            effective=decision.effective,
-            confidence=decision.confidence,
-            document_score=decision.document_score,
-            collection_score=decision.collection_score,
-            profile_source=decision.profile_source,
-            entity_level=entity_level,
-        )
-        sections = _collection_sections(text, parse=parse, entity_level=entity_level)
-    else:
-        sections = _document_sections(text, parse=parse)
-    drafts: list[ChunkDraft] = []
-    for section in sections:
-        if not section.content.strip() or not _has_non_heading_body(section.content):
-            continue
-        metadata_base = _section_metadata(
-            section=section,
-            parse=parse,
-            decision=decision,
-            document_title=document_title,
-            source_title=source_title,
-            source_path=source_path,
-        )
-        drafts.extend(
-            _split_section(
-                section,
-                metadata_base=metadata_base,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                start_index=len(drafts),
-            )
-        )
-    if len(drafts) > settings.max_chunks_per_source:
-        raise KnowledgeIndexError(
-            "KNOWLEDGE_TOO_MANY_CHUNKS",
-            "Source text produced too many chunks.",
-            {"chunks": len(drafts), "limit": settings.max_chunks_per_source},
-        )
-    return drafts
-
-
-def _requested_chunk_profile(
-    parse: MarkdownParseResult,
-    *,
-    source_title: str,
-    source_uri: str,
-    text: str,
-    source_chunk_profile: str | None,
-    origin_default_chunk_profile: str | None,
-    knowledge_base_default_chunk_profile: str | None,
-) -> tuple[str, str]:
-    override = str(parse.frontmatter.get("chunk_profile") or "").strip()
-    if override:
-        if override not in VALID_CHUNK_PROFILES:
-            raise KnowledgeIndexError(
-                "KNOWLEDGE_INVALID_CHUNK_PROFILE",
-                "Frontmatter chunk_profile must be plain_text, markdown_document, markdown_collection, or markdown_auto.",
-                {"chunk_profile": override},
-            )
-        return override, "frontmatter"
-    if source_chunk_profile:
-        _validate_profile(source_chunk_profile, "Source chunk profile")
-        return source_chunk_profile, "source_override"
-    if origin_default_chunk_profile:
-        _validate_profile(origin_default_chunk_profile, "Origin default chunk profile")
-        return origin_default_chunk_profile, "origin_default"
-    if knowledge_base_default_chunk_profile:
-        _validate_profile(knowledge_base_default_chunk_profile, "Knowledge base default chunk profile")
-        return knowledge_base_default_chunk_profile, "kb_default"
-    if _looks_like_markdown(source_title=source_title, source_uri=source_uri, text=text, parse=parse):
-        return "markdown_auto", "auto_detector"
-    return "markdown_document", "fallback"
-
-
-def _validate_profile(value: str, label: str) -> None:
-    if value not in VALID_CHUNK_PROFILES:
-        raise KnowledgeIndexError(
-            "KNOWLEDGE_INVALID_CHUNK_PROFILE",
-            f"{label} must be plain_text, markdown_document, markdown_collection, or markdown_auto.",
-            {"chunk_profile": value},
-        )
-
-
-def _normalize_virtual_folder_path(value: str) -> str:
-    raw = value.strip().replace("\\", "/")
-    if not raw:
-        return ""
-    parts = [part.strip() for part in raw.split("/") if part.strip() and part.strip() not in {".", ".."}]
-    return "/".join(re.sub(r"[^A-Za-z0-9._ -]+", "-", part).strip(" .") or "folder" for part in parts)
-
-
-def _safe_virtual_file_name(title: str, suffix: str) -> str:
-    base = Path(title.strip() or "source").name
-    safe = re.sub(r"[^A-Za-z0-9._ -]+", "-", base).strip(" .") or "source"
-    return safe if Path(safe).suffix else f"{safe}{suffix}"
-
-
-def _looks_like_markdown(*, source_title: str, source_uri: str, text: str, parse: MarkdownParseResult) -> bool:
-    lower_title = source_title.lower()
-    lower_uri = source_uri.lower()
-    if lower_title.endswith((".md", ".markdown")) or lower_uri.endswith((".md", ".markdown")):
-        return True
-    if parse.frontmatter:
-        return True
-    if parse.headings:
-        return True
-    return bool(re.search(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+\S", text))
-
-
-def _profile_decision(requested_profile: str, *, parse: MarkdownParseResult, source_title: str, source_uri: str, profile_source: str) -> ProfileDecision:
-    if requested_profile in {"plain_text", "markdown_document", "markdown_collection"}:
-        return ProfileDecision(requested=requested_profile, effective=requested_profile, confidence=1.0, document_score=0, collection_score=0, profile_source=profile_source)
-    document_score, collection_score = _profile_scores(parse=parse, source_title=source_title, source_uri=source_uri)
-    diff = collection_score - document_score
-    if collection_score >= 3 and diff >= 2:
-        confidence = min(0.95, 0.55 + (diff * 0.1))
-        return ProfileDecision("markdown_auto", "markdown_collection", confidence, document_score, collection_score, profile_source)
-    confidence = 0.55 if abs(diff) <= 1 else min(0.9, 0.55 + (abs(diff) * 0.08))
-    return ProfileDecision("markdown_auto", "markdown_document", confidence, document_score, collection_score, profile_source)
-
-
-def _profile_scores(*, parse: MarkdownParseResult, source_title: str, source_uri: str) -> tuple[int, int]:
-    document_score = 0
-    collection_score = 0
-    filename_title = _titleized_filename(_source_path(source_title=source_title, source_uri=source_uri))
-    h1 = next((heading.title for heading in parse.headings if heading.level == 1), "")
-    if h1 and filename_title and _similar_title(h1, filename_title):
-        document_score += 2
-    if _path_entity_type(_source_path(source_title=source_title, source_uri=source_uri)) != "Document":
-        document_score += 2
-    for heading in parse.headings:
-        normalized = _normalize_label(heading.title)
-        if heading.level in {2, 3} and normalized in DOCUMENT_SECTION_HEADINGS:
-            document_score += 1
-        if normalized in COLLECTION_CATEGORY_HEADINGS:
-            collection_score += 2
-    sibling_groups: dict[tuple[int, tuple[str, ...]], list[MarkdownHeading]] = {}
-    for heading in parse.headings:
-        parent = heading.path[:-1]
-        sibling_groups.setdefault((heading.level, parent), []).append(heading)
-    for (_level, parent), siblings in sibling_groups.items():
-        if len(siblings) >= 2 and parent and all(len(item.title.split()) <= 5 for item in siblings):
-            collection_score += 2
-            parent_label = _normalize_label(parent[-1])
-            if parent_label in COLLECTION_CATEGORY_HEADINGS:
-                collection_score += 2
-    source_path = _source_path(source_title=source_title, source_uri=source_uri).lower()
-    stem = Path(source_path.replace("\\", "/")).stem
-    if stem in COLLECTION_CATEGORY_HEADINGS or (stem and _path_entity_type(source_path) == "Document" and "-" in stem):
-        collection_score += 1
-    return document_score, collection_score
-
-
-def _document_title(*, parse: MarkdownParseResult, source_title: str) -> str:
-    fm_title = str(parse.frontmatter.get("title") or "").strip()
-    if fm_title:
-        return fm_title
-    h1 = next((heading.title for heading in parse.headings if heading.level == 1), "")
-    return h1 or _titleized_filename(source_title) or (source_title.strip() or "Document")
-
-
-def _document_sections(text: str, *, parse: MarkdownParseResult) -> list[MarkdownSection]:
-    headings = parse.headings
-    if not headings:
-        body = text[parse.body_start_char :]
-        return [
-            MarkdownSection(
-                heading=None,
-                heading_path="",
-                char_start=parse.body_start_char,
-                char_end=len(text),
-                line_start=_line_for_char(parse.line_starts, parse.body_start_char),
-                line_end=_line_for_char(parse.line_starts, len(text)),
-                content=body,
-            )
-        ]
-    sections: list[MarkdownSection] = []
-    if parse.body_start_char < headings[0].char_start and text[parse.body_start_char : headings[0].char_start].strip():
-        sections.append(
-            MarkdownSection(
-                heading=None,
-                heading_path="",
-                char_start=parse.body_start_char,
-                char_end=headings[0].char_start,
-                line_start=_line_for_char(parse.line_starts, parse.body_start_char),
-                line_end=max(_line_for_char(parse.line_starts, headings[0].char_start) - 1, 1),
-                content=text[parse.body_start_char : headings[0].char_start],
-            )
-        )
-    for index, heading in enumerate(headings):
-        next_start = headings[index + 1].char_start if index + 1 < len(headings) else len(text)
-        sections.append(
-            MarkdownSection(
-                heading=heading,
-                heading_path=" > ".join(heading.path),
-                char_start=heading.char_start,
-                char_end=next_start,
-                line_start=heading.line_start,
-                line_end=_line_for_char(parse.line_starts, next_start),
-                content=text[heading.char_start : next_start],
-            )
-        )
-    return sections
-
-
-def _collection_sections(text: str, *, parse: MarkdownParseResult, entity_level: int) -> list[MarkdownSection]:
-    sections: list[MarkdownSection] = []
-    entity_headings = [heading for heading in parse.headings if heading.level == entity_level]
-    for heading in entity_headings:
-        end = len(text)
-        for candidate in parse.headings:
-            if candidate.char_start <= heading.char_start:
-                continue
-            if candidate.level <= entity_level:
-                end = candidate.char_start
-                break
-        sections.append(
-            MarkdownSection(
-                heading=heading,
-                heading_path=" > ".join(heading.path),
-                char_start=heading.char_start,
-                char_end=end,
-                line_start=heading.line_start,
-                line_end=_line_for_char(parse.line_starts, end),
-                content=text[heading.char_start:end],
-            )
-        )
-    return sections or _document_sections(text, parse=parse)
-
-
-def _collection_entity_level(headings: list[MarkdownHeading]) -> int:
-    for category_level, entity_level in ((2, 3), (1, 2)):
-        categories = [heading for heading in headings if heading.level == category_level and _normalize_label(heading.title) in COLLECTION_CATEGORY_HEADINGS]
-        for category in categories:
-            children = [heading for heading in headings if heading.level == entity_level and heading.path[:-1] == category.path]
-            if len(children) >= 2:
-                return entity_level
-        if categories:
-            return entity_level
-    levels = sorted({heading.level for heading in headings})
-    return levels[1] if len(levels) > 1 else (levels[0] if levels else 1)
-
-
-def _section_metadata(
-    *,
-    section: MarkdownSection,
-    parse: MarkdownParseResult,
-    decision: ProfileDecision,
-    document_title: str,
-    source_title: str,
-    source_path: str,
-) -> dict[str, Any]:
-    fm_type = str(parse.frontmatter.get("type") or "").strip()
-    if decision.effective == "markdown_collection" and section.heading is not None:
-        chunk_title = section.heading.title
-        title_source = "heading"
-        parent = section.heading.path[-2] if len(section.heading.path) >= 2 else ""
-        entity_type = fm_type or _entity_type_from_category(parent) or "Document"
-        type_source = "frontmatter" if fm_type else ("parent_heading" if _entity_type_from_category(parent) else "fallback")
-    else:
-        chunk_title = document_title
-        title_source = "frontmatter" if parse.frontmatter.get("title") else ("h1" if any(h.level == 1 for h in parse.headings) else "filename")
-        entity_type = fm_type or _path_entity_type(source_path) or "Document"
-        type_source = "frontmatter" if fm_type else ("path" if _path_entity_type(source_path) != "Document" else "fallback")
-    return {
-        "chunk_title": chunk_title,
-        "document_title": document_title,
-        "entity_type": entity_type,
-        "heading_path": section.heading_path,
-        "line_start": section.line_start,
-        "line_end": section.line_end,
-        "char_start": section.char_start,
-        "char_end": section.char_end,
-        "chunk_profile_requested": decision.requested,
-        "chunk_profile_effective": decision.effective,
-        "chunk_profile_confidence": round(decision.confidence, 3),
-        "profile_source": decision.profile_source,
-        "entity_level": decision.entity_level,
-        "title_source": title_source,
-        "type_source": type_source,
-        "path": source_path or source_title,
-    }
-
-
-def _split_section(
-    section: MarkdownSection,
-    *,
-    metadata_base: dict[str, Any],
-    chunk_size: int,
-    chunk_overlap: int,
-    start_index: int,
-) -> list[ChunkDraft]:
-    drafts: list[ChunkDraft] = []
-    section_length = section.char_end - section.char_start
-    local_start = 0
-    while local_start < section_length:
-        local_end = _choose_split_end(section.content, local_start=local_start, section_length=section_length, chunk_size=chunk_size)
-        char_start = section.char_start + local_start
-        char_end = section.char_start + local_end
-        content = section.content[local_start:local_end]
-        metadata = {
-            **metadata_base,
-            "line_start": _line_for_char_from_section(section, char_start),
-            "line_end": _line_for_char_from_section(section, char_end),
-            "char_start": char_start,
-            "char_end": char_end,
-        }
-        drafts.append(
-            ChunkDraft(
-                chunk_index=start_index + len(drafts),
-                heading_path=section.heading_path,
-                content=content,
-                char_start=char_start,
-                char_end=char_end,
-                token_count=max(1, round(len(content) / 4)),
-                content_hash=source_content_hash(content),
-                metadata=metadata,
-            )
-        )
-        if local_end >= section_length:
-            break
-        next_start = max(local_start + 1, local_end - chunk_overlap)
-        local_start = _choose_overlap_start(
-            section.content,
-            target_start=next_start,
-            current_start=local_start,
-            local_end=local_end,
-            section_length=section_length,
-        )
-    return drafts
-
-
-_HEADING_LINE_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+\S.*?[ \t]*#*[ \t]*$")
-_SENTENCE_BOUNDARY_RE = re.compile(r"[.!?;:。！？；：][ \t\r\n]+")
-
-
-def _has_non_heading_body(content: str) -> bool:
-    for line in content.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if _HEADING_LINE_RE.match(line.rstrip("\r\n")):
-            continue
-        return True
-    return False
-
-
-def _choose_split_end(content: str, *, local_start: int, section_length: int, chunk_size: int) -> int:
-    target = min(local_start + chunk_size, section_length)
-    if target >= section_length:
-        return section_length
-    min_length = max(1, min(chunk_size // 2, chunk_size - 1))
-    min_end = min(target, local_start + min_length)
-    for boundary in _split_boundary_candidates(content, local_start=local_start, target=target, min_end=min_end):
-        if boundary > local_start:
-            return boundary
-    return target
-
-
-def _split_boundary_candidates(content: str, *, local_start: int, target: int, min_end: int) -> list[int]:
-    window = content[min_end:target]
-    ranked: list[int] = []
-    for marker in ("\n\n", "\r\n\r\n"):
-        index = window.rfind(marker)
-        if index >= 0:
-            ranked.append(min_end + index + len(marker))
-    if ranked:
-        return _valid_boundaries(ranked, local_start=local_start, target=target)
-
-    newline = max(window.rfind("\n"), window.rfind("\r"))
-    if newline >= 0:
-        return _valid_boundaries([min_end + newline + 1], local_start=local_start, target=target)
-
-    sentence = None
-    for match in _SENTENCE_BOUNDARY_RE.finditer(window):
-        sentence = min_end + match.end()
-    if sentence is not None:
-        return _valid_boundaries([sentence], local_start=local_start, target=target)
-
-    whitespace = None
-    for index in range(len(window) - 1, -1, -1):
-        if window[index].isspace():
-            whitespace = min_end + index + 1
-            break
-    if whitespace is not None:
-        return _valid_boundaries([whitespace], local_start=local_start, target=target)
-    return []
-
-
-def _valid_boundaries(candidates: list[int], *, local_start: int, target: int) -> list[int]:
-    return sorted({candidate for candidate in candidates if local_start < candidate <= target}, reverse=True)
-
-
-def _choose_overlap_start(
-    content: str,
-    *,
-    target_start: int,
-    current_start: int,
-    local_end: int,
-    section_length: int,
-) -> int:
-    if target_start >= section_length:
-        return section_length
-    lower = max(current_start + 1, target_start - 24)
-    upper = min(local_end - 1, section_length - 1, target_start + 24)
-    if lower > upper:
-        return target_start
-    for candidate in _overlap_boundary_candidates(content, lower=lower, upper=upper, target=target_start):
-        if current_start < candidate < section_length:
-            return candidate
-    return target_start
-
-
-def _overlap_boundary_candidates(content: str, *, lower: int, upper: int, target: int) -> list[int]:
-    candidates: list[int] = []
-    for marker in ("\n\n", "\r\n\r\n"):
-        search_start = lower
-        while True:
-            index = content.find(marker, search_start, upper + len(marker))
-            if index < 0:
-                break
-            candidate = index + len(marker)
-            if lower <= candidate <= upper:
-                candidates.append(candidate)
-            search_start = index + 1
-    for index in range(lower, upper + 1):
-        if content[index - 1 : index + 1] in {"\n", "\r"} or content[index - 1 : index + 1].endswith("\n") or content[index - 1 : index + 1].endswith("\r"):
-            candidates.append(index)
-        previous = content[index - 1] if index > 0 else ""
-        current = content[index] if index < len(content) else ""
-        if previous in ".!?;:。！？；：" and current.isspace():
-            candidates.append(index + 1 if index + 1 <= upper else index)
-        if current.isspace():
-            candidates.append(index + 1 if index + 1 <= upper else index)
-    return sorted({candidate for candidate in candidates if lower <= candidate <= upper}, key=lambda value: abs(value - target))
-
-
 def build_embedding_input(source_title: str, chunk: ChunkDraft) -> str:
-    metadata = chunk.metadata or {}
-    chunk_title = str(metadata.get("chunk_title") or source_title or "").strip()
-    document_title = str(metadata.get("document_title") or "").strip()
-    entity_type = str(metadata.get("entity_type") or "").strip()
-    path = str(metadata.get("path") or source_title or "").strip()
-    heading_path = str(metadata.get("heading_path") or chunk.heading_path or "").strip()
-    header = [f"Title: {chunk_title}" if chunk_title else ""]
-    if document_title and document_title != chunk_title:
-        header.append(f"Document: {document_title}")
-    if entity_type:
-        header.append(f"Type: {entity_type}")
-    if path:
-        header.append(f"Path: {path}")
-    if heading_path:
-        header.append(f"Section: {heading_path}")
-    return "\n".join([part for part in header if part] + ["", chunk.content])
+    return f"{source_title}\n{chunk.heading_path}\n{chunk.content}".strip()
 
 
 def build_search_text(title: str, heading_path: str, content: str, metadata: dict[str, Any] | None = None) -> str:
-    metadata = metadata or {}
-    base = "\n".join(
-        part
-        for part in [
-            str(metadata.get("chunk_title") or ""),
-            str(metadata.get("document_title") or ""),
-            str(metadata.get("entity_type") or ""),
-            title,
-            heading_path,
-            content,
-        ]
-        if part
-    )
-    bigrams = _cjk_bigrams(base)
-    return f"{base}\n{' '.join(bigrams)}" if bigrams else base
+    return "\n".join(item for item in (title,heading_path,content) if item)
 
 
-def embed_chunks(
-    *,
-    backend: Any,
-    profile: EmbeddingModelProfile,
-    chunks: list[ChunkDraft],
-    device: str,
-    provider_profile_store: Any | None = None,
-    repo_root: Any | None = None,
-) -> dict:
-    return embed_texts(
-        backend=backend,
-        profile=profile,
-        texts=[build_embedding_input("", chunk) for chunk in chunks],
-        purpose="document",
-        device=device,
-        provider_profile_store=provider_profile_store,
-        repo_root=repo_root,
-    )
+def embed_chunks(*, backend: Any, profile: EmbeddingModelProfile, chunks: list[ChunkDraft], settings: KnowledgeSettings, provider_profile_store: Any = None, repo_root: Any = None) -> dict[str, Any]:
+    try:
+        result=embed_texts(backend=backend,profile=profile,texts=[build_embedding_input("",c) for c in chunks],purpose="document",device=settings.local_model_device,provider_profile_store=provider_profile_store,repo_root=repo_root)
+    except Exception as exc:
+        if isinstance(exc,KnowledgeModelError): raise KnowledgeIndexError(exc.code,exc.message,exc.details) from exc
+        raise
+    return result
 
 
-def model_error_to_index_error(exc: KnowledgeModelError) -> KnowledgeIndexError:
-    return KnowledgeIndexError(exc.code, exc.message, exc.details)
+def model_error_to_index_error(exc: KnowledgeModelError) -> KnowledgeIndexError: return KnowledgeIndexError(exc.code,exc.message,exc.details)
 
 
-def _cjk_bigrams(text: str) -> list[str]:
-    tokens: list[str] = []
-    for run in re.findall(r"[\u3400-\u9fff\u3040-\u30ff]+", text):
-        tokens.extend(run[index : index + 2] for index in range(0, max(0, len(run) - 1)))
-    return tokens
-
-
-def _clean_heading_title(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip().strip("#").strip())
-
-
-def _normalize_label(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-
-
-def _entity_type_from_category(value: str) -> str | None:
-    return ENTITY_TYPE_BY_CATEGORY.get(_normalize_label(value).replace(" ", ""))
-
-
-def _path_entity_type(source_path: str) -> str:
-    normalized = source_path.replace("\\", "/").lower()
-    parts = [part for part in normalized.split("/") if part]
-    for part in parts[:-1]:
-        mapped = _entity_type_from_category(part)
-        if mapped:
-            return mapped
-    return "Document"
-
-
-def _source_path(*, source_title: str, source_uri: str) -> str:
-    title = source_title.strip()
-    if "/" in title or "\\" in title or title.lower().endswith((".md", ".markdown", ".txt")):
-        return title
-    uri = source_uri.strip()
-    return uri or title
-
-
-def _titleized_filename(path: str) -> str:
-    name = Path(path.replace("\\", "/")).name or path
-    stem = re.sub(r"\.(md|markdown|txt)$", "", name, flags=re.IGNORECASE)
-    words = [word for word in re.split(r"[-_\s]+", stem) if word]
-    return " ".join(word[:1].upper() + word[1:] for word in words)
-
-
-def _similar_title(left: str, right: str) -> bool:
-    left_norm = re.sub(r"[^a-z0-9]+", "", left.lower())
-    right_norm = re.sub(r"[^a-z0-9]+", "", right.lower())
-    return bool(left_norm and right_norm and (left_norm == right_norm or left_norm in right_norm or right_norm in left_norm))
-
-
-def _line_for_char(line_starts: list[int], char_offset: int) -> int:
-    line = 1
-    for index, start in enumerate(line_starts, start=1):
-        if start > char_offset:
-            break
-        line = index
-    return line
-
-
-def _line_for_char_from_section(section: MarkdownSection, char_offset: int) -> int:
-    if char_offset <= section.char_start:
-        return section.line_start
-    prefix = section.content[: max(0, char_offset - section.char_start)]
-    return section.line_start + prefix.count("\n")
+def _heading_at(text: str, offset: int) -> str:
+    headings=[]
+    for match in re.finditer(r"(?m)^\s*(#{1,6})\s+(.+?)\s*$",text):
+        if match.start()<=offset: headings.append(match.group(2).strip())
+    return " > ".join(headings[-3:])

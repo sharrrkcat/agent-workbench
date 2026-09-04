@@ -1,2 +1,1 @@
-"""Core schemas, manifest loading, and registries."""
-
+"""Core services for ordinary chat, persistence, and local context."""

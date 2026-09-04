@@ -19,8 +19,7 @@ class WorldbookSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int = 1
-    worldbook_enabled_for_prompt_agents: StrictBool = True
-    worldbook_enabled_for_script_agents: StrictBool = False
+    worldbook_enabled: StrictBool = True
     worldbook_max_entries_per_call: int = Field(default=20, ge=1, le=200)
     worldbook_max_context_chars: int = Field(default=8000, ge=1000, le=200000)
     worldbook_regex_case_insensitive: StrictBool = True
@@ -34,8 +33,7 @@ class WorldbookSettings(BaseModel):
 class WorldbookSettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    worldbook_enabled_for_prompt_agents: StrictBool | None = None
-    worldbook_enabled_for_script_agents: StrictBool | None = None
+    worldbook_enabled: StrictBool | None = None
     worldbook_max_entries_per_call: int | None = Field(default=None, ge=1, le=200)
     worldbook_max_context_chars: int | None = Field(default=None, ge=1000, le=200000)
     worldbook_regex_case_insensitive: StrictBool | None = None

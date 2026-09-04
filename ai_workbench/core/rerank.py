@@ -1,119 +1,47 @@
-from pathlib import Path
-from typing import Any
+"""Optional post-retrieval reranking boundary.
 
-from ai_workbench.core.knowledge_models import KnowledgeModelError, LocalKnowledgeModelBackend
-from ai_workbench.core.knowledge_store import RerankerModelProfile
-from ai_workbench.core.provider_inventory import resolve_internal_reranker_model_ref
-from ai_workbench.core.provider_runtime import provider_runtime_settings
-from ai_workbench.core.schema.llm_profile import ProviderProfileSchema
+Phase 1 deliberately has no model-profile store for reranking. Retrieval is
+always useful with deterministic RRF ordering; callers may provide a small
+callable in a later phase, and failures are represented as metadata instead
+of escaping into the chat path.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Sequence
 
 
-RERANKER_PROVIDER_NOT_CONFIGURED = "KNOWLEDGE_RERANKER_PROVIDER_NOT_CONFIGURED"
-RERANKER_PROVIDER_UNSUPPORTED = "KNOWLEDGE_RERANKER_PROVIDER_UNSUPPORTED"
-INTERNAL_RERANKER_UNAVAILABLE = "KNOWLEDGE_INTERNAL_RERANKER_UNAVAILABLE"
+RERANK_FALLBACK_KEY = "rerank_fallback"
 
 
 def rerank_documents(
+    documents: Sequence[dict[str, Any]],
     *,
-    backend: LocalKnowledgeModelBackend,
-    model_path: str,
-    query: str,
-    documents: list[dict[str, str]],
-    device: str,
-) -> dict:
-    return {
-        "ok": True,
-        "model_path": model_path,
-        "results": backend.rerank(model_path, query, documents, device=device),
-    }
+    query: str = "",
+    reranker: Callable[..., Sequence[dict[str, Any]]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Return reranked documents and stable diagnostic metadata.
 
+    ``reranker`` is intentionally an injected callable rather than a profile
+    or registry lookup. If it is absent or raises, the original order is
+    returned and ``rerank_fallback`` is true.
+    """
 
-def rerank_with_profile(
-    *,
-    backend: LocalKnowledgeModelBackend,
-    profile: RerankerModelProfile,
-    provider_profile_store: Any,
-    query: str,
-    documents: list[dict[str, str]],
-    device: str,
-    repo_root: Path | None = None,
-) -> dict:
-    if not profile.enabled:
-        raise KnowledgeModelError("KNOWLEDGE_RERANKER_MODEL_DISABLED", "Reranker model profile is disabled.", {"model_profile_id": profile.id})
+    original = [dict(item) for item in documents]
+    if reranker is None:
+        return original, {RERANK_FALLBACK_KEY: True, "reranker_used": False}
     try:
-        provider: ProviderProfileSchema = provider_profile_store.get(profile.provider_profile_id)
-    except KeyError as exc:
-        raise KnowledgeModelError(
-            RERANKER_PROVIDER_NOT_CONFIGURED,
-            "Reranker provider profile was not found.",
-            {"provider_profile_id": profile.provider_profile_id},
-        ) from exc
-    if not provider.enabled:
-        raise KnowledgeModelError(
-            RERANKER_PROVIDER_NOT_CONFIGURED,
-            "Reranker provider profile is disabled.",
-            {"provider_profile_id": provider.id},
-        )
-    if provider.provider == "internal_transformers":
-        try:
-            resolve_internal_reranker_model_ref(provider.provider, profile.provider_model_id, repo_root)
-            model_path = legacy_model_path_for_reranker_ref(profile.provider_model_id)
-            runtime = provider_runtime_settings(provider, legacy_device=device)
-            result = rerank_documents(backend=backend, model_path=model_path, query=query, documents=documents, device=runtime["local_runtime_device"])
-            result.update({"model_profile_id": profile.id, "provider_profile_id": provider.id, "provider": provider.provider, "provider_model_id": profile.provider_model_id})
-            return result
-        except KnowledgeModelError:
-            raise
-        except Exception as exc:
-            raise KnowledgeModelError(INTERNAL_RERANKER_UNAVAILABLE, str(exc), {"provider_profile_id": provider.id, "provider_model_id": profile.provider_model_id}) from exc
-    if provider.provider == "internal_llama_cpp":
-        return _rerank_with_llama_cpp(backend=backend, profile=profile, provider=provider, query=query, documents=documents, repo_root=repo_root)
-    raise KnowledgeModelError(
-        RERANKER_PROVIDER_UNSUPPORTED,
-        f"Provider does not support reranking: {provider.provider}",
-        {"provider_profile_id": provider.id, "provider": provider.provider},
-    )
-
-
-def legacy_model_path_for_reranker_ref(model_ref: str) -> str:
-    normalized = str(model_ref or "").strip()
-    if not normalized.startswith("reranker/"):
-        raise ValueError("Reranker provider model id must start with reranker/.")
-    return "rerankers/" + normalized.removeprefix("reranker/")
-
-
-def unload_model_path_for_reranker_profile(profile: RerankerModelProfile, provider: ProviderProfileSchema | None = None) -> str:
-    if provider is not None and provider.provider == "internal_transformers" and profile.provider_model_id:
-        return legacy_model_path_for_reranker_ref(profile.provider_model_id)
-    return ""
-
-
-def _rerank_with_llama_cpp(
-    *,
-    backend: LocalKnowledgeModelBackend,
-    profile: RerankerModelProfile,
-    provider: ProviderProfileSchema,
-    query: str,
-    documents: list[dict[str, str]],
-    repo_root: Path | None,
-) -> dict:
-    try:
-        model_path = resolve_internal_reranker_model_ref(provider.provider, profile.provider_model_id, repo_root)
-        runtime = provider_runtime_settings(provider)
-        rerank = getattr(backend, "llama_cpp_rerank", None)
-        if not callable(rerank):
-            raise KnowledgeModelError(INTERNAL_RERANKER_UNAVAILABLE, "llama.cpp reranker backend is not configured.", {"provider_profile_id": provider.id, "provider_model_id": profile.provider_model_id})
-        return {
-            "ok": True,
-            "model_profile_id": profile.id,
-            "provider_profile_id": provider.id,
-            "provider": provider.provider,
-            "provider_model_id": profile.provider_model_id,
-            "results": rerank(model_path, query, documents, gpu_layers=runtime["llama_cpp_gpu_layers"]),
+        value = reranker(query=query, documents=original)
+        result = [dict(item) for item in (value or ())]
+        if not result:
+            return original, {RERANK_FALLBACK_KEY: True, "reranker_used": False}
+        return result, {RERANK_FALLBACK_KEY: False, "reranker_used": True}
+    except Exception as exc:  # pragma: no cover - defensive provider boundary
+        return original, {
+            RERANK_FALLBACK_KEY: True,
+            "reranker_used": False,
+            "rerank_error": str(exc) or "reranker failed",
         }
-    except KnowledgeModelError:
-        raise
-    except ImportError as exc:
-        raise KnowledgeModelError(INTERNAL_RERANKER_UNAVAILABLE, "llama-cpp-python is not installed.", {"provider_profile_id": provider.id, "provider_model_id": profile.provider_model_id}) from exc
-    except Exception as exc:
-        raise KnowledgeModelError(INTERNAL_RERANKER_UNAVAILABLE, str(exc), {"provider_profile_id": provider.id, "provider_model_id": profile.provider_model_id}) from exc
+
+
+__all__ = ["RERANK_FALLBACK_KEY", "rerank_documents"]

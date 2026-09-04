@@ -27,7 +27,7 @@ def build_core_memory_context(
     *,
     app_settings_store: Any = None,
     settings: AppSettings | None = None,
-    source: str,
+    source: str = "chat",
 ) -> CoreMemoryContextResult:
     try:
         resolved = settings or (app_settings_store.get() if app_settings_store is not None else AppSettings())
@@ -38,7 +38,7 @@ def build_core_memory_context(
             warnings=[warning],
         )
 
-    enabled = _enabled_for_source(resolved, source)
+    enabled = bool(getattr(resolved, "core_memory_enabled", True))
     content = str(getattr(resolved, "core_memory_content", "") or "").strip()
     if not enabled:
         return CoreMemoryContextResult(metadata=_metadata(enabled=False, injected=False, content_chars=len(content), skipped_reason="disabled"))
@@ -66,12 +66,6 @@ def append_system_context(messages: list[dict[str, Any]], rendered_text: str) ->
 def context_metadata_for_step(metadata: dict[str, Any]) -> dict[str, Any]:
     allowed = {"enabled", "injected", "content_chars", "skipped_reason", "warnings"}
     return {key: value for key, value in (metadata or {}).items() if key in allowed}
-
-
-def _enabled_for_source(settings: AppSettings, source: str) -> bool:
-    if source == "script_agent":
-        return bool(settings.core_memory_enabled_for_script_agents)
-    return bool(settings.core_memory_enabled_for_prompt_agents)
 
 
 def _metadata(

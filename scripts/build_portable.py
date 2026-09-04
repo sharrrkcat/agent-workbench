@@ -14,7 +14,7 @@ def project_root() -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a minimal portable Agent Workbench folder.")
+    parser = argparse.ArgumentParser(description="Build a minimal portable Workbench folder.")
     parser.add_argument("--zip", action="store_true", help="Also create dist/agent-workbench-portable.zip")
     return parser.parse_args()
 
@@ -52,12 +52,12 @@ def copy_required_files(root: Path, output: Path) -> None:
         if source.is_file():
             shutil.copy2(source, output / filename)
 
-    for dirname in ["ai_workbench", "agents", "capabilities"]:
+    for dirname in ["ai_workbench"]:
         copy_tree(root / dirname, output / dirname)
 
     scripts_dir = output / "scripts"
     scripts_dir.mkdir()
-    for filename in ["run_app.py", "check_agents.py"]:
+    for filename in ["run_app.py"]:
         shutil.copy2(root / "scripts" / filename, scripts_dir / filename)
 
     frontend_dist = root / "frontend" / "dist"

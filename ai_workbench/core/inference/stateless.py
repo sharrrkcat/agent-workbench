@@ -82,7 +82,6 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
                         "capabilities": ["chat_completions"],
                         "profile_id": profile.id,
                         "profile_alias": profile_alias,
-                        "legacy_model_id": _legacy_model_ref(LLM_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "external_inference_enabled": True,
                     }
@@ -100,7 +99,6 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
                         "capabilities": ["embeddings"],
                         "profile_id": profile.id,
                         "profile_alias": profile_alias,
-                        "legacy_model_id": _legacy_model_ref(EMBEDDING_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "external_inference_enabled": True,
                     }
@@ -118,7 +116,6 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
                         "capabilities": ["multimodal_embeddings"],
                         "profile_id": profile.id,
                         "profile_alias": profile_alias,
-                        "legacy_model_id": _legacy_model_ref(MULTIMODAL_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "architecture": profile.architecture,
                         "supported_input_types": profile.supported_input_types,
@@ -140,7 +137,6 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
                         "capabilities": ["vision_tasks"],
                         "profile_id": profile.id,
                         "profile_alias": profile_alias,
-                        "legacy_model_id": _legacy_model_ref(VISION_MODEL_PREFIX, profile),
                         "provider_profile_id": profile.provider_profile_id,
                         "architecture": profile.architecture,
                         "supported_tasks": profile.supported_tasks,
@@ -150,7 +146,7 @@ def list_external_models(state: Any) -> list[dict[str, Any]]:
     return sorted(models, key=lambda item: (item["type"], item["id"]))
 
 
-def create_chat_completion_response(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+async def create_chat_completion_response(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     model_id = _required_model(payload)
     if payload.get("stream") is True:
         raise StatelessInferenceError(InferenceErrorCode.NOT_IMPLEMENTED, status_code=501)
@@ -160,7 +156,11 @@ def create_chat_completion_response(state: Any, payload: dict[str, Any]) -> dict
         if key in payload and payload[key] is not None:
             model_config[key] = payload[key]
     try:
-        raw = state.runtimes.get_runtime("llm").chat(messages=messages, model_config=model_config, stream=False)
+        llm_service = getattr(state, "llm", None)
+        if llm_service is None:
+            raise RuntimeError("LLM service is unavailable.")
+        # The stateless API shares the same explicit LLM service as ChatRunner.
+        raw = await llm_service.chat_response(messages, model_config)
     except Exception as exc:
         raise _provider_exception(exc) from exc
     content, usage, actual_model = _extract_chat_result(raw)
@@ -307,7 +307,6 @@ def _openai_model_item(item: dict[str, Any]) -> dict[str, Any]:
         "capabilities",
         "profile_id",
         "profile_alias",
-        "legacy_model_id",
         "architecture",
         "supported_input_types",
         "dimensions",
@@ -329,10 +328,6 @@ def _profile_alias(profile: Any) -> str | None:
 
 def _model_ref(prefix: str, profile: Any) -> str:
     return f"{prefix}{_profile_alias(profile) or profile.id}"
-
-
-def _legacy_model_ref(prefix: str, profile: Any) -> str:
-    return f"{prefix}{profile.id}"
 
 
 def _provider_enabled(state: Any, provider_profile_id: str | None) -> bool:

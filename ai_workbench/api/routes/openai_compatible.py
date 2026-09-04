@@ -66,7 +66,7 @@ async def create_chat_completion(
     if not isinstance(payload, dict):
         raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
     try:
-        return create_chat_completion_response(state, payload)
+        return await create_chat_completion_response(state, payload)
     except StatelessInferenceError as exc:
         log_stateless_failure(
             state,

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -7,15 +7,16 @@ from ai_workbench.core.time import isoformat_utc, utc_now
 
 
 class Session(BaseModel):
+    """A conversation container with no executable-agent identity."""
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
     title: str = ""
-    default_agent_id: str = "chat"
     context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
-    waiting_run_id: Optional[str] = None
-    llm_profile_id: Optional[str] = None
-    last_announced_llm_profile_id: Optional[str] = None
+    waiting_run_id: str | None = None
+    llm_profile_id: str | None = None
+    last_announced_llm_profile_id: str | None = None
     title_generation_state: Literal["pending", "done", "skipped", "failed", "manual"] = "pending"
     title_generation_metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)

@@ -1,5 +1,1 @@
-"""Schema package marker.
-
-Import concrete schemas from their modules, for example
-`ai_workbench.core.schema.agent.AgentSchema`.
-"""
+"""Public transport schemas for the compact Workbench core."""

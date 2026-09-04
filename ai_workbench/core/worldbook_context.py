@@ -18,7 +18,7 @@ def build_session_worldbook_context(
     worldbook_store: Any,
     session_id: str,
     user_text: str,
-    source: str,
+    source: str = "chat",
 ) -> WorldbookContextResult:
     input_text = str(user_text or "")
     input_empty = not input_text.strip()
@@ -117,9 +117,7 @@ def worldbook_step_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def _enabled_for_source(settings: WorldbookSettings, source: str) -> bool:
-    if source == "script_agent":
-        return bool(settings.worldbook_enabled_for_script_agents)
-    return bool(settings.worldbook_enabled_for_prompt_agents)
+    return bool(getattr(settings, "worldbook_enabled", True))
 
 
 def _render_entries(items: list[dict[str, Any]], settings: WorldbookSettings) -> tuple[str, list[dict[str, Any]], bool]:

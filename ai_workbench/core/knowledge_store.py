@@ -1,54 +1,36 @@
+"""Knowledge domain models and an in-memory knowledge store."""
+
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
+from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
 from ai_workbench.core.time import utc_now
-from ai_workbench.core.knowledge_settings import (
-    ChunkProfile,
-    KnowledgeSettings,
-    KnowledgeSettingsPatch,
-    knowledge_settings_patch_updates,
-)
-
-
-ALIAS_PATTERN_DESCRIPTION = "lowercase letters, numbers, underscores, and hyphens only"
-MAX_KB_ALIASES = 50
-MAX_KB_ALIAS_CHARS = 120
 
 
 def validate_alias(value: str) -> str:
     import re
-
     alias = str(value or "").strip().lower()
-    if not alias:
-        raise ValueError("Alias must not be empty.")
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", alias):
-        raise ValueError(f"Alias must use {ALIAS_PATTERN_DESCRIPTION}.")
+    if not alias or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", alias):
+        raise ValueError("Alias must use lowercase letters, numbers, underscores, and hyphens.")
     return alias
 
 
 def normalize_aliases_text(value: Any) -> str:
-    parts: list[str] = []
-    seen: set[str] = set()
+    seen: set[str] = set(); result: list[str] = []
     for raw in str(value or "").split(","):
-        alias = raw.strip()[:MAX_KB_ALIAS_CHARS]
-        if not alias:
-            continue
-        key = alias.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        parts.append(alias)
-        if len(parts) >= MAX_KB_ALIASES:
-            break
-    return ", ".join(parts)
+        item = raw.strip()[:120]
+        if item and item.casefold() not in seen:
+            seen.add(item.casefold()); result.append(item)
+    return ", ".join(result[:50])
 
 
 class EmbeddingModelProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     alias: str
@@ -67,209 +49,41 @@ class EmbeddingModelProfile(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def _name(cls, value: str) -> str:
-        text = str(value or "").strip()
-        if not text:
-            raise ValueError("Name must not be empty.")
-        return text
-
+    def non_empty_name(cls, value: str) -> str:
+        if not str(value).strip(): raise ValueError("Name must not be empty.")
+        return str(value).strip()
     @field_validator("alias")
     @classmethod
-    def _alias(cls, value: str) -> str:
-        return validate_alias(value)
-
-    @field_validator("document_instruction", "query_instruction", "notes", mode="before")
-    @classmethod
-    def _text(cls, value: Any) -> str:
-        return "" if value is None else str(value)
-
-    @field_validator("model_path", "provider_model_id", mode="before")
-    @classmethod
-    def _path_text(cls, value: Any) -> str:
-        return "" if value is None else str(value).strip()
-
-    @field_validator("provider_profile_id", mode="before")
-    @classmethod
-    def _optional_id(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
+    def valid_alias(cls, value: str) -> str: return validate_alias(value)
 
 
-class EmbeddingModelProfileCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    alias: str
-    model_path: str = ""
-    provider_profile_id: str | None = None
-    provider_model_id: str = ""
-    dimension: int | None = Field(default=None, ge=1)
-    normalize: StrictBool = True
-    document_instruction: str = ""
-    query_instruction: str = ""
-    enabled: StrictBool = True
-    external_inference_enabled: StrictBool = False
-    notes: str = ""
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, value: str) -> str:
-        return EmbeddingModelProfile(name=value, alias="tmp", model_path="embeddings/tmp").name
-
-    @field_validator("alias")
-    @classmethod
-    def _alias(cls, value: str) -> str:
-        return validate_alias(value)
-
-    @field_validator("model_path", "provider_model_id", mode="before")
-    @classmethod
-    def _path_text(cls, value: Any) -> str:
-        return "" if value is None else str(value).strip()
-
-    @field_validator("provider_profile_id", mode="before")
-    @classmethod
-    def _optional_id(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
+class EmbeddingModelProfileCreate(EmbeddingModelProfile):
+    id: str = Field(default_factory=lambda: str(uuid4()))
 
 
 class EmbeddingModelProfilePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     name: str | None = None
     alias: str | None = None
     model_path: str | None = None
     provider_profile_id: str | None = None
     provider_model_id: str | None = None
     dimension: int | None = Field(default=None, ge=1)
-    normalize: StrictBool | None = None
+    normalize: bool | None = None
     document_instruction: str | None = None
     query_instruction: str | None = None
-    enabled: StrictBool | None = None
-    external_inference_enabled: StrictBool | None = None
+    enabled: bool | None = None
+    external_inference_enabled: bool | None = None
     notes: str | None = None
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        text = value.strip()
-        if not text:
-            raise ValueError("Name must not be empty.")
-        return text
-
-    @field_validator("alias")
-    @classmethod
-    def _alias(cls, value: str | None) -> str | None:
-        return validate_alias(value) if value is not None else None
-
-    @field_validator("provider_profile_id", mode="before")
-    @classmethod
-    def _optional_id(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
-
-
-class RerankerModelProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    name: str
-    alias: str
-    provider_profile_id: str
-    provider_model_id: str
-    enabled: StrictBool = True
-    notes: str = ""
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, value: str) -> str:
-        text = str(value or "").strip()
-        if not text:
-            raise ValueError("Name must not be empty.")
-        return text
-
-    @field_validator("alias")
-    @classmethod
-    def _alias(cls, value: str) -> str:
-        return validate_alias(value)
-
-    @field_validator("provider_profile_id", "provider_model_id", mode="before")
-    @classmethod
-    def _required_text(cls, value: Any) -> str:
-        text = str(value or "").strip()
-        if not text:
-            raise ValueError("Provider profile and model ref are required.")
-        return text
-
-    @field_validator("notes", mode="before")
-    @classmethod
-    def _text(cls, value: Any) -> str:
-        return "" if value is None else str(value)
-
-
-class RerankerModelProfileCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    alias: str
-    provider_profile_id: str
-    provider_model_id: str
-    enabled: StrictBool = True
-    notes: str = ""
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, value: str) -> str:
-        return RerankerModelProfile(name=value, alias="tmp", provider_profile_id="provider", provider_model_id="reranker/tmp").name
-
-    @field_validator("alias")
-    @classmethod
-    def _alias(cls, value: str) -> str:
-        return validate_alias(value)
-
-
-class RerankerModelProfilePatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = None
-    alias: str | None = None
-    provider_profile_id: str | None = None
-    provider_model_id: str | None = None
-    enabled: StrictBool | None = None
-    notes: str | None = None
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        text = value.strip()
-        if not text:
-            raise ValueError("Name must not be empty.")
-        return text
-
-    @field_validator("alias")
-    @classmethod
-    def _alias(cls, value: str | None) -> str | None:
-        return validate_alias(value) if value is not None else None
 
 
 KnowledgeIndexStatus = Literal["empty", "ready", "indexing", "failed", "needs_reindex"]
+KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "needs_reindex", "failed", "deleted"]
+KnowledgeSourceType = Literal["pasted_text", "attachment_text", "file"]
 
 
 class KnowledgeBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     description: str = ""
@@ -278,92 +92,51 @@ class KnowledgeBase(BaseModel):
     enabled: StrictBool = True
     index_status: KnowledgeIndexStatus = "empty"
     index_error: str | None = None
-    chunk_size_override: int | None = Field(default=None, ge=100, le=10000)
-    chunk_overlap_override: int | None = Field(default=None, ge=0, le=5000)
     vector_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
-    default_chunk_profile: ChunkProfile | None = "markdown_auto"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("name")
     @classmethod
-    def _name(cls, value: str) -> str:
-        text = str(value or "").strip()
-        if not text:
-            raise ValueError("Name must not be empty.")
-        return text
-
+    def valid_name(cls, value: str) -> str:
+        if not str(value).strip(): raise ValueError("Name must not be empty.")
+        return str(value).strip()
     @field_validator("aliases_text", mode="before")
     @classmethod
-    def _aliases_text(cls, value: Any) -> str:
-        return normalize_aliases_text(value)
-
-    @field_validator("default_chunk_profile", mode="before")
-    @classmethod
-    def _default_chunk_profile(cls, value: Any) -> str:
-        return str(value or "markdown_auto")
+    def aliases(cls, value: Any) -> str: return normalize_aliases_text(value)
 
 
 class KnowledgeBaseCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     name: str
     description: str = ""
     aliases_text: str = ""
     embedding_model_profile_id: str
-    enabled: StrictBool = True
-    chunk_size_override: int | None = Field(default=None, ge=100, le=10000)
-    chunk_overlap_override: int | None = Field(default=None, ge=0, le=5000)
+    enabled: bool = True
     vector_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
-    default_chunk_profile: ChunkProfile | None = "markdown_auto"
-
-    @field_validator("aliases_text", mode="before")
-    @classmethod
-    def _aliases_text(cls, value: Any) -> str:
-        return normalize_aliases_text(value)
-
-    @field_validator("default_chunk_profile", mode="before")
-    @classmethod
-    def _default_chunk_profile(cls, value: Any) -> str:
-        return str(value or "markdown_auto")
 
 
 class KnowledgeBasePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     name: str | None = None
     description: str | None = None
     aliases_text: str | None = None
     embedding_model_profile_id: str | None = None
-    enabled: StrictBool | None = None
-    chunk_size_override: int | None = Field(default=None, ge=100, le=10000)
-    chunk_overlap_override: int | None = Field(default=None, ge=0, le=5000)
+    enabled: bool | None = None
     vector_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     keyword_candidate_k_override: int | None = Field(default=None, ge=1, le=1000)
     final_top_k_override: int | None = Field(default=None, ge=1, le=100)
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
-    default_chunk_profile: ChunkProfile | None = None
-
-    @field_validator("aliases_text", mode="before")
-    @classmethod
-    def _aliases_text(cls, value: Any) -> str | None:
-        return normalize_aliases_text(value) if value is not None else None
-
-    @field_validator("default_chunk_profile", mode="before")
-    @classmethod
-    def _default_chunk_profile(cls, value: Any) -> str | None:
-        return "markdown_auto" if value is None else str(value)
 
 
 class SessionKnowledgeBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     id: int | None = None
     session_id: str
     knowledge_base_id: str
@@ -373,80 +146,10 @@ class SessionKnowledgeBinding(BaseModel):
     knowledge_base: KnowledgeBase | None = None
 
 
-KnowledgeOriginStatus = Literal["ready", "scan_failed", "importing", "failed"]
-KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "needs_reindex", "failed", "deleted", "new", "changed", "missing"]
-KnowledgeSourceType = Literal["pasted_text", "attachment_text", "origin_file"]
-
-
-class KnowledgeOrigin(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    knowledge_base_id: str
-    name: str
-    slug: str
-    root_path: str
-    include_globs: str = "**/*"
-    exclude_globs: str = ""
-    default_chunk_profile: ChunkProfile | None = None
-    last_scan_at: datetime | None = None
-    last_import_at: datetime | None = None
-    status: KnowledgeOriginStatus | str = "ready"
-    error: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, value: str) -> str:
-        text = str(value or "").strip()
-        if not text:
-            raise ValueError("Name must not be empty.")
-        return text
-
-    @field_validator("slug")
-    @classmethod
-    def _slug(cls, value: str) -> str:
-        from ai_workbench.core.knowledge_origins import safe_origin_slug
-
-        return safe_origin_slug(value)
-
-
-class KnowledgeOriginCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    slug: str
-    include_globs: str = "**/*"
-    exclude_globs: str = ""
-    default_chunk_profile: ChunkProfile | None = None
-
-    @field_validator("slug")
-    @classmethod
-    def _slug(cls, value: str) -> str:
-        from ai_workbench.core.knowledge_origins import safe_origin_slug
-
-        return safe_origin_slug(value)
-
-
-class KnowledgeOriginPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = None
-    include_globs: str | None = None
-    exclude_globs: str | None = None
-    default_chunk_profile: ChunkProfile | None = None
-    status: str | None = None
-    metadata: dict[str, Any] | None = None
-
-
 class KnowledgeSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     id: str = Field(default_factory=lambda: str(uuid4()))
     knowledge_base_id: str
-    origin_id: str | None = None
     source_type: KnowledgeSourceType
     uri: str = ""
     title: str
@@ -467,22 +170,12 @@ class KnowledgeSource(BaseModel):
     error: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     chunks: int = 0
-    embedding_model_profile_id: str | None = None
-    embedding_dimension: int | None = None
-    chunk_profile_requested: str | None = None
-    chunk_profile_effective: str | None = None
-    chunk_profile_confidence: float | None = None
-    profile_source: str | None = None
-    entity_level: int | None = None
-    title_source: str | None = None
-    type_source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
 
 class KnowledgeSourceIndexResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     source_id: str
     status: str
     chunks: int
@@ -494,279 +187,84 @@ class KnowledgeSourceIndexResult(BaseModel):
 
 
 class KnowledgeStore:
-    def get_settings(self) -> Any:
-        raise NotImplementedError
-
-    def patch_settings(self, values: dict[str, Any]) -> Any:
-        raise NotImplementedError
-
-    def list_embedding_profiles(self) -> list[EmbeddingModelProfile]:
-        raise NotImplementedError
-
-    def create_embedding_profile(self, profile: EmbeddingModelProfile) -> EmbeddingModelProfile:
-        raise NotImplementedError
-
-    def get_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        raise NotImplementedError
-
-    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None:
-        raise NotImplementedError
-
-    def get_embedding_profile_by_id_or_alias(self, profile_id_or_alias: str) -> EmbeddingModelProfile:
-        raise NotImplementedError
-
-    def update_embedding_profile(self, profile_id: str, values: dict[str, Any]) -> EmbeddingModelProfile:
-        raise NotImplementedError
-
-    def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        raise NotImplementedError
-
-    def list_reranker_profiles(self) -> list[RerankerModelProfile]:
-        raise NotImplementedError
-
-    def create_reranker_profile(self, profile: RerankerModelProfile) -> RerankerModelProfile:
-        raise NotImplementedError
-
-    def get_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
-        raise NotImplementedError
-
-    def update_reranker_profile(self, profile_id: str, values: dict[str, Any]) -> RerankerModelProfile:
-        raise NotImplementedError
-
-    def delete_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
-        raise NotImplementedError
-
-    def list_knowledge_bases(self) -> list[KnowledgeBase]:
-        raise NotImplementedError
-
-    def create_knowledge_base(self, knowledge_base: KnowledgeBase) -> KnowledgeBase:
-        raise NotImplementedError
-
-    def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
-        raise NotImplementedError
-
-    def update_knowledge_base(self, knowledge_base_id: str, values: dict[str, Any]) -> KnowledgeBase:
-        raise NotImplementedError
-
-    def delete_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
-        raise NotImplementedError
-
-    def list_session_bindings(self, session_id: str) -> list[SessionKnowledgeBinding]:
-        raise NotImplementedError
-
-    def replace_session_bindings(self, session_id: str, knowledge_base_ids: list[str]) -> list[SessionKnowledgeBinding]:
-        raise NotImplementedError
-
-    def delete_session_bindings(self, session_id: str) -> None:
-        raise NotImplementedError
-
-    def list_sources(self, knowledge_base_id: str) -> list[KnowledgeSource]:
-        raise NotImplementedError
-
-    def list_origins(self, knowledge_base_id: str) -> list[KnowledgeOrigin]:
-        raise NotImplementedError
-
-    def create_origin(self, origin: KnowledgeOrigin) -> KnowledgeOrigin:
-        raise NotImplementedError
-
-    def get_origin(self, origin_id: str) -> KnowledgeOrigin:
-        raise NotImplementedError
-
-    def update_origin(self, origin_id: str, values: dict[str, Any]) -> KnowledgeOrigin:
-        raise NotImplementedError
-
-    def delete_origin(self, origin_id: str) -> KnowledgeOrigin:
-        raise NotImplementedError
-
-    def get_source(self, source_id: str) -> KnowledgeSource:
-        raise NotImplementedError
-
-    def upsert_indexed_source(
-        self,
-        *,
-        source: KnowledgeSource,
-        chunks: list[Any],
-        vectors: list[list[float]],
-        embedding_model_profile: EmbeddingModelProfile,
-        embedding_dimension: int,
-        search_texts: list[str],
-    ) -> KnowledgeSourceIndexResult:
-        raise NotImplementedError
-
-    def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
-        raise NotImplementedError
-
-    def delete_source(self, source_id: str) -> KnowledgeSource:
-        raise NotImplementedError
-
-    def source_text_reference(self, source_id: str) -> dict[str, Any]:
-        raise NotImplementedError
+    """Structural interface implemented by memory and SQL stores."""
+    pass
 
 
 class MemoryKnowledgeStore(KnowledgeStore):
     def __init__(self) -> None:
         self._settings = KnowledgeSettings()
         self._embedding_profiles: dict[str, EmbeddingModelProfile] = {}
-        self._reranker_profiles: dict[str, RerankerModelProfile] = {}
-        self._knowledge_bases: dict[str, KnowledgeBase] = {}
+        self._bases: dict[str, KnowledgeBase] = {}
         self._bindings: dict[tuple[str, str], SessionKnowledgeBinding] = {}
-        self._next_binding_id = 1
+        self._sources: dict[str, KnowledgeSource] = {}
+        self._chunks: dict[str, list[Any]] = {}
+        self._vectors: dict[str, list[list[float]]] = {}
+        self._search_texts: dict[str, list[str]] = {}
 
-    def get_settings(self) -> KnowledgeSettings:
-        return self._settings
-
+    def get_settings(self) -> KnowledgeSettings: return self._settings
     def patch_settings(self, values: dict[str, Any]) -> KnowledgeSettings:
         patch = KnowledgeSettingsPatch.model_validate(values)
-        updates = knowledge_settings_patch_updates(patch)
-        changed_chunk_defaults = any(
-            key in updates and getattr(self._settings, key) != updates[key]
-            for key in ("default_chunk_size", "default_chunk_overlap")
-        )
-        self._settings = KnowledgeSettings.model_validate({**self._settings.model_dump(), **updates})
-        if changed_chunk_defaults:
-            self._mark_kbs_using_default_chunking_needs_reindex()
+        self._settings = KnowledgeSettings.model_validate({**self._settings.model_dump(), **knowledge_settings_patch_updates(patch)})
         return self._settings
-
-    def list_embedding_profiles(self) -> list[EmbeddingModelProfile]:
-        return sorted(self._embedding_profiles.values(), key=lambda item: (item.alias, item.created_at))
-
+    def list_embedding_profiles(self) -> list[EmbeddingModelProfile]: return sorted(self._embedding_profiles.values(), key=lambda item: item.alias)
     def create_embedding_profile(self, profile: EmbeddingModelProfile) -> EmbeddingModelProfile:
-        if any(item.alias == profile.alias for item in self._embedding_profiles.values()):
-            raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
-        self._embedding_profiles[profile.id] = profile
-        return profile
-
+        if any(item.alias == profile.alias for item in self._embedding_profiles.values()): raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
+        self._embedding_profiles[profile.id] = profile; return profile
     def get_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        try:
-            return self._embedding_profiles[profile_id]
-        except KeyError as exc:
-            raise KeyError(f"unknown embedding model profile: {profile_id}") from exc
-
-    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None:
-        for profile in self._embedding_profiles.values():
-            if profile.alias == alias:
-                return profile
-        return None
-
-    def get_embedding_profile_by_id_or_alias(self, profile_id_or_alias: str) -> EmbeddingModelProfile:
-        if profile_id_or_alias in self._embedding_profiles:
-            return self._embedding_profiles[profile_id_or_alias]
-        profile = self.find_embedding_profile_by_alias(profile_id_or_alias)
-        if profile is not None:
-            return profile
-        raise KeyError(f"unknown embedding model profile: {profile_id_or_alias}")
-
+        if profile_id not in self._embedding_profiles: raise KeyError(f"unknown embedding model profile: {profile_id}")
+        return self._embedding_profiles[profile_id]
+    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None: return next((item for item in self._embedding_profiles.values() if item.alias == alias), None)
+    def get_embedding_profile_by_id_or_alias(self, value: str) -> EmbeddingModelProfile:
+        try: return self.get_embedding_profile(value)
+        except KeyError:
+            item=self.find_embedding_profile_by_alias(value)
+            if item is None: raise KeyError(f"unknown embedding model profile: {value}")
+            return item
     def update_embedding_profile(self, profile_id: str, values: dict[str, Any]) -> EmbeddingModelProfile:
-        existing = self.get_embedding_profile(profile_id)
-        if "alias" in values and any(item.alias == values["alias"] and item.id != existing.id for item in self._embedding_profiles.values()):
-            raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
-        stale_keys = {"provider_profile_id", "provider_model_id", "model_path", "dimension", "normalize", "document_instruction", "query_instruction"}
-        needs_reindex = any(key in values and getattr(existing, key) != values[key] for key in stale_keys)
-        updated = EmbeddingModelProfile.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
-        self._embedding_profiles[existing.id] = updated
-        if needs_reindex:
-            self._mark_kbs_for_profile_needs_reindex(existing.id)
-        return updated
-
+        current=self.get_embedding_profile(profile_id); updated=EmbeddingModelProfile.model_validate({**current.model_dump(),**values,"updated_at":utc_now()}); self._embedding_profiles[profile_id]=updated; return updated
     def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        existing = self.get_embedding_profile(profile_id)
-        if any(kb.embedding_model_profile_id == existing.id for kb in self._knowledge_bases.values()):
-            raise ValueError("KNOWLEDGE_EMBEDDING_MODEL_IN_USE")
-        del self._embedding_profiles[existing.id]
-        return existing
-
-    def list_reranker_profiles(self) -> list[RerankerModelProfile]:
-        return sorted(self._reranker_profiles.values(), key=lambda item: (item.alias, item.created_at))
-
-    def create_reranker_profile(self, profile: RerankerModelProfile) -> RerankerModelProfile:
-        if any(item.alias == profile.alias for item in self._reranker_profiles.values()):
-            raise ValueError("KNOWLEDGE_RERANKER_ALIAS_EXISTS")
-        self._reranker_profiles[profile.id] = profile
-        return profile
-
-    def get_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
-        try:
-            return self._reranker_profiles[profile_id]
-        except KeyError as exc:
-            raise KeyError(f"unknown reranker model profile: {profile_id}") from exc
-
-    def update_reranker_profile(self, profile_id: str, values: dict[str, Any]) -> RerankerModelProfile:
-        existing = self.get_reranker_profile(profile_id)
-        if "alias" in values and any(item.alias == values["alias"] and item.id != existing.id for item in self._reranker_profiles.values()):
-            raise ValueError("KNOWLEDGE_RERANKER_ALIAS_EXISTS")
-        updated = RerankerModelProfile.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
-        self._reranker_profiles[existing.id] = updated
-        return updated
-
-    def delete_reranker_profile(self, profile_id: str) -> RerankerModelProfile:
-        existing = self.get_reranker_profile(profile_id)
-        if self._settings.reranker_profile_id == existing.id:
-            raise ValueError("KNOWLEDGE_RERANKER_MODEL_IN_USE")
-        del self._reranker_profiles[existing.id]
-        return existing
-
-    def list_knowledge_bases(self) -> list[KnowledgeBase]:
-        return sorted(self._knowledge_bases.values(), key=lambda item: (item.name.lower(), item.created_at))
-
-    def create_knowledge_base(self, knowledge_base: KnowledgeBase) -> KnowledgeBase:
-        self._knowledge_bases[knowledge_base.id] = knowledge_base
-        return knowledge_base
-
+        current=self.get_embedding_profile(profile_id)
+        if any(item.embedding_model_profile_id == profile_id for item in self._bases.values()): raise ValueError("KNOWLEDGE_EMBEDDING_MODEL_IN_USE")
+        del self._embedding_profiles[profile_id]; return current
+    def list_knowledge_bases(self) -> list[KnowledgeBase]: return sorted(self._bases.values(), key=lambda item: item.name.casefold())
+    def create_knowledge_base(self, knowledge_base: KnowledgeBase) -> KnowledgeBase: self._bases[knowledge_base.id]=knowledge_base; return knowledge_base
     def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
-        try:
-            return self._knowledge_bases[knowledge_base_id]
-        except KeyError as exc:
-            raise KeyError(f"unknown knowledge base: {knowledge_base_id}") from exc
-
+        if knowledge_base_id not in self._bases: raise KeyError(f"unknown knowledge base: {knowledge_base_id}")
+        return self._bases[knowledge_base_id]
     def update_knowledge_base(self, knowledge_base_id: str, values: dict[str, Any]) -> KnowledgeBase:
-        existing = self.get_knowledge_base(knowledge_base_id)
-        stale_keys = {"embedding_model_profile_id", "chunk_size_override", "chunk_overlap_override", "default_chunk_profile"}
-        needs_reindex = any(key in values and getattr(existing, key) != values[key] for key in stale_keys)
-        updated = KnowledgeBase.model_validate(existing.model_copy(update={**values, "updated_at": utc_now()}).model_dump())
-        if needs_reindex and existing.index_status in {"ready", "needs_reindex", "failed"}:
-            updated = updated.model_copy(update={"index_status": "needs_reindex", "index_error": None})
-        self._knowledge_bases[existing.id] = updated
-        return updated
-
-    def _mark_kbs_for_profile_needs_reindex(self, profile_id: str) -> None:
-        for kb in list(self._knowledge_bases.values()):
-            if kb.embedding_model_profile_id == profile_id and kb.index_status in {"ready", "needs_reindex", "failed"}:
-                self._knowledge_bases[kb.id] = kb.model_copy(update={"index_status": "needs_reindex", "index_error": None, "updated_at": utc_now()})
-
-    def _mark_kbs_using_default_chunking_needs_reindex(self) -> None:
-        for kb in list(self._knowledge_bases.values()):
-            if kb.chunk_size_override is None and kb.chunk_overlap_override is None and kb.index_status in {"ready", "needs_reindex", "failed"}:
-                self._knowledge_bases[kb.id] = kb.model_copy(update={"index_status": "needs_reindex", "index_error": None, "updated_at": utc_now()})
-
+        current=self.get_knowledge_base(knowledge_base_id); updated=KnowledgeBase.model_validate({**current.model_dump(),**values,"updated_at":utc_now()}); self._bases[knowledge_base_id]=updated; return updated
     def delete_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
-        existing = self.get_knowledge_base(knowledge_base_id)
-        del self._knowledge_bases[existing.id]
-        self._bindings = {key: value for key, value in self._bindings.items() if value.knowledge_base_id != existing.id}
-        return existing
-
+        current=self.get_knowledge_base(knowledge_base_id); del self._bases[knowledge_base_id]
+        for key in list(self._bindings):
+            if key[1] == knowledge_base_id: del self._bindings[key]
+        for source_id, source in list(self._sources.items()):
+            if source.knowledge_base_id == knowledge_base_id: self._sources.pop(source_id); self._chunks.pop(source_id, None); self._vectors.pop(source_id, None); self._search_texts.pop(source_id, None)
+        return current
     def list_session_bindings(self, session_id: str) -> list[SessionKnowledgeBinding]:
-        bindings = [binding for binding in self._bindings.values() if binding.session_id == session_id]
-        ordered = sorted(bindings, key=lambda item: (item.sort_order, item.created_at))
-        return [binding.model_copy(update={"knowledge_base": self._knowledge_bases.get(binding.knowledge_base_id)}) for binding in ordered]
-
+        result=[]
+        for binding in sorted((item for (sid,_),item in self._bindings.items() if sid==session_id), key=lambda item:item.sort_order):
+            result.append(binding.model_copy(update={"knowledge_base": self._bases.get(binding.knowledge_base_id)}))
+        return result
     def replace_session_bindings(self, session_id: str, knowledge_base_ids: list[str]) -> list[SessionKnowledgeBinding]:
-        self.delete_session_bindings(session_id)
-        seen: set[str] = set()
-        for index, knowledge_base_id in enumerate(knowledge_base_ids):
-            if knowledge_base_id in seen:
-                continue
-            self.get_knowledge_base(knowledge_base_id)
-            seen.add(knowledge_base_id)
-            binding = SessionKnowledgeBinding(
-                id=self._next_binding_id,
-                session_id=session_id,
-                knowledge_base_id=knowledge_base_id,
-                enabled=True,
-                sort_order=(index + 1) * 10,
-            )
-            self._next_binding_id += 1
-            self._bindings[(session_id, knowledge_base_id)] = binding
+        for key in list(self._bindings):
+            if key[0] == session_id: del self._bindings[key]
+        for index,kb_id in enumerate(dict.fromkeys(knowledge_base_ids)):
+            self.get_knowledge_base(kb_id); binding=SessionKnowledgeBinding(session_id=session_id,knowledge_base_id=kb_id,sort_order=(index+1)*10); self._bindings[(session_id,kb_id)] = binding
         return self.list_session_bindings(session_id)
-
     def delete_session_bindings(self, session_id: str) -> None:
-        self._bindings = {key: value for key, value in self._bindings.items() if value.session_id != session_id}
+        for key in list(self._bindings):
+            if key[0] == session_id: del self._bindings[key]
+    def list_sources(self, knowledge_base_id: str) -> list[KnowledgeSource]: return [item for item in self._sources.values() if item.knowledge_base_id==knowledge_base_id]
+    def get_source(self, source_id: str) -> KnowledgeSource:
+        if source_id not in self._sources: raise KeyError(f"unknown knowledge source: {source_id}")
+        return self._sources[source_id]
+    def upsert_indexed_source(self, *, source: KnowledgeSource, chunks: list[Any], vectors: list[list[float]], embedding_model_profile: EmbeddingModelProfile, embedding_dimension: int, search_texts: list[str]) -> KnowledgeSourceIndexResult:
+        indexed=source.model_copy(update={"status":"indexed","chunks":len(chunks),"indexed_at":utc_now(),"error":None}); self._sources[source.id]=indexed; self._chunks[source.id]=list(chunks); self._vectors[source.id]=list(vectors); self._search_texts[source.id]=list(search_texts); return KnowledgeSourceIndexResult(source_id=source.id,status="indexed",chunks=len(chunks),embedding_model_profile_id=embedding_model_profile.id,embedding_dimension=embedding_dimension,indexed_at=indexed.indexed_at)
+    def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
+        self._sources[source.id]=source.model_copy(update={"status":"failed","error":error}); return KnowledgeSourceIndexResult(source_id=source.id,status="failed",chunks=0,error=error)
+    def delete_source(self, source_id: str) -> KnowledgeSource:
+        current=self.get_source(source_id); del self._sources[source_id]; self._chunks.pop(source_id,None); self._vectors.pop(source_id,None); self._search_texts.pop(source_id,None); return current
+    def source_text_reference(self, source_id: str) -> dict[str, Any]:
+        source=self.get_source(source_id); return {"source_id":source.id,"uri":source.uri,"title":source.title}
+    def list_chunks(self, source_id: str) -> list[Any]: return list(self._chunks.get(source_id, []))

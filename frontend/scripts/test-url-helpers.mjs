@@ -36,8 +36,8 @@ assert.equal(resolveAttachmentUrlFromBase('/api', 'data:text/html;base64,aaaa'),
 assert.equal(resolveAttachmentUrlFromBase('/api', 'javascript:alert(1)'), '');
 assert.equal(resolveAttachmentUrlFromBase('/api', 'file:///tmp/x.png'), '');
 
-assert.equal(resolveAvatarUrlFromBase('/api', '/api/agents/chat/avatar'), '/api/agents/chat/avatar');
-assert.equal(resolveAvatarUrlFromBase('http://127.0.0.1:8000/api', '/api/agents/chat/avatar'), 'http://127.0.0.1:8000/api/agents/chat/avatar');
+assert.equal(resolveAvatarUrlFromBase('/api', '/api/pets/demo/spritesheet.webp'), '/api/pets/demo/spritesheet.webp');
+assert.equal(resolveAvatarUrlFromBase('http://127.0.0.1:8000/api', '/api/pets/demo/spritesheet.webp'), 'http://127.0.0.1:8000/api/pets/demo/spritesheet.webp');
 assert.equal(resolveAvatarUrlFromBase('/api', 'javascript:alert(1)'), '');
 
 assert.equal(createWebSocketUrlFromBase('/api', 'session-1', 'http://127.0.0.1:8765'), 'ws://127.0.0.1:8765/api/ws/session-1');
