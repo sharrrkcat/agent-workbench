@@ -1,60 +1,38 @@
 # AI Context
 
-This is the lightweight Codex entry point. Its job is task routing, not the
-full project contract.
+This is the lightweight entry point for repository work. Read the roadmap and
+the smallest relevant contract before searching source broadly.
 
-## Fixed Entry Rules
+## Task map
 
-1. Identify the task type before reading or searching broadly.
-2. Read the matching `docs/ai/TASK_*.md` card first.
-3. From the task card, read only the listed contract docs and likely source
-   entry points needed for the change.
-4. Do not default to whole-repository search. Use targeted source search only
-   after the task card and contracts are insufficient.
-5. Interface, protocol, settings, metadata, or user workflow changes must update
-   the relevant contract docs in the same change.
-6. User-visible frontend text changes must update every supported locale under
-   `frontend/src/i18n/resources`.
-7. Agent or Capability manifest changes must regenerate the generated registry
-   with `uv run python scripts/generate_registry_docs.py`.
-8. Keep detailed rules in task cards or contract docs, not in this file.
+- [Runtime](ai/TASK_RUNTIME.md): ChatRunner, runs, streaming, attachments,
+  provider status, and model lifecycle.
+- [Knowledge](ai/TASK_KNOWLEDGE.md): indexing, hybrid retrieval, bindings, and
+  context injection.
+- [Memory/Worldbook](ai/TASK_MEMORY_WORLDBOOK.md): deterministic context stores
+  and matching.
+- [Settings](ai/TASK_SETTINGS.md): General, Models, Pet, and strict schemas.
+- [Frontend](ai/TASK_FRONTEND_UI.md): components, stores, i18n, and client
+  contracts.
 
-## Task Map
+Deleted extension task cards are not execution guides. There is no manifest,
+registry, route parser, or script SDK to modify.
 
-- [Agent tasks](ai/TASK_AGENT.md): create or modify Prompt Agents, Script Agents,
-  Agent actions, Script ctx usage, or Agent manifests.
-- [Capability tasks](ai/TASK_CAPABILITY.md): create or modify Capabilities,
-  slash commands, Capability manifests, and command output contracts.
-- [Settings tasks](ai/TASK_SETTINGS.md): change General settings, AgentConfig,
-  CapabilityConfig, Model Profiles, title settings, or settings UI contracts.
-- [Runtime tasks](ai/TASK_RUNTIME.md): change routing, run lifecycle, streaming,
-  attachments, provider status, model unload, or runtime metadata.
-- [Knowledge tasks](ai/TASK_KNOWLEDGE.md): change Knowledge/RAG settings,
-  indexing, retrieval, session KB bindings, or Knowledge context injection.
-- [Memory and Worldbook tasks](ai/TASK_MEMORY_WORLDBOOK.md): change Core Memory,
-  Worldbook settings, APIs, matching, bindings, or runtime context injection.
-- [Intent Routing tasks](ai/TASK_INTENT_ROUTING.md): change semantic routing,
-  Utility LLM slot extraction, Route Test, safe auto-route behavior, or route
-  metadata.
-- [Frontend UI tasks](ai/TASK_FRONTEND_UI.md): change reusable UI primitives,
-  chat rendering, settings panels, i18n, or frontend contract wiring.
-- [ComfyUI tasks](ai/TASK_COMFYUI.md): change ComfyUI Capability, ComfyUI Agent,
-  workflow/preset library behavior, or preset YAML.
-- [Image Generation tasks](ai/TASK_IMAGE_GENERATION.md): change internal image
-  generation profiles, model inventory, generation runtime, Capability, or
-  drawing Agents, including Settings UI for image model profiles.
-- [Docs maintenance](ai/DOCS_MAINTENANCE.md): maintain document ownership,
-  line-count limits, and report requirements.
-- [Docs refactor plan](ai/DOCS_REFACTOR_PLAN.md): current duplication audit and
-  staged contract split plan.
+## Contract index
 
-## Global Boundaries
+- `contracts/runtime-run-lifecycle.md`
+- `contracts/runtime-streaming.md`
+- `contracts/runtime-llm-resolution.md`
+- `contracts/provider-status.md`
+- `contracts/attachments-vision.md`
+- `contracts/knowledge.md`
+- `contracts/memory-worldbook.md`
+- `contracts/settings-general.md`
+- `contracts/pet.md`
+- `contracts/message-parts.md`
+- `contracts/utility-llm.md`
+- `contracts/stateless-inference.md`
 
-- Do not put historical rules, full protocols, or long avoid lists back into
-  this file.
-- Put long topic contracts under `docs/contracts/<topic>.md` once those contracts
-  exist; keep task cards as routing summaries.
-- Keep `docs/AI_CONTEXT.md` under 150 lines.
-- Keep each `docs/ai/TASK_*.md` under 120 lines.
-- If only UI style changes and no behavior, schema, metadata, or workflow changes
-  occur, contract docs usually do not need updates.
+Interface, protocol, settings, metadata, or workflow changes update the owning
+contract in the same change. User-visible text changes update both locales.
+Run `uv run python scripts/check_docs_size.py` when changing documentation.

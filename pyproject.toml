@@ -1,7 +1,7 @@
 [project]
 name = "agent-workbench"
 version = "0.1.0"
-description = "A lightweight local AI workbench with callable agents and commands."
+description = "A lightweight local AI workbench with a compact chat path and explicit core services."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -11,7 +11,6 @@ dependencies = [
     "pydantic>=2.7",
     "psutil>=5.9",
     "python-multipart>=0.0.9",
-    "PyYAML>=6.0",
     "segno>=1.6",
     "sqlmodel>=0.0.22",
     "uvicorn>=0.30",
@@ -36,11 +35,6 @@ knowledge-cuda128 = [
     "torch>=2.2",
     "torchvision>=0.17",
     "transformers>=4.40",
-]
-image-generation = [
-    "diffusers>=0.30",
-    "Pillow>=10",
-    "safetensors>=0.4",
 ]
 onnx = [
     "onnxruntime-gpu>=1.17,<1.24",

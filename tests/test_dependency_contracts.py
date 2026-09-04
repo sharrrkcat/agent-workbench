@@ -37,7 +37,6 @@ def test_florence2_local_runtime_dependencies_are_declared_and_documented() -> N
     assert "`einops`, `timm`, `Pillow`, `torch`, and `torchvision`" in flat_contract
     assert "metadata.trust_remote_code=true" in contract
     assert "/api/inference/vision-models/{profile_id_or_alias}/preflight" in contract
-    assert "manually installed CUDA wheel" in flat_contract
     assert "uv sync --extra knowledge" in contract
     assert "uv sync --extra knowledge-cuda128" in contract
     assert "CUDA 12.8" in contract
@@ -55,7 +54,14 @@ def test_onnxruntime_provider_dependencies_are_declared_and_documented() -> None
     ):
         assert dependency in extra
 
-    assert "internal_onnxruntime" in contract
-    assert "data/models/vision/<folder>" in contract
-    assert "uv sync --extra onnx" in contract
-    assert "`onnx` extra includes `onnxruntime-gpu>=1.17,<1.24`, `numpy`, and `Pillow`" in contract
+    assert "optional `onnx` extra" in contract
+    assert "uv sync --extra onnx" not in contract
+    assert "onnxruntime-gpu>=1.17,<1.24" in contract
+    assert "`numpy`, and" in contract
+
+
+def test_removed_generation_dependencies_are_not_declared() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "PyYAML" not in pyproject
+    assert "image-generation" not in pyproject
+    assert "diffusers" not in pyproject

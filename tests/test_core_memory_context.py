@@ -20,13 +20,13 @@ def test_core_memory_context_trims_and_records_compact_metadata() -> None:
     assert "stable preference" not in str(result.metadata)
 
 
-def test_core_memory_script_source_respects_disabled_default() -> None:
+def test_core_memory_chat_source_injects_enabled_memory() -> None:
     settings = AppSettingsStore()
     settings.patch({"core_memory_content": "script memory"})
 
-    result = build_core_memory_context(app_settings_store=settings, source="script_agent")
+    result = build_core_memory_context(app_settings_store=settings, source="chat")
 
-    assert result.rendered_text == ""
-    assert result.metadata["enabled"] is False
-    assert result.metadata["injected"] is False
-    assert result.metadata["skipped_reason"] == "disabled"
+    assert "script memory" in result.rendered_text
+    assert result.metadata["injected"] is True
+    assert result.metadata["enabled"] is True
+    assert result.metadata["skipped_reason"] is None

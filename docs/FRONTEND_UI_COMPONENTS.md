@@ -1,45 +1,29 @@
-# Frontend UI Components
+# Frontend UI components
 
-Use the lightweight primitives in `frontend/src/components/ui` before adding one-off UI for common workbench surfaces.
+The React client is intentionally small and local-first.
 
-- `AppModal`: centered modal panels rendered through a body portal. Use for app-level centered dialogs, especially chat and settings modals that must not be clipped by parent layout.
-- `SettingsDetailHeader`: settings object detail headers with icon, title, subtitle, and right-aligned actions.
-- `StatusDot`: small status indicators for compact buttons and rows. It should not be stretched by flex layouts.
-- `ToggleSwitch` and `MiniToggle`: standard toggles. Use `MiniToggle` in dense row headers such as Worldbook entries.
-- `EmptyStateRow`: empty state text with an optional right-aligned action button.
-- `Chip` / `StatusChip`: lightweight state labels for activation modes, dirty state, warnings, and similar metadata.
-- `DragHandle`: consistent drag affordance for reorderable cards and rows.
-- `InlineStatus`: short inline save/error/warning feedback near the object it describes.
+## Chat
 
-Current expected reuse points:
+`ChatView`, `ChatInput`, `MessageBubble`, `RunPanel`, and `SessionSidebar`
+render generic sessions, message parts, and run events. All input is submitted
+as text; no client-side parser or command palette is present. Streaming merges
+sequence-numbered deltas and replaces drafts with the final message.
 
-- Chat Context Sources uses `AppModal`, `StatusDot`, and `EmptyStateRow`.
-- Settings object pages should use `SettingsDetailHeader`.
-- Worldbook entry cards should use `DragHandle`, `MiniToggle`, `Chip` / `StatusChip`, and `InlineStatus`.
-- Chat message output renders `message.parts` first through
-  `frontend/src/components/messages/MessagePartsRenderer.tsx`. There is no
-  legacy visible message fallback; copy, renderability, forms, and command
-  buttons all read `Message.parts[]`.
-- Chat composer slash command autocomplete uses the shared command palette for
-  command names, static first-argument suggestions from Capability command
-  `argument_suggestions`, and allowlisted dynamic next-argument suggestions.
-  Dynamic suggestions are currently limited to `/pet select <pet_id>` through
-  the core `pet_ids` provider. It does not implement path completion, URL
-  history/completion, arbitrary provider callbacks, or command argument schemas.
-- Command palette keyboard navigation must keep the active item visible inside
-  the palette scroll container for command names, static argument suggestions,
-  and dynamic argument suggestions without scrolling the page, chat transcript,
-  or moving focus out of the composer.
-- Audio message parts render through
-  `frontend/src/components/messages/parts/AudioPartRenderer.tsx` with a custom
-  project-styled player backed by a hidden `<audio>` element without native
-  controls. It accepts local attachment-backed URLs for `source: attachment`
-  and HTTP/HTTPS direct audio URLs for `source: url`; it does not autoplay,
-  expose download controls, execute HTML/JS, proxy media, or repair remote
-  server playback restrictions.
-- Video message parts render through
-  `frontend/src/components/messages/parts/VideoPartRenderer.tsx` with native
-  `<video controls preload="metadata">`. It accepts local attachment-backed
-  URLs for `source: attachment` and HTTP/HTTPS direct video URLs for
-  `source: url`, does not autoplay, does not proxy/cache/download remote media,
-  and does not implement custom playback controls.
+## Settings
+
+`SettingsPage` exposes exactly General, Models, Knowledge, Worldbook, and Pet.
+Models contains provider/chat profiles, the global default, and Utility LLM
+selection. Pet settings use the nested `/api/pets/settings` façade.
+
+## Pet
+
+`PetOverlay`, `PetSprite`, and `PetSettingsPanel` load state initially and
+refresh after changes. Overlay sprite/bubble state derives from run status and
+`RunStep.kind`; `WAITING_FOR_USER` is rendered as a confirmation state.
+
+## Shared rules
+
+Transport types are defined in `src/types.ts`; API calls live in
+`src/api/client.ts`; local state is in `useWorkbenchStore`. User-visible text
+must be added to both locale trees. Run `npm run check:i18n` and the frontend
+contract scripts for UI changes.

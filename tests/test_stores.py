@@ -2,53 +2,52 @@ from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
 
 
-def test_session_store_creates_session_and_changes_default_agent() -> None:
+def test_session_store_keeps_context_and_model_overrides() -> None:
     store = SessionStore()
 
-    session = store.create_session(default_agent_id="chat", title="Test")
-    updated = store.set_default_agent(session.session_id, "translate")
+    session = store.create_session(title="Test", context_mode="group_transcript")
+    updated = store.set_llm_profile(session.session_id, "profile-1")
 
     assert session.session_id
-    assert session.title == "Test"
-    assert updated.default_agent_id == "translate"
-    assert store.get_session(session.session_id).default_agent_id == "translate"
-    assert [item.session_id for item in store.list_sessions()] == [session.session_id]
+    assert updated.context_mode == "group_transcript"
+    assert updated.llm_profile_id == "profile-1"
+    assert store.get_session(session.session_id).llm_profile_id == "profile-1"
 
 
-def test_run_store_creates_and_updates_run() -> None:
+def test_run_store_uses_generic_chat_contract() -> None:
     store = RunStore()
 
-    run = store.create_run(kind="command", target_id="/encode", session_id="session-1")
-    running = store.update_status(run.run_id, RunStatus.RUNNING, current_step="started")
+    run = store.create_run(kind="chat", target="chat", session_id="session-1")
+    running = store.update_status(run.run_id, RunStatus.RUNNING, current_step="context")
     done = store.update_status(run.run_id, RunStatus.DONE, current_step="done")
 
-    assert run.status == RunStatus.PENDING
-    assert running.status == RunStatus.RUNNING
-    assert running.current_step == "started"
-    assert done.status == RunStatus.DONE
-    assert done.current_step == "done"
-    assert store.get_run(run.run_id).status == RunStatus.DONE
-    assert [item.run_id for item in store.list_runs("session-1")] == [run.run_id]
+    assert run.kind == "chat"
+    assert run.target == "chat"
+    assert running.status is RunStatus.RUNNING
+    assert done.status is RunStatus.DONE
+    assert store.get_run(run.run_id).status is RunStatus.DONE
 
 
-def test_message_store_appends_and_lists_messages() -> None:
-    store = MessageStore()
+def test_message_store_persists_generic_speaker_parts_and_parent() -> None:
+    sessions = SessionStore()
+    store = MessageStore(session_store=sessions)
+    session = sessions.create_session()
+    session_id = session.session_id
 
-    first = store.add_message(session_id="session-1", role="user", content="hello")
+    first = store.add_message(session_id=session_id, role="user", content="hello")
     second = store.add_message(
-        session_id="session-1",
+        session_id=session_id,
         role="assistant",
-        content="placeholder",
-        agent_id="chat",
-        action_id="default",
+        content="reply",
         run_id="run-1",
         parent_message_id=first.message_id,
+        metadata={"target": "chat"},
     )
 
-    messages = store.list_messages("session-1")
+    messages = store.list_messages(session_id)
 
     assert [message.message_id for message in messages] == [first.message_id, second.message_id]
-    assert messages[0].content == "hello"
-    assert messages[1].agent_id == "chat"
+    assert messages[0].parts[0]["text"] == "hello"
+    assert messages[1].speaker_id == "chat"
     assert messages[1].parent_message_id == first.message_id
-
+    assert messages[1].metadata == {"target": "chat"}

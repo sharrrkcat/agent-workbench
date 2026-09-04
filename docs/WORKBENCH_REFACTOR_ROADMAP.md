@@ -1,6 +1,6 @@
 # Agent Workbench 架构精简与重构路线图
 
-> 状态：设计冻结，Phase 0 已完成（2026-09-04）
+> 状态：设计冻结，Phase 0 与 Phase 1 已完成（2026-09-04）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口
 
@@ -13,7 +13,7 @@
 - 每个实施轮次只推进一个可验收切片；完成后勾选清单并记录测试、迁移和遗留项。
 - 发现代码与路线图冲突时，先做只读影响扫描并记录冲突，不要为通过局部测试重新引入已删除的概念。
 
-迁移完成前，现有 contracts 和 task cards 仍然描述当前实现；本文件描述的是目标方向，不能把两者混为一谈。
+本文件与 `docs/contracts/` 一起描述当前实现和后续方向；已删除扩展的历史 task card 不再作为执行依据。
 
 ## 1. 产品方向与边界
 
@@ -70,7 +70,7 @@
 | 内部 diffusers | 移除 | 删除 image generation runtime、表、路由、设置、agent、capability 和 extra |
 | Pet | 保留前端表现，剥离 capability | 设置放 app settings JSON；保留 overlay、sprite、宠物包和独立宠物 API |
 | Pet 联动 | 与对话状态继续联动 | run step 使用稳定 kind；WAITING_FOR_USER 显示等待确认 |
-| 数据库迁移 | 引入 Alembic | Phase 0 建现有 schema baseline，后续所有删表、改名和数据搬迁走迁移 |
+| 数据库迁移 | 引入 Alembic | Phase 0 建 baseline；后续 schema 变化走迁移，测试阶段允许直接删表/删列 |
 | API 与内部调用 | 共享 core/models | 外部路由和 ChatRunner 共用 adapter、ModelManager、错误和观测 |
 
 ### 2.1 两轮决策的覆盖关系
@@ -174,7 +174,7 @@ ProviderAdapter 是唯一的 provider 调用接口，至少统一：
 - generation/runtime params、enabled、external_enabled。
 - lifecycle policy 和可选 worker variant。
 
-配置优先级压缩为 session 覆盖 > persona 配置 > 全局默认。旧 .env、llm capability config 和 agent manifest model 块迁移后不再参与解析。
+配置优先级压缩为 session 覆盖 > 全局默认；不读取扩展配置或 manifest。
 
 ModelManager 是唯一生命周期入口。外部 base_url provider 的 load 可以是健康检查；受管 provider 的 load 是启动或唤醒进程。unload、空闲超时、并发队列、错误和事件均由它统一发出。
 
@@ -201,7 +201,7 @@ Persona 是数据库记录，不是可执行插件。最小字段：
 - harness_enabled、tools_allowed。
 - 默认 Knowledge/Worldbook 绑定。
 
-Session 保留标题、消息、等待中的 run 和上下文模式；群聊增加 session-persona 关联、发言顺序或当前 speaker 语义。旧 default_agent_id 只作为一次性迁移输入。
+Session 保留标题、消息、等待中的 run 和上下文模式；群聊保留 speaker 与 transcript 语义。
 
 普通聊天路径：
 
@@ -210,7 +210,7 @@ Session 保留标题、消息、等待中的 run 和上下文模式；群聊增�
 3. ChatRunner 调用 core/models。
 4. delta、run step、最终 message 和标题状态通过现有 runs/events/WS 落库并发送。
 
-旧的 @agent、@agent:action 和 :action 命名空间不再扩展。迁移期可以只读兼容或返回明确错误；新 UI 不再生成它们。
+`@...`、`@...:...`、`:...` 和 `/...` 均按普通文本处理；新 UI 不生成命令或 action 调用。
 
 ### 4.4 harness 与工具
 
@@ -270,7 +270,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 ## 5. 分阶段迁移计划
 
-阶段以可运行、可回滚的小切片推进。顺序是依赖顺序，不要求一次性重写。
+阶段以可运行的小切片推进。破坏性阶段不承诺数据库回滚，测试库可重建。
 
 ### Phase 0：冻结、卫生和数据库基线
 
@@ -294,16 +294,16 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：让普通聊天主路径变短，删除不再符合方向的代码。
 
-- [ ] 删除 Intent Routing 全链路、设置、路由、前端测试页和 metadata。
-- [ ] 删除 Capability/Command registry、CapabilityConfig、CommandRunner、manifest commands 和自定义插件入口。
-- [ ] 删除 core/script.py、Script Agent SDK、特定 script agents 及测试。
-- [ ] 删除 Web Context 管线、Plan/Judge/Gate、对应设置和前端控制；保留未来工具所需的最小网络安全边界。
-- [ ] 删除 ComfyUI capability、agent、preset/workflow 旧入口；未来工具从零实现。
-- [ ] 删除内部 diffusers/image generation runtime、表、路由、设置、agent、capability 和 extra。
-- [ ] 删除 forms/action-form、旧 command-buttons part 和相关 UI。
-- [ ] 让 Pet 脱离 capability runtime，保留前端和独立宠物 API。
-- [ ] 把 Utility LLM 收敛为辅助模型设置和内部接口，不保留 intent 专用路由。
-- [ ] 保留 reranker 核心，但删除独立 reranker profile 栈和旧专属设置。
+- [x] 删除 Intent Routing 全链路、设置、路由、前端测试页和 metadata。
+- [x] 删除 Capability/Command registry、CapabilityConfig、CommandRunner、manifest commands 和自定义插件入口。
+- [x] 删除 core/script.py、Script Agent SDK、特定 script agents 及测试。
+- [x] 删除 Web Context 管线、Plan/Judge/Gate、对应设置和前端控制；保留未来工具所需的最小网络安全边界。
+- [x] 删除 ComfyUI capability、agent、preset/workflow 旧入口；未来工具从零实现。
+- [x] 删除内部 diffusers/image generation runtime、表、路由、设置、agent、capability 和 extra。
+- [x] 删除 forms/action-form、旧 command-buttons part 和相关 UI。
+- [x] 让 Pet 脱离 capability runtime，保留前端和独立宠物 API。
+- [x] 把 Utility LLM 收敛为辅助模型设置和内部接口，不保留 intent 专用路由。
+- [x] 保留 reranker 核心，但删除独立 reranker profile 栈和旧专属设置。
 
 验收：
 
@@ -324,7 +324,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 - [ ] 为 /v1/chat/completions 增加 streaming、tools、vision input、response_format 的兼容请求/响应。
 - [ ] 保持单 key + localhost guard、请求大小限制和观测日志。
 - [ ] 将 embedding、内部 rerank 和标题辅助模型纳入统一生命周期。
-- [ ] 清理 .env、llm capability config、agent legacy model 的最终解析依赖。
+- [ ] 清理旧环境变量和扩展配置的最终解析依赖。
 
 验收：
 
@@ -359,12 +359,12 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 - [ ] 新增 personas 表及 Alembic 迁移。
 - [ ] 将 chat/translate 的必要初始内容转为默认 persona seed，不再读取 agent.yaml。
-- [ ] 将 session 的 default_agent_id 迁移为 persona 语义；兼容字段只用于一次性迁移。
+- [ ] 将 session 关联扩展为 persona 语义（不保留旧字段）。
 - [ ] 为多角色 session 增加 session-persona 关联、当前 speaker 和 group transcript 配置。
 - [ ] 将 model/context/params/harness/tools/knowledge/worldbook 绑定落到 persona/session。
 - [ ] 删除 AgentRegistry、AgentConfig 双层覆盖、manifest viewer 和 agent YAML 依赖。
 - [ ] 前端 Agents 页改为 Persona 编辑器，不显示 Agent type、Action 或 capability 列表。
-- [ ] 明确旧 @/: 输入的兼容期和稳定版错误格式；新 UI 只生成普通文本和 /tool。
+- [ ] 明确普通前缀文本的稳定行为；新 UI 只生成普通文本和未来 `/tool`。
 
 验收：
 
@@ -397,7 +397,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：消除新旧架构并存，形成可维护产品。
 
-- [ ] 删除过期兼容分支、旧表和孤立 imports。
+- [ ] 删除过期分支、旧表和孤立 imports。
 - [ ] 将设置收敛为 Models、Chat/Persona、Knowledge、Worldbook、Harness、Pet 和 App 基础项。
 - [ ] 拆分前端巨型组件及 types/store，保持行为不变。
 - [ ] 将 contract 文档压缩为 models、chat/context、harness/tools、knowledge、runs/streaming、settings 等 5–6 个主题。
@@ -447,7 +447,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 - 独立 reranker profile 表、store、设置和专属路由
 - action-form、旧 command-buttons、pet_command 相关分支
 
-删除前必须完成数据迁移、路由下线策略和测试替换；不能直接删除仍被用户数据引用的表。
+Phase 1 已在测试数据库直接完成删除；后续删除仍须有对应 Alembic revision 和契约测试。
 
 ### 6.4 明确后置
 
@@ -458,15 +458,13 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 - HF/ModelScope 模型下载
 - 多 key、非 localhost、用户/租户权限和配额
 
-## 7. 数据迁移与兼容策略
+## 7. 数据库策略
 
-1. Phase 0 为当前 schema 建 Alembic baseline，并在副本上验证升级、回滚和重复执行幂等。
-2. 新表优先 additive migration；删除旧表前先做数据拷贝、计数校验和备份。
-3. SessionRecord.default_agent_id、旧 agent id、旧 profile id 和 capability config 只作为迁移输入；稳定代码不继续双写。
-4. MessageRecord.parts_json 保持历史可读；旧 command/form part 用兼容 renderer 或一次性转换，新写入只允许有效的 text、file、image、tool_call、tool_result 类型。
-5. RunStep 增加稳定 kind 和结构化 metadata；旧显示名称可以保留在历史中，但不能作为逻辑分支。
-6. runtime jobs、worker 日志和安装目录不塞入 SQLite 大字段；数据库保存状态、版本、路径、摘要和错误引用。
-7. 任何 destructive migration 都要先备份和 dry-run，不使用无目标递归删除或 reset。
+1. Phase 0 为当前 schema 建 Alembic baseline；Phase 1 使用 `0002_phase1_prune` 直接删除不再需要的表和列。
+2. 本项目处于测试阶段，Phase 1 不复制、转换、双写或校验用户数据；空库 `upgrade head` 是主要启动验收。
+3. 破坏性 revision 的 `downgrade()` 明确报错，不伪装成可恢复迁移；开发者可重建测试数据库。
+4. 新写入只使用通用 message parts、run step kinds 和严格 schema；应用不读取已删除扩展配置。
+5. 未来新增表或字段仍须通过 Alembic；模型文件、附件和日志目录不由迁移脚本递归删除。
 
 ## 8. API 与事件目标
 
@@ -487,7 +485,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 - response_format 的受支持子集
 - /v1/embeddings
 
-公共 /v1/rerank 保持设计兼容但本轮不公开；图像生成不属于当前实现。
+公共 `/v1/rerank` 后置到 Phase 2；图像生成不属于当前实现。
 
 ### 8.2 内部 REST/WS
 
@@ -502,7 +500,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 每个阶段至少覆盖：
 
-- 数据/迁移：空库 baseline、旧库升级、重复执行幂等和关键记录计数。
+- 数据/迁移：空库 baseline、破坏性 prune、重复执行幂等和 schema 签名。
 - 模型层：adapter 能力、配置优先级、load/unload、缺失 runtime 和错误映射。
 - 聊天：普通文本、附件/视觉、memory/worldbook、Knowledge、群聊 transcript 和标题。
 - harness：schema、allowlist、循环上限、取消、审批恢复、工具结果投影和直接调用。
@@ -518,7 +516,7 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 1. 先读本文件，再按任务类型读 docs/ai/TASK_*.md 和对应 contract。
 2. 找到当前 phase 和验收标准，不从旧 generated registry 推断新目标。
 3. 先做只读影响扫描，列出 import、路由、表、前端入口和测试引用。
-4. 用 Alembic 和小步迁移保留数据，不以重建数据库或删除用户目录代替迁移。
+4. 用 Alembic 记录 schema 变化；Phase 1 测试阶段允许破坏性删表/删列，不复制或迁移用户数据。
 5. 一次完成一个可验证切片，结束时更新清单、测试结果和决策记录。
 6. 不重新引入 agent type、action、capability manifest、intent router、script SDK 或 ComfyUI 旧入口。
 7. 新工具必须同时支持模型调用和用户直接调用，并共享 schema、权限、审批、错误和持久化路径。
@@ -535,7 +533,6 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - 哪些工具默认需要审批、网络请求允许范围和读文件目录。
 - 群聊的 persona 轮次、当前 speaker 选择和 UI 交互。
 - 标题何时使用当前模型、何时使用辅助模型。
-- 旧路由兼容期长度及错误格式。
 - reranker adapter 的外部请求格式，保持未来 Jina/Cohere 风格兼容。
 
 这些细节应通过小型 schema、契约测试和用户可见示例确定，不应扩大为插件生态或自动意图识别。
@@ -552,13 +549,13 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - [x] 确认 Alembic baseline 纳入 Phase 0。
 - [x] 新建本路线图文档。
 - [x] Phase 0 实施：静态 Alembic baseline、旧库安全接管、测试隔离、数据目录文档和只读审计脚本已完成。
-- [ ] Phase 1 实施。
+- [x] Phase 1 实施：单一路径 Chat、显式核心服务、破坏性 prune migration、前端与文档契约收敛。
 - [ ] Phase 2a/2b 实施。
 - [ ] Phase 3 Persona 数据化。
 - [ ] Phase 4 harness。
 - [ ] Phase 5 文档和前端收尾。
 
-Phase 0 只建立迁移与卫生边界，没有删除旧 Agent、Capability、Intent、ComfyUI、diffusers 或旧表，也没有改变 HTTP API、设置、消息 part、事件或用户工作流。后续阶段仍须以本路线图的冻结决策为准。
+Phase 0 建立迁移与卫生边界；Phase 1 已完成旧扩展塔的硬切换。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准。
 
 ### Phase 0 实施记录（2026-09-04）
 
@@ -570,6 +567,16 @@ Phase 0 只建立迁移与卫生边界，没有删除旧 Agent、Capability、In
 - 验证命令：`uv run pytest tests/test_phase0_migrations.py tests/test_stateless_inference_skeleton.py -q`（54 passed）；`uv run pytest tests/test_persistence.py -q`（通过）；`uv run python scripts/phase0_audit.py --check`（通过）。全量套件为 1451 passed、23 failed，失败属于既有旧 MessageSchema/Intent 测试契约、可选依赖提示和 Knowledge 分块数量契约，不是 Phase 0 迁移路径。
 - API、设置、消息 parts、事件和用户工作流未作有意变更；旧架构减法留待 Phase 1。
 
+### Phase 1 实施记录（2026-09-04）
+
+- `ChatTargetCatalog` 只包含代码内 `chat`（公开默认）和 `translate`（内部测试）目标；所有前缀输入按普通文本发送。
+- Runtime/ChatRunner 统一处理等待恢复、上下文、Memory、Worldbook、Knowledge、附件、群聊 transcript、标题与 run/event 持久化。
+- RuntimeState 改为显式注入 sessions/messages/runs、LLM、Utility LLM、Knowledge、Pet、NetworkPolicy 等服务；启动不扫描扩展目录。
+- 删除 Agent/Command/Capability/Intent/Web Context/ComfyUI/image-generation/script/forms/action UI 代码、路由、测试和相关前端入口。
+- `0002_phase1_prune` 对测试数据库执行破坏性删表删列；不做数据复制、双写、旧字段转换或回滚伪装。
+- `AppSettings.pet`、`RunStep.kind`、Utility LLM 错误码、Knowledge RRF fallback 与 `NetworkPolicy` 契约测试已补齐；前端设置导航和 Pet 状态契约有静态测试。
+- 验证：后端 `uv run pytest -q`（41 passed）；前端 build、i18n、Knowledge citations、URL helper 与 Phase 1 contracts 均通过。
+
 ## 13. 决策变更记录
 
 | 日期 | 变更 |
@@ -577,3 +584,4 @@ Phase 0 只建立迁移与卫生边界，没有删除旧 Agent、Capability、In
 | 2026-09-04 | 初版：将 Claude Code 对话中的目标、证据、最终决策、目标架构、迁移阶段和交接规则冻结为文档。 |
 | 2026-09-04 | 记录最终覆盖关系：受管 worker、llama-server、手动放模型、Pet 在 app settings、ComfyUI 当前移除、reranker 保留但公共 API defer、Alembic 纳入 Phase 0。 |
 | 2026-09-04 | 完成 Phase 0：静态 baseline、旧库备份/校验/stamp、测试模型目录隔离、`DATA_LAYOUT.md` 与只读审计脚本；未改变 API 或用户工作流。 |
+| 2026-09-04 | 完成 Phase 1：普通聊天单一路径、显式核心服务、破坏性 schema prune、前端/契约测试与文档依赖收敛。 |

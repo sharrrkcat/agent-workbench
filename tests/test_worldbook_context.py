@@ -18,7 +18,7 @@ def test_worldbook_context_applies_entry_and_context_limits() -> None:
         worldbook_store=store,
         session_id="session-1",
         user_text="dragon",
-        source="prompt_agent",
+        source="chat",
     )
 
     assert result.metadata["matched_entry_count"] == 2
@@ -52,7 +52,7 @@ def test_worldbook_context_invalid_regex_warns_and_continues() -> None:
         worldbook_store=store,
         session_id="session-1",
         user_text="anything",
-        source="prompt_agent",
+        source="chat",
     )
 
     assert result.metadata["matched_entry_count"] == 1

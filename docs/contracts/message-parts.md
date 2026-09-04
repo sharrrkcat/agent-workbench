@@ -1,150 +1,27 @@
-# Message Parts v2 Contract
+# Message parts contract
 
-Message Parts v2 is the only visible message content model.
+Messages use `content_version: 2` and a validated `parts` array. The generic
+message schema is strict (`extra="forbid"`) and stores role, speaker identity,
+run/parent references, and compact metadata.
 
-```json
-{
-  "content_version": 2,
-  "parts": []
-}
-```
+## Supported parts
 
-`content_version` is required and currently fixed at `2`. `parts` is required
-and defaults to an empty array. Messages do not expose `content` or
-`output_type`, and `rich_content.blocks` is not a persistent message structure.
-Metadata may store compact refs, counts, warnings, and runtime details, but it
-must not duplicate full parts.
+- `text` with `plain` or `markdown` format;
+- `json` data;
+- `file` inline text or an attachment reference;
+- `image`, `audio`, and `video` attachment/direct URL references;
+- `media_group` image galleries;
+- `notice` and `error` status parts.
 
-## Supported Parts
+Unknown part types are rejected. There are no form, action, command-button,
+diff, or registry-specific parts. Large binary data belongs in the attachment
+store and is referenced by id/URL.
 
-- `text`: `format` is `plain` or `markdown`. Prompt Agent final output is a
-  markdown text part. Knowledge citations stay as inline `[K1]` tokens with
-  compact `metadata.snippet_refs`; chunk text is fetched at render time. Web
-  citations stay as inline `[W1]` tokens with compact
-  `metadata.web_context.source_refs`; source details are read from that compact
-  metadata at render time. Optional Web Context page excerpts are rendered into
-  Prompt Agent context before the model call and may be previewed from compact
-  metadata, but they do not change Message Parts schema or citation token
-  semantics.
-- `json`: structured object or array data.
-- `file`: inline raw text (`mode: inline_text`) or an attachment reference.
-- `image`: one image by `url` or `attachment_id`.
-- `audio`: one audio file. It supports local attachment-backed audio with
-  `source: attachment`, `attachment_id`, `/api/attachments/<id>.<ext>` URL, and
-  `audio/*` MIME type. It also supports direct remote audio with `source: url`,
-  an `http://` or `https://` URL, and `audio/*` MIME type.
-- `video`: one video file. It supports local attachment-backed video with
-  `source: attachment`, `attachment_id`, `/api/attachments/<id>.<ext>` URL, and
-  `video/*` MIME type. It also supports direct remote video with `source: url`,
-  an `http://` or `https://` URL, and `video/*` MIME type.
-- `media_group`: `layout: gallery` with image items.
-- `form`: validated action form. It does not allow HTML, JavaScript, arbitrary
-  URLs, file uploads, password/secret fields, or automatic execution.
-- `command_buttons`: send-message shortcuts. Clicks submit ordinary user text.
-- `notice` and `error`: simple structured status and error content.
+## Rendering and context
 
-Unknown part types fail validation. `diff`, `chart`, `table`, and `artifact`
-are future work and are not accepted.
-
-AudioPart `source: url` is only for safe HTTP/HTTPS direct audio links. It does
-not allow `file:`, `data:`, `javascript:`, or `blob:` URLs and must not include
-`attachment_id`. AudioPart does not support network downloads, remote
-attachment caching, HTTP media proxying, HLS/DASH manifests, `.m3u8`, `.mpd`,
-`.pls`, livestreams, radio, podcast RSS, TTS, ASR, transcription, audio input
-to LLMs, or audio content understanding. The built-in file Capability creates
-attachment-backed AudioParts through `/read-file <path>` when the local file is
-detected as supported audio.
-VideoPart `source: url` is only for safe HTTP/HTTPS direct video links. It does
-not allow `file:`, `data:`, `javascript:`, or `blob:` URLs and must not include
-`attachment_id`. VideoPart requires `video/*` MIME type. Remote poster URLs are
-not supported; `poster_url`, when present, must remain a local attachment URL.
-VideoPart does not support network downloads, remote attachment caching, HTTP
-media proxying, HLS/DASH manifests, `.m3u8`, `.mpd`, livestreams, video page
-extraction, metadata parsing, thumbnail or poster generation, transcoding, OCR,
-ASR, transcription, video input to LLMs, or video content understanding. The
-built-in file Capability creates attachment-backed VideoParts through
-`/read-file <path>` when the local file is detected as supported video.
-
-## Capability Outputs
-
-Capability method declarations use Message Parts terms:
-
-```yaml
-output:
-  part_type: text
-  format: markdown
-```
-
-Supported declarations are:
-
-- `part_type: text`, with `format: plain|markdown`.
-- `part_type: json`.
-- `part_type: file`, with `mode: inline_text`.
-- `part_type: image`.
-- `part_type: audio`.
-- `part_type: video`.
-- `part_type: media_group`, with `layout: gallery`.
-- `part_type: parts`, for a validated list of message parts.
-
-The built-in `file` Capability declares `/read-file` as `part_type: parts`
-because it auto-detects supported local text, image, and audio files. Text files
-return a raw `file` part with `mode: inline_text`; image files return an
-`image` part; audio files return an attachment-backed `audio` part; video files
-return an attachment-backed `video` part.
-
-The built-in `http` Capability declares `/fetch-url` as `part_type: parts`
-because it auto-detects supported remote text, HTML, JSON, image, direct audio,
-and direct video responses. Plain text returns a plain `text` part, HTML returns
-lightweight extracted page text, JSON returns a `json` part, images return an
-`image` part, direct audio returns an AudioPart with `source: url`, and direct
-video returns a VideoPart with `source: url`. HTTP audio and video are not
-downloaded, cached, saved as local attachments, or proxied. HLS/DASH, `.m3u8`,
-`.mpd`, `.pls`, livestream/radio/podcast extraction, video page extraction,
-OCR, ASR, TTS, transcription, audio/video understanding, and PDF parsing are
-not implemented.
-
-The built-in `codec` Capability declares `/encode` and `/decode` as
-`part_type: parts`. Text codec results use inline `file` parts. `/encode qr <text>`
-saves a generated PNG as a local attachment and returns an attachment-backed
-`image` part. QR decoding is not implemented.
-
-`output.type` is invalid. If a method omits `output`, the runtime infers the
-current parts contract from the returned value: lists are validated as parts,
-dicts become JSON unless they look like image/media payloads, and scalars become
-plain text.
-
-## Rendering
-
-The frontend renders normal messages only through `MessagePartsRenderer`.
-Missing or invalid parts produce a safe empty/error state, not a legacy fallback.
-Copyable content and renderability checks are derived from parts and status.
-Markdown text rendering may enhance known `[K#]` and `[W#]` tokens into
-clickable citation badges. This is render-time only: persisted message parts and
-copy behavior keep the original markdown text. Citation enhancement must avoid
-code blocks, inline code, and links, and unknown labels such as `[W99]` must not
-throw or trigger network calls.
-The frontend may render citation badges with readable titles from compact
-metadata, such as Web source title/page title/domain for `[W#]` and Knowledge
-source title/path/heading metadata for `[K#]`. These display labels are UI-only
-and must not mutate the stored markdown text, message parts, retry/edit content,
-or copy-to-clipboard output.
-Fetched Web Context page excerpts do not create new citation ids; `[W#]`
-continues to point at the matching compact Web source ref.
-Audio parts render with the project custom audio player, backed by a hidden
-`<audio>` element without native browser controls. Remote `source: url` playback
-depends on browser support and the remote server's Content-Type, Range, CORS,
-and hotlink behavior; the workbench does not proxy or repair remote media.
-Video parts render with a native `<video controls preload="metadata">` element.
-They accept local attachment URLs for `source: attachment` and HTTP/HTTPS direct
-video URLs for `source: url`. Remote playback depends on browser support and
-the remote server's Content-Type, Range, CORS, and hotlink behavior; the
-workbench does not proxy or repair remote media.
-
-Forms and command buttons are first-class parts. Silent form updates replace the
-matching `form` part in `Message.parts[]`.
-
-## Attachments
-
-Generated images, audio, video, and files should be saved as local attachments
-and referenced by `/api/attachments/<id>` URLs or attachment ids. Message parts
-must not create a new durable large-base64 storage path.
+The frontend renders parts without interpreting their text as routing
+instructions. Markdown is displayed as content; copy/retry/edit operations use
+the original text. ChatRunner projects text parts into model messages while
+preserving speaker labels for group transcripts. Metadata may hold compact
+source refs, counts, and warnings, but never duplicates full part bodies or
+secrets.

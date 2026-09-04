@@ -27,8 +27,6 @@ class CheckResult:
 FIXED_LIMITS = {
     "docs/AI_CONTEXT.md": 150,
     "README.md": 350,
-    "docs/EXTENSION_API.md": 350,
-    "docs/EXTENSION_ARCHITECTURE.md": 350,
     "docs/RUNTIME_PROTOCOLS.md": 300,
 }
 

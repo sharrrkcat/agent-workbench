@@ -109,6 +109,13 @@ def _content(value: Any) -> str:
             return str(content)
         if content is not None:
             return str(content)
+        choices = value.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0] if isinstance(choices[0], dict) else {}
+            message = first.get("message") if isinstance(first.get("message"), dict) else {}
+            choice_content = message.get("content") or first.get("text")
+            if choice_content is not None:
+                return str(choice_content)
         message = value.get("message")
         if isinstance(message, dict):
             return str(message.get("content") or "")
