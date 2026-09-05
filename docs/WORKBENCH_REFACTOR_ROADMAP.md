@@ -1,6 +1,6 @@
 # Agent Workbench 架构精简与重构路线图
 
-> 状态：设计冻结，Phase 0、Phase 1 与 Phase 2a 已完成（2026-09-05）
+> 状态：设计冻结，Phase 0、Phase 1、Phase 2a 与 Phase 2b 已完成（2026-09-06）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口
 
@@ -340,14 +340,14 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：用户能在网页中安装和管理运行环境，而不污染 API 主进程。
 
-- [ ] 建立 runtime catalog、版本/变体校验和安装状态模型。
-- [ ] 实现 llama-server 下载、校验、启动、健康检查、停止和日志收集。
-- [ ] 实现 Python worker venv 的 uv 创建、固定 requirements 安装和 worker RPC。
-- [ ] 将 CLIP、SigLIP2、DINOv2、Florence2、WD14、transformers embedding 迁入 worker。
-- [ ] 安装任务支持进度事件、取消、重试、单任务互斥和失败日志。
-- [ ] Provider/Model 设置显示未安装、安装中、就绪、损坏和版本。
-- [ ] 缺失 runtime 统一返回 RUNTIME_NOT_INSTALLED，并提供可执行安装动作。
-- [ ] 安装/卸载与 ModelManager 串联；应用退出清理受管子进程。
+- [x] 建立 runtime catalog、版本/变体校验和安装状态模型。
+- [x] 实现 llama-server 下载、校验、启动、健康检查、停止和日志收集。
+- [x] 实现 Python worker venv 的 uv 创建、固定 requirements 安装和 worker RPC。
+- [x] 将 CLIP、SigLIP2、DINOv2、Florence2、WD14、transformers embedding 迁入 worker。
+- [x] 安装任务支持进度事件、取消、重试、单任务互斥和失败日志。
+- [x] Provider/Model 设置显示未安装、安装中、就绪、损坏和版本。
+- [x] 缺失 runtime 统一返回 RUNTIME_NOT_INSTALLED，并提供可执行安装动作。
+- [x] 安装/卸载与 ModelManager 串联；应用退出清理受管子进程。
 
 验收：
 
@@ -529,9 +529,7 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 
 这些问题不改变产品方向，需在对应阶段定稿：
 
-- ModelProfile 参数与 capability 命名已在 Phase 2a 契约中冻结；worker 运行参数在 Phase 2b 确定。
-- llama-server/Python worker 的版本矩阵、端口分配和日志保留策略。
-- runtime catalog 的签名/校验来源和代理设置字段。
+- ModelProfile 参数与 capability 命名已在 Phase 2a 契约中冻结；Phase 2b 的 worker 参数、CPU 版本矩阵、动态回环端口、哈希来源和下载设置见 managed-runtime 契约。
 - /tool-name args 的多参数解析和工具名称命名空间。
 - 哪些工具默认需要审批、网络请求允许范围和读文件目录。
 - 群聊的 persona 轮次、当前 speaker 选择和 UI 交互。
@@ -542,7 +540,7 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 
 ## 12. 当前进度快照
 
-截至 2026-09-05：
+截至 2026-09-06：
 
 - [x] 完成只读架构调研和问题证据整理。
 - [x] 确认产品目标、减法范围、runtime worker 方向和 reranker 保留策略。
@@ -554,12 +552,23 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - [x] Phase 0 实施：静态 Alembic baseline、旧库安全接管、测试隔离、数据目录文档和只读审计脚本已完成。
 - [x] Phase 1 实施：单一路径 Chat、显式核心服务、破坏性 prune migration、前端与文档契约收敛。
 - [x] Phase 2a 实施：统一 Models、ModelManager、外部协议、前端和测试库重建。
-- [ ] Phase 2b 受管 runtime 与安装任务。
+- [x] Phase 2b 受管 runtime 与安装任务。
 - [ ] Phase 3 Persona 数据化。
 - [ ] Phase 4 harness。
 - [ ] Phase 5 文档和前端收尾。
 
-Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2a 完成统一模型调用面。下一阶段为 Phase 2b。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准，以下旧阶段记录只用于说明历史，不恢复旧兼容实现。
+Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2a 完成统一模型调用面；Phase 2b 完成受管 runtime 与安装任务。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准，以下旧阶段记录只用于说明历史，不恢复旧兼容实现。
+
+### Phase 2b 实施记录（2026-09-06）
+
+- 新增代码内锁定 runtime catalog，首批启用 x86_64 Windows/Linux 的 llama-server CPU 与 Python worker torch-cpu；CUDA、Vulkan、torch-cu128 和 onnx-gpu 保留为明确 unsupported 条目。llama.cpp b10809 的 Windows/Linux CPU 资产使用官方 HTTPS URL 与固定 SHA-256；Python worker requirements 使用带哈希锁文件。
+- 新增 `RuntimeStore`、`RuntimeSupervisor`、Alembic `0004_phase2b_runtimes`、安装/卸载任务 API、动态回环端口、Windows Job Object/跨平台进程组、10 MiB 脱敏日志和 20 条历史保留。安装 staging 和 runtime 目录与模型/附件目录分离，迁移不删除文件。
+- `ModelProfile` 增加 runtime_id/runtime_variant/runtime_options；`ModelManager` 统一托管 LlamaServerAdapter 与 PythonWorkerAdapter。Python worker 通过 token-authenticated HTTP RPC 暴露 health/load/unload/embed/rerank/image-embed/vision，并强制离线、本地模型加载。
+- Models UI 增加 RuntimesPanel、runtime profile 绑定、任务进度/取消/重试/卸载/日志和双语文案；全局 runtime/model events 可在没有聊天 session 时订阅。
+- 验证：`uv run --no-sync pytest -q` 为 **115 passed**；Phase 2b 专项测试 35 passed；compileall、前端 build、i18n、model-stream、Phase 1 contracts、Knowledge citations、URL helpers、docs size、workspace audit、git diff --check 均通过。实际 `llama-server/cpu` 与 `python-worker/torch-cpu` 安装完成；Python 3.12.11、PyTorch CPU、Transformers、ONNX Runtime 导入检查通过；未下载任何模型文件。
+- API/设置变化：新增 `/api/models/runtime/settings`、`/api/models/runtimes/*`、受管 profile 字段和 `/api/models/profiles/{id}/log`；新增 `runtime_job_updated`/`runtime_status` 全局事件。聊天 Run、消息、附件和 `/v1` 外部边界未扩展。
+- 实际 CPU 前向检查：在临时目录生成随机权重，用安装好的 worker Python 验证 embedding、reranker、CLIP、SigLIP2、DINOv2 的有限值输出；临时权重已清理。此检查不代表预训练模型质量验收。
+- 剩余限制：当前只启用 CPU runtime；预训练 GGUF/Florence2/WD14 权重和 Linux 主机运行未实测。浏览器已验证桌面安装完成状态与窄屏设置页；窄屏运行环境列表因浏览器标签丢失未完成交互验收。CUDA/Vulkan、公共 `/v1/rerank`、模型下载和后续阶段边界不变。
 
 ### Phase 0 实施记录（2026-09-04）
 
@@ -606,3 +615,4 @@ Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2
 | 2026-09-04 | 完成 Phase 1：普通聊天单一路径、显式核心服务、破坏性 schema prune、前端/契约测试与文档依赖收敛。 |
 | 2026-09-05 | 完成 Phase 2a：统一模型层/表/接口/前端，补齐 OpenAI 兼容流式与工具/视觉/格式子集，删除旧进程内推理与配置栈，整体重建测试库；冻结 OpenAI Compatible 单协议、manual 默认释放、标题仅显式辅助模型。 |
 | 2026-09-05 | 永久确认测试阶段无用户/用户数据、允许长期停服、不做保活或旧结构兼容、不迁移数据和不考虑旧习惯；模型/附件/runtime 等文件不随 schema 删除。 |
+| 2026-09-06 | Phase 2b 完成：首批 CPU runtime、代码内锁定 catalog、动态回环 HTTP worker、SQLite 安装任务与全局事件；GPU 变体显式 unsupported，模型仍手动管理。 |

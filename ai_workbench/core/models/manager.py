@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
     ImagePart, ModelProfile, ModelStatus, ProviderProfile,
 )
+from ai_workbench.workers.protocol import WorkerError
 
 
 @dataclass
@@ -26,19 +28,30 @@ class ProviderSlot:
     model_queued: dict[tuple | None, int] = field(default_factory=dict)
 
 
+@dataclass
+class ManagedQueue:
+    concurrency: int = 1
+    queue_size: int = 32
+    queue_timeout_seconds: float = 30
+
+
 class ModelManager:
     def __init__(self, profiles, providers, settings, events=None,
-                 adapter_factory: Callable[[ProviderProfile], ProviderAdapter] = OpenAIAdapter):
+                 adapter_factory: Callable[[ProviderProfile], ProviderAdapter] = OpenAIAdapter,
+                 runtime_supervisor=None):
         self.profiles = profiles
         self.providers = providers
         self.settings = settings
         self.events = events
         self.adapter_factory = adapter_factory
-        self._slots: dict[str, ProviderSlot] = {}
+        self.runtime_supervisor = runtime_supervisor
+        if runtime_supervisor:
+            runtime_supervisor.manager = self
+        self._slots: dict[str | tuple, ProviderSlot] = {}
         self._statuses: dict[tuple, ModelStatus] = {}
         self._idle: dict[tuple, asyncio.Task] = {}
         self._load_locks: dict[tuple, asyncio.Lock] = {}
-        self._invalidating: set[str | None] = set()
+        self._invalidating: set[str | tuple | None] = set()
         self._closed = False
 
     def profile(self, profile_id: str, kind: str | None = None) -> ModelProfile:
@@ -64,18 +77,60 @@ class ModelManager:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a chat model in Models settings.", 503)
         return self.profile(profile_id, "llm")
 
-    @staticmethod
-    def _key(profile: ModelProfile) -> tuple:
-        return profile.provider_profile_id, profile.model_ref
+    def backend_key(self, profile: ModelProfile):
+        if not profile.runtime_id:
+            return profile.provider_profile_id
+        key = (profile.runtime_id, profile.runtime_variant)
+        if profile.runtime_id == "llama-server":
+            # Keep identity stable if a weight file/link disappears after loading.
+            # Filesystem containment is rechecked at every health/load operation.
+            path = self.runtime_supervisor.root / "data" / "models" / profile.model_ref
+            key += (os.path.normcase(str(path)),)
+        return key
+
+    def _key(self, profile: ModelProfile) -> tuple:
+        backend = self.backend_key(profile)
+        return backend, profile.id if profile.runtime_id == "python-worker" else backend[-1] if profile.runtime_id else profile.model_ref
+
+    def validate_binding(self, profile):
+        if profile.runtime_id:
+            self.runtime_supervisor.entry(profile.runtime_id, profile.runtime_variant)
+        if profile.runtime_id == "llama-server":
+            for alias in self.profiles.list("llm"):
+                if alias.id != getattr(profile, "id", None) and self.backend_key(alias) == self.backend_key(profile) and alias.runtime_options != profile.runtime_options:
+                    raise ModelError("MODEL_CONFLICT", "Aliases of a managed GGUF must use identical runtime options.", 409)
 
     def status(self, profile_id: str) -> ModelStatus:
         profile = self.profiles.get(profile_id)
         status = self._statuses.get(self._key(profile), ModelStatus()).model_copy()
         provider = next((p for p in self.providers.list() if p.id == profile.provider_profile_id), None)
-        if not profile.enabled or provider is None or not provider.enabled:
+        if profile.runtime_id and self.runtime_supervisor:
+            from ai_workbench.core.models.runtimes.schema import model_path
+            from ai_workbench.core.models.runtimes.schema import RuntimeStatus
+            installation = self.runtime_supervisor.installation(profile.runtime_id, profile.runtime_variant)
+            slot = self._slots.get(self.backend_key(profile))
+            status = slot.adapter.snapshot(profile) if slot else ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)
+            status.runtime = RuntimeStatus(runtime_id=installation.runtime_id, variant=installation.variant, version=installation.version,
+                install_state=installation.state, job_id=installation.job_id,
+                process_state=slot.adapter.state if slot else "stopped")
+            if installation.state != "installed":
+                status.state = "unavailable"
+                status.error_code = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING", "unsupported": "RUNTIME_UNSUPPORTED"}.get(installation.state, "RUNTIME_BROKEN")
+            else:
+                try:
+                    path = model_path(self.runtime_supervisor.root, profile.model_ref)
+                    if profile.runtime_id == "llama-server" and not path.is_file():
+                        raise ValueError()
+                    if profile.runtime_id == "python-worker":
+                        from ai_workbench.workers.protocol import local_model
+                        local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
+                            wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14")
+                except (OSError, ValueError, WorkerError):
+                    status.state, status.error_code = "unavailable", "MODEL_NOT_FOUND"
+        if not profile.enabled or not profile.runtime_id and (provider is None or not provider.enabled):
             status.state = "unavailable"
             status.error_code = "MODEL_UNAVAILABLE"
-        slot = self._slots.get(profile.provider_profile_id)
+        slot = self._slots.get(self.backend_key(profile))
         if slot:
             status.active = slot.model_active.get(self._key(profile), 0)
             status.queued = slot.model_queued.get(self._key(profile), 0)
@@ -93,11 +148,23 @@ class ModelManager:
                         "model_profile_id": profile.id, "status": self.status(profile.id).model_dump(),
                     })
 
-    def _slot(self, provider_id: str | None) -> tuple[ProviderProfile, ProviderSlot]:
+    def _slot(self, provider_id, profile=None, require_runtime=True):
         if self._closed:
             raise ModelError("MODEL_UNAVAILABLE", "Model manager is shutting down.", 503)
         if provider_id in self._invalidating:
             raise ModelError("MODEL_BUSY", "Provider configuration is changing.", 409)
+        if profile and profile.runtime_id:
+            supervisor = self.runtime_supervisor
+            if supervisor.blocked == (profile.runtime_id, profile.runtime_variant):
+                raise ModelError("RUNTIME_INSTALLING", "Runtime maintenance is in progress.", 409)
+            if require_runtime:
+                supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
+            if provider_id not in self._slots:
+                from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter, PythonWorkerAdapter
+                cls = LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
+                adapter = cls(supervisor, profile, lambda: self._managed_changed(provider_id))
+                self._slots[provider_id] = ProviderSlot(adapter, asyncio.Semaphore(1))
+            return ManagedQueue(), self._slots[provider_id]
         try:
             provider = self.providers.get(provider_id)
         except KeyError as exc:
@@ -109,8 +176,8 @@ class ModelManager:
         return provider, self._slots[provider.id]
 
     @asynccontextmanager
-    async def _provider_lease(self, provider_id: str | None, key: tuple | None = None):
-        provider, slot = self._slot(provider_id)
+    async def _provider_lease(self, provider_id, key: tuple | None = None, profile=None, require_runtime=True):
+        provider, slot = self._slot(provider_id, profile, require_runtime)
         if slot.active + slot.queued >= provider.concurrency + provider.queue_size:
             raise ModelError("MODEL_BUSY", "Provider queue is full.", 429)
         slot.queued += 1
@@ -143,13 +210,13 @@ class ModelManager:
             self._publish(key)
 
     @asynccontextmanager
-    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True):
+    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True):
         key = self._key(profile)
         idle = self._idle.pop(key, None)
         if idle and idle is not asyncio.current_task():
             idle.cancel()
         try:
-            async with self._provider_lease(profile.provider_profile_id, key) as slot:
+            async with self._provider_lease(self.backend_key(profile), key, profile, require_runtime) as slot:
                 try:
                     if autoload:
                         async with self._load_locks.setdefault(key, asyncio.Lock()):
@@ -201,16 +268,16 @@ class ModelManager:
     async def load(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
         async with self._lease(profile, autoload=False, release=False) as adapter:
-            result = await adapter.load(profile)
+            result = await adapter.load(profile, explicit=True) if profile.runtime_id else await adapter.load(profile)
             self._notify(profile, result)
             return result
 
     async def unload(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
-        slot = self._slots.get(profile.provider_profile_id)
+        slot = self._slots.get(self.backend_key(profile))
         if slot and (slot.active or slot.queued):
             raise ModelError("MODEL_BUSY", "Wait for active and queued requests before unloading.", 409)
-        async with self._lease(profile, autoload=False, release=False) as adapter:
+        async with self._lease(profile, autoload=False, release=False, require_runtime=False) as adapter:
             result = await adapter.unload(profile)
             self._notify(profile, result)
             return result
@@ -293,13 +360,57 @@ class ModelManager:
 
     async def image_embed(self, profile_id: str, images: list[str]):
         profile = self.profile(profile_id, "image_embedding")
+        if not images:
+            raise ModelError("INVALID_REQUEST", "Image embedding requires at least one image.")
         async with self._lease(profile) as adapter:
-            return await adapter.image_embed(profile, images)
+            result = await adapter.image_embed(profile, images)
+            dimension = profile.parameters.get("dimensions")
+            if len(result.vectors) != len(images):
+                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Image embedding count did not match input.", 502)
+            for vector in result.vectors:
+                dimension = dimension or len(vector)
+                if not vector or len(vector) != dimension or not all(math.isfinite(x) for x in vector):
+                    raise ModelError("EMBEDDING_DIMENSION_MISMATCH", "Image embeddings have invalid dimensions or values.", 502)
+                if profile.parameters.get("normalize", True):
+                    norm = math.sqrt(sum(x * x for x in vector))
+                    if norm:
+                        vector[:] = [x / norm for x in vector]
+            return result
 
     async def vision(self, profile_id: str, images: list[str]):
         profile = self.profile(profile_id, "vision")
+        if not images:
+            raise ModelError("INVALID_REQUEST", "Vision requires at least one image.")
         async with self._lease(profile) as adapter:
             return await adapter.vision(profile, images)
+
+    def _managed_changed(self, backend):
+        slot = self._slots.get(backend)
+        if slot:
+            for profile in self.profiles.list():
+                if self.backend_key(profile) == backend:
+                    self._notify(profile, slot.adapter.snapshot(profile))
+
+    def runtime_changed(self, runtime_id, variant):
+        for profile in self.profiles.list():
+            if (profile.runtime_id, profile.runtime_variant) == (runtime_id, variant):
+                self._publish(self._key(profile))
+
+    def process_log(self, profile):
+        slot = self._slots.get(self.backend_key(profile))
+        path = getattr(slot.adapter, "log_path", None) if slot else None
+        return path.read_text(encoding="utf-8", errors="replace") if path and path.is_file() else ""
+
+    def require_runtime_idle(self, runtime_id, variant):
+        for key in set(self._slots) | self._invalidating:
+            if isinstance(key, tuple) and key[:2] == (runtime_id, variant):
+                self.require_idle(key)
+
+    async def invalidate_runtime(self, runtime_id, variant):
+        self.require_runtime_idle(runtime_id, variant)
+        for key in list(self._slots):
+            if isinstance(key, tuple) and key[:2] == (runtime_id, variant):
+                await self.invalidate(key)
 
     def require_idle(self, provider_id: str | None) -> None:
         slot = self._slots.get(provider_id)

@@ -15,12 +15,20 @@ utility_model_profile_id, external_enabled, external_api_key and
 max_request_mb. Session model_profile_id overrides the global default.
 Settings are persisted as one models object in appmetadatarecord.
 
-The Models panel has Profiles, Connections and External service tabs.
+The Models panel has Profiles, Connections, Runtimes and External service tabs.
 One kind filter exposes llm, embedding, reranker, image_embedding and vision
 profiles. Connections use only the OpenAI-compatible protocol. Editors own
 capability flags, generation/per-kind parameters and lifecycle (manual by
 default). Local inventory and provider model listing do not load weights.
 Load, health, unload and occupation use the shared model store.
+
+Managed profiles select runtime/variant and validated runtime options instead
+of an external connection. Runtimes exposes installation, cancellation,
+reinstallation, uninstall, task history and bounded logs. Runtime download
+settings at `/api/models/runtime/settings` own only http_proxy,
+pypi_index_url, pytorch_index_url and github_release_proxy_url. Index and
+release proxy URLs require HTTPS; HTTP is allowed for the explicit proxy.
+Credentials in URLs are rejected. See [managed-runtime](managed-runtime.md).
 
 Keys are omitted from reads; presence flags replace them. PATCH omission
 retains a key, an explicit empty string clears it. External enablement requires

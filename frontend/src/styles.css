@@ -110,3 +110,14 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { cursor: no
 @keyframes cursor-pulse { 50% { opacity: .25; } }
 @media (max-width: 900px) { .model-row { grid-template-columns: minmax(0, 1fr) auto; } .model-row > .model-actions { grid-column: 1 / -1; justify-content: flex-end; } }
 @media (max-width: 600px) { .model-defaults, .model-form-grid { grid-template-columns: minmax(0, 1fr); } .model-tabs { gap: 14px; } .app-modal-overlay { padding: 10px; } .app-modal-panel { max-height: calc(100dvh - 20px); } .app-modal-header { padding: 14px; } .app-modal-body { padding: 0 14px 16px; } .topbar-left, .topbar-actions { flex-wrap: wrap; min-width: 0; } .compact-topbar { flex-wrap: wrap; } .chat-model-select { max-width: 190px; } }
+/* Runtime management uses the existing settings rows and modal surfaces. */
+.runtime-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) auto; gap: 16px; padding: 16px 0; border-bottom: 1px solid #333; align-items: center; }
+.runtime-progress { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.runtime-progress progress { width: 100%; height: 8px; accent-color: #2e8871; }
+.runtime-log { max-height: 55vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+.runtime-download-settings, .runtime-panel details { margin: 16px 0; }
+.runtime-panel summary { cursor: pointer; padding: 8px 0; }
+.runtime-history { max-height: 320px; overflow: auto; }
+.runtime-history small { display: block; }
+.model-runtime-state { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .runtime-row { grid-template-columns: minmax(0, 1fr) auto; } .runtime-progress { grid-column: 1 / -1; grid-row: 2; } .model-tabs { flex-wrap: wrap; } }

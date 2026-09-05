@@ -9,8 +9,10 @@ import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
+import { useModelEvents } from './hooks/useModelEvents';
 
 export default function App() {
+  useModelEvents();
   const initialize = useWorkbenchStore((state) => state.initialize);
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const refreshCurrent = useWorkbenchStore((state) => state.refreshCurrent);

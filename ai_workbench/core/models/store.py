@@ -24,14 +24,14 @@ class _Store(Generic[T]):
 
     def _decode(self, record) -> T:
         data = record.model_dump()
-        for key in ("capabilities", "parameters", "lifecycle"):
+        for key in ("capabilities", "parameters", "lifecycle", "runtime_options"):
             if key + "_json" in data:
                 data[key] = json.loads(data.pop(key + "_json"))
         return self.schema.model_validate(data)
 
     def _encode(self, profile) -> dict:
         data = profile.model_dump()
-        for key in ("capabilities", "parameters", "lifecycle"):
+        for key in ("capabilities", "parameters", "lifecycle", "runtime_options"):
             if key in data:
                 data[key + "_json"] = json.dumps(data.pop(key))
         return data

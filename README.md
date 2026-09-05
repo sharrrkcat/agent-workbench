@@ -1,9 +1,9 @@
 # Agent Workbench
 
-A local-first chat workbench and OpenAI-compatible model gateway. Phase 2a
+A local-first chat workbench and OpenAI-compatible model gateway. Phase 2b
 uses one ModelManager for chat, auxiliary tasks, Knowledge and external
-requests. Connections currently call an existing OpenAI-compatible service;
-managed llama-server/Python workers are Phase 2b.
+requests, with optional catalog-pinned llama-server and Python worker
+backends outside the API process.
 
 ## Start
 
@@ -36,9 +36,17 @@ In Settings > Models:
    A chat session can override the default.
 
 There is one profile store for llm, embedding, reranker, image_embedding and
-vision. LLM chat and text embeddings execute through external connections.
-The other kinds can be configured, but need Phase 2b managed backends to run.
-Image input through a vision-capable LLM is already supported.
+vision. External connections use the OpenAI-compatible protocol. Managed
+profiles select a runtime and variant, while weights remain manual files under
+data/models. LLM chat uses llama-server; text embeddings, reranking, image
+embeddings and vision use the Python worker. Image input through a
+vision-capable external LLM is also supported.
+
+In Settings > Models > Runtimes, install the enabled CPU runtimes, inspect
+job progress and logs, cancel or retry tasks, and uninstall a runtime. CUDA,
+Vulkan and GPU worker variants are shown as unsupported until enabled for the
+platform. Runtime settings configure only HTTPS artifact indexes/proxies;
+model weights are never downloaded by the application.
 
 Lifecycle defaults to manual release. External connections cannot report
 weight residency or unload through the standard protocol; the UI shows
@@ -97,9 +105,10 @@ Keys are omitted from management reads, with presence flags instead. Omitting
 a PATCH key retains it; an empty string clears it. Local key storage is not
 encrypted. Logs exclude credentials and request/model content.
 
-SQLite is managed solely by Alembic. Head 0003_phase2a_models recreates the
-whole disposable database, including sessions, settings, Knowledge and
-Worldbook, without copying or converting records. Downgrade is unsupported.
+SQLite is managed solely by Alembic. Head 0004_phase2b_runtimes adds managed
+profile fields and runtime job/install records after Phase 2a's disposable
+database recreation, without copying or converting records. Downgrade is
+unsupported.
 Empty databases upgrade to head; unversioned nonempty databases are rejected.
 
 This project has no users/user data. Prolonged service downtime is acceptable.
@@ -129,10 +138,11 @@ Pop-Location
 ```
 
 Backend tests use isolated roots, mock upstream HTTP plus real loopback
-HTTP/SSE/WS transport tests. They do not load/download weights. Frontend state
+HTTP/SSE/WS transport tests. Runtime tests install/download only pinned runtime
+artifacts into isolated roots; they do not download model weights. Frontend state
 tests exercise sequence ordering, canonical completion, concurrent model
-refreshes and session isolation. Browser smoke is outside this round's
-requested verification.
+refreshes, runtime jobs and session isolation. Installed runtime smoke checks
+are reported separately from deterministic tests.
 
 Read [AI context](docs/AI_CONTEXT.md), then the
 [refactor roadmap](docs/WORKBENCH_REFACTOR_ROADMAP.md) and owning contract

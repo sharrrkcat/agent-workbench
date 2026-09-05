@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai_workbench.core.time import utc_now
+from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision"]
 
@@ -113,6 +114,9 @@ class ModelInput(StrictModel):
     alias: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
     kind: ModelKind
     provider_profile_id: str | None = None
+    runtime_id: Literal["llama-server", "python-worker"] | None = None
+    runtime_variant: Literal["cpu", "cuda", "vulkan", "torch-cpu", "torch-cu128", "onnx-gpu"] | None = None
+    runtime_options: dict[str, Any] = Field(default_factory=dict)
     model_ref: str = Field(min_length=1, max_length=1024)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -122,6 +126,27 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
+        from ai_workbench.core.models.runtimes.schema import LlamaOptions, PythonOptions, relative_ref
+        if self.runtime_id:
+            if self.provider_profile_id or not self.runtime_variant:
+                raise ValueError("A managed model requires a runtime variant and no external connection")
+            relative_ref(self.model_ref)
+            if self.runtime_id == "llama-server":
+                if self.kind != "llm" or self.runtime_variant not in {"cpu", "cuda", "vulkan"}:
+                    raise ValueError("llama-server requires llm kind and cpu/cuda/vulkan variant")
+                self.runtime_options = LlamaOptions.model_validate(self.runtime_options).model_dump()
+                if self.runtime_variant == "cpu" and self.runtime_options["gpu_layers"] != 0:
+                    raise ValueError("CPU runtime requires gpu_layers=0")
+                if not self.model_ref.endswith(".gguf"):
+                    raise ValueError("llama-server requires a local GGUF file")
+                if self.capabilities.vision:
+                    raise ValueError("Managed llama image input requires a future projector configuration")
+            else:
+                if self.kind == "llm" or self.runtime_variant not in {"torch-cpu", "torch-cu128", "onnx-gpu"}:
+                    raise ValueError("Python worker requires a non-llm kind and a Python runtime variant")
+                self.runtime_options = PythonOptions.model_validate(self.runtime_options).model_dump()
+        elif self.runtime_variant or self.runtime_options:
+            raise ValueError("Runtime variant and options require runtime_id")
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
@@ -353,3 +378,4 @@ class ModelStatus(StrictModel):
     active: int = 0
     queued: int = 0
     error_code: str | None = None
+    runtime: RuntimeStatus | None = None

@@ -3,8 +3,8 @@
 This is the lightweight entry point for repository work. Read the roadmap and
 the smallest relevant contract before searching source broadly.
 
-Phase 2a is complete (2026-09-05); the next implementation phase is 2b.
-Current schema head: `0003_phase2a_models`. See the roadmap implementation
+Phase 2b is complete (2026-09-06); the next implementation phase is 3.
+Current schema head: `0004_phase2b_runtimes`. See the roadmap implementation
 record for changed modules, verification and the managed-runtime boundary.
 
 ## Fixed Refactor Constraints
@@ -19,7 +19,7 @@ attachments, runtimes, or other data directories.
 
 Phase 2a unifies inference under `core/models` with only OpenAI-compatible
 external connections. Local in-process inference is removed; managed backends
-arrive in Phase 2b. Model release defaults to manual. Titles use only the
+use isolated llama-server/Python workers. Model release defaults to manual. Titles use only the
 explicitly selected auxiliary model and stay unchanged on absence or failure.
 
 ## Task map
@@ -43,6 +43,7 @@ registry, route parser, or script SDK to modify.
 - `contracts/runtime-streaming.md`
 - `contracts/runtime-llm-resolution.md`
 - `contracts/provider-status.md`
+- `contracts/managed-runtime.md`
 - `contracts/attachments-vision.md`
 - `contracts/knowledge.md`
 - `contracts/memory-worldbook.md`

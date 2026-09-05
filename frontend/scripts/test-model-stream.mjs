@@ -81,6 +81,27 @@ statusRead.resolve(idle);
 await statusReload;
 assert.equal(modelsStore.getState().statuses.new.active, 2);
 
+mockApi.runtimeCatalog = async () => [{ runtime_id: 'python-worker', variant: 'torch-cpu' }];
+mockApi.runtimeInstallations = async () => [{ id: 'python-worker/torch-cpu', state: 'not_installed' }];
+const jobsRead = deferred();
+mockApi.runtimeJobs = () => jobsRead.promise;
+const runtimeReload = modelsStore.getState().reloadRuntimes();
+const job = { id: 'job', runtime_id: 'python-worker', variant: 'torch-cpu', state: 'running', stage: 'installing_packages', created_at: '2026-09-05T00:00:00Z', revision: 2 };
+modelsStore.getState().applyModelEvent({ type: 'runtime_job_updated', session_id: '', payload: { job } });
+modelsStore.getState().applyModelEvent({ type: 'runtime_status', session_id: '', payload: { installation: { id: 'python-worker/torch-cpu', state: 'installing' } } });
+jobsRead.resolve([{ ...job, state: 'queued', revision: 1 }]);
+await runtimeReload;
+assert.equal(modelsStore.getState().jobs[0].state, 'running');
+assert.equal(modelsStore.getState().installations[0].state, 'installing');
+modelsStore.getState().setJob({ ...job, state: 'cancelled', revision: 3 });
+modelsStore.getState().setJob(job);
+assert.equal(modelsStore.getState().jobs[0].state, 'cancelled');
+modelsStore.getState().setJob({ ...job, id: 'retry', revision: 1, created_at: '2026-09-05T00:01:00Z' });
+assert.equal(modelsStore.getState().jobs[0].id, 'retry');
+modelsStore.getState().applyModelEvent({ type: 'model_status', session_id: '', payload: { model_profile_id: 'new', status: { ...idle, active: 1 } } });
+assert.equal(modelsStore.getState().statuses.new.active, 1);
+console.log('runtime progress, stale reads, cancellation, retry history and global events: ok');
+
 const workbenchModule = await loadStore('../src/store/useWorkbenchStore.ts', {
   ...commonImports, './useModelsStore': modelsModule.url, './messageStream': dataModule(compiled),
 });

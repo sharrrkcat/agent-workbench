@@ -16,6 +16,8 @@ ModelsPanel contains unified profiles for five kinds, OpenAI-compatible
 connections, global/auxiliary model selectors and external-service settings.
 ChatHeader and Knowledge selectors share useModelsStore. Model parameters,
 capabilities, release policy, status and inventory live in ModelsPanel.
+RuntimesPanel provides catalog installation, cancellation, retry, task and
+process logs. useModelEvents keeps model/runtime state live without a session.
 Pet settings use the nested `/api/pets/settings` façade.
 
 ## Pet

@@ -12,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
 from ai_workbench.api.routes import assets, attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
+from ai_workbench.api.routes import runtimes
 from ai_workbench.core.models.http import InferenceObservabilityMiddleware
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
@@ -26,6 +27,7 @@ async def runtime_lifespan(app: FastAPI):
     finally:
         state = app.state.runtime_state
         await state.active_runs.cancel_all()
+        await state.runtime_supervisor.close()
         await state.model_manager.close()
         state.events.close()
 
@@ -94,6 +96,7 @@ def create_app(
     app.include_router(data.router)
     app.include_router(openai_compatible.router)
     app.include_router(models.router)
+    app.include_router(runtimes.router)
     app.include_router(knowledge.router)
     app.include_router(worldbook.router)
     app.include_router(settings.router)

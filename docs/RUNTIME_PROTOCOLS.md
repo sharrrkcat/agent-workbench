@@ -21,8 +21,9 @@ reserved. See [run lifecycle](contracts/runtime-run-lifecycle.md).
 
 [Model resolution](contracts/runtime-llm-resolution.md) defines one profile
 store, five kinds, one OpenAI-compatible external connection protocol and the
-manager's bounded queue/manual-default lifecycle. Local managed runtimes are
-Phase 2b; API-process inference implementations are removed.
+manager's bounded queue/manual-default lifecycle. Local managed runtimes use
+the catalog, supervisor and worker protocol in
+[managed-runtime](contracts/managed-runtime.md); API-process inference stays removed.
 
 WebSocket message_started/message_delta/message_completed share one message
 id; seq increases from 1 and the completed parts are authoritative. The client
@@ -41,8 +42,8 @@ executes tools or writes business rows. See
 
 ## Persistence
 
-Alembic is the only schema authority. Head 0003_phase2a_models recreates the
-whole disposable test database without row conversion or downgrade support.
+Alembic is the only schema authority. Head 0004_phase2b_runtimes adds runtime
+configuration and jobs after Phase 2a's disposable database recreation.
 Model, attachment, runtime and other file directories are outside revision
 ownership. The project has no users/user data, permits prolonged downtime and
 retains no abandoned compatibility implementations.

@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import asyncio
+from contextlib import aclosing
+import json
+import os
+from pathlib import Path
+import secrets
+import socket
+from uuid import uuid4
+
+import httpx
+from pydantic import ValidationError
+
+from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
+from ai_workbench.core.models.runtimes.schema import RuntimeStatus, model_path
+from ai_workbench.core.models.runtimes.supervisor import remove_owned
+from ai_workbench.core.models.schema import EmbeddingResult, ModelStatus, ProviderProfile, RerankResult, VisionResult
+
+
+class ManagedAdapter:
+    def __init__(self, supervisor, profile, changed):
+        self.supervisor, self.profile, self.changed = supervisor, profile, changed
+        self.entry = supervisor.entry(profile.runtime_id, profile.runtime_variant)
+        self.process: ManagedProcess | None = None
+        self.monitor: asyncio.Task | None = None
+        self.client: httpx.AsyncClient | None = None
+        self.openai: OpenAIAdapter | None = None
+        self.loaded: set[str] = set()
+        self.failed = False
+        self.state = "stopped"
+        self.run_dir: Path | None = None
+        self.lock = asyncio.Lock()
+        self.token = ""
+        self.log_path: Path | None = None
+
+    def runtime_status(self):
+        value = self.supervisor.installation(self.entry.runtime_id, self.entry.variant)
+        return RuntimeStatus(runtime_id=value.runtime_id, variant=value.variant, version=value.version,
+            install_state=value.state, process_state=self.state, job_id=value.job_id).model_dump()
+
+    def snapshot(self, profile):
+        loaded = bool(self.loaded) if profile.runtime_id == "llama-server" else profile.id in self.loaded
+        return ModelStatus(state="failed" if self.failed else "ready" if loaded else "unloaded",
+            residency="loaded" if loaded else "unloaded", unload_supported=True,
+            error_code="MODEL_UNAVAILABLE" if self.failed else None, runtime=self.runtime_status())
+
+    def _model_path(self, profile):
+        try:
+            path = model_path(self.supervisor.root, profile.model_ref)
+            if not path.exists() or profile.runtime_id == "llama-server" and not path.is_file() or profile.runtime_id == "python-worker" and not path.is_dir():
+                raise FileNotFoundError()
+            if profile.runtime_id == "python-worker":
+                from ai_workbench.workers.protocol import WorkerError, local_model
+                try:
+                    return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
+                        wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14")
+                except WorkerError as exc:
+                    raise ModelError(exc.code, "The local model directory is incomplete or outside data/models.", exc.status) from exc
+            return path
+        except (OSError, ValueError) as exc:
+            raise ModelError("MODEL_NOT_FOUND", "The local model file or directory is missing or outside data/models.", 404) from exc
+
+    async def health(self, profile):
+        self.supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
+        await self.supervisor.verify(self.entry)
+        self._model_path(profile)
+        if self.client and self.process and self.process.process.returncode is None:
+            await self._rpc("GET", "/health")
+        return self.snapshot(profile)
+
+    async def load(self, profile, *, explicit=False):
+        async with self.lock:
+            if self.failed and not explicit:
+                raise ModelError("MODEL_UNAVAILABLE", "The managed process failed. Load the model again from Models settings.", 503)
+            self.supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
+            executable = await self.supervisor.verify(self.entry)
+            path = self._model_path(profile)
+            if self.failed:
+                await self._stop()
+                self.failed = False
+            try:
+                if not self.process:
+                    await self._start(profile, path, executable)
+                if profile.runtime_id == "python-worker" and profile.id not in self.loaded:
+                    await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
+                        "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
+                self.loaded.add(profile.id)
+                return self.snapshot(profile)
+            except BaseException:
+                await self._stop()
+                self.failed, self.state = True, "failed"
+                self.changed()
+                raise
+
+    async def _start(self, profile, path, executable):
+        self.state = "starting"
+        self.changed()
+        run_id = str(uuid4())
+        self.run_dir = self.supervisor.base / ".processes" / run_id
+        self.run_dir.mkdir(parents=True)
+        self.token = secrets.token_urlsafe(32)
+        self.log_path = self.supervisor.logs / f"process-{profile.runtime_id}-{run_id}.log"
+        log = RuntimeLog(self.log_path, self.supervisor.root, (self.token,))
+        active_logs = {slot.adapter.log_path for slot in self.supervisor.manager._slots.values()
+                       if isinstance(slot.adapter, ManagedAdapter) and slot.adapter.process}
+        finished_logs = sorted((path for path in self.supervisor.logs.glob(f"process-{profile.runtime_id}-*.log") if path not in active_logs), key=lambda path: path.stat().st_mtime, reverse=True)
+        for old_log in finished_logs[19:]:
+            old_log.unlink()
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("PYTHON", "VIRTUAL_ENV", "LLAMA_ARG_")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
+        env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
+        target = self.supervisor.directory(self.entry)
+        if profile.runtime_id == "python-worker":
+            ready = self.run_dir / "ready.json"
+            env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
+                       WORKBENCH_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
+            args = [executable, "-I", "-B", target / "worker" / "server.py"]
+            port = None
+        else:
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                port = reservation.getsockname()[1]
+            key_file = self.run_dir / "api-key"
+            key_file.write_text(self.token, encoding="utf-8")
+            key_file.chmod(0o600)
+            options = profile.runtime_options
+            args = [executable, "--host", "127.0.0.1", "--port", port, "--model", path, "--alias", "managed",
+                    "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
+                    "--batch-size", options["batch_size"], "--n-gpu-layers", options["gpu_layers"], "--parallel", 1,
+                    "--reasoning-format", "none", "--log-verbosity", 1]
+        self.process = await ManagedProcess.start(args, env=env, cwd=executable.parent, log=log)
+        for _ in range(1200):
+            if self.process.process.returncode is not None:
+                raise ModelError("MODEL_UNAVAILABLE", "The managed process exited during startup.", 503)
+            if port is None and ready.exists():
+                try:
+                    data = json.loads(ready.read_text(encoding="utf-8"))
+                    if data["protocol_version"] != 1 or type(data["port"]) is not int or not 1 <= data["port"] <= 65535:
+                        raise ValueError()
+                    port = data["port"]
+                except (ValueError, KeyError):
+                    raise ModelError("RUNTIME_BROKEN", "Worker readiness response was invalid.", 503)
+            if port is not None:
+                if not self.client:
+                    headers = {"X-Worker-Token": self.token} if profile.runtime_id == "python-worker" else {"Authorization": f"Bearer {self.token}"}
+                    self.client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=headers, timeout=300, trust_env=False)
+                try:
+                    response = await self.client.get("/health", timeout=1)
+                    if response.status_code == 200:
+                        if profile.runtime_id == "python-worker" and response.json().get("protocol_version") != 1:
+                            raise ModelError("RUNTIME_BROKEN", "Worker protocol version mismatch.", 503)
+                        break
+                except (httpx.RequestError, ValueError):
+                    pass
+            await asyncio.sleep(0.25)
+        else:
+            raise ModelError("MODEL_TIMEOUT", "The managed process did not become healthy in five minutes.", 504)
+        if profile.runtime_id == "llama-server":
+            provider = ProviderProfile(name="managed", base_url=f"http://127.0.0.1:{port}/v1", api_key=self.token, timeout_seconds=300)
+            self.openai = OpenAIAdapter(provider)
+            if "managed" not in await self.openai.models():
+                raise ModelError("RUNTIME_BROKEN", "llama-server did not advertise the configured model.", 503)
+        self.state = "ready"
+        self.monitor = asyncio.create_task(self._watch(self.process))
+        self.changed()
+
+    async def _watch(self, process):
+        await process.process.wait()
+        if not process.stopping:
+            await process.stop()
+            self.failed, self.state = True, "failed"
+            self.loaded.clear()
+            self.changed()
+
+    async def _rpc(self, method, operation, body=None):
+        if self.failed or not self.client:
+            raise ModelError("MODEL_UNAVAILABLE", "The managed worker is not running.", 503)
+        try:
+            response = await self.client.request(method, operation, json=body)
+            value = response.json()
+            if not response.is_success:
+                code = value.get("error", {}).get("code", "MODEL_UNAVAILABLE")
+                allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE"}
+                raise ModelError(code if code in allowed else "MODEL_UNAVAILABLE", "The managed worker could not complete this operation.", response.status_code)
+            if not isinstance(value, dict):
+                raise ValueError()
+            return value
+        except asyncio.CancelledError:
+            # A synchronous CPU call cannot be cancelled safely within its thread.
+            # Stop the shared worker before the manager releases its queue slot.
+            await self._stop()
+            self.changed()
+            raise
+        except httpx.TimeoutException as exc:
+            await self._stop()
+            self.failed, self.state = True, "failed"
+            self.changed()
+            raise ModelError("MODEL_TIMEOUT", "The managed worker timed out and was stopped.", 504) from exc
+        except (httpx.HTTPError, ValueError) as exc:
+            await self._stop()
+            self.failed, self.state = True, "failed"
+            self.changed()
+            raise ModelError("MODEL_UNAVAILABLE", "The managed worker disconnected or returned an invalid response.", 503) from exc
+
+    async def unload(self, profile):
+        async with self.lock:
+            if profile.runtime_id == "python-worker":
+                if profile.id in self.loaded and not self.failed:
+                    await self._rpc("POST", "/unload", {"profile_id": profile.id})
+                    self.loaded.discard(profile.id)
+                elif self.failed:
+                    self.loaded.clear()
+            else:
+                self.loaded.clear()
+            if not self.loaded or profile.runtime_id == "llama-server":
+                await self._stop()
+                self.failed = False
+            return self.snapshot(profile)
+
+    async def _stop(self):
+        if self.process:
+            await self.process.stop()
+            self.process = None
+        if self.monitor:
+            await self.monitor
+            self.monitor = None
+        if self.client:
+            await self.client.aclose()
+            self.client = None
+        if self.openai:
+            await self.openai.close()
+            self.openai = None
+        self.loaded.clear()
+        self.state = "stopped"
+        if self.run_dir and self.run_dir.exists():
+            remove_owned(self.supervisor.base, self.run_dir)
+        self.run_dir = None
+
+    async def close(self):
+        await self._stop()
+
+
+class LlamaServerAdapter(ManagedAdapter):
+    async def chat(self, profile, request):
+        if not self.openai or self.failed:
+            raise ModelError("MODEL_UNAVAILABLE", "The managed model is not running.", 503)
+        return await self.openai.chat(profile.model_copy(update={"model_ref": "managed"}), request)
+
+    async def chat_stream(self, profile, request):
+        if not self.openai or self.failed:
+            raise ModelError("MODEL_UNAVAILABLE", "The managed model is not running.", 503)
+        async with aclosing(self.openai.chat_stream(profile.model_copy(update={"model_ref": "managed"}), request)) as stream:
+            async for chunk in stream:
+                yield chunk
+
+
+class PythonWorkerAdapter(ManagedAdapter):
+    async def _batches(self, profile, operation, items, input_key, output_key, schema, extra=None):
+        results = []
+        size = min(profile.parameters.get("batch_size", 1), profile.runtime_options["max_batch_size"])
+        for offset in range(0, len(items), size):
+            batch = items[offset:offset + size]
+            value = await self._rpc("POST", operation, {"profile_id": profile.id, input_key: batch, **(extra or {})})
+            try:
+                result = schema.model_validate(value)
+            except ValidationError as exc:
+                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker returned an invalid result.", 502) from exc
+            rows = getattr(result, output_key)
+            if len(rows) != len(batch):
+                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker result count did not match input.", 502)
+            results.extend(rows)
+        return schema(**{output_key: results})
+
+    async def embed(self, profile, texts, dimensions):
+        return await self._batches(profile, "/embed", texts, "texts", "vectors", EmbeddingResult, {"dimensions": dimensions})
+
+    async def rerank(self, profile, query, documents):
+        return await self._batches(profile, "/rerank", documents, "documents", "scores", RerankResult, {"query": query})
+
+    async def image_embed(self, profile, images):
+        return await self._batches(profile, "/image-embed", images, "images", "vectors", EmbeddingResult)
+
+    async def vision(self, profile, images):
+        return await self._batches(profile, "/vision", images, "images", "outputs", VisionResult)

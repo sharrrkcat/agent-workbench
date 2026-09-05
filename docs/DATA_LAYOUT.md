@@ -10,7 +10,7 @@ schema revisions.
 | data/attachments/ | Uploaded files referenced by message parts | Explicit orphan cleanup only |
 | data/knowledge/ | Source/index working data | Knowledge service |
 | data/models/ | Manually placed model files | No model download or schema-driven deletion |
-| data/runtimes/ | Future worker/runtime installations | Phase 2b |
+| data/runtimes/ | Pinned binaries, Python interpreters/venvs, cache and staging | Runtime supervisor |
 | data/logs/ | Diagnostic and inference access logs | Operational state |
 | data/backups/ | Optional operator backups | Ignored by Git |
 
@@ -19,12 +19,19 @@ only relative paths are returned. Inventory does not import/load runtimes.
 The frontend build lives at frontend/dist/. Root dist/ was an obsolete
 application snapshot and is not a supported runtime.
 
-Alembic head is 0003_phase2a_models. Its static DDL recreates every SQLite
-business table and Knowledge FTS index, including sessions/settings/Knowledge/
-Worldbook. It copies no rows and its downgrade is unsupported. Empty databases
+Alembic head is 0004_phase2b_runtimes. Phase 2a recreated every SQLite
+business table and Knowledge FTS index. Phase 2b adds managed profile fields,
+runtime_installations and runtime_jobs without touching file directories.
+Revisions copy no rows and downgrade is unsupported. Empty databases
 upgrade to head. Nonempty unversioned databases are rejected instead of
 auto-stamped. Health reports schema_revision; there is no schema_version
 metadata authority.
 
 Tests use temporary database/attachment/Knowledge/model roots. Audit the
 current checkout and schema with scripts/audit_workspace.py --check.
+
+Runtime binaries and venvs use the directories in
+[managed-runtime](contracts/managed-runtime.md). Explicit uninstall removes
+only that catalog entry's directory. Shared Python distributions and download
+cache remain available for other variants. Task/process logs are capped at
+10 MiB and retained under data/logs/runtimes. Database revisions own no files.

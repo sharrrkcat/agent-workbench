@@ -15,6 +15,8 @@ from ai_workbench.core.font_assets import ensure_fonts_directory
 from ai_workbench.core.knowledge_service import KnowledgeService
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
 from ai_workbench.core.models.manager import ModelManager
+from ai_workbench.core.models.runtimes.store import RuntimeStore
+from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore, ModelSettingsStore
 from ai_workbench.core.network_policy import NetworkPolicy
@@ -55,6 +57,7 @@ class RuntimeState:
     utility_llm: UtilityLLMService
     network_policy: NetworkPolicy
     runtime_resources: RuntimeResourcesService
+    runtime_supervisor: RuntimeSupervisor
     repo_root: Path
     database_url: str
     started_at: datetime = field(default_factory=utc_now)
@@ -93,7 +96,8 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     model_settings = ModelSettingsStore(engine)
     active_runs = ActiveRunRegistry()
     events = EventBus(run_event_store=run_events, app_settings_store=app_settings)
-    manager = ModelManager(profiles, providers, model_settings, events, adapter_factory)
+    supervisor = RuntimeSupervisor(repo_root, RuntimeStore(engine), events)
+    manager = ModelManager(profiles, providers, model_settings, events, adapter_factory, supervisor)
     knowledge_service = KnowledgeService(store=knowledge, model_manager=manager, repo_root=repo_root)
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
     chat_runner = ChatRunner(
@@ -111,6 +115,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         pet_service=PetService(repo_root=repo_root, app_settings_store=app_settings),
         utility_llm=utility_llm, network_policy=NetworkPolicy(),
         runtime_resources=RuntimeResourcesService(), repo_root=repo_root,
+        runtime_supervisor=supervisor,
         database_url=resolved_database_url,
     )
 

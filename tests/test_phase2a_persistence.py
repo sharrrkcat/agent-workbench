@@ -24,7 +24,7 @@ def test_phase2a_recreates_all_test_data_and_matches_orm(tmp_path):
         assert connection.execute(text("SELECT COUNT(*) FROM appmetadatarecord")).scalar() == 0
     assert files.read_bytes() == b"model"
     signature = migrations.inspect_schema(engine)
-    assert migrations.current_revision(engine) == migrations.PHASE2A_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     assert "model_profiles" in signature.tables and "provider_profiles" in signature.tables
     assert not {"llm_profiles", "embedding_model_profiles", "vision_model_profiles", "multimodal_embedding_model_profiles"} & set(signature.tables)
     assert "model_profile_id" in signature.columns["sessionrecord"]

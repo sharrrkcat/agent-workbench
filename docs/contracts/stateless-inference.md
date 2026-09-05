@@ -61,4 +61,5 @@ the same profile's query instruction.
 
 The old multimodal/vision endpoints and inference management routes are
 deleted. Reranker remains an internal operation; public /v1/rerank, image
-services and managed local inference are deferred.
+services remain deferred. Managed llama chat and Python text embeddings share
+these existing endpoints and the same ModelManager with internal callers.

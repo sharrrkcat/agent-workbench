@@ -1,12 +1,18 @@
 # Task: Settings and models
 
 Read first: `../contracts/settings-general.md`, `../contracts/pet.md`,
-`../contracts/runtime-llm-resolution.md`, and `../contracts/knowledge.md`.
+`../contracts/runtime-llm-resolution.md`, `../contracts/knowledge.md` and
+`../contracts/managed-runtime.md`.
 
 Likely sources: `core/settings.py`, `core/knowledge_settings.py`, model profile
 schemas/stores in `core/models/`, `api/routes/models.py`, settings/pet routes,
 `frontend/src/components/SettingsPage.tsx`, `settings/ModelsPanel.tsx`, and
 `store/useModelsStore.ts`.
+
+Managed runtime ownership is in `core/models/runtimes/`,
+`api/routes/runtimes.py` and `settings/RuntimesPanel.tsx`. Read
+`../contracts/managed-runtime.md` for catalog, tasks, download settings and
+profile binding. Global model events must work without a chat session.
 
 Use strict Pydantic schemas and nested `AppSettings.pet`. The settings
 navigation is General, Models, Knowledge, Worldbook, and Pet. Main model

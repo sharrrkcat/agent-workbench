@@ -68,7 +68,9 @@ async def profiles(kind: ModelKind | None = None, state: RuntimeState = Depends(
 async def create_profile(payload: ModelInput, state: RuntimeState = Depends(get_state)):
     if payload.provider_profile_id:
         state.provider_profiles.get(payload.provider_profile_id)
-    return state.model_profiles.create(ModelProfile(**payload.model_dump())).model_dump(mode="json")
+    profile = ModelProfile(**payload.model_dump())
+    state.model_manager.validate_binding(profile)
+    return state.model_profiles.create(profile).model_dump(mode="json")
 
 
 @router.get("/profiles/{profile_id}")
@@ -84,10 +86,11 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
         raise ModelError("MODEL_KIND_IMMUTABLE", "Create a new profile to use a different model kind.", 409)
     if updated.provider_profile_id:
         state.provider_profiles.get(updated.provider_profile_id)
-    state.model_manager.require_idle(updated.provider_profile_id)
-    await state.model_manager.invalidate(current.provider_profile_id)
+    state.model_manager.validate_binding(ModelProfile(**updated.model_dump(), id=profile_id))
+    state.model_manager.require_idle(state.model_manager.backend_key(updated))
+    await state.model_manager.invalidate(state.model_manager.backend_key(current))
     result = state.model_profiles.update(profile_id, payload)
-    if current.kind == "embedding" and (current.provider_profile_id, current.model_ref, current.parameters) != (result.provider_profile_id, result.model_ref, result.parameters):
+    if current.kind == "embedding" and (current.provider_profile_id, current.model_ref, current.parameters, current.runtime_id, current.runtime_variant, current.runtime_options) != (result.provider_profile_id, result.model_ref, result.parameters, result.runtime_id, result.runtime_variant, result.runtime_options):
         _invalidate_profile_indexes(state, profile_id)
     return result.model_dump(mode="json")
 
@@ -108,7 +111,7 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
     references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
     if profile_id in references:
         raise ModelError("MODEL_IN_USE", "Remove session, default or Knowledge references before deleting this model.", 409)
-    await state.model_manager.invalidate(profile.provider_profile_id)
+    await state.model_manager.invalidate(state.model_manager.backend_key(profile))
     state.model_profiles.delete(profile_id)
     return {"deleted": True}
 
@@ -116,6 +119,12 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
 @router.get("/profiles/{profile_id}/status")
 async def profile_status(profile_id: str, state: RuntimeState = Depends(get_state)):
     return state.model_manager.status(profile_id).model_dump()
+
+
+@router.get("/profiles/{profile_id}/log")
+def profile_log(profile_id: str, state: RuntimeState = Depends(get_state)):
+    profile = state.model_profiles.get(profile_id)
+    return {"text": state.model_manager.process_log(profile)}
 
 
 @router.post("/profiles/{profile_id}/health")

@@ -8,6 +8,15 @@ router = APIRouter(tags=["ws"])
 
 @router.websocket("/api/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
+    await relay_events(websocket, session_id)
+
+
+@router.websocket("/api/models/runtimes/events")
+async def model_events(websocket: WebSocket) -> None:
+    await relay_events(websocket, "")
+
+
+async def relay_events(websocket: WebSocket, session_id: str) -> None:
     state = websocket.app.state.runtime_state
     await websocket.accept()
     state.active_websockets = getattr(state, "active_websockets", 0) + 1

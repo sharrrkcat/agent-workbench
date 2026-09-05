@@ -5,6 +5,7 @@ import type {
   PetSettingsResponse, RuntimeEvent, RuntimeResponse, Run, RunEvent, Session,
   SessionKnowledgeBinding, SessionWorldbooksResponse, Worldbook, WorldbookEntry,
   WorldbookSettings,
+  RuntimeCatalogEntry, RuntimeInstallation, RuntimeJob, RuntimeDownloadSettings,
 } from '../types';
 import { API_BASE_URL, createWebSocketUrlFromBase, joinApiUrl } from './url';
 
@@ -47,6 +48,15 @@ function toApiError(status: number, payload: unknown): ApiError {
 }
 
 export const api = {
+  runtimeCatalog: () => request<RuntimeCatalogEntry[]>('/api/models/runtimes/catalog'),
+  runtimeInstallations: () => request<RuntimeInstallation[]>('/api/models/runtimes'),
+  runtimeJobs: () => request<RuntimeJob[]>('/api/models/runtimes/jobs'),
+  runtimeJob: (id: string) => request<RuntimeJob>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}`),
+  runtimeJobLog: (id: string) => request<{ text: string }>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}/log`),
+  cancelRuntimeJob: (id: string) => request<RuntimeJob>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  runtimeAction: (runtime: string, variant: string, action: 'install' | 'uninstall') => request<RuntimeJob>(`/api/models/runtimes/${encodeURIComponent(runtime)}/${encodeURIComponent(variant)}/${action}`, { method: 'POST' }),
+  runtimeSettings: () => request<RuntimeDownloadSettings>('/api/models/runtime/settings'),
+  patchRuntimeSettings: (settings: RuntimeDownloadSettings) => request<RuntimeDownloadSettings>('/api/models/runtime/settings', { method: 'PATCH', body: JSON.stringify(settings) }),
   listSessions: () => request<Session[]>('/api/sessions'),
   createSession: (title = '', context_mode: Session['context_mode'] = 'single_assistant', model_profile_id: string | null = null) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify({ title, context_mode, model_profile_id }) }),
@@ -76,6 +86,7 @@ export const api = {
   patchModelProfile: (id: string, patch: Partial<ModelInput>) => request<ModelProfile>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteModelProfile: (id: string) => request<{ deleted: boolean }>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   getModelStatus: (id: string) => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/status`),
+  getModelLog: (id: string) => request<{ text: string }>(`/api/models/profiles/${encodeURIComponent(id)}/log`),
   modelAction: (id: string, action: 'load' | 'unload' | 'health') => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
   listModelInventory: (kind?: ModelKind) => request<ModelInventoryItem[]>('/api/models/inventory' + (kind ? '?kind=' + kind : '')),
   listProviderProfiles: () => request<ProviderProfile[]>('/api/models/providers'),

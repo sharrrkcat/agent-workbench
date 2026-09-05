@@ -31,4 +31,12 @@ start and finish. Status events do not create business rows.
 
 `GET /api/runtime/resources` retains the cached CPU/RAM/GPU snapshot.
 Runtime-wide free-memory endpoints and old per-kind diagnostics are deleted.
-Managed process installation and status actions belong to Phase 2b.
+Managed profiles include `runtime` with runtime_id, variant, version,
+install_state, process_state and the latest job id. Missing/broken/unsupported
+runtimes return structured errors; missing weights return MODEL_NOT_FOUND.
+Health checks files and the existing process; it does not start a worker.
+
+Catalog, installation jobs, download settings and logs are described in
+[managed-runtime](managed-runtime.md). Global model and runtime events can be
+consumed without a chat session at `/api/models/runtimes/events`, using the
+existing next_event/ping protocol. Reconnect refreshes authoritative state.

@@ -8,6 +8,7 @@ Read first:
 - `../contracts/attachments-vision.md`
 - `../contracts/provider-status.md`
 - `../contracts/utility-llm.md`
+- `../contracts/managed-runtime.md`
 
 Likely sources: `core/runtime.py`, `core/chat_runner.py`, `core/context.py`,
 `core/run_lifecycle.py`, `core/models/`, `api/deps.py`, session/message/run
@@ -19,7 +20,9 @@ the generic kinds, and title generation best effort. Do not add route parsing,
 dynamic registration, or hidden compatibility branches. Internal chat and
 external inference share the manager directly. Auxiliary titles use only the
 explicit model selection, after the main lease releases. Local managed
-processes belong to Phase 2b; do not restore in-process inference.
+processes use core/models/runtimes and the worker-only ai_workbench/workers
+package. Do not restore in-process inference. Runtime tasks have their own
+store and global events; they are not chat runs.
 
 Run targeted runtime tests and then `uv run pytest -q`,
 `uv run python -m compileall -q ai_workbench`, and `git diff --check`.

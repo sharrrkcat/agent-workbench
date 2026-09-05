@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint, String
 from sqlmodel import Field, SQLModel
 
 from ai_workbench.core.time import utc_now
@@ -130,12 +130,48 @@ class ModelProfileRecord(SQLModel, table=True):
     external_enabled: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    runtime_id: Optional[str] = None
+    runtime_variant: Optional[str] = None
+    runtime_options_json: str = Field(default="{}", sa_column=Column(String, nullable=False, server_default="{}"))
 
 
 class AppMetadataRecord(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class RuntimeInstallationRecord(SQLModel, table=True):
+    __tablename__ = "runtime_installations"
+    id: str = Field(primary_key=True)
+    runtime_id: str
+    variant: str
+    version: str
+    state: str
+    job_id: Optional[str] = None
+    error_code: Optional[str] = None
+    manifest_sha256: Optional[str] = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class RuntimeJobRecord(SQLModel, table=True):
+    __tablename__ = "runtime_jobs"
+    id: str = Field(primary_key=True)
+    runtime_id: str
+    variant: str
+    version: str
+    operation: str
+    state: str
+    stage: str
+    progress_current: int = 0
+    progress_total: Optional[int] = None
+    error_code: Optional[str] = None
+    cancel_requested: bool = False
+    log_path: str = ""
+    revision: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    finished_at: Optional[datetime] = None
 
 
 class KnowledgeSettingsRecord(SQLModel, table=True):

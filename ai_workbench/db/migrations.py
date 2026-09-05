@@ -20,7 +20,8 @@ from sqlalchemy.engine import Connection, make_url
 BASELINE_REVISION = "0001_current_schema"
 PHASE1_REVISION = "0002_phase1_prune"
 PHASE2A_REVISION = "0003_phase2a_models"
-HEAD_REVISION = PHASE2A_REVISION
+PHASE2B_REVISION = "0004_phase2b_runtimes"
+HEAD_REVISION = PHASE2B_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

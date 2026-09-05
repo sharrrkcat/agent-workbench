@@ -114,7 +114,8 @@ chmod +x start.sh
 - Python and uv are required.
 - Node.js is only required when building `frontend/dist` yourself.
 - If this portable folder already contains `frontend/dist`, normal startup does not need `npm run dev`.
-- LM Studio, Ollama, or llama.cpp are not bundled. Start your chosen local LLM service separately.
+- Install supported CPU runtimes from Models > Runtimes, or configure an external OpenAI-compatible connection.
+- Model weights are not bundled or downloaded. Place them manually under data/models.
 
 Default address:
 

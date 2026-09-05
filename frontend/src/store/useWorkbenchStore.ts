@@ -197,7 +197,6 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
 
   applyRuntimeEvent: (event) => {
     if (event.type === 'model_status' && event.payload?.model_profile_id) {
-      useModelsStore.getState().setStatus(String(event.payload.model_profile_id), event.payload.status as import('../types').ModelStatus);
       return;
     }
     if (event.session_id !== get().currentSession?.session_id) return;

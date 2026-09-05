@@ -13,10 +13,11 @@ lowercase identifier, with no kind prefix or alternate lookup rules.
 
 `provider_profiles` holds `protocol=openai_compatible`, `base_url`,
 `api_key`, timeouts, concurrency, queue limits and enablement. There are no
-brand-specific provider variants. A model holds `provider_profile_id`,
-`model_ref`, capabilities, per-kind parameters, lifecycle, `enabled` and
-`external_enabled`. Kind is immutable after creation. A model with no
-connection can be saved but cannot execute until a backend is configured.
+brand-specific provider variants. A model holds `provider_profile_id` or
+`runtime_id` plus `runtime_variant`/validated `runtime_options`, `model_ref`,
+capabilities, per-kind parameters, lifecycle, `enabled` and `external_enabled`.
+The two backend bindings are mutually exclusive. Kind is immutable. A model
+without an executable backend can be saved but cannot execute.
 
 CRUD lives at `/api/models/providers` and `/api/models/profiles`; the latter
 accepts `?kind=...`. Unknown parameters are rejected before persistence.
@@ -49,17 +50,20 @@ including connection model discovery, share the provider queue. Queue
 overflow/timeout returns `MODEL_BUSY`. Cancelling or closing a stream releases
 its upstream response, slot and task registration.
 
-Residency and active/queued counts are shared by `(provider_profile_id,
-model_ref)`. Release defaults to `manual`. `after_request` and `idle`
+External residency and active/queued counts are shared by `(provider_profile_id,
+model_ref)`. Managed GGUF aliases share a normalized model reference, process and options;
+Python profiles share a variant queue but load/unload independently.
+Release defaults to `manual`. `after_request` and `idle`
 (default 300 seconds) are opt-in. Any enabled manual alias keeps a shared model
 resident; otherwise the longest configured idle timeout wins. Automatic
 release errors are diagnostic and do not replace successful inference.
 
 OpenAI-compatible connections execute chat and text embeddings. Load is a
 health/model-list check; residency stays unknown and unload is unsupported.
-Standalone rerank/image embedding/vision execution and local model loading
-await Phase 2b managed runtimes. Their profile kinds and adapter operations
-already exist. The old in-process runtime implementations are deleted.
+Managed llama-server executes LLM chat; Python workers execute text embedding,
+rerank, image embedding and vision. Loading requires an installed runtime and
+manually placed weights. Crashes require explicit load; no automatic restart
+or model substitution occurs. See [managed-runtime](managed-runtime.md).
 
 See [provider-status](provider-status.md), [stateless-inference](stateless-inference.md)
 and [utility-llm](utility-llm.md).

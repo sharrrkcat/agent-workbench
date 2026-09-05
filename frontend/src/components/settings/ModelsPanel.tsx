@@ -1,24 +1,26 @@
-import { Activity, Copy, KeyRound, Pencil, Play, Plus, RefreshCw, Save, Square, Trash2 } from 'lucide-react';
+import { Activity, Copy, FileText, KeyRound, Pencil, Play, Plus, RefreshCw, Save, Square, Trash2 } from 'lucide-react';
 import { cloneElement, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../../api/client';
 import { useModelsStore } from '../../store/useModelsStore';
 import type { ModelInput, ModelKind, ModelInventoryItem, ProviderInput } from '../../types';
 import { AppModal } from '../ui/AppModal';
+import { RuntimesPanel } from './RuntimesPanel';
 
 const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision'];
 const newModel = (kind: ModelKind): ModelInput => ({
   name: '', alias: '', kind, model_ref: '', provider_profile_id: null, enabled: true, external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
   parameters: {}, lifecycle: { unload: 'manual', idle_seconds: 300 },
+  runtime_id: null, runtime_variant: null, runtime_options: {},
 });
 const newProvider = (): ProviderInput => ({ name: '', protocol: 'openai_compatible', base_url: 'http://127.0.0.1:1234/v1',
   timeout_seconds: 60, concurrency: 1, queue_size: 32, queue_timeout_seconds: 30, enabled: true });
 
 export function ModelsPanel() {
   const { t } = useTranslation('llm');
-  const { profiles, providers, settings, statuses, loading, error: loadError, reload, setStatus } = useModelsStore();
-  const [tab, setTab] = useState<'profiles' | 'providers' | 'service'>('profiles');
+  const { profiles, providers, settings, statuses, catalog, reloadRuntimes, loading, error: loadError, reload, setStatus } = useModelsStore();
+  const [tab, setTab] = useState<'profiles' | 'providers' | 'runtimes' | 'service'>('profiles');
   const [kind, setKind] = useState<ModelKind>('llm');
   const [model, setModel] = useState<{ id?: string; value: ModelInput } | null>(null);
   const [provider, setProvider] = useState<{ id?: string; value: ProviderInput } | null>(null);
@@ -28,8 +30,10 @@ export function ModelsPanel() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [processLog, setProcessLog] = useState<string | null>(null);
 
   useEffect(() => { void reload().catch(() => undefined); }, [reload]);
+  useEffect(() => { void reloadRuntimes().catch(() => undefined); }, [reloadRuntimes]);
   useEffect(() => {
     let cancelled = false;
     setRemoteModels([]);
@@ -61,7 +65,8 @@ export function ModelsPanel() {
       <Field label={t('defaultModel')}><select aria-label={t('defaultModel')} value={settings?.default_model_profile_id || ''} disabled={busy || !settings} onChange={(e) => void run(() => api.updateModelSettings({ default_model_profile_id: e.target.value || null }))}><option value="">{t('unconfigured')}</option>{chatProfiles.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
       <Field label={t('utilityModel')}><select aria-label={t('utilityModel')} value={settings?.utility_model_profile_id || ''} disabled={busy || !settings} onChange={(e) => void run(() => api.updateModelSettings({ utility_model_profile_id: e.target.value || null }))}><option value="">{t('unconfigured')}</option>{chatProfiles.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
     </div>
-    <div className="model-tabs" role="tablist">{(['profiles', 'providers', 'service'] as const).map((v) => <button role="tab" aria-selected={tab === v} key={v} onClick={() => setTab(v)}>{t(v)}</button>)}</div>
+    <div className="model-tabs" role="tablist">{(['profiles', 'providers', 'runtimes', 'service'] as const).map((v) => <button role="tab" aria-selected={tab === v} key={v} onClick={() => setTab(v)}>{t(v)}</button>)}</div>
+    {tab === 'runtimes' ? <RuntimesPanel /> : null}
     {tab === 'profiles' ? <>
       <div className="model-toolbar"><select aria-label={t('kind')} value={kind} onChange={(e) => setKind(e.target.value as ModelKind)}>{kinds.map((k) => <option key={k} value={k}>{t('kinds.' + k)}</option>)}</select><div className="model-actions"><Icon label={t('inventory')} disabled={busy} onClick={() => void run(async () => setInventory(await api.listModelInventory(kind)), false)}><RefreshCw size={16} /></Icon><button className="secondary-button" disabled={busy} onClick={() => { setError(''); setModel({ value: newModel(kind) }); }}><Plus size={16} />{t('addModel')}</button></div></div>
       <div className="model-list">
@@ -71,13 +76,15 @@ export function ModelsPanel() {
             <div className="model-identity"><strong>{p.name}</strong><code>{p.alias}</code><small>{p.model_ref}</small></div>
             <div className="model-state"><span className={'state-' + (status?.state || 'unknown')}>{p.enabled ? t('states.' + (status?.state || 'unknown')) : t('disabled')}</span><small>{t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}</small><small>{t('active')}: {status?.active || 0} / {t('queued')}: {status?.queued || 0}</small></div>
             <div className="model-actions">
-              <Icon label={t('health')} disabled={busy || !p.enabled || !p.provider_profile_id} onClick={() => void statusAction(p.id, 'health')}><Activity size={15} /></Icon>
-              <Icon label={t('load')} disabled={busy || !p.enabled || !p.provider_profile_id} onClick={() => void statusAction(p.id, 'load')}><Play size={15} /></Icon>
-              <Icon label={status?.unload_supported ? t('unload') : t('unloadUnsupported')} disabled={busy || !status?.unload_supported || !!status.active || !!status.queued} onClick={() => void statusAction(p.id, 'unload')}><Square size={14} /></Icon>
+              <Icon label={t('health')} disabled={busy || !p.enabled || !(p.provider_profile_id || p.runtime_id)} onClick={() => void statusAction(p.id, 'health')}><Activity size={15} /></Icon>
+              <Icon label={t('load')} disabled={busy || !p.enabled || !(p.provider_profile_id || p.runtime_id)} onClick={() => void statusAction(p.id, 'load')}><Play size={15} /></Icon>
+              <Icon label={status?.unload_supported ? t('unload') : t('unloadUnsupported')} disabled={busy || !status?.unload_supported || !!status.active || !!status.queued || (!!status.runtime && status.runtime.install_state !== 'installed')} onClick={() => void statusAction(p.id, 'unload')}><Square size={14} /></Icon>
+              {p.runtime_id ? <Icon label={t('processLog')} disabled={busy} onClick={() => void run(async () => setProcessLog((await api.getModelLog(p.id)).text), false)}><FileText size={14} /></Icon> : null}
               <Icon label={t('edit')} disabled={busy} onClick={() => { const { id, created_at: _c, updated_at: _u, ...value } = p; setError(''); setModel({ id, value }); }}><Pencil size={15} /></Icon>
               <Icon label={t('duplicate')} disabled={busy} onClick={() => { const { id: _id, created_at: _c, updated_at: _u, ...value } = p; setError(''); setModel({ value: { ...value, alias: p.alias + '-copy', name: p.name + ' ' + t('copy') } }); }}><Copy size={15} /></Icon>
               <Icon label={t('delete')} disabled={busy} onClick={() => void run(() => api.deleteModelProfile(p.id))}><Trash2 size={15} /></Icon>
             </div>
+            {status?.runtime ? <div className="model-runtime-state"><span>{status.runtime.runtime_id} / {status.runtime.variant} / {status.runtime.version}: {t('runtimeStates.' + status.runtime.install_state)}</span>{status.error_code ? <code className="error-text">{status.error_code}</code> : null}{status.runtime.install_state !== 'installed' ? <button type="button" className="text-button" onClick={() => setTab('runtimes')}>{t('manageRuntime')}</button> : null}</div> : null}
           </div>;
         })}
         {!loading && !profiles.some((p) => p.kind === kind) ? <p className="model-empty">{t('emptyModels')}</p> : null}
@@ -94,17 +101,20 @@ export function ModelsPanel() {
       <Field label={t('apiKey')}><div className="model-actions"><input aria-label={t('apiKey')} type="password" autoComplete="new-password" placeholder={settings.has_external_api_key ? t('keySet') : ''} value={apiKey} onChange={(e) => setApiKey(e.target.value)} /><Icon label={t('generateKey')} onClick={() => setApiKey(crypto.randomUUID() + crypto.randomUUID())}><KeyRound size={16} /></Icon><Icon label={t('copy')} disabled={!apiKey} onClick={() => void run(() => navigator.clipboard.writeText(apiKey), false)}><Copy size={16} /></Icon><Icon label={t('save')} disabled={!apiKey || busy} onClick={() => void run(async () => { await api.updateModelSettings({ external_api_key: apiKey }); setApiKey(''); })}><Save size={16} /></Icon></div></Field>
       <NumberInput label={t('bodyLimit')} value={settings.max_request_mb} min={1} max={100} onChange={(v) => { if (v != null) void run(() => api.updateModelSettings({ max_request_mb: v })); }} />
     </div> : null}
+    <AppModal open={processLog !== null} title={t('processLog')} closeLabel={t('close')} width="large" onClose={() => setProcessLog(null)}><pre className="runtime-log">{processLog || t('emptyLog')}</pre></AppModal>
     <AppModal open={!!model} title={model?.id ? t('editModel') : t('addModel')} closeLabel={t('close')} width="large" onClose={() => { if (!busy) setModel(null); }}>
       {model ? <form onSubmit={(e) => { e.preventDefault(); void run(async () => { if (model.id) await api.patchModelProfile(model.id, model.value); else await api.createModelProfile(model.value); setModel(null); }); }}>
         {feedback}<fieldset disabled={busy} className="model-form"><div className="model-form-grid">
           <Field label={t('name')}><input required value={model.value.name} onChange={(e) => patchModel({ name: e.target.value })} /></Field>
           <Field label={t('alias')}><input required pattern="[a-z0-9][a-z0-9._-]{0,127}" value={model.value.alias} onChange={(e) => patchModel({ alias: e.target.value })} /></Field>
           <Field label={t('kind')}><select disabled value={model.value.kind}>{kinds.map((k) => <option value={k} key={k}>{t('kinds.' + k)}</option>)}</select></Field>
-          <Field label={t('provider')}><select value={model.value.provider_profile_id || ''} onChange={(e) => patchModel({ provider_profile_id: e.target.value || null })}><option value="">{t('unavailableBackend')}</option>{providers.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>
+          <Field label={t('backend')}><select value={model.value.runtime_id ? 'managed' : 'external'} onChange={(e) => patchModel({ provider_profile_id: null, runtime_id: e.target.value === 'managed' ? model.value.kind === 'llm' ? 'llama-server' : 'python-worker' : null, runtime_variant: e.target.value === 'managed' ? model.value.kind === 'llm' ? 'cpu' : 'torch-cpu' : null, runtime_options: {}, capabilities: { ...model.value.capabilities, vision: false } })}><option value="external">OpenAI Compatible</option><option value="managed">{t('managedBackend')}</option></select></Field>
+          {model.value.runtime_id ? <Field label={t('runtimeVariant')}><select value={model.value.runtime_variant || ''} onChange={(e) => patchModel({ runtime_variant: e.target.value, runtime_options: {} })}>{catalog.filter((entry) => entry.runtime_id === model.value.runtime_id).map((entry) => <option key={entry.variant} value={entry.variant}>{entry.variant}{entry.supported ? '' : ` (${t('runtimeStates.unsupported')})`}</option>)}</select></Field> : <Field label={t('provider')}><select value={model.value.provider_profile_id || ''} onChange={(e) => patchModel({ provider_profile_id: e.target.value || null })}><option value="">{t('unavailableBackend')}</option>{providers.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>}
           <Field label={t('modelRef')}><input required list="provider-models" value={model.value.model_ref} onChange={(e) => patchModel({ model_ref: e.target.value })} /></Field>
           <datalist id="provider-models">{remoteModels.map((id) => <option key={id} value={id} />)}</datalist>
           <div className="model-checks"><Check label={t('enabled')} checked={model.value.enabled} onChange={(enabled) => patchModel({ enabled })} /><Check label={t('externalModel')} checked={model.value.external_enabled} onChange={(external_enabled) => patchModel({ external_enabled })} /></div>
         </div>
+        {model.value.runtime_id ? <><h3>{t('runtimeOptions')}</h3><div className="model-form-grid">{(model.value.runtime_id === 'llama-server' ? [['threads', 4, 1, 256], ['context_size', 4096, 512, 1048576], ['batch_size', 512, 1, 4096], ['gpu_layers', 0, 0, model.value.runtime_variant === 'cpu' ? 0 : 999]] : [['intraop_threads', 4, 1, 256], ['max_batch_size', 32, 1, 2048]]).map(([key, value, min, max]) => <NumberInput key={key} label={t('runtimeParams.' + key)} value={Number(model.value.runtime_options[String(key)] ?? value)} min={Number(min)} max={Number(max)} onChange={(v) => patchModel({ runtime_options: { ...model.value.runtime_options, [String(key)]: v ?? Number(value) } })} />)}</div></> : null}
         {model.value.kind === 'llm' ? <><h3>{t('capabilities')}</h3><div className="model-checks">{(Object.keys(model.value.capabilities) as Array<keyof ModelInput['capabilities']>).map((key) => <Check key={key} label={t('cap.' + key)} checked={model.value.capabilities[key]} onChange={(v) => patchModel({ capabilities: { ...model.value.capabilities, [key]: v } })} />)}</div></> : null}
         <h3>{t('parameters')}</h3><div className="model-form-grid">
           {model.value.kind === 'llm' ? <>

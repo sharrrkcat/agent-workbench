@@ -16,6 +16,8 @@ limits. Other attachments contribute a bounded descriptive marker. Historical
 attachment bytes are not resent; normal context projection remains in force.
 
 The standalone vision and image_embedding profile kinds are distinct from
-LLM image input. They can be configured under Models, but their execution
-requires Phase 2b managed backends. The previous /v1/vision and multimodal
-embedding APIs are deleted.
+LLM image input. They execute in the managed Python worker using bounded PNG,
+JPEG or WebP data URLs. It never fetches image URLs or model weights. The old
+/v1/vision and multimodal embedding APIs remain deleted. Managed llama image
+input is rejected until projector configuration is implemented; external
+vision-capable connections retain their existing behavior.
