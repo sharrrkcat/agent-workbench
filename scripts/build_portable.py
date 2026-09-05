@@ -47,12 +47,12 @@ def copy_tree(source: Path, destination: Path) -> None:
 
 def copy_required_files(root: Path, output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    for filename in ["pyproject.toml", "uv.lock", "README.md"]:
+    for filename in ["pyproject.toml", "uv.lock", "README.md", "alembic.ini"]:
         source = root / filename
         if source.is_file():
             shutil.copy2(source, output / filename)
 
-    for dirname in ["ai_workbench"]:
+    for dirname in ["ai_workbench", "alembic"]:
         copy_tree(root / dirname, output / dirname)
 
     scripts_dir = output / "scripts"

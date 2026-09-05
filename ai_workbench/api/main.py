@@ -10,19 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import assets, attachments, data, health, inference, knowledge, llm_profiles, llm_provider_profiles, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
+from ai_workbench.api.routes import assets, attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
 from ai_workbench.api.ws import router as ws_router
-from ai_workbench.core.inference.observability import (
-    REQUEST_ID_HEADER,
-    elapsed_ms,
-    is_inference_observability_path,
-    log_access_event,
-    log_unhandled_exception,
-    monotonic_time,
-    reset_current_request_id,
-    resolve_request_id,
-    set_current_request_id,
-)
+from ai_workbench.core.models.http import InferenceObservabilityMiddleware
+from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.observability import is_inference_observability_path
+from pydantic import ValidationError
 
 
 @asynccontextmanager
@@ -31,13 +25,14 @@ async def runtime_lifespan(app: FastAPI):
         yield
     finally:
         state = app.state.runtime_state
-        state.events.close()
         await state.active_runs.cancel_all()
+        await state.model_manager.close()
+        state.events.close()
 
 
 def create_app(
     runtime_state: RuntimeState = None,
-    llm_runtime: Any = None,
+    adapter_factory=OpenAIAdapter,
     database_url: str = None,
     use_memory: bool = False,
     frontend_dist: str | Path | None = None,
@@ -45,32 +40,12 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Agent Workbench", lifespan=runtime_lifespan)
     app.state.runtime_state = runtime_state or build_runtime_state(
-        llm_runtime=llm_runtime,
+        adapter_factory=adapter_factory,
         database_url=database_url,
         use_memory=use_memory,
         root=root,
     )
-    from ai_workbench.core.inference.clip_runtime import register_clip_open_clip_runtime_factories
-    from ai_workbench.core.inference.dinov2_runtime import register_dinov2_runtime_factory
-    from ai_workbench.core.inference.florence2_runtime import register_florence2_runtime_factory
-    from ai_workbench.core.inference.siglip2_runtime import register_siglip2_runtime_factory
-
-    register_clip_open_clip_runtime_factories(
-        repo_root=app.state.runtime_state.repo_root,
-        provider_profile_store=app.state.runtime_state.provider_profiles,
-    )
-    register_siglip2_runtime_factory(
-        repo_root=app.state.runtime_state.repo_root,
-        provider_profile_store=app.state.runtime_state.provider_profiles,
-    )
-    register_dinov2_runtime_factory(
-        repo_root=app.state.runtime_state.repo_root,
-        provider_profile_store=app.state.runtime_state.provider_profiles,
-    )
-    register_florence2_runtime_factory(
-        repo_root=app.state.runtime_state.repo_root,
-        provider_profile_store=app.state.runtime_state.provider_profiles,
-    )
+    app.add_middleware(InferenceObservabilityMiddleware, repo_root=app.state.runtime_state.repo_root)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -83,41 +58,18 @@ def create_app(
         allow_headers=["*"],
     )
 
-    @app.middleware("http")
-    async def inference_observability_middleware(request, call_next):
-        path = request.url.path
-        if not is_inference_observability_path(path):
-            return await call_next(request)
+    @app.exception_handler(ModelError)
+    async def model_error_handler(request, exc: ModelError):
+        _record_inference_error_code(request, exc.payload())
+        return JSONResponse(status_code=exc.status, content=exc.payload())
 
-        repo_root = getattr(app.state.runtime_state, "repo_root", None)
-        request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
-        token = set_current_request_id(request_id)
-        request.state.inference_request_id = request_id
-        start = monotonic_time()
-        status_code = 500
-        try:
-            response = await call_next(request)
-            status_code = response.status_code
-            response.headers[REQUEST_ID_HEADER] = request_id
-            return response
-        except Exception as exc:
-            log_unhandled_exception(
-                repo_root=repo_root,
-                method=request.method,
-                path=path,
-                exception=exc,
-            )
-            raise
-        finally:
-            log_access_event(
-                repo_root=repo_root,
-                method=request.method,
-                path=path,
-                status_code=status_code,
-                duration_ms=elapsed_ms(start),
-                error_code=getattr(request.state, "inference_error_code", None),
-            )
-            reset_current_request_id(token)
+    @app.exception_handler(KeyError)
+    async def missing_record_handler(request, exc):
+        return JSONResponse(status_code=404, content={"error": {"code": "RECORD_NOT_FOUND", "message": "Record does not exist."}})
+
+    @app.exception_handler(ValidationError)
+    async def model_validation_handler(request, exc):
+        return JSONResponse(status_code=422, content={"error": {"code": "VALIDATION_ERROR", "message": exc.errors(include_input=False)[0]["msg"]}})
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request, exc: HTTPException):
@@ -141,9 +93,7 @@ def create_app(
     app.include_router(attachments.router)
     app.include_router(data.router)
     app.include_router(openai_compatible.router)
-    app.include_router(inference.router)
-    app.include_router(llm_profiles.router)
-    app.include_router(llm_provider_profiles.router)
+    app.include_router(models.router)
     app.include_router(knowledge.router)
     app.include_router(worldbook.router)
     app.include_router(settings.router)

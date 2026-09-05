@@ -21,7 +21,7 @@ rendered context preview. RRF ordering is deterministic for equal candidates.
 
 `KnowledgeSettings` retains `reranker_enabled`,
 `reranker_model_profile_id`, and `reranker_candidate_limit`. There is no
-independent reranker profile store or public rerank endpoint in Phase 1. If a
+independent reranker profile store or public rerank endpoint. If a
 reranker is not configured, unavailable, or fails, retrieval returns the RRF
 order and records `metadata.rerank_fallback` without failing the chat.
 
@@ -36,7 +36,18 @@ background-indexing workflows are not part of this contract.
 - `/api/knowledge/sources/{id}/reindex` — rebuild one source index.
 - `/api/knowledge/search` — explicit hybrid search.
 - `/api/sessions/{id}/knowledge-bases` — ordered session bindings.
-- Embedding profile routes and `/api/knowledge/embeddings` provide the
-  existing embedding skeleton used by indexing.
+- Model selection uses `/api/models/profiles?kind=embedding` or `reranker`.
+
+Indexing, query embedding and reranking are async calls to the app-scoped
+ModelManager. Model instructions, dimensions, normalization and batch sizes
+belong to the unified profile. Indexing and `/v1/embeddings` use the same
+document preprocessing; retrieval uses query preprocessing. No local runtime
+is imported by Knowledge. Rerank execution awaits a capable Phase 2b adapter;
+the manager boundary is covered by an executable test adapter.
+
+Changing an embedding profile's provider, model reference or parameters, or
+its provider URL, marks associated bases and sources `needs_reindex` in both
+memory and SQLite stores. Retrieval excludes invalidated bases until reindex.
+Search forwards threshold, per-source and per-base chunk limits to retrieval.
 
 Request models use `extra="forbid"`; removed fields are rejected with 422.

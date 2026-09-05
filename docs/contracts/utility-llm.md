@@ -1,55 +1,34 @@
 # Utility LLM contract
 
-Utility LLM is a core service for short internal tasks. It is not a public
-target, route, plugin, command, or independently configurable backend.
+UtilityLLMService is an internal client of ModelManager for short text/JSON
+tasks and titles. It has no independent backend, unload path or public route.
 
-## Configuration
+## Configuration and calls
 
-`AppSettings.utility_model_profile_id` is the only selector. The id resolves
-an enabled LLM profile (alias lookup is allowed by the profile store). If no
-profile, provider, model, or runtime is available, calls raise
-`UtilityLlmError(code="UTILITY_MODEL_UNAVAILABLE")`.
+`/api/models/settings.utility_model_profile_id` is the sole selector and
+must identify an enabled llm profile by UUID. Missing selection or model
+failure raises `UTILITY_MODEL_UNAVAILABLE`. It never substitutes the default
+chat model or accepts profile aliases.
 
-The remaining title settings are:
+`generate_text(prompt, max_tokens=None, temperature=None)` uses non-streaming
+manager chat with only the supplied prompt. `generate_json(prompt, schema,
+**parameters)` parses the entire returned text as JSON and validates the
+Pydantic schema. Fenced/embedded JSON, tool calls and invalid output raise
+`UTILITY_OUTPUT_INVALID`; output never becomes executable instructions.
 
-- `auto_generate_session_titles` (default `true`)
-- `session_title_prompt`
-- `session_title_max_input_chars` (default `1200`)
-
-There are no utility-specific model paths, device settings, scans, or public
-diagnostic endpoints.
-
-## Interface
-
-```python
-class UtilityLlmService(Protocol):
-    async def generate_text(self, prompt: str, *, max_tokens: int | None = None,
-                            temperature: float | None = None) -> str: ...
-    async def generate_json(self, prompt: str, schema: type[T], *,
-                            max_tokens: int | None = None,
-                            temperature: float | None = None) -> T: ...
-    async def generate_title(self, user_text: str) -> str | None: ...
-    def unload(self) -> dict: ...
-```
-
-`generate_text` sends a non-streaming user prompt through the normal LLM
-runtime. `generate_json` parses plain text (including a fenced or embedded JSON
-object) and validates it with the supplied Pydantic schema. Invalid output
-raises `UTILITY_OUTPUT_INVALID`; it never executes instructions from the text.
-`generate_title` truncates to the configured input limit and returns `None` on
-any unavailable, invalid, or empty result so the chat run can continue.
-`unload` is best effort and returns a small status dictionary.
-
-## Isolation and metadata
-
-Utility calls do not create messages, runs, events, or recursive title calls.
-They receive only their explicit prompt and do not inject chat history,
-attachments, Memory, Worldbook, or Knowledge. Logs and metadata may contain
-public profile/model identifiers and compact error codes, never secrets or raw
-prompts/model output.
+Utility tasks create no messages or runs. Their occupancy/status uses the
+same provider queue and release policy as any other manager caller.
 
 ## Title lifecycle
 
-After the first user message in a default-titled session, ChatRunner may make
-one best-effort title call. Failure leaves the existing title unchanged and
-does not change the response model or run status.
+General settings retain auto_generate_session_titles (true),
+session_title_prompt and session_title_max_input_chars (1200). ChatRunner
+finishes the response, releases its model lease and publishes message/run
+completion before attempting a title. The title request explicitly uses
+max_tokens=64 and temperature=0.
+
+An empty/default title may be generated from the bounded current user text.
+No configured auxiliary model, failed/empty output or a concurrently edited
+manual title leaves the current title unchanged. Title failure does not change
+the successful chat result. No history, attachments, Memory, Worldbook or
+Knowledge is injected into the auxiliary prompt.

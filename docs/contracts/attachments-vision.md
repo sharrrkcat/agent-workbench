@@ -1,19 +1,21 @@
 # Attachments and vision contract
 
-Attachments are local files referenced by message parts. Upload limits are
-owned by `AppSettings`; durable message metadata stores ids, MIME type, name,
-size, and compact status, never large base64 payloads.
+Uploads and serving use the configured local attachment directory. General
+settings own size/count/type limits. Message parts retain ids, MIME type,
+name, size and compact metadata; image data URLs are not persisted in messages
+or logs. Orphan cleanup is an explicit, separate operation.
 
-Supported parts are `file`, `image`, `audio`, `video`, and `media_group`.
-Attachment serving resolves only inside the configured attachment directory;
-orphan cleanup is limited to unreferenced files there.
+Supported parts remain file, image, audio, video and media_group. Current
+image attachments become OpenAI image_url parts through the selected llm
+profile and ModelManager. The profile must advertise capabilities.vision;
+otherwise the run reports UNSUPPORTED_CAPABILITY. No alternate vision model
+or silent display-only inference path is selected.
 
-When the selected LLM profile advertises `supports_vision`, image attachments
-from the current user message may be encoded as provider image content.
-Otherwise they remain display-only and the model receives no image bytes.
-Text attachment context is controlled by the General setting and per-file and
-per-message byte limits. Historical attachments are not implicitly resent.
+General settings control text-file context and per-file/per-message byte
+limits. Other attachments contribute a bounded descriptive marker. Historical
+attachment bytes are not resent; normal context projection remains in force.
 
-The existing explicit `/v1/vision` and `/api/inference/vision` skeletons use
-vision model profiles and remain stateless. They do not create sessions,
-messages, runs, or Knowledge rows.
+The standalone vision and image_embedding profile kinds are distinct from
+LLM image input. They can be configured under Models, but their execution
+requires Phase 2b managed backends. The previous /v1/vision and multimodal
+embedding APIs are deleted.

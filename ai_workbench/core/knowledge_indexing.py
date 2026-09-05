@@ -12,10 +12,8 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from ai_workbench.core.attachments import read_attachment_text, resolve_attachment_uri
-from ai_workbench.core.embedding import embed_texts
-from ai_workbench.core.knowledge_models import KnowledgeModelError, knowledge_sources_path
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
-from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase
+from ai_workbench.core.knowledge_store import KnowledgeBase
 
 
 class KnowledgeIndexError(Exception):
@@ -59,7 +57,7 @@ def source_content_hash(text: str) -> str: return hashlib.sha256(text.encode("ut
 
 
 def prepare_pasted_text_source(*, root: Path, title: str, text: str, source_id: str | None = None) -> SourceText:
-    source_id=source_id or str(uuid4()); content=text or ""; target=knowledge_sources_path(root)/(source_id+".txt"); target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content,encoding="utf-8")
+    source_id=source_id or str(uuid4()); content=text or ""; target=root/"data"/"knowledge"/"sources"/(source_id+".txt"); target.parent.mkdir(parents=True,exist_ok=True); target.write_text(content,encoding="utf-8")
     return SourceText(source_id=source_id,source_type="pasted_text",title=title.strip() or "Pasted text",text=content,uri=f"data/knowledge/sources/{source_id}.txt",mime_type="text/plain",size_bytes=len(content.encode()),content_hash=source_content_hash(content),metadata={})
 
 
@@ -110,18 +108,6 @@ def build_embedding_input(source_title: str, chunk: ChunkDraft) -> str:
 
 def build_search_text(title: str, heading_path: str, content: str, metadata: dict[str, Any] | None = None) -> str:
     return "\n".join(item for item in (title,heading_path,content) if item)
-
-
-def embed_chunks(*, backend: Any, profile: EmbeddingModelProfile, chunks: list[ChunkDraft], settings: KnowledgeSettings, provider_profile_store: Any = None, repo_root: Any = None) -> dict[str, Any]:
-    try:
-        result=embed_texts(backend=backend,profile=profile,texts=[build_embedding_input("",c) for c in chunks],purpose="document",device=settings.local_model_device,provider_profile_store=provider_profile_store,repo_root=repo_root)
-    except Exception as exc:
-        if isinstance(exc,KnowledgeModelError): raise KnowledgeIndexError(exc.code,exc.message,exc.details) from exc
-        raise
-    return result
-
-
-def model_error_to_index_error(exc: KnowledgeModelError) -> KnowledgeIndexError: return KnowledgeIndexError(exc.code,exc.message,exc.details)
 
 
 def _heading_at(text: str, offset: int) -> str:

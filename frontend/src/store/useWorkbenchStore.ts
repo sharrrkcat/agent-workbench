@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { applyMessageEvent } from './messageStream';
+import { useModelsStore } from './useModelsStore';
 import { api, ApiError } from '../api/client';
 import type { GeneralSettings, Message, Run, RunStep, RuntimeEvent, Session } from '../types';
 
@@ -9,6 +11,7 @@ type Store = {
   runs: Run[];
   stepsByRunId: Record<string, RunStep[]>;
   settings: GeneralSettings | null;
+  messageVersion: number;
   composerDraftText: string;
   loading: boolean;
   sending: boolean;
@@ -18,7 +21,7 @@ type Store = {
   selectSession: (id: string) => Promise<void>;
   createSession: () => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
-  updateSession: (patch: Partial<Pick<Session, 'title' | 'context_mode' | 'llm_profile_id'>>) => Promise<void>;
+  updateSession: (patch: Partial<Pick<Session, 'title' | 'context_mode' | 'model_profile_id'>>) => Promise<void>;
   sendMessage: (content: string, attachments?: Record<string, unknown>[]) => Promise<RuntimeEvent | undefined>;
   deleteMessage: (messageId: string) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
@@ -57,6 +60,7 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
   runs: [],
   stepsByRunId: {},
   settings: null,
+  messageVersion: 0,
   composerDraftText: '',
   loading: false,
   sending: false,
@@ -69,7 +73,7 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
       if (sessions.length === 0) sessions = [await api.createSession()];
       const selected = sessions[0];
       set({ sessions, currentSession: selected });
-      const [settings] = await Promise.all([api.getGeneralSettings(), get().refreshCurrent()]);
+      const [settings] = await Promise.all([api.getGeneralSettings(), get().refreshCurrent(), useModelsStore.getState().reload()]);
       set({ settings });
     } catch (error) {
       set({ error: errorText(error) });
@@ -81,16 +85,18 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
   refreshCurrent: async () => {
     const session = get().currentSession;
     if (!session) return;
+    const version = get().messageVersion;
     try {
       const [freshSession, messages, runs] = await Promise.all([
         api.getSession(session.session_id),
         api.listMessages(session.session_id),
         api.listRuns(session.session_id),
       ]);
+      if (get().currentSession?.session_id !== session.session_id) return;
       set((state) => ({
         currentSession: freshSession,
         sessions: state.sessions.map((item) => item.session_id === freshSession.session_id ? freshSession : item),
-        messages,
+        messages: state.messageVersion !== version ? mergeMessages(messages, state.messages) : mergeMessages(state.messages.filter((m) => m.metadata?.streaming && runs.some((r) => r.run_id === m.run_id && r.status === "RUNNING")), messages),
         runs,
         stepsByRunId: stepsFromRuns(runs),
       }));
@@ -132,6 +138,7 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
     if (!session) return;
     try {
       const updated = await api.updateSession(session.session_id, patch);
+      if (get().currentSession?.session_id !== updated.session_id) return;
       set((state) => ({ currentSession: updated, sessions: state.sessions.map((item) => item.session_id === updated.session_id ? updated : item) }));
     } catch (error) {
       set({ error: errorText(error) });
@@ -144,9 +151,9 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
     set({ sending: true, error: null });
     try {
       const response = await api.sendMessage(session.session_id, content, attachments, crypto.randomUUID());
-      if (response.messages?.length) set((state) => ({ messages: mergeMessages(state.messages, response.messages || []) }));
-      if (response.session) set((state) => ({ currentSession: response.session || null, sessions: state.sessions.map((item) => item.session_id === response.session?.session_id ? response.session as Session : item) }));
-      if (response.run) set((state) => ({ runs: mergeRuns(state.runs, [response.run as Run]), stepsByRunId: { ...state.stepsByRunId, [response.run!.run_id]: response.run!.steps || [] } }));
+      if (response.messages?.length && get().currentSession?.session_id === response.messages[0].session_id) set((state) => ({ messages: mergeMessages(state.messages, response.messages || []) }));
+      if (response.session && get().currentSession?.session_id === response.session.session_id) set((state) => ({ currentSession: response.session || null, sessions: state.sessions.map((item) => item.session_id === response.session?.session_id ? response.session as Session : item) }));
+      if (response.run && get().currentSession?.session_id === response.run.session_id) set((state) => ({ runs: mergeRuns(state.runs, [response.run as Run]), stepsByRunId: { ...state.stepsByRunId, [response.run!.run_id]: response.run!.steps || [] } }));
       if (!response.success && response.error) set({ error: `${response.error_code || 'CHAT_FAILED'}: ${response.error}` });
       return response.run ? { type: 'run_completed', session_id: session.session_id, run_id: response.run.run_id } : undefined;
     } catch (error) {
@@ -189,15 +196,34 @@ export const useWorkbenchStore = create<Store>((set, get) => ({
   },
 
   applyRuntimeEvent: (event) => {
+    if (event.type === 'model_status' && event.payload?.model_profile_id) {
+      useModelsStore.getState().setStatus(String(event.payload.model_profile_id), event.payload.status as import('../types').ModelStatus);
+      return;
+    }
     if (event.session_id !== get().currentSession?.session_id) return;
     const payload = event.payload || {};
-    if (event.type === 'message_delta') return;
+    if (['message_started', 'message_delta', 'message_completed'].includes(event.type)) {
+      if (event.type === 'message_started' && get().runs.some((r) => r.run_id === event.run_id && ['DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(r.status))) return;
+      set((state) => ({ messages: applyMessageEvent(state.messages, event), messageVersion: state.messageVersion + 1 }));
+      return;
+    }
+    if (event.type === 'session_updated' && payload.session) {
+      const session = payload.session as Session;
+      set((state) => ({ currentSession: session, sessions: state.sessions.map((s) => s.session_id === session.session_id ? session : s) }));
+      return;
+    }
+    if (['run_failed', 'run_cancelled'].includes(event.type)) {
+      set((state) => ({ messages: state.messages.filter((m) => m.run_id !== event.run_id || !m.metadata?.streaming), messageVersion: state.messageVersion + 1 }));
+    }
+    if (payload.run) {
+      set((state) => ({ runs: mergeRuns(state.runs, [payload.run as Run]) }));
+    }
     if (event.type === 'run_step_updated' || event.type === 'run_step_created') {
       const step = payload.step as RunStep | undefined;
       if (!step) return;
       set((state) => ({ stepsByRunId: { ...state.stepsByRunId, [step.run_id]: [...(state.stepsByRunId[step.run_id] || []).filter((item) => item.step_id !== step.step_id), step].sort((a, b) => a.order - b.order) } }));
     }
-    void get().refreshCurrent();
+    if (['run_started', 'run_completed', 'run_failed', 'run_cancelled'].includes(event.type)) void get().refreshCurrent();
   },
 
   setComposerDraftText: (text) => set({ composerDraftText: text }),

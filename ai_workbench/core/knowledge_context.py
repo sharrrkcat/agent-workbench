@@ -16,18 +16,19 @@ class KnowledgeContextResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def build_session_knowledge_context(*, knowledge_store: Any, model_backend: Any, query: str, session_id: str, source: str = "chat", search_fn: Callable[..., dict[str, Any]] | None = None, provider_profile_store: Any = None, repo_root: Any = None, **_ignored: Any) -> KnowledgeContextResult:
+async def build_session_knowledge_context(*, knowledge_service: Any, query: str, session_id: str, source: str = "chat") -> KnowledgeContextResult:
+    knowledge_store = knowledge_service.store
     text=str(query or "").strip()
     if not text or knowledge_store is None or not session_id: return KnowledgeContextResult(metadata={"injected":False,"reason":"no_active_kbs"})
     bindings=[item for item in knowledge_store.list_session_bindings(session_id) if item.enabled]
     if not bindings: return KnowledgeContextResult(metadata={"injected":False,"reason":"no_active_kbs"})
     try:
-        response=(search_fn or search_knowledge)(engine=getattr(knowledge_store,"engine",None),knowledge_store=knowledge_store,model_backend=model_backend,query=text,session_id=session_id,include_debug=True,top_k=None,max_context_chars=None,provider_profile_store=provider_profile_store,repo_root=repo_root)
+        response=await knowledge_service.search(query=text,session_id=session_id,include_debug=True)
     except Exception as exc:
         warning=f"Knowledge retrieval failed: {exc}"; return KnowledgeContextResult(metadata={"injected":False,"reason":"retrieval_failed","rerank_fallback":False},warnings=[warning])
     results=list(response.get("results") or []); debug=response.get("debug") if isinstance(response.get("debug"),dict) else {}; warnings=[str(item) for item in debug.get("warnings",[])]; settings=knowledge_store.get_settings(); names={item.knowledge_base_id:(item.knowledge_base.name if item.knowledge_base else item.knowledge_base_id) for item in bindings}
     snippets=[_snippet(item,index,names) for index,item in enumerate(results,1)]; rendered=render_knowledge_context_preview(settings=settings,results=results,knowledge_base_names=names)
-    return KnowledgeContextResult(rendered_text=rendered,snippets=snippets,metadata={"injected":bool(rendered),"source":source,"result_count":len(snippets),"knowledge_base_ids":list(names),"reranker_used":False,"rerank_fallback":bool(debug.get("rerank_fallback",False)),"snippet_refs":[{"index":s["index"],"chunk_id":s.get("chunk_id"),"source_id":s.get("source_id")} for s in snippets]},warnings=warnings)
+    return KnowledgeContextResult(rendered_text=rendered,snippets=snippets,metadata={"injected":bool(rendered),"source":source,"result_count":len(snippets),"knowledge_base_ids":list(names),"reranker_used":bool(debug.get("reranker_used",False)),"rerank_fallback":bool(debug.get("rerank_fallback",False)),"snippet_refs":[{"index":s["index"],"chunk_id":s.get("chunk_id"),"source_id":s.get("source_id")} for s in snippets]},warnings=warnings)
 
 
 def append_knowledge_to_system(messages: list[dict[str, Any]], rendered_text: str) -> list[dict[str, Any]]:

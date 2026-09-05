@@ -1,7 +1,7 @@
 import type {
-  Attachment, EmbeddingModelProfile, GeneralSettings, KnowledgeBase, KnowledgeSearchResponse,
-  KnowledgeSettings, KnowledgeSource, LlmDefaults, LlmProfile, LlmProfileInput,
-  LlmProviderProfile, LlmProviderProfileInput, Message, PetListResponse, PetSettings,
+  Attachment, GeneralSettings, KnowledgeBase, KnowledgeSearchResponse,
+  KnowledgeSettings, KnowledgeSource, ModelKind, ModelProfile, ModelInput, ModelSettings,
+  ProviderProfile, ProviderInput, ModelStatus, ModelInventoryItem, Message, PetListResponse, PetSettings,
   PetSettingsResponse, RuntimeEvent, RuntimeResponse, Run, RunEvent, Session,
   SessionKnowledgeBinding, SessionWorldbooksResponse, Worldbook, WorldbookEntry,
   WorldbookSettings,
@@ -48,10 +48,10 @@ function toApiError(status: number, payload: unknown): ApiError {
 
 export const api = {
   listSessions: () => request<Session[]>('/api/sessions'),
-  createSession: (title = '', context_mode: Session['context_mode'] = 'single_assistant', llm_profile_id: string | null = null) =>
-    request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify({ title, context_mode, llm_profile_id }) }),
+  createSession: (title = '', context_mode: Session['context_mode'] = 'single_assistant', model_profile_id: string | null = null) =>
+    request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify({ title, context_mode, model_profile_id }) }),
   getSession: (sessionId: string) => request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`),
-  updateSession: (sessionId: string, patch: Partial<Pick<Session, 'title' | 'context_mode' | 'llm_profile_id'>>) =>
+  updateSession: (sessionId: string, patch: Partial<Pick<Session, 'title' | 'context_mode' | 'model_profile_id'>>) =>
     request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteSession: (sessionId: string) => request<{ deleted: boolean; session_id: string }>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   listMessages: (sessionId: string) => request<Message[]>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`),
@@ -69,30 +69,23 @@ export const api = {
 
   getGeneralSettings: () => request<GeneralSettings>('/api/settings/general'),
   updateGeneralSettings: (patch: Record<string, unknown>) => request<GeneralSettings>('/api/settings/general', { method: 'PATCH', body: JSON.stringify(patch) }),
-  getLlmDefaults: () => request<LlmDefaults>('/api/settings/llm-defaults'),
-  updateLlmDefaults: (patch: Partial<LlmDefaults>) => request<LlmDefaults>('/api/settings/llm-defaults', { method: 'PATCH', body: JSON.stringify(patch) }),
-  listLlmProfiles: () => request<LlmProfile[]>('/api/llm-profiles'),
-  createLlmProfile: (profile: LlmProfileInput) => request<LlmProfile>('/api/llm-profiles', { method: 'POST', body: JSON.stringify(profile) }),
-  patchLlmProfile: (id: string, patch: Record<string, unknown>) => request<LlmProfile>(`/api/llm-profiles/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  deleteLlmProfile: (id: string) => request<{ deleted: boolean; profile_id: string }>(`/api/llm-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  duplicateLlmProfile: (id: string) => request<LlmProfile>(`/api/llm-profiles/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }),
-  testLlmProfile: (id: string) => request<{ success: boolean; message: string; models?: string[] }>(`/api/llm-profiles/${encodeURIComponent(id)}/test`, { method: 'POST' }),
-  listLlmProfileModels: (id: string) => request<{ success: boolean; models: Array<{ id: string }> }>(`/api/llm-profiles/${encodeURIComponent(id)}/models`),
-  listProviderProfiles: () => request<LlmProviderProfile[]>('/api/llm-provider-profiles'),
-  createProviderProfile: (profile: LlmProviderProfileInput) => request<LlmProviderProfile>('/api/llm-provider-profiles', { method: 'POST', body: JSON.stringify(profile) }),
-  patchProviderProfile: (id: string, patch: Record<string, unknown>) => request<LlmProviderProfile>(`/api/llm-provider-profiles/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  deleteProviderProfile: (id: string) => request<{ deleted: boolean; profile_id: string }>(`/api/llm-provider-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  duplicateProviderProfile: (id: string) => request<LlmProviderProfile>(`/api/llm-provider-profiles/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }),
-  testProviderProfile: (id: string) => request<{ success: boolean; message: string; models?: string[] }>(`/api/llm-provider-profiles/${encodeURIComponent(id)}/test`, { method: 'POST' }),
-  listProviderModels: (id: string) => request<{ success: boolean; provider_profile_id: string; models: Array<{ id: string }> }>(`/api/llm-provider-profiles/${encodeURIComponent(id)}/models`),
+  getModelSettings: () => request<ModelSettings>('/api/models/settings'),
+  updateModelSettings: (patch: Partial<Omit<ModelSettings, 'has_external_api_key'>> & { external_api_key?: string }) => request<ModelSettings>('/api/models/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
+  listModelProfiles: (kind?: ModelKind) => request<ModelProfile[]>('/api/models/profiles' + (kind ? '?kind=' + kind : '')),
+  createModelProfile: (profile: ModelInput) => request<ModelProfile>('/api/models/profiles', { method: 'POST', body: JSON.stringify(profile) }),
+  patchModelProfile: (id: string, patch: Partial<ModelInput>) => request<ModelProfile>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteModelProfile: (id: string) => request<{ deleted: boolean }>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getModelStatus: (id: string) => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/status`),
+  modelAction: (id: string, action: 'load' | 'unload' | 'health') => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
+  listModelInventory: (kind?: ModelKind) => request<ModelInventoryItem[]>('/api/models/inventory' + (kind ? '?kind=' + kind : '')),
+  listProviderProfiles: () => request<ProviderProfile[]>('/api/models/providers'),
+  createProviderProfile: (profile: ProviderInput) => request<ProviderProfile>('/api/models/providers', { method: 'POST', body: JSON.stringify(profile) }),
+  patchProviderProfile: (id: string, patch: Partial<ProviderInput>) => request<ProviderProfile>(`/api/models/providers/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteProviderProfile: (id: string) => request<{ deleted: boolean }>(`/api/models/providers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listProviderModels: (id: string) => request<{ models: string[] }>(`/api/models/providers/${encodeURIComponent(id)}/models`),
 
   getKnowledgeSettings: () => request<KnowledgeSettings>('/api/knowledge/settings'),
   updateKnowledgeSettings: (patch: Record<string, unknown>) => request<KnowledgeSettings>('/api/knowledge/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
-  listEmbeddingModels: () => request<EmbeddingModelProfile[]>('/api/knowledge/embedding-models'),
-  createEmbeddingModel: (profile: Record<string, unknown>) => request<EmbeddingModelProfile>('/api/knowledge/embedding-models', { method: 'POST', body: JSON.stringify(profile) }),
-  patchEmbeddingModel: (id: string, patch: Record<string, unknown>) => request<EmbeddingModelProfile>(`/api/knowledge/embedding-models/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  deleteEmbeddingModel: (id: string) => request<{ deleted: boolean; profile_id: string }>(`/api/knowledge/embedding-models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  scanKnowledgeModels: () => request<Record<string, unknown>>('/api/knowledge/models/scan'),
   listKnowledgeBases: () => request<KnowledgeBase[]>('/api/knowledge/bases'),
   createKnowledgeBase: (value: Record<string, unknown>) => request<KnowledgeBase>('/api/knowledge/bases', { method: 'POST', body: JSON.stringify(value) }),
   patchKnowledgeBase: (id: string, patch: Record<string, unknown>) => request<KnowledgeBase>(`/api/knowledge/bases/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
@@ -130,8 +123,6 @@ export const api = {
   uploadAttachment: (file: File) => { const form = new FormData(); form.append('file', file, file.name || 'attachment'); return requestForm<Attachment>('/api/attachments', form); },
 
   getRuntimeResources: () => request<Record<string, unknown>>('/api/runtime/resources'),
-  getRuntimeMemory: (sessionId?: string) => request<Record<string, unknown>>(`/api/runtime/memory${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`),
-  freeRuntimeMemory: (targets: string[], sessionId?: string) => request<Record<string, unknown>>('/api/runtime/free-memory', { method: 'POST', body: JSON.stringify({ targets, session_id: sessionId ?? null }) }),
   getHealthDetails: () => request<Record<string, unknown>>('/api/health/details'),
 };
 

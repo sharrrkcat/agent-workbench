@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator
 
-from ai_workbench.core.secrets import MASKED_SECRET
 from ai_workbench.core.time import utc_now
 
 
@@ -133,7 +132,6 @@ class AppSettings(BaseModel):
     send_text_file_attachments_to_llm: StrictBool = True
     persist_streaming_message_deltas: StrictBool = False
     auto_generate_session_titles: StrictBool = True
-    utility_model_profile_id: str | None = None
     session_title_prompt: str = DEFAULT_SESSION_TITLE_PROMPT
     session_title_max_input_chars: int = Field(default=1200, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
@@ -162,10 +160,6 @@ class AppSettings(BaseModel):
     appearance_font_code_custom_family_id: StrictStr | None = None
     core_memory_content: str = ""
     core_memory_enabled: StrictBool = True
-    inference_service_enabled: StrictBool = False
-    inference_service_require_api_key: StrictBool = True
-    inference_service_max_request_mb: int = Field(default=10, ge=1, le=100)
-    inference_service_api_key: StrictStr | None = None
     pet: PetSettings = Field(default_factory=PetSettings)
 
     @field_validator("session_title_prompt")
@@ -176,7 +170,7 @@ class AppSettings(BaseModel):
             raise ValueError("Session title prompt must not be empty.")
         return value
 
-    @field_validator("group_transcript_system_instruction", "utility_model_profile_id", mode="before")
+    @field_validator("group_transcript_system_instruction", mode="before")
     @classmethod
     def optional_text(cls, value: Any) -> str | None:
         if value is None:
@@ -223,7 +217,6 @@ class AppSettingsPatch(BaseModel):
     send_text_file_attachments_to_llm: StrictBool | None = None
     persist_streaming_message_deltas: StrictBool | None = None
     auto_generate_session_titles: StrictBool | None = None
-    utility_model_profile_id: str | None = None
     session_title_prompt: str | None = None
     session_title_max_input_chars: int | None = Field(default=None, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
@@ -252,17 +245,11 @@ class AppSettingsPatch(BaseModel):
     appearance_font_code_custom_family_id: StrictStr | None = None
     core_memory_content: str | None = None
     core_memory_enabled: StrictBool | None = None
-    inference_service_enabled: StrictBool | None = None
-    inference_service_require_api_key: StrictBool | None = None
-    inference_service_max_request_mb: int | None = Field(default=None, ge=1, le=100)
-    inference_service_api_key: StrictStr | None = None
     pet: PetSettingsPatch | None = None
 
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:
     payload = settings.model_dump(mode="json")
-    payload["inference_service_api_key"] = MASKED_SECRET if settings.inference_service_api_key else None
-    payload["inference_service_api_key_set"] = bool(settings.inference_service_api_key)
     payload["session_title_prompt_default"] = DEFAULT_SESSION_TITLE_PROMPT
     payload["group_transcript_system_instruction_default"] = DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     payload["group_transcript_system_instruction_effective"] = settings.group_transcript_system_instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
@@ -271,8 +258,6 @@ def app_settings_response(settings: AppSettings) -> dict[str, Any]:
 
 def app_settings_patch_updates(patch: AppSettingsPatch) -> dict[str, Any]:
     updates = patch.model_dump(exclude_unset=True, exclude_none=False)
-    if updates.get("inference_service_api_key") == MASKED_SECRET:
-        updates.pop("inference_service_api_key", None)
     return updates
 
 

@@ -1,105 +1,139 @@
 # Agent Workbench
 
-Agent Workbench is a small local-first chat workbench. Phase 1 uses one
-predictable chat path backed by explicit core services for sessions, runs,
-memory, Worldbook, Knowledge/RAG, models, and the optional Pet overlay.
+A local-first chat workbench and OpenAI-compatible model gateway. Phase 2a
+uses one ModelManager for chat, auxiliary tasks, Knowledge and external
+requests. Connections currently call an existing OpenAI-compatible service;
+managed llama-server/Python workers are Phase 2b.
 
-## Quick start
+## Start
 
 Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Node.js and npm.
 
 ```powershell
 uv sync
-uv run uvicorn ai_workbench.api.main:app --reload
-```
-
-In another shell:
-
-```powershell
-cd frontend
+Push-Location frontend
 npm install
-npm run dev
+npm run build
+Pop-Location
+uv run python scripts/run_app.py --no-open
 ```
 
-The default frontend URL is `http://localhost:5173`. Copy `.env.example` to
-`.env` when custom database, model, attachment, or frontend paths are needed.
+Open http://127.0.0.1:8765. Use --port 8766 if the port is occupied.
+For frontend development, run the API on port 8000 and npm run dev in
+frontend; Vite serves http://127.0.0.1:5173 with its API/WS proxy.
 
-## Chat behavior
+## Configure models
 
-Every message is sent to the static `chat` prompt target. Prefixes are not
-commands: `/base64 hello`, `@chat hi`, `@chat:formal hi`, and `:formal hi`
-are ordinary message text and are preserved in history and model context.
-If a session has `waiting_run_id`, its waiting run is resumed before a new chat
-run starts. Session model selection overrides the global default model.
+In Settings > Models:
 
-The ChatRunner builds generic session or group-transcript context and injects
-Core Memory, Worldbook, Knowledge results, and permitted attachments. Runs
-persist `context`, `model`, `save`, and (when needed) `approval` steps; `tool`
-is reserved for a later harness phase. Titles are generated best-effort by the
-optional Utility LLM and never block a reply.
+1. Add a connection with an OpenAI-compatible API base URL, optional key,
+   timeout and queue limits.
+2. Add a model profile, choose its kind and connection, and enter the exact
+   model reference advertised by the provider. Choose a unique public alias.
+3. Set capability flags, generation/per-kind parameters and release policy.
+   Health/load checks verify the connection and model.
+4. Choose the default chat model and, optionally, a separate auxiliary model.
+   A chat session can override the default.
 
-## Settings and services
+There is one profile store for llm, embedding, reranker, image_embedding and
+vision. LLM chat and text embeddings execute through external connections.
+The other kinds can be configured, but need Phase 2b managed backends to run.
+Image input through a vision-capable LLM is already supported.
 
-The frontend Settings page contains only General, Models, Knowledge,
-Worldbook, and Pet. General settings include attachments, Core Memory, title
-generation, inference service limits, and nested `pet` settings. Models owns
-provider profiles, chat profiles, the global default, and the single
-`utility_model_profile_id` selector.
+Lifecycle defaults to manual release. External connections cannot report
+weight residency or unload through the standard protocol; the UI shows
+unknown residency and disables unload. Queue defaults are concurrency 1,
+32 waiting requests and a 30-second queue timeout. Multiple aliases for the
+same connection/model share occupancy. No model files are downloaded.
 
-Utility LLM is an internal service with `generate_text`, `generate_json`,
-`generate_title`, and best-effort `unload`. It resolves one enabled LLM profile;
-missing or unavailable profiles return `UTILITY_MODEL_UNAVAILABLE`, invalid
-validated JSON returns `UTILITY_OUTPUT_INVALID`, and title failures are
-non-blocking.
+## Chat and Knowledge
 
-Knowledge keeps source/chunk/index lifecycles, hybrid vector + keyword search,
-RRF merging, session bindings, automatic context injection, and optional
-post-retrieval reranking. There is one chunk size/overlap configuration.
-Reranking always fails open to RRF and records `rerank_fallback` metadata.
-Sources are created directly from text, attachments, or workspace paths.
+Every message follows the ordinary ChatRunner path. Prefixes such as /base64,
+@chat or :formal remain text. Session/group transcript context, Memory,
+Worldbook and Knowledge injection remain available. Persona editing is Phase 3;
+harness and tool execution are Phase 4.
 
-Pet settings are served by `/api/pets/settings`; updates deep-merge
-`position` and `bubble_texts` into `AppSettings`. Pet rendering follows run
-status and stable step kinds, with `WAITING_FOR_USER` shown as a confirmation
-state. Pet lists and settings load initially and refresh after changes.
+Chat responses stream over WebSocket with stable message ids and sequenced
+deltas. The completed message is authoritative. Title generation uses only
+the explicitly selected auxiliary model, after the main model lease releases.
+Missing or failed auxiliary configuration leaves the title unchanged.
 
-`NetworkPolicy` is a side-effect-free boundary for future tools. It accepts
-only public HTTP/HTTPS URLs, rejects credentials and non-public DNS results,
-allows at most three redirects, and caps responses at 1 MiB. Phase 1 performs
-no network fetches.
+Knowledge retains direct text/file/attachment sources, chunking, vector/FTS
+retrieval, RRF, session bindings and automatic context injection. Embedding
+and reranker selectors reference the same Models profiles. Document/query
+preprocessing and lifecycle run through the manager. Changing vector
+configuration invalidates affected indexes and requires reindexing. When
+reranking is unavailable, retrieval keeps RRF order with diagnostic metadata.
 
-## API surface
+## External API
 
-Retained routes cover `/api/sessions`, `/api/messages`, `/api/runs`, settings,
-LLM/provider profiles, Knowledge, Worldbook, Pet, attachments, health,
-diagnostics, and the existing localhost-guarded `/v1` inference skeleton.
-Removed Agent, Command, Intent, form, Web Context, ComfyUI, and image-generation
-routes are ordinary 404s. Removed request fields are rejected with 422 by
-strict Pydantic schemas.
+Enable External service in Models, configure one API key, and mark selected
+profiles visible to the external API. The service accepts localhost clients
+only and is disabled by default.
 
-## Database
+| Endpoint | Behavior |
+| --- | --- |
+| GET /v1/models | Enabled public llm/embedding aliases |
+| POST /v1/chat/completions | Non-streaming/SSE, function tool data, image_url and response_format |
+| POST /v1/embeddings | Text/string arrays, float/base64 output |
 
-SQLite is managed with Alembic. Empty databases upgrade directly to head;
-`0001_current_schema` is the baseline and `0002_phase1_prune` is a destructive
-test-phase migration that drops obsolete tables/columns without data-copy or
-compatibility paths. Downgrade is intentionally unsupported. The default path
-is `data/agent_workbench.db`; override it with
-`AGENT_WORKBENCH_DATABASE_URL`.
+Use Authorization: Bearer <key> or x-api-key. Model names are public aliases;
+internal UUIDs are not accepted. Only n=1 and the documented request subset
+are supported. Tool calls are forwarded, never executed. Unsupported
+capabilities return errors without selecting another model.
+
+Model management is under /api/models/providers, /profiles, /inventory and
+/settings. The old LLM/per-kind/inference management routes, standalone vision
+and multimodal endpoints are deleted. Public rerank and image services are
+deferred. See [the external protocol](docs/contracts/stateless-inference.md).
+
+## Settings and storage
+
+General owns attachment limits, titles, Memory, appearance and Pet settings.
+Models owns connections, all model profiles, model selectors and the external
+service. Knowledge and Worldbook own their context/retrieval settings.
+
+Keys are omitted from management reads, with presence flags instead. Omitting
+a PATCH key retains it; an empty string clears it. Local key storage is not
+encrypted. Logs exclude credentials and request/model content.
+
+SQLite is managed solely by Alembic. Head 0003_phase2a_models recreates the
+whole disposable database, including sessions, settings, Knowledge and
+Worldbook, without copying or converting records. Downgrade is unsupported.
+Empty databases upgrade to head; unversioned nonempty databases are rejected.
+
+This project has no users/user data. Prolonged service downtime is acceptable.
+Abandoned code has no compatibility implementation or configuration fallback.
+Schema revisions never delete model files, attachments, runtimes or other
+data directories. See [data layout](docs/DATA_LAYOUT.md).
+
+The default database is data/agent_workbench.db, configurable with
+AGENT_WORKBENCH_DATABASE_URL. Remaining environment paths are listed in
+.env.example; model connection settings live in the database.
 
 ## Verification
 
 ```powershell
 uv run pytest -q
 uv run python -m compileall -q ai_workbench
+uv run python scripts/check_docs_size.py
+uv run python scripts/audit_workspace.py --check
 Push-Location frontend
 npm run build
 npm run check:i18n
+npm run test:model-stream
 npm run test:phase1-contracts
 npm run test:knowledge-citations
 npm run test:url
 Pop-Location
 ```
 
-See [docs/WORKBENCH_REFACTOR_ROADMAP.md](docs/WORKBENCH_REFACTOR_ROADMAP.md)
-for the frozen architecture and Phase 2 follow-up work. Current API and data
-contracts live under [docs/contracts](docs/contracts).
+Backend tests use isolated roots, mock upstream HTTP plus real loopback
+HTTP/SSE/WS transport tests. They do not load/download weights. Frontend state
+tests exercise sequence ordering, canonical completion, concurrent model
+refreshes and session isolation. Browser smoke is outside this round's
+requested verification.
+
+Read [AI context](docs/AI_CONTEXT.md), then the
+[refactor roadmap](docs/WORKBENCH_REFACTOR_ROADMAP.md) and owning contract
+before changing code.

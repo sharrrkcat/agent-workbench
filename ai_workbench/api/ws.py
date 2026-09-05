@@ -39,7 +39,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 event_task = None
                 if event is None:
                     return
-                if event.session_id == session_id:
+                if event.session_id in {session_id, ""}:
                     await websocket.send_json(event.model_dump(mode="json"))
                     wants_event = False
     except (WebSocketDisconnect, asyncio.CancelledError):

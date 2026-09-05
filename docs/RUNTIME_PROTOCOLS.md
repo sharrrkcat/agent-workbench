@@ -1,41 +1,48 @@
 # Runtime protocols
 
-This index summarizes the Phase 1 runtime. Detailed contracts live under
-[`contracts/`](contracts).
+Phase 2a shares all model calls through core/models. Detailed contracts are in
+[contracts](contracts).
 
 ## Chat and runs
 
-`Runtime` dispatches every new message to `ChatRunner`; a session
-`waiting_run_id` is resumed first. Input prefixes are preserved as text.
-`ContextBuilder` projects session or group-transcript messages and appends
-Memory, Worldbook, Knowledge, and permitted attachment context.
+Runtime dispatches to ChatRunner, with waiting-run resume first. Prefixes stay
+ordinary text. ContextBuilder projects the session/group transcript and
+injects Memory, Worldbook, Knowledge and permitted attachment context.
 
-Runs use `chat`/`resume` kinds and generic steps: `context`, `model`, `save`,
-`approval`, and reserved `tool`. Statuses, cancellation, and event payloads
-are defined in [runtime-run-lifecycle](contracts/runtime-run-lifecycle.md).
+ChatRunner resolves session.model_profile_id then the global default and
+calls the shared manager. An explicitly selected auxiliary model may generate
+a title after the main lease is released. Missing auxiliary configuration
+leaves the title unchanged.
 
-## Streaming
+Runs retain chat/resume kinds and context/model/save/approval steps; tool is
+reserved. See [run lifecycle](contracts/runtime-run-lifecycle.md).
 
-WebSocket `message_started`, `message_delta`, and `message_completed` events
-form the visible stream. Sequence numbers are monotonic; the completed
-message parts are authoritative. See [runtime-streaming](contracts/runtime-streaming.md).
+## Models and streams
 
-## Models and services
+[Model resolution](contracts/runtime-llm-resolution.md) defines one profile
+store, five kinds, one OpenAI-compatible external connection protocol and the
+manager's bounded queue/manual-default lifecycle. Local managed runtimes are
+Phase 2b; API-process inference implementations are removed.
 
-Main LLM resolution is session profile then global default. Provider/profile
-status and local resource release are read-only/best effort. Utility LLM,
-Knowledge, Pet, attachments, and NetworkPolicy are explicit core services; no
-directory scanning or dynamic registration occurs at startup.
+WebSocket message_started/message_delta/message_completed share one message
+id; seq increases from 1 and the completed parts are authoritative. The client
+rejects duplicate/late/gapped deltas. Session refresh preserves active drafts.
+Global model_status events share occupancy across aliases.
+See [streaming](contracts/runtime-streaming.md) and
+[status](contracts/provider-status.md).
 
-## Stateless inference
+## External protocol
 
-The disabled-by-default localhost `/v1` service retains chat, embedding, and
-vision skeletons with strict auth, size, and profile guards. Stateless calls
-never create project state.
+The optional single-key localhost service exposes /v1/models,
+/v1/chat/completions and /v1/embeddings. Chat supports SSE, function tool data,
+image input and response_format according to declared capabilities. It never
+executes tools or writes business rows. See
+[stateless inference](contracts/stateless-inference.md).
 
-## Persistence boundaries
+## Persistence
 
-Messages use generic role/speaker/parts fields (`content_version=2`). Metadata
-contains compact references, counts, warnings, and public ids only. SQLite
-schema changes are managed by Alembic; Phase 1's prune revision is intentionally
-destructive for the disposable test database.
+Alembic is the only schema authority. Head 0003_phase2a_models recreates the
+whole disposable test database without row conversion or downgrade support.
+Model, attachment, runtime and other file directories are outside revision
+ownership. The project has no users/user data, permits prolonged downtime and
+retains no abandoned compatibility implementations.

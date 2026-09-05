@@ -6,12 +6,12 @@ def test_session_store_keeps_context_and_model_overrides() -> None:
     store = SessionStore()
 
     session = store.create_session(title="Test", context_mode="group_transcript")
-    updated = store.set_llm_profile(session.session_id, "profile-1")
+    updated = store.set_model_profile(session.session_id, "profile-1")
 
     assert session.session_id
     assert updated.context_mode == "group_transcript"
-    assert updated.llm_profile_id == "profile-1"
-    assert store.get_session(session.session_id).llm_profile_id == "profile-1"
+    assert updated.model_profile_id == "profile-1"
+    assert store.get_session(session.session_id).model_profile_id == "profile-1"
 
 
 def test_run_store_uses_generic_chat_contract() -> None:

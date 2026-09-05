@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from uuid import uuid4
+from contextlib import aclosing
 
 from ai_workbench.core.chat_targets import ChatTargetCatalog
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
-from ai_workbench.core.llm_config import LLMConfigError, public_llm_config_status, require_llm_model, resolve_llm_config
-from ai_workbench.core.llm_service import LLMService
+from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.schema import ChatRequest
+from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_text, is_text_attachment
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.result import RunResult
@@ -28,14 +32,10 @@ class ChatRunner:
         messages: Any,
         runs: Any,
         events: Any,
-        llm: Any = None,
-        llm_profiles: Any = None,
-        provider_profiles: Any = None,
-        llm_defaults: Any = None,
+        model_manager: Any,
         app_settings: Any = None,
         utility_llm: Any = None,
-        knowledge: Any = None,
-        knowledge_model_backend: Any = None,
+        knowledge_service: Any = None,
         worldbooks: Any = None,
         active_runs: Any = None,
         target_catalog: ChatTargetCatalog | None = None,
@@ -44,14 +44,10 @@ class ChatRunner:
         self.messages = messages
         self.runs = runs
         self.events = events
-        self.llm = llm if isinstance(llm, LLMService) else LLMService(llm)
-        self.llm_profiles = llm_profiles
-        self.provider_profiles = provider_profiles
-        self.llm_defaults = llm_defaults
+        self.model_manager = model_manager
         self.app_settings = app_settings
         self.utility_llm = utility_llm
-        self.knowledge = knowledge
-        self.knowledge_model_backend = knowledge_model_backend
+        self.knowledge_service = knowledge_service
         self.worldbooks = worldbooks
         self.active_runs = active_runs
         self.targets = target_catalog or ChatTargetCatalog()
@@ -135,7 +131,7 @@ class ChatRunner:
                 status=RunStepStatus.RUNNING,
             )
             active_step_id = context_step.step_id
-            context, context_meta = self._build_context(
+            context, context_meta = await self._build_context(
                 session,
                 raw_text,
                 (run.metadata or {}).get("input_message_id"),
@@ -158,34 +154,37 @@ class ChatRunner:
                 status=RunStepStatus.RUNNING,
             )
             active_step_id = model_step.step_id
-            config = resolve_llm_config(
-                session_llm_profile_id=session.llm_profile_id,
-                llm_profile_store=self.llm_profiles,
-                provider_profile_store=self.provider_profiles,
-                llm_defaults_store=self.llm_defaults,
-            )
-            require_llm_model(config)
-            self.runs.update_metadata(
-                run.run_id,
-                {**(self.runs.get_run(run.run_id).metadata or {}), "llm_resolution": public_llm_config_status(config)},
-            )
+            profile = self.model_manager.chat_profile(session.model_profile_id)
+            resolution = {"model_profile_id": profile.id, "alias": profile.alias,
+                          "provider_profile_id": profile.provider_profile_id, "model_ref": profile.model_ref}
+            self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
+            streamed = profile.capabilities.streaming
+            request = ChatRequest(model=profile.alias, messages=context, stream=streamed)
+            self.model_manager.validate_chat(profile, request)
+            message_id = str(uuid4())
+            pending = MessageSchema(message_id=message_id, session_id=session_id, role="assistant",
+                                    run_id=run.run_id, parts=[], metadata={"streaming": True})
+            self.events.emit("message_started", session_id=session_id, run_id=run.run_id,
+                             message_id=message_id, payload={"message": pending.model_dump(mode="json"), "seq": 0})
             output = ""
-            streamed = False
-            if config.values.get("supports_streaming", True) and callable(getattr(self.llm.runtime, "chat_stream", None)):
-                streamed = True
-                async for delta in self.llm.chat_stream(context, config.values):
-                    if self._cancelled(run.run_id):
-                        return self._cancel_result(run.run_id, session_id)
-                    value = str(delta or "")
-                    output += value
-                    self.events.emit(
-                        "message_delta",
-                        session_id=session_id,
-                        run_id=run.run_id,
-                        payload={"delta": value, "text": output},
-                    )
+            if streamed:
+                seq = 0
+                async with aclosing(self.model_manager.chat_stream(profile.id, request)) as stream:
+                    async for chunk in stream:
+                        if self._cancelled(run.run_id):
+                            return self._cancel_result(run.run_id, session_id)
+                        if chunk.delta.tool_calls:
+                            raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat cannot execute tool calls.", 502)
+                        if chunk.delta.content:
+                            output += chunk.delta.content
+                            seq += 1
+                            self.events.emit("message_delta", session_id=session_id, run_id=run.run_id,
+                                             message_id=message_id, payload={"delta": chunk.delta.content, "seq": seq})
             else:
-                output = await self.llm.chat(context, config.values)
+                response = await self.model_manager.chat(profile.id, request)
+                if response.message.tool_calls or not isinstance(response.message.content, str):
+                    raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
+                output = response.message.content
             self.runs.update_step(
                 model_step.step_id,
                 status=RunStepStatus.COMPLETED,
@@ -206,11 +205,12 @@ class ChatRunner:
                 session_id=session_id,
                 role="assistant",
                 content=output,
+                message_id=message_id,
                 run_id=run.run_id,
                 parent_message_id=(self.runs.get_run(run.run_id).metadata or {}).get("input_message_id"),
                 metadata={
                     "target": self.target_id,
-                    "llm_resolution": public_llm_config_status(config),
+                    "model_resolution": resolution,
                     "streamed": streamed,
                 },
             )
@@ -234,7 +234,7 @@ class ChatRunner:
             )
             await self._maybe_title(session_id, raw_text)
             return RunResult(success=True, run_id=run.run_id, data=output)
-        except LLMConfigError as exc:
+        except ModelError as exc:
             self._fail_step(active_step_id, exc.code, exc.message)
             return self._fail(run.run_id, session_id, exc.code, exc.message)
         except asyncio.CancelledError:
@@ -266,7 +266,7 @@ class ChatRunner:
             resume=True,
         )
 
-    def _build_context(
+    async def _build_context(
         self,
         session: Any,
         text: str,
@@ -275,7 +275,7 @@ class ChatRunner:
     ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         target = self.targets.get(self.target_id)
         policy = target.context_policy or ContextPolicy(mode="session")
-        current_text = _with_current_attachments(text, attachments)
+        current_text = _with_current_attachments(text, attachments, self.app_settings.get())
         result = self.context_builder.build(
             session.session_id,
             current_text,
@@ -308,17 +308,19 @@ class ChatRunner:
             )
             messages = append_system_context(messages, worldbook.rendered_text)
             metadata["worldbook"] = worldbook.metadata
-        if self.knowledge is not None:
-            knowledge = build_session_knowledge_context(
-                knowledge_store=self.knowledge,
-                model_backend=self.knowledge_model_backend,
-                query=text,
-                session_id=session.session_id,
-                source="chat",
-                provider_profile_store=self.provider_profiles,
+        if self.knowledge_service is not None:
+            knowledge = await build_session_knowledge_context(
+                knowledge_service=self.knowledge_service, query=text, session_id=session.session_id, source="chat",
             )
             messages = append_knowledge_to_system(messages, knowledge.rendered_text)
             metadata["knowledge"] = knowledge.metadata
+        images = [item for item in attachments if item.get("type") == "image"]
+        if images:
+            # ContextBuilder leaves the current user message last in both modes.
+            current = messages[-1]
+            current["content"] = [{"type": "text", "text": current["content"]}] + [
+                {"type": "image_url", "image_url": {"url": read_attachment_as_data_url(item)}} for item in images
+            ]
         return messages, metadata
 
     async def _maybe_title(self, session_id: str, text: str) -> None:
@@ -331,7 +333,11 @@ class ChatRunner:
                 return
             title = await self.utility_llm.generate_title(text)
             if title:
-                self.sessions.set_generated_title(session_id, title, {"source": "utility"})
+                current = self.sessions.get_session(session_id)
+                if current.title != session.title or current.title_generation_state == "manual":
+                    return
+                updated = self.sessions.set_generated_title(session_id, title, {"source": "utility"})
+                self.events.emit("session_updated", session_id=session_id, payload={"session": updated.model_dump(mode="json")})
         except Exception:
             return
 
@@ -398,13 +404,21 @@ class ChatRunner:
         return RunResult(success=False, run_id=run_id, error=message, error_code=code)
 
 
-def _with_current_attachments(text: str, attachments: list[dict[str, Any]]) -> str:
+def _with_current_attachments(text: str, attachments: list[dict[str, Any]], settings: Any) -> str:
     blocks = [str(text)] if text else []
+    used = 0
     for attachment in attachments:
         if not isinstance(attachment, dict):
             continue
+        if attachment.get("type") == "image":
+            continue
         label = str(attachment.get("name") or attachment.get("id") or "file")
-        context_text = attachment.get("context_text") or attachment.get("text")
+        context_text = ""
+        if settings.send_text_file_attachments_to_llm and is_text_attachment(attachment):
+            remaining = settings.max_total_file_context_per_message_bytes - used
+            if remaining > 0:
+                context_text = read_attachment_text(attachment, limit=min(settings.max_file_context_per_file_bytes, remaining))["content"]
+                used += len(context_text.encode("utf-8"))
         if context_text:
             blocks.append(f"[Attachment: {label}]\n{context_text}")
         else:

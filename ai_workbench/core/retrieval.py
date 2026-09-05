@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.keyword_search import search_keywords
 from ai_workbench.core.vector_store import search_vectors
 from ai_workbench.core.rerank import RERANK_FALLBACK_KEY
@@ -38,7 +37,7 @@ def rrf_merge(vector_candidates: list[RetrievalCandidate], keyword_candidates: l
     return sorted(merged.values(), key=lambda item:item.rrf_score, reverse=True)
 
 
-def search_knowledge(*, engine: Any, knowledge_store: Any, model_backend: Any, query: str, knowledge_base_ids: list[str] | None = None, session_id: str | None = None, top_k: int | None = None, max_context_chars: int | None = None, include_debug: bool = False, min_score_threshold: float | None = None, max_chunks_per_source: int | None = None, max_chunks_per_knowledge_base: int | None = None, provider_profile_store: Any | None = None, repo_root: Any | None = None, **_ignored: Any) -> dict[str, Any]:
+async def search_knowledge(*, engine: Any, knowledge_store: Any, model_manager: Any, query: str, knowledge_base_ids: list[str] | None = None, session_id: str | None = None, top_k: int | None = None, max_context_chars: int | None = None, include_debug: bool = False, min_score_threshold: float | None = None, max_chunks_per_source: int | None = None, max_chunks_per_knowledge_base: int | None = None) -> dict[str, Any]:
     settings=knowledge_store.get_settings(); warnings=[]
     ids=list(dict.fromkeys(knowledge_base_ids or [b.knowledge_base_id for b in knowledge_store.list_session_bindings(session_id or "") if b.enabled]))
     if not ids:
@@ -51,21 +50,21 @@ def search_knowledge(*, engine: Any, knowledge_store: Any, model_backend: Any, q
             reranker_enabled=bool(settings.reranker_enabled),
         )
     bases=[knowledge_store.get_knowledge_base(item) for item in ids]
-    bases=[item for item in bases if item.enabled]
+    bases=[item for item in bases if item.enabled and item.index_status != "needs_reindex"]
     vector=[]; keyword=[]
     profiles={}
     for base in bases:
-        try: profiles[base.embedding_model_profile_id]=knowledge_store.get_embedding_profile(base.embedding_model_profile_id)
-        except KeyError: warnings.append(f"Embedding profile not found: {base.embedding_model_profile_id}")
+        try: profiles[base.embedding_model_profile_id]=model_manager.profile(base.embedding_model_profile_id, "embedding")
+        except Exception as exc: warnings.append(f"Embedding unavailable: {exc}")
     for profile_id, profile in profiles.items():
         group=[base.id for base in bases if base.embedding_model_profile_id==profile_id]
         try:
-            embedded=embed_texts(backend=model_backend,profile=profile,texts=[query],purpose="query",device=settings.local_model_device,provider_profile_store=provider_profile_store,repo_root=repo_root)
+            embedded=await model_manager.embed(profile.id, [query], purpose="query")
             candidate_k = max((int(base.vector_candidate_k_override or settings.default_vector_candidate_k) for base in bases if base.id in group), default=settings.default_vector_candidate_k)
             if engine is not None:
-                found, extra=search_vectors(engine=engine,query_vector=embedded["vectors"][0],embedding_model_profile_id=profile.id,knowledge_base_ids=group,top_k=candidate_k); warnings.extend(extra); vector.extend(_vector(item) for item in found)
+                found, extra=search_vectors(engine=engine,query_vector=embedded.vectors[0],embedding_model_profile_id=profile.id,knowledge_base_ids=group,top_k=candidate_k); warnings.extend(extra); vector.extend(_vector(item) for item in found)
             else:
-                vector.extend(_memory_vector_candidates(knowledge_store, embedded["vectors"][0], group, profile.id, candidate_k))
+                vector.extend(_memory_vector_candidates(knowledge_store, embedded.vectors[0], group, profile.id, candidate_k))
         except Exception as exc: warnings.append(f"Vector search unavailable: {exc}")
     if settings.hybrid_search_enabled:
         try:
@@ -76,36 +75,47 @@ def search_knowledge(*, engine: Any, knowledge_store: Any, model_backend: Any, q
                 keyword.extend(_memory_keyword_candidates(knowledge_store, query, [base.id for base in bases], candidate_k))
         except Exception as exc: warnings.append(f"Keyword search unavailable: {exc}")
     merged=rrf_merge(vector,keyword,rrf_k=settings.rrf_k)
+    rerank_fallback = False
+    reranker_used = False
+    if settings.reranker_enabled and merged:
+        if settings.reranker_model_profile_id:
+            try:
+                candidates = merged[:settings.reranker_candidate_limit]
+                ranked = await model_manager.rerank(settings.reranker_model_profile_id, query, [item.content for item in candidates])
+                for item, score in zip(candidates, ranked.scores):
+                    item.rerank_score = score
+                merged = sorted(candidates, key=lambda item: item.rerank_score, reverse=True)
+                reranker_used = True
+            except Exception as exc:
+                rerank_fallback = True
+                warnings.append(f"RERANK_FALLBACK: {exc}; using RRF order.")
+        else:
+            rerank_fallback = True
+            warnings.append("RERANK_FALLBACK: no reranker model is configured; using RRF order.")
     limit=top_k or max((int(base.final_top_k_override or settings.default_final_top_k) for base in bases), default=settings.default_final_top_k)
     max_chars=max_context_chars or max((int(base.max_context_chars_override or settings.default_max_context_chars) for base in bases), default=settings.default_max_context_chars)
     results=[]; source_counts={}; kb_counts={}; used=0
     threshold=min_score_threshold if min_score_threshold is not None else settings.min_score_threshold if settings.min_score_threshold is not None else settings.default_min_score
     for item in merged:
         if threshold is not None and item.rrf_score < threshold: continue
-        source_counts[item.source_id]=source_counts.get(item.source_id,0)+1; kb_counts[item.knowledge_base_id]=kb_counts.get(item.knowledge_base_id,0)+1
         source_limit = max_chunks_per_source if max_chunks_per_source is not None else settings.retrieval_max_chunks_per_source
         kb_limit = max_chunks_per_knowledge_base if max_chunks_per_knowledge_base is not None else settings.retrieval_max_chunks_per_knowledge_base
-        if source_limit and source_counts[item.source_id]>source_limit: continue
-        if kb_limit and kb_counts[item.knowledge_base_id]>kb_limit: continue
+        if source_limit and source_counts.get(item.source_id, 0) >= source_limit: continue
+        if kb_limit and kb_counts.get(item.knowledge_base_id, 0) >= kb_limit: continue
         text=item.content; remaining=max_chars-used; truncated=len(text)>remaining
         if remaining<=0: break
         text=text[:remaining]; used+=len(text)
-        results.append({"chunk_id":item.chunk_id,"knowledge_base_id":item.knowledge_base_id,"source_id":item.source_id,"title":item.title,"heading_path":item.heading_path,"content":text,"truncated":truncated,"vector_score":item.vector_score,"vector_rank":item.vector_rank,"keyword_score":item.keyword_score,"keyword_rank":item.keyword_rank,"rrf_score":item.rrf_score,"rerank_score":None})
+        source_counts[item.source_id] = source_counts.get(item.source_id, 0) + 1
+        kb_counts[item.knowledge_base_id] = kb_counts.get(item.knowledge_base_id, 0) + 1
+        results.append({"chunk_id":item.chunk_id,"knowledge_base_id":item.knowledge_base_id,"source_id":item.source_id,"title":item.title,"heading_path":item.heading_path,"content":text,"truncated":truncated,"vector_score":item.vector_score,"vector_rank":item.vector_rank,"keyword_score":item.keyword_score,"keyword_rank":item.keyword_rank,"rrf_score":item.rrf_score,"rerank_score":item.rerank_score})
         if len(results)>=limit: break
-    # A fallback is meaningful only when there are candidates that would have
-    # been reranked. Empty searches should not claim that reranking failed.
-    rerank_fallback = bool(settings.reranker_enabled and results)
-    if settings.reranker_enabled and results:
-        if settings.reranker_model_profile_id:
-            warnings.append("RERANK_FALLBACK: configured reranker is not available in Phase 1; using RRF order.")
-        else:
-            warnings.append("RERANK_FALLBACK: no reranker model is configured; using RRF order.")
     return _response(
         query,
         results,
         warnings,
         include_debug,
         rerank_fallback=rerank_fallback,
+        reranker_used=reranker_used,
         reranker_enabled=bool(settings.reranker_enabled),
     )
 
@@ -164,10 +174,11 @@ def _response(
     *,
     rerank_fallback: bool = False,
     reranker_enabled: bool = False,
+    reranker_used: bool = False,
 ) -> dict[str, Any]:
     rerank_meta = {
         RERANK_FALLBACK_KEY: rerank_fallback,
-        "reranker_used": False,
+        "reranker_used": reranker_used,
         "reranker_enabled": reranker_enabled,
     }
     payload = {"query": query, "results": results, "metadata": rerank_meta}
@@ -175,7 +186,7 @@ def _response(
         payload["debug"] = {
             "warnings": warnings,
             "merged_candidate_count": len(results),
-            "reranker_used": False,
+            "reranker_used": reranker_used,
             "reranker_failed": rerank_fallback,
             **rerank_meta,
         }

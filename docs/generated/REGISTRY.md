@@ -1,6 +1,6 @@
 # Runtime catalog
 
-Phase 1 has no generated extension registry. The application starts from
+There is no generated extension registry. The application starts from
 explicit code and does not scan manifests or plugin directories.
 
 ## Prompt targets
@@ -17,16 +17,19 @@ through YAML or a runtime registration API.
 
 - `ChatRunner`: context construction, model call, persistence, streaming events,
   title hook, and waiting-run resume.
-- `UtilityLlmService`: short text/JSON/title calls through one configured model
+- `ModelManager`: the shared adapter, provider queue, model status and
+  lifecycle owner for all internal/external inference.
+- `ModelProfileStore`: five model kinds with internal UUIDs and public aliases.
+- `UtilityLLMService`: short text/JSON/title calls through one configured model
   profile, with structured unavailable/invalid-output errors.
 - `KnowledgeService`: source/index lifecycle, hybrid retrieval, RRF and optional
   fail-open post-retrieval reranking.
 - `PetService`: nested application settings and pet package lifecycle.
 - `NetworkPolicy`: pure URL/DNS/redirect/response-size validation for future
-  tools; it performs no requests in Phase 1.
+  tools; it performs no requests itself.
 
 ## Generation
 
-This document is maintained as a static catalog during Phase 1. A future tool
+This document is maintained as a static catalog. A future tool
 harness may add an explicit, schema-checked registry, but it will not restore
 manifest loading or extension discovery.

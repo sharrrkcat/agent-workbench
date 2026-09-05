@@ -1,4 +1,4 @@
-"""Small Alembic helpers for the destructive Phase 1 schema.
+"""Small Alembic helpers for the current disposable test schema.
 
 The application is still in a disposable test phase. The only supported
 upgrade path is the normal Alembic path; no row copying, backups, or
@@ -19,7 +19,8 @@ from sqlalchemy.engine import Connection, make_url
 
 BASELINE_REVISION = "0001_current_schema"
 PHASE1_REVISION = "0002_phase1_prune"
-HEAD_REVISION = PHASE1_REVISION
+PHASE2A_REVISION = "0003_phase2a_models"
+HEAD_REVISION = PHASE2A_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 
@@ -114,20 +115,12 @@ def upgrade(bind: Engine | Connection, revision: str = "head") -> None:
 
 def downgrade(bind: Engine | Connection, revision: str = "-1") -> None:
     if revision in {"base", BASELINE_REVISION, "-1"}:
-        raise RuntimeError("destructive Phase 1 migration downgrade is unsupported")
+        raise RuntimeError("destructive test database downgrade is unsupported")
     if isinstance(bind, Connection):
         command.downgrade(_config(bind), revision)
         return
     with bind.begin() as connection:
         command.downgrade(_config(connection), revision)
-
-
-def stamp(bind: Engine | Connection, revision: str = BASELINE_REVISION) -> None:
-    if isinstance(bind, Connection):
-        command.stamp(_config(bind), revision)
-        return
-    with bind.begin() as connection:
-        command.stamp(_config(connection), revision)
 
 
 def is_empty_database(bind: Engine | Connection) -> bool:

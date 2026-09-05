@@ -1,6 +1,6 @@
 # Agent Workbench 架构精简与重构路线图
 
-> 状态：设计冻结，Phase 0 与 Phase 1 已完成（2026-09-04）
+> 状态：设计冻结，Phase 0、Phase 1 与 Phase 2a 已完成（2026-09-05）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口
 
@@ -72,6 +72,9 @@
 | Pet 联动 | 与对话状态继续联动 | run step 使用稳定 kind；WAITING_FOR_USER 显示等待确认 |
 | 数据库迁移 | 引入 Alembic | Phase 0 建 baseline；后续 schema 变化走迁移，测试阶段允许直接删表/删列 |
 | API 与内部调用 | 共享 core/models | 外部路由和 ChatRunner 共用 adapter、ModelManager、错误和观测 |
+| 测试阶段约束 | 无用户、无用户数据，允许服务长时间停用 | 不做保活、用户数据迁移、兼容、legacy、旧配置 fallback、双写或用户习惯适配；后续阶段不改变 |
+| 外部连接协议 | 仅 OpenAI Compatible | 不增加品牌专属分支；不支持的操作返回明确错误 |
+| 模型释放和标题 | 默认 manual；标题只用显式辅助模型 | 未配置或调用失败保持原标题，不借用主聊天模型 |
 
 ### 2.1 两轮决策的覆盖关系
 
@@ -270,7 +273,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 ## 5. 分阶段迁移计划
 
-阶段以可运行的小切片推进。破坏性阶段不承诺数据库回滚，测试库可重建。
+阶段以可验收切片推进，中间状态允许服务长时间停用，不需要保活。项目始终按测试阶段、无用户、无用户数据处理；不考虑用户习惯，不做用户数据迁移或兼容。明确遗弃的方法和结构必须直接删除，禁止 legacy、旧配置 fallback、兼容转发和双写。这些约束在后续阶段不会改变。破坏性阶段不承诺数据库回滚，测试库可重建。
 
 ### Phase 0：冻结、卫生和数据库基线
 
@@ -316,15 +319,15 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：先统一调用面，再接 runtime。
 
-- [ ] 定义 ProviderAdapter 接口、能力声明和错误模型。
-- [ ] 建立统一 model_profiles 表、store、schema 和按 kind 过滤的 API。
-- [ ] 将 LLM、Embedding、Reranker、Image Embedding、Vision 旧 profile 数据迁入统一表。
-- [ ] 实现 ModelManager 的 load/unload/health、并发和空闲策略。
-- [ ] 将内部 ChatRunner 和 /v1 路由切到同一 core/models。
-- [ ] 为 /v1/chat/completions 增加 streaming、tools、vision input、response_format 的兼容请求/响应。
-- [ ] 保持单 key + localhost guard、请求大小限制和观测日志。
-- [ ] 将 embedding、内部 rerank 和标题辅助模型纳入统一生命周期。
-- [ ] 清理旧环境变量和扩展配置的最终解析依赖。
+- [x] 定义 ProviderAdapter 接口、能力声明和错误模型。
+- [x] 建立统一 model_profiles 表、store、schema 和按 kind 过滤的 API。
+- [x] 重建整个 SQLite 测试库，删除旧 profile 表，以统一表承载五种 kind；不迁入旧记录，不删除模型、附件等文件目录。
+- [x] 实现 ModelManager 的 load/unload/health、并发和空闲策略。
+- [x] 将内部 ChatRunner 和 /v1 路由切到同一 core/models。
+- [x] 为 /v1/chat/completions 增加 streaming、tools、vision input、response_format 的兼容请求/响应。
+- [x] 保持单 key + localhost guard、请求大小限制和观测日志。
+- [x] 将 embedding、内部 rerank 和标题辅助模型纳入统一生命周期。
+- [x] 清理旧环境变量和扩展配置的最终解析依赖。
 
 验收：
 
@@ -417,7 +420,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 - ai_workbench/core/memory_context.py
 - ai_workbench/core/worldbook.py、worldbook_context.py
 - 精简后的 knowledge_*、retrieval.py、keyword_search.py、vector_store.py
-- provider_status.py、provider_inventory.py、runtime_resources.py
+- runtime_resources.py；模型状态与只读 inventory 已收敛至 core/models
 - /v1 的鉴权、限制、模型列表、观测和请求 guard
 - 前端 PetOverlay.tsx、PetSprite.tsx、PetSettingsPanel.tsx 和宠物包资源
 
@@ -425,7 +428,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 - core/runner.py → ChatRunner + AgentLoop + run event 组合
 - core/runtime.py → 简化输入、等待恢复和生命周期协调
-- core/llm_config.py → 三层配置解析和 ModelManager 调用
+- core/llm_config.py → 删除；session 覆盖 > 全局默认，两层选择直接调用 ModelManager
 - db/models.py → Alembic 管理的统一 model_profiles、personas、session-persona、runtime jobs
 - api/deps.py → 少量明确依赖，不再注入旧的 19 个服务
 - settings.py、agent_settings.py、前端 Settings 面板/store/types → 新的模型、persona、harness 设置
@@ -461,7 +464,7 @@ Phase 1 已在测试数据库直接完成删除；后续删除仍须有对应 Al
 ## 7. 数据库策略
 
 1. Phase 0 为当前 schema 建 Alembic baseline；Phase 1 使用 `0002_phase1_prune` 直接删除不再需要的表和列。
-2. 本项目处于测试阶段，Phase 1 不复制、转换、双写或校验用户数据；空库 `upgrade head` 是主要启动验收。
+2. 本项目处于测试阶段，没有用户和用户数据；所有阶段不复制、转换、双写或校验旧用户数据。Phase 2a 重建整个 SQLite 测试库（包括会话、设置、Knowledge、Worldbook、模型记录），空库 `upgrade head` 是主要启动验收。
 3. 破坏性 revision 的 `downgrade()` 明确报错，不伪装成可恢复迁移；开发者可重建测试数据库。
 4. 新写入只使用通用 message parts、run step kinds 和严格 schema；应用不读取已删除扩展配置。
 5. 未来新增表或字段仍须通过 Alembic；模型文件、附件和日志目录不由迁移脚本递归删除。
@@ -485,7 +488,7 @@ Phase 1 已在测试数据库直接完成删除；后续删除仍须有对应 Al
 - response_format 的受支持子集
 - /v1/embeddings
 
-公共 `/v1/rerank` 后置到 Phase 2；图像生成不属于当前实现。
+公共 `/v1/rerank` 后置，未在 Phase 2a 开放；图像生成不属于当前实现。
 
 ### 8.2 内部 REST/WS
 
@@ -526,20 +529,20 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 
 这些问题不改变产品方向，需在对应阶段定稿：
 
-- ModelProfile 的完整参数和 provider capability 命名。
+- ModelProfile 参数与 capability 命名已在 Phase 2a 契约中冻结；worker 运行参数在 Phase 2b 确定。
 - llama-server/Python worker 的版本矩阵、端口分配和日志保留策略。
 - runtime catalog 的签名/校验来源和代理设置字段。
 - /tool-name args 的多参数解析和工具名称命名空间。
 - 哪些工具默认需要审批、网络请求允许范围和读文件目录。
 - 群聊的 persona 轮次、当前 speaker 选择和 UI 交互。
-- 标题何时使用当前模型、何时使用辅助模型。
-- reranker adapter 的外部请求格式，保持未来 Jina/Cohere 风格兼容。
+- 标题只使用显式选定的辅助模型；未配置或失败时保持标题不变（2026-09-05 已冻结）。
+- 公共 rerank 请求格式在开放该端点时确定；Phase 2a 不增加品牌专属连接协议。
 
 这些细节应通过小型 schema、契约测试和用户可见示例确定，不应扩大为插件生态或自动意图识别。
 
 ## 12. 当前进度快照
 
-截至 2026-09-04：
+截至 2026-09-05：
 
 - [x] 完成只读架构调研和问题证据整理。
 - [x] 确认产品目标、减法范围、runtime worker 方向和 reranker 保留策略。
@@ -550,12 +553,13 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - [x] 新建本路线图文档。
 - [x] Phase 0 实施：静态 Alembic baseline、旧库安全接管、测试隔离、数据目录文档和只读审计脚本已完成。
 - [x] Phase 1 实施：单一路径 Chat、显式核心服务、破坏性 prune migration、前端与文档契约收敛。
-- [ ] Phase 2a/2b 实施。
+- [x] Phase 2a 实施：统一 Models、ModelManager、外部协议、前端和测试库重建。
+- [ ] Phase 2b 受管 runtime 与安装任务。
 - [ ] Phase 3 Persona 数据化。
 - [ ] Phase 4 harness。
 - [ ] Phase 5 文档和前端收尾。
 
-Phase 0 建立迁移与卫生边界；Phase 1 已完成旧扩展塔的硬切换。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准。
+Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2a 完成统一模型调用面。下一阶段为 Phase 2b。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准，以下旧阶段记录只用于说明历史，不恢复旧兼容实现。
 
 ### Phase 0 实施记录（2026-09-04）
 
@@ -577,6 +581,21 @@ Phase 0 建立迁移与卫生边界；Phase 1 已完成旧扩展塔的硬切换�
 - `AppSettings.pet`、`RunStep.kind`、Utility LLM 错误码、Knowledge RRF fallback 与 `NetworkPolicy` 契约测试已补齐；前端设置导航和 Pet 状态契约有静态测试。
 - 验证：后端 `uv run pytest -q`（41 passed）；前端 build、i18n、Knowledge citations、URL helper 与 Phase 1 contracts 均通过。
 
+### Phase 2a 实施记录（2026-09-05）
+
+- 新增 `core/models/`：统一 ProviderAdapter、严格 schema、ModelProfileStore、ModelSettingsStore、ModelManager、OpenAI adapter、inventory、错误和观测。五种 kind 共用模型表，内部只用 UUID，外部只用全局唯一 alias。
+- Provider 连接只实现 OpenAI Compatible；请求、模型列表及 health/load 共用有界队列，取消、断流、配置更新和退出均释放占用。相同 provider/model_ref 的别名共享占用、状态事件与最保守释放策略，默认 manual。
+- `api/routes/models.py` 提供统一 provider/profile CRUD、kind 过滤、status、inventory、health/load/unload 和 settings；密钥不回显，引用删除及繁忙更新返回明确错误。
+- `api/routes/openai_compatible.py` 共用 manager，支持非流式/SSE、tools/tool_calls、tool 消息、图像输入、response_format 子集及 float/base64 embeddings。保留 localhost、单 key、body 限制和完整流结束后的日志；工具仅透传、不执行。
+- ChatRunner、UtilityLLMService、Knowledge indexing/query embedding/rerank 改为 manager 调用；标题只用显式辅助模型。修改向量配置会使 memory/SQLite 两种 store 的 KB/source 索引失效，检索阈值和数量限制透传到 retrieval。
+- 删除旧 profile 表/store/route、core/inference 进程内推理、LLM 配置解析、品牌 runtime、旧环境变量和主进程重型推理 extras；删除旧 vision/multimodal 公共接口与过期契约，没有兼容转发或旧配置读取。
+- `0002_phase1_prune` 改为固定历史 DDL，避免引用最新 ORM；新增静态 `0003_phase2a_models` 重建整个测试 SQLite，Alembic 成为唯一 schema authority。实际库由 0001 经 0002 升至 0003，审计为 18 张业务表、31 个显式索引、integrity=ok；重建前后数据库外 1,174 个文件的内容摘要一致。
+- 前端新增 `ModelsPanel.tsx`、`useModelsStore.ts`、`messageStream.ts`，统一五类模型、连接、参数、能力、生命周期和外部服务设置；聊天和 Knowledge 共用模型源。修正 WS delta、完成消息覆盖、旧刷新响应、会话切换隔离、RunPanel 选择器及弹窗焦点；双语同步。
+- 更新 AGENTS、AI_CONTEXT、README、task cards、运行/数据/模型契约。审计脚本改为 `scripts/audit_workspace.py`，不再调用旧 baseline 兼容检查；便携构建补齐 Alembic 文件，官方 launcher 仅允许 loopback。
+- 验证：`uv run --no-sync pytest -q` 为 **80 passed**；`compileall`、前端 build、i18n（11 namespaces）、model-stream、Phase 1 contracts、Knowledge citations、URL helpers、docs size、workspace audit、`git diff --check` 均通过。便携临时目录可独立创建 0003 schema；实际服务根页面与 health 返回 200。
+- 协议测试含 MockTransport 及真实本机 HTTP/SSE/WS：工具参数分片、中文字节分片、usage、错误、断流取消、队列上限/超时/更新互斥及 HTTP 完成前收到 WS delta。前端状态测试覆盖重复/乱序/完成事件和并发刷新。按用户要求停止浏览器 smoke，未宣称浏览器验收通过；未使用真实模型权重或实际外部推理服务。
+- Phase 2a 边界：外部连接可执行 LLM 和文本 embeddings；远端 residency=unknown，unload 明确 unsupported。reranker/image_embedding/vision 配置和内部接口已建立，生产执行等待 Phase 2b 受管后端；RAG 在 rerank 不可用时保持 RRF。Persona、harness、公共 rerank、图像服务和模型下载未提前实施。
+
 ## 13. 决策变更记录
 
 | 日期 | 变更 |
@@ -585,3 +604,5 @@ Phase 0 建立迁移与卫生边界；Phase 1 已完成旧扩展塔的硬切换�
 | 2026-09-04 | 记录最终覆盖关系：受管 worker、llama-server、手动放模型、Pet 在 app settings、ComfyUI 当前移除、reranker 保留但公共 API defer、Alembic 纳入 Phase 0。 |
 | 2026-09-04 | 完成 Phase 0：静态 baseline、旧库备份/校验/stamp、测试模型目录隔离、`DATA_LAYOUT.md` 与只读审计脚本；未改变 API 或用户工作流。 |
 | 2026-09-04 | 完成 Phase 1：普通聊天单一路径、显式核心服务、破坏性 schema prune、前端/契约测试与文档依赖收敛。 |
+| 2026-09-05 | 完成 Phase 2a：统一模型层/表/接口/前端，补齐 OpenAI 兼容流式与工具/视觉/格式子集，删除旧进程内推理与配置栈，整体重建测试库；冻结 OpenAI Compatible 单协议、manual 默认释放、标题仅显式辅助模型。 |
+| 2026-09-05 | 永久确认测试阶段无用户/用户数据、允许长期停服、不做保活或旧结构兼容、不迁移数据和不考虑旧习惯；模型/附件/runtime 等文件不随 schema 删除。 |

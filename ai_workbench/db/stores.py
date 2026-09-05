@@ -10,23 +10,21 @@ from uuid import uuid4
 from sqlmodel import Session as DbSession, delete, select
 
 from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
-from ai_workbench.core.knowledge_store import EmbeddingModelProfile, KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, SessionKnowledgeBinding
-from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
-from ai_workbench.core.vision_profiles import VisionModelProfile
+from ai_workbench.core.knowledge_store import KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, SessionKnowledgeBinding
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts
-from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import utc_now
+from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.worldbook import SessionWorldbookBinding, Worldbook, WorldbookEntry, WorldbookSettings, sync_worldbook_settings_patch
 from ai_workbench.db.models import (
-    AppMetadataRecord, EmbeddingModelProfileRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
-    KnowledgeSettingsRecord, KnowledgeSourceRecord, LLMProfileRecord, MessageRecord, MultimodalEmbeddingModelProfileRecord,
-    ProviderProfileRecord, RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
-    SessionWorldbookBindingRecord, VisionModelProfileRecord, WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord,
+    AppMetadataRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
+    KnowledgeSettingsRecord, KnowledgeSourceRecord, MessageRecord,
+    RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
+    SessionWorldbookBindingRecord, WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord,
 )
 
 
@@ -70,8 +68,7 @@ class SqlSessionStore:
     def set_generated_title(self, session_id: str, title: str, metadata: Optional[dict[str, Any]] = None) -> Session: return self._update(session_id, title=title, title_generation_state="done", title_generation_metadata_json=_dump(metadata or {}))
     def set_title_generation_state(self, session_id: str, state: str, metadata: Optional[dict[str, Any]] = None) -> Session: return self._update(session_id, title_generation_state=state, title_generation_metadata_json=_dump(metadata or {}))
     def set_waiting_run(self, session_id: str, run_id: Optional[str]) -> Session: return self._update(session_id, waiting_run_id=run_id)
-    def set_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session: return self._update(session_id, llm_profile_id=profile_id)
-    def set_last_announced_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session: return self._update(session_id, last_announced_llm_profile_id=profile_id)
+    def set_model_profile(self, session_id: str, profile_id: Optional[str]) -> Session: return self._update(session_id, model_profile_id=profile_id)
 
     def clear_interrupted_waiting_runs(self, run_ids: list[str]) -> None:
         if not run_ids: return
@@ -94,12 +91,12 @@ class SqlSessionStore:
 class SqlMessageStore:
     def __init__(self, engine) -> None: self.engine = engine
 
-    def add_message(self, session_id: str, role: str, content: Any = None, *, parts: list[dict[str, Any]] | None = None, run_id: str | None = None, parent_message_id: str | None = None, metadata: dict[str, Any] | None = None, speaker_type: str | None = None, speaker_id: str | None = None, speaker_name: str | None = None, origin: str | None = None) -> MessageSchema:
+    def add_message(self, session_id: str, role: str, content: Any = None, *, parts: list[dict[str, Any]] | None = None, run_id: str | None = None, parent_message_id: str | None = None, metadata: dict[str, Any] | None = None, speaker_type: str | None = None, speaker_id: str | None = None, speaker_name: str | None = None, origin: str | None = None, message_id: str | None = None) -> MessageSchema:
         metadata = dict(metadata or {})
         speaker = infer_speaker_identity(role, metadata=metadata, speaker_type=speaker_type, speaker_id=speaker_id, speaker_name=speaker_name, origin=origin)
         if parts is None: parts = [make_text_part(str(content), format="markdown" if role == "assistant" else "plain")] if content not in (None, "") else []
         validated = validate_message_parts(parts)
-        record = MessageRecord(message_id=str(uuid4()), session_id=session_id, role=role, **speaker, parts_json=_dump(validated), run_id=run_id, parent_message_id=parent_message_id, metadata_json=_dump(metadata))
+        record = MessageRecord(message_id=message_id or str(uuid4()), session_id=session_id, role=role, **speaker, parts_json=_dump(validated), run_id=run_id, parent_message_id=parent_message_id, metadata_json=_dump(metadata))
         with DbSession(self.engine) as db:
             db.add(record)
             session = db.get(SessionRecord, session_id)
@@ -254,142 +251,6 @@ class SqlRunEventStore:
         with DbSession(self.engine) as db: db.exec(delete(RunEventRecord).where(RunEventRecord.session_id == session_id)); db.commit()
 
 
-class SqlLLMProfileStore:
-    def __init__(self, engine) -> None: self.engine = engine
-    def create(self, profile: LLMProfileSchema) -> LLMProfileSchema:
-        row = LLMProfileRecord(**_profile_data(profile));
-        with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
-        return _llm_profile(row)
-    def get(self, profile_id: str) -> LLMProfileSchema:
-        with DbSession(self.engine) as db:
-            row=db.get(LLMProfileRecord, profile_id)
-            if row is None: raise KeyError(f"unknown profile id: {profile_id}")
-            return _llm_profile(row)
-    def find_by_alias(self, alias: str) -> LLMProfileSchema | None:
-        with DbSession(self.engine) as db:
-            row=db.exec(select(LLMProfileRecord).where(LLMProfileRecord.alias == alias)).first(); return _llm_profile(row) if row else None
-    def get_by_id_or_alias(self, value: str) -> LLMProfileSchema:
-        try: return self.get(value)
-        except KeyError:
-            found=self.find_by_alias(value)
-            if found is None: raise KeyError(f"unknown profile: {value}")
-            return found
-    def update(self, value: str, values: dict[str, Any]) -> LLMProfileSchema:
-        current=self.get_by_id_or_alias(value)
-        data=current.model_dump(); data.update(values)
-        updated=LLMProfileSchema.model_validate(data)
-        with DbSession(self.engine) as db:
-            row=db.get(LLMProfileRecord, current.id)
-            for key,val in _profile_data(updated).items(): setattr(row,key,val)
-            row.updated_at=utc_now(); db.add(row); db.commit(); db.refresh(row); return _llm_profile(row)
-    def delete(self, value: str) -> LLMProfileSchema:
-        current=self.get_by_id_or_alias(value)
-        with DbSession(self.engine) as db:
-            row=db.get(LLMProfileRecord,current.id); db.delete(row); db.commit()
-        return current
-    def list(self) -> list[LLMProfileSchema]:
-        with DbSession(self.engine) as db: return [_llm_profile(row) for row in db.exec(select(LLMProfileRecord).order_by(LLMProfileRecord.name)).all()]
-
-
-class SqlProviderProfileStore:
-    def __init__(self, engine) -> None: self.engine = engine
-    def create(self, profile: ProviderProfileSchema) -> ProviderProfileSchema:
-        row=ProviderProfileRecord(**_provider_data(profile));
-        with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
-        return _provider(row)
-    def get(self, profile_id: str) -> ProviderProfileSchema:
-        with DbSession(self.engine) as db:
-            row=db.get(ProviderProfileRecord,profile_id)
-            if row is None: raise KeyError(f"unknown provider profile: {profile_id}")
-            return _provider(row)
-    def update(self, profile_id: str, values: dict[str, Any]) -> ProviderProfileSchema:
-        current=self.get(profile_id); data=current.model_dump(); data.update(values); updated=ProviderProfileSchema.model_validate(data)
-        with DbSession(self.engine) as db:
-            row=db.get(ProviderProfileRecord,profile_id)
-            for key,val in _provider_data(updated).items(): setattr(row,key,val)
-            row.updated_at=utc_now(); db.add(row); db.commit(); db.refresh(row); return _provider(row)
-    def delete(self, profile_id: str) -> ProviderProfileSchema:
-        current=self.get(profile_id)
-        with DbSession(self.engine) as db: db.delete(db.get(ProviderProfileRecord,profile_id)); db.commit()
-        return current
-    def list(self) -> list[ProviderProfileSchema]:
-        with DbSession(self.engine) as db: return [_provider(row) for row in db.exec(select(ProviderProfileRecord).order_by(ProviderProfileRecord.name)).all()]
-
-
-class SqlMultimodalEmbeddingProfileStore:
-    def __init__(self, engine) -> None: self.engine = engine
-    def create(self, profile: MultimodalEmbeddingModelProfile) -> MultimodalEmbeddingModelProfile:
-        data = profile.model_dump(); data["supported_input_types_json"] = _dump(data.pop("supported_input_types")); data["metadata_json"] = _dump(data.pop("metadata"))
-        row = MultimodalEmbeddingModelProfileRecord(**data)
-        with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
-        return _multimodal(row)
-    def get(self, profile_id: str) -> MultimodalEmbeddingModelProfile:
-        with DbSession(self.engine) as db:
-            row = db.get(MultimodalEmbeddingModelProfileRecord, profile_id)
-            if row is None: raise KeyError(f"unknown profile id: {profile_id}")
-            return _multimodal(row)
-    def find_by_alias(self, alias: str) -> MultimodalEmbeddingModelProfile | None:
-        with DbSession(self.engine) as db:
-            row = db.exec(select(MultimodalEmbeddingModelProfileRecord).where(MultimodalEmbeddingModelProfileRecord.alias == alias)).first()
-            return _multimodal(row) if row else None
-    def get_by_id_or_alias(self, value: str) -> MultimodalEmbeddingModelProfile:
-        try: return self.get(value)
-        except KeyError:
-            result = self.find_by_alias(value)
-            if result is None: raise KeyError(f"unknown profile: {value}")
-            return result
-    def update(self, value: str, values: dict[str, Any]) -> MultimodalEmbeddingModelProfile:
-        current = self.get_by_id_or_alias(value); data = current.model_dump(); data.update(values); updated = MultimodalEmbeddingModelProfile.model_validate(data)
-        with DbSession(self.engine) as db:
-            row = db.get(MultimodalEmbeddingModelProfileRecord, current.id)
-            serialized = updated.model_dump(); serialized["supported_input_types_json"] = _dump(serialized.pop("supported_input_types")); serialized["metadata_json"] = _dump(serialized.pop("metadata"))
-            for key, val in serialized.items(): setattr(row, key, val)
-            row.updated_at = utc_now(); db.add(row); db.commit(); db.refresh(row); return _multimodal(row)
-    def delete(self, value: str) -> MultimodalEmbeddingModelProfile:
-        current = self.get_by_id_or_alias(value)
-        with DbSession(self.engine) as db: db.delete(db.get(MultimodalEmbeddingModelProfileRecord, current.id)); db.commit()
-        return current
-    def list(self) -> list[MultimodalEmbeddingModelProfile]:
-        with DbSession(self.engine) as db: return [_multimodal(row) for row in db.exec(select(MultimodalEmbeddingModelProfileRecord).order_by(MultimodalEmbeddingModelProfileRecord.name)).all()]
-
-
-class SqlVisionProfileStore:
-    def __init__(self, engine) -> None: self.engine = engine
-    def create(self, profile: VisionModelProfile) -> VisionModelProfile:
-        data = profile.model_dump(); data["supported_tasks_json"] = _dump(data.pop("supported_tasks")); data["metadata_json"] = _dump(data.pop("metadata"))
-        row = VisionModelProfileRecord(**data)
-        with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
-        return _vision(row)
-    def get(self, profile_id: str) -> VisionModelProfile:
-        with DbSession(self.engine) as db:
-            row = db.get(VisionModelProfileRecord, profile_id)
-            if row is None: raise KeyError(f"unknown profile id: {profile_id}")
-            return _vision(row)
-    def find_by_alias(self, alias: str) -> VisionModelProfile | None:
-        with DbSession(self.engine) as db:
-            row = db.exec(select(VisionModelProfileRecord).where(VisionModelProfileRecord.alias == alias)).first()
-            return _vision(row) if row else None
-    def get_by_id_or_alias(self, value: str) -> VisionModelProfile:
-        try: return self.get(value)
-        except KeyError:
-            result = self.find_by_alias(value)
-            if result is None: raise KeyError(f"unknown profile: {value}")
-            return result
-    def update(self, value: str, values: dict[str, Any]) -> VisionModelProfile:
-        current = self.get_by_id_or_alias(value); data = current.model_dump(); data.update(values); updated = VisionModelProfile.model_validate(data)
-        with DbSession(self.engine) as db:
-            row = db.get(VisionModelProfileRecord, current.id)
-            serialized = updated.model_dump(); serialized["supported_tasks_json"] = _dump(serialized.pop("supported_tasks")); serialized["metadata_json"] = _dump(serialized.pop("metadata"))
-            for key, val in serialized.items(): setattr(row, key, val)
-            row.updated_at = utc_now(); db.add(row); db.commit(); db.refresh(row); return _vision(row)
-    def delete(self, value: str) -> VisionModelProfile:
-        current = self.get_by_id_or_alias(value)
-        with DbSession(self.engine) as db: db.delete(db.get(VisionModelProfileRecord, current.id)); db.commit()
-        return current
-    def list(self) -> list[VisionModelProfile]:
-        with DbSession(self.engine) as db: return [_vision(row) for row in db.exec(select(VisionModelProfileRecord).order_by(VisionModelProfileRecord.name)).all()]
-
-
 class SqlAppSettingsStore:
     def __init__(self, engine) -> None: self.engine=engine
     def get(self) -> AppSettings:
@@ -412,22 +273,6 @@ class SqlAppSettingsStore:
             else: row.value=_dump(result.model_dump()); row.updated_at=utc_now()
             db.add(row); db.commit()
         return result
-
-
-class SqlLLMDefaultsStore:
-    def __init__(self, engine) -> None: self.engine=engine
-    def get(self) -> dict[str, Optional[str]]:
-        with DbSession(self.engine) as db:
-            row=db.get(AppMetadataRecord,"llm_defaults"); return _load(row.value if row else None,{"default_model_profile_id":None})
-    def patch(self, values: dict[str, Any]) -> dict[str, Optional[str]]:
-        data=self.get();
-        if "default_model_profile_id" in values: data["default_model_profile_id"] = str(values["default_model_profile_id"]) if values["default_model_profile_id"] else None
-        with DbSession(self.engine) as db:
-            row=db.get(AppMetadataRecord,"llm_defaults")
-            if row is None: row=AppMetadataRecord(key="llm_defaults",value=_dump(data))
-            else: row.value=_dump(data); row.updated_at=utc_now()
-            db.add(row); db.commit()
-        return data
 
 
 class SqlWorldbookStore:
@@ -517,7 +362,7 @@ class SqlKnowledgeStore:
     def __init__(self, engine) -> None: self.engine=engine
     def get_settings(self) -> KnowledgeSettings:
         with DbSession(self.engine) as db:
-            row=db.get(KnowledgeSettingsRecord,1); return KnowledgeSettings.model_validate(row.model_dump() if row else KnowledgeSettings().model_dump())
+            row=db.get(KnowledgeSettingsRecord,1); return KnowledgeSettings.model_validate(row.model_dump(exclude={"created_at", "updated_at"}) if row else KnowledgeSettings().model_dump())
     def patch_settings(self, values: dict[str, Any]) -> KnowledgeSettings:
         current=self.get_settings(); patch=KnowledgeSettingsPatch.model_validate(values); result=KnowledgeSettings.model_validate({**current.model_dump(),**knowledge_settings_patch_updates(patch)})
         with DbSession(self.engine) as db:
@@ -525,36 +370,19 @@ class SqlKnowledgeStore:
             for key,val in result.model_dump(exclude={"id"}).items(): setattr(row,key,val)
             row.updated_at=utc_now(); db.add(row); db.commit(); db.refresh(row)
         return result
-    def list_embedding_profiles(self) -> list[EmbeddingModelProfile]:
-        with DbSession(self.engine) as db: return [_embedding(row) for row in db.exec(select(EmbeddingModelProfileRecord).order_by(EmbeddingModelProfileRecord.alias)).all()]
-    def create_embedding_profile(self, profile: EmbeddingModelProfile) -> EmbeddingModelProfile:
-        row=EmbeddingModelProfileRecord(**profile.model_dump());
-        with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
-        return _embedding(row)
-    def get_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
+    def invalidate_base_index(self, base_id: str) -> None:
         with DbSession(self.engine) as db:
-            row=db.get(EmbeddingModelProfileRecord,profile_id)
-            if row is None: raise KeyError(f"unknown embedding model profile: {profile_id}")
-            return _embedding(row)
-    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None:
-        with DbSession(self.engine) as db:
-            row=db.exec(select(EmbeddingModelProfileRecord).where(EmbeddingModelProfileRecord.alias==alias)).first(); return _embedding(row) if row else None
-    def get_embedding_profile_by_id_or_alias(self, value: str) -> EmbeddingModelProfile:
-        try: return self.get_embedding_profile(value)
-        except KeyError:
-            result=self.find_embedding_profile_by_alias(value)
-            if result is None: raise KeyError(f"unknown embedding model profile: {value}")
-            return result
-    def update_embedding_profile(self, profile_id: str, values: dict[str, Any]) -> EmbeddingModelProfile:
-        current=self.get_embedding_profile(profile_id); result=EmbeddingModelProfile.model_validate({**current.model_dump(),**values,"updated_at":utc_now().isoformat()})
-        with DbSession(self.engine) as db:
-            row=db.get(EmbeddingModelProfileRecord,profile_id)
-            for key,val in result.model_dump().items(): setattr(row,key,val)
-            db.add(row); db.commit(); db.refresh(row); return _embedding(row)
-    def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        current=self.get_embedding_profile(profile_id)
-        with DbSession(self.engine) as db: db.delete(db.get(EmbeddingModelProfileRecord,profile_id)); db.commit()
-        return current
+            base = db.get(KnowledgeBaseRecord, base_id)
+            if base is None:
+                raise KeyError(base_id)
+            base.index_status = "needs_reindex"
+            db.add(base)
+            for source in db.exec(select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id == base_id)).all():
+                source.status = "needs_reindex"
+                db.add(source)
+            db.exec(delete(KnowledgeEmbeddingRecord).where(KnowledgeEmbeddingRecord.knowledge_base_id == base_id))
+            db.commit()
+
     def list_knowledge_bases(self) -> list[KnowledgeBase]:
         with DbSession(self.engine) as db: return [_kb(row) for row in db.exec(select(KnowledgeBaseRecord).order_by(KnowledgeBaseRecord.name)).all()]
     def create_knowledge_base(self, knowledge_base: KnowledgeBase) -> KnowledgeBase:
@@ -598,7 +426,7 @@ class SqlKnowledgeStore:
             row=db.get(KnowledgeSourceRecord,source_id)
             if row is None: raise KeyError(f"unknown knowledge source: {source_id}")
             return _source(row,db)
-    def upsert_indexed_source(self, *, source: KnowledgeSource, chunks: list[Any], vectors: list[list[float]], embedding_model_profile: EmbeddingModelProfile, embedding_dimension: int, search_texts: list[str]) -> KnowledgeSourceIndexResult:
+    def upsert_indexed_source(self, *, source: KnowledgeSource, chunks: list[Any], vectors: list[list[float]], embedding_model_profile: ModelProfile, embedding_dimension: int, search_texts: list[str]) -> KnowledgeSourceIndexResult:
         with DbSession(self.engine) as db:
             row=db.get(KnowledgeSourceRecord,source.id)
             values = source.model_dump(exclude={"chunks", "metadata"})
@@ -618,7 +446,7 @@ class SqlKnowledgeStore:
                 db.connection().exec_driver_sql("DELETE FROM kb_chunk_fts WHERE source_id = ?", (source.id,))
             for index,chunk in enumerate(chunks):
                 chunk_id=str(uuid4()); db.add(KnowledgeChunkRecord(id=chunk_id,knowledge_base_id=source.knowledge_base_id,source_id=source.id,chunk_index=index,heading_path=chunk.heading_path,content=chunk.content,char_start=chunk.char_start,char_end=chunk.char_end,token_count=getattr(chunk,"token_count",None),content_hash=chunk.content_hash,metadata_json=_dump(chunk.metadata)))
-                if index < len(vectors): db.add(KnowledgeEmbeddingRecord(id=str(uuid4()),knowledge_base_id=source.knowledge_base_id,source_id=source.id,chunk_id=chunk_id,embedding_model_profile_id=embedding_model_profile.id,embedding_model_id_snapshot=embedding_model_profile.model_path or embedding_model_profile.provider_model_id,embedding_dimension=embedding_dimension,embedding_normalize_snapshot=embedding_model_profile.normalize,vector_blob=array("f", [float(value) for value in vectors[index]]).tobytes()))
+                if index < len(vectors): db.add(KnowledgeEmbeddingRecord(id=str(uuid4()),knowledge_base_id=source.knowledge_base_id,source_id=source.id,chunk_id=chunk_id,embedding_model_profile_id=embedding_model_profile.id,embedding_model_id_snapshot=embedding_model_profile.model_ref,embedding_dimension=embedding_dimension,embedding_normalize_snapshot=embedding_model_profile.parameters["normalize"],vector_blob=array("f", [float(value) for value in vectors[index]]).tobytes()))
                 if self.engine.dialect.name == "sqlite":
                     search_text = search_texts[index] if index < len(search_texts) else chunk.content
                     db.connection().exec_driver_sql("INSERT INTO kb_chunk_fts (chunk_id, knowledge_base_id, source_id, title, heading_path, content, search_text) VALUES (?, ?, ?, ?, ?, ?, ?)", (chunk_id, source.knowledge_base_id, source.id, source.title, chunk.heading_path, chunk.content, search_text))
@@ -646,7 +474,7 @@ class SqlKnowledgeStore:
 
 
 def _session(row: SessionRecord) -> Session:
-    return Session(session_id=row.session_id,title=row.title,context_mode=row.context_mode,waiting_run_id=row.waiting_run_id,llm_profile_id=row.llm_profile_id,last_announced_llm_profile_id=row.last_announced_llm_profile_id,title_generation_state=row.title_generation_state,title_generation_metadata=_load(row.title_generation_metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
+    return Session(session_id=row.session_id,title=row.title,context_mode=row.context_mode,waiting_run_id=row.waiting_run_id,model_profile_id=row.model_profile_id,title_generation_state=row.title_generation_state,title_generation_metadata=_load(row.title_generation_metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
 def _message(row: MessageRecord) -> MessageSchema:
     return MessageSchema(message_id=row.message_id,session_id=row.session_id,role=row.role,speaker_type=row.speaker_type,speaker_id=row.speaker_id,speaker_name=row.speaker_name,origin=row.origin,content_version=row.content_version,parts=_load(row.parts_json,[]),run_id=row.run_id,parent_message_id=row.parent_message_id,metadata=_load(row.metadata_json,{}),created_at=row.created_at)
 def _run(row: RunRecord) -> RunSchema:
@@ -655,28 +483,10 @@ def _step(row: RunStepRecord) -> RunStepSchema:
     return RunStepSchema(step_id=row.step_id,run_id=row.run_id,kind=row.kind,parent_step_id=row.parent_step_id,label=row.label,status=row.status,message=row.message,order=row.order,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
 def _event(row: RunEventRecord) -> RunEventSchema:
     return RunEventSchema(event_id=row.event_id,run_id=row.run_id,session_id=row.session_id,type=row.type,message=row.message,payload=_load(row.payload_json,{}),created_at=row.created_at)
-def _llm_profile(row: LLMProfileRecord) -> LLMProfileSchema:
-    return LLMProfileSchema(**{key:getattr(row,key) for key in LLMProfileSchema.model_fields if hasattr(row,key)})
-def _provider(row: ProviderProfileRecord) -> ProviderProfileSchema:
-    return ProviderProfileSchema(id=row.id,name=row.name,provider=row.provider,base_url=row.base_url,api_key=row.api_key,timeout_seconds=row.timeout_seconds,enabled=row.enabled,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
-def _profile_data(profile: LLMProfileSchema) -> dict[str,Any]: return profile.model_dump()
-def _provider_data(profile: ProviderProfileSchema) -> dict[str,Any]:
-    data=profile.model_dump(); data["metadata_json"]=_dump(data.pop("metadata",{})); return data
 def _worldbook_settings(row: WorldbookSettingsRecord) -> WorldbookSettings: return WorldbookSettings(**{key:getattr(row,key) for key in WorldbookSettings.model_fields if hasattr(row,key)})
 def _worldbook(row: WorldbookRecord, db: DbSession) -> Worldbook:
     entries=len(db.exec(select(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id==row.id)).all()); bindings=len(db.exec(select(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.worldbook_id==row.id,SessionWorldbookBindingRecord.enabled==True)).all()); return Worldbook(id=row.id,name=row.name,description=row.description,enabled=row.enabled,created_at=row.created_at,updated_at=row.updated_at,entry_count=entries,active_binding_count=bindings)
 def _entry(row: WorldbookEntryRecord) -> WorldbookEntry: return WorldbookEntry(id=row.id,worldbook_id=row.worldbook_id,name=row.name,keywords_text=row.keywords_text,content=row.content,activation_mode=row.activation_mode,enabled=row.enabled,sort_order=row.sort_order,created_at=row.created_at,updated_at=row.updated_at)
-def _embedding(row: EmbeddingModelProfileRecord) -> EmbeddingModelProfile: return EmbeddingModelProfile(**{key:getattr(row,key) for key in EmbeddingModelProfile.model_fields if hasattr(row,key)})
-def _multimodal(row: MultimodalEmbeddingModelProfileRecord) -> MultimodalEmbeddingModelProfile:
-    data = {key: getattr(row, key) for key in MultimodalEmbeddingModelProfile.model_fields if hasattr(row, key)}
-    data["supported_input_types"] = _load(row.supported_input_types_json, ["image", "text"])
-    data["metadata"] = _load(row.metadata_json, {})
-    return MultimodalEmbeddingModelProfile(**data)
-def _vision(row: VisionModelProfileRecord) -> VisionModelProfile:
-    data = {key: getattr(row, key) for key in VisionModelProfile.model_fields if hasattr(row, key)}
-    data["supported_tasks"] = _load(row.supported_tasks_json, [])
-    data["metadata"] = _load(row.metadata_json, {})
-    return VisionModelProfile(**data)
 def _kb(row: KnowledgeBaseRecord) -> KnowledgeBase: return KnowledgeBase(**{key:getattr(row,key) for key in KnowledgeBase.model_fields if hasattr(row,key)})
 def _source(row: KnowledgeSourceRecord, db: DbSession) -> KnowledgeSource:
     chunks=db.exec(select(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id==row.id)).all(); return KnowledgeSource(id=row.id,knowledge_base_id=row.knowledge_base_id,source_type=row.source_type,uri=row.uri,title=row.title,relative_path=row.relative_path,virtual_path=row.virtual_path,folder_path=row.folder_path,file_name=row.file_name,extension=row.extension,path_depth=row.path_depth,file_status=row.file_status,source_mtime=row.source_mtime,source_size_bytes=row.source_size_bytes,mime_type=row.mime_type,size_bytes=row.size_bytes,content_hash=row.content_hash,indexed_at=row.indexed_at,status=row.status,error=row.error,metadata=_load(row.metadata_json,{}),chunks=len(chunks))

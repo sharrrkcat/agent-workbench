@@ -1,140 +1,91 @@
+from __future__ import annotations
+
+import base64
+import json
+import struct
+import time
+from contextlib import aclosing
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 
 from ai_workbench.api.deps import RuntimeState, get_state
-from ai_workbench.core.inference.auth import check_inference_auth
-from ai_workbench.core.inference.errors import (
-    InferenceErrorCode,
-    raise_openai_inference_error,
-)
-from ai_workbench.core.inference.request_limits import check_content_length, read_limited_json
-from ai_workbench.core.inference.route_context import (
-    chat_failure_context,
-    embedding_failure_context,
-    log_stateless_failure,
-    multimodal_failure_context,
-    vision_failure_context,
-)
-from ai_workbench.core.inference.stateless import (
-    StatelessInferenceError,
-    create_chat_completion_response,
-    create_embeddings_response,
-    create_multimodal_embeddings_response,
-    create_vision_response,
-    openai_model_list,
-)
-from ai_workbench.core.inference.settings import resolve_inference_settings
+from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.http import guard, read_request
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest
 
-
-router = APIRouter(prefix="/v1", tags=["openai-compatible-inference"])
-
-
-def _guard_openai_request(request: Request, state: RuntimeState):
-    settings = resolve_inference_settings(state.app_settings)
-    if not settings.enabled:
-        raise_openai_inference_error(503, InferenceErrorCode.SERVICE_DISABLED)
-    size_error = check_content_length(request, settings)
-    if size_error is not None:
-        status_code = 413 if size_error == InferenceErrorCode.REQUEST_TOO_LARGE else 400
-        raise_openai_inference_error(status_code, size_error)
-    auth_error = check_inference_auth(
-        request,
-        require_api_key=settings.require_api_key,
-        configured_api_key=settings.api_key,
-    )
-    if auth_error is not None:
-        if auth_error == InferenceErrorCode.SERVICE_MISCONFIGURED:
-            status_code = 500
-        else:
-            status_code = 401 if auth_error == InferenceErrorCode.AUTH_REQUIRED else 403
-        raise_openai_inference_error(status_code, auth_error)
-    return settings
+router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 
 
 @router.get("/models")
-def list_models(request: Request, state: RuntimeState = Depends(get_state)) -> dict:
-    _guard_openai_request(request, state)
-    return openai_model_list(state)
+async def list_models(request: Request, state: RuntimeState = Depends(get_state)):
+    guard(request, state.model_settings.get())
+    return {"object": "list", "data": [
+        {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "workbench"}
+        for p in state.model_profiles.list() if p.enabled and p.external_enabled and p.kind in {"llm", "embedding"}
+    ]}
 
 
 @router.post("/chat/completions")
-async def create_chat_completion(
-    request: Request,
-    state: RuntimeState = Depends(get_state),
-) -> dict:
-    settings = _guard_openai_request(request, state)
-    payload = await read_limited_json(request, settings)
-    if not isinstance(payload, dict):
-        raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
-    try:
-        return await create_chat_completion_response(state, payload)
-    except StatelessInferenceError as exc:
-        log_stateless_failure(
-            state,
-            endpoint="/v1/chat/completions",
-            exc=exc,
-            context=chat_failure_context(payload),
-        )
-        raise_openai_inference_error(exc.status_code, exc.code, exc.message)
+async def chat(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, ChatRequest)
+    manager = state.model_manager
+    profile = manager.external_profile(payload.model, "llm")
+    manager.validate_chat(profile, payload)
+    identity = {"id": "chatcmpl-" + uuid4().hex, "created": int(time.time()), "model": profile.alias}
+    if not payload.stream:
+        result = await manager.chat(profile.id, payload)
+        response = {**identity, "object": "chat.completion", "choices": [
+            {"index": 0, "message": {**result.message.model_dump(exclude_none=True), "content": result.message.content}, "finish_reason": result.finish_reason}
+        ]}
+        if result.usage:
+            response["usage"] = result.usage.model_dump()
+        return response
+
+    # Resolve backend/queue failures before headers; inference failures after
+    # headers use an explicit SSE error followed by the terminal sentinel.
+    await manager.load(profile.id)
+
+    async def events():
+        try:
+            async with aclosing(manager.chat_stream(profile.id, payload)) as chunks:
+                async for chunk in chunks:
+                    delta = chunk.delta.model_dump(exclude_none=True)
+                    data = {**identity, "object": "chat.completion.chunk",
+                            "choices": [{"index": 0, "delta": delta, "finish_reason": chunk.finish_reason}] if delta or chunk.finish_reason else []}
+                    if payload.stream_options and payload.stream_options.include_usage:
+                        data["usage"] = chunk.usage.model_dump() if chunk.usage else None
+                    if data["choices"] or data.get("usage"):
+                        yield "data: " + json.dumps(data, ensure_ascii=True) + "\n\n"
+        except ModelError as exc:
+            request.state.inference_error_code = exc.code
+            yield "data: " + json.dumps(exc.payload()) + "\n\n"
+        except Exception:
+            request.state.inference_error_code = "INTERNAL_ERROR"
+            yield "data: " + json.dumps(ModelError("INTERNAL_ERROR", "Streaming inference failed.", 500).payload()) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/embeddings")
-async def create_embedding(
-    request: Request,
-    state: RuntimeState = Depends(get_state),
-) -> dict:
-    settings = _guard_openai_request(request, state)
-    payload = await read_limited_json(request, settings)
-    if not isinstance(payload, dict):
-        raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
-    try:
-        return create_embeddings_response(state, payload)
-    except StatelessInferenceError as exc:
-        log_stateless_failure(
-            state,
-            endpoint="/v1/embeddings",
-            exc=exc,
-            context=embedding_failure_context(payload),
-        )
-        raise_openai_inference_error(exc.status_code, exc.code, exc.message)
-
-
-@router.post("/embeddings/multimodal")
-async def create_multimodal_embedding(
-    request: Request,
-    state: RuntimeState = Depends(get_state),
-) -> dict:
-    settings = _guard_openai_request(request, state)
-    payload = await read_limited_json(request, settings)
-    if not isinstance(payload, dict):
-        raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
-    try:
-        return create_multimodal_embeddings_response(state, payload)
-    except StatelessInferenceError as exc:
-        log_stateless_failure(
-            state,
-            endpoint="/v1/embeddings/multimodal",
-            exc=exc,
-            context=multimodal_failure_context(payload),
-        )
-        raise_openai_inference_error(exc.status_code, exc.code, exc.message)
-
-
-@router.post("/vision")
-async def run_vision_task(
-    request: Request,
-    state: RuntimeState = Depends(get_state),
-) -> dict:
-    settings = _guard_openai_request(request, state)
-    payload = await read_limited_json(request, settings)
-    if not isinstance(payload, dict):
-        raise_openai_inference_error(400, InferenceErrorCode.INVALID_REQUEST)
-    try:
-        return create_vision_response(state, payload)
-    except StatelessInferenceError as exc:
-        log_stateless_failure(
-            state,
-            endpoint="/v1/vision",
-            exc=exc,
-            context=vision_failure_context(payload),
-        )
-        raise_openai_inference_error(exc.status_code, exc.code, exc.message)
+async def embeddings(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, EmbeddingRequest)
+    profile = state.model_manager.external_profile(payload.model, "embedding")
+    inputs = [payload.input] if isinstance(payload.input, str) else payload.input
+    result = await state.model_manager.embed(profile.id, inputs, purpose="document", dimensions=payload.dimensions)
+    def encode(vector):
+        if payload.encoding_format == "base64":
+            return base64.b64encode(struct.pack("<" + "f" * len(vector), *vector)).decode("ascii")
+        return vector
+    response = {"object": "list", "model": profile.alias,
+                "data": [{"object": "embedding", "index": i, "embedding": encode(v)} for i, v in enumerate(result.vectors)]}
+    if result.usage:
+        response["usage"] = result.usage.model_dump(exclude={"completion_tokens"})
+    return response

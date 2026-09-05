@@ -1,9 +1,4 @@
-"""Read-only Phase 0 hygiene and database audit.
-
-The cleanup itself is intentionally not implemented here.  This command only
-reports the state of the checkout and, with ``--check``, returns a non-zero
-status when a known Phase 0 invariant is violated.
-"""
+"""Read-only workspace hygiene and current Alembic schema audit."""
 
 from __future__ import annotations
 
@@ -92,13 +87,11 @@ def _read_database(path: Path) -> tuple[str | None, str | None, int | None, int 
                 revision = str(rows[0][0])
             elif rows:
                 errors.append("alembic_version_multiple_rows")
-        from ai_workbench.db.migrations import (
-            BASELINE_REVISION,
-            CRITICAL_TABLES,
-            validate_baseline_compatibility,
-        )
+        from ai_workbench.db.migrations import HEAD_REVISION
+        from ai_workbench.db.models import SQLModel
 
-        business_count = len(names & set(CRITICAL_TABLES))
+        expected = SQLModel.metadata.tables
+        business_count = len(names & set(expected))
         index_count = sum(
             1
             for row in connection.execute(
@@ -106,19 +99,20 @@ def _read_database(path: Path) -> tuple[str | None, str | None, int | None, int 
             ).fetchall()
             if not str(row[0]).startswith("sqlite_")
         )
-        if revision is not None and revision != BASELINE_REVISION:
+        if revision is not None and revision != HEAD_REVISION:
             errors.append(f"unexpected_alembic_revision:{revision}")
-        if revision == BASELINE_REVISION:
-            from sqlalchemy import create_engine
-
-            engine = create_engine(f"sqlite:///{path}")
-            try:
-                validate_baseline_compatibility(engine)
-            except Exception as exc:
-                errors.append(f"database_schema_invalid:{exc}")
-            finally:
-                engine.dispose()
-        elif business_count:
+        if revision == HEAD_REVISION:
+            actual = {name for name in names if not name.startswith(("sqlite_", "kb_chunk_fts_"))}
+            if actual != set(expected) | {"alembic_version", "kb_chunk_fts"}:
+                errors.append("database_table_mismatch")
+            for name, table in expected.items():
+                escaped = name.replace('"', '""')
+                columns = {row[1] for row in connection.execute(f'PRAGMA table_info("{escaped}")')}
+                if columns != set(table.columns.keys()):
+                    errors.append(f"database_column_mismatch:{name}")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                errors.append("database_foreign_key_invalid")
+        elif revision is None and names - {"alembic_version"}:
             errors.append("database_unversioned")
     except sqlite3.Error as exc:
         errors.append(f"database_read_failed:{exc}")

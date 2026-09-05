@@ -56,7 +56,7 @@ def resolve_request_id(raw_value: str | None) -> str:
 
 
 def is_inference_observability_path(path: str) -> bool:
-    return path == "/v1" or path.startswith("/v1/") or path == "/api/inference" or path.startswith("/api/inference/")
+    return path == "/v1" or path.startswith("/v1/")
 
 
 def inference_route_family(path: str) -> str:

@@ -9,10 +9,11 @@ Read first:
 
 Likely sources: `frontend/src/types.ts`, `frontend/src/api/client.ts`,
 `frontend/src/store/useWorkbenchStore.ts`, chat components, SettingsPage,
-PetOverlay, and both locale trees.
+PetOverlay, `store/useModelsStore.ts`, `store/messageStream.ts`,
+`components/settings/ModelsPanel.tsx`, and both locale trees.
 
 Keep the UI limited to Chat, Models, Knowledge, Worldbook, General, and Pet.
 Render messages from generic parts and run progress from stable step kinds.
 Update both locales and run `npm run build`, `npm run check:i18n`,
 `npm run test:phase1-contracts`, `npm run test:knowledge-citations`, and
-`npm run test:url`.
+`npm run test:url`, and `npm run test:model-stream`.

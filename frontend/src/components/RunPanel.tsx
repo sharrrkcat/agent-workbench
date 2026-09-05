@@ -5,7 +5,8 @@ import type { Run, RunStep } from '../types';
 
 export function RunPanel({ run }: { run: Run }) {
   const cancel = useWorkbenchStore((state) => state.cancelRun);
-  const steps = useWorkbenchStore((state) => state.stepsByRunId[run.run_id] || run.steps || []);
+  const storedSteps = useWorkbenchStore((state) => state.stepsByRunId[run.run_id]);
+  const steps = storedSteps || run.steps || [];
   const [expanded, setExpanded] = useState(true);
   const active = ['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status);
   return (
@@ -15,7 +16,7 @@ export function RunPanel({ run }: { run: Run }) {
         {active ? <button type="button" className="icon-button danger" title="Cancel" aria-label="Cancel" onClick={() => void cancel(run.run_id)}><Square size={14} /></button> : null}
       </div>
       {run.error ? <p className="run-error">{run.error_code ? `${run.error_code}: ` : ''}{run.error}</p> : null}
-      {expanded ? <div className="run-steps">{steps.length ? steps.sort((a, b) => a.order - b.order).map((step) => <StepRow key={step.step_id} step={step} />) : <span className="run-muted">Preparing…</span>}</div> : null}
+      {expanded ? <div className="run-steps">{steps.length ? [...steps].sort((a, b) => a.order - b.order).map((step) => <StepRow key={step.step_id} step={step} />) : <span className="run-muted">Preparing…</span>}</div> : null}
     </div>
   );
 }

@@ -22,7 +22,7 @@ def project_root() -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Agent Workbench in production web mode.")
-    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Bind host. Default: {DEFAULT_HOST}")
+    parser.add_argument("--host", choices=("127.0.0.1", "localhost"), default=DEFAULT_HOST, help=f"Loopback bind host. Default: {DEFAULT_HOST}")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Bind port. Default: {DEFAULT_PORT}")
     parser.add_argument("--frontend-dist", default=None, help="Path to built frontend dist. Default: frontend/dist")
     parser.add_argument("--reload", action="store_true", help="Enable uvicorn reload for local development.")

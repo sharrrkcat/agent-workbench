@@ -6,7 +6,8 @@ from typing import Any
 
 from ai_workbench.core.attachments import attachments_root
 from ai_workbench.core.time import isoformat_utc, utc_now
-from ai_workbench.db.database import SCHEMA_VERSION, get_database_url
+from ai_workbench.db.database import get_database_url
+from ai_workbench.db.migrations import HEAD_REVISION
 
 
 def sqlite_database_path(database_url: str | None = None) -> Path | None:
@@ -49,7 +50,7 @@ def storage_stats(message_store: Any, database_url: str | None = None) -> dict[s
             "status": db_status,
             "path": str(db_path) if db_path is not None else ":memory:",
             "size_bytes": db_size,
-            "schema_version": SCHEMA_VERSION,
+            "schema_revision": HEAD_REVISION,
         },
         "attachments": {
             "directory": str(attachments_root()),

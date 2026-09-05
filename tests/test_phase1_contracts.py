@@ -20,7 +20,7 @@ from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.prompt_target import PromptTarget
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema
 from ai_workbench.core.settings import AppSettingsStore
-from ai_workbench.core.stores import LLMProfileStore, ProviderProfileStore
+from tests.model_fixtures import MockOpenAI, configure_model
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.utility_llm import (
     UTILITY_MODEL_UNAVAILABLE,
@@ -30,26 +30,9 @@ from ai_workbench.core.utility_llm import (
 )
 
 
-class FakeLLMRuntime:
-    def __init__(self, response: Any = "reply") -> None:
-        self.response = response
-        self.calls: list[dict[str, Any]] = []
-
-    def chat(self, messages: list[dict[str, str]], model_config: dict[str, Any] | None = None, stream: bool = False) -> Any:
-        self.calls.append({"messages": messages, "model_config": model_config or {}, "stream": stream})
-        return self.response
-
-
-def make_client(tmp_path: Path, runtime: FakeLLMRuntime | None = None) -> tuple[TestClient, FakeLLMRuntime]:
-    llm = runtime or FakeLLMRuntime({"choices": [{"message": {"content": "reply"}}]})
-    return TestClient(create_app(llm_runtime=llm, use_memory=True, root=tmp_path)), llm
-
-
-def configure_model(client: TestClient) -> None:
-    profile = client.post("/api/llm-profiles", json={"alias": "local", "name": "Local", "model_id": "fake"})
-    assert profile.status_code == 200, profile.text
-    defaults = client.patch("/api/settings/llm-defaults", json={"default_model_profile_id": "local"})
-    assert defaults.status_code == 200, defaults.text
+def make_client(tmp_path: Path):
+    upstream = MockOpenAI()
+    return TestClient(create_app(adapter_factory=upstream.factory, use_memory=True, root=tmp_path)), upstream
 
 
 def create_session(client: TestClient) -> dict[str, Any]:
@@ -133,45 +116,23 @@ def test_removed_routes_are_ordinary_404_and_removed_payloads_are_422(tmp_path: 
 
 
 def test_utility_service_error_codes_and_title_failure_are_non_blocking(tmp_path: Path) -> None:
-    settings = AppSettingsStore()
-    profiles = LLMProfileStore()
-    providers = ProviderProfileStore()
-    unavailable = UtilityLLMService(
-        llm_runtime=FakeLLMRuntime(),
-        llm_profile_store=profiles,
-        provider_profile_store=providers,
-        app_settings_store=settings,
-    )
+    client, upstream = make_client(tmp_path)
+    configure_model(client)
+    state = client.app.state.runtime_state
     with pytest.raises(UtilityLlmError) as missing:
-        asyncio.run(unavailable.generate_text("hello"))
+        asyncio.run(state.utility_llm.generate_text("hello"))
     assert missing.value.code == UTILITY_MODEL_UNAVAILABLE
-
-    from ai_workbench.core.schema.llm_profile import LLMProfileSchema
-
-    profile = LLMProfileSchema(id="p", alias="utility", name="Utility", model_id="fake", created_at=utc_now(), updated_at=utc_now())
-    profiles.create(profile)
-    settings.patch({"utility_model_profile_id": "utility"})
-    invalid = UtilityLLMService(
-        llm_runtime=FakeLLMRuntime("not-json"),
-        llm_profile_store=profiles,
-        provider_profile_store=providers,
-        app_settings_store=settings,
-    )
-
+    profile = state.model_profiles.find_by_alias("local")
+    state.model_settings.patch({"utility_model_profile_id": profile.id})
     class Output(BaseModel):
         model_config = ConfigDict(extra="forbid")
-
         value: str
-
+    upstream.response = "not-json"
     with pytest.raises(UtilityLlmError) as bad:
-        asyncio.run(invalid.generate_json("return json", Output))
+        asyncio.run(state.utility_llm.generate_json("return json", Output))
     assert bad.value.code == UTILITY_OUTPUT_INVALID
-    invalid.llm_runtime.response = ""
-    assert asyncio.run(invalid.generate_title("title me")) is None
-
-    client, _runtime = make_client(tmp_path)
-    configure_model(client)
-    assert client.post(f"/api/sessions/{create_session(client)['session_id']}/messages", json={"content": "chat"}).status_code == 200
+    upstream.response = ""
+    assert asyncio.run(state.utility_llm.generate_title("title me")) is None
 
 
 def test_pet_settings_are_nested_and_deep_merged(tmp_path: Path) -> None:
@@ -219,17 +180,17 @@ def test_knowledge_rrf_is_deterministic_and_empty_rerank_is_not_reported_as_fail
         def list_session_bindings(self, _session_id: str) -> list[Any]:
             return []
 
-    response = search_knowledge(
+    response = asyncio.run(search_knowledge(
         engine=None,
         knowledge_store=EmptyKnowledge(),
-        model_backend=None,
+        model_manager=None,
         query="hello",
         session_id="session",
         knowledge_base_ids=None,
         top_k=None,
         max_context_chars=None,
         include_debug=True,
-    )
+    ))
     assert response["results"] == []
     assert response["metadata"]["rerank_fallback"] is False
 

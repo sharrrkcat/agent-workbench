@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends
 
 from ai_workbench import __version__
 from ai_workbench.api.deps import RuntimeState, get_state
-from ai_workbench.core.llm_config import public_llm_config_status, resolve_llm_config
-from ai_workbench.db.database import SCHEMA_VERSION
+from ai_workbench.db.migrations import HEAD_REVISION
 
 
 router = APIRouter(tags=["health"])
@@ -18,7 +17,7 @@ def health(state: RuntimeState = Depends(get_state)) -> dict:
         "status": "ok" if database["status"] == "ok" else "degraded",
         "version": __version__,
         "database": database["status"],
-        "schema_version": SCHEMA_VERSION,
+        "schema_revision": HEAD_REVISION,
     }
 
 
@@ -30,7 +29,7 @@ def health_details(state: RuntimeState = Depends(get_state)) -> dict:
         "status": "ok" if database["status"] == "ok" and llm["status"] == "ok" else "degraded",
         "version": __version__,
         "database": database,
-        "schema_version": SCHEMA_VERSION,
+        "schema_revision": HEAD_REVISION,
         "llm": llm,
         "runs": {"active_count": state.active_runs.active_count()},
     }
@@ -46,11 +45,8 @@ def _database_status(state: RuntimeState) -> dict:
 
 def _llm_status(state: RuntimeState) -> dict:
     try:
-        config = resolve_llm_config(
-            llm_profile_store=state.llm_profiles,
-            provider_profile_store=state.provider_profiles,
-            llm_defaults_store=state.llm_defaults,
-        )
-        return {"status": "ok", **public_llm_config_status(config)}
+        profile = state.model_manager.chat_profile(None)
+        return {"status": "ok", "model_profile_id": profile.id, "alias": profile.alias,
+                **state.model_manager.status(profile.id).model_dump()}
     except Exception as exc:
         return {"status": "degraded", "error": str(exc) or "LLM config unavailable"}

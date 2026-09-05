@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
 from ai_workbench.core.time import utc_now
+from ai_workbench.core.models.schema import ModelProfile
 
 
 def validate_alias(value: str) -> str:
@@ -27,54 +28,6 @@ def normalize_aliases_text(value: Any) -> str:
         if item and item.casefold() not in seen:
             seen.add(item.casefold()); result.append(item)
     return ", ".join(result[:50])
-
-
-class EmbeddingModelProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    name: str
-    alias: str
-    model_path: str = ""
-    provider_profile_id: str | None = None
-    provider_model_id: str = ""
-    dimension: int | None = Field(default=None, ge=1)
-    normalize: StrictBool = True
-    document_instruction: str = ""
-    query_instruction: str = ""
-    enabled: StrictBool = True
-    external_inference_enabled: StrictBool = False
-    notes: str = ""
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-
-    @field_validator("name")
-    @classmethod
-    def non_empty_name(cls, value: str) -> str:
-        if not str(value).strip(): raise ValueError("Name must not be empty.")
-        return str(value).strip()
-    @field_validator("alias")
-    @classmethod
-    def valid_alias(cls, value: str) -> str: return validate_alias(value)
-
-
-class EmbeddingModelProfileCreate(EmbeddingModelProfile):
-    id: str = Field(default_factory=lambda: str(uuid4()))
-
-
-class EmbeddingModelProfilePatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    name: str | None = None
-    alias: str | None = None
-    model_path: str | None = None
-    provider_profile_id: str | None = None
-    provider_model_id: str | None = None
-    dimension: int | None = Field(default=None, ge=1)
-    normalize: bool | None = None
-    document_instruction: str | None = None
-    query_instruction: str | None = None
-    enabled: bool | None = None
-    external_inference_enabled: bool | None = None
-    notes: str | None = None
 
 
 KnowledgeIndexStatus = Literal["empty", "ready", "indexing", "failed", "needs_reindex"]
@@ -194,7 +147,6 @@ class KnowledgeStore:
 class MemoryKnowledgeStore(KnowledgeStore):
     def __init__(self) -> None:
         self._settings = KnowledgeSettings()
-        self._embedding_profiles: dict[str, EmbeddingModelProfile] = {}
         self._bases: dict[str, KnowledgeBase] = {}
         self._bindings: dict[tuple[str, str], SessionKnowledgeBinding] = {}
         self._sources: dict[str, KnowledgeSource] = {}
@@ -207,26 +159,12 @@ class MemoryKnowledgeStore(KnowledgeStore):
         patch = KnowledgeSettingsPatch.model_validate(values)
         self._settings = KnowledgeSettings.model_validate({**self._settings.model_dump(), **knowledge_settings_patch_updates(patch)})
         return self._settings
-    def list_embedding_profiles(self) -> list[EmbeddingModelProfile]: return sorted(self._embedding_profiles.values(), key=lambda item: item.alias)
-    def create_embedding_profile(self, profile: EmbeddingModelProfile) -> EmbeddingModelProfile:
-        if any(item.alias == profile.alias for item in self._embedding_profiles.values()): raise ValueError("KNOWLEDGE_EMBEDDING_ALIAS_EXISTS")
-        self._embedding_profiles[profile.id] = profile; return profile
-    def get_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        if profile_id not in self._embedding_profiles: raise KeyError(f"unknown embedding model profile: {profile_id}")
-        return self._embedding_profiles[profile_id]
-    def find_embedding_profile_by_alias(self, alias: str) -> EmbeddingModelProfile | None: return next((item for item in self._embedding_profiles.values() if item.alias == alias), None)
-    def get_embedding_profile_by_id_or_alias(self, value: str) -> EmbeddingModelProfile:
-        try: return self.get_embedding_profile(value)
-        except KeyError:
-            item=self.find_embedding_profile_by_alias(value)
-            if item is None: raise KeyError(f"unknown embedding model profile: {value}")
-            return item
-    def update_embedding_profile(self, profile_id: str, values: dict[str, Any]) -> EmbeddingModelProfile:
-        current=self.get_embedding_profile(profile_id); updated=EmbeddingModelProfile.model_validate({**current.model_dump(),**values,"updated_at":utc_now()}); self._embedding_profiles[profile_id]=updated; return updated
-    def delete_embedding_profile(self, profile_id: str) -> EmbeddingModelProfile:
-        current=self.get_embedding_profile(profile_id)
-        if any(item.embedding_model_profile_id == profile_id for item in self._bases.values()): raise ValueError("KNOWLEDGE_EMBEDDING_MODEL_IN_USE")
-        del self._embedding_profiles[profile_id]; return current
+    def invalidate_base_index(self, base_id: str) -> None:
+        self.update_knowledge_base(base_id, {"index_status": "needs_reindex"})
+        for source in self.list_sources(base_id):
+            self._sources[source.id] = source.model_copy(update={"status": "needs_reindex"})
+            self._vectors.pop(source.id, None)
+
     def list_knowledge_bases(self) -> list[KnowledgeBase]: return sorted(self._bases.values(), key=lambda item: item.name.casefold())
     def create_knowledge_base(self, knowledge_base: KnowledgeBase) -> KnowledgeBase: self._bases[knowledge_base.id]=knowledge_base; return knowledge_base
     def get_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
@@ -259,7 +197,8 @@ class MemoryKnowledgeStore(KnowledgeStore):
     def get_source(self, source_id: str) -> KnowledgeSource:
         if source_id not in self._sources: raise KeyError(f"unknown knowledge source: {source_id}")
         return self._sources[source_id]
-    def upsert_indexed_source(self, *, source: KnowledgeSource, chunks: list[Any], vectors: list[list[float]], embedding_model_profile: EmbeddingModelProfile, embedding_dimension: int, search_texts: list[str]) -> KnowledgeSourceIndexResult:
+    def upsert_indexed_source(self, *, source: KnowledgeSource, chunks: list[Any], vectors: list[list[float]], embedding_model_profile: ModelProfile, embedding_dimension: int, search_texts: list[str]) -> KnowledgeSourceIndexResult:
+        self.update_knowledge_base(source.knowledge_base_id, {"index_status": "ready", "index_error": None})
         indexed=source.model_copy(update={"status":"indexed","chunks":len(chunks),"indexed_at":utc_now(),"error":None}); self._sources[source.id]=indexed; self._chunks[source.id]=list(chunks); self._vectors[source.id]=list(vectors); self._search_texts[source.id]=list(search_texts); return KnowledgeSourceIndexResult(source_id=source.id,status="indexed",chunks=len(chunks),embedding_model_profile_id=embedding_model_profile.id,embedding_dimension=embedding_dimension,indexed_at=indexed.indexed_at)
     def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
         self._sources[source.id]=source.model_copy(update={"status":"failed","error":error}); return KnowledgeSourceIndexResult(source_id=source.id,status="failed",chunks=0,error=error)

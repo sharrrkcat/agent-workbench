@@ -12,9 +12,6 @@ from typing import Any, Generic, Iterable, Optional, TypeVar
 from uuid import uuid4
 
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts
-from ai_workbench.core.schema.llm_profile import LLMProfileSchema, ProviderProfileSchema
-from ai_workbench.core.multimodal_profiles import MultimodalEmbeddingModelProfile
-from ai_workbench.core.vision_profiles import VisionModelProfile
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepKind, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
@@ -57,11 +54,8 @@ class SessionStore:
     def set_waiting_run(self, session_id: str, run_id: Optional[str]) -> Session:
         return self._replace(session_id, waiting_run_id=run_id)
 
-    def set_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
-        return self._replace(session_id, llm_profile_id=profile_id)
-
-    def set_last_announced_llm_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
-        return self._replace(session_id, last_announced_llm_profile_id=profile_id)
+    def set_model_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
+        return self._replace(session_id, model_profile_id=profile_id)
 
     def clear_interrupted_waiting_runs(self, run_ids: list[str]) -> None:
         ids = set(run_ids)
@@ -106,6 +100,7 @@ class MessageStore:
         speaker_id: str | None = None,
         speaker_name: str | None = None,
         origin: str | None = None,
+        message_id: str | None = None,
     ) -> MessageSchema:
         metadata = dict(metadata or {})
         speaker = infer_speaker_identity(
@@ -123,7 +118,7 @@ class MessageStore:
                 parts = []
         validated = validate_message_parts(parts)
         message = MessageSchema(
-            message_id=str(uuid4()),
+            message_id=message_id or str(uuid4()),
             session_id=session_id,
             role=role,
             **speaker,
@@ -132,6 +127,8 @@ class MessageStore:
             parent_message_id=parent_message_id,
             metadata=metadata,
         )
+        if message.message_id in self._messages:
+            raise ValueError("message_id already exists")
         self._messages[message.message_id] = message
         self._session_ids.setdefault(session_id, []).append(message.message_id)
         if self.session_store is not None:
@@ -344,84 +341,3 @@ class RunEventStore:
             if event.session_id == session_id:
                 self._events.pop(event_id, None)
                 self._run_ids[event.run_id] = [item for item in self._run_ids.get(event.run_id, []) if item != event_id]
-
-
-T = TypeVar("T")
-
-
-class _ProfileStore(Generic[T]):
-    schema_type: type[T]
-
-    def __init__(self) -> None:
-        self._records: dict[str, T] = {}
-
-    def create(self, profile: T) -> T:
-        profile_id = str(getattr(profile, "id"))
-        if profile_id in self._records:
-            raise ValueError(f"profile id already exists: {profile_id}")
-        self._records[profile_id] = profile
-        return profile
-
-    def get(self, profile_id: str) -> T:
-        try:
-            return self._records[profile_id]
-        except KeyError as exc:
-            raise KeyError(f"unknown profile id: {profile_id}") from exc
-
-    def find_by_alias(self, alias: str) -> T | None:
-        key = str(alias).casefold()
-        return next((item for item in self._records.values() if str(getattr(item, "alias", "")).casefold() == key), None)
-
-    def get_by_id_or_alias(self, value: str) -> T:
-        try:
-            return self.get(value)
-        except KeyError:
-            found = self.find_by_alias(value)
-            if found is None:
-                raise KeyError(f"unknown profile: {value}")
-            return found
-
-    def update(self, value: str, updates: dict[str, Any]) -> T:
-        current = self.get_by_id_or_alias(value)
-        data = current.model_dump()
-        data.update(updates)
-        updated = type(current).model_validate(data)
-        self._records[str(getattr(current, "id"))] = updated
-        return updated
-
-    def delete(self, value: str) -> T:
-        current = self.get_by_id_or_alias(value)
-        return self._records.pop(str(getattr(current, "id")))
-
-    def list(self) -> list[T]:
-        return sorted(self._records.values(), key=lambda item: (str(getattr(item, "name", "")), str(getattr(item, "id", ""))))
-
-
-class LLMProfileStore(_ProfileStore[LLMProfileSchema]):
-    pass
-
-
-class ProviderProfileStore(_ProfileStore[ProviderProfileSchema]):
-    pass
-
-
-class MultimodalEmbeddingProfileStore(_ProfileStore[MultimodalEmbeddingModelProfile]):
-    pass
-
-
-class VisionProfileStore(_ProfileStore[VisionModelProfile]):
-    pass
-
-
-class LLMDefaultsStore:
-    def __init__(self) -> None:
-        self._values: dict[str, Optional[str]] = {"default_model_profile_id": None}
-
-    def get(self) -> dict[str, Optional[str]]:
-        return dict(self._values)
-
-    def patch(self, values: dict[str, Any]) -> dict[str, Optional[str]]:
-        if "default_model_profile_id" in values:
-            value = values.get("default_model_profile_id")
-            self._values["default_model_profile_id"] = str(value) if value else None
-        return self.get()

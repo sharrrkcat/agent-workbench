@@ -15,8 +15,7 @@ class Session(BaseModel):
     title: str = ""
     context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
     waiting_run_id: str | None = None
-    llm_profile_id: str | None = None
-    last_announced_llm_profile_id: str | None = None
+    model_profile_id: str | None = None
     title_generation_state: Literal["pending", "done", "skipped", "failed", "manual"] = "pending"
     title_generation_metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)

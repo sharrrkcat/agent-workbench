@@ -27,24 +27,24 @@ class CreateSessionRequest(BaseModel):
 
     title: str = ""
     context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
-    llm_profile_id: str | None = None
+    model_profile_id: str | None = None
 
 
 class UpdateSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = None
-    llm_profile_id: str | None = None
+    model_profile_id: str | None = None
     context_mode: Literal["single_assistant", "group_transcript"] | None = None
 
 
 @router.post("")
 def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(get_state)) -> dict:
-    if payload.llm_profile_id:
-        _validate_profile(state, payload.llm_profile_id)
+    if payload.model_profile_id:
+        _validate_profile(state, payload.model_profile_id)
     session = state.sessions.create_session(title=payload.title, context_mode=payload.context_mode)
-    if payload.llm_profile_id:
-        session = state.sessions.set_llm_profile(session.session_id, payload.llm_profile_id)
+    if payload.model_profile_id:
+        session = state.sessions.set_model_profile(session.session_id, payload.model_profile_id)
     return session.model_dump(mode="json")
 
 
@@ -89,10 +89,10 @@ def update_session(
                 "previous_context_mode": previous,
             },
         )
-    if "llm_profile_id" in payload.model_fields_set:
-        if payload.llm_profile_id is not None:
-            _validate_profile(state, payload.llm_profile_id)
-        session = state.sessions.set_llm_profile(session_id, payload.llm_profile_id)
+    if "model_profile_id" in payload.model_fields_set:
+        if payload.model_profile_id is not None:
+            _validate_profile(state, payload.model_profile_id)
+        session = state.sessions.set_model_profile(session_id, payload.model_profile_id)
     return session.model_dump(mode="json")
 
 
@@ -208,12 +208,7 @@ def _get_session_or_404(state: RuntimeState, session_id: str):
 
 
 def _validate_profile(state: RuntimeState, profile_id: str) -> None:
-    try:
-        profile = state.llm_profiles.get_by_id_or_alias(profile_id)
-    except KeyError:
-        raise_error(400, "LLM_PROFILE_NOT_FOUND", f"LLM profile not found: {profile_id}")
-    if not profile.enabled:
-        raise_error(400, "LLM_PROFILE_DISABLED", f"LLM profile is disabled: {profile.alias}")
+    state.model_manager.profile(profile_id, "llm")
 
 
 def _message_payload(state: RuntimeState, message) -> dict:

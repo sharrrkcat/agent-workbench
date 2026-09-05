@@ -1,67 +1,16 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _toml_array_block(text: str, key: str) -> str:
-    start = text.index(f"{key} = [")
-    end = text.index("\n]", start) + 2
-    return text[start:end]
+def test_api_process_has_no_in_process_inference_dependencies():
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    for dependency in ("llama-cpp-python", "torch", "transformers", "sentence-transformers", "onnxruntime", "diffusers"):
+        assert dependency not in project
+    assert "httpx-sse" in project
 
 
-def test_florence2_local_runtime_dependencies_are_declared_and_documented() -> None:
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    contract = (ROOT / "docs" / "contracts" / "stateless-vision-models.md").read_text(encoding="utf-8")
-
-    for extra_name in ("knowledge", "knowledge-cuda128"):
-        extra = _toml_array_block(pyproject, extra_name)
-        for dependency in (
-            '"torch>=2.2"',
-            '"torchvision>=0.17"',
-            '"transformers>=4.40"',
-            '"einops>=0.8"',
-            '"timm>=1.0"',
-            '"Pillow>=10"',
-        ):
-            assert dependency in extra
-
-    assert "{ index = \"pytorch-cu128\", extra = \"knowledge-cuda128\" }" in pyproject
-    assert "url = \"https://download.pytorch.org/whl/cu128\"" in pyproject
-    assert "explicit = true" in pyproject
-    assert "{ extra = \"knowledge\" }" in pyproject
-    assert "{ extra = \"knowledge-cuda128\" }" in pyproject
-
-    flat_contract = " ".join(contract.split())
-    assert "Florence2 custom model code requires" in contract
-    assert "`einops`, `timm`, `Pillow`, `torch`, and `torchvision`" in flat_contract
-    assert "metadata.trust_remote_code=true" in contract
-    assert "/api/inference/vision-models/{profile_id_or_alias}/preflight" in contract
-    assert "uv sync --extra knowledge" in contract
-    assert "uv sync --extra knowledge-cuda128" in contract
-    assert "CUDA 12.8" in contract
-
-
-def test_onnxruntime_provider_dependencies_are_declared_and_documented() -> None:
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    contract = (ROOT / "docs" / "contracts" / "stateless-vision-models.md").read_text(encoding="utf-8")
-
-    extra = _toml_array_block(pyproject, "onnx")
-    for dependency in (
-        '"onnxruntime-gpu>=1.17,<1.24"',
-        '"numpy>=1.24"',
-        '"Pillow>=10"',
-    ):
-        assert dependency in extra
-
-    assert "optional `onnx` extra" in contract
-    assert "uv sync --extra onnx" not in contract
-    assert "onnxruntime-gpu>=1.17,<1.24" in contract
-    assert "`numpy`, and" in contract
-
-
-def test_removed_generation_dependencies_are_not_declared() -> None:
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "PyYAML" not in pyproject
-    assert "image-generation" not in pyproject
-    assert "diffusers" not in pyproject
+def test_old_model_modules_are_removed():
+    for module in ("inference/stateless.py", "knowledge_models.py", "llm_config.py",
+                   "llm_service.py", "embedding.py", "multimodal_profiles.py", "vision_profiles.py"):
+        assert not (ROOT / "ai_workbench/core" / module).exists()

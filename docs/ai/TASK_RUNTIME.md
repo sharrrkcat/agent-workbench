@@ -10,12 +10,16 @@ Read first:
 - `../contracts/utility-llm.md`
 
 Likely sources: `core/runtime.py`, `core/chat_runner.py`, `core/context.py`,
-`core/run_lifecycle.py`, `api/deps.py`, session/message/run routes, and WS.
+`core/run_lifecycle.py`, `core/models/`, `api/deps.py`, session/message/run
+routes, `api/routes/models.py`, `api/routes/openai_compatible.py`, and WS.
 
 The runtime has one default ChatRunner path. Waiting-run resume precedes new
 messages; all prefixes remain text. Keep metadata compact, steps limited to
 the generic kinds, and title generation best effort. Do not add route parsing,
-dynamic registration, or hidden compatibility branches.
+dynamic registration, or hidden compatibility branches. Internal chat and
+external inference share the manager directly. Auxiliary titles use only the
+explicit model selection, after the main lease releases. Local managed
+processes belong to Phase 2b; do not restore in-process inference.
 
 Run targeted runtime tests and then `uv run pytest -q`,
 `uv run python -m compileall -q ai_workbench`, and `git diff --check`.

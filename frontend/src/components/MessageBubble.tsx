@@ -17,6 +17,7 @@ export function MessageBubble({ message }: { message: Message }) {
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
   const retryMessage = useWorkbenchStore((state) => state.retryMessage);
   const isUser = message.role === 'user';
+  const streaming = message.metadata?.streaming === true;
 
   async function saveEdit() {
     setBusy(true);
@@ -30,12 +31,13 @@ export function MessageBubble({ message }: { message: Message }) {
         <div className="message-meta"><strong>{message.speaker_name || (isUser ? 'You' : message.role === 'assistant' ? 'Assistant' : 'System')}</strong><time>{formatTime(message.created_at)}</time></div>
         <div className="message">
           {editing ? <textarea value={value} onChange={(event) => setValue(event.currentTarget.value)} rows={Math.max(3, value.split('\n').length)} /> : <MessageParts parts={message.parts} />}
+          {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
         <div className="message-actions">
           {isUser && !editing ? <button type="button" onClick={() => setEditing(true)} title="Edit"><Pencil size={14} /></button> : null}
           {isUser && editing ? <><button type="button" onClick={() => void saveEdit()} disabled={busy}>Save</button><button type="button" onClick={() => setEditing(false)}>Cancel</button></> : null}
-          {!isUser && message.role === 'assistant' ? <button type="button" onClick={() => void retryMessage(message.message_id)} title="Retry"><RefreshCw size={14} /></button> : null}
-          <button type="button" onClick={() => { if (window.confirm('Delete this message?')) void deleteMessage(message.message_id); }} title="Delete"><Trash2 size={14} /></button>
+          {!isUser && message.role === 'assistant' ? <button type="button" disabled={streaming} onClick={() => void retryMessage(message.message_id)} title="Retry"><RefreshCw size={14} /></button> : null}
+          <button type="button" disabled={streaming} onClick={() => { if (window.confirm('Delete this message?')) void deleteMessage(message.message_id); }} title="Delete"><Trash2 size={14} /></button>
         </div>
       </div>
     </article>

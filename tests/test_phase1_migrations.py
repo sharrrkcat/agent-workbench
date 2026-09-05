@@ -16,9 +16,9 @@ def test_baseline_upgrade_prunes_extension_tables_and_columns(tmp_path: Path) ->
     removed_agent_table = "agent" + "configrecord"
     assert removed_agent_table in inspect(engine).get_table_names()
 
-    migrations.upgrade(engine, migrations.HEAD_REVISION)
+    migrations.upgrade(engine, migrations.PHASE1_REVISION)
     tables = set(inspect(engine).get_table_names())
-    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+    assert migrations.current_revision(engine) == migrations.PHASE1_REVISION
     assert removed_agent_table not in tables
     assert ("capability" + "configrecord") not in tables
     assert ("image" + "_generation_model_profiles") not in tables
@@ -61,5 +61,5 @@ def test_phase1_downgrade_is_explicitly_unsupported(tmp_path: Path) -> None:
     engine = get_engine(f"sqlite:///{tmp_path / 'downgrade.db'}")
     init_db(engine)
 
-    with pytest.raises(RuntimeError, match="destructive Phase 1 migration downgrade is unsupported"):
+    with pytest.raises(RuntimeError, match="destructive test database downgrade is unsupported"):
         migrations.downgrade(engine)

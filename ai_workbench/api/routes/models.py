@@ -1,0 +1,154 @@
+from fastapi import APIRouter, Depends
+
+from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.inventory import inventory
+from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelProfile, ModelSettings, ProviderInput, ProviderProfile
+
+router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+def public_provider(profile: ProviderProfile) -> dict:
+    return {**profile.model_dump(mode="json", exclude={"api_key"}), "has_api_key": bool(profile.api_key)}
+
+
+def public_settings(settings: ModelSettings) -> dict:
+    return {**settings.model_dump(exclude={"external_api_key"}), "has_external_api_key": bool(settings.external_api_key)}
+
+
+@router.get("/providers")
+async def providers(state: RuntimeState = Depends(get_state)):
+    return [public_provider(p) for p in state.provider_profiles.list()]
+
+
+@router.post("/providers")
+async def create_provider(payload: ProviderInput, state: RuntimeState = Depends(get_state)):
+    return public_provider(state.provider_profiles.create(ProviderProfile(**payload.model_dump())))
+
+
+@router.get("/providers/{provider_id}")
+async def provider(provider_id: str, state: RuntimeState = Depends(get_state)):
+    return public_provider(state.provider_profiles.get(provider_id))
+
+
+@router.patch("/providers/{provider_id}")
+async def update_provider(provider_id: str, payload: dict, state: RuntimeState = Depends(get_state)):
+    state.model_manager.require_idle(provider_id)
+    current = state.provider_profiles.get(provider_id)
+    values = ProviderInput.model_validate({**current.model_dump(include=set(ProviderInput.model_fields)), **payload})
+    await state.model_manager.invalidate(provider_id)
+    result = state.provider_profiles.update(provider_id, values.model_dump())
+    if result.base_url != current.base_url:
+        for profile in state.model_profiles.list("embedding"):
+            if profile.provider_profile_id == provider_id:
+                _invalidate_profile_indexes(state, profile.id)
+    return public_provider(result)
+
+
+@router.delete("/providers/{provider_id}")
+async def delete_provider(provider_id: str, state: RuntimeState = Depends(get_state)):
+    if any(p.provider_profile_id == provider_id for p in state.model_profiles.list()):
+        raise ModelError("PROVIDER_IN_USE", "Remove model references before deleting this provider.", 409)
+    await state.model_manager.invalidate(provider_id)
+    state.provider_profiles.delete(provider_id)
+    return {"deleted": True}
+
+
+@router.get("/providers/{provider_id}/models")
+async def provider_models(provider_id: str, state: RuntimeState = Depends(get_state)):
+    return {"models": await state.model_manager.provider_models(provider_id)}
+
+
+@router.get("/profiles")
+async def profiles(kind: ModelKind | None = None, state: RuntimeState = Depends(get_state)):
+    return [p.model_dump(mode="json") for p in state.model_profiles.list(kind)]
+
+
+@router.post("/profiles")
+async def create_profile(payload: ModelInput, state: RuntimeState = Depends(get_state)):
+    if payload.provider_profile_id:
+        state.provider_profiles.get(payload.provider_profile_id)
+    return state.model_profiles.create(ModelProfile(**payload.model_dump())).model_dump(mode="json")
+
+
+@router.get("/profiles/{profile_id}")
+async def profile(profile_id: str, state: RuntimeState = Depends(get_state)):
+    return state.model_profiles.get(profile_id).model_dump(mode="json")
+
+
+@router.patch("/profiles/{profile_id}")
+async def update_profile(profile_id: str, payload: dict, state: RuntimeState = Depends(get_state)):
+    current = state.model_profiles.get(profile_id)
+    updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
+    if updated.kind != current.kind:
+        raise ModelError("MODEL_KIND_IMMUTABLE", "Create a new profile to use a different model kind.", 409)
+    if updated.provider_profile_id:
+        state.provider_profiles.get(updated.provider_profile_id)
+    state.model_manager.require_idle(updated.provider_profile_id)
+    await state.model_manager.invalidate(current.provider_profile_id)
+    result = state.model_profiles.update(profile_id, payload)
+    if current.kind == "embedding" and (current.provider_profile_id, current.model_ref, current.parameters) != (result.provider_profile_id, result.model_ref, result.parameters):
+        _invalidate_profile_indexes(state, profile_id)
+    return result.model_dump(mode="json")
+
+
+def _invalidate_profile_indexes(state, profile_id):
+    for base in state.knowledge.list_knowledge_bases():
+        if base.embedding_model_profile_id == profile_id:
+            state.knowledge.invalidate_base_index(base.id)
+
+
+@router.delete("/profiles/{profile_id}")
+async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_state)):
+    profile = state.model_profiles.get(profile_id)
+    settings = state.model_settings.get()
+    references = [settings.default_model_profile_id, settings.utility_model_profile_id,
+                  state.knowledge.get_settings().reranker_model_profile_id]
+    references.extend(s.model_profile_id for s in state.sessions.list_sessions())
+    references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
+    if profile_id in references:
+        raise ModelError("MODEL_IN_USE", "Remove session, default or Knowledge references before deleting this model.", 409)
+    await state.model_manager.invalidate(profile.provider_profile_id)
+    state.model_profiles.delete(profile_id)
+    return {"deleted": True}
+
+
+@router.get("/profiles/{profile_id}/status")
+async def profile_status(profile_id: str, state: RuntimeState = Depends(get_state)):
+    return state.model_manager.status(profile_id).model_dump()
+
+
+@router.post("/profiles/{profile_id}/health")
+async def profile_health(profile_id: str, state: RuntimeState = Depends(get_state)):
+    return (await state.model_manager.health(profile_id)).model_dump()
+
+
+@router.post("/profiles/{profile_id}/load")
+async def load_profile(profile_id: str, state: RuntimeState = Depends(get_state)):
+    return (await state.model_manager.load(profile_id)).model_dump()
+
+
+@router.post("/profiles/{profile_id}/unload")
+async def unload_profile(profile_id: str, state: RuntimeState = Depends(get_state)):
+    return (await state.model_manager.unload(profile_id)).model_dump()
+
+
+@router.get("/inventory")
+async def model_inventory(kind: ModelKind | None = None, state: RuntimeState = Depends(get_state)):
+    return inventory(state.repo_root, kind)
+
+
+@router.get("/settings")
+async def model_settings(state: RuntimeState = Depends(get_state)):
+    return public_settings(state.model_settings.get())
+
+
+@router.patch("/settings")
+async def update_model_settings(payload: dict, state: RuntimeState = Depends(get_state)):
+    values = ModelSettings.model_validate({**state.model_settings.get().model_dump(), **payload})
+    for profile_id in (values.default_model_profile_id, values.utility_model_profile_id):
+        if profile_id:
+            state.model_manager.profile(profile_id, "llm")
+    if values.external_enabled and not values.external_api_key.strip():
+        raise ModelError("SERVICE_MISCONFIGURED", "Set an API key before enabling the external service.", 422)
+    return public_settings(state.model_settings.patch(payload))

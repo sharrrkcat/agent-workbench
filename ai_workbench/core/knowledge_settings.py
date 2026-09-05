@@ -19,10 +19,6 @@ class KnowledgeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int = 1
-    models_root: str = "data/models"
-    local_model_device: Literal["auto", "cpu", "cuda"] = "auto"
-    embedding_batch_size: int = Field(default=16, ge=1, le=1024)
-    embedding_timeout_seconds: int = Field(default=60, ge=1, le=3600)
     reranker_enabled: StrictBool = False
     reranker_model_profile_id: str | None = None
     reranker_candidate_limit: int = Field(default=50, ge=1, le=1000)
@@ -71,9 +67,6 @@ class KnowledgeSettings(BaseModel):
 class KnowledgeSettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    local_model_device: Literal["auto", "cpu", "cuda"] | None = None
-    embedding_batch_size: int | None = Field(default=None, ge=1, le=1024)
-    embedding_timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
     reranker_enabled: StrictBool | None = None
     reranker_model_profile_id: str | None = None
     reranker_candidate_limit: int | None = Field(default=None, ge=1, le=1000)

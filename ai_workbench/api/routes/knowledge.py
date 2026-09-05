@@ -17,19 +17,15 @@ from sqlmodel import Session as DbSession, select
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.embedding import embed_texts
 from ai_workbench.core.knowledge_indexing import (
     KnowledgeIndexError,
     prepare_attachment_text_source,
     prepare_file_source,
     prepare_pasted_text_source,
 )
-from ai_workbench.core.knowledge_models import KnowledgeModelError, scan_local_models
+from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.knowledge_settings import KnowledgeSettingsPatch
 from ai_workbench.core.knowledge_store import (
-    EmbeddingModelProfile,
-    EmbeddingModelProfileCreate,
-    EmbeddingModelProfilePatch,
     KnowledgeBase,
     KnowledgeBaseCreate,
     KnowledgeBasePatch,
@@ -41,21 +37,6 @@ from ai_workbench.db.models import KnowledgeChunkRecord, KnowledgeEmbeddingRecor
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 SOURCE_PREVIEW_MAX_CHARS = 20_000
 CHUNK_CONTENT_PREVIEW_MAX_CHARS = 2_000
-
-
-class EmbeddingTestRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    text: str
-    purpose: Literal["query", "document"] = "query"
-
-
-class EmbeddingsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    model_profile_id: str
-    purpose: Literal["query", "document"]
-    inputs: list[str] = Field(min_length=1)
 
 
 class SessionKnowledgePatch(BaseModel):
@@ -100,122 +81,15 @@ def get_knowledge_settings(state: RuntimeState = Depends(get_state)) -> dict[str
 def patch_knowledge_settings(payload: dict[str, Any], state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         patch = KnowledgeSettingsPatch.model_validate(payload)
+        if patch.reranker_model_profile_id:
+            state.model_manager.profile(patch.reranker_model_profile_id, "reranker")
         return state.knowledge.patch_settings(patch.model_dump(exclude_unset=True)).model_dump(mode="json")
     except ValidationError as exc:
         _validation_error(exc, "INVALID_KNOWLEDGE_SETTING")
 
 
-@router.get("/models/scan")
-def scan_models(state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    inventory = scan_local_models(state.repo_root)
-    # Independent reranker model management is intentionally deferred.
-    inventory.pop("reranker_models", None)
-    return inventory
-
-
-@router.get("/embedding-models")
-def list_embedding_models(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
-    return [item.model_dump(mode="json") for item in state.knowledge.list_embedding_profiles()]
-
-
-@router.post("/embedding-models")
-def create_embedding_model(payload: EmbeddingModelProfileCreate, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    try:
-        profile = EmbeddingModelProfile.model_validate(payload.model_dump())
-        return state.knowledge.create_embedding_profile(profile).model_dump(mode="json")
-    except ValidationError as exc:
-        _validation_error(exc, "INVALID_KNOWLEDGE_EMBEDDING_MODEL")
-    except ValueError as exc:
-        _store_error(exc)
-
-
-@router.get("/embedding-models/{profile_id}")
-def get_embedding_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    try:
-        return state.knowledge.get_embedding_profile_by_id_or_alias(profile_id).model_dump(mode="json")
-    except KeyError:
-        raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
-
-
-@router.patch("/embedding-models/{profile_id}")
-def patch_embedding_model(profile_id: str, payload: EmbeddingModelProfilePatch, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    try:
-        return state.knowledge.update_embedding_profile(profile_id, payload.model_dump(exclude_unset=True)).model_dump(mode="json")
-    except KeyError:
-        raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
-    except (ValidationError, ValueError) as exc:
-        _validation_error(exc, "INVALID_KNOWLEDGE_EMBEDDING_MODEL")
-
-
-@router.delete("/embedding-models/{profile_id}")
-def delete_embedding_model(profile_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    try:
-        profile = state.knowledge.delete_embedding_profile(profile_id)
-        return {"deleted": True, "profile_id": profile.id}
-    except KeyError:
-        raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
-    except ValueError as exc:
-        _store_error(exc)
-
-
-@router.post("/embedding-models/{profile_id}/test")
-def test_embedding_model(profile_id: str, payload: EmbeddingTestRequest, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    if not payload.text.strip():
-        raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Text must not be empty.")
-    try:
-        profile = state.knowledge.get_embedding_profile_by_id_or_alias(profile_id)
-        settings = state.knowledge.get_settings()
-        result = embed_texts(
-            backend=state.knowledge_model_backend,
-            profile=profile,
-            texts=[payload.text],
-            purpose=payload.purpose,
-            device=settings.local_model_device,
-            provider_profile_store=state.provider_profiles,
-            repo_root=state.repo_root,
-        )
-        vector = (result.get("vectors") or [[]])[0]
-        return {
-            "ok": True,
-            "model_profile_id": profile.id,
-            "purpose": payload.purpose,
-            "dimension": result.get("dimension", len(vector)),
-            "normalized": profile.normalize,
-            "sample": vector[:8],
-            "provider_profile_id": result.get("provider_profile_id"),
-        }
-    except KeyError:
-        raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
-    except KnowledgeModelError as exc:
-        raise_error(400, exc.code, exc.message, exc.details)
-
-
-@router.post("/embeddings")
-def create_embeddings(payload: EmbeddingsRequest, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    settings = state.knowledge.get_settings()
-    if len(payload.inputs) > settings.embedding_batch_size:
-        raise_error(422, "KNOWLEDGE_EMBEDDING_BATCH_TOO_LARGE", "Inputs exceed embedding_batch_size.")
-    if any(not item.strip() for item in payload.inputs):
-        raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Embedding inputs must not be empty.")
-    try:
-        profile = state.knowledge.get_embedding_profile_by_id_or_alias(payload.model_profile_id)
-        return embed_texts(
-            backend=state.knowledge_model_backend,
-            profile=profile,
-            texts=payload.inputs,
-            purpose=payload.purpose,
-            device=settings.local_model_device,
-            provider_profile_store=state.provider_profiles,
-            repo_root=state.repo_root,
-        )
-    except KeyError:
-        raise_error(404, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {payload.model_profile_id}")
-    except KnowledgeModelError as exc:
-        raise_error(400, exc.code, exc.message, exc.details)
-
-
 @router.post("/search")
-def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
+async def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     query = payload.query.strip()
     if not query:
         raise_error(422, "KNOWLEDGE_EMPTY_INPUT", "Query must not be empty.")
@@ -224,21 +98,23 @@ def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_st
     if payload.session_id:
         _require_session(state, payload.session_id)
     try:
-        state.knowledge_service.model_backend = state.knowledge_model_backend
-        response = state.knowledge_service.search(
+        response = await state.knowledge_service.search(
             query=query,
             knowledge_base_ids=payload.knowledge_base_ids,
             session_id=payload.session_id,
             top_k=payload.top_k,
             max_context_chars=payload.max_context_chars,
             include_debug=payload.debug,
+            min_score_threshold=payload.min_score_threshold,
+            max_chunks_per_source=payload.max_chunks_per_source,
+            max_chunks_per_knowledge_base=payload.max_chunks_per_knowledge_base,
         )
         response["context_preview"] = _context_preview(response, state)
         return response
     except KeyError as exc:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", str(exc))
-    except KnowledgeModelError as exc:
-        raise_error(400, exc.code, exc.message, exc.details)
+    except ModelError as exc:
+        raise_error(400, exc.code, exc.message)
 
 
 @router.get("/chunks/{chunk_id}")
@@ -322,6 +198,10 @@ def patch_knowledge_base(knowledge_base_id: str, payload: KnowledgeBasePatch, st
     if updates.get("embedding_model_profile_id"):
         _require_embedding_profile(state, updates["embedding_model_profile_id"])
     try:
+        current = state.knowledge.get_knowledge_base(knowledge_base_id)
+        if "embedding_model_profile_id" in updates and updates["embedding_model_profile_id"] != current.embedding_model_profile_id:
+            state.knowledge.invalidate_base_index(knowledge_base_id)
+            updates["index_status"] = "needs_reindex"
         return _base_payload(state.knowledge.update_knowledge_base(knowledge_base_id, updates))
     except KeyError:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
@@ -348,16 +228,16 @@ def list_knowledge_sources(knowledge_base_id: str, state: RuntimeState = Depends
 
 
 @router.post("/bases/{knowledge_base_id}/sources")
-def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
+async def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         state.knowledge.get_knowledge_base(knowledge_base_id)
         prepared = _prepare_source(payload, state)
-        return _index_prepared(knowledge_base_id, prepared, state).model_dump(mode="json")
+        return (await _index_prepared(knowledge_base_id, prepared, state)).model_dump(mode="json")
     except KeyError:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
     except KnowledgeIndexError as exc:
         raise_error(400 if exc.code.startswith("KNOWLEDGE_ATTACHMENT") else 422, exc.code, exc.message, exc.details)
-    except KnowledgeModelError as exc:
+    except ModelError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
 
 
@@ -376,28 +256,26 @@ def delete_knowledge_source(source_id: str, state: RuntimeState = Depends(get_st
 
 
 @router.post("/sources/{source_id}/reindex")
-def reindex_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
+async def reindex_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
-        state.knowledge_service.model_backend = state.knowledge_model_backend
-        return state.knowledge_service.reindex(source_id).model_dump(mode="json")
+        return (await state.knowledge_service.reindex(source_id)).model_dump(mode="json")
     except KeyError:
         raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
     except KnowledgeIndexError as exc:
         raise_error(422, exc.code, exc.message, exc.details)
-    except KnowledgeModelError as exc:
+    except ModelError as exc:
         raise_error(400, exc.code, exc.message, exc.details)
 
 
 @router.post("/bases/{knowledge_base_id}/reindex")
-def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
+async def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
-        state.knowledge_service.model_backend = state.knowledge_model_backend
         state.knowledge.get_knowledge_base(knowledge_base_id)
         results = []
         for source in state.knowledge.list_sources(knowledge_base_id):
             try:
-                results.append(state.knowledge_service.reindex(source.id).model_dump(mode="json"))
-            except (KnowledgeIndexError, KnowledgeModelError) as exc:
+                results.append((await state.knowledge_service.reindex(source.id)).model_dump(mode="json"))
+            except (KnowledgeIndexError, ModelError) as exc:
                 results.append({"source_id": source.id, "status": "failed", "chunks": source.chunks, "error": str(exc)})
         return {"knowledge_base_id": knowledge_base_id, "sources": results}
     except KeyError:
@@ -458,9 +336,8 @@ def _require_session(state: RuntimeState, session_id: str) -> Any:
         raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
 
 
-def _index_prepared(knowledge_base_id: str, prepared: Any, state: RuntimeState):
-    state.knowledge_service.model_backend = state.knowledge_model_backend
-    return state.knowledge_service._index(knowledge_base_id, prepared)
+async def _index_prepared(knowledge_base_id: str, prepared: Any, state: RuntimeState):
+    return await state.knowledge_service.index_source(knowledge_base_id, prepared)
 
 
 def _source_or_404(state: RuntimeState, source_id: str) -> KnowledgeSource:
@@ -487,12 +364,7 @@ def _read_source_text(source: KnowledgeSource, state: RuntimeState) -> str:
 
 
 def _require_embedding_profile(state: RuntimeState, profile_id: str) -> None:
-    try:
-        profile = state.knowledge.get_embedding_profile_by_id_or_alias(profile_id)
-    except KeyError:
-        raise_error(400, "KNOWLEDGE_EMBEDDING_MODEL_NOT_FOUND", f"Embedding model profile not found: {profile_id}")
-    if not profile.enabled:
-        raise_error(400, "KNOWLEDGE_EMBEDDING_MODEL_DISABLED", f"Embedding model profile is disabled: {profile_id}")
+    state.model_manager.profile(profile_id, "embedding")
 
 
 def _base_payload(base: KnowledgeBase) -> dict[str, Any]:
@@ -528,18 +400,10 @@ def _json_load(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
+
 def _validation_error(exc: Exception, code: str) -> None:
     errors = exc.errors() if hasattr(exc, "errors") else []
     first = errors[0] if errors else {}
     loc = ".".join(str(item) for item in first.get("loc", []))
     message = f"{loc}: {first.get('msg', 'Invalid value')}" if loc else str(exc)
     raise_error(422, code, message)
-
-
-def _store_error(exc: ValueError) -> None:
-    message = str(exc)
-    if message == "KNOWLEDGE_EMBEDDING_ALIAS_EXISTS":
-        raise_error(409, "KNOWLEDGE_EMBEDDING_ALIAS_EXISTS", "Embedding model alias already exists.")
-    if message == "KNOWLEDGE_EMBEDDING_MODEL_IN_USE":
-        raise_error(409, "KNOWLEDGE_EMBEDDING_MODEL_IN_USE", "Embedding model profile is in use.")
-    raise_error(422, "INVALID_KNOWLEDGE_MODEL", message)

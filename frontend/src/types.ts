@@ -7,8 +7,7 @@ export type Session = {
   title: string;
   context_mode: ContextMode;
   waiting_run_id: string | null;
-  llm_profile_id: string | null;
-  last_announced_llm_profile_id?: string | null;
+  model_profile_id: string | null;
   title_generation_state?: string;
   title_generation_metadata?: Record<string, unknown>;
   created_at: string;
@@ -121,7 +120,6 @@ export type GeneralSettings = {
   send_text_file_attachments_to_llm: boolean;
   persist_streaming_message_deltas: boolean;
   auto_generate_session_titles: boolean;
-  utility_model_profile_id: string | null;
   session_title_prompt: string;
   session_title_max_input_chars: number;
   group_transcript_system_instruction: string | null;
@@ -135,52 +133,32 @@ export type GeneralSettings = {
   resource_status_show_tokens: boolean;
   core_memory_content: string;
   core_memory_enabled: boolean;
-  inference_service_enabled: boolean;
-  inference_service_require_api_key: boolean;
-  inference_service_max_request_mb: number;
-  inference_service_api_key?: string | null;
-  inference_service_api_key_set?: boolean;
   pet: PetSettings;
   [key: string]: unknown;
 };
 
-export type LlmDefaults = { default_model_profile_id: string | null };
-export type LlmProfile = {
-  id: string;
-  alias: string;
-  name: string;
-  provider_profile_id?: string | null;
-  provider: string;
-  base_url: string;
-  api_key?: string;
-  api_key_set?: boolean;
-  model_id: string;
-  enabled: boolean;
-  temperature?: number | null;
-  top_p?: number | null;
-  top_k?: number | null;
-  max_tokens?: number | null;
-  timeout?: number | null;
-  supports_vision: boolean;
-  supports_tools: boolean;
-  supports_reasoning: boolean;
-  supports_streaming: boolean;
-  supports_json_mode: boolean;
-  external_inference_enabled: boolean;
-  notes?: string | null;
-  created_at: string;
-  updated_at: string;
+export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision';
+export type ModelCapabilities = { streaming: boolean; tools: boolean; vision: boolean; json_object: boolean; json_schema: boolean };
+export type ModelInput = {
+  alias: string; name: string; kind: ModelKind; provider_profile_id: string | null;
+  model_ref: string; enabled: boolean; external_enabled: boolean;
+  capabilities: ModelCapabilities; parameters: Record<string, unknown>;
+  lifecycle: { unload: 'manual' | 'after_request' | 'idle'; idle_seconds: number };
 };
-export type LlmProfileInput = Partial<Omit<LlmProfile, 'id' | 'created_at' | 'updated_at' | 'api_key_set'>> & { alias: string; name: string; model_id: string };
-export type LlmProviderProfile = { id: string; name: string; provider: string; base_url: string; api_key?: string; api_key_set?: boolean; timeout_seconds?: number | null; enabled: boolean; metadata?: Record<string, unknown>; created_at: string; updated_at: string };
-export type LlmProviderProfileInput = Partial<Omit<LlmProviderProfile, 'id' | 'created_at' | 'updated_at' | 'api_key_set'>> & { name: string };
+export type ModelProfile = ModelInput & { id: string; created_at: string; updated_at: string };
+export type ProviderInput = {
+  name: string; protocol: 'openai_compatible'; base_url: string; api_key?: string;
+  timeout_seconds: number; concurrency: number; queue_size: number; queue_timeout_seconds: number; enabled: boolean;
+};
+export type ProviderProfile = Omit<ProviderInput, 'api_key'> & { id: string; has_api_key: boolean; created_at: string; updated_at: string };
+export type ModelSettings = { default_model_profile_id: string | null; utility_model_profile_id: string | null;
+  external_enabled: boolean; has_external_api_key: boolean; max_request_mb: number };
+export type ModelStatus = { state: 'unknown' | 'ready' | 'unavailable' | 'failed' | 'unloaded';
+  residency: 'unknown' | 'loaded' | 'unloaded'; unload_supported: boolean; active: number; queued: number; error_code: string | null };
+export type ModelInventoryItem = { kind: ModelKind; name: string; model_ref: string; state: string; error_code: string };
 
 export type KnowledgeSettings = {
   id: number;
-  models_root: string;
-  local_model_device: 'auto' | 'cpu' | 'cuda';
-  embedding_batch_size: number;
-  embedding_timeout_seconds: number;
   reranker_enabled: boolean;
   reranker_model_profile_id: string | null;
   reranker_candidate_limit: number;
@@ -202,7 +180,6 @@ export type KnowledgeSettings = {
   knowledge_context_instruction: string;
   knowledge_context_snippet_template: string;
 };
-export type EmbeddingModelProfile = { id: string; name: string; alias: string; model_path: string; provider_profile_id?: string | null; provider_model_id: string; dimension?: number | null; normalize: boolean; document_instruction: string; query_instruction: string; enabled: boolean; external_inference_enabled: boolean; notes: string; created_at: string; updated_at: string };
 export type KnowledgeBase = { id: string; name: string; description: string; aliases_text: string; embedding_model_profile_id: string; enabled: boolean; index_status: string; index_error?: string | null; vector_candidate_k_override?: number | null; keyword_candidate_k_override?: number | null; final_top_k_override?: number | null; max_context_chars_override?: number | null; created_at: string; updated_at: string };
 export type KnowledgeSource = { id: string; knowledge_base_id: string; source_type: 'pasted_text' | 'attachment_text' | 'file'; uri: string; title: string; relative_path?: string; status: string; error?: string | null; chunks: number; indexed_at?: string | null; created_at: string; updated_at: string; [key: string]: unknown };
 export type SessionKnowledgeBinding = { id?: number | null; session_id: string; knowledge_base_id: string; enabled: boolean; sort_order: number; knowledge_base?: KnowledgeBase | null };

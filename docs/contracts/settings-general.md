@@ -1,37 +1,39 @@
-# General settings contract
+# Settings contract
 
-General settings are served by `GET/PATCH /api/settings/general`. Pydantic
-schemas use `extra="forbid"`; unknown or removed fields return HTTP 422.
+GET/PATCH /api/settings/general validates AppSettings with extra=forbid.
+Unknown/removed fields return HTTP 422.
 
-## AppSettings groups
-
-- Attachment limits and whether text attachments enter model context.
-- `auto_generate_session_titles`, `session_title_prompt`, and
-  `session_title_max_input_chars`.
-- One `utility_model_profile_id` for the internal Utility LLM.
-- Core Memory content and enablement.
-- Group transcript instruction and resource/inference service switches.
-- Appearance font settings.
-- Nested `pet: PetSettings` (see [Pet contract](pet.md)).
-
-There are no Agent, Command, Intent, Web, image-generation, or extension
-configuration fields. Pet updates are also exposed by
-`GET/PATCH /api/pets/settings`; the façade deep-merges `position` and
-`bubble_texts` before saving the nested object.
+General owns attachment/context limits, title behavior, Core Memory, group
+transcript instruction, appearance, resource monitoring, streaming-delta
+persistence and nested PetSettings. GET/PATCH /api/pets/settings deep-merges
+position and bubble_texts into that nested object.
 
 ## Models
 
-`/api/settings/llm-defaults` stores the global default chat profile. Session
-`llm_profile_id` overrides it. Provider and LLM profile CRUD remains under
-`/api/provider-profiles` and `/api/llm-profiles`; profile secrets are masked in
-responses.
+GET/PATCH /api/models/settings owns default_model_profile_id,
+utility_model_profile_id, external_enabled, external_api_key and
+max_request_mb. Session model_profile_id overrides the global default.
+Settings are persisted as one models object in appmetadatarecord.
 
-Knowledge settings are owned by `/api/knowledge/settings`, and Worldbook
-settings by `/api/worldbook/settings`. The Settings UI exposes only General,
-Models, Knowledge, Worldbook, and Pet.
+The Models panel has Profiles, Connections and External service tabs.
+One kind filter exposes llm, embedding, reranker, image_embedding and vision
+profiles. Connections use only the OpenAI-compatible protocol. Editors own
+capability flags, generation/per-kind parameters and lifecycle (manual by
+default). Local inventory and provider model listing do not load weights.
+Load, health, unload and occupation use the shared model store.
 
-## Validation and errors
+Keys are omitted from reads; presence flags replace them. PATCH omission
+retains a key, an explicit empty string clears it. External enablement requires
+a key. Reference deletion, invalid kind/capability/parameter combinations and
+busy connection edits report errors; they are not silently accepted.
 
-Strict booleans, bounded numeric fields, nested Pet models, and constrained
-literal values are validated before persistence. Secrets are never copied into
-run metadata, logs, generated documentation, or model prompts.
+## Other ownership
+
+Knowledge settings own chunk/retrieval/context controls and the unified
+reranker selection. KB records select unified embedding profiles. Model paths,
+connection timeouts, instructions, dimensions, batching and normalization
+belong to Models. Worldbook settings remain at /api/worldbook/settings.
+
+The Settings navigation remains General, Models, Knowledge, Worldbook, Pet.
+There are no extension configs, old default-model routes, independent
+per-kind profile pages or old General inference-service settings.

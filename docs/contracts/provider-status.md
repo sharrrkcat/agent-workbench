@@ -1,26 +1,34 @@
-# Provider status and runtime resources contract
+# Model status and inventory contract
 
-Provider and model status is a read-only diagnostic surface. It never imports
-heavy model runtimes during listing and never exposes API keys or absolute
-filesystem paths.
+Status and inventory reads never load weights, import heavy runtimes or
+download models. All paths belong to `/api/models`.
 
-## Status
+| Operation | Endpoint | Effect |
+| --- | --- | --- |
+| Cached status | GET `/profiles/{id}/status` | No provider call |
+| Health | POST `/profiles/{id}/health` | Explicit provider/model check |
+| Load | POST `/profiles/{id}/load` | Manager load operation |
+| Unload | POST `/profiles/{id}/unload` | Manager release operation |
+| Connection models | GET `/providers/{id}/models` | Queued upstream GET models |
+| Local files | GET `/inventory?kind=...` | Read-only relative refs |
 
-Common profile states are `READY`, `PROVIDER_UNREACHABLE`,
-`MODEL_NOT_AVAILABLE`, `MODEL_MISMATCH`, `MODEL_STATUS_UNKNOWN`, and
-`MODEL_NOT_LOADED`. A reachable provider with no matching model is not ready.
+Status contains `state` (unknown, ready, unavailable, failed, unloaded),
+`residency` (unknown, loaded, unloaded), `unload_supported`,
+`active`, `queued`, and optional `error_code`. Unchecked connections are
+unknown. A disabled model/connection or absent connection is unavailable.
+A reachable provider must advertise the exact model_ref to pass health/load.
 
-`/api/llm-provider-profiles/{id}/test` and `/api/llm-profiles/{id}/test`
-perform explicit checks. Inventory endpoints list safe relative model refs;
-they do not load weights or download files. Model files remain user-managed.
+OpenAI-compatible connections do not expose process residency or unload.
+Successful health therefore means ready with unknown residency; unload
+returns `UNLOAD_UNSUPPORTED`. The UI disables unavailable controls and gives
+the reason. Backend/kind failures return structured errors rather than
+pretending weights are loaded.
 
-## Runtime resources
+The manager broadcasts `model_status` with an empty session_id and
+`{model_profile_id, status}` to every session WebSocket. All aliases of the
+same connection/model receive matching occupancy snapshots as requests queue,
+start and finish. Status events do not create business rows.
 
-`GET /api/runtime/resources` returns a cached CPU/RAM/GPU snapshot.
-`GET /api/runtime/memory` and `POST /api/runtime/free-memory` expose
-best-effort local cache release for supported targets. Release never deletes
-model files, indexes, sessions, settings, attachments, or other user data.
-
-The stateless inference profile APIs retain embedding and vision model
-management for future phases. Their status/listing operations are no-load and
-use the same redaction rules.
+`GET /api/runtime/resources` retains the cached CPU/RAM/GPU snapshot.
+Runtime-wide free-memory endpoints and old per-kind diagnostics are deleted.
+Managed process installation and status actions belong to Phase 2b.
