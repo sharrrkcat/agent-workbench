@@ -1,9 +1,9 @@
 # Settings contract
 
 Settings have explicit domain owners and strict Pydantic inputs with
-extra=forbid. Unknown/removed fields return HTTP 422. The frontend keeps seven
+extra=forbid. Unknown/removed fields return HTTP 422. The frontend keeps six
 navigation entries and `/settings?tab=` values: general, models, personas,
-knowledge, worldbook, tools, pet. Default/unknown tab selects General.
+knowledge, worldbook, tools. Default/unknown tab selects General, including pet.
 
 SettingsPage owns navigation and composition only. Domain panels own their
 forms; shared controls are independent of the page. Types and API clients use
@@ -35,7 +35,10 @@ This irreversible test-state reset is documented in [data layout](../DATA_LAYOUT
 
 GET/PATCH `/api/models/settings` owns default_model_profile_id,
 utility_model_profile_id, external_enabled, external_api_key and max_request_mb.
-These persist as the models object in appmetadatarecord. Model selection and
+These persist as the model_settings object in appmetadatarecord. The chat default
+initializes new sessions; changing it preserves existing session selections.
+The header and session settings select concrete LLM profiles without a Global
+default option. Model selection and
 profile parameters are defined in [models](models.md); title behavior belongs
 to [chat/context](chat-context.md#auxiliary-tasks-and-titles).
 
@@ -59,9 +62,11 @@ Runtimes exposes install/cancel/reinstall/uninstall, job history and bounded log
 
 ## Other domains
 
-Personas owns prompt, model, context policy, generation, harness defaults and
-ordered Knowledge/Worldbook bindings. Session overrides are explicit; see
-[chat/context](chat-context.md). Harness settings own only the optional
+Personas owns identity, avatar, prompt and ordered Knowledge/Worldbook bindings.
+Session configuration owns model selection, context, generation, the Harness
+boolean and a catalog-backed tool list. Resources show locked Persona bindings
+and editable session additions; there are no Persona configuration overrides.
+See [chat/context](chat-context.md). Harness settings own only the optional
 searxng_base_url through `/api/tools/settings`.
 
 ToolsPanel shows catalog, risk, parameter schema, direct JSON calls, results and
@@ -77,30 +82,31 @@ Worldbook settings stay at `/api/worldbook/settings`; its matching/context
 rules are owned by chat/context. There are no independent per-kind model pages,
 extension configuration objects or old General inference-service settings.
 
-## Pet settings and packages
+## Pet foundations
 
-PetSettings is nested in AppSettings: pet_enabled, default_pet_id, pet_scale,
-show_status_bubble, bubble_offset_x/y, jump_on_hover, running_prefix, position
-(default/custom with x/y), and bubble_texts. Bubble keys are idle, waiting,
-done, failed, cancelled, interrupted, wake, tuck, status, select, reload, no_pet,
-import_success/import_failed and delete_success/delete_failed.
+The Codex Pet overlay, sprite format, package service, settings page and all
+discovery/import/selection/deletion/asset flows are removed. Their routes return
+404; no placeholder routes or package scanning remain. Existing data/pet files
+are untouched. No Pet is mounted or fetched by the current application.
 
-GET `/api/pets/settings` returns `{settings: PetSettings}`. PATCH accepts
-`{values: Partial[PetSettings]}`, validates strictly and deep-merges position
-and bubble_texts. Command text configuration and top-level Pet fields are invalid.
-Settings use the same AppSettingsStore as General.
+PetSettings remains nested in AppSettings with only position:
+`{mode: default|custom, x: int|null, y: int|null}`. Coordinates are strict integers
+between -20000 and 20000. Default position has null coordinates. GET
+`/api/pets/settings` returns `{settings: {position}}`; PATCH accepts
+`{values: {position?: Partial[PetPosition]}}`. It deep-merges position using the
+same AppSettingsStore as General. Removed fields and null position/mode return
+422. Revision 0009 resets disposable app_settings without filtering old JSON.
 
-`/api/pets` lists packages; POST `/scan` refreshes discovery; POST `/import`
-accepts pet.json and spritesheet.webp; DELETE `/{pet_id}` removes a package;
-GET `/{pet_id}/spritesheet.webp` serves the asset. Package errors use structured
-4xx responses. Default selection uses the configured valid pet or first valid
-package. Bundled package deletion is disabled.
+usePetPosition receives saved position, width, height and onCommit. It bounds
+dragging to the viewport, commits rounded coordinates on pointer release and
+returns saving/error state. Pointer cancellation restores the drag origin and
+does not save. It has no sprite, package, API client or event-dispatch dependency.
+Without both custom coordinates it uses a default bottom-right position.
 
-PetOverlay loads current settings/catalog initially and after change events,
-without polling or a second default-settings model. usePetData rejects stale
-refreshes; usePetPosition bounds/persists dragging; petState derives sprite and
-bubble status. Approval/WAITING_FOR_USER shows waiting; pending/running uses the
-configured prefix and bilingual step kind; terminal states map to done/failed/
-cancelled/interrupted. Hover/jump behavior is preserved. Custom bubble content
-is stored user data and is not translated. No capability or chat-command path
-controls the overlay.
+petTaskState is a pure current-session selector over existing runs and steps.
+It returns run_id, raw RunStatus (or IDLE), step_kind and progress fields. Active
+runs take precedence over recent terminal runs; timestamps retain microseconds.
+Approval steps take precedence while waiting; terminal states expose no active
+step. It imports no animation states or bubble text. Future visuals subscribe
+to the existing Workbench store; no Pet-specific task endpoint or polling is added.
+New appearance, asset format and animations are explicitly deferred.

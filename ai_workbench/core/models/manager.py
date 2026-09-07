@@ -71,11 +71,11 @@ class ModelManager:
             raise ModelError("MODEL_NOT_FOUND", "Model alias is not available to the external service.", 404)
         return self.profile(profile.id, kind)
 
-    def chat_profile(self, session_model_profile_id: str | None) -> ModelProfile:
-        profile_id = session_model_profile_id or self.settings.get().default_model_profile_id
-        if not profile_id:
-            raise ModelError("MODEL_NOT_CONFIGURED", "Select a chat model in Models settings.", 503)
-        return self.profile(profile_id, "llm")
+    def default_chat_profile(self) -> ModelProfile | None:
+        profiles = [profile for profile in self.profiles.list("llm") if profile.enabled]
+        default_id = self.settings.get().default_model_profile_id
+        return next((profile for profile in profiles if profile.id == default_id),
+                    profiles[0] if profiles else None)
 
     def backend_key(self, profile: ModelProfile):
         if not profile.runtime_id:

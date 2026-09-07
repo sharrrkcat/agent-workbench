@@ -15,6 +15,10 @@ pending/running/completed/failed/skipped. Steps have stable order, optional
 parent ids, timing, compact messages and structured errors. UI labels come
 from stable kinds and both locales, never implementation progress strings.
 
+The optional Pet foundation consumes these same statuses, step kinds and
+progress fields through a pure current-session frontend selector. No Pet UI,
+animation vocabulary, separate task stream or polling participates in execution.
+
 ChatRunner persists user messages, runs, steps, assistant/tool messages and
 events. Run/message metadata contains public ids, counts, timings, warnings
 and source refs, never prompts, full history/context, vectors, binaries or keys.

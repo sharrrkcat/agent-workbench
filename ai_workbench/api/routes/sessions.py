@@ -10,7 +10,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.models.schema import GenerationParameters
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.schema.persona import BindingMode, CHAT_PERSONA_ID, SessionPersona
+from ai_workbench.core.schema.persona import CHAT_PERSONA_ID, SessionPersona
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.time import ensure_utc, utc_now
@@ -28,12 +28,10 @@ class CreateSessionRequest(BaseModel):
     model_profile_id: str | None = None
     current_persona_id: str = CHAT_PERSONA_ID
     personas: list[SessionPersona] = Field(default_factory=lambda: [SessionPersona(persona_id=CHAT_PERSONA_ID)], min_length=1, max_length=64)
-    context_policy: ContextPolicy | None = None
-    generation: GenerationParameters | None = None
-    harness_enabled: StrictBool | None = None
-    tools_allowed: list[str] | None = None
-    knowledge_binding_mode: BindingMode = "inherit"
-    worldbook_binding_mode: BindingMode = "inherit"
+    context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
+    generation: GenerationParameters = Field(default_factory=GenerationParameters)
+    harness_enabled: StrictBool = False
+    tools_allowed: list[str] = Field(default_factory=list, max_length=128)
 
 
 class UpdateSessionRequest(BaseModel):
@@ -44,12 +42,10 @@ class UpdateSessionRequest(BaseModel):
     context_mode: Literal["single_assistant", "group_transcript"] | None = None
     current_persona_id: str | None = None
     personas: list[SessionPersona] | None = Field(default=None, min_length=1, max_length=64)
-    context_policy: ContextPolicy | None = None
-    generation: GenerationParameters | None = None
-    harness_enabled: StrictBool | None = None
-    tools_allowed: list[str] | None = None
-    knowledge_binding_mode: BindingMode | None = None
-    worldbook_binding_mode: BindingMode | None = None
+    context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
+    generation: GenerationParameters = Field(default_factory=GenerationParameters)
+    harness_enabled: StrictBool = False
+    tools_allowed: list[str] = Field(default_factory=list, max_length=128)
 
 
 class SessionPersonasPatch(BaseModel):
@@ -60,13 +56,12 @@ class SessionPersonasPatch(BaseModel):
 
 class SessionKnowledgePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    mode: BindingMode = "override"
-    knowledge_base_ids: list[str] | None = Field(default=None, max_length=128)
+    knowledge_base_ids: list[str] = Field(max_length=128)
 
 
 @router.post("")
 async def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(get_state)) -> dict:
-    session = state.chat_service.create_session(payload.model_dump())
+    session = state.chat_service.create_session(payload.model_dump(exclude_unset=True))
     return state.chat_service.session_response(session)
 
 
@@ -209,7 +204,7 @@ async def update_session_knowledge_bases(
     state: RuntimeState = Depends(get_state),
 ) -> dict:
     _get_session_or_404(state, session_id)
-    state.chat_service.update_bindings(session_id, "knowledge", payload.mode, payload.knowledge_base_ids)
+    state.chat_service.update_bindings(session_id, "knowledge", payload.knowledge_base_ids)
     state.events.emit("session_updated", session_id=session_id,
         payload={"session": state.chat_service.session_response(state.sessions.get_session(session_id))})
     return state.chat_service.binding_response(session_id, "knowledge")

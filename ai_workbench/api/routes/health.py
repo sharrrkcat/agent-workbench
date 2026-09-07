@@ -45,7 +45,9 @@ def _database_status(state: RuntimeState) -> dict:
 
 def _llm_status(state: RuntimeState) -> dict:
     try:
-        profile = state.model_manager.chat_profile(None)
+        profile = state.model_manager.default_chat_profile()
+        if profile is None:
+            return {"status": "degraded", "error": "No enabled chat model is configured."}
         return {"status": "ok", "model_profile_id": profile.id, "alias": profile.alias,
                 **state.model_manager.status(profile.id).model_dump()}
     except Exception as exc:

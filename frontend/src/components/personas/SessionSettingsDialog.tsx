@@ -1,20 +1,22 @@
-import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, LockKeyhole, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../api/knowledge';
 import { worldbookApi } from '../../api/worldbook';
 import { chatApi } from '../../api/chat';
+import { toolsApi } from '../../api/tools';
 import { ApiError } from '../../api/http';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { BindingMode, Session, SessionPatch, SessionPersona } from '../../types/chat';
+import type { Session, SessionPatch, SessionPersona } from '../../types/chat';
+import type { HarnessTool } from '../../types/tools';
 import type { KnowledgeBase } from '../../types/knowledge';
 import type { Worldbook } from '../../types/worldbook';
 import { AppModal } from '../ui/AppModal';
 import { BindingsField, Check, ContextFields, Field, GenerationFields, IconButton, ModelField, PersonaAvatar, ToolsField } from './ConfigurationFields';
 
-type Tab = 'members' | 'overrides' | 'knowledge' | 'worldbook';
+type Tab = 'members' | 'configuration' | 'knowledge' | 'worldbook';
 
 export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { session: Session; onClose: () => void; onManagePersonas: () => void }) {
   const { t } = useTranslation('personas');
@@ -26,20 +28,22 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { 
   const [books, setBooks] = useState<string[]>([]);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
+  const [tools, setTools] = useState<HarnessTool[]>([]);
   const [memberId, setMemberId] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let live = true;
-    void Promise.all([usePersonasStore.getState().reload(), knowledgeApi.listSessionKnowledgeBases(session.session_id), worldbookApi.getSessionWorldbooks(session.session_id), knowledgeApi.listKnowledgeBases(), worldbookApi.listWorldbooks()])
-      .then(([, kb, wb, bases, worldbooks]) => { if (live) { setKnowledge(kb.knowledge_base_ids); setBooks(wb.worldbook_ids); setBases(bases); setWorldbooks(worldbooks); setLoading(false); } })
+    setError('');
+    void Promise.all([usePersonasStore.getState().reload(), knowledgeApi.listSessionKnowledgeBases(session.session_id), worldbookApi.getSessionWorldbooks(session.session_id), knowledgeApi.listKnowledgeBases(), worldbookApi.listWorldbooks(), toolsApi.listTools(), useModelsStore.getState().reload()])
+      .then(([, kb, wb, bases, worldbooks, catalog]) => { if (live) { setKnowledge(kb.knowledge_base_ids); setBooks(wb.worldbook_ids); setBases(bases); setWorldbooks(worldbooks); setTools(catalog); setLoading(false); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
-  }, [session.session_id]);
+  }, [session.session_id, reload]);
   const patch = (values: Partial<Session>) => setDraft((current) => ({ ...current, ...values }));
   const available = personas.filter((p) => !draft.personas.some((m) => m.persona_id === p.id));
-  const selected = personas.find((p) => p.id === draft.current_persona_id);
   const move = (index: number, delta: number) => {
     const members = [...draft.personas];
     [members[index], members[index + delta]] = [members[index + delta], members[index]];
@@ -53,12 +57,12 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { 
       personas: draft.personas.map(({ persona_id, enabled }) => ({ persona_id, enabled })),
       model_profile_id: draft.model_profile_id, context_policy: draft.context_policy,
       generation: draft.generation, harness_enabled: draft.harness_enabled,
-      tools_allowed: draft.tools_allowed?.map((s) => s.trim()).filter(Boolean) ?? null,
+      tools_allowed: draft.tools_allowed,
     };
     try {
       await chatApi.updateSession(session.session_id, values);
-      await knowledgeApi.updateSessionKnowledgeBases(session.session_id, draft.knowledge_binding_mode, knowledge);
-      await worldbookApi.updateSessionWorldbooks(session.session_id, draft.worldbook_binding_mode, books);
+      await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledge);
+      await worldbookApi.updateSessionWorldbooks(session.session_id, books);
       await useWorkbenchStore.getState().reloadSessions();
       onClose();
     } catch (e) { setError(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e)); } finally { setBusy(false); }
@@ -66,8 +70,9 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { 
 
   return <AppModal open title={t('sessionSettings')} closeLabel={t('close')} width="large" onClose={() => { if (!busy) onClose(); }}>
     {error ? <p role="alert" className="model-feedback error-text">{error}</p> : null}
+    {error && loading ? <IconButton label={t('refresh')} onClick={() => setReload((value) => value + 1)}><RefreshCw size={16} /></IconButton> : null}
     {loading ? <p className="model-empty">{t('loading')}</p> : <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
-      <div className="model-tabs" role="tablist" aria-label={t('sessionSections')}>{(['members', 'overrides', 'knowledge', 'worldbook'] as Tab[]).map((key) => <button type="button" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{t(key)}</button>)}</div>
+      <div className="model-tabs" role="tablist" aria-label={t('sessionSections')}>{(['members', 'configuration', 'knowledge', 'worldbook'] as Tab[]).map((key) => <button type="button" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{t(key)}</button>)}</div>
       <fieldset className="model-form" disabled={busy}>
         {tab === 'members' ? <>
           <Field label={t('sessionTitle')}><input maxLength={120} value={draft.title} onChange={(e) => patch({ title: e.target.value })} /></Field>
@@ -85,49 +90,41 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { 
           <div className="persona-add-member"><Field label={t('addMember')}><select value={memberId} onChange={(e) => setMemberId(e.target.value)}><option value="">{t('selectPersona')}</option>{available.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field><IconButton label={t('addMember')} disabled={!available.some((p) => p.id === memberId)} onClick={() => { const p = available.find((item) => item.id === memberId); if (p) patch({ personas: [...draft.personas, { persona_id: p.id, name: p.name, enabled: true, avatar_attachment_id: p.avatar_attachment_id }] }); setMemberId(''); }}><Plus size={17} /></IconButton></div>
           <button type="button" className="secondary-button" onClick={onManagePersonas}>{t('manage')}</button>
         </> : null}
-        {tab === 'overrides' ? <>
-          <ModelField profiles={profiles} value={draft.model_profile_id} inheritLabel={t('inheritPersona')} onChange={(model_profile_id) => patch({ model_profile_id })} />
-          <h3>{t('context')}</h3><Check label={t('overrideContext')} checked={draft.context_policy !== null} onChange={(enabled) => patch({ context_policy: enabled ? structuredClone(selected?.context_policy || session.effective.context_policy) : null })} />
-          {draft.context_policy ? <ContextFields value={draft.context_policy} onChange={(context_policy) => patch({ context_policy })} /> : <span className="configuration-state">{t('contextModes.' + (selected?.context_policy.mode || session.effective.context_policy.mode))}</span>}
-          <h3>{t('generation')}</h3><Check label={t('overrideGeneration')} checked={draft.generation !== null} onChange={(enabled) => patch({ generation: enabled ? { ...(selected?.generation || {}) } : null })} />
-          {draft.generation ? <GenerationFields value={draft.generation} onChange={(generation) => patch({ generation })} /> : null}
-          <h3>{t('harness')}</h3><p className="configuration-state">{t('harnessHelp')}</p>
-          <Check label={t('overrideHarness')} checked={draft.harness_enabled !== null} onChange={(enabled) => patch({ harness_enabled: enabled ? selected?.harness_enabled || false : null })} />
-          {draft.harness_enabled !== null ? <Check label={t('harnessEnabled')} checked={draft.harness_enabled} onChange={(harness_enabled) => patch({ harness_enabled })} /> : null}
-          <Check label={t('overrideTools')} checked={draft.tools_allowed !== null} onChange={(enabled) => patch({ tools_allowed: enabled ? [...(selected?.tools_allowed || [])] : null })} />
-          {draft.tools_allowed !== null ? <ToolsField value={draft.tools_allowed} onChange={(tools_allowed) => patch({ tools_allowed })} /> : null}
+        {tab === 'configuration' ? <>
+          <ModelField profiles={profiles} value={draft.model_profile_id} onChange={(model_profile_id) => patch({ model_profile_id })} />
+          <h3>{t('context')}</h3>
+          <ContextFields value={draft.context_policy} onChange={(context_policy) => patch({ context_policy })} />
+          <h3>{t('generation')}</h3>
+          <GenerationFields value={draft.generation} onChange={(generation) => patch({ generation })} />
+          <h3>{t('harness')}</h3>
+          <Check label={t('harnessEnabled')} checked={draft.harness_enabled} onChange={(harness_enabled) => patch({ harness_enabled })} />
+          {draft.harness_enabled ? <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => patch({ tools_allowed })} /> : null}
         </> : null}
-        {tab === 'knowledge' ? <>
-          <BindingModeField value={draft.knowledge_binding_mode} onChange={(knowledge_binding_mode) => patch({ knowledge_binding_mode })} />
-          {draft.knowledge_binding_mode === 'override' ? <BindingsField items={bases} ids={knowledge} onChange={setKnowledge} /> : <InheritedBindings personaId={draft.current_persona_id} kind="knowledge" items={bases} />}
-        </> : null}
-        {tab === 'worldbook' ? <>
-          <BindingModeField value={draft.worldbook_binding_mode} onChange={(worldbook_binding_mode) => patch({ worldbook_binding_mode })} />
-          {draft.worldbook_binding_mode === 'override' ? <BindingsField items={worldbooks} ids={books} onChange={setBooks} /> : <InheritedBindings personaId={draft.current_persona_id} kind="worldbook" items={worldbooks} />}
-        </> : null}
+        {tab === 'knowledge' ? <SessionBindings key={draft.current_persona_id} personaId={draft.current_persona_id} kind="knowledge" items={bases} ids={knowledge} onChange={setKnowledge} /> : null}
+        {tab === 'worldbook' ? <SessionBindings key={draft.current_persona_id} personaId={draft.current_persona_id} kind="worldbook" items={worldbooks} ids={books} onChange={setBooks} /> : null}
         <div className="model-form-footer"><button type="submit" className="primary-button"><Save size={16} />{t('save')}</button></div>
       </fieldset>
     </form>}
   </AppModal>;
 }
 
-function BindingModeField({ value, onChange }: { value: BindingMode; onChange: (mode: BindingMode) => void }) {
+export function SessionBindings({ personaId, kind, items, ids, onChange }: { personaId: string; kind: 'knowledge' | 'worldbook'; items: Array<{ id: string; name: string; enabled: boolean }>; ids: string[]; onChange: (ids: string[]) => void }) {
   const { t } = useTranslation('personas');
-  return <Field label={t('bindingsMode')}><select value={value} onChange={(e) => onChange(e.target.value as BindingMode)}><option value="inherit">{t('inheritPersona')}</option><option value="override">{t('sessionOverride')}</option></select></Field>;
-}
-
-function InheritedBindings({ personaId, kind, items }: { personaId: string; kind: 'knowledge' | 'worldbook'; items: Array<{ id: string; name: string; enabled: boolean }> }) {
-  const { t } = useTranslation('personas');
-  const [ids, setIds] = useState<string[] | null>(null);
+  const [personaIds, setPersonaIds] = useState<string[] | null>(null);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
   useEffect(() => {
-    let live = true; setIds(null); setError('');
+    let live = true; setPersonaIds(null); setError('');
     const load = async () => kind === 'knowledge' ? (await chatApi.getPersonaKnowledge(personaId)).knowledge_base_ids : (await chatApi.getPersonaWorldbooks(personaId)).worldbook_ids;
-    void load().then((values) => { if (live) setIds(values); }).catch((e) => { if (live) setError(String(e)); });
+    void load().then((values) => { if (live) setPersonaIds(values); }).catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
-  }, [personaId, kind]);
-  if (error) return <p role="alert" className="error-text">{error}</p>;
-  if (ids === null) return <p className="model-empty">{t('loading')}</p>;
-  if (!ids.length) return <p className="model-empty">{t('noBindings')}</p>;
-  return <BindingsField items={items.filter((item) => ids.includes(item.id))} ids={ids} onChange={() => undefined} disabled />;
+  }, [personaId, kind, reload]);
+  if (error) return <><p role="alert" className="error-text">{error}</p><IconButton label={t('refresh')} onClick={() => setReload((value) => value + 1)}><RefreshCw size={16} /></IconButton></>;
+  if (personaIds === null) return <p className="model-empty">{t('loading')}</p>;
+  return <>
+    <h3 className="binding-section-heading"><LockKeyhole size={15} aria-hidden="true" />{t('personaBindings')}</h3>
+    {personaIds.length ? <BindingsField items={items.filter((item) => personaIds.includes(item.id))} ids={personaIds} onChange={() => undefined} disabled /> : <p className="model-empty">{t('noBindings')}</p>}
+    <h3>{t('sessionAdditions')}</h3>
+    <BindingsField items={items.filter((item) => !personaIds.includes(item.id) || ids.includes(item.id))} ids={ids} onChange={onChange} />
+  </>;
 }

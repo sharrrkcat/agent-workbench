@@ -1,4 +1,4 @@
-export const settingsSections = ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools', 'pet'] as const;
+export const settingsSections = ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools'] as const;
 export type SettingsSection = (typeof settingsSections)[number];
 
 export function readSettingsSection(search: string): SettingsSection {

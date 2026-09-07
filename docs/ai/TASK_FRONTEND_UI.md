@@ -13,15 +13,18 @@ microsecond timestamp ordering, approval state and isolation after session
 switches. messageStream owns sequence-based text merging. useModelsStore and
 useModelEvents own global model/runtime progress even without a session.
 
-SettingsPage owns seven entries and composes independent domain panels.
+SettingsPage owns six entries and composes independent domain panels.
 settings/models splits profile/connection lists and editors, external service,
 field controls and feedback; RuntimesPanel owns the runtime view. Shared fields
 must not import SettingsPage. Existing navigation and Models tab drafts persist.
 
-MessageBubble composes messages/MessageActions and MessageParts. PetOverlay
-composes pet/usePetData, usePetPosition and petState with the existing PetSprite.
+MessageBubble composes messages/MessageActions and MessageParts. Pet has no UI:
+usePetPosition retains generic dragging and petState retains current-session
+run/step/progress selection. Neither depends on a sprite format or package list.
 Keep tool output as data and active approval/cancellation visibly actionable.
-Persona editing and session overrides use the existing personas components.
+Persona editing and session configuration use the existing personas components.
+Only sessions own model/context/generation/Harness; tool permissions use catalog
+switches and resource additions remain separate from locked Persona bindings.
 
 All UI copy uses both locale trees. Custom content, prompts, tool payloads and
 ids are not translated. Run `npm test` and `npm run build` in frontend. Tests

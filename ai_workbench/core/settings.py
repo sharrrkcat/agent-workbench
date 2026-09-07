@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, ValidationError, field_validator
 
 from ai_workbench.core.time import utc_now
 
@@ -26,90 +26,25 @@ User message:
 class PetPosition(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal["default", "custom"] = "default"
-    x: int | None = None
-    y: int | None = None
-
-    @field_validator("x", "y")
-    @classmethod
-    def coordinate_range(cls, value: int | None) -> int | None:
-        if value is not None and not -20000 <= value <= 20000:
-            raise ValueError("position coordinates are out of range")
-        return value
-
-
-class PetBubbleTexts(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    idle: str = ""
-    waiting: str = "等你一下"
-    done: str = "完成啦"
-    failed: str = "出错了"
-    cancelled: str = "已取消"
-    interrupted: str = "已中断"
-    wake: str = "我来啦"
-    tuck: str = "先睡一会儿"
-    status: str = "我在这里"
-    select: str = "换好啦"
-    reload: str = "重新扫描完成"
-    no_pet: str = "还没有可用的宠物"
-    import_success: str = "导入成功"
-    import_failed: str = "导入失败"
-    delete_success: str = "已删除"
-    delete_failed: str = "删除失败"
+    x: StrictInt | None = Field(default=None, ge=-20000, le=20000)
+    y: StrictInt | None = Field(default=None, ge=-20000, le=20000)
 
 
 class PetSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    pet_enabled: StrictBool = True
-    default_pet_id: str = ""
-    pet_scale: float = Field(default=0.5, ge=0.5, le=2.0)
-    show_status_bubble: StrictBool = True
-    bubble_offset_x: int = Field(default=12, ge=-240, le=240)
-    bubble_offset_y: int = Field(default=-12, ge=-240, le=240)
-    jump_on_hover: StrictBool = True
-    running_prefix: str = "正在"
     position: PetPosition = Field(default_factory=PetPosition)
-    bubble_texts: PetBubbleTexts = Field(default_factory=PetBubbleTexts)
 
 
 class PetPositionPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    mode: Literal["default", "custom"] | None = None
-    x: int | None = Field(default=None, ge=-20000, le=20000)
-    y: int | None = Field(default=None, ge=-20000, le=20000)
-
-
-class PetBubbleTextsPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    idle: str | None = None
-    waiting: str | None = None
-    done: str | None = None
-    failed: str | None = None
-    cancelled: str | None = None
-    interrupted: str | None = None
-    wake: str | None = None
-    tuck: str | None = None
-    status: str | None = None
-    select: str | None = None
-    reload: str | None = None
-    no_pet: str | None = None
-    import_success: str | None = None
-    import_failed: str | None = None
-    delete_success: str | None = None
-    delete_failed: str | None = None
+    mode: Literal["default", "custom"] = "default"
+    x: StrictInt | None = Field(default=None, ge=-20000, le=20000)
+    y: StrictInt | None = Field(default=None, ge=-20000, le=20000)
 
 
 class PetSettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    pet_enabled: StrictBool | None = None
-    default_pet_id: str | None = None
-    pet_scale: float | None = Field(default=None, ge=0.5, le=2.0)
-    show_status_bubble: StrictBool | None = None
-    bubble_offset_x: int | None = Field(default=None, ge=-240, le=240)
-    bubble_offset_y: int | None = Field(default=None, ge=-240, le=240)
-    jump_on_hover: StrictBool | None = None
-    running_prefix: str | None = None
-    position: PetPositionPatch | None = None
-    bubble_texts: PetBubbleTextsPatch | None = None
+    position: PetPositionPatch = Field(default_factory=PetPositionPatch)
 
 
 class AppSettings(BaseModel):
@@ -207,14 +142,7 @@ class AppSettingsStore:
         current = self._settings.model_dump()
         pet_patch = updates.pop("pet", None)
         if pet_patch is not None:
-            pet_values = current["pet"] if isinstance(current.get("pet"), dict) else self._settings.pet.model_dump()
-            pet_data = pet_patch if isinstance(pet_patch, dict) else {}
-            for key in ("position", "bubble_texts"):
-                nested = pet_data.pop(key, None)
-                if isinstance(nested, dict):
-                    pet_values[key] = {**(pet_values.get(key) or {}), **nested}
-            pet_values.update(pet_data)
-            current["pet"] = pet_values
+            current["pet"]["position"].update(pet_patch.get("position", {}))
         current.update(updates)
         self._settings = AppSettings.model_validate(current)
         self.updated_at = utc_now()

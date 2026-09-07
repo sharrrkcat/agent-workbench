@@ -6,7 +6,6 @@ import { worldbookApi } from '../../api/worldbook';
 import { chatApi } from '../../api/chat';
 import { ApiError } from '../../api/http';
 import { usePersonasStore } from '../../store/usePersonasStore';
-import { useModelsStore } from '../../store/useModelsStore';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { KnowledgeBase } from '../../types/knowledge';
 import type { Persona, PersonaInput } from '../../types/chat';
@@ -14,28 +13,17 @@ import type { Worldbook } from '../../types/worldbook';
 import { AppModal } from '../ui/AppModal';
 import {
   BindingsField,
-  Check,
-  ContextFields,
-  defaultPolicy,
   Field,
-  GenerationFields,
   IconButton,
-  ModelField,
   PersonaAvatar,
-  ToolsField,
 } from '../personas/ConfigurationFields';
 
 type Editor = { id?: string; value: PersonaInput; knowledge: string[]; worldbooks: string[] };
-type Tab = 'identity' | 'context' | 'knowledge' | 'worldbook';
+type Tab = 'identity' | 'knowledge' | 'worldbook';
 const newPersona = (): PersonaInput => ({
   name: '',
   avatar_attachment_id: null,
   system_prompt: '',
-  model_profile_id: null,
-  context_policy: defaultPolicy(),
-  generation: {},
-  harness_enabled: false,
-  tools_allowed: [],
 });
 
 export function PersonasPanel() {
@@ -43,7 +31,6 @@ export function PersonasPanel() {
   const personas = usePersonasStore((s) => s.personas);
   const reload = usePersonasStore((s) => s.reload);
   const storeError = usePersonasStore((s) => s.error);
-  const profiles = useModelsStore((s) => s.profiles);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [tab, setTab] = useState<Tab>('identity');
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
@@ -54,9 +41,8 @@ export function PersonasPanel() {
   const temporaryAvatars = useRef(new Set<string>());
 
   async function load() {
-    const [, , knowledge, books] = await Promise.all([
+    const [, knowledge, books] = await Promise.all([
       reload(),
-      useModelsStore.getState().reload(),
       knowledgeApi.listKnowledgeBases(),
       worldbookApi.listWorldbooks(),
     ]);
@@ -111,7 +97,7 @@ export function PersonasPanel() {
       return;
     }
     await run(async () => {
-      const value = { ...editor.value, tools_allowed: editor.value.tools_allowed.map((s) => s.trim()).filter(Boolean) };
+      const value = editor.value;
       const saved = editor.id ? await chatApi.patchPersona(editor.id, value) : await chatApi.createPersona(value);
       setEditor({ ...editor, id: saved.id, value });
       if (saved.avatar_attachment_id) temporaryAvatars.current.delete(saved.avatar_attachment_id);
@@ -168,12 +154,6 @@ export function PersonasPanel() {
             <PersonaAvatar name={persona.name} attachmentId={persona.avatar_attachment_id} />
             <div className="persona-identity">
               <strong>{persona.name}</strong>
-              <small>
-                {persona.model_profile_id
-                  ? profiles.find((p) => p.id === persona.model_profile_id)?.name || t('unavailable')
-                  : t('globalDefault')}
-              </small>
-              <small>{t('contextModes.' + persona.context_policy.mode)}</small>
             </div>
             <div className="model-actions">
               <IconButton
@@ -220,7 +200,7 @@ export function PersonasPanel() {
               </p>
             ) : null}
             <div className="model-tabs" role="tablist" aria-label={t('editorSections')}>
-              {(['identity', 'context', 'knowledge', 'worldbook'] as Tab[]).map((key) => (
+              {(['identity', 'knowledge', 'worldbook'] as Tab[]).map((key) => (
                 <button type="button" role="tab" key={key} aria-selected={tab === key} onClick={() => setTab(key)}>
                   {t(key)}
                 </button>
@@ -269,33 +249,6 @@ export function PersonasPanel() {
                       onChange={(e) => patch({ system_prompt: e.target.value })}
                     />
                   </Field>
-                  <ModelField
-                    profiles={profiles}
-                    value={editor.value.model_profile_id}
-                    onChange={(model_profile_id) => patch({ model_profile_id })}
-                    inheritLabel={t('globalDefault')}
-                  />
-                  <h3>{t('generation')}</h3>
-                  <GenerationFields value={editor.value.generation} onChange={(generation) => patch({ generation })} />
-                </>
-              ) : null}
-              {tab === 'context' ? (
-                <>
-                  <ContextFields
-                    value={editor.value.context_policy}
-                    onChange={(context_policy) => patch({ context_policy })}
-                  />
-                  <h3>{t('harness')}</h3>
-                  <p className="configuration-state">{t('harnessHelp')}</p>
-                  <Check
-                    label={t('harnessEnabled')}
-                    checked={editor.value.harness_enabled}
-                    onChange={(harness_enabled) => patch({ harness_enabled })}
-                  />
-                  <ToolsField
-                    value={editor.value.tools_allowed}
-                    onChange={(tools_allowed) => patch({ tools_allowed })}
-                  />
                 </>
               ) : null}
               {tab === 'knowledge' ? (

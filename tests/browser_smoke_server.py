@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -29,17 +28,12 @@ def main() -> None:
         note = root / "data/knowledge/note.txt"
         note.parent.mkdir(parents=True)
         note.write_text("Browser approval result", encoding="utf-8")
-        source = next((repository / "data/pet").glob("*/spritesheet.webp"), None)
-        if source:
-            shutil.copytree(source.parent, root / "data/pet" / source.parent.name)
         upstream = MockOpenAI("Browser chat reply")
         app = create_app(root=root, use_memory=True, adapter_factory=upstream.factory,
                          frontend_dist=repository / "frontend/dist")
         client = TestClient(app)
         configure_model(client, alias="chat-model", capabilities={"streaming": True, "tools": True})
         configure_model(client, kind="embedding", alias="embedding-model", parameters={"dimensions": 2})
-        persona = client.get("/api/personas").json()[0]
-        client.patch(f"/api/personas/{persona['id']}", json={"tools_allowed": ["base64_encode", "read_file"]}).raise_for_status()
         client.patch("/api/models/settings", json={"external_api_key": "browser-test-key", "external_enabled": True}).raise_for_status()
         client.patch("/api/settings/general", json={"auto_generate_session_titles": False}).raise_for_status()
         uvicorn.run(app, host="127.0.0.1", port=args.port)

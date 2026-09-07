@@ -5,7 +5,6 @@ import { GeneralPanel } from './settings/GeneralPanel';
 import { KnowledgePanel } from './settings/KnowledgePanel';
 import { ModelsPanel } from './settings/ModelsPanel';
 import { PersonasPanel } from './settings/PersonasPanel';
-import { PetSettingsPanel } from './settings/PetSettingsPanel';
 import { ToolsPanel } from './settings/ToolsPanel';
 import { WorldbookPanel } from './settings/WorldbookPanel';
 import { readSettingsSection, settingsSections, settingsSectionUrl } from './settings/navigation';
@@ -52,7 +51,6 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
           {section === 'knowledge' ? <KnowledgePanel save={run} /> : null}
           {section === 'worldbook' ? <WorldbookPanel save={run} /> : null}
           {section === 'tools' ? <ToolsPanel /> : null}
-          {section === 'pet' ? <PetSettingsPanel /> : null}
         </main>
       </div>
     </div>

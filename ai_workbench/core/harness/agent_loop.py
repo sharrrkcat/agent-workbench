@@ -177,7 +177,7 @@ class HarnessAgentLoop:
     async def _model_round(self, session, config, run, user, state: HarnessState, budget: _Budget) -> str | None:
         step = self._start_step(run.run_id, "model", "Generating response", {"round": state.rounds + 1})
         if not config.model_profile_id:
-            raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session, persona or the global default.", 503)
+            raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
                  for spec in (self.registry.get(name) for name in config.tools_allowed)]

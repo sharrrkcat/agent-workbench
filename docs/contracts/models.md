@@ -29,9 +29,14 @@ invalidates associated indexes; see [Knowledge](knowledge.md).
 
 ## Resolution and capabilities
 
-Chat selects session model override, then current Persona model, then the
-global default. Missing selection returns `MODEL_NOT_CONFIGURED`. Disabled,
-missing or wrong-kind profiles fail explicitly without model substitution.
+New sessions save the enabled global-default LLM or, when it is unavailable,
+the first enabled LLM in profile-list order (name, then id). Execution uses the
+saved session model. Persona has no model selection. Missing selection returns
+`MODEL_NOT_CONFIGURED`. Disabled, missing or wrong-kind explicitly selected
+profiles fail without substitution. Default selection checks profiles only,
+without model discovery, health calls or inference.
+The LLM summary at `/api/health/details` uses this same default selection and
+cached status, reporting degraded when no enabled LLM exists.
 Persona/session behavior and the auxiliary title selector are owned by
 [chat/context](chat-context.md).
 

@@ -1,5 +1,8 @@
 # Agent Workbench 架构精简与重构路线图
 
+> 后续计划：[会话配置精简与 Pet 基础](WORKBENCH_SIMPLIFICATION_PLAN.md)（2026-09-07）。
+> 下文记录已完成阶段的历史基线；Persona 配置、会话资料绑定和 Pet 的当前决策以新计划及 owning contracts 为准。
+
 > 状态：设计冻结，Phase 0、Phase 1、Phase 2a、Phase 2b、Phase 3、Phase 4 与 Phase 5 已完成（2026-09-07）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口

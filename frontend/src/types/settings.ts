@@ -1,52 +1,10 @@
 export type PetPosition = { mode: 'default' | 'custom'; x: number | null; y: number | null };
 
-export type PetBubbleTexts = {
-  idle: string;
-  waiting: string;
-  done: string;
-  failed: string;
-  cancelled: string;
-  interrupted: string;
-  wake: string;
-  tuck: string;
-  status: string;
-  select: string;
-  reload: string;
-  no_pet: string;
-  import_success: string;
-  import_failed: string;
-  delete_success: string;
-  delete_failed: string;
-};
-
 export type PetSettings = {
-  pet_enabled: boolean;
-  default_pet_id: string;
-  pet_scale: number;
-  show_status_bubble: boolean;
-  bubble_offset_x: number;
-  bubble_offset_y: number;
-  jump_on_hover: boolean;
-  running_prefix: string;
   position: PetPosition;
-  bubble_texts: PetBubbleTexts;
-};
-
-export type PetItem = {
-  id: string;
-  display_name: string;
-  description?: string;
-  valid: boolean;
-  status?: string;
-  errors?: string[];
-  spritesheet_url?: string | null;
-  can_delete?: boolean;
-  is_builtin?: boolean;
 };
 
 export type PetSettingsResponse = { settings: PetSettings };
-
-export type PetListResponse = { pets: PetItem[] };
 
 export type GeneralSettings = {
   max_image_size_mb: number;
@@ -68,9 +26,8 @@ export type GeneralSettings = {
   group_transcript_system_instruction_effective: string;
 };
 
-export type PetSettingsPatch = Partial<Omit<PetSettings, 'position' | 'bubble_texts'>> & {
+export type PetSettingsPatch = {
   position?: Partial<PetPosition>;
-  bubble_texts?: Partial<PetBubbleTexts>;
 };
 
 export type GeneralSettingsPatch = Partial<

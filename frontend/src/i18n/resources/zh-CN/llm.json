@@ -102,7 +102,6 @@
     "queue_timeout_seconds": "排队超时（秒）"
   },
   "chatModel": "聊天模型",
-  "globalDefault": "全局默认",
   "conversationMode": "对话模式",
   "singleAssistant": "单助手",
   "groupTranscript": "群聊转录",

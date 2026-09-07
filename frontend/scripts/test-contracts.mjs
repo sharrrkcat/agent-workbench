@@ -9,7 +9,7 @@ const resources = Object.fromEntries(
   ['en', 'zh-CN'].map((locale) => [
     locale,
     Object.fromEntries(
-      ['common', 'settings', 'knowledge', 'worldbook', 'pet', 'personas', 'runs', 'renderers'].map((namespace) => [
+      ['common', 'settings', 'knowledge', 'worldbook', 'personas', 'runs', 'renderers'].map((namespace) => [
         namespace,
         JSON.parse(
           fs.readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'),
@@ -26,10 +26,10 @@ const load = createModuleLoader({
 const { settingsSections, readSettingsSection, settingsSectionUrl } = (
   await load('../src/components/settings/navigation.ts')
 ).exports;
-assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools', 'pet']);
+assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
 for (const section of settingsSections)
   assert.equal(readSettingsSection(new URL(settingsSectionUrl(section), 'http://localhost').search), section);
-for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities'])
+for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
   assert.equal(readSettingsSection(tab), 'general');
 
 const { settingsApi } = (await load('../src/api/settings.ts')).exports;
@@ -41,11 +41,11 @@ globalThis.fetch = async (url, options) => {
   requests.push({ url, method: options.method, body: JSON.parse(options.body) });
   return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
-await settingsApi.updatePetSettings({ position: { x: 12 }, bubble_texts: { done: 'Updated' } });
+await settingsApi.updatePetSettings({ position: { x: 12 } });
 assert.deepEqual(requests.at(-1), {
   url: '/api/pets/settings',
   method: 'PATCH',
-  body: { values: { position: { x: 12 }, bubble_texts: { done: 'Updated' } } },
+  body: { values: { position: { x: 12 } } },
 });
 await modelsApi.patchProviderProfile('provider/1', { name: 'Renamed' });
 assert.equal(requests.at(-1).url, '/api/models/providers/provider%2F1');
@@ -71,7 +71,7 @@ const settings = {
   auto_generate_session_titles: false,
   session_title_max_input_chars: 1234,
   group_transcript_system_instruction: null,
-  pet: { pet_scale: 1 },
+  pet: { position: { mode: 'default', x: null, y: null } },
   max_file_size_mb: 42,
 };
 function descendants(node) {
@@ -110,47 +110,4 @@ for (const [locale, label] of [
   assert.doesNotMatch(html, /appearance_font|resource_status|generalFields\./);
 }
 
-const { currentRun, stateFor, bubbleFor } = (await load('../src/components/pet/petState.ts')).exports;
-const { clampPosition } = (await load('../src/components/pet/usePetPosition.ts')).exports;
-const run = { run_id: 'r', session_id: 's', status: 'RUNNING', updated_at: '2026-09-07T00:00:00Z' };
-const pet = {
-  running_prefix: 'Working',
-  bubble_texts: {
-    idle: '',
-    waiting: 'Confirm',
-    done: 'Done',
-    failed: 'Failed',
-    cancelled: 'Cancelled',
-    interrupted: 'Interrupted',
-    status: 'Status',
-  },
-};
-assert.equal(
-  currentRun(
-    [
-      { ...run, session_id: 'other' },
-      { ...run, status: 'WAITING_FOR_USER' },
-    ],
-    's',
-  ).status,
-  'WAITING_FOR_USER',
-);
-for (const [status, sprite, bubble] of [
-  ['PENDING', 'running', 'Working Model'],
-  ['RUNNING', 'running', 'Working Model'],
-  ['CANCELLING', 'running', 'Working Model'],
-  ['WAITING_FOR_USER', 'waiting', 'Confirm'],
-  ['DONE', 'review', 'Done'],
-  ['FAILED', 'failed', 'Failed'],
-  ['CANCELLED', 'failed', 'Cancelled'],
-  ['INTERRUPTED', 'failed', 'Interrupted'],
-]) {
-  assert.equal(stateFor({ ...run, status }, null, false, false), sprite);
-  assert.equal(bubbleFor(pet, { ...run, status }, null, 'Model'), bubble);
-}
-assert.equal(stateFor(run, { kind: 'approval' }, false, false), 'waiting');
-assert.equal(stateFor(run, null, true, false), 'idle');
-assert.equal(stateFor(run, null, false, true), 'jumping');
-assert.deepEqual(clampPosition({ x: 1000, y: -50 }, 96, 104, { width: 390, height: 844 }), { x: 286, y: 8 });
-assert.deepEqual(clampPosition({ x: 10, y: 10 }, 192, 208, { width: 150, height: 150 }), { x: 8, y: 8 });
-console.log('settings navigation/submission, API boundaries, bilingual rendering and Pet behavior: ok');
+console.log('settings navigation/submission, API boundaries and bilingual rendering: ok');

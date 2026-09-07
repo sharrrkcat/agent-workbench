@@ -1,8 +1,9 @@
 # Repository Instructions
 
-Read `docs/AI_CONTEXT.md`, then `docs/WORKBENCH_REFACTOR_ROADMAP.md` and the
-owning contract before changing code. The roadmap supersedes the removed
-Agent/Action/Capability/Command and YAML architecture.
+Read `docs/AI_CONTEXT.md`, then `docs/WORKBENCH_SIMPLIFICATION_PLAN.md` and the
+owning contract before changing code. The current plan supersedes the historical
+roadmap's Persona, session-binding and Pet decisions. The removed
+Agent/Action/Capability/Command and YAML architecture must not return.
 
 ## Permanent Refactor Constraints
 

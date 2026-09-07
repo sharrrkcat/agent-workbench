@@ -9,8 +9,8 @@ syntax, allowlists, bounded loops and approvals.
 
 Personas are strict editable database records, never executable agents,
 scripts, manifests or extension registrations. Fields are id, name, optional
-avatar_attachment_id, system_prompt, optional model_profile_id, context_policy,
-generation parameters, harness_enabled and tools_allowed. The avatar references
+avatar_attachment_id, system_prompt and timestamps. Ordered Knowledge/Worldbook
+bindings are stored separately. The avatar references
 an existing local image filename; bytes remain in the attachment store.
 
 Migrations seed editable Chat and Translate records. New sessions bind Chat as
@@ -21,23 +21,40 @@ messages retain speaker id/name/avatar snapshots.
 `session_personas` is an ordered enabled member list. current_persona_id must
 refer to an enabled member. Group sessions generate one response from the
 manually selected speaker per input, without automatic round-robin.
-Model selection is session override, current Persona, global default.
-Context, generation, harness and tool settings resolve explicit session
-overrides before Persona defaults. Null inherits; an explicit empty tool list
-allows no tools. Allowlists reference registered built-ins only.
+New sessions persist a concrete model selection. When POST omits model_profile_id
+or supplies null, select the enabled global-default LLM if present, otherwise the
+first enabled LLM in profile-list order (name, then id). No eligible LLM leaves
+the selection null. Explicit ids are validated and never substituted. Changing
+the global default affects later sessions only; execution uses the saved session
+id. PATCH omission preserves it and null clears it. An unselected session requires
+an explicit choice even after a model is added. Neither chat model selector offers
+a Global default entry; both show the saved model and a disabled empty/unavailable
+state when appropriate. No model discovery, health check or inference is performed
+to initialize a session.
+Resolved configuration reports model_source=session; there is no inherited model
+source at execution time.
 
-Personas own ordered Knowledge and Worldbook defaults. Session binding mode is
-inherit or override. Inherit uses the current speaker's defaults; override uses
-the ordered session binding rows. An empty override means no resources.
-Retrieval and Worldbook receive resolved ids explicitly.
+Context, generation, Harness and tool selection belong only to the session. Context defaults to
+session history with explicit attachments; generation defaults to {} and its
+non-null fields override the selected model's parameters. Neither object is
+nullable. Harness defaults off. New sessions omit tools_allowed to allow all
+currently registered built-ins; an explicit [] allows none. Saved allowlists
+do not change when the catalog grows. These settings never depend on Persona.
+
+Personas own ordered Knowledge and Worldbook bindings. Each run combines only
+the current speaker's bindings with independent ordered session additions,
+deduplicating by id in first-occurrence order. Clearing additions never removes
+Persona bindings; changing speaker preserves additions, including overlaps.
+Resource enablement and retrieval/matching limits still apply. Retrieval and
+Worldbook receive resolved ids explicitly.
 
 | Endpoint | Ownership |
 | --- | --- |
 | `/api/personas` and `/{id}` | Strict Persona CRUD |
-| `/api/personas/{id}/knowledge-bases`, `/worldbooks` | Persona defaults |
+| `/api/personas/{id}/knowledge-bases`, `/worldbooks` | Persona bindings |
 | `/api/sessions` and `/{id}` | Session creation, selection and configuration |
 | `/api/sessions/{id}/personas` | Ordered members/current speaker |
-| `/api/sessions/{id}/knowledge-bases`, `/worldbooks` | Configured/effective bindings and mode |
+| `/api/sessions/{id}/knowledge-bases`, `/worldbooks` | Session additions, Persona ids and effective ids |
 | `/api/sessions/{id}/messages` | History and new input |
 | `/api/messages/{id}`, `/retry`, `/edit` | Message deletion, retry and user edit |
 
@@ -46,19 +63,26 @@ References are validated before persistence. Unknown/removed fields return
 A waiting approval blocks new messages and direct calls. Active overlapping
 execution returns SESSION_BUSY. The explicit approval API resumes the same run.
 
+Binding PATCH bodies contain only knowledge_base_ids or worldbook_ids arrays;
+[] clears additions. Responses expose that array, read-only persona_* ids and
+effective_* ids. There is no mode field. The UI locks the Persona section and
+edits additions separately; it never writes effective ids back as additions.
+
 ## Configuration snapshots and context
 
-Each run privately stores the resolved Persona configuration in
+Each run privately stores the resolved chat configuration in
 config_snapshot_json. Its prompt/generation/context remain stable through
 Persona edits, speaker switches and approval waits. Public metadata exposes
 only ids, names, model selection, context mode, limits and binding ids.
-Retry uses the original assistant speaker configuration; tool-call messages
-cannot be retried as assistant answers.
+Retry selects the original assistant speaker and resolves a new run's
+configuration; tool-call messages cannot be retried as assistant answers.
 
 ContextBuilder supports single_assistant and group_transcript projection, with
 none/current_message/recent_messages/session/selected_message policies, message
-and character bounds, system prompt inclusion and explicit attachments.
-The chat header/session dialog selects speakers and overrides; selected-message
+and character bounds and explicit attachments. The current Persona's nonempty
+system prompt is always inserted once, independently of history mode; there is
+no include_system_prompt switch. The chat header/session dialog selects speakers
+and session configuration; selected-message
 context uses an explicit source message and is cleared on session changes.
 Group transcripts preserve historical speaker labels and reply as the current
 speaker. Context sources are separate bounded data blocks, with compact

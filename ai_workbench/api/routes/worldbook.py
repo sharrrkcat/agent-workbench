@@ -3,7 +3,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.schema.persona import BindingMode
 from ai_workbench.core.worldbook import (
     Worldbook,
     WorldbookCreate,
@@ -29,8 +28,7 @@ class EntryReorderRequest(BaseModel):
 class SessionWorldbooksPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mode: BindingMode = "override"
-    worldbook_ids: list[str] | None = Field(default=None, max_length=128)
+    worldbook_ids: list[str] = Field(max_length=128)
 
 
 class MatchTestRequest(BaseModel):
@@ -182,7 +180,7 @@ def get_session_worldbooks(session_id: str, state: RuntimeState = Depends(get_st
 async def patch_session_worldbooks(session_id: str, payload: SessionWorldbooksPatch, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     _require_session(state, session_id)
-    state.chat_service.update_bindings(session_id, "worldbook", payload.mode, payload.worldbook_ids)
+    state.chat_service.update_bindings(session_id, "worldbook", payload.worldbook_ids)
     state.events.emit("session_updated", session_id=session_id,
         payload={"session": state.chat_service.session_response(state.sessions.get_session(session_id))})
     return state.chat_service.binding_response(session_id, "worldbook")

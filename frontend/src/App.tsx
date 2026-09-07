@@ -4,7 +4,6 @@ import { ChatHeader } from './components/ChatHeader';
 import { ChatInput } from './components/ChatInput';
 import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
-import { PetOverlay } from './components/PetOverlay';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
@@ -37,5 +36,5 @@ export default function App() {
   }, [currentSession?.session_id, applyRuntimeEvent, refreshCurrent]);
   useEffect(() => { const onPop = () => rerender((value) => value + 1); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop); }, []);
   if (window.location.pathname === '/settings') return <SettingsPage onBack={() => { window.history.pushState({}, '', '/'); rerender((value) => value + 1); }} />;
-  return <div className="app-shell">{sidebarOpen ? <div className="mobile-sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}<SessionSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenSettings={() => { window.history.pushState({}, '', '/settings'); rerender((value) => value + 1); }} /><main className="workspace"><ChatHeader onToggleSidebar={() => setSidebarOpen((open) => !open)} onOpenSettings={(section = "general") => { window.history.pushState({}, "", "/settings?tab=" + section); rerender((value) => value + 1); }} /><ErrorBanner /><ChatView /><PetOverlay /><ChatInput key={currentSession?.session_id} /><StatusBar /></main></div>;
+  return <div className="app-shell">{sidebarOpen ? <div className="mobile-sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}<SessionSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenSettings={() => { window.history.pushState({}, '', '/settings'); rerender((value) => value + 1); }} /><main className="workspace"><ChatHeader onToggleSidebar={() => setSidebarOpen((open) => !open)} onOpenSettings={(section = "general") => { window.history.pushState({}, "", "/settings?tab=" + section); rerender((value) => value + 1); }} /><ErrorBanner /><ChatView /><ChatInput key={currentSession?.session_id} /><StatusBar /></main></div>;
 }

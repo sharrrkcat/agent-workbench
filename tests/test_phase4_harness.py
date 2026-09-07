@@ -16,7 +16,7 @@ from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.persona import CHAT_PERSONA_ID
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
-from ai_workbench.db.database import get_engine, init_db
+from ai_workbench.db.database import get_engine
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
@@ -32,10 +32,10 @@ def harness_client(tmp_path, request):
 
 def configure(client, *, tools=None, enabled=True, streaming=True, capability=True, model=True):
     profile = configure_model(client, capabilities={"streaming": streaming, "tools": capability}) if model else None
-    persona = ok(client.post("/api/personas", json={"name": "Original persona", "system_prompt": "PRIVATE_TOOL_PROMPT",
-        "harness_enabled": enabled, "tools_allowed": tools or ["base64_encode", "base64_decode"], "generation": {"temperature": 0.25}}))
+    persona = ok(client.post("/api/personas", json={"name": "Original persona", "system_prompt": "PRIVATE_TOOL_PROMPT"}))
     session = ok(client.post("/api/sessions", json={"personas": [{"persona_id": persona["id"]}, {"persona_id": CHAT_PERSONA_ID}],
-        "current_persona_id": persona["id"]}))
+        "current_persona_id": persona["id"], "harness_enabled": enabled,
+        "tools_allowed": tools if tools is not None else ["base64_encode", "base64_decode"], "generation": {"temperature": 0.25}}))
     return session, persona, profile
 
 
@@ -141,8 +141,8 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     assert "PRIVATE_TOOL_PROMPT" not in json.dumps(response)
     assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "approve"}).json()["error"]["code"] == "RUN_WAITING_FOR_APPROVAL"
     assert client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}}).status_code == 409
-    ok(client.patch(f"/api/personas/{persona['id']}", json={"name": "Changed", "system_prompt": "CHANGED_PROMPT", "tools_allowed": [], "generation": {"temperature": 0.9}}))
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"current_persona_id": CHAT_PERSONA_ID}))
+    ok(client.patch(f"/api/personas/{persona['id']}", json={"name": "Changed", "system_prompt": "CHANGED_PROMPT"}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"current_persona_id": CHAT_PERSONA_ID, "tools_allowed": [], "generation": {"temperature": 0.9}}))
     approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
     assert approved["run"]["status"] == "WAITING_FOR_USER"
     assert [p["tool_call_id"] for p in results(approved)] == ["first", "middle"]
@@ -292,8 +292,8 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={"name": "provider", "base_url": "http://provider.test/v1"}))
             profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "provider_profile_id": provider["id"], "capabilities": {"tools": True}}))
-            persona = ok(await client.post("/api/personas", json={"name": "persona", "model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["blocking"]}))
-            session = ok(await client.post("/api/sessions", json={"current_persona_id": persona["id"], "personas": [{"persona_id": persona["id"]}]}))
+            persona = ok(await client.post("/api/personas", json={"name": "persona"}))
+            session = ok(await client.post("/api/sessions", json={"current_persona_id": persona["id"], "personas": [{"persona_id": persona["id"]}], "model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["blocking"]}))
             if entry == "chat":
                 task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "run"}))
             elif entry == "direct":
@@ -351,7 +351,7 @@ def test_phase4_migration_and_private_state(tmp_path):
     assert "harness_state_json" in migrations.inspect_schema(engine).columns["runrecord"]
     assert inspect(engine).get_check_constraints("runrecord")[0]["sqltext"] == "kind IN ('chat', 'tool')"
     signature = migrations.inspect_schema(engine)
-    init_db(engine)
+    migrations.upgrade(engine, migrations.PHASE4_REVISION)
     assert signature == migrations.inspect_schema(engine)
     assert all(path.read_text() == "preserved" for path in sentinels)
     with engine.connect() as db:
@@ -391,7 +391,7 @@ def test_settings_snapshot_and_strict_rest_json(harness_client):
     assert client.patch("/api/tools/settings", content='{"searxng_base_url":null,"searxng_base_url":"https://8.8.8.8"}', headers={"Content-Type": "application/json"}).status_code == 422
     duplicate = '{"session_id":' + json.dumps(session["session_id"]) + ',"arguments":{"query":"a","query":"b"}}'
     assert client.post("/api/tools/web_search/call", content=duplicate, headers={"Content-Type": "application/json"}).json()["error"]["code"] == "INVALID_TOOL_JSON"
-    assert client.post("/api/personas", json={"name": "bad", "tools_allowed": ["not_registered"]}).json()["error"]["code"] == "TOOL_NOT_FOUND"
+    assert client.post("/api/sessions", json={"tools_allowed": ["not_registered"]}).json()["error"]["code"] == "TOOL_NOT_FOUND"
 
 
 def test_waiting_time_is_excluded_and_approval_rounds_remain_bounded(harness_client, monkeypatch):

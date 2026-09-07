@@ -1,4 +1,3 @@
-import type { BindingMode } from './chat';
 
 export type KnowledgeSettings = {
   id: number;
@@ -59,7 +58,7 @@ export type KnowledgeSource = {
 
 export type SessionKnowledgeBindings = {
   session_id: string;
-  mode: BindingMode;
+  persona_knowledge_base_ids: string[];
   knowledge_base_ids: string[];
   effective_knowledge_base_ids: string[];
 };

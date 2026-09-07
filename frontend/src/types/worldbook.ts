@@ -1,4 +1,3 @@
-import type { BindingMode } from './chat';
 
 export type WorldbookSettings = {
   worldbook_enabled: boolean;
@@ -36,7 +35,7 @@ export type WorldbookEntry = {
 
 export type SessionWorldbooksResponse = {
   session_id: string;
-  mode: BindingMode;
+  persona_worldbook_ids: string[];
   worldbook_ids: string[];
   effective_worldbook_ids: string[];
 };

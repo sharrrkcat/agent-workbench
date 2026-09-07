@@ -156,7 +156,7 @@ class ChatRunner:
             )
             active_step_id = model_step.step_id
             if not config.model_profile_id:
-                raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session, persona or the global default.", 503)
+                raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
             profile = self.model_manager.profile(config.model_profile_id, "llm")
             resolution = {"model_profile_id": profile.id, "alias": profile.alias,
                           "provider_profile_id": profile.provider_profile_id, "model_ref": profile.model_ref}
@@ -285,7 +285,7 @@ class ChatRunner:
             "warnings": result.warnings,
             "persona_id": config.persona_id,
         }
-        if policy.include_system_prompt and config.system_prompt:
+        if config.system_prompt:
             messages.insert(0, {"role": "system", "content": config.system_prompt})
         memory = build_core_memory_context(app_settings_store=self.app_settings, source="chat")
         messages = append_system_context(messages, memory.rendered_text)

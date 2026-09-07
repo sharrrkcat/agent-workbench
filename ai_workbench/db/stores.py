@@ -1,5 +1,4 @@
 """SQLite-backed stores for the explicit core contracts."""
-
 from __future__ import annotations
 
 import json
@@ -322,11 +321,7 @@ class SqlAppSettingsStore:
         current=self.get(); patch=AppSettingsPatch.model_validate(values); updates=app_settings_patch_updates(patch)
         data=current.model_dump(); nested=updates.pop("pet",None)
         if isinstance(nested,dict):
-            pet=dict(data.get("pet") or {});
-            for key in ("position","bubble_texts"):
-                sub=nested.pop(key,None)
-                if isinstance(sub,dict): pet[key]={**(pet.get(key) or {}),**sub}
-            pet.update(nested); data["pet"]=pet
+            data["pet"]["position"].update(nested.get("position", {}))
         data.update(updates); result=AppSettings.model_validate(data)
         with DbSession(self.engine) as db:
             row=db.get(AppMetadataRecord,"app_settings")
@@ -538,7 +533,7 @@ def _session(row: SessionRecord, db: DbSession) -> Session:
     values = row.model_dump()
     for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
         encoded = values.pop(key + "_json")
-        values[key] = json.loads(encoded) if encoded is not None else None
+        values[key] = json.loads(encoded)
     members = db.exec(select(SessionPersonaRecord).where(SessionPersonaRecord.session_id == row.session_id).order_by(SessionPersonaRecord.sort_order)).all()
     values["personas"] = [SessionPersona(persona_id=m.persona_id, enabled=m.enabled) for m in members]
     return Session.model_validate(values)
@@ -548,7 +543,7 @@ def _session_record_values(session: Session) -> dict:
     values = session.model_dump(exclude={"personas"})
     for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
         value = values.pop(key)
-        values[key + "_json"] = _dump(value) if value is not None else None
+        values[key + "_json"] = _dump(value)
     return values
 def _message(row: MessageRecord) -> MessageSchema:
     return MessageSchema(message_id=row.message_id,session_id=row.session_id,role=row.role,speaker_type=row.speaker_type,speaker_id=row.speaker_id,speaker_name=row.speaker_name,origin=row.origin,content_version=row.content_version,parts=_load(row.parts_json,[]),run_id=row.run_id,parent_message_id=row.parent_message_id,metadata=_load(row.metadata_json,{}),created_at=row.created_at)

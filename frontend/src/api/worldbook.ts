@@ -1,5 +1,4 @@
 import type { SessionWorldbooksResponse, Worldbook, WorldbookEntry, WorldbookSettings } from '../types/worldbook';
-import type { BindingMode } from '../types/chat';
 import { request } from './http';
 
 export const worldbookApi = {
@@ -32,9 +31,9 @@ export const worldbookApi = {
     }),
   getSessionWorldbooks: (sessionId: string) =>
     request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`),
-  updateSessionWorldbooks: (sessionId: string, mode: BindingMode, ids?: string[]) =>
+  updateSessionWorldbooks: (sessionId: string, ids: string[]) =>
     request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`, {
       method: 'PATCH',
-      body: JSON.stringify({ mode, worldbook_ids: ids }),
+      body: JSON.stringify({ worldbook_ids: ids }),
     }),
 };

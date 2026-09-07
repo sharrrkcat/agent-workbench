@@ -1,7 +1,11 @@
 # Harness and tools contract
 
-Harness execution is opt-in through the resolved Persona/session
-`harness_enabled` value and `tools_allowed` list. Ordinary chat sends no tools
+Harness execution is opt-in through the session's non-null `harness_enabled`
+boolean (default false) and `tools_allowed` list. Persona owns neither field.
+New sessions default to all registered tools; explicit [] disables every tool.
+Changing Harness enablement preserves the list, and new registry entries do
+not rewrite existing lists. The session UI uses catalog-backed tool switches.
+Ordinary chat sends no tools
 and rejects unexpected calls with `UNEXPECTED_TOOL_CALL`. An enabled harness
 with an empty allowlist uses ordinary chat. A model lacking native tool support
 returns `UNSUPPORTED_CAPABILITY`; there is no text-command fallback.
@@ -12,7 +16,7 @@ The registry contains only explicitly registered built-in Python tools. It
 does not load manifests, plugin directories or dynamic modules. Each ToolSpec
 has a lower snake_case name (at most 64 characters), description, Draft 2020-12
 object schema, handler, risk, requires_approval and direct_callable.
-Persona/session allowlists are unique and reference registered names.
+Session allowlists are unique and reference registered names.
 
 Arguments and results must be finite JSON data. Duplicate object keys in
 model arguments, multi-parameter slash calls and tool REST bodies are rejected.
@@ -70,7 +74,7 @@ Every attempted call has a tool step, including validation failures.
 A sensitive call creates an approval step and sets WAITING_FOR_USER and the
 session's waiting_run_id. Private harness_state_json preserves the original
 input, transcript, ordered remaining calls, approval ID, round count, settings
-and active time. config_snapshot_json preserves the Persona configuration.
+and active time. config_snapshot_json preserves the resolved chat configuration.
 Neither private state appears in public run metadata, responses or events.
 
 Only the approval endpoint resumes a waiting run. Approval executes the original

@@ -24,7 +24,9 @@ PHASE2B_REVISION = "0004_phase2b_runtimes"
 PHASE3_REVISION = "0005_phase3_personas"
 PHASE4_REVISION = "0006_phase4_tools"
 PHASE5_REVISION = "0007_phase5_cleanup"
-HEAD_REVISION = PHASE5_REVISION
+CHAT_CONFIGURATION_REVISION = "0008_chat_configuration"
+PET_FOUNDATION_REVISION = "0009_pet_foundation"
+HEAD_REVISION = PET_FOUNDATION_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

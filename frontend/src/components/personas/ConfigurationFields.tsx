@@ -1,12 +1,11 @@
-import { ArrowDown, ArrowUp, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ShieldCheck, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
 import type { ContextPolicy, GenerationParameters } from '../../types/chat';
 import type { ModelProfile } from '../../types/models';
+import type { HarnessTool } from '../../types/tools';
 import { API_BASE_URL } from '../../api/url';
 import { resolveAttachmentUrlFromBase } from '../../api/url';
-
-export const defaultPolicy = (): ContextPolicy => ({ mode: 'session', max_messages: null, max_chars: null, include_system_prompt: true, include_attachments: 'explicit' });
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="settings-field"><span>{label}</span>{children}</label>;
@@ -20,14 +19,24 @@ export function PersonaAvatar({ name, attachmentId }: { name: string; attachment
   return <span className="persona-avatar">{attachmentId ? <img src={resolveAttachmentUrlFromBase(API_BASE_URL, `local://attachments/${attachmentId}`)} alt={name} /> : <UserRound size={19} aria-hidden="true" />}</span>;
 }
 
-export function ModelField({ profiles, value, onChange, inheritLabel }: { profiles: ModelProfile[]; value: string | null; onChange: (id: string | null) => void; inheritLabel: string }) {
+type ModelSelectProps = { profiles: ModelProfile[]; value: string | null; onChange: (id: string) => void };
+
+export function ModelSelect({ profiles, value, onChange, disabled, className }: ModelSelectProps & { disabled?: boolean; className?: string }) {
   const { t } = useTranslation('personas');
   const options = profiles.filter((p) => p.kind === 'llm');
-  return <Field label={t('model')}><select value={value || ''} onChange={(e) => onChange(e.target.value || null)}>
-    <option value="">{inheritLabel}</option>
+  const selected = options.find((p) => p.id === value);
+  const available = options.some((p) => p.enabled);
+  const emptyLabel = t(available ? 'selectModel' : 'noModels');
+  return <select className={className} aria-label={t('model')} title={selected?.name || (value ? t('unavailable') : emptyLabel)} value={value || ''} disabled={disabled || !available} onChange={(e) => onChange(e.target.value)}>
+    {!value ? <option value="" disabled>{emptyLabel}</option> : null}
     {options.map((p) => <option key={p.id} value={p.id} disabled={!p.enabled}>{p.name}{p.enabled ? '' : ` (${t('disabled')})`}</option>)}
-    {value && !options.some((p) => p.id === value) ? <option value={value} disabled>{t('unavailable')}</option> : null}
-  </select></Field>;
+    {value && !selected ? <option value={value} disabled>{t('unavailable')}</option> : null}
+  </select>;
+}
+
+export function ModelField(props: ModelSelectProps) {
+  const { t } = useTranslation('personas');
+  return <Field label={t('model')}><ModelSelect {...props} /></Field>;
 }
 
 export function ContextFields({ value, onChange }: { value: ContextPolicy; onChange: (value: ContextPolicy) => void }) {
@@ -40,7 +49,6 @@ export function ContextFields({ value, onChange }: { value: ContextPolicy; onCha
       <NumberField label={t('maxMessages')} value={value.max_messages} min={1} max={10000} placeholder={value.mode === 'recent_messages' ? '20' : t('unlimited')} onChange={(max_messages) => onChange({ ...value, max_messages })} />
       <NumberField label={t('maxChars')} value={value.max_chars} min={1} max={1000000} placeholder={t('unlimited')} onChange={(max_chars) => onChange({ ...value, max_chars })} />
     </div>
-    <Check label={t('includePrompt')} checked={value.include_system_prompt} onChange={(include_system_prompt) => onChange({ ...value, include_system_prompt })} />
     <Check label={t('includeAttachments')} checked={value.include_attachments === 'explicit'} onChange={(enabled) => onChange({ ...value, include_attachments: enabled ? 'explicit' : 'none' })} />
   </>;
 }
@@ -59,9 +67,19 @@ export function GenerationFields({ value, onChange }: { value: GenerationParamet
   </div>;
 }
 
-export function ToolsField({ value, onChange }: { value: string[]; onChange: (values: string[]) => void }) {
-  const { t } = useTranslation('personas');
-  return <Field label={t('tools')}><textarea rows={3} value={value.join('\n')} onChange={(e) => onChange(e.target.value ? e.target.value.split('\n') : [])} /></Field>;
+export function ToolsField({ tools, value, onChange }: { tools: HarnessTool[]; value: string[]; onChange: (values: string[]) => void }) {
+  const { t } = useTranslation('settings');
+  const { t: p } = useTranslation('personas');
+  return <div className="context-binding-list" role="group" aria-label={p('tools')}>
+    {!tools.length ? <p className="model-empty">{p('noTools')}</p> : null}
+    {tools.map((tool) => <div className="context-binding-row" key={tool.name}>
+      <Check label={tool.name} checked={value.includes(tool.name)} onChange={(enabled) => onChange(enabled ? tools.filter((item) => item.name === tool.name || value.includes(item.name)).map((item) => item.name) : value.filter((name) => name !== tool.name))} />
+      <span className="tool-permission-detail">
+        <span>{t('toolRisk.' + tool.risk)}</span>
+        {tool.requires_approval ? <span title={t('approvalRequired')} aria-label={t('approvalRequired')}><ShieldCheck size={15} /></span> : null}
+      </span>
+    </div>)}
+  </div>;
 }
 
 export function Check({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {

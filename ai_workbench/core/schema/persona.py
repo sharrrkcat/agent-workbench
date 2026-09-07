@@ -13,18 +13,12 @@ from ai_workbench.core.time import isoformat_utc, utc_now
 
 CHAT_PERSONA_ID = "00000000-0000-4000-8000-000000000001"
 TRANSLATE_PERSONA_ID = "00000000-0000-4000-8000-000000000002"
-BindingMode = Literal["inherit", "override"]
 
 
 class PersonaInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
     avatar_attachment_id: str | None = None
     system_prompt: str = Field(default="", max_length=100000)
-    model_profile_id: str | None = None
-    context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
-    generation: GenerationParameters = Field(default_factory=GenerationParameters)
-    harness_enabled: StrictBool = False
-    tools_allowed: list[str] = Field(default_factory=list, max_length=128)
 
     @field_validator("name")
     @classmethod
@@ -32,15 +26,6 @@ class PersonaInput(StrictModel):
         if not value.strip():
             raise ValueError("Persona name must not be empty")
         return value.strip()
-
-    @field_validator("tools_allowed")
-    @classmethod
-    def tool_names(cls, values: list[str]) -> list[str]:
-        if any(not v.strip() or len(v) > 128 or v != v.strip() for v in values):
-            raise ValueError("Tool names must be nonempty and at most 128 characters")
-        if len(values) != len(set(values)):
-            raise ValueError("Tool names must be unique")
-        return values
 
 
 class Persona(PersonaInput):
@@ -67,7 +52,7 @@ class ResolvedChatConfig(StrictModel):
     group_transcript_instruction: str
     context_policy: ContextPolicy
     model_profile_id: str | None
-    model_source: Literal["session", "persona", "global"]
+    model_source: Literal["session"]
     generation: GenerationParameters
     harness_enabled: bool
     tools_allowed: list[str]
@@ -82,6 +67,5 @@ def seed_personas() -> list[Persona]:
     return [
         Persona(id=CHAT_PERSONA_ID, name="Chat", system_prompt="You are a helpful assistant."),
         Persona(id=TRANSLATE_PERSONA_ID, name="Translate",
-                system_prompt="Translate the user's text accurately. Return only the translation.",
-                context_policy=ContextPolicy(mode="current_message")),
+                system_prompt="Translate the user's text accurately. Return only the translation."),
     ]

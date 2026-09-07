@@ -22,7 +22,6 @@ from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore, ModelSettingsStore
 from ai_workbench.core.network_policy import NetworkPolicy
-from ai_workbench.core.pet_service import PetService
 from ai_workbench.core.runtime import ActiveRunRegistry, WorkbenchRuntime
 from ai_workbench.core.runtime_resources import RuntimeResourcesService
 from ai_workbench.core.settings import AppSettingsStore
@@ -57,7 +56,6 @@ class RuntimeState:
     knowledge: Any
     knowledge_service: KnowledgeService
     worldbooks: Any
-    pet_service: PetService
     utility_llm: UtilityLLMService
     network_policy: NetworkPolicy
     tool_registry: ToolRegistry
@@ -128,7 +126,6 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         model_manager=manager, model_profiles=profiles, provider_profiles=providers,
         model_settings=model_settings, app_settings=app_settings, knowledge=knowledge,
         knowledge_service=knowledge_service, worldbooks=worldbooks,
-        pet_service=PetService(repo_root=repo_root, app_settings_store=app_settings),
         utility_llm=utility_llm, network_policy=network_policy,
         runtime_resources=RuntimeResourcesService(), repo_root=repo_root,
         runtime_supervisor=supervisor,

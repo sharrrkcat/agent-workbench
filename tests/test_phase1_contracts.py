@@ -16,7 +16,6 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.retrieval import RetrievalCandidate, rrf_merge, search_knowledge
 from ai_workbench.core.network_policy import NetworkPolicy, NetworkPolicyError
-from ai_workbench.core.pet_service import PetService
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema
 from ai_workbench.core.settings import AppSettingsStore
@@ -44,7 +43,7 @@ def create_session(client: TestClient) -> dict[str, Any]:
 def test_persona_seeds_are_database_records_with_strict_input() -> None:
     catalog = PersonaStore()
     assert [p.name for p in catalog.list()] == ["Chat", "Translate"]
-    assert catalog.get(CHAT_PERSONA_ID).context_policy.mode == "session"
+    assert catalog.get(CHAT_PERSONA_ID).system_prompt == "You are a helpful assistant."
     with pytest.raises(KeyError):
         catalog.get("unknown")
     with pytest.raises(ValidationError):
@@ -135,18 +134,16 @@ def test_utility_service_error_codes_and_title_failure_are_non_blocking(tmp_path
     assert asyncio.run(state.utility_llm.generate_title("title me")) is None
 
 
-def test_pet_settings_are_nested_and_deep_merged(tmp_path: Path) -> None:
+def test_pet_position_settings_are_nested_and_deep_merged() -> None:
     store = AppSettingsStore()
-    service = PetService(repo_root=tmp_path, app_settings_store=store)
 
-    service.update_settings({"position": {"mode": "custom", "x": 100}, "bubble_texts": {"done": "Ready"}})
+    store.patch({"pet": {"position": {"mode": "custom", "x": 100}}})
+    store.patch({"pet": {"position": {"y": 200}}})
     settings = store.get().pet
 
     assert settings.position.mode == "custom"
     assert settings.position.x == 100
-    assert settings.position.y is None
-    assert settings.bubble_texts.done == "Ready"
-    assert settings.bubble_texts.waiting == "等你一下"
+    assert settings.position.y == 200
 
 
 def test_network_policy_rejects_unsafe_urls_and_limits_redirects(monkeypatch: pytest.MonkeyPatch) -> None:

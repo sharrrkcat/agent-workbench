@@ -114,7 +114,7 @@ class WorkbenchRuntime:
             if not spec.direct_callable:
                 raise ToolExecutionError("TOOL_NOT_DIRECT_CALLABLE", "Tool cannot be called directly.")
             if name not in config.tools_allowed:
-                raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is not allowed for this persona/session.")
+                raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is disabled for this session.")
             registry.validate_arguments(name, arguments)
         except ToolExecutionError as exc:
             raise ChatError(exc.code, exc.message, 404 if exc.code == "TOOL_NOT_FOUND" else 400) from exc

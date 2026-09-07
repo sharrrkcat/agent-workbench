@@ -5,8 +5,9 @@ Read [chat/context](../contracts/chat-context.md) and
 
 Likely sources are core/memory_context.py, worldbook.py, worldbook_context.py,
 context.py, chat_service.py, settings.py, API worldbook routes and SQLite stores.
-Keep matching deterministic and bounded. Resolve Persona defaults/session
-overrides before invoking context services; empty override means no resources.
+Keep matching deterministic and bounded. Resolve the current speaker's Persona
+bindings plus independent session additions before invoking context services.
+Deduplicate only the effective ids; empty additions never disable Persona resources.
 Match-test is read-only. Metadata stores compact diagnostics, not source bodies.
 
 General owns Core Memory. Phase 5 resets that disposable setting along with

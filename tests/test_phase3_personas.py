@@ -17,7 +17,7 @@ from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore
 from ai_workbench.db import migrations
-from ai_workbench.db.database import get_engine, init_db
+from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import MessageRecord
 from tests.model_fixtures import MockOpenAI, configure_model
 
@@ -66,7 +66,7 @@ def test_migration_seeds_and_discards_only_chat_rows(tmp_path):
         path.parent.mkdir(parents=True)
         path.write_bytes(path.name.encode())
     before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-    init_db(engine)
+    migrations.upgrade(engine, migrations.PHASE3_REVISION)
     with engine.connect() as db:
         seeds = db.execute(text("SELECT id,name,context_policy_json FROM personas ORDER BY name")).all()
         assert [row.name for row in seeds] == ["Chat", "Translate"]
@@ -78,7 +78,7 @@ def test_migration_seeds_and_discards_only_chat_rows(tmp_path):
         assert db.exec_driver_sql("PRAGMA foreign_key_check").all() == []
     assert {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in files} == before
     schema = migrations.inspect_schema(engine).as_dict()
-    init_db(engine)
+    migrations.upgrade(engine, migrations.PHASE3_REVISION)
     assert migrations.inspect_schema(engine).as_dict() == schema
     assert "target" not in schema["columns"]["runrecord"]
     assert "config_snapshot_json" in schema["columns"]["runrecord"]
@@ -127,38 +127,40 @@ def test_persona_crud_membership_and_strict_schemas(chat_client):
 def test_model_generation_and_context_precedence(chat_client):
     client, upstream = chat_client
     global_model = configure_model(client, alias="global", parameters={"temperature": 0.1}, capabilities={"tools": True})
-    role_model = configure_model(client, alias="role", model_ref="other", parameters={"temperature": 0.2, "top_p": 0.7}, capabilities={"tools": True})
+    selected_model = configure_model(client, alias="selected", model_ref="other", parameters={"temperature": 0.2, "top_p": 0.7}, capabilities={"tools": True})
     override_model = configure_model(client, alias="override", model_ref="fake", parameters={"temperature": 0.3}, capabilities={"tools": True})
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": global_model["id"]}))
-    role = persona(client, model_profile_id=role_model["id"], generation={"temperature": 0.6},
-                   context_policy={"mode": "current_message"}, harness_enabled=True, tools_allowed=["read_file"])
-    session = session_for(client, role["id"])
+    role = persona(client)
+    session = session_for(client, role["id"], model_profile_id=selected_model["id"], generation={"temperature": 0.6},
+                          context_policy={"mode": "current_message"}, harness_enabled=True, tools_allowed=["read_file"])
     response = send(client, session)
     assert response["run"]["persona_id"] == role["id"]
     assert upstream.calls[-1]["model"] == "other"
     assert upstream.calls[-1]["temperature"] == 0.6 and upstream.calls[-1]["top_p"] == 0.7
     assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["read_file"]
     assert response["session"]["effective"]["harness_enabled"] is True
+    assert response["session"]["effective"]["model_source"] == "session"
     assert response["messages"][-1]["speaker_name"] == "Role"
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(response)
     state = client.app.state.runtime_state
     assert state.runs.get_config_snapshot(response["run"]["run_id"])["system_prompt"] == "PRIVATE_PERSONA_PROMPT"
     events = ok(client.get(f"/api/runs/{response['run']['run_id']}/events"))
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(events)
-    assert client.delete(f"/api/models/profiles/{role_model['id']}").status_code == 409
+    assert client.delete(f"/api/models/profiles/{selected_model['id']}").status_code == 409
     path = f"/api/sessions/{session['session_id']}"
-    ok(client.patch(path, json={"model_profile_id": override_model["id"], "generation": {"temperature": 0.9}, "context_policy": {"mode": "current_message", "include_system_prompt": False}}))
+    ok(client.patch(path, json={"model_profile_id": override_model["id"], "generation": {"temperature": 0.9}, "context_policy": {"mode": "current_message"}}))
     assert send(client, session, "second")["success"]
     assert upstream.calls[-1]["model"] == "fake" and upstream.calls[-1]["temperature"] == 0.9
-    assert upstream.calls[-1]["messages"] == [{"role": "user", "content": "second"}]
+    assert upstream.calls[-1]["messages"] == [{"role": "system", "content": "PRIVATE_PERSONA_PROMPT"}, {"role": "user", "content": "second"}]
     ok(client.patch(path, json={"generation": {}}))
     send(client, session, "third")
     assert upstream.calls[-1]["temperature"] == 0.3
-    ok(client.patch(path, json={"model_profile_id": None, "generation": None, "context_policy": None}))
-    ok(client.patch(f"/api/personas/{role['id']}", json={"model_profile_id": None, "generation": {}}))
+    restored = ok(client.patch(path, json={"model_profile_id": global_model["id"], "generation": {}, "context_policy": {"mode": "session"}}))
+    assert restored["effective"]["model_source"] == "session"
     send(client, session, "fourth")
     assert upstream.calls[-1]["model"] == "fake" and upstream.calls[-1]["temperature"] == 0.1
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": None}))
+    ok(client.patch(path, json={"model_profile_id": None}))
     assert send(client, session, "missing")["run"]["error_code"] == "MODEL_NOT_CONFIGURED"
 
 
@@ -196,7 +198,7 @@ def test_group_speakers_live_edits_retry_and_selected_context(chat_client):
     assert "second input" not in json.dumps(upstream.calls[-1])
 
 
-def test_binding_inheritance_override_empty_and_search_preview(chat_client):
+def test_persona_bindings_survive_empty_session_additions_and_search_preview(chat_client):
     client, upstream = chat_client
     configure_model(client)
     embedding = configure_model(client, kind="embedding", alias="embed")
@@ -218,13 +220,11 @@ def test_binding_inheritance_override_empty_and_search_preview(chat_client):
     assert client.delete(f"/api/worldbooks/{book['id']}").status_code == 409
     for suffix, key in (("knowledge-bases", "knowledge_base_ids"), ("worldbooks", "worldbook_ids")):
         assert client.patch(path + "/" + suffix, json={key: ["missing"]}).status_code == 404
-        ok(client.patch(path + "/" + suffix, json={key: [], "mode": "override"}))
+        ok(client.patch(path + "/" + suffix, json={key: []}))
     cleared = send(client, session, "artifact")
-    assert cleared["session"]["effective"]["knowledge_base_ids"] == []
-    assert "WORLD_FACT" not in json.dumps(upstream.calls[-1]) and "artifact is green" not in json.dumps(upstream.calls[-1])
-    assert ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))["results"] == []
-    for suffix in ("knowledge-bases", "worldbooks"):
-        ok(client.patch(path + "/" + suffix, json={"mode": "inherit"}))
+    assert cleared["session"]["effective"]["knowledge_base_ids"] == [base["id"]]
+    assert "WORLD_FACT" in json.dumps(upstream.calls[-1]) and "artifact is green" in json.dumps(upstream.calls[-1])
+    assert ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))["results"]
     ok(client.patch(path, json={"current_persona_id": CHAT_PERSONA_ID}))
     assert ok(client.get(path))["effective"]["worldbook_ids"] == []
     ok(client.patch(path, json={"current_persona_id": role["id"]}))
@@ -257,30 +257,31 @@ def test_sql_restart_preserves_persona_bindings_history_and_snapshot(tmp_path):
     upstream = MockOpenAI()
     with TestClient(create_app(root=tmp_path, database_url=url, adapter_factory=upstream.factory)) as client:
         configure_model(client)
-        role = persona(client, "Persistent", generation={"seed": 123})
-        session = session_for(client, role["id"], CHAT_PERSONA_ID)
+        role = persona(client, "Persistent")
+        session = session_for(client, role["id"], CHAT_PERSONA_ID, generation={"seed": 123})
         run = send(client, session)["run"]
         ok(client.patch(f"/api/personas/{CHAT_PERSONA_ID}", json={"name": "Edited default"}))
         ok(client.delete(f"/api/personas/{TRANSLATE_PERSONA_ID}"))
     with TestClient(create_app(root=tmp_path, database_url=url, adapter_factory=upstream.factory)) as client:
-        assert ok(client.get(f"/api/personas/{role['id']}"))["generation"]["seed"] == 123
+        assert ok(client.get(f"/api/personas/{role['id']}"))["name"] == "Persistent"
         assert ok(client.get(f"/api/personas/{CHAT_PERSONA_ID}"))["name"] == "Edited default"
         assert client.get(f"/api/personas/{TRANSLATE_PERSONA_ID}").status_code == 404
         loaded = ok(client.get(f"/api/sessions/{session['session_id']}"))
+        assert loaded["generation"]["seed"] == 123
         assert loaded["current_persona_id"] == role["id"] and len(loaded["personas"]) == 2
         assert client.app.state.runtime_state.runs.get_config_snapshot(run["run_id"])["system_prompt"] == "PRIVATE_PERSONA_PROMPT"
         history = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))
         assert history[-1]["speaker_name"] == "Persistent"
 
 
-def test_disabled_or_wrong_kind_persona_model_never_substitutes(chat_client):
+def test_disabled_or_wrong_kind_session_model_never_substitutes(chat_client):
     client, upstream = chat_client
     model = configure_model(client)
     embedding = configure_model(client, kind="embedding", alias="embedding")
-    bad = client.post("/api/personas", json={"name": "Wrong kind", "model_profile_id": embedding["id"]})
+    bad = client.post("/api/sessions", json={"model_profile_id": embedding["id"]})
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "MODEL_KIND_MISMATCH"
-    role = persona(client, model_profile_id=model["id"])
-    session = session_for(client, role["id"])
+    role = persona(client)
+    session = session_for(client, role["id"], model_profile_id=model["id"])
     ok(client.patch(f"/api/models/profiles/{model['id']}", json={"enabled": False}))
     result = send(client, session)
     assert not result["success"] and result["run"]["error_code"] == "MODEL_UNAVAILABLE"
@@ -290,8 +291,8 @@ def test_disabled_or_wrong_kind_persona_model_never_substitutes(chat_client):
 def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     client, upstream = chat_client
     configure_model(client, capabilities={"tools": True, "streaming": True})
-    role = persona(client, "Waiting persona", context_policy={"mode": "current_message"}, generation={"temperature": 0.25}, harness_enabled=True, tools_allowed=["read_file"])
-    session = session_for(client, role["id"], CHAT_PERSONA_ID)
+    role = persona(client, "Waiting persona")
+    session = session_for(client, role["id"], CHAT_PERSONA_ID, context_policy={"mode": "current_message"}, generation={"temperature": 0.25}, harness_enabled=True, tools_allowed=["read_file"])
     state = client.app.state.runtime_state
     path = state.repo_root / "data/knowledge/note.txt"
     path.parent.mkdir(parents=True)
@@ -304,8 +305,8 @@ def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     run_id = waiting["run"]["run_id"]
     assert waiting["run"]["status"] == "WAITING_FOR_USER"
     upstream.stream_events = None
-    ok(client.patch(f"/api/personas/{role['id']}", json={"name": "Later name", "system_prompt": "LATER_PROMPT", "generation": {"temperature": 0.75}}))
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"current_persona_id": CHAT_PERSONA_ID}))
+    ok(client.patch(f"/api/personas/{role['id']}", json={"name": "Later name", "system_prompt": "LATER_PROMPT"}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"current_persona_id": CHAT_PERSONA_ID, "generation": {"temperature": 0.75}, "tools_allowed": [], "harness_enabled": False}))
     result = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
     assert result["run"]["status"] == "DONE" and result["run"]["run_id"] == run_id
     assert result["session"]["waiting_run_id"] is None
@@ -317,8 +318,8 @@ def test_explicit_approval_retains_saved_persona_configuration(chat_client):
 def test_disabled_harness_never_authorizes_unexpected_tools(chat_client):
     client, upstream = chat_client
     configure_model(client, capabilities={"streaming": True, "tools": True})
-    role = persona(client, harness_enabled=False, tools_allowed=["read_file"])
-    session = session_for(client, role["id"])
+    role = persona(client)
+    session = session_for(client, role["id"], harness_enabled=False, tools_allowed=["read_file"])
     upstream.stream_events = [
         {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]}, "finish_reason": None}]},
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
@@ -362,8 +363,8 @@ def test_running_snapshot_survives_persona_edit_and_speaker_switch(tmp_path):
             provider = ok(await client.post("/api/models/providers", json={"name": "provider", "base_url": "http://provider.test/v1"}))
             model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "provider_profile_id": provider["id"], "capabilities": {"streaming": True, "tools": True}, "parameters": {"temperature": 0.2}}))
             ok(await client.patch("/api/models/settings", json={"default_model_profile_id": model["id"]}))
-            before = ok(await client.post("/api/personas", json={"name": "Before", "system_prompt": "BEFORE_PROMPT", "harness_enabled": True, "tools_allowed": ["read_file"]}))
-            session = ok(await client.post("/api/sessions", json={"current_persona_id": before["id"], "personas": [{"persona_id": before["id"]}, {"persona_id": CHAT_PERSONA_ID}], "context_mode": "group_transcript"}))
+            before = ok(await client.post("/api/personas", json={"name": "Before", "system_prompt": "BEFORE_PROMPT"}))
+            session = ok(await client.post("/api/sessions", json={"current_persona_id": before["id"], "personas": [{"persona_id": before["id"]}, {"persona_id": CHAT_PERSONA_ID}], "context_mode": "group_transcript", "harness_enabled": True, "tools_allowed": ["read_file"]}))
             path = f"/api/sessions/{session['session_id']}"
             request = asyncio.create_task(client.post(path + "/messages", json={"content": "first"}))
             await asyncio.wait_for(entered.wait(), 5)
@@ -374,7 +375,7 @@ def test_running_snapshot_survives_persona_edit_and_speaker_switch(tmp_path):
                 assert started.payload["message"]["speaker_name"] == "Before"
                 assert (await client.delete(path)).status_code == 409
                 assert (await client.patch(f"/api/models/profiles/{model['id']}", json={"parameters": {"temperature": 0.8}})).status_code == 409
-                ok(await client.patch(f"/api/personas/{before['id']}", json={"name": "After", "system_prompt": "AFTER_PROMPT", "generation": {"temperature": 0.9}}))
+                ok(await client.patch(f"/api/personas/{before['id']}", json={"name": "After", "system_prompt": "AFTER_PROMPT"}))
                 ok(await client.patch(path, json={"current_persona_id": CHAT_PERSONA_ID, "generation": {"temperature": 0.7}}))
                 release.set()
                 response = ok(await asyncio.wait_for(request, 5))
@@ -389,10 +390,10 @@ def test_running_snapshot_survives_persona_edit_and_speaker_switch(tmp_path):
             assert upstream.calls[-1]["temperature"] == 0.2
             assert "BEFORE_PROMPT" in json.dumps(upstream.calls[-1]) and "AFTER_PROMPT" not in json.dumps(upstream.calls[-1])
             assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["read_file"]
-            ok(await client.patch(path, json={"current_persona_id": before["id"], "generation": None}))
+            ok(await client.patch(path, json={"current_persona_id": before["id"], "generation": {}}))
             later = ok(await client.post(path + "/messages", json={"content": "second"}))
             assert later["messages"][-1]["speaker_name"] == "After"
-            assert upstream.calls[-1]["temperature"] == 0.9
+            assert upstream.calls[-1]["temperature"] == 0.2
 
             entered.clear()
             release.clear()

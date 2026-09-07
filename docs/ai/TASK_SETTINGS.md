@@ -7,18 +7,19 @@ Read [settings](../contracts/settings.md) and the domain owner:
 core/settings.py owns strict AppSettings and nested Pet settings. Models,
 Knowledge, Worldbook and Harness have explicit separate schemas/stores and APIs.
 Unknown fields are 422; removed display fields have no compatibility path.
-0007 resets only the disposable app_settings object, not model files or other
-settings objects. Future persistence changes require Alembic.
+0009 resets only the disposable app_settings object, not model files or other
+settings objects. Pet settings now contain only position. Future persistence changes require Alembic.
 
-The frontend retains General, Models, Personas, Knowledge, Worldbook, Tools and
-Pet. Domain panels under components/settings own their forms and use independent
+The frontend retains General, Models, Personas, Knowledge, Worldbook and Tools.
+Domain panels under components/settings own their forms and use independent
 shared fields. SettingsPage only coordinates navigation and shared feedback.
 Models has five kinds and four tabs; runtime settings download dependencies,
 never weights. Keep secret omission/clearing and reference guards intact.
 
-Title selection is auxiliary-only. Persona/session null overrides inherit and
-explicit empty binding/tool lists mean empty. Pending approvals retain the
-original Persona and search-service snapshots. Pet position/bubble PATCH is
+Title selection is auxiliary-only. Sessions own all execution configuration;
+Personas own prompts and bindings. Empty additions preserve Persona resources;
+an empty tool list disables every tool. Pending approvals retain the
+original chat and search-service snapshots. Pet position PATCH is
 deep-merged through AppSettingsStore.
 
 Run affected schema/API/store tests, all backend tests and frontend tests/build.

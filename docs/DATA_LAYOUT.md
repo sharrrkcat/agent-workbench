@@ -12,6 +12,7 @@ are never removed by schema revisions.
 | data/runtimes/ | Supervisor-owned pinned binaries, Python interpreters/venvs, caches/staging |
 | data/logs/ | Operational diagnostics and inference/runtime logs |
 | data/assets/ | Existing local files, including retired font assets; untouched by cleanup |
+| data/pet/ | Retired Pet packages; untouched and no longer scanned or served |
 | data/backups/ | Optional operator backups; ignored by Git |
 | frontend/dist/ | Generated frontend production build |
 | build/ | Generated portable package and optional ZIP; ignored by Git |
@@ -22,7 +23,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0007_phase5_cleanup`; there are 24 current business tables.
+Alembic head is `0009_pet_foundation`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -34,6 +35,18 @@ This resets General, Core Memory and Pet settings to current defaults.
 Models, harness settings, sessions, messages, pending approvals, Knowledge,
 Worldbook and other records are preserved. No old settings JSON is copied or
 converted. Repeating upgrade at head leaves newly saved settings intact.
+
+Revision 0008 recreates Persona/session tables with session-owned configuration.
+It discards disposable Personas and their bindings, session members/additions,
+messages, runs, steps, events and private snapshots, then seeds reduced Chat and
+Translate records. Knowledge, Worldbook, models, runtimes and settings are
+preserved. No filesystem operations or record conversions are performed.
+
+Revision 0009 deletes only appmetadatarecord's app_settings row to remove the
+old Pet presentation schema. General, Core Memory and Pet position reset to
+defaults. Other settings and business records, including new sessions and runs,
+survive. Repeated upgrade preserves subsequently saved settings. Existing Pet
+assets, models, runtimes, attachments and all other file directories are untouched.
 
 The implementation validates protected file paths, sizes and modification times
 around the actual database upgrade. Automated tests use temporary roots;

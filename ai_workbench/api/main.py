@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.routing import APIRoute
+from starlette.routing import Match
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -136,10 +138,10 @@ def configure_frontend_routes(app: FastAPI, frontend_dist: str | Path | None = N
             status_code=503,
         )
 
-    @app.get("/{path:path}", include_in_schema=False)
+    frontend_router = APIRouter(route_class=FrontendRoute)
+
+    @frontend_router.get("/{path:path}", include_in_schema=False)
     def frontend_fallback(path: str):
-        if _is_backend_path(path):
-            raise HTTPException(status_code=404, detail="Not found")
         if not index_html.is_file():
             return PlainTextResponse(
                 "frontend build not found; please run: cd frontend && npm run build",
@@ -153,6 +155,16 @@ def configure_frontend_routes(app: FastAPI, frontend_dist: str | Path | None = N
         if requested.is_file():
             return FileResponse(requested)
         return FileResponse(index_html)
+
+    app.include_router(frontend_router)
+
+
+class FrontendRoute(APIRoute):
+    def matches(self, scope):
+        # The SPA must not turn removed backend endpoints into GET-only routes.
+        if scope["type"] == "http" and _is_backend_path(scope.get("path", "").lstrip("/")):
+            return Match.NONE, {}
+        return super().matches(scope)
 
 
 def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
@@ -203,4 +215,3 @@ class LazyApp:
 
 
 app = LazyApp()
-

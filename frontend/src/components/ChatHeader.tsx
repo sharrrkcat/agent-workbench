@@ -5,7 +5,7 @@ import { useModelsStore } from '../store/useModelsStore';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { SettingsSection } from './settings/navigation';
 import { SessionSettingsDialog } from './personas/SessionSettingsDialog';
-import { PersonaAvatar } from './personas/ConfigurationFields';
+import { ModelSelect, PersonaAvatar } from './personas/ConfigurationFields';
 
 export function ChatHeader({ onOpenSettings, onToggleSidebar }: { onOpenSettings: (section?: SettingsSection) => void; onToggleSidebar: () => void }) {
   const { t } = useTranslation('personas');
@@ -21,7 +21,7 @@ export function ChatHeader({ onOpenSettings, onToggleSidebar }: { onOpenSettings
     </div>
     <div className="topbar-actions">
       {session ? <div className="speaker-control"><PersonaAvatar name={session.effective.persona_name} attachmentId={session.effective.avatar_attachment_id} /><select aria-label={t('currentSpeaker')} value={session.current_persona_id} onChange={(e) => void updateSession({ current_persona_id: e.target.value })}>{session.personas.filter((p) => p.enabled).map((p) => <option key={p.persona_id} value={p.persona_id}>{p.name}</option>)}</select></div> : null}
-      <select className="chat-model-select" aria-label={t('model')} title={profiles.find((p) => p.id === session?.effective.model_profile_id)?.name || t('unavailable')} value={session?.model_profile_id || ''} disabled={!session} onChange={(e) => void updateSession({ model_profile_id: e.target.value || null })}><option value="">{t('inheritPersona')}</option>{profiles.filter((p) => p.kind === 'llm').map((p) => <option key={p.id} value={p.id} disabled={!p.enabled}>{p.name}</option>)}</select>
+      <ModelSelect className="chat-model-select" profiles={profiles} value={session?.model_profile_id ?? null} disabled={!session} onChange={(model_profile_id) => void updateSession({ model_profile_id })} />
       <button className="icon-button" type="button" title={t('sessionSettings')} aria-label={t('sessionSettings')} disabled={!session} onClick={() => setEditing(true)}><SlidersHorizontal size={18} /></button>
       <button className="icon-button" type="button" title={t('settings')} aria-label={t('settings')} onClick={() => onOpenSettings('models')}><Settings2 size={18} /></button>
     </div>

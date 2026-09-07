@@ -47,7 +47,7 @@ def test_settings_revision_resets_only_application_json_and_preserves_files(tmp_
     before_schema = migrations.inspect_schema(engine)
     before_rows = business_rows(engine)
 
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.PHASE5_REVISION)
 
     assert migrations.current_revision(engine) == migrations.PHASE5_REVISION
     assert migrations.inspect_schema(engine) == before_schema
@@ -59,7 +59,7 @@ def test_settings_revision_resets_only_application_json_and_preserves_files(tmp_
     store = SqlAppSettingsStore(engine)
     assert store.get() == AppSettings()
     store.patch({"core_memory_content": "New setting"})
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.PHASE5_REVISION)
     assert store.get().core_memory_content == "New setting"
     engine.dispose()
 

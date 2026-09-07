@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from sqlmodel import Session, delete, select
 
 from ai_workbench.core.schema.persona import Persona, PersonaInput, seed_personas
@@ -15,7 +13,6 @@ BINDINGS = {
     "knowledge": (PersonaKnowledgeBindingRecord, "knowledge_base_id"),
     "worldbook": (PersonaWorldbookBindingRecord, "worldbook_id"),
 }
-JSON_FIELDS = ("context_policy", "generation", "tools_allowed")
 
 
 class PersonaStore:
@@ -26,17 +23,11 @@ class PersonaStore:
 
     @staticmethod
     def _decode(row: PersonaRecord) -> Persona:
-        values = row.model_dump()
-        for key in JSON_FIELDS:
-            values[key] = json.loads(values.pop(key + "_json"))
-        return Persona.model_validate(values)
+        return Persona.model_validate(row.model_dump())
 
     @staticmethod
     def _encode(persona: Persona) -> dict:
-        values = persona.model_dump()
-        for key in JSON_FIELDS:
-            values[key + "_json"] = json.dumps(values.pop(key), ensure_ascii=False)
-        return values
+        return persona.model_dump()
 
     def list(self) -> list[Persona]:
         if self.engine is None:

@@ -46,8 +46,10 @@ In **Settings > Models**, choose one backend:
 
 Each profile has one of five kinds, an internal UUID, a unique public alias,
 capabilities, parameters and lifecycle settings. Choose the default chat model
-and optionally a separate auxiliary model. Chat resolves session override,
-current Persona model, then global default. Titles use only the auxiliary
+and optionally a separate auxiliary model. New sessions select and save that
+default, or the first enabled LLM when it is unavailable. Both chat selectors
+show concrete models; changing the default preserves existing session selections.
+Titles use only the auxiliary
 selection and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Managed backend |
@@ -76,25 +78,27 @@ default to concurrency 1, 32 waiting requests and 30-second queue timeout.
 
 ## Chat and tools
 
-Personas are editable prompt records with model, context, generation, harness
-and Knowledge/Worldbook defaults. New sessions start with Chat. Add members and
+Personas own identity, avatar, prompt and Knowledge/Worldbook bindings.
+Their nonempty system prompt is always included. New sessions start with Chat. Add members and
 select the current speaker for group transcript conversations; each input
-generates one selected speaker's reply. Explicit session overrides may replace
-Persona defaults, including an empty context-binding or tool list.
+generates one selected speaker's reply. Sessions own model, context, generation
+and Harness configuration. The current speaker's resources are always bound;
+sessions may add resources. Clearing additions preserves Persona bindings.
 
 Core Memory, Worldbook and Knowledge remain available in ordinary chat.
 Knowledge supports text/file/attachment sources, chunking, vector/keyword
 retrieval and optional reranking. Changing embedding configuration requires
 reindexing. Unavailable reranking intentionally preserves RRF order.
 
-Enable Harness and choose allowed tools in Persona/session settings to permit
-native model tool calls. Built-ins are read_file, web_search, fetch_url,
+Harness defaults off. Enable it in session settings and use the tool switches
+to permit native model calls. New sessions select all current tools; disabling
+and re-enabling Harness preserves those choices. Built-ins are read_file, web_search, fetch_url,
 knowledge_search, base64_encode and base64_decode. File/network calls require
 approval every time; waiting survives restart and resumes through explicit
 approval, rejection or cancellation. Other input is blocked while waiting.
 
 Direct calls use **Settings > Tools** or a registered slash tool. For example,
-after allowing base64_encode, `/base64_encode hello` returns `aGVsbG8=` without
+`/base64_encode hello` returns `aGVsbG8=` when that tool is enabled, without
 a model summary or title. Multi-parameter tools require a JSON object, such as
 `/read_file {"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...`
 prefixes are ordinary text. Tool results are rendered as data.
@@ -145,16 +149,21 @@ Public rerank and image generation remain [future design records](docs/FUTURE_MO
 
 ## Settings and storage
 
-The seven settings entries are General, Models, Personas, Knowledge, Worldbook,
-Tools and Pet. Each has one owner; [settings](docs/contracts/settings.md) lists
+The six settings entries are General, Models, Personas, Knowledge, Worldbook
+and Tools. Each has one owner; [settings](docs/contracts/settings.md) lists
 APIs, editable fields and key omission/clearing semantics. Keys are omitted from
 management reads but remain unencrypted in local storage. Logs omit credentials
 and request/model content.
 
-Alembic alone manages SQLite. Current head is `0007_phase5_cleanup`. This revision
-deletes only the disposable app_settings object, resetting General, Core Memory
-and Pet settings to defaults. It preserves other settings, chat, Persona,
-Knowledge, Worldbook and runtime records. Empty databases upgrade to head;
+The previous Codex Pet and package import are removed. Position settings,
+dragging and task-state interfaces remain for a future Pet; existing Pet files
+are retained without loading or serving them.
+
+Alembic alone manages SQLite. Current head is `0009_pet_foundation`. Revision
+0008 resets disposable Personas, sessions, their bindings, messages and runs to
+the reduced configuration schema. Revision 0009 resets General, Core Memory and
+Pet settings. Models, Knowledge, Worldbook and runtime records survive both.
+Empty databases upgrade to head;
 nonempty unversioned databases are rejected and destructive downgrade is unsupported.
 
 Model files, attachments, runtimes and other data directories are never deleted
@@ -178,10 +187,10 @@ git diff --check
 
 Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS
 transport. Frontend tests cover API payloads, settings, translation, streaming,
-Persona/session isolation, model/runtime events, tool approval and Pet state.
+Persona/session isolation, model/runtime events, tool approval and Pet foundations.
 Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
 
 Before changing code, read [AI context](docs/AI_CONTEXT.md), the
-[refactor roadmap](docs/WORKBENCH_REFACTOR_ROADMAP.md) and the owning contract.
+[current plan](docs/WORKBENCH_SIMPLIFICATION_PLAN.md) and the owning contract.

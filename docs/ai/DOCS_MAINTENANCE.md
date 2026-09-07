@@ -1,7 +1,8 @@
 # Documentation maintenance
 
-`README.md` owns installation and user-facing behavior. The refactor roadmap
-owns frozen decisions and phase status. `docs/contracts/` contains one concise
+`README.md` owns installation and user-facing behavior. The simplification plan
+owns current decisions and round status; the refactor roadmap is historical.
+`docs/contracts/` contains one concise
 owner for each boundary: models, chat/context, harness/tools, Knowledge,
 runs/streaming and settings. `docs/ai/TASK_*.md` cards
 are short read-first pointers for contributors.

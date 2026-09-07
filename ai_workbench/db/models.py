@@ -18,12 +18,10 @@ class SessionRecord(SQLModel, table=True):
     waiting_run_id: Optional[str] = None
     model_profile_id: Optional[str] = None
     current_persona_id: str = Field(foreign_key="personas.id")
-    context_policy_json: Optional[str] = None
-    generation_json: Optional[str] = None
-    harness_enabled: Optional[bool] = None
-    tools_allowed_json: Optional[str] = None
-    knowledge_binding_mode: str = "inherit"
-    worldbook_binding_mode: str = "inherit"
+    context_policy_json: str
+    generation_json: str = "{}"
+    harness_enabled: bool = False
+    tools_allowed_json: str = "[]"
     title_generation_state: str = "pending"
     title_generation_metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
@@ -36,11 +34,6 @@ class PersonaRecord(SQLModel, table=True):
     name: str
     avatar_attachment_id: Optional[str] = None
     system_prompt: str = ""
-    model_profile_id: Optional[str] = Field(default=None, foreign_key="model_profiles.id", index=True)
-    context_policy_json: str
-    generation_json: str = "{}"
-    harness_enabled: bool = False
-    tools_allowed_json: str = "[]"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
