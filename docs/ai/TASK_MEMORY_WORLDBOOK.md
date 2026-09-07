@@ -1,15 +1,15 @@
-# Task: Core Memory and Worldbook
+# Task: Memory and Worldbook
 
-Read first: `../contracts/memory-worldbook.md` and
-`../contracts/message-parts.md`.
+Read [chat/context](../contracts/chat-context.md) and
+[settings](../contracts/settings.md).
 
-Likely sources: `core/memory_context.py`, `core/worldbook.py`,
-`core/worldbook_context.py`, `core/context.py`, and the matching API routes.
+Likely sources are core/memory_context.py, worldbook.py, worldbook_context.py,
+context.py, chat_service.py, settings.py, API worldbook routes and SQLite stores.
+Keep matching deterministic and bounded. Resolve Persona defaults/session
+overrides before invoking context services; empty override means no resources.
+Match-test is read-only. Metadata stores compact diagnostics, not source bodies.
 
-Keep injection deterministic and data-only. Core Memory is controlled by
-General settings; Worldbook settings and CRUD remain under their own routes.
-Session bindings, group transcript speaker labels, entry limits, matching
-rules, and compact metadata are part of the contract.
-
-Run `uv run pytest tests/test_core_memory_context.py tests/test_worldbook_context.py -q`
-and the full suite after changes.
+General owns Core Memory. Phase 5 resets that disposable setting along with
+the rest of app_settings; Worldbook records/settings are unaffected.
+Use temporary roots and test matching, disabled/empty injection, context limits,
+binding resolution and memory/SQL behavior. Update both locales for UI copy.

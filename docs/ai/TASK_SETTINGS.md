@@ -1,29 +1,25 @@
-# Task: Settings and models
+# Task: Settings
 
-Read first: `../contracts/settings-general.md`, `../contracts/pet.md`,
-`../contracts/runtime-llm-resolution.md`, `../contracts/knowledge.md` and
-`../contracts/managed-runtime.md` and `../contracts/harness-tools.md`.
+Read [settings](../contracts/settings.md) and the domain owner:
+[models](../contracts/models.md), [chat/context](../contracts/chat-context.md),
+[Knowledge](../contracts/knowledge.md) or [harness/tools](../contracts/harness-tools.md).
 
-Likely sources: `core/settings.py`, `core/knowledge_settings.py`, model profile
-schemas/stores in `core/models/`, `api/routes/models.py`, settings/pet routes,
-`frontend/src/components/SettingsPage.tsx`, `settings/ModelsPanel.tsx`, and
-`store/useModelsStore.ts`.
+core/settings.py owns strict AppSettings and nested Pet settings. Models,
+Knowledge, Worldbook and Harness have explicit separate schemas/stores and APIs.
+Unknown fields are 422; removed display fields have no compatibility path.
+0007 resets only the disposable app_settings object, not model files or other
+settings objects. Future persistence changes require Alembic.
 
-Managed runtime ownership is in `core/models/runtimes/`,
-`api/routes/runtimes.py` and `settings/RuntimesPanel.tsx`. Read
-`../contracts/managed-runtime.md` for catalog, tasks, download settings and
-profile binding. Global model events must work without a chat session.
+The frontend retains General, Models, Personas, Knowledge, Worldbook, Tools and
+Pet. Domain panels under components/settings own their forms and use independent
+shared fields. SettingsPage only coordinates navigation and shared feedback.
+Models has five kinds and four tabs; runtime settings download dependencies,
+never weights. Keep secret omission/clearing and reference guards intact.
 
-Use strict Pydantic schemas and nested `AppSettings.pet`. The settings
-navigation is General, Models, Personas, Knowledge, Worldbook, Tools, and Pet. Main
-model resolution is session override, Persona model, then global default; Utility LLM has one
-profile selector in /api/models/settings. Models owns five kinds, connection
-CRUD, per-kind parameters, lifecycle and external-service settings. Preserve
-key omission/clearing semantics and reference guards. Removed fields must
-produce 422, not be ignored.
-HarnessSettings owns the SearXNG URL; ToolsPanel also exposes catalog/direct
-calls and the shared approval workflow. Persona/session allowlists use only
-registered built-in tool names.
+Title selection is auxiliary-only. Persona/session null overrides inherit and
+explicit empty binding/tool lists mean empty. Pending approvals retain the
+original Persona and search-service snapshots. Pet position/bubble PATCH is
+deep-merged through AppSettingsStore.
 
-Run `uv run pytest tests/test_phase2a_persistence.py tests/test_phase2a_manager.py -q`
-and the frontend contract/build/i18n scripts.
+Run affected schema/API/store tests, all backend tests and frontend tests/build.
+Update both locales, the owning contract and documentation checks.

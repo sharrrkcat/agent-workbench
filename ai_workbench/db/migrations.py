@@ -14,7 +14,7 @@ from typing import Any
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine
-from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.engine import Connection
 
 
 BASELINE_REVISION = "0001_current_schema"
@@ -23,7 +23,8 @@ PHASE2A_REVISION = "0003_phase2a_models"
 PHASE2B_REVISION = "0004_phase2b_runtimes"
 PHASE3_REVISION = "0005_phase3_personas"
 PHASE4_REVISION = "0006_phase4_tools"
-HEAD_REVISION = PHASE4_REVISION
+PHASE5_REVISION = "0007_phase5_cleanup"
+HEAD_REVISION = PHASE5_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 
@@ -82,10 +83,6 @@ def inspect_schema(bind: Engine | Connection) -> SchemaSignature:
             connection.close()
 
 
-def has_alembic_version(bind: Engine | Connection) -> bool:
-    return "alembic_version" in inspect_schema(bind).tables
-
-
 def current_revision(bind: Engine | Connection) -> str | None:
     connection, close = _connection(bind)
     try:
@@ -129,10 +126,3 @@ def downgrade(bind: Engine | Connection, revision: str = "-1") -> None:
 def is_empty_database(bind: Engine | Connection) -> bool:
     signature = inspect_schema(bind)
     return not any(name != "alembic_version" for name in signature.tables)
-
-
-def sqlite_database_path(bind: Engine) -> Path | None:
-    url = make_url(str(bind.url))
-    if not url.drivername.startswith("sqlite") or not url.database or url.database == ":memory:":
-        return None
-    return Path(url.database).expanduser().resolve()

@@ -1,10 +1,10 @@
-"""SQLite-backed stores matching the explicit Phase 1 core contracts."""
+"""SQLite-backed stores for the explicit core contracts."""
 
 from __future__ import annotations
 
 import json
 from array import array
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional
 from uuid import uuid4
 
 from sqlmodel import Session as DbSession, delete, select

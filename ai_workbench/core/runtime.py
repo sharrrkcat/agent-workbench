@@ -9,7 +9,6 @@ from ai_workbench.core.chat_runner import ChatRunner
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.message_parts import text_from_parts
 from ai_workbench.core.schema.result import RunResult
-from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.json_data import strict_json_loads
 

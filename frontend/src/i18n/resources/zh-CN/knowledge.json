@@ -1,1 +1,15 @@
-{"title":"知识库","hybrid":"混合检索","reranker":"可选重排","base":"知识库","source":"来源"}
+{
+  "title": "知识库",
+  "hybrid": "混合向量与关键词检索",
+  "reranker": "启用可选重排模型",
+  "base": "知识库",
+  "source": "来源",
+  "chunkSize": "分块大小",
+  "chunkOverlap": "分块重叠",
+  "finalResults": "最终结果数",
+  "save": "保存知识库设置",
+  "bases": "知识库",
+  "baseName": "知识库名称",
+  "embeddingProfile": "嵌入模型配置",
+  "addBase": "添加知识库"
+}

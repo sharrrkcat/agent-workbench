@@ -346,7 +346,7 @@ def test_phase4_migration_and_private_state(tmp_path):
     for path in sentinels:
         path.parent.mkdir(parents=True)
         path.write_text("preserved")
-    init_db(engine)
+    migrations.upgrade(engine, migrations.PHASE4_REVISION)
     assert migrations.current_revision(engine) == migrations.PHASE4_REVISION
     assert "harness_state_json" in migrations.inspect_schema(engine).columns["runrecord"]
     assert inspect(engine).get_check_constraints("runrecord")[0]["sqltext"] == "kind IN ('chat', 'tool')"

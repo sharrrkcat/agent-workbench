@@ -2,7 +2,7 @@ import { ChevronDown, Square } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Run, RunStep } from '../types';
+import type { Run, RunStep } from '../types/runs';
 
 export function RunPanel({ run }: { run: Run }) {
   const { t } = useTranslation('runs');

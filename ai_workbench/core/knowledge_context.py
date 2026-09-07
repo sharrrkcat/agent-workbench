@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-from ai_workbench.core.retrieval import search_knowledge
 
 
 @dataclass

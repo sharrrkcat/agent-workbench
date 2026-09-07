@@ -8,9 +8,11 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "check:docs": "node scripts/check-doc-links.mjs",
     "test:model-stream": "node scripts/test-model-stream.mjs",
     "test:harness": "node scripts/test-harness.mjs",
-    "test:phase1-contracts": "node scripts/test-phase1-contracts.mjs",
+    "test": "node scripts/test-all.mjs",
+    "test:contracts": "node scripts/test-contracts.mjs",
     "test:knowledge-citations": "node scripts/test-knowledge-citations.mjs",
     "test:url": "node scripts/test-url-helpers.mjs"
   },
@@ -31,7 +33,10 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.23",
+    "github-slugger": "^2.0.0",
     "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.19"
+    "remark-parse": "^11.0.0",
+    "tailwindcss": "^3.4.19",
+    "unified": "^11.0.5"
   }
 }

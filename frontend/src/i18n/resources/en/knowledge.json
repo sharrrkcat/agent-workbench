@@ -1,1 +1,15 @@
-{"title":"Knowledge","hybrid":"Hybrid search","reranker":"Optional reranker","base":"Knowledge base","source":"Source"}
+{
+  "title": "Knowledge",
+  "hybrid": "Hybrid vector + keyword search",
+  "reranker": "Enable optional reranker",
+  "base": "Knowledge base",
+  "source": "Source",
+  "chunkSize": "Chunk size",
+  "chunkOverlap": "Chunk overlap",
+  "finalResults": "Final results",
+  "save": "Save knowledge settings",
+  "bases": "Knowledge bases",
+  "baseName": "Base name",
+  "embeddingProfile": "Embedding profile",
+  "addBase": "Add base"
+}

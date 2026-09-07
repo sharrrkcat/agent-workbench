@@ -7,9 +7,8 @@ SQLite application without any extension registry machinery.
 
 from __future__ import annotations
 
-from datetime import datetime
 from copy import deepcopy
-from typing import Any, Generic, Iterable, Optional, TypeVar
+from typing import Any, Optional
 from uuid import uuid4
 
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts

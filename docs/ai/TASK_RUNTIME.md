@@ -1,32 +1,25 @@
-# Task: Chat runtime
+# Task: Runtime
 
-Read first:
+Read [chat/context](../contracts/chat-context.md),
+[runs/streaming](../contracts/runs-streaming.md), [models](../contracts/models.md)
+and [harness/tools](../contracts/harness-tools.md).
 
-- `../contracts/runtime-run-lifecycle.md`
-- `../contracts/runtime-streaming.md`
-- `../contracts/runtime-llm-resolution.md`
-- `../contracts/attachments-vision.md`
-- `../contracts/provider-status.md`
-- `../contracts/utility-llm.md`
-- `../contracts/managed-runtime.md`
-- `../contracts/harness-tools.md`
+The explicit assembly is api/deps.py. core/runtime.py coordinates input and
+cancellation; ChatRunner builds context and calls ModelManager or HarnessAgentLoop.
+Only registered slash tools dispatch directly. Waiting approvals block new
+input and resume solely through the explicit approval API.
 
-Likely sources: `core/runtime.py`, `core/chat_runner.py`, `core/context.py`,
-`core/run_lifecycle.py`, `core/models/`, `api/deps.py`, session/message/run
-routes, `api/routes/models.py`, `api/routes/openai_compatible.py`, and WS.
+core/models owns adapters, queues, lifecycle, status and managed runtime jobs.
+Workers live outside the API process. Runtime jobs are not chat runs. Internal
+and external callers share the manager directly; titles use only the auxiliary
+selector after the main response/lease completes.
 
-The runtime has one default ChatRunner path and an opt-in HarnessAgentLoop.
-Only registered `/tool_name` inputs invoke direct tools; unknown prefixes stay
-text. Waiting approvals require the explicit API and block new messages.
-Keep metadata compact, steps limited to generic kinds, and titles best effort.
-Do not add dynamic registration or hidden compatibility branches. Internal chat and
-external inference share the manager directly. Auxiliary titles use only the
-explicit model selection, after the main lease releases. Local managed
-processes use core/models/runtimes and the worker-only ai_workbench/workers
-package. Do not restore in-process inference. Runtime tasks have their own
-store and global events; they are not chat runs.
-Harness private state owns the ordered pending queue and active-time budget.
-Direct, chat and approval-resumed execution must share cancellation and results.
+Run snapshots and continuations are private. Preserve ordered pending calls,
+active-time budgets, restart handling and cancellation across chat/direct/resumed
+execution. Keep public metadata compact and errors structured. RunStep kinds
+remain context/model/save/approval/tool, with bilingual frontend labels.
 
-Run targeted runtime tests and then `uv run pytest -q`,
-`uv run python -m compileall -q ai_workbench`, and `git diff --check`.
+Relevant sources include core/chat_runner.py, harness/, models/, context.py,
+stores.py, run_lifecycle.py, events.py and api routes/messages/tools/runs/ws.
+Tests cover models, transport, Persona snapshots and harness behavior. Run the
+full backend suite, frontend state tests/build and documentation checks.

@@ -7,7 +7,6 @@ from typing import Any
 
 from ai_workbench.core.keyword_search import search_keywords
 from ai_workbench.core.vector_store import search_vectors
-from ai_workbench.core.rerank import RERANK_FALLBACK_KEY
 
 
 @dataclass
@@ -177,7 +176,7 @@ def _response(
     reranker_used: bool = False,
 ) -> dict[str, Any]:
     rerank_meta = {
-        RERANK_FALLBACK_KEY: rerank_fallback,
+        "rerank_fallback": rerank_fallback,
         "reranker_used": reranker_used,
         "reranker_enabled": reranker_enabled,
     }

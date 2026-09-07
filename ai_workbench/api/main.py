@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import assets, attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook, tools
+from ai_workbench.api.routes import attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook, tools
 from ai_workbench.api.ws import router as ws_router
 from ai_workbench.api.routes import runtimes
 from ai_workbench.api.routes import personas
@@ -97,7 +97,6 @@ def create_app(
         _record_inference_error_code(request, {"error": {"code": code}})
         return JSONResponse(status_code=422, content={"error": {"code": code, "message": message}})
 
-    app.include_router(assets.router)
     app.include_router(attachments.router)
     app.include_router(data.router)
     app.include_router(openai_compatible.router)
@@ -165,8 +164,7 @@ def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
 
 def _is_backend_path(path: str) -> bool:
     first_segment = path.split("/", 1)[0]
-    # Retired command URLs must not be swallowed by the SPA fallback. They
-    # intentionally return an ordinary 404 after the Phase 1 hard cut.
+    # Backend and reserved input paths must not resolve to the SPA.
     return first_segment in {
         "api",
         "v1",

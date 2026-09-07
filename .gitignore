@@ -13,3 +13,4 @@ data/assets/*
 data/assets/fonts/*
 !data/assets/fonts/.gitkeep
 dist/
+build/

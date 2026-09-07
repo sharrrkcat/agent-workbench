@@ -1,11 +1,16 @@
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { api, ApiError } from '../../api/client';
+import { knowledgeApi } from '../../api/knowledge';
+import { worldbookApi } from '../../api/worldbook';
+import { chatApi } from '../../api/chat';
+import { ApiError } from '../../api/http';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import type { BindingMode, KnowledgeBase, Session, SessionPatch, SessionPersona, Worldbook } from '../../types';
+import type { BindingMode, Session, SessionPatch, SessionPersona } from '../../types/chat';
+import type { KnowledgeBase } from '../../types/knowledge';
+import type { Worldbook } from '../../types/worldbook';
 import { AppModal } from '../ui/AppModal';
 import { BindingsField, Check, ContextFields, Field, GenerationFields, IconButton, ModelField, PersonaAvatar, ToolsField } from './ConfigurationFields';
 
@@ -27,7 +32,7 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { 
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
-    void Promise.all([usePersonasStore.getState().reload(), api.listSessionKnowledgeBases(session.session_id), api.getSessionWorldbooks(session.session_id), api.listKnowledgeBases(), api.listWorldbooks()])
+    void Promise.all([usePersonasStore.getState().reload(), knowledgeApi.listSessionKnowledgeBases(session.session_id), worldbookApi.getSessionWorldbooks(session.session_id), knowledgeApi.listKnowledgeBases(), worldbookApi.listWorldbooks()])
       .then(([, kb, wb, bases, worldbooks]) => { if (live) { setKnowledge(kb.knowledge_base_ids); setBooks(wb.worldbook_ids); setBases(bases); setWorldbooks(worldbooks); setLoading(false); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
@@ -51,9 +56,9 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: { 
       tools_allowed: draft.tools_allowed?.map((s) => s.trim()).filter(Boolean) ?? null,
     };
     try {
-      await api.updateSession(session.session_id, values);
-      await api.updateSessionKnowledgeBases(session.session_id, draft.knowledge_binding_mode, knowledge);
-      await api.updateSessionWorldbooks(session.session_id, draft.worldbook_binding_mode, books);
+      await chatApi.updateSession(session.session_id, values);
+      await knowledgeApi.updateSessionKnowledgeBases(session.session_id, draft.knowledge_binding_mode, knowledge);
+      await worldbookApi.updateSessionWorldbooks(session.session_id, draft.worldbook_binding_mode, books);
       await useWorkbenchStore.getState().reloadSessions();
       onClose();
     } catch (e) { setError(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e)); } finally { setBusy(false); }
@@ -117,7 +122,7 @@ function InheritedBindings({ personaId, kind, items }: { personaId: string; kind
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true; setIds(null); setError('');
-    const load = async () => kind === 'knowledge' ? (await api.getPersonaKnowledge(personaId)).knowledge_base_ids : (await api.getPersonaWorldbooks(personaId)).worldbook_ids;
+    const load = async () => kind === 'knowledge' ? (await chatApi.getPersonaKnowledge(personaId)).knowledge_base_ids : (await chatApi.getPersonaWorldbooks(personaId)).worldbook_ids;
     void load().then((values) => { if (live) setIds(values); }).catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
   }, [personaId, kind]);

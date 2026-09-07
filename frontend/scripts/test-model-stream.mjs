@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import ts from 'typescript';
+import { apiMocks, createModuleLoader } from './module-loader.mjs';
 
-const source = fs.readFileSync(new URL('../src/store/messageStream.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { applyMessageEvent } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'));
+const mockApi = {};
+const loadStore = createModuleLoader(apiMocks(mockApi));
+const { applyMessageEvent } = (await loadStore('../src/store/messageStream.ts')).exports;
 
-const message = { message_id: 'm', session_id: 's', role: 'assistant', parts: [], run_id: 'r', created_at: '2026-09-05T00:00:00Z' };
+const message = {
+  message_id: 'm',
+  session_id: 's',
+  role: 'assistant',
+  parts: [],
+  run_id: 'r',
+  created_at: '2026-09-05T00:00:00Z',
+};
 const event = (type, payload) => ({ type, message_id: 'm', session_id: 's', run_id: 'r', payload });
 let state = applyMessageEvent([], event('message_started', { message }));
 state = applyMessageEvent(state, event('message_delta', { seq: 1, delta: 'hello' }));
@@ -15,48 +21,32 @@ assert.equal(applyMessageEvent(state, event('message_delta', { seq: 1, delta: 'd
 assert.equal(applyMessageEvent(state, event('message_delta', { seq: 3, delta: 'gap' })), state);
 state = applyMessageEvent(state, event('message_delta', { seq: 2, delta: ' world' }));
 assert.equal(state[0].parts[0].text, 'hello world');
-const final = { ...message, parts: [{ id: 'text', type: 'text', text: 'final canonical text' }], metadata: { streamed: true } };
+const final = {
+  ...message,
+  parts: [{ id: 'text', type: 'text', text: 'final canonical text' }],
+  metadata: { streamed: true },
+};
 state = applyMessageEvent(state, event('message_completed', { message: final }));
 assert.deepEqual(state, [final]);
 assert.equal(applyMessageEvent(state, event('message_delta', { seq: 3, delta: 'late' })), state);
 assert.equal(applyMessageEvent(state, event('message_started', { message })), state);
-assert.equal(applyMessageEvent(state, event('message_completed', { message: { ...final, session_id: 'other' } })), state);
+assert.equal(
+  applyMessageEvent(state, event('message_completed', { message: { ...final, session_id: 'other' } })),
+  state,
+);
 assert.deepEqual(applyMessageEvent([], event('message_delta', { seq: 1, delta: 'orphan' })), []);
 assert.deepEqual(applyMessageEvent([], event('message_completed', { message: final })), [final]);
 console.log('model streaming behavior: ok');
 
 function deferred() {
   let resolve;
-  const promise = new Promise((done) => { resolve = done; });
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
-const dataModule = (code) => 'data:text/javascript;base64,' + Buffer.from(code).toString('base64');
-const mockApi = {};
-globalThis.workbenchTestApi = mockApi;
-const clientModule = dataModule('export const api = globalThis.workbenchTestApi; export class ApiError extends Error {}');
-
-async function loadStore(path, imports) {
-  const source = fs.readFileSync(new URL(path, import.meta.url), 'utf8');
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-    transformers: { before: [(context) => (root) => {
-      function visit(node) {
-        if (ts.isImportDeclaration(node) && imports[node.moduleSpecifier.text]) {
-          return ts.factory.updateImportDeclaration(node, node.modifiers, node.importClause,
-            ts.factory.createStringLiteral(imports[node.moduleSpecifier.text]), node.attributes);
-        }
-        return ts.visitEachChild(node, visit, context);
-      }
-      return ts.visitNode(root, visit);
-    }] },
-  }).outputText;
-  const url = dataModule(compiled);
-  return { url, exports: await import(url) };
-}
-
-const commonImports = { zustand: import.meta.resolve('zustand'), '../api/client': clientModule };
-const modelsModule = await loadStore('../src/store/useModelsStore.ts', commonImports);
+const modelsModule = await loadStore('../src/store/useModelsStore.ts');
 const modelsStore = modelsModule.exports.useModelsStore;
 const idle = { state: 'ready', residency: 'unknown', unload_supported: false, active: 0, queued: 0 };
 mockApi.listProviderProfiles = async () => [];
@@ -64,7 +54,7 @@ mockApi.getModelSettings = async () => ({ default_model_profile_id: null });
 mockApi.getModelStatus = async () => idle;
 const oldProfiles = deferred();
 let profileReads = 0;
-mockApi.listModelProfiles = () => ++profileReads === 1 ? oldProfiles.promise : Promise.resolve([{ id: 'new' }]);
+mockApi.listModelProfiles = () => (++profileReads === 1 ? oldProfiles.promise : Promise.resolve([{ id: 'new' }]));
 const firstReload = modelsStore.getState().reload();
 await modelsStore.getState().reload();
 oldProfiles.resolve([{ id: 'old' }]);
@@ -73,7 +63,10 @@ assert.equal(modelsStore.getState().profiles[0].id, 'new');
 
 const statusRead = deferred();
 const statusStarted = deferred();
-mockApi.getModelStatus = () => { statusStarted.resolve(); return statusRead.promise; };
+mockApi.getModelStatus = () => {
+  statusStarted.resolve();
+  return statusRead.promise;
+};
 const statusReload = modelsStore.getState().reload();
 await statusStarted.promise;
 modelsStore.getState().setStatus('new', { ...idle, active: 2 });
@@ -86,9 +79,23 @@ mockApi.runtimeInstallations = async () => [{ id: 'python-worker/torch-cpu', sta
 const jobsRead = deferred();
 mockApi.runtimeJobs = () => jobsRead.promise;
 const runtimeReload = modelsStore.getState().reloadRuntimes();
-const job = { id: 'job', runtime_id: 'python-worker', variant: 'torch-cpu', state: 'running', stage: 'installing_packages', created_at: '2026-09-05T00:00:00Z', revision: 2 };
+const job = {
+  id: 'job',
+  runtime_id: 'python-worker',
+  variant: 'torch-cpu',
+  state: 'running',
+  stage: 'installing_packages',
+  created_at: '2026-09-05T00:00:00Z',
+  revision: 2,
+};
 modelsStore.getState().applyModelEvent({ type: 'runtime_job_updated', session_id: '', payload: { job } });
-modelsStore.getState().applyModelEvent({ type: 'runtime_status', session_id: '', payload: { installation: { id: 'python-worker/torch-cpu', state: 'installing' } } });
+modelsStore
+  .getState()
+  .applyModelEvent({
+    type: 'runtime_status',
+    session_id: '',
+    payload: { installation: { id: 'python-worker/torch-cpu', state: 'installing' } },
+  });
 jobsRead.resolve([{ ...job, state: 'queued', revision: 1 }]);
 await runtimeReload;
 assert.equal(modelsStore.getState().jobs[0].state, 'running');
@@ -98,13 +105,17 @@ modelsStore.getState().setJob(job);
 assert.equal(modelsStore.getState().jobs[0].state, 'cancelled');
 modelsStore.getState().setJob({ ...job, id: 'retry', revision: 1, created_at: '2026-09-05T00:01:00Z' });
 assert.equal(modelsStore.getState().jobs[0].id, 'retry');
-modelsStore.getState().applyModelEvent({ type: 'model_status', session_id: '', payload: { model_profile_id: 'new', status: { ...idle, active: 1 } } });
+modelsStore
+  .getState()
+  .applyModelEvent({
+    type: 'model_status',
+    session_id: '',
+    payload: { model_profile_id: 'new', status: { ...idle, active: 1 } },
+  });
 assert.equal(modelsStore.getState().statuses.new.active, 1);
 console.log('runtime progress, stale reads, cancellation, retry history and global events: ok');
 
-const workbenchModule = await loadStore('../src/store/useWorkbenchStore.ts', {
-  ...commonImports, './useModelsStore': modelsModule.url, './messageStream': dataModule(compiled),
-});
+const workbenchModule = await loadStore('../src/store/useWorkbenchStore.ts');
 const workbench = workbenchModule.exports.useWorkbenchStore;
 const session = { session_id: 's', title: '', model_profile_id: null };
 workbench.setState({ currentSession: session, sessions: [session], messages: [], runs: [] });
@@ -144,7 +155,12 @@ await staleRefresh;
 assert.equal(workbench.getState().currentSession.current_persona_id, 'second');
 assert.equal(workbench.getState().sessions[0].effective.persona_name, 'Second');
 
-const speakerMessage = { ...message, speaker_id: 'first', speaker_name: 'First', metadata: { speaker_avatar_attachment_id: 'image.png' } };
+const speakerMessage = {
+  ...message,
+  speaker_id: 'first',
+  speaker_name: 'First',
+  metadata: { speaker_avatar_attachment_id: 'image.png' },
+};
 workbench.getState().applyRuntimeEvent(event('message_started', { message: speakerMessage }));
 workbench.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'response' }));
 assert.equal(workbench.getState().messages[0].speaker_name, 'First');
@@ -177,5 +193,4 @@ await retry;
 assert.deepEqual(workbench.getState().messages, []);
 console.log('persona speaker identity, configuration refresh, selected context, cancellation and retry isolation: ok');
 
-delete globalThis.workbenchTestApi;
 console.log('model reload, live status, chat refresh and session isolation: ok');

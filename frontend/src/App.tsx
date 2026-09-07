@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createWebSocketUrl } from './api/client';
+import { createWebSocketUrl } from './api/url';
 import { ChatHeader } from './components/ChatHeader';
 import { ChatInput } from './components/ChatInput';
 import { ChatView } from './components/ChatView';

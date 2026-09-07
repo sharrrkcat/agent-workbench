@@ -1,6 +1,6 @@
 """Knowledge base HTTP API.
 
-Phase 1 deliberately keeps this surface small: sources are created directly
+Sources have one direct creation workflow: sources are created directly
 from text, an attachment, or a workspace path. There is no origin/import
 layer and no public reranker endpoint; retrieval always has an RRF fallback.
 """

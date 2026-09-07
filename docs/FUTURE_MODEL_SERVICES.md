@@ -1,0 +1,32 @@
+# Future model services
+
+These records identify future boundaries, not active endpoints or frozen wire
+schemas. Neither service is implemented in Phase 5.
+
+## Public rerank
+
+The reranker profile kind, ModelManager operation and managed worker already
+support Knowledge retrieval. A future `/v1/rerank` should call that same manager
+operation and reuse external enablement, single-key loopback authentication,
+public aliases, capability/kind checks, byte limits and access observations.
+No second profile table, provider protocol or lifecycle owner is needed.
+
+The endpoint's request/response format and public visibility rules will be
+decided when implementing it. Direct API failures should be explicit; Knowledge's
+intentional RRF ordering on unavailable rerank remains a separate retrieval rule.
+Acceptance must cover aliases, invalid input, cancellation, queue release and
+absence of chat/Knowledge writes from stateless requests.
+
+## Image service
+
+Current vision and image_embedding kinds consume images; they do not generate
+them. A future image service requires a separate decision about generation
+operations, profile capabilities and supported managed backend, followed by
+strict schemas and a ModelManager adapter. Heavy execution stays outside the
+API process. Reuse runtime supervision and external service guards where they
+fit, without restoring the removed internal diffusers implementation.
+
+An eventual `/v1/images/generations` must define bounded inputs/outputs, artifact
+ownership/retention, cancellation, lifecycle, observability and error behavior
+before implementation. Model weights remain manually managed under the current
+product boundary. This note adds no route, runtime variant or model kind.

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { API_BASE_URL, joinApiUrl } from '../api/client';
+import { API_BASE_URL, joinApiUrl } from '../api/url';
 import { useModelsStore } from '../store/useModelsStore';
-import type { RuntimeEvent } from '../types';
+import type { RuntimeEvent } from '../types/runs';
 
 export function useModelEvents() {
   useEffect(() => {

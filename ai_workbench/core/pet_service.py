@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ai_workbench.core.settings import PetSettings, PetSettingsPatch
+from ai_workbench.core.settings import PetSettingsPatch
 
 
 PET_ID_RE = re.compile(r"^[a-z0-9_-]+$")

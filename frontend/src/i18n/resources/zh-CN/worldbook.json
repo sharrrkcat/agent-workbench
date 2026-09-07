@@ -1,1 +1,12 @@
-{"title":"世界书","enabled":"启用世界书上下文","entries":"条目"}
+{
+  "title": "世界书",
+  "enabled": "启用世界书上下文",
+  "entries": "条目",
+  "maximumEntries": "最大条目数",
+  "save": "保存世界书设置",
+  "worldbooks": "世界书",
+  "worldbookName": "世界书名称",
+  "addWorldbook": "添加世界书",
+  "entryCount_one": "{{count}} 个条目",
+  "entryCount_other": "{{count}} 个条目"
+}

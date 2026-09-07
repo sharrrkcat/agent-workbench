@@ -15,7 +15,7 @@ def project_root() -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a minimal portable Workbench folder.")
-    parser.add_argument("--zip", action="store_true", help="Also create dist/agent-workbench-portable.zip")
+    parser.add_argument("--zip", action="store_true", help="Also create build/agent-workbench-portable.zip")
     return parser.parse_args()
 
 
@@ -47,12 +47,11 @@ def copy_tree(source: Path, destination: Path) -> None:
 
 def copy_required_files(root: Path, output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    for filename in ["pyproject.toml", "uv.lock", "README.md", "alembic.ini"]:
+    for filename in ["pyproject.toml", "uv.lock", "README.md", "README_RUN.md", "alembic.ini", ".env.example"]:
         source = root / filename
-        if source.is_file():
-            shutil.copy2(source, output / filename)
+        shutil.copy2(source, output / filename)
 
-    for dirname in ["ai_workbench", "alembic"]:
+    for dirname in ["ai_workbench", "alembic", "docs"]:
         copy_tree(root / dirname, output / dirname)
 
     scripts_dir = output / "scripts"
@@ -90,52 +89,6 @@ uv run python scripts/run_app.py --open
     )
 
 
-def write_readme(output: Path) -> None:
-    (output / "README_RUN.md").write_text(
-        """# Agent Workbench Portable Run Guide
-
-## Windows
-
-Double-click `start.bat`, or run:
-
-```bat
-start.bat
-```
-
-## Linux/macOS
-
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-## Requirements
-
-- Python and uv are required.
-- Node.js is only required when building `frontend/dist` yourself.
-- If this portable folder already contains `frontend/dist`, normal startup does not need `npm run dev`.
-- Install supported CPU runtimes from Models > Runtimes, or configure an external OpenAI-compatible connection.
-- Model weights are not bundled or downloaded. Place them manually under data/models.
-
-Default address:
-
-```text
-http://127.0.0.1:8765
-```
-
-If the port is in use:
-
-```bash
-uv run python scripts/run_app.py --port 8766 --open
-```
-
-This portable package does not include `.env`, databases, attachments, API keys, `node_modules`, or cache folders.
-Current data is still stored in the project `data` directory. A future release may move data to an OS user data directory.
-""",
-        encoding="utf-8",
-    )
-
-
 def create_zip(output: Path) -> Path:
     zip_base = output.parent / PORTABLE_NAME
     zip_path = Path(shutil.make_archive(str(zip_base), "zip", root_dir=output.parent, base_dir=output.name))
@@ -145,8 +98,10 @@ def create_zip(output: Path) -> Path:
 def main() -> None:
     args = parse_args()
     root = project_root()
-    dist_dir = root / "dist"
-    output = dist_dir / PORTABLE_NAME
+    build_dir = (root / "build").resolve()
+    output = (build_dir / PORTABLE_NAME).resolve()
+    if build_dir.parent != root.resolve() or output.parent != build_dir:
+        raise SystemExit("Portable output must remain inside the project build directory.")
 
     run_frontend_build(root)
 
@@ -154,7 +109,6 @@ def main() -> None:
         shutil.rmtree(output)
     copy_required_files(root, output)
     write_start_scripts(output)
-    write_readme(output)
 
     print(f"Portable package created: {output}")
     if args.zip:

@@ -1,0 +1,141 @@
+# Chat and context contract
+
+Chat uses explicit Persona data, ContextBuilder and ChatRunner. Ordinary input
+has no intent router. Registered `/tool_name` inputs use the direct executor;
+all other prefixes remain text. [Harness/tools](harness-tools.md) owns direct
+syntax, allowlists, bounded loops and approvals.
+
+## Personas and sessions
+
+Personas are strict editable database records, never executable agents,
+scripts, manifests or extension registrations. Fields are id, name, optional
+avatar_attachment_id, system_prompt, optional model_profile_id, context_policy,
+generation parameters, harness_enabled and tools_allowed. The avatar references
+an existing local image filename; bytes remain in the attachment store.
+
+Migrations seed editable Chat and Translate records. New sessions bind Chat as
+their only member/current speaker. Chat may be edited but not deleted. Persona
+deletion fails while referenced by a session or unfinished run. Historical
+messages retain speaker id/name/avatar snapshots.
+
+`session_personas` is an ordered enabled member list. current_persona_id must
+refer to an enabled member. Group sessions generate one response from the
+manually selected speaker per input, without automatic round-robin.
+Model selection is session override, current Persona, global default.
+Context, generation, harness and tool settings resolve explicit session
+overrides before Persona defaults. Null inherits; an explicit empty tool list
+allows no tools. Allowlists reference registered built-ins only.
+
+Personas own ordered Knowledge and Worldbook defaults. Session binding mode is
+inherit or override. Inherit uses the current speaker's defaults; override uses
+the ordered session binding rows. An empty override means no resources.
+Retrieval and Worldbook receive resolved ids explicitly.
+
+| Endpoint | Ownership |
+| --- | --- |
+| `/api/personas` and `/{id}` | Strict Persona CRUD |
+| `/api/personas/{id}/knowledge-bases`, `/worldbooks` | Persona defaults |
+| `/api/sessions` and `/{id}` | Session creation, selection and configuration |
+| `/api/sessions/{id}/personas` | Ordered members/current speaker |
+| `/api/sessions/{id}/knowledge-bases`, `/worldbooks` | Configured/effective bindings and mode |
+| `/api/sessions/{id}/messages` | History and new input |
+| `/api/messages/{id}`, `/retry`, `/edit` | Message deletion, retry and user edit |
+
+References are validated before persistence. Unknown/removed fields return
+422; missing or conflicting references return structured 404/409 errors.
+A waiting approval blocks new messages and direct calls. Active overlapping
+execution returns SESSION_BUSY. The explicit approval API resumes the same run.
+
+## Configuration snapshots and context
+
+Each run privately stores the resolved Persona configuration in
+config_snapshot_json. Its prompt/generation/context remain stable through
+Persona edits, speaker switches and approval waits. Public metadata exposes
+only ids, names, model selection, context mode, limits and binding ids.
+Retry uses the original assistant speaker configuration; tool-call messages
+cannot be retried as assistant answers.
+
+ContextBuilder supports single_assistant and group_transcript projection, with
+none/current_message/recent_messages/session/selected_message policies, message
+and character bounds, system prompt inclusion and explicit attachments.
+The chat header/session dialog selects speakers and overrides; selected-message
+context uses an explicit source message and is cleared on session changes.
+Group transcripts preserve historical speaker labels and reply as the current
+speaker. Context sources are separate bounded data blocks, with compact
+diagnostics rather than copied content in metadata.
+
+Core Memory injects trimmed core_memory_content when enabled and nonempty,
+wrapped in `<core_memory>` tags. Metadata contains flags, length, skip reason
+and warnings only. The settings and reset boundary are in [settings](settings.md).
+
+Worldbook is deterministic matching over current user text and configured
+keywords. Enabled entries obey entry/context limits, case sensitivity,
+whole-word matching and recursion depth. Books/entries have explicit CRUD;
+match-test is diagnostic and changes no session/run. Persona/session bindings
+use the resolution above. Memory, Worldbook, Knowledge and attachment content
+are data, never runtime instructions or routing decisions.
+
+[Knowledge](knowledge.md) owns indexing, hybrid retrieval, RRF and optional
+rerank. Its context injection uses the run's resolved bindings. File context
+and current-image handling follow the attachment rules below.
+
+## Messages and attachments
+
+Messages use content_version=2 and validated parts. The strict message schema
+owns role, speaker identity, run/parent references and compact metadata.
+Supported parts are text (plain/markdown), json, file (inline_text or
+attachment_ref), image, audio, video, media_group image galleries, notice,
+error, tool_call and tool_result. Unknown types are rejected; there are no
+forms, actions, command buttons or diff parts.
+
+Large binary data belongs in the attachment store and is referenced by id/URL.
+Uploads and serving use the configured attachment directory; General owns
+size/count and text-context byte limits. Persisted parts retain ids, MIME,
+name, size and compact metadata, never image data URLs. Orphan cleanup is an
+explicit separate operation and considers Persona avatar references.
+
+Current image attachments become OpenAI image_url parts through the selected
+LLM and ModelManager. The profile must advertise vision; otherwise the run
+returns UNSUPPORTED_CAPABILITY without an alternate model or silent display-only
+path. Standalone image_embedding/vision profiles and managed backend limits
+are described in [models](models.md#resolution-and-capabilities).
+
+Text-file context obeys the enable switch and per-file/per-message bounds.
+Other attachments contribute bounded descriptive markers. Historical attachment
+bytes are not resent; normal history projection remains in force.
+
+Tool calls require assistant role, a unique call id within the run, a name and
+finite JSON object arguments. Results require tool role, matching call id,
+success/error/rejected/cancelled status, optional JSON data/error fields and
+truncation flag. Calls in one assistant message have distinct part ids.
+Live loops use native assistant/tool pairs. Historical tool parts are quoted
+as ordinary/group context data, allowing selected or truncated history without
+orphan protocol calls. They never become system/developer instructions.
+
+The frontend renders parts without executing or routing text. Markdown remains
+content; edit/retry uses original text. MessageActions owns controls and
+selected-context references; MessageParts owns presentation and attachment URLs.
+Speaker snapshots are presentation data. Metadata may hold counts, source refs
+and warnings, never full part bodies, prompts or secrets. Stream merging belongs
+to [runs/streaming](runs-streaming.md).
+
+## Auxiliary tasks and titles
+
+UtilityLLMService is an internal ModelManager client without a separate backend,
+unload path or public route. utility_model_profile_id is its only selector and
+must identify an enabled LLM UUID. Missing or failed selection raises
+UTILITY_MODEL_UNAVAILABLE and never borrows the default chat model.
+
+generate_text uses non-streaming manager chat with only the supplied prompt.
+generate_json parses the entire response and validates the supplied Pydantic
+schema. Fenced/embedded JSON, unexpected calls and invalid output raise
+UTILITY_OUTPUT_INVALID. These tasks create no messages/runs and share the
+provider queue, lifecycle and status observations.
+
+Titles are enabled by default, with session_title_prompt and a 1200-character
+input limit. ChatRunner persists/publishes the completed response and run,
+releases the main model lease, then requests a title using max_tokens=64 and
+temperature=0. Only an empty/default title is eligible. Missing auxiliary
+selection, failed/empty output or concurrent manual renaming leaves the title
+unchanged and does not affect chat success. The bounded current user text is
+the only input: no history, attachments, Memory, Worldbook or Knowledge.

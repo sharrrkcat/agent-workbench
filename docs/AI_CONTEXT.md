@@ -1,62 +1,49 @@
-# AI Context
+# AI context
 
-This is the lightweight entry point for repository work. Read the roadmap and
-the smallest relevant contract before searching source broadly.
+Read the [roadmap](WORKBENCH_REFACTOR_ROADMAP.md), then the smallest relevant
+contract before searching source broadly. Phases 0-5 are complete. Schema head
+is `0007_phase5_cleanup`; final verification is recorded in the roadmap.
 
-Phases 0–4 are complete (2026-09-07); current schema head is
-`0006_phase4_tools`. Phase 4 closes with 233 backend tests, frontend build and
-contract checks passing. See the roadmap implementation record,
-[persona-chat](contracts/persona-chat.md) and [harness-tools](contracts/harness-tools.md).
-Phase 5 remains pending.
+## Fixed constraints
 
-## Fixed Refactor Constraints
+This project is in testing with no users or user data. Prolonged downtime is
+acceptable. Delete abandoned code directly: no compatibility layers, legacy
+implementations, configuration fallbacks, dual writes or data conversions.
+Alembic alone owns schema revisions. SQLite test records may be reset, but
+revisions never delete models, runtimes, attachments or other file directories.
+See [data layout](DATA_LAYOUT.md) for the Phase 5 settings reset.
 
-The project is in testing with no users or user data. Long service outages are
-acceptable; do not add keepalive measures. Delete abandoned structures without
-legacy implementations, backward compatibility, fallback configuration, dual
-writes, data migration, or preserving previous habits. These constraints apply
-throughout the refactor. Alembic may recreate disposable SQLite data, including
-sessions, settings, Knowledge and Worldbook; it must not delete model files,
-attachments, runtimes, or other data directories.
+All inference uses core/models. External connections speak only the
+OpenAI-compatible protocol. Local inference runs in managed llama-server or
+isolated Python workers, not the API process. Model weights are placed manually.
+Model release defaults to manual. Auxiliary titles use only the explicitly
+selected model; absence or failure leaves the title unchanged. Reranker remains
+a model kind and RAG operation; preserving RRF order on failure is intentional.
 
-Phase 2a unifies inference under `core/models` with only OpenAI-compatible
-external connections. Local in-process inference is removed; managed backends
-use isolated llama-server/Python workers. Model release defaults to manual. Titles use only the
-explicitly selected auxiliary model and stay unchanged on absence or failure.
+Personas are database prompt data. Harness is opt-in with explicit built-in
+tools, bounded loops and durable approvals. Unknown prefixes are plain text.
+There is no Agent/Action/Capability/Command registry, YAML execution, intent
+router, script SDK, image generation or model downloader to extend.
+
+## Contracts
+
+- [Models](contracts/models.md): profiles, adapters, lifecycle, runtimes, `/v1`.
+- [Chat/context](contracts/chat-context.md): Personas, sessions, context, parts, titles.
+- [Harness/tools](contracts/harness-tools.md): direct calls, loops, permissions, approval.
+- [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
+- [Runs/streaming](contracts/runs-streaming.md): status, events, persistence, reconciliation.
+- [Settings](contracts/settings.md): strict ownership, seven UI entries, Pet.
 
 ## Task map
 
-- [Runtime](ai/TASK_RUNTIME.md): ChatRunner, runs, streaming, attachments,
-  provider status, and model lifecycle.
-- [Knowledge](ai/TASK_KNOWLEDGE.md): indexing, hybrid retrieval, bindings, and
-  context injection.
-- [Memory/Worldbook](ai/TASK_MEMORY_WORLDBOOK.md): deterministic context stores
-  and matching.
-- [Settings](ai/TASK_SETTINGS.md): General, Models, Personas, Pet, and strict schemas.
-- [Frontend](ai/TASK_FRONTEND_UI.md): components, stores, i18n, and client
-  contracts.
+- [Runtime](ai/TASK_RUNTIME.md)
+- [Knowledge](ai/TASK_KNOWLEDGE.md)
+- [Memory/Worldbook](ai/TASK_MEMORY_WORLDBOOK.md)
+- [Settings](ai/TASK_SETTINGS.md)
+- [Frontend](ai/TASK_FRONTEND_UI.md)
 
-Deleted extension task cards are not execution guides. There is no manifest,
-registry, route parser, or script SDK to modify.
-
-## Contract index
-
-- `contracts/runtime-run-lifecycle.md`
-- `contracts/runtime-streaming.md`
-- `contracts/runtime-llm-resolution.md`
-- `contracts/provider-status.md`
-- `contracts/managed-runtime.md`
-- `contracts/attachments-vision.md`
-- `contracts/knowledge.md`
-- `contracts/memory-worldbook.md`
-- `contracts/settings-general.md`
-- `contracts/pet.md`
-- `contracts/message-parts.md`
-- `contracts/utility-llm.md`
-- `contracts/stateless-inference.md`
-- `contracts/persona-chat.md`
-- `contracts/harness-tools.md`
-
-Interface, protocol, settings, metadata, or workflow changes update the owning
-contract in the same change. User-visible text changes update both locales.
-Run `uv run python scripts/check_docs_size.py` when changing documentation.
+Interface/workflow changes update the owning contract. UI text changes update
+both locales. Run backend tests, frontend tests/build and
+`uv run python scripts/check_docs_size.py` for every implementation round.
+Verification commands and startup examples are in the [README](../README.md).
+Future work is limited to the short [model service records](FUTURE_MODEL_SERVICES.md).

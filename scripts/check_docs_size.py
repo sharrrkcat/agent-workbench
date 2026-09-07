@@ -1,4 +1,4 @@
-"""Check soft line limits for key documentation files.
+"""Check line limits and the six owning contracts.
 
 Run from the repository root:
 
@@ -31,6 +31,11 @@ FIXED_LIMITS = {
 }
 
 TASK_LIMIT = 120
+CONTRACT_NAMES = {
+    "models.md", "chat-context.md", "harness-tools.md", "knowledge.md",
+    "runs-streaming.md", "settings.md",
+}
+CONTRACT_LIMIT = 300
 
 
 def count_lines(path: Path) -> int:
@@ -65,10 +70,11 @@ def collect_results() -> list[CheckResult]:
             results.append(check_limited_file(relative_path, TASK_LIMIT))
 
     contracts_dir = ROOT / "docs" / "contracts"
-    if contracts_dir.exists():
-        for path in sorted(contracts_dir.glob("*.md")):
-            relative_path = path.relative_to(ROOT).as_posix()
-            results.append(CheckResult(relative_path, count_lines(path), None, "info"))
+    for name in sorted(CONTRACT_NAMES):
+        results.append(check_limited_file(f"docs/contracts/{name}", CONTRACT_LIMIT))
+    for path in sorted(contracts_dir.glob("*.md")):
+        if path.name not in CONTRACT_NAMES:
+            results.append(CheckResult(path.relative_to(ROOT).as_posix(), count_lines(path), None, "unexpected"))
 
     return results
 
@@ -76,7 +82,7 @@ def collect_results() -> list[CheckResult]:
 def print_text(results: list[CheckResult]) -> None:
     for result in results:
         if result.limit is None:
-            print(f"{result.path}: {result.lines} lines (info)")
+            print(f"{result.path}: {result.lines} lines [{result.status}]")
             continue
         if result.lines is None:
             print(f"{result.path}: missing (limit {result.limit})")
@@ -93,7 +99,7 @@ def main() -> int:
     args = parser.parse_args()
 
     results = collect_results()
-    failed = any(result.status in {"missing", "over"} for result in results)
+    failed = any(result.status in {"missing", "over", "unexpected"} for result in results)
 
     if args.json:
         print(json.dumps([result.__dict__ for result in results], indent=2))

@@ -1,8 +1,9 @@
 import { ArrowDown, ArrowUp, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
-import type { ContextPolicy, GenerationParameters, ModelProfile } from '../../types';
-import { API_BASE_URL } from '../../api/client';
+import type { ContextPolicy, GenerationParameters } from '../../types/chat';
+import type { ModelProfile } from '../../types/models';
+import { API_BASE_URL } from '../../api/url';
 import { resolveAttachmentUrlFromBase } from '../../api/url';
 
 export const defaultPolicy = (): ContextPolicy => ({ mode: 'session', max_messages: null, max_chars: null, include_system_prompt: true, include_attachments: 'explicit' });

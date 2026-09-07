@@ -11,11 +11,9 @@ from fastapi import Request
 
 from ai_workbench.core.chat_runner import ChatRunner
 from ai_workbench.core.harness import HarnessSettingsStore, ToolRegistry, register_builtin_tools
-from ai_workbench.core.harness.agent_loop import HarnessAgentLoop
 from ai_workbench.core.chat_service import ChatService
 from ai_workbench.core.personas import PersonaStore
 from ai_workbench.core.events import EventBus
-from ai_workbench.core.font_assets import ensure_fonts_directory
 from ai_workbench.core.knowledge_service import KnowledgeService
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
 from ai_workbench.core.models.manager import ModelManager
@@ -75,7 +73,6 @@ class RuntimeState:
 def build_runtime_state(root: str | Path | None = None, database_url: str | None = None,
                         use_memory: bool = False, adapter_factory=OpenAIAdapter) -> RuntimeState:
     repo_root = Path(root or Path(__file__).resolve().parents[2]).resolve()
-    ensure_fonts_directory(repo_root)
     engine = None
     if use_memory:
         sessions = SessionStore()

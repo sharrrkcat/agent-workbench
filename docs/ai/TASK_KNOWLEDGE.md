@@ -1,7 +1,7 @@
 # Task: Knowledge / RAG
 
-Read first: `../contracts/knowledge.md`,
-`../contracts/memory-worldbook.md`, and `../contracts/runtime-llm-resolution.md`.
+Read [Knowledge](../contracts/knowledge.md),
+[chat/context](../contracts/chat-context.md) and [models](../contracts/models.md).
 
 Likely sources are `ai_workbench/core/knowledge_*`, `retrieval.py`,
 `keyword_search.py`, `vector_store.py`, `api/routes/knowledge.py`, and the

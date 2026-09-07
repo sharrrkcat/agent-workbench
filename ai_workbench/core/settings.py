@@ -1,12 +1,10 @@
-"""Application settings for the compact Phase 1 workbench."""
+"""Strict application settings for chat context, attachments and Pet."""
 
 from __future__ import annotations
 
-import re
-from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
 
 from ai_workbench.core.time import utc_now
 
@@ -23,13 +21,6 @@ Return only the title.
 
 User message:
 {user_input}"""
-DEFAULT_UI_FONT_FAMILY = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-DEFAULT_MESSAGE_FONT_FAMILY = DEFAULT_UI_FONT_FAMILY
-DEFAULT_CODE_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace'
-DEFAULT_UI_FONT_SYSTEM_NAME = "Inter"
-DEFAULT_MESSAGE_FONT_SYSTEM_NAME = "Inter"
-DEFAULT_CODE_FONT_SYSTEM_NAME = "ui-monospace"
-FONT_SOURCES = {"system", "custom_file", "custom_family"}
 
 
 class PetPosition(BaseModel):
@@ -135,29 +126,6 @@ class AppSettings(BaseModel):
     session_title_prompt: str = DEFAULT_SESSION_TITLE_PROMPT
     session_title_max_input_chars: int = Field(default=1200, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
-    resource_status_panel_enabled: StrictBool = False
-    resource_status_show_cpu: StrictBool = True
-    resource_status_show_ram: StrictBool = True
-    resource_status_show_gpu: StrictBool = True
-    resource_status_show_vram: StrictBool = True
-    resource_status_ram_display_mode: Literal["percent", "value"] = "percent"
-    resource_status_vram_display_mode: Literal["percent", "value"] = "percent"
-    resource_status_show_tokens: StrictBool = True
-    appearance_font_ui_family: StrictStr = DEFAULT_UI_FONT_FAMILY
-    appearance_font_message_family: StrictStr = DEFAULT_MESSAGE_FONT_FAMILY
-    appearance_font_code_family: StrictStr = DEFAULT_CODE_FONT_FAMILY
-    appearance_font_ui_source: StrictStr = "system"
-    appearance_font_message_source: StrictStr = "system"
-    appearance_font_code_source: StrictStr = "system"
-    appearance_font_ui_system_name: StrictStr = DEFAULT_UI_FONT_SYSTEM_NAME
-    appearance_font_message_system_name: StrictStr = DEFAULT_MESSAGE_FONT_SYSTEM_NAME
-    appearance_font_code_system_name: StrictStr = DEFAULT_CODE_FONT_SYSTEM_NAME
-    appearance_font_ui_custom_id: StrictStr | None = None
-    appearance_font_message_custom_id: StrictStr | None = None
-    appearance_font_code_custom_id: StrictStr | None = None
-    appearance_font_ui_custom_family_id: StrictStr | None = None
-    appearance_font_message_custom_family_id: StrictStr | None = None
-    appearance_font_code_custom_family_id: StrictStr | None = None
     core_memory_content: str = ""
     core_memory_enabled: StrictBool = True
     pet: PetSettings = Field(default_factory=PetSettings)
@@ -178,20 +146,7 @@ class AppSettings(BaseModel):
         value = str(value).strip()
         return value or None
 
-    @field_validator("appearance_font_ui_family", "appearance_font_message_family", "appearance_font_code_family", mode="before")
-    @classmethod
-    def font_family(cls, value: Any) -> str:
-        value = str(value or "").strip()
-        if not value:
-            raise ValueError("Font family must not be empty.")
-        return value
 
-    @field_validator("appearance_font_ui_source", "appearance_font_message_source", "appearance_font_code_source")
-    @classmethod
-    def font_source(cls, value: str) -> str:
-        if value not in FONT_SOURCES:
-            raise ValueError("Font source must be system, custom_file, or custom_family.")
-        return value
 
     @property
     def max_file_size_bytes(self) -> int:
@@ -220,29 +175,6 @@ class AppSettingsPatch(BaseModel):
     session_title_prompt: str | None = None
     session_title_max_input_chars: int | None = Field(default=None, ge=100, le=10000)
     group_transcript_system_instruction: str | None = None
-    resource_status_panel_enabled: StrictBool | None = None
-    resource_status_show_cpu: StrictBool | None = None
-    resource_status_show_ram: StrictBool | None = None
-    resource_status_show_gpu: StrictBool | None = None
-    resource_status_show_vram: StrictBool | None = None
-    resource_status_ram_display_mode: Literal["percent", "value"] | None = None
-    resource_status_vram_display_mode: Literal["percent", "value"] | None = None
-    resource_status_show_tokens: StrictBool | None = None
-    appearance_font_ui_family: StrictStr | None = None
-    appearance_font_message_family: StrictStr | None = None
-    appearance_font_code_family: StrictStr | None = None
-    appearance_font_ui_source: StrictStr | None = None
-    appearance_font_message_source: StrictStr | None = None
-    appearance_font_code_source: StrictStr | None = None
-    appearance_font_ui_system_name: StrictStr | None = None
-    appearance_font_message_system_name: StrictStr | None = None
-    appearance_font_code_system_name: StrictStr | None = None
-    appearance_font_ui_custom_id: StrictStr | None = None
-    appearance_font_message_custom_id: StrictStr | None = None
-    appearance_font_code_custom_id: StrictStr | None = None
-    appearance_font_ui_custom_family_id: StrictStr | None = None
-    appearance_font_message_custom_family_id: StrictStr | None = None
-    appearance_font_code_custom_family_id: StrictStr | None = None
     core_memory_content: str | None = None
     core_memory_enabled: StrictBool | None = None
     pet: PetSettingsPatch | None = None

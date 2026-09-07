@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { api, ApiError } from '../api/client';
-import type { Persona } from '../types';
+import { chatApi } from '../api/chat';
+import { ApiError } from '../api/http';
+import type { Persona } from '../types/chat';
 
 type State = {
   personas: Persona[];
@@ -16,7 +17,7 @@ export const usePersonasStore = create<State>((set) => ({
     const version = ++requestVersion;
     set({ loading: true, error: null });
     try {
-      const personas = await api.listPersonas();
+      const personas = await chatApi.listPersonas();
       if (version === requestVersion) set({ personas });
     } catch (error) {
       if (version === requestVersion) set({ error: error instanceof ApiError ? `${error.code}: ${error.message}` : String(error) });

@@ -1,4 +1,5 @@
-import type { Message, RuntimeEvent } from '../types';
+import type { Message } from '../types/messages';
+import type { RuntimeEvent } from '../types/runs';
 
 export function applyMessageEvent(messages: Message[], event: RuntimeEvent): Message[] {
   const payload = event.payload || {};

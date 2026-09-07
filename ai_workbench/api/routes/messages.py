@@ -8,9 +8,8 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.sessions import _get_session_or_404
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_attachments
-from ai_workbench.core.message_parts import make_text_part, text_from_parts
+from ai_workbench.core.message_parts import make_text_part
 from ai_workbench.core.schema.message import MessageSchema
-from ai_workbench.core.schema.run import RunStatus
 
 
 router = APIRouter(prefix="/api/sessions/{session_id}", tags=["messages"])

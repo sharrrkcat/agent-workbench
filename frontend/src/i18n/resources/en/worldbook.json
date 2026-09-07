@@ -1,1 +1,12 @@
-{"title":"Worldbook","enabled":"Enable worldbook context","entries":"entries"}
+{
+  "title": "Worldbook",
+  "enabled": "Enable worldbook context",
+  "entries": "entries",
+  "maximumEntries": "Maximum entries",
+  "save": "Save worldbook settings",
+  "worldbooks": "Worldbooks",
+  "worldbookName": "Worldbook name",
+  "addWorldbook": "Add worldbook",
+  "entryCount_one": "{{count}} entry",
+  "entryCount_other": "{{count}} entries"
+}

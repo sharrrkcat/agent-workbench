@@ -1,7 +1,7 @@
 """Validated, transport-neutral message parts.
 
-Phase 1 keeps only presentation/data parts.  Forms and command buttons were
-part of the removed extension protocol and are intentionally rejected.
+Parts carry presentation and tool data. Executable forms and command buttons
+are rejected.
 """
 
 from __future__ import annotations

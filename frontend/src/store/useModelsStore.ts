@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { api } from '../api/client';
-import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalogEntry, RuntimeInstallation, RuntimeJob, RuntimeEvent } from '../types';
+import { modelsApi } from '../api/models';
+import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalogEntry, RuntimeInstallation, RuntimeJob } from '../types/models';
+import type { RuntimeEvent } from '../types/runs';
 
 type ModelsState = {
   profiles: ModelProfile[]; providers: ProviderProfile[]; settings: ModelSettings | null;
@@ -35,7 +36,7 @@ export const useModelsStore = create<ModelsState>((set, get) => {
     const initialInstallationVersion = installationVersion;
     set({ runtimeLoading: true, runtimeError: '' });
     try {
-      const [catalog, installations, jobs] = await Promise.all([api.runtimeCatalog(), api.runtimeInstallations(), api.runtimeJobs()]);
+      const [catalog, installations, jobs] = await Promise.all([modelsApi.runtimeCatalog(), modelsApi.runtimeInstallations(), modelsApi.runtimeJobs()]);
       if (version !== runtimeVersion) return;
       set((state) => ({ catalog, installations: initialInstallationVersion === installationVersion ? installations : state.installations,
         jobs: mergeRuntimeJobs(state.jobs, jobs) }));
@@ -60,8 +61,8 @@ export const useModelsStore = create<ModelsState>((set, get) => {
     const initialStatusVersions = new Map(statusVersions);
     set({ loading: true, error: '' });
     try {
-      const [profiles, providers, settings] = await Promise.all([api.listModelProfiles(), api.listProviderProfiles(), api.getModelSettings()]);
-      const statuses = Object.fromEntries(await Promise.all(profiles.map(async (p) => [p.id, await api.getModelStatus(p.id)])));
+      const [profiles, providers, settings] = await Promise.all([modelsApi.listModelProfiles(), modelsApi.listProviderProfiles(), modelsApi.getModelSettings()]);
+      const statuses = Object.fromEntries(await Promise.all(profiles.map(async (p) => [p.id, await modelsApi.getModelStatus(p.id)])));
       if (version !== reloadVersion) return;
       for (const profile of profiles) {
         if (statusVersions.get(profile.id) !== initialStatusVersions.get(profile.id) && get().statuses[profile.id]) {

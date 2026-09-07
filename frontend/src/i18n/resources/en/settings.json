@@ -39,5 +39,13 @@
     "knowledge_search": "Search the current Persona/session Knowledge bindings.",
     "base64_encode": "Encode UTF-8 text as Base64.",
     "base64_decode": "Decode Base64 to UTF-8 text."
+  },
+  "generalFields": {
+    "memoryEnabled": "Enable core memory",
+    "memoryContent": "Core memory",
+    "titlesEnabled": "Generate session titles",
+    "titleLimit": "Title input limit",
+    "groupInstruction": "Group transcript instruction",
+    "save": "Save general settings"
   }
 }

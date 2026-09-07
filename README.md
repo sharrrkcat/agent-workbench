@@ -1,131 +1,166 @@
 # Agent Workbench
 
-A local-first chat workbench and OpenAI-compatible model gateway. Round 3
-uses one ModelManager for chat, auxiliary tasks, Knowledge and external
-requests, with optional catalog-pinned llama-server and Python worker
-backends outside the API process.
+A local chat workbench and OpenAI-compatible model service. One ModelManager
+serves chat, auxiliary titles, Knowledge retrieval and external inference.
+Prompt Personas and an optional bounded tool harness support ordinary and group
+conversations. Local models run in managed llama-server/Python workers outside
+the API process, or through an external OpenAI-compatible connection.
+
+The project is in testing, without users or user data. It does not provide an
+autonomous coding agent, extension/plugin discovery, model downloads or image
+generation. The external API stays single-key and localhost-only.
 
 ## Start
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), Node.js and npm.
+Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), and Node.js 20.19+
+or 22.12+ with npm. From a source checkout:
 
 ```powershell
 uv sync
 Push-Location frontend
-npm install
+npm ci
 npm run build
 Pop-Location
 uv run python scripts/run_app.py --no-open
 ```
 
-Open http://127.0.0.1:8765. Use --port 8766 if the port is occupied.
-For frontend development, run the API on port 8000 and npm run dev in
-frontend; Vite serves http://127.0.0.1:5173 with its API/WS proxy.
+Open <http://127.0.0.1:8765>. Use `--port 8766` when that port is occupied.
+Windows `start.bat` and Linux/macOS `bash start.sh` open the built application.
+For development, start the API with `--port 8000`, then run `npm run dev` in
+frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy.
+
+The [run guide](README_RUN.md) also covers portable packaging. The builder writes
+under build/ and bundles application code, migrations, frontend assets and docs;
+it excludes local data, dependencies, credentials and model weights.
 
 ## Configure models
 
-In Settings > Models:
+In **Settings > Models**, choose one backend:
 
-1. Add a connection with an OpenAI-compatible API base URL, optional key,
-   timeout and queue limits.
-2. Add a model profile, choose its kind and connection, and enter the exact
-   model reference advertised by the provider. Choose a unique public alias.
-3. Set capability flags, generation/per-kind parameters and release policy.
-   Health/load checks verify the connection and model.
-4. Choose the default chat model and, optionally, a separate auxiliary model.
-   A chat session can override the default.
+1. **External connection:** add an OpenAI-compatible base URL, optional key and
+   queue/timeout settings under Connections. Create a profile with the exact
+   model reference advertised by that connection.
+2. **Managed runtime:** install an enabled CPU runtime under Runtimes, place
+   model weights manually under data/models, then create a managed profile with
+   that runtime, variant and inventory reference.
 
-There is one profile store for llm, embedding, reranker, image_embedding and
-vision. External connections use the OpenAI-compatible protocol. Managed
-profiles select a runtime and variant, while weights remain manual files under
-data/models. LLM chat uses llama-server; text embeddings, reranking, image
-embeddings and vision use the Python worker. Image input through a
-vision-capable external LLM is also supported.
+Each profile has one of five kinds, an internal UUID, a unique public alias,
+capabilities, parameters and lifecycle settings. Choose the default chat model
+and optionally a separate auxiliary model. Chat resolves session override,
+current Persona model, then global default. Titles use only the auxiliary
+selection and remain unchanged when it is missing or fails.
 
-In Settings > Models > Runtimes, install the enabled CPU runtimes, inspect
-job progress and logs, cancel or retry tasks, and uninstall a runtime. CUDA,
-Vulkan and GPU worker variants are shown as unsupported until enabled for the
-platform. Runtime settings configure only HTTPS artifact indexes/proxies;
-model weights are never downloaded by the application.
+| Kind | Local inventory root | Managed backend |
+| --- | --- | --- |
+| llm | data/models/llms | llama-server, GGUF |
+| embedding | data/models/embeddings | Python worker |
+| reranker | data/models/rerankers | Python worker |
+| image_embedding | data/models/image_embeddings | Python worker |
+| vision | data/models/vision | Python worker |
 
-Lifecycle defaults to manual release. External connections cannot report
-weight residency or unload through the standard protocol; the UI shows
-unknown residency and disables unload. Queue defaults are concurrency 1,
-32 waiting requests and a 30-second queue timeout. Multiple aliases for the
-same connection/model share occupancy. No model files are downloaded.
+Inventory returns references relative to data/models, for example
+`llms/example.gguf`. Python models use native Transformers checkpoints; WD14
+uses model.onnx plus selected_tags.csv. Image input to chat requires an external
+vision-capable LLM; managed llama projector support is not implemented.
 
-## Chat and Knowledge
+Runtime installation is supported for Windows/Linux x64 CPU variants.
+CUDA/Vulkan/GPU worker entries remain unavailable. Install/cancel/retry/uninstall,
+job progress and bounded logs are available in Runtimes. Download settings
+configure runtime dependencies and artifact proxies only. No model weights are
+downloaded. See [models](docs/contracts/models.md) for engine and platform limits.
 
-Ordinary messages follow ChatRunner; registered `/tool_name` inputs invoke
-built-in tools directly. Other prefixes such as @chat or :formal remain text.
-Session/group transcript context, Memory,
-Worldbook and Knowledge injection remain available. Persona defaults and
-session overrides are resolved before each chat run; group sessions preserve
-speaker metadata and generate one selected speaker response at a time. Enable
-Harness in Persona/session settings and select allowed tools for a bounded
-model tool loop. Files and network requests require explicit approval;
-direct calls in Settings > Tools never trigger a model summary. See the
-[harness contract](docs/contracts/harness-tools.md) for tools, limits and APIs.
+Release defaults to manual. External health/load verifies the advertised model,
+but standard OpenAI-compatible connections cannot report weight residency or
+unload; the UI shows unknown residency and disables unload. Provider queues
+default to concurrency 1, 32 waiting requests and 30-second queue timeout.
 
-Chat responses stream over WebSocket with stable message ids and sequenced
-deltas. The completed message is authoritative. Title generation uses only
-the explicitly selected auxiliary model, after the main model lease releases.
-Missing or failed auxiliary configuration leaves the title unchanged.
+## Chat and tools
 
-Knowledge retains direct text/file/attachment sources, chunking, vector/FTS
-retrieval, RRF, session bindings and automatic context injection. Embedding
-and reranker selectors reference the same Models profiles. Document/query
-preprocessing and lifecycle run through the manager. Changing vector
-configuration invalidates affected indexes and requires reindexing. When
-reranking is unavailable, retrieval keeps RRF order with diagnostic metadata.
+Personas are editable prompt records with model, context, generation, harness
+and Knowledge/Worldbook defaults. New sessions start with Chat. Add members and
+select the current speaker for group transcript conversations; each input
+generates one selected speaker's reply. Explicit session overrides may replace
+Persona defaults, including an empty context-binding or tool list.
+
+Core Memory, Worldbook and Knowledge remain available in ordinary chat.
+Knowledge supports text/file/attachment sources, chunking, vector/keyword
+retrieval and optional reranking. Changing embedding configuration requires
+reindexing. Unavailable reranking intentionally preserves RRF order.
+
+Enable Harness and choose allowed tools in Persona/session settings to permit
+native model tool calls. Built-ins are read_file, web_search, fetch_url,
+knowledge_search, base64_encode and base64_decode. File/network calls require
+approval every time; waiting survives restart and resumes through explicit
+approval, rejection or cancellation. Other input is blocked while waiting.
+
+Direct calls use **Settings > Tools** or a registered slash tool. For example,
+after allowing base64_encode, `/base64_encode hello` returns `aGVsbG8=` without
+a model summary or title. Multi-parameter tools require a JSON object, such as
+`/read_file {"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...`
+prefixes are ordinary text. Tool results are rendered as data.
+See [harness/tools](docs/contracts/harness-tools.md) for limits and APIs.
 
 ## External API
 
-Enable External service in Models, configure one API key, and mark selected
-profiles visible to the external API. The service accepts localhost clients
-only and is disabled by default.
+In **Models > External service**, configure a key and enable the service. Mark
+LLM/embedding profiles externally visible. Requests use public aliases, not
+internal UUIDs. The service is disabled by default, accepts loopback clients
+only, and shares inference/lifecycle with internal callers without writing chat
+or Knowledge records. It forwards tool definitions/calls and never executes tools.
 
-| Endpoint | Behavior |
-| --- | --- |
-| GET /v1/models | Enabled public llm/embedding aliases |
-| POST /v1/chat/completions | Non-streaming/SSE, function tool data, image_url and response_format |
-| POST /v1/embeddings | Text/string arrays, float/base64 output |
+The examples below are PowerShell. Set the key and aliases to your configuration:
 
-Use Authorization: Bearer <key> or x-api-key. Model names are public aliases;
-internal UUIDs are not accepted. Only n=1 and the documented request subset
-are supported. Tool calls are forwarded, never executed. Unsupported
-capabilities return errors without selecting another model.
+```powershell
+$apiBase = 'http://127.0.0.1:8765/v1'
+$headers = @{ Authorization = 'Bearer YOUR_LOCAL_KEY' }
+Invoke-RestMethod "$apiBase/models" -Headers $headers
 
-Model management is under /api/models/providers, /profiles, /inventory and
-/settings. The old LLM/per-kind/inference management routes, standalone vision
-and multimodal endpoints are deleted. Public rerank and image services are
-deferred. See [the external protocol](docs/contracts/stateless-inference.md).
+$chatBody = @{
+  model = 'chat-model'
+  messages = @(@{ role = 'user'; content = 'Hello' })
+} | ConvertTo-Json -Depth 10
+Invoke-RestMethod "$apiBase/chat/completions" -Method Post -Headers $headers `
+  -ContentType 'application/json' -Body $chatBody
+
+$embeddingBody = @{ model = 'embedding-model'; input = @('First text', 'Second text') } | ConvertTo-Json
+Invoke-RestMethod "$apiBase/embeddings" -Method Post -Headers $headers `
+  -ContentType 'application/json' -Body $embeddingBody
+```
+
+For SSE with curl (use `curl.exe` on Windows):
+
+```shell
+curl -N http://127.0.0.1:8765/v1/chat/completions \
+  -H 'Authorization: Bearer YOUR_LOCAL_KEY' -H 'Content-Type: application/json' \
+  -d '{"model":"chat-model","messages":[{"role":"user","content":"Hello"}],"stream":true,"stream_options":{"include_usage":true}}'
+```
+
+Chat accepts the documented OpenAI subset, including n=1, function tool data,
+user image_url parts and supported response_format capabilities. Embeddings
+accept strings/string arrays with float or base64 output. Unsupported fields,
+capabilities and unavailable models produce explicit errors without substitution.
+[Models](docs/contracts/models.md#external-inference-api) owns request rules;
+[runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
+Public rerank and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
 
 ## Settings and storage
 
-General owns attachment limits, titles, Memory, appearance and Pet settings.
-Models owns connections, all model profiles, model selectors and the external
-service. Knowledge and Worldbook own their context/retrieval settings.
+The seven settings entries are General, Models, Personas, Knowledge, Worldbook,
+Tools and Pet. Each has one owner; [settings](docs/contracts/settings.md) lists
+APIs, editable fields and key omission/clearing semantics. Keys are omitted from
+management reads but remain unencrypted in local storage. Logs omit credentials
+and request/model content.
 
-Keys are omitted from management reads, with presence flags instead. Omitting
-a PATCH key retains it; an empty string clears it. Local key storage is not
-encrypted. Logs exclude credentials and request/model content.
+Alembic alone manages SQLite. Current head is `0007_phase5_cleanup`. This revision
+deletes only the disposable app_settings object, resetting General, Core Memory
+and Pet settings to defaults. It preserves other settings, chat, Persona,
+Knowledge, Worldbook and runtime records. Empty databases upgrade to head;
+nonempty unversioned databases are rejected and destructive downgrade is unsupported.
 
-SQLite is managed solely by Alembic. Head 0005_phase3_personas adds Persona,
-ordered session members, binding modes and private run snapshots after the
-runtime schema and disposable
-database recreation, without copying or converting records. Downgrade is
-unsupported.
-Empty databases upgrade to head; unversioned nonempty databases are rejected.
-
-This project has no users/user data. Prolonged service downtime is acceptable.
-Abandoned code has no compatibility implementation or configuration fallback.
-Schema revisions never delete model files, attachments, runtimes or other
-data directories. See [data layout](docs/DATA_LAYOUT.md).
-
-The default database is data/agent_workbench.db, configurable with
-AGENT_WORKBENCH_DATABASE_URL. Remaining environment paths are listed in
-.env.example; model connection settings live in the database.
+Model files, attachments, runtimes and other data directories are never deleted
+by schema revisions. The default database is data/agent_workbench.db;
+AGENT_WORKBENCH_DATABASE_URL overrides it. See [data layout](docs/DATA_LAYOUT.md)
+and [.env.example](.env.example) for paths and explicit maintenance commands.
 
 ## Verification
 
@@ -135,22 +170,18 @@ uv run python -m compileall -q ai_workbench
 uv run python scripts/check_docs_size.py
 uv run python scripts/audit_workspace.py --check
 Push-Location frontend
+npm test
 npm run build
-npm run check:i18n
-npm run test:model-stream
-npm run test:phase1-contracts
-npm run test:knowledge-citations
-npm run test:url
 Pop-Location
+git diff --check
 ```
 
-Backend tests use isolated roots, mock upstream HTTP plus real loopback
-HTTP/SSE/WS transport tests. Runtime tests install/download only pinned runtime
-artifacts into isolated roots; they do not download model weights. Frontend state
-tests exercise sequence ordering, canonical completion, concurrent model
-refreshes, runtime jobs and session isolation. Installed runtime smoke checks
-are reported separately from deterministic tests.
+Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS
+transport. Frontend tests cover API payloads, settings, translation, streaming,
+Persona/session isolation, model/runtime events, tool approval and Pet state.
+Runtime installation and real-model/browser smoke checks are reported separately
+from deterministic tests. Frontend source is organized by domain types/API,
+explicit store actions and focused view components.
 
-Read [AI context](docs/AI_CONTEXT.md), then the
-[refactor roadmap](docs/WORKBENCH_REFACTOR_ROADMAP.md) and owning contract
-before changing code.
+Before changing code, read [AI context](docs/AI_CONTEXT.md), the
+[refactor roadmap](docs/WORKBENCH_REFACTOR_ROADMAP.md) and the owning contract.

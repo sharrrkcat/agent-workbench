@@ -1,6 +1,6 @@
 # Agent Workbench 架构精简与重构路线图
 
-> 状态：设计冻结，Phase 0、Phase 1、Phase 2a、Phase 2b、Phase 3 与 Phase 4 已完成（2026-09-07）
+> 状态：设计冻结，Phase 0、Phase 1、Phase 2a、Phase 2b、Phase 3、Phase 4 与 Phase 5 已完成（2026-09-07）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口
 
@@ -406,7 +406,7 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 - [ ] 将 contract 文档压缩为 models、chat/context、harness/tools、knowledge、runs/streaming、settings 等 5–6 个主题。
 - [ ] 重写 README 的产品边界、runtime 安装和 API 示例。
 - [ ] 运行 docs size、全量后端测试、前端测试和构建。
-- [ ] 为未来 ComfyUI tool、/v1/rerank、图像服务、MCP 和模型下载各留短设计记录，但不提前实现。
+- [ ] 为未来 /v1/rerank、图像服务各留短设计记录，但不提前实现。
 
 ## 6. 文件与模块去向
 
@@ -555,9 +555,18 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - [x] Phase 2b 受管 runtime 与安装任务。
 - [x] Phase 3 Persona 数据化。
 - [x] Phase 4 harness。
-- [ ] Phase 5 文档和前端收尾。
+- [x] Phase 5 文档和前端收尾。
 
-Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2a 完成统一模型调用面；Phase 2b 完成受管 runtime 与安装任务。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准，以下旧阶段记录只用于说明历史，不恢复旧兼容实现。
+Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2a 完成统一模型调用面；Phase 2b 完成受管 runtime 与安装任务；Phase 5 完成文档、设置边界和前端模块收敛。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准，以下旧阶段记录只用于说明历史，不恢复旧兼容实现。
+
+### Phase 5 收尾与验收记录（2026-09-07）
+
+- 删除旧字体/资源路由、旧 rerank 分发、模型下载脚本、聚合 API/types、过期契约和实现包；保留资源诊断 API、统一 reranker kind/RAG 操作和手动模型管理边界。
+- 新增 `0007_phase5_cleanup`，只删除 disposable `app_settings` JSON 行以重置 General/Core Memory/Pet；不触碰模型、runtime、附件、Knowledge、Worldbook 或其他数据目录，并补齐迁移、字段拒绝、资源 API 和便携包回归测试。
+- 设置最终收敛为 General、Models、Personas、Knowledge、Worldbook、Tools、Pet 七个入口；Models、消息 parts、Pet、API clients、types 和 Workbench store 按域拆分，保留状态隔离、审批操作、工具数据渲染和双语界面行为。
+- 将旧契约归并为 `models`、`chat-context`、`harness-tools`、`knowledge`、`runs-streaming`、`settings` 六个主题；README/运行指南重写为当前产品边界、runtime 安装、API 示例和数据/迁移规则，并加入 `/v1/rerank` 与图像服务短设计记录。
+- 验证：`uv run --no-sync pytest -q --tb=short` 为 **226 passed**；compileall、`scripts/check_docs_size.py`、`scripts/audit_workspace.py --check`、frontend `npm test`、`npm run build` 和 `git diff --check` 均通过。前端测试覆盖实际 TypeScript 模块图、API 边界、设置提交、双语渲染、流式消息、模型/runtime 事件、Persona/Harness/Pet 状态及文档链接。
+- 当前边界：未提前实现 MCP、ComfyUI、图像生成、公共 `/v1/rerank` 或模型下载；真实模型权重、真实搜索服务和浏览器手工 smoke 仍不在本阶段的确定性验收范围内。
 
 ### Phase 4 收尾与验收记录（2026-09-07）
 
@@ -639,4 +648,5 @@ Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2
 | 2026-09-05 | 完成 Phase 2a：统一模型层/表/接口/前端，补齐 OpenAI 兼容流式与工具/视觉/格式子集，删除旧进程内推理与配置栈，整体重建测试库；冻结 OpenAI Compatible 单协议、manual 默认释放、标题仅显式辅助模型。 |
 | 2026-09-05 | 永久确认测试阶段无用户/用户数据、允许长期停服、不做保活或旧结构兼容、不迁移数据和不考虑旧习惯；模型/附件/runtime 等文件不随 schema 删除。 |
 | 2026-09-06 | Phase 2b 完成：首批 CPU runtime、代码内锁定 catalog、动态回环 HTTP worker、SQLite 安装任务与全局事件；GPU 变体显式 unsupported，模型仍手动管理。 |
-| 2026-09-07 | Phase 4 完成：显式内置工具、八轮循环与主动预算、可恢复审批、共享取消、直接调用与双语前端；0006 schema、233 后端测试及前端质量门槛通过，Phase 5 待实施。 |
+| 2026-09-07 | Phase 4 完成：显式内置工具、八轮循环与主动预算、可恢复审批、共享取消、直接调用与双语前端；0006 schema、233 后端测试及前端质量门槛通过。 |
+| 2026-09-07 | Phase 5 完成：删除孤立旧架构、收敛七个设置入口、按域拆分前端、归并六个契约主题、重写 README/运行指南并加入 0007 settings reset；226 后端测试、前端测试/构建、文档大小、工作区审计和差异检查通过。 |

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModelsStore } from '../store/useModelsStore';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { SettingsSection } from './SettingsPage';
+import type { SettingsSection } from './settings/navigation';
 import { SessionSettingsDialog } from './personas/SessionSettingsDialog';
 import { PersonaAvatar } from './personas/ConfigurationFields';
 

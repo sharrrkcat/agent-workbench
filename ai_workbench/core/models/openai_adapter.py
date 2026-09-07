@@ -57,7 +57,7 @@ class OpenAIAdapter:
 
     async def health(self, profile: ModelProfile) -> ModelStatus:
         if profile.kind not in {"llm", "embedding"}:
-            raise ModelError("MODEL_UNAVAILABLE", "This model kind requires a managed backend (Phase 2b).", 503)
+            raise ModelError("MODEL_UNAVAILABLE", "This model kind requires a managed backend.", 503)
         if profile.model_ref not in await self.models():
             raise ModelError("MODEL_NOT_FOUND", "model_ref is not advertised by the configured provider.", 404)
         return ModelStatus(state="ready")
@@ -153,13 +153,13 @@ class OpenAIAdapter:
             raise transport_error(exc) from exc
 
     async def rerank(self, profile, query, documents):
-        raise ModelError("MODEL_UNAVAILABLE", "Reranking requires a managed backend (Phase 2b).", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Reranking requires a managed backend.", 503)
 
     async def image_embed(self, profile, images):
-        raise ModelError("MODEL_UNAVAILABLE", "Image embedding requires a managed backend (Phase 2b).", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Image embedding requires a managed backend.", 503)
 
     async def vision(self, profile, images):
-        raise ModelError("MODEL_UNAVAILABLE", "Vision models require a managed backend (Phase 2b).", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Vision models require a managed backend.", 503)
 
     async def close(self) -> None:
         await self.client.aclose()

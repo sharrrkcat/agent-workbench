@@ -1,9 +1,9 @@
 import { Paperclip, Send, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { api } from '../api/client';
+import { chatApi } from '../api/chat';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Attachment } from '../types';
+import type { Attachment } from '../types/messages';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
@@ -37,7 +37,7 @@ export function ChatInput() {
     if (!files.length) return;
     setUploading(true);
     try {
-      const uploaded = await Promise.all(files.map((file) => api.uploadAttachment(file)));
+      const uploaded = await Promise.all(files.map((file) => chatApi.uploadAttachment(file)));
       setAttachments((current) => [...current, ...uploaded]);
     } catch (e) {
       setError(String(e));

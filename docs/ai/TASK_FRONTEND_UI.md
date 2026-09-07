@@ -1,30 +1,30 @@
 # Task: Frontend UI
 
-Read first:
+Read [settings](../contracts/settings.md), [chat/context](../contracts/chat-context.md),
+[runs/streaming](../contracts/runs-streaming.md) and the affected domain contract.
 
-- `../contracts/message-parts.md`
-- `../contracts/runtime-streaming.md`
-- `../contracts/settings-general.md`
-- `../contracts/pet.md`
-- `../contracts/managed-runtime.md`
-- `../contracts/harness-tools.md`
+Types live in frontend/src/types by domain. frontend/src/api has matching
+domain clients plus http.ts for requests/errors and url.ts for URL handling.
+There is no aggregate types.ts or api/client.ts import path.
 
-Likely sources: `frontend/src/types.ts`, `frontend/src/api/client.ts`,
-`frontend/src/store/useWorkbenchStore.ts`, chat components, SettingsPage,
-PetOverlay, `store/useModelsStore.ts`, `store/messageStream.ts`,
-`components/settings/ModelsPanel.tsx`, and both locale trees.
+useWorkbenchStore composes workbench/sessionActions, messageActions, runActions,
+runtimeEvents and mergeState into one Zustand store. Preserve atomic updates,
+microsecond timestamp ordering, approval state and isolation after session
+switches. messageStream owns sequence-based text merging. useModelsStore and
+useModelEvents own global model/runtime progress even without a session.
 
-Runtime catalog/jobs live in useModelsStore and RuntimesPanel. useModelEvents
-subscribes to global events independently of the selected chat session.
+SettingsPage owns seven entries and composes independent domain panels.
+settings/models splits profile/connection lists and editors, external service,
+field controls and feedback; RuntimesPanel owns the runtime view. Shared fields
+must not import SettingsPage. Existing navigation and Models tab drafts persist.
 
-Keep the UI limited to Chat, Models, Personas, Knowledge, Worldbook, General,
-Tools, and Pet.
-Render messages from generic parts and run progress from stable step kinds.
-PersonasPanel edits prompt Personas and default context bindings; the chat
-header/session dialog selects current speakers and explicit overrides.
-Update both locales and run `npm run build`, `npm run check:i18n`,
-`npm run test:phase1-contracts`, `npm run test:knowledge-citations`, and
-`npm run test:url`, `npm run test:model-stream`, and `npm run test:harness`.
-ToolsPanel and RunPanel share direct-call and approval state. Tool parts render
-as data, all labels use both locales, and stale events/responses must not cross
-sessions or reopen a completed approval.
+MessageBubble composes messages/MessageActions and MessageParts. PetOverlay
+composes pet/usePetData, usePetPosition and petState with the existing PetSprite.
+Keep tool output as data and active approval/cancellation visibly actionable.
+Persona editing and session overrides use the existing personas components.
+
+All UI copy uses both locale trees. Custom content, prompts, tool payloads and
+ids are not translated. Run `npm test` and `npm run build` in frontend. Tests
+load actual TypeScript module graphs through scripts/module-loader.mjs and
+mock API/component boundaries; do not match source formatting as behavior.
+Use desktop/mobile browser checks for layout or workflow changes.

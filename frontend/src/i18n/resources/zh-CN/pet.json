@@ -1,1 +1,45 @@
-{"title":"宠物","waiting":"等待确认","done":"完成","failed":"失败","imported":"已导入","deleted":"已删除"}
+{
+  "title": "宠物",
+  "waiting": "等待确认",
+  "done": "完成",
+  "failed": "失败",
+  "imported": "已导入",
+  "deleted": "已删除",
+  "showPet": "显示宠物",
+  "showBubble": "显示状态气泡",
+  "jumpOnHover": "悬停时跳跃",
+  "scale": "缩放",
+  "defaultPet": "默认宠物",
+  "automatic": "自动选择",
+  "importPackage": "导入宠物包",
+  "import": "导入",
+  "importFailed": "导入失败",
+  "deleteFailed": "删除失败",
+  "deleteConfirm": "删除这只宠物？",
+  "bubbleText": "气泡文案",
+  "packageStates": {
+    "valid": "可用",
+    "invalid_pet_id": "宠物 ID 无效",
+    "missing_manifest": "缺少 pet.json",
+    "invalid_manifest": "pet.json 无效",
+    "missing_spritesheet": "缺少精灵图"
+  },
+  "bubbleLabels": {
+    "idle": "空闲",
+    "waiting": "等待确认",
+    "done": "完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "interrupted": "已中断",
+    "wake": "唤醒",
+    "tuck": "收起",
+    "status": "状态",
+    "select": "切换宠物",
+    "reload": "刷新列表",
+    "no_pet": "没有可用宠物",
+    "import_success": "导入成功",
+    "import_failed": "导入失败",
+    "delete_success": "删除成功",
+    "delete_failed": "删除失败"
+  }
+}
