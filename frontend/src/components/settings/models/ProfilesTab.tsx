@@ -162,6 +162,10 @@ export function ProfilesTab({
                         {status.runtime.runtime_id} / {status.runtime.variant} / {status.runtime.version}:{' '}
                         {t('runtimeStates.' + status.runtime.install_state)}
                       </span>
+                      {status.runtime.device_name ? <span>{status.runtime.device_name}</span> : null}
+                      {status.runtime.gpu_layers_loaded != null ? <span>{t('gpuOffloaded', {
+                        loaded: status.runtime.gpu_layers_loaded, total: status.runtime.gpu_layers_total,
+                      })}</span> : null}
                       {status.error_code ? <code className="error-text">{status.error_code}</code> : null}
                       {status.runtime.install_state !== 'installed' ? (
                         <button type="button" className="text-button" onClick={() => onOpenRuntimes()}>

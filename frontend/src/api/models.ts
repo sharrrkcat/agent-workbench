@@ -11,6 +11,7 @@ import type {
   RuntimeDownloadSettings,
   RuntimeInstallation,
   RuntimeJob,
+  RuntimeStorage,
 } from '../types/models';
 import { request } from './http';
 
@@ -18,6 +19,10 @@ export const modelsApi = {
   runtimeCatalog: () => request<RuntimeCatalogEntry[]>('/api/models/runtimes/catalog'),
   runtimeInstallations: () => request<RuntimeInstallation[]>('/api/models/runtimes'),
   runtimeJobs: () => request<RuntimeJob[]>('/api/models/runtimes/jobs'),
+  runtimeStorage: () => request<RuntimeStorage>('/api/models/runtimes/storage'),
+  cleanupRuntimeCache: (mode: 'prune' | 'clean') => request<RuntimeJob>('/api/models/runtimes/cache/cleanup', {
+    method: 'POST', body: JSON.stringify({ mode }),
+  }),
   runtimeJob: (id: string) => request<RuntimeJob>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}`),
   runtimeJobLog: (id: string) => request<{ text: string }>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}/log`),
   cancelRuntimeJob: (id: string) =>

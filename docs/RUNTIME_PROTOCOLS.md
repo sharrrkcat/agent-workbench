@@ -16,7 +16,7 @@ Only registered `/tool_name` input triggers a direct tool; ordinary messages
 use ChatRunner and an optional harness. External `/v1` forwards tool data and
 never executes it. Pending approval resumes only through the approval API.
 
-Alembic is the only schema authority; head is `0007_phase5_cleanup`.
+Alembic is the only schema authority; head is `0010_runtime_maintenance`.
 The disposable application-settings reset and protected file boundaries are
 documented in [data layout](DATA_LAYOUT.md). Earlier revisions remain executable
 history, not alternative current schemas or compatibility implementations.

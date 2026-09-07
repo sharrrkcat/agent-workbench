@@ -10,6 +10,7 @@ import { AppModal } from '../../ui/AppModal';
 import { Field, Check, NumberInput } from './fields';
 import type { ModelFeedbackProps } from './types';
 import { kinds } from './profileDefaults';
+import { CudaLayersField } from './CudaLayersField';
 
 export type ProfileDraft = { id?: string; value: ModelInput };
 export function ProfileEditor({
@@ -184,7 +185,7 @@ export function ProfileEditor({
                         ['intraop_threads', 4, 1, 256],
                         ['max_batch_size', 32, 1, 2048],
                       ]
-                  ).map(([key, value, min, max]) => (
+                  ).filter(([key]) => key !== 'gpu_layers' || model.value.runtime_variant !== 'cuda').map(([key, value, min, max]) => (
                     <NumberInput
                       key={key}
                       label={t('runtimeParams.' + key)}
@@ -198,6 +199,10 @@ export function ProfileEditor({
                       }
                     />
                   ))}
+                  {model.value.runtime_variant === 'cuda' ? (
+                    <CudaLayersField value={typeof model.value.runtime_options.gpu_layers === 'number' ? model.value.runtime_options.gpu_layers : 'auto'}
+                      onChange={(gpu_layers) => patchModel({ runtime_options: { ...model.value.runtime_options, gpu_layers } })} />
+                  ) : null}
                 </div>
               </>
             ) : null}

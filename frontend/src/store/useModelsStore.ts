@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { modelsApi } from '../api/models';
-import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalogEntry, RuntimeInstallation, RuntimeJob } from '../types/models';
+import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalogEntry, RuntimeInstallation, RuntimeJob, RuntimeStorage } from '../types/models';
 import type { RuntimeEvent } from '../types/runs';
 
 type ModelsState = {
@@ -11,6 +11,8 @@ type ModelsState = {
   catalog: RuntimeCatalogEntry[]; installations: RuntimeInstallation[]; jobs: RuntimeJob[];
   runtimeLoading: boolean; runtimeError: string;
   reloadRuntimes: () => Promise<void>;
+  storage: RuntimeStorage | null; storageLoading: boolean; storageError: string;
+  reloadStorage: () => Promise<void>;
   setJob: (job: RuntimeJob) => void;
   applyModelEvent: (event: RuntimeEvent) => void;
 };
@@ -28,9 +30,24 @@ export const useModelsStore = create<ModelsState>((set, get) => {
   const statusVersions = new Map<string, number>();
   let runtimeVersion = 0;
   let installationVersion = 0;
+  let storageVersion = 0;
   return {
   profiles: [], providers: [], settings: null, statuses: {}, loading: false, error: '',
   catalog: [], installations: [], jobs: [], runtimeLoading: false, runtimeError: '',
+  storage: null, storageLoading: false, storageError: '',
+  reloadStorage: async () => {
+    const version = ++storageVersion;
+    set({ storageLoading: true, storageError: '' });
+    try {
+      const storage = await modelsApi.runtimeStorage();
+      if (version === storageVersion) set({ storage });
+    } catch (error) {
+      if (version === storageVersion) set({ storage: null, storageError: error instanceof Error ? error.message : String(error) });
+      throw error;
+    } finally {
+      if (version === storageVersion) set({ storageLoading: false });
+    }
+  },
   reloadRuntimes: async () => {
     const version = ++runtimeVersion;
     const initialInstallationVersion = installationVersion;

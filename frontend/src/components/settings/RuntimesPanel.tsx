@@ -5,15 +5,19 @@ import { modelsApi } from '../../api/models';
 import { useModelsStore } from '../../store/useModelsStore';
 import type { RuntimeDownloadSettings, RuntimeJob } from '../../types/models';
 import { AppModal } from '../ui/AppModal';
+import { CacheJobResult, RuntimeStoragePanel } from './RuntimeStoragePanel';
 
 export function RuntimesPanel() {
   const { t } = useTranslation('llm');
-  const { catalog, installations, jobs, runtimeLoading, runtimeError, reloadRuntimes, setJob } = useModelsStore();
+  const { catalog, installations, jobs, runtimeLoading, runtimeError, reloadRuntimes, reloadStorage, storageLoading, setJob } = useModelsStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState<RuntimeDownloadSettings | null>(null);
   const [log, setLog] = useState<{ job: RuntimeJob; text: string } | null>(null);
   const active = jobs.find((job) => job.state === 'queued' || job.state === 'running');
+  const jobLabel = (job: RuntimeJob) => job.runtime_id
+    ? `${job.runtime_id} / ${job.variant} / ${t('runtimeOperations.' + job.operation)}`
+    : t('runtimeOperations.' + job.operation);
   useEffect(() => {
     void modelsApi
       .runtimeSettings()
@@ -44,8 +48,8 @@ export function RuntimesPanel() {
           className="icon-button"
           title={t('refresh')}
           aria-label={t('refresh')}
-          disabled={busy || runtimeLoading}
-          onClick={() => void run(reloadRuntimes)}
+          disabled={busy || runtimeLoading || storageLoading}
+          onClick={() => void run(reloadStorage)}
         >
           <RefreshCw size={16} />
         </button>
@@ -55,6 +59,9 @@ export function RuntimesPanel() {
           {error || runtimeError}
         </p>
       ) : null}
+      <RuntimeStoragePanel busy={busy} active={active}
+        onCleanup={(mode) => run(async () => setJob(await modelsApi.cleanupRuntimeCache(mode)))}
+        onCancel={(job) => void run(async () => setJob(await modelsApi.cancelRuntimeJob(job.id)))} />
       {catalog.map((entry) => {
         const installation = installations.find((item) => item.id === `${entry.runtime_id}/${entry.variant}`);
         const job = jobs.find((item) => item.runtime_id === entry.runtime_id && item.variant === entry.variant);
@@ -94,7 +101,7 @@ export function RuntimesPanel() {
                   className="icon-button"
                   title={t('cancelInstall')}
                   aria-label={t('cancelInstall')}
-                  disabled={busy}
+                  disabled={busy || job.cancel_requested}
                   onClick={() => void run(async () => setJob(await modelsApi.cancelRuntimeJob(job.id)))}
                 >
                   <Square size={16} />
@@ -180,7 +187,7 @@ export function RuntimesPanel() {
             {jobs.map((job) => (
               <div className="model-row" key={job.id}>
                 <span>
-                  {job.runtime_id} / {job.variant}
+                  {jobLabel(job)}
                   <small>{new Date(job.created_at).toLocaleString()}</small>
                 </span>
                 <span>{t('jobStates.' + job.state)}</span>
@@ -203,9 +210,7 @@ export function RuntimesPanel() {
         {log ? (
           <>
             <div className="model-toolbar">
-              <code>
-                {log.job.runtime_id} / {log.job.variant}
-              </code>
+              <span>{jobLabel(log.job)}</span>
               <button
                 className="icon-button"
                 title={t('refresh')}
@@ -216,6 +221,7 @@ export function RuntimesPanel() {
                 <RefreshCw size={16} />
               </button>
             </div>
+            <CacheJobResult job={jobs.find((job) => job.id === log.job.id) || log.job} />
             <pre className="runtime-log">{log.text || t('emptyLog')}</pre>
           </>
         ) : null}

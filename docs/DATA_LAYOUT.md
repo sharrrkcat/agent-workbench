@@ -23,7 +23,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0009_pet_foundation`; there are 24 current business tables.
+Alembic head is `0010_runtime_maintenance`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -48,6 +48,11 @@ defaults. Other settings and business records, including new sessions and runs,
 survive. Repeated upgrade preserves subsequently saved settings. Existing Pet
 assets, models, runtimes, attachments and all other file directories are untouched.
 
+Revision 0010 recreates only disposable runtime_jobs and clears runtime installation
+job_id references. Installation identity, version, state and integrity digests,
+other business records and all file directories survive. There is no conversion
+of historical jobs. Repeating upgrade preserves newly recorded maintenance tasks.
+
 The implementation validates protected file paths, sizes and modification times
 around the actual database upgrade. Automated tests use temporary roots;
 the suite additionally checks hashes of repository model files.
@@ -61,6 +66,11 @@ Installation directories and process ownership are defined in
 uninstall removes only its catalog entry's directory. Shared Python
 distributions and download cache remain available for other variants.
 Task/process logs are bounded and retained under data/logs/runtimes.
+Runtime storage accounting covers ordinary files across runtimes, deduplicates
+hard links and reports exclusive logical size rather than physical disk recovery.
+Manual uv prune/clean acts only on .cache, through the shared runtime task lock.
+It does not uninstall runtimes or remove interpreters. Retained hard links keep
+installed files alive; a later installation may need to download cache entries again.
 
 ## Environment and maintenance
 

@@ -65,6 +65,14 @@ pypi_index_url, pytorch_index_url and github_release_proxy_url. Index/release
 proxy URLs require HTTPS; HTTP is allowed for the explicit proxy. URL credentials
 are rejected. These settings serve runtime artifacts/dependencies only.
 Runtimes exposes install/cancel/reinstall/uninstall, job history and bounded logs.
+It also shows runtime storage totals/details and manual cache prune/clean.
+Storage is fetched on entry, explicit refresh and maintenance completion, with
+no timer. Incomplete scans show unknown values; cache recovery uses an exclusive
+logical-size estimate. Clear cache requires confirmation, including the estimate
+and future-download consequence. Maintenance actions share the runtime task lock.
+Cache history/results have their own labels and no synthetic runtime identity.
+CUDA profiles use an Automatic/Manual GPU-layer control, preserving a draft's
+manual value while switching modes. Defaults and execution belong to Models.
 
 ## Other domains
 

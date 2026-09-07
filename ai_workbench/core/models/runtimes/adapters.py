@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
@@ -35,17 +36,23 @@ class ManagedAdapter:
         self.lock = asyncio.Lock()
         self.token = ""
         self.log_path: Path | None = None
+        self.error_code: str | None = None
+        self.device_name: str | None = None
+        self.gpu_layers_loaded: int | None = None
+        self.gpu_layers_total: int | None = None
 
     def runtime_status(self):
         value = self.supervisor.installation(self.entry.runtime_id, self.entry.variant)
         return RuntimeStatus(runtime_id=value.runtime_id, variant=value.variant, version=value.version,
-            install_state=value.state, process_state=self.state, job_id=value.job_id).model_dump()
+            install_state=value.state, process_state=self.state, job_id=value.job_id,
+            device_name=self.device_name, gpu_layers_loaded=self.gpu_layers_loaded,
+            gpu_layers_total=self.gpu_layers_total).model_dump()
 
     def snapshot(self, profile):
         loaded = bool(self.loaded) if profile.runtime_id == "llama-server" else profile.id in self.loaded
         return ModelStatus(state="failed" if self.failed else "ready" if loaded else "unloaded",
             residency="loaded" if loaded else "unloaded", unload_supported=True,
-            error_code="MODEL_UNAVAILABLE" if self.failed else None, runtime=self.runtime_status())
+            error_code=(self.error_code or "MODEL_UNAVAILABLE") if self.failed else None, runtime=self.runtime_status())
 
     def _model_path(self, profile):
         try:
@@ -89,9 +96,10 @@ class ManagedAdapter:
                         "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
                 self.loaded.add(profile.id)
                 return self.snapshot(profile)
-            except BaseException:
+            except BaseException as exc:
                 await self._stop()
                 self.failed, self.state = True, "failed"
+                self.error_code = exc.code if isinstance(exc, ModelError) else "MODEL_UNAVAILABLE"
                 self.changed()
                 raise
 
@@ -103,7 +111,8 @@ class ManagedAdapter:
         self.run_dir.mkdir(parents=True)
         self.token = secrets.token_urlsafe(32)
         self.log_path = self.supervisor.logs / f"process-{profile.runtime_id}-{run_id}.log"
-        log = RuntimeLog(self.log_path, self.supervisor.root, (self.token,))
+        cuda = self.entry.runtime_id == "llama-server" and self.entry.variant == "cuda"
+        log = (LlamaCudaLog if cuda else RuntimeLog)(self.log_path, self.supervisor.root, (self.token,))
         active_logs = {slot.adapter.log_path for slot in self.supervisor.manager._slots.values()
                        if isinstance(slot.adapter, ManagedAdapter) and slot.adapter.process}
         finished_logs = sorted((path for path in self.supervisor.logs.glob(f"process-{profile.runtime_id}-*.log") if path not in active_logs), key=lambda path: path.stat().st_mtime, reverse=True)
@@ -119,6 +128,9 @@ class ManagedAdapter:
             args = [executable, "-I", "-B", target / "worker" / "server.py"]
             port = None
         else:
+            if cuda:
+                env = llama_environment(executable.parent)
+                device_id, self.device_name = await probe_cuda_device(executable, env, log)
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
                 port = reservation.getsockname()[1]
@@ -126,10 +138,14 @@ class ManagedAdapter:
             key_file.write_text(self.token, encoding="utf-8")
             key_file.chmod(0o600)
             options = profile.runtime_options
+            # b10809 exposes core llama INFO records, including offload, at trace verbosity.
             args = [executable, "--host", "127.0.0.1", "--port", port, "--model", path, "--alias", "managed",
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
-                    "--batch-size", options["batch_size"], "--n-gpu-layers", options["gpu_layers"], "--parallel", 1,
-                    "--reasoning-format", "none", "--log-verbosity", 1]
+                    "--batch-size", options["batch_size"], "--parallel", 1,
+                    "--reasoning-format", "none", "--log-verbosity", 4 if cuda else 1]
+            if cuda:
+                args.extend(["--log-colors", "off"])
+            args.extend(cuda_arguments(options, device_id) if cuda else ["--n-gpu-layers", options["gpu_layers"]])
         self.process = await ManagedProcess.start(args, env=env, cwd=executable.parent, log=log)
         for _ in range(1200):
             if self.process.process.returncode is not None:
@@ -158,6 +174,8 @@ class ManagedAdapter:
         else:
             raise ModelError("MODEL_TIMEOUT", "The managed process did not become healthy in five minutes.", 504)
         if profile.runtime_id == "llama-server":
+            if cuda:
+                self.gpu_layers_loaded, self.gpu_layers_total = await confirmed_offload(log)
             provider = ProviderProfile(name="managed", base_url=f"http://127.0.0.1:{port}/v1", api_key=self.token, timeout_seconds=300)
             self.openai = OpenAIAdapter(provider)
             if "managed" not in await self.openai.models():
@@ -171,6 +189,8 @@ class ManagedAdapter:
         if not process.stopping:
             await process.stop()
             self.failed, self.state = True, "failed"
+            self.error_code = "MODEL_UNAVAILABLE"
+            self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None
             self.loaded.clear()
             self.changed()
 
@@ -234,6 +254,8 @@ class ManagedAdapter:
             self.openai = None
         self.loaded.clear()
         self.state = "stopped"
+        self.error_code = None
+        self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None
         if self.run_dir and self.run_dir.exists():
             remove_owned(self.supervisor.base, self.run_dir)
         self.run_dir = None

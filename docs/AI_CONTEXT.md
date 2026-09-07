@@ -4,7 +4,9 @@ Read the [current plan](WORKBENCH_SIMPLIFICATION_PLAN.md), then the smallest
 relevant contract before searching source broadly. Phases 0-5 are complete;
 the [historical roadmap](WORKBENCH_REFACTOR_ROADMAP.md) records that baseline.
 The new plan supersedes its Persona, session-binding and Pet decisions.
-Schema head is `0009_pet_foundation`; current verification is in the new plan.
+Schema head is `0010_runtime_maintenance`. The current
+[runtime maintenance plan](RUNTIME_MAINTENANCE_PLAN.md) adds storage accounting,
+manual cache cleanup and Windows llama CUDA; its verification is recorded there.
 The independent [conversation presentation plan](CHAT_PRESENTATION_PLAN.md)
 adds one visible reply per run, collapsible processing and whole-reply actions.
 Its verification is recorded separately from the completed roadmap.

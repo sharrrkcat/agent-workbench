@@ -53,10 +53,10 @@ def supervisor(tmp_path, *, data=None, store=None):
     return RuntimeSupervisor(tmp_path, store or RuntimeStore(), EventBus(), [entry], transport)
 
 
-def test_catalog_pins_supported_cpu_platforms_and_marks_accelerators_unsupported():
+def test_catalog_pins_supported_platforms_and_defers_remaining_accelerators():
     for system in ("windows", "linux"):
         entries = catalog(system, "x86_64")
-        assert {entry.variant for entry in entries if entry.supported} == {"cpu", "torch-cpu"}
+        assert {entry.variant for entry in entries if entry.supported} == ({"cpu", "cuda", "torch-cpu"} if system == "windows" else {"cpu", "torch-cpu"})
         assert all(entry.sha256 for entry in entries if entry.supported)
     assert not any(entry.supported for entry in catalog("darwin", "arm64"))
     with pytest.raises(ValidationError):
@@ -152,7 +152,7 @@ def test_cancel_mutual_exclusion_and_shutdown_release_installation(tmp_path):
         service = supervisor(tmp_path)
         started = asyncio.Event()
         cancelled = asyncio.Event()
-        async def download(*args):
+        async def download(*args, **kwargs):
             started.set()
             try:
                 await asyncio.Event().wait()
@@ -194,7 +194,7 @@ def test_api_install_actions_global_events_and_missing_runtime_details(tmp_path)
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
         assert response.json()["error"]["details"]["action"] == "install"
-        assert client.post("/api/models/runtimes/llama-server/cuda/install").status_code == 422
+        assert client.post("/api/models/runtimes/llama-server/vulkan/install").status_code == 422
         with client.websocket_connect("/api/models/runtimes/events") as socket:
             socket.send_json({"type": "next_event"})
             client.app.state.runtime_state.events.emit("runtime_job_updated", session_id="", payload={"job": {"id": "example"}})

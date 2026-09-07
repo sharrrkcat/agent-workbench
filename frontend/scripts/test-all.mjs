@@ -8,6 +8,7 @@ for (const script of [
   'test-session-settings',
   'test-pet-foundation',
   'test-model-stream',
+  'test-runtime-maintenance',
   'test-harness',
   'test-chat-presentation',
   'test-knowledge-citations',

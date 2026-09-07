@@ -18,7 +18,10 @@ import httpx
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, find_entry, text_digest, worker_digest
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
-from ai_workbench.core.models.runtimes.schema import Installation, RuntimeJob, TERMINAL
+from ai_workbench.core.models.runtimes.schema import (
+    CacheCleanupResult, Installation, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
+)
+from ai_workbench.core.models.runtimes.storage import is_link, scan_storage
 from ai_workbench.core.time import utc_now
 
 
@@ -178,6 +181,8 @@ class RuntimeSupervisor:
             data = json.loads(manifest.read_text(encoding="utf-8"))
             if data["artifact_sha256"] != entry.sha256 or data["version"] != entry.version:
                 raise ValueError("artifact mismatch")
+            if entry.additional_artifacts and data["additional_artifact_sha256"] != [artifact.sha256 for artifact in entry.additional_artifacts]:
+                raise ValueError("additional artifacts mismatch")
             if entry.runtime_id == "python-worker" and data.get("worker_sha256") != entry.worker_sha256:
                 raise ValueError("worker code mismatch")
             files = data["files"]
@@ -223,6 +228,109 @@ class RuntimeSupervisor:
     def public_job(job):
         return job.model_dump(mode="json", exclude={"log_path"})
 
+    async def storage(self):
+        task = asyncio.create_task(asyncio.to_thread(scan_storage, self.base))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
+    async def _cache_usage(self):
+        snapshot = await self.storage()
+        group = next(group for group in snapshot.groups if group.id == ".cache")
+        return StorageUsage.model_validate(group.model_dump(include=set(StorageUsage.model_fields)))
+
+    def _cache_directory(self):
+        cache = self.base / ".cache"
+        for path in (self.base.parent, self.base, cache):
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                continue
+            if is_link(info) or not stat.S_ISDIR(info.st_mode):
+                raise ModelError("RUNTIME_BROKEN", "The managed cache directory is redirected or invalid.", 503)
+        pending = [cache] if cache.exists() else []
+        while pending:
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    info = path.lstat()
+                    if is_link(info):
+                        if not path.resolve().is_relative_to(cache):
+                            raise ModelError("RUNTIME_BROKEN", "A cache link escapes the managed cache directory.", 503)
+                    elif stat.S_ISDIR(info.st_mode):
+                        pending.append(path)
+        return cache
+
+    @staticmethod
+    def _uv():
+        uv = Path(sysconfig.get_path("scripts")) / ("uv.exe" if os.name == "nt" else "uv")
+        if not uv.is_file():
+            raise ModelError("RUNTIME_BROKEN", "The application uv dependency is missing.", 503)
+        return uv
+
+    async def submit_cache(self, mode):
+        if self.closed:
+            raise ModelError("MODEL_UNAVAILABLE", "Runtime supervisor is shutting down.", 503)
+        if self.active_job is not None:
+            raise ModelError("RUNTIME_INSTALLING", "Another runtime maintenance task is in progress.", 409)
+        job = RuntimeJob(operation=f"cache_{mode}", result=CacheCleanupResult())
+        job.log_path = f"{job.id}.log"
+        self.active_job = job.id
+        try:
+            self._save_job(job)
+            self.task = asyncio.create_task(self._execute_cache(job, mode))
+            return job
+        except BaseException:
+            self.active_job = None
+            raise
+
+    async def _execute_cache(self, job, mode):
+        log = None
+        try:
+            log = RuntimeLog(self.logs / job.log_path, self.root)
+            job.state = "running"
+            self._stage(job, "scanning_cache", log)
+            job.result.before = await self._cache_usage()
+            self._save_job(job)
+            validation = asyncio.create_task(asyncio.to_thread(self._cache_directory))
+            try:
+                cache = await asyncio.shield(validation)
+            except asyncio.CancelledError:
+                await asyncio.gather(validation, return_exceptions=True)
+                raise
+            env = {key: value for key, value in os.environ.items()
+                   if not key.upper().startswith(("UV_", "PIP_", "PYTHON", "VIRTUAL_ENV"))}
+            self._stage(job, "pruning_cache" if mode == "prune" else "cleaning_cache", log)
+            await self._command([self._uv(), "cache", mode, "--cache-dir", cache, "--no-config", "--offline"],
+                                env, self.root, log)
+            job.state, job.stage = "completed", "completed"
+            log.write("Cache maintenance completed.")
+        except asyncio.CancelledError:
+            job.state, job.error_code, job.cancel_requested = "cancelled", "RUNTIME_CANCELLED", True
+            if log:
+                log.write("Cache maintenance cancelled; already removed entries stay removed.")
+        except Exception as exc:
+            job.state = "failed"
+            job.error_code = exc.code if isinstance(exc, ModelError) and exc.code != "RUNTIME_INSTALL_FAILED" else "RUNTIME_CLEANUP_FAILED"
+            if log:
+                log.write(f"Cache maintenance failed: {job.error_code} ({type(exc).__name__}).")
+        finally:
+            try:
+                job.result.after = await self._cache_usage()
+                if log:
+                    log.write("Cache accounting: " + job.result.model_dump_json())
+            except Exception as exc:
+                if log:
+                    log.write(f"Cache accounting unavailable: {type(exc).__name__}.")
+            job.finished_at = utc_now()
+            try:
+                self._save_job(job)
+            finally:
+                self.active_job = None
+            self._prune_logs(None)
+
     async def submit(self, runtime_id, variant, operation):
         if self.closed:
             raise ModelError("MODEL_UNAVAILABLE", "Runtime supervisor is shutting down.", 503)
@@ -267,12 +375,14 @@ class RuntimeSupervisor:
     async def cancel(self, job_id):
         job = self.store.job(job_id)
         if job.state not in TERMINAL and job.id == self.active_job:
-            job.cancel_requested = True
-            self._save_job(job)
-            # Let the task enter its cleanup block before delivering cancellation.
-            await asyncio.sleep(0)
+            if not job.cancel_requested:
+                job.cancel_requested = True
+                self._save_job(job)
+                # Let the task enter its cleanup block before delivering cancellation.
+                await asyncio.sleep(0)
+                if self.task:
+                    self.task.cancel()
             if self.task:
-                self.task.cancel()
                 await asyncio.gather(self.task, return_exceptions=True)
         return self.store.job(job_id)
 
@@ -296,16 +406,15 @@ class RuntimeSupervisor:
                 if entry.archive_format == "venv":
                     await self._install_python(entry, payload, job, log)
                 else:
-                    archive = staging / "download"
-                    await self._download(entry, archive, job)
-                    self._stage(job, "extracting", log)
-                    extract_archive(archive, payload, entry.archive_format)
+                    await self._install_archives(entry, payload, staging, job, log)
                 candidates = list(payload.rglob(entry.executable)) if entry.runtime_id == "llama-server" else [payload / entry.executable]
                 if len(candidates) != 1 or not candidates[0].is_file():
                     raise ModelError("RUNTIME_BROKEN", "Runtime entry program was not found.", 503)
                 self._stage(job, "verifying", log)
                 executable = candidates[0].relative_to(payload).as_posix()
                 manifest = {"version": entry.version, "artifact_sha256": entry.sha256, "worker_sha256": entry.worker_sha256, "executable": executable, "files": {}}
+                if entry.additional_artifacts:
+                    manifest["additional_artifact_sha256"] = [artifact.sha256 for artifact in entry.additional_artifacts]
                 for path in sorted(payload.rglob("*")):
                     installed_file(self.base, payload, path.relative_to(payload).as_posix(), entry.archive_format == "venv")
                     if path.is_file() and "__pycache__" not in path.parts:
@@ -353,17 +462,61 @@ class RuntimeSupervisor:
                 self.blocked = None
             self._prune_logs(job.runtime_id)
 
+    async def _install_archives(self, entry, payload, staging, job, log):
+        artifacts = [RuntimeArtifact(url=entry.url, sha256=entry.sha256,
+                                     archive_format=entry.archive_format, size_bytes=entry.size_bytes), *entry.additional_artifacts]
+        total = sum(artifact.size_bytes for artifact in artifacts) if all(artifact.size_bytes is not None for artifact in artifacts) else None
+        offset = 0
+        for index, artifact in enumerate(artifacts):
+            log.write(f"Downloading artifact {index + 1}/{len(artifacts)}.")
+            await self._download(artifact, staging / f"download-{index}", job, offset=offset,
+                                 total_bytes=total, final=index == len(artifacts) - 1)
+            offset = job.progress_current
+        self._stage(job, "extracting", log)
+        extract_archive(staging / "download-0", payload, entry.archive_format)
+        candidates = list(payload.rglob(entry.executable))
+        if len(candidates) != 1 or not candidates[0].is_file():
+            raise ModelError("RUNTIME_BROKEN", "Runtime entry program was not found.", 503)
+        for index, artifact in enumerate(entry.additional_artifacts, 1):
+            extra = staging / f"additional-{index}"
+            extract_archive(staging / f"download-{index}", extra, artifact.archive_format)
+            dll_count = 0
+            for source in sorted(extra.rglob("*")):
+                if is_link(source.lstat()):
+                    raise ModelError("RUNTIME_BROKEN", "Additional runtime files must not be links.", 503)
+                if not source.is_file():
+                    continue
+                if source.suffix.lower() == ".dll":
+                    target = candidates[0].parent / source.name
+                    dll_count += 1
+                else:
+                    target = payload / "dependencies" / str(index) / source.relative_to(extra)
+                contained(payload, target)
+                if target.exists():
+                    if not target.is_file() or target.is_symlink() or await file_digest(target) != await file_digest(source):
+                        raise ModelError("RUNTIME_BROKEN", "Runtime artifacts contain conflicting files.", 503)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    source.replace(target)
+            if not dll_count:
+                raise ModelError("RUNTIME_BROKEN", "Additional CUDA runtime DLLs are missing.", 503)
+        if entry.variant == "cuda":
+            from ai_workbench.core.models.runtimes.cuda import llama_environment
+            self._stage(job, "checking_program", log)
+            await self._command([candidates[0], "--version"], llama_environment(candidates[0].parent), candidates[0].parent, log)
+
     def _stage(self, job, stage, log):
         job.stage, job.progress_current, job.progress_total = stage, 0, None
         log.write(stage)
         self._save_job(job)
 
-    async def _download(self, entry, target, job):
+    async def _download(self, entry, target, job, *, offset=0, total_bytes=None, final=True):
         settings = self.store.settings()
         url = entry.url
         if settings.github_release_proxy_url:
             url = settings.github_release_proxy_url + "/" + url
         job.stage = "downloading"
+        job.progress_current, job.progress_total = offset, total_bytes
         self._save_job(job)
         digest = hashlib.sha256()
         last_event = time.monotonic()
@@ -379,7 +532,8 @@ class RuntimeSupervisor:
                         continue
                     response.raise_for_status()
                     length = response.headers.get("content-length")
-                    job.progress_total = int(length) if length and length.isdigit() else None
+                    if total_bytes is None and final:
+                        job.progress_total = offset + int(length) if length and length.isdigit() else None
                     with target.open("wb") as output:
                         async for data in response.aiter_bytes():
                             output.write(data)
@@ -405,9 +559,7 @@ class RuntimeSupervisor:
             await process.stop()
 
     async def _install_python(self, entry, target, job, log):
-        uv = Path(sysconfig.get_path("scripts")) / ("uv.exe" if os.name == "nt" else "uv")
-        if not uv.is_file():
-            raise ModelError("RUNTIME_BROKEN", "The application uv dependency is missing.", 503)
+        uv = self._uv()
         lock = CATALOG_ROOT / entry.requirements
         if text_digest(lock) != entry.sha256:
             raise ModelError("RUNTIME_BROKEN", "Worker requirements checksum mismatch.", 503)

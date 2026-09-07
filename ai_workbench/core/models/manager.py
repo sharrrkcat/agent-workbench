@@ -110,9 +110,9 @@ class ModelManager:
             installation = self.runtime_supervisor.installation(profile.runtime_id, profile.runtime_variant)
             slot = self._slots.get(self.backend_key(profile))
             status = slot.adapter.snapshot(profile) if slot else ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)
-            status.runtime = RuntimeStatus(runtime_id=installation.runtime_id, variant=installation.variant, version=installation.version,
-                install_state=installation.state, job_id=installation.job_id,
-                process_state=slot.adapter.state if slot else "stopped")
+            if not slot:
+                status.runtime = RuntimeStatus(runtime_id=installation.runtime_id, variant=installation.variant, version=installation.version,
+                    install_state=installation.state, job_id=installation.job_id, process_state="stopped")
             if installation.state != "installed":
                 status.state = "unavailable"
                 status.error_code = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING", "unsupported": "RUNTIME_UNSUPPORTED"}.get(installation.state, "RUNTIME_BROKEN")

@@ -67,6 +67,9 @@ export type ModelStatus = {
     install_state: RuntimeInstallState;
     process_state: 'stopped' | 'starting' | 'ready' | 'failed';
     job_id: string | null;
+    device_name: string | null;
+    gpu_layers_loaded: number | null;
+    gpu_layers_total: number | null;
   } | null;
 };
 
@@ -103,10 +106,11 @@ export type RuntimeInstallation = {
 
 export type RuntimeJob = {
   id: string;
-  runtime_id: string;
-  variant: string;
-  version: string;
-  operation: 'install' | 'uninstall';
+  runtime_id: string | null;
+  variant: string | null;
+  version: string | null;
+  operation: 'install' | 'uninstall' | 'cache_prune' | 'cache_clean';
+  result: { before: StorageUsage | null; after: StorageUsage | null } | null;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   stage: string;
   progress_current: number;
@@ -117,6 +121,33 @@ export type RuntimeJob = {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+};
+
+export type StorageUsage = {
+  complete: boolean;
+  file_count: number | null;
+  logical_bytes: number | null;
+  unique_bytes: number | null;
+  shared_bytes: number | null;
+  exclusive_bytes: number | null;
+};
+
+export type StorageGroup = StorageUsage & {
+  id: string;
+  category: 'runtime' | 'python' | 'cache' | 'staging' | 'processes' | 'other';
+  relative_path: string;
+  runtime_id: string | null;
+  variant: string | null;
+  version: string | null;
+};
+
+export type RuntimeStorage = {
+  scanned_at: string;
+  complete: boolean;
+  totals: StorageUsage;
+  groups: StorageGroup[];
+  warnings: { code: string; relative_path: string }[];
+  skipped_links: number;
 };
 
 export type RuntimeDownloadSettings = {

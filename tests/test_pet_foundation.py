@@ -83,7 +83,7 @@ def test_pet_revision_resets_settings_only_and_new_position_survives_restart(tmp
     before_files = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files}
     before_rows = preserved_rows()
     before_schema = migrations.inspect_schema(engine)
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.PET_FOUNDATION_REVISION)
     assert migrations.current_revision(engine) == migrations.PET_FOUNDATION_REVISION
     assert migrations.inspect_schema(engine) == before_schema
     assert preserved_rows() == before_rows
@@ -94,7 +94,7 @@ def test_pet_revision_resets_settings_only_and_new_position_survives_restart(tmp
     store = SqlAppSettingsStore(engine)
     assert store.get() == AppSettings()
     store.patch({"core_memory_content": "New", "pet": {"position": {"mode": "custom", "x": 88, "y": 99}}})
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.PET_FOUNDATION_REVISION)
     reloaded = SqlAppSettingsStore(engine).get()
     assert reloaded.core_memory_content == "New"
     assert reloaded.pet.position.model_dump() == {"mode": "custom", "x": 88, "y": 99}

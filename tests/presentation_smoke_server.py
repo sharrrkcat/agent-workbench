@@ -20,6 +20,7 @@ from ai_workbench.core.message_parts import make_tool_call_part, make_tool_resul
 from ai_workbench.core.schema.run import RunStatus
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, tool_call
+from tests.runtime_browser_fixture import install_runtime_fixture
 
 
 class FixtureStream(httpx.AsyncByteStream):
@@ -82,6 +83,7 @@ def create_fixture_app(repository: Path, root: Path):
     profile = configure_model(client, alias="chat-model", capabilities={"streaming": True, "tools": True})
     client.patch("/api/settings/general", json={"auto_generate_session_titles": False}).raise_for_status()
     state = app.state.runtime_state
+    install_runtime_fixture(app, root)
 
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):

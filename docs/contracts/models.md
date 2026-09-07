@@ -86,7 +86,9 @@ optional error_code. External health/load requires the exact advertised
 model_ref, means ready with unknown residency, and cannot unload weights;
 unload returns `UNLOAD_UNSUPPORTED`. UI controls reflect these limits.
 Managed status adds runtime id/variant/version, installation/process state and
-latest job id. Global status events are defined in [runs/streaming](runs-streaming.md).
+latest job id. CUDA status also reports device_name, gpu_layers_loaded and
+gpu_layers_total, clearing them when the process stops. Global status events
+are defined in [runs/streaming](runs-streaming.md).
 `GET /api/runtime/resources` remains a cached CPU/RAM/GPU diagnostic snapshot.
 
 ## Managed catalog and installation
@@ -95,17 +97,19 @@ latest job id. Global status events are defined in [runs/streaming](runs-streami
 platform/architecture support, model kinds and strict options schemas. Internal
 catalog records own HTTPS artifact URLs, SHA-256, archive format and executable.
 Enabled variants are `llama-server/cpu` and `python-worker/torch-cpu` on Windows
-and Linux x64. CUDA, Vulkan, torch-cu128 and onnx-gpu remain visibly unsupported.
+and Linux x64, plus `llama-server/cuda` on Windows x64. Vulkan, torch-cu128,
+onnx-gpu and Linux CUDA remain visibly unsupported.
 
 Llama model_ref is a safe relative GGUF path; Python model_ref is a safe relative
 directory, both under `data/models`. Profiles cannot supply an executable or
 arbitrary command-line argument. Llama options are threads, context_size,
-batch_size and gpu_layers (zero on CPU); worker options are device=cpu,
+batch_size and gpu_layers (strict zero on CPU; auto or strict integer 1..999
+on CUDA, default auto); worker options are device=cpu,
 intraop_threads and max_batch_size. Saving before installation is allowed;
 execution reports the missing runtime/model.
 
 `POST /api/models/runtimes/{runtime_id}/{variant}/install` creates a job. Only
-one installation/uninstallation job runs application-wide. Artifacts stream to
+one installation, uninstallation or cache-maintenance job runs application-wide. Artifacts stream to
 `data/runtimes/.staging/{job_id}`, undergo checksum/path checks and receive an
 installation manifest before promotion to:
 
@@ -118,6 +122,15 @@ The bundled application uv installs pinned Python into runtime-owned storage,
 creates the worker venv and installs hash-locked dependencies. `--no-bin` and
 `--no-registry` avoid user PATH/registry changes. Download configuration is
 owned by [settings](settings.md); weights are always placed manually.
+
+Windows CUDA uses llama.cpp b10809's CUDA 12.4 main ZIP and separately pinned
+cudart ZIP. Catalog additional_artifacts owns the latter's URL, hash, format
+and size. Both downloads must pass SHA-256 before extraction. Combined byte
+progress covers both packages. Dependency DLLs join the executable directory;
+different-content filename collisions fail. Other dependency files retain a
+namespaced directory. The manifest records both artifact hashes and every
+installed file. A --version check precedes promotion. Dependencies are scoped
+to the child process; system PATH, registry and drivers are not modified.
 
 Jobs expose queued/running/completed/failed/cancelled/interrupted states, stage,
 byte progress, error code, revision and bounded logs. Cancellation stops the
@@ -132,8 +145,43 @@ Read-only routes list installations, per-runtime status, jobs and job details.
 cancellation. `/api/models/profiles/{id}/log` returns managed process logs.
 Responses omit absolute paths, ports, process tokens and raw provider errors.
 Runtime failures use `RUNTIME_NOT_INSTALLED`, `RUNTIME_INSTALLING`,
-`RUNTIME_BROKEN`, `RUNTIME_UNSUPPORTED`, `MODEL_NOT_FOUND`, `MODEL_BUSY` or
+`RUNTIME_BROKEN`, `RUNTIME_UNSUPPORTED`, `RUNTIME_DEVICE_UNAVAILABLE`, `MODEL_NOT_FOUND`, `MODEL_BUSY` or
 `MODEL_UNAVAILABLE`.
+
+## Storage and cache maintenance
+
+GET /api/models/runtimes/storage performs an on-demand, metadata-only scan in
+a background thread. It returns scanned_at, complete, totals, groups, warnings
+and skipped_links. Groups cover each runtime installation directory, shared
+Python, cache, staging, process files and other files. Paths are relative to
+data/runtimes; symbolic links and Windows directory junctions are not followed.
+
+Usage fields are file_count, logical_bytes, unique_bytes, shared_bytes and
+exclusive_bytes. File identities deduplicate hard links. Exclusive size requires
+all OS-reported hard links to belong to the group, including links outside the
+scanned root in the exclusion. Totals deduplicate independently of the rows.
+These are logical file sizes, not allocated disk bytes or exact free-space
+predictions; compression and copy-on-write sharing are not measured.
+Unreadable or changing metadata makes the affected group and totals incomplete,
+with unknown usage fields represented by null. Reads do not load models.
+
+POST /api/models/runtimes/cache/cleanup accepts only mode=prune|clean and returns
+202 with a RuntimeJob. The bundled uv runs cache prune/clean with an explicit
+managed cache directory, --no-config and normal uv locking. Redirected roots or
+escaping cache links fail validation. Cleanup is limited to .cache and does not
+unload models. Filesystem occupancy failures retain diagnostics for retry.
+
+Cache jobs use operation=cache_prune|cache_clean and null runtime_id, variant
+and version. Optional result.before/after hold strict usage snapshots; missing
+accounting is null. They reuse job/log/cancel routes and global job events,
+without installation state writes. Cancellation/failure may leave partial
+cleanup; before/after figures are never presented as actual disk recovery.
+Startup marks unfinished cache jobs interrupted. Latest 20 terminal cache logs
+are retained independently of runtime installation logs.
+
+Revision 0010_runtime_maintenance recreates disposable runtime_jobs and clears
+installation job_id references. Installation identity/state/checksums, all other
+business records and all file directories survive; there is no old-job conversion.
 
 ## Managed processes and workers
 
@@ -147,6 +195,14 @@ Llama-server uses the existing OpenAI-compatible adapter and a per-process key
 stored only in its private process directory. Python workers use token-authenticated
 `GET /health` and `POST /load`, `/unload`, `/embed`, `/rerank`, `/image-embed`,
 `/vision` endpoints. Standard-library request validation precedes engine imports.
+
+CUDA load enumerates devices using the pinned executable and selects the first
+CUDA device with split-mode=none. No usable device returns RUNTIME_DEVICE_UNAVAILABLE.
+Automatic offload uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx
+equal to the configured context size. Manual layers use fit=off. Before ready,
+the pinned startup log must confirm at least one layer on GPU; zero/missing
+offload or insufficient memory fails loading and stops the process. There is
+no CPU substitution. Cached status/catalog reads do not probe GPU hardware.
 
 Workers set HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE, use local_files_only, reject
 unsafe paths and accept images only as bounded PNG/JPEG/WebP data URLs. They

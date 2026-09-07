@@ -75,6 +75,10 @@ Approval requests include arguments, risk and step id. Global events have an
 empty session_id, create no business rows and share alias occupancy. Models
 subscriptions remain active without a session and across settings navigation.
 Runtime jobs use their own store, not chat runs.
+The same global runtime_job_updated event carries cache_prune/cache_clean jobs,
+including null runtime identity and optional before/after accounting. Cache
+maintenance never emits an installation-state update. The Runtimes view refreshes
+storage when a newer terminal maintenance job arrives, without periodic polling.
 
 ## Client reconciliation
 

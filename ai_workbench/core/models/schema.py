@@ -126,7 +126,7 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import LlamaOptions, PythonOptions, relative_ref
+        from ai_workbench.core.models.runtimes.schema import PythonOptions, llama_options, relative_ref
         if self.runtime_id:
             if self.provider_profile_id or not self.runtime_variant:
                 raise ValueError("A managed model requires a runtime variant and no external connection")
@@ -134,9 +134,7 @@ class ModelInput(StrictModel):
             if self.runtime_id == "llama-server":
                 if self.kind != "llm" or self.runtime_variant not in {"cpu", "cuda", "vulkan"}:
                     raise ValueError("llama-server requires llm kind and cpu/cuda/vulkan variant")
-                self.runtime_options = LlamaOptions.model_validate(self.runtime_options).model_dump()
-                if self.runtime_variant == "cpu" and self.runtime_options["gpu_layers"] != 0:
-                    raise ValueError("CPU runtime requires gpu_layers=0")
+                self.runtime_options = llama_options(self.runtime_variant).model_validate(self.runtime_options).model_dump()
                 if not self.model_ref.endswith(".gguf"):
                     raise ValueError("llama-server requires a local GGUF file")
                 if self.capabilities.vision:

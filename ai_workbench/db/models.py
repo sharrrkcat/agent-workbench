@@ -196,10 +196,11 @@ class RuntimeInstallationRecord(SQLModel, table=True):
 class RuntimeJobRecord(SQLModel, table=True):
     __tablename__ = "runtime_jobs"
     id: str = Field(primary_key=True)
-    runtime_id: str
-    variant: str
-    version: str
+    runtime_id: Optional[str] = None
+    variant: Optional[str] = None
+    version: Optional[str] = None
     operation: str
+    result_json: Optional[str] = None
     state: str
     stage: str
     progress_current: int = 0

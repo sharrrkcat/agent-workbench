@@ -40,7 +40,7 @@ In **Settings > Models**, choose one backend:
 1. **External connection:** add an OpenAI-compatible base URL, optional key and
    queue/timeout settings under Connections. Create a profile with the exact
    model reference advertised by that connection.
-2. **Managed runtime:** install an enabled CPU runtime under Runtimes, place
+2. **Managed runtime:** install a supported runtime under Runtimes, place
    model weights manually under data/models, then create a managed profile with
    that runtime, variant and inventory reference.
 
@@ -65,9 +65,15 @@ Inventory returns references relative to data/models, for example
 uses model.onnx plus selected_tags.csv. Image input to chat requires an external
 vision-capable LLM; managed llama projector support is not implemented.
 
-Runtime installation is supported for Windows/Linux x64 CPU variants.
-CUDA/Vulkan/GPU worker entries remain unavailable. Install/cancel/retry/uninstall,
-job progress and bounded logs are available in Runtimes. Download settings
+Runtime installation supports Windows/Linux x64 CPU variants and Windows x64
+llama CUDA 12.4. CUDA defaults to automatic GPU layers with a fixed context floor;
+manual layers are available. Loading requires a usable NVIDIA device and confirmed
+positive GPU offload. Vulkan, GPU workers and Linux CUDA remain unavailable.
+Install/cancel/retry/uninstall, job progress and bounded logs are available in
+Runtimes, alongside storage accounting and manual cache prune/clean. Shared hard
+links are deduplicated; the displayed cleanup estimate is exclusive logical size,
+not an exact disk-space promise. Clear cache preserves installed environments.
+Download settings
 configure runtime dependencies and artifact proxies only. No model weights are
 downloaded. See [models](docs/contracts/models.md) for engine and platform limits.
 
@@ -172,10 +178,12 @@ The previous Codex Pet and package import are removed. Position settings,
 dragging and task-state interfaces remain for a future Pet; existing Pet files
 are retained without loading or serving them.
 
-Alembic alone manages SQLite. Current head is `0009_pet_foundation`. Revision
+Alembic alone manages SQLite. Current head is `0010_runtime_maintenance`. Revision
 0008 resets disposable Personas, sessions, their bindings, messages and runs to
 the reduced configuration schema. Revision 0009 resets General, Core Memory and
 Pet settings. Models, Knowledge, Worldbook and runtime records survive both.
+Revision 0010 recreates disposable runtime job history and clears installation
+job references while preserving installed runtimes and all other business records.
 Empty databases upgrade to head;
 nonempty unversioned databases are rejected and destructive downgrade is unsupported.
 
@@ -204,6 +212,14 @@ Persona/session isolation, model/runtime events, tool approval and Pet foundatio
 Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
+
+The [runtime maintenance plan](docs/RUNTIME_MAINTENANCE_PLAN.md) records storage,
+cache, CUDA and migration verification. For an explicit installation/GPU check
+using a manually placed GGUF, run `uv run --no-sync python -m
+scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. This installs
+CUDA if needed and exercises auto/manual load, chat, streaming and unload using
+temporary in-memory model profiles; runtime installation/jobs remain persisted.
+Stop Workbench before running this explicit smoke command.
 
 Before changing code, read [AI context](docs/AI_CONTEXT.md), the
 [current plan](docs/WORKBENCH_SIMPLIFICATION_PLAN.md) and the owning contract.

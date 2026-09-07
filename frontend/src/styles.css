@@ -118,6 +118,43 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { cursor: no
 .runtime-history { max-height: 320px; overflow: auto; }
 .runtime-history small { display: block; }
 .model-runtime-state { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.runtime-storage { border-bottom: 1px solid #383838; padding-bottom: 8px; min-width: 0; }
+.runtime-storage-heading, .runtime-cache-task-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.runtime-storage-heading h3 { margin: 8px 0; }
+.runtime-storage-heading small { color: #aaa; font-size: 11px; }
+.runtime-storage-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 14px 0 18px; }
+.runtime-storage-summary dt, .runtime-cache-result dt { color: #aaa; font-size: 11px; overflow-wrap: anywhere; }
+.runtime-storage-summary dd { margin: 7px 0 0; color: #ddd; font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.runtime-cache-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.runtime-cache-actions button { min-width: 0; font-size: 12px; }
+.runtime-cache-task { margin-top: 14px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.runtime-cache-task-heading { min-height: 32px; }
+.runtime-cache-result { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 8px 0; }
+.runtime-cache-result dd { margin: 4px 0 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.runtime-storage-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+.runtime-storage-table th, .runtime-storage-table td { padding: 9px 5px; border-bottom: 1px solid #363636; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.runtime-storage-table th:first-child { width: 30%; text-align: left; font-weight: normal; }
+.runtime-storage-table thead th { color: #aaa; font-weight: normal; }
+.runtime-storage-table code { display: block; color: #999; font-size: 10px; margin-top: 4px; }
+.runtime-storage-warning, .runtime-storage-warnings { color: #e1c48a; font-size: 12px; overflow-wrap: anywhere; }
+.runtime-storage-warnings { padding-left: 18px; }
+.runtime-clean-consequence { color: #aaa; font-size: 13px; line-height: 1.6; }
+.runtime-gpu-field { min-width: 0; margin: 12px 0; color: #aaa; font-size: 12px; }
+.runtime-gpu-mode { display: inline-flex; border: 1px solid #484848; border-radius: 6px; margin-top: 5px; overflow: hidden; width: 100%; max-width: 240px; }
+.runtime-gpu-mode button { flex: 1; min-width: 0; border: 0; border-radius: 0; padding: 8px 10px; color: #bbb; background: #242424; }
+.runtime-gpu-mode button[aria-pressed=true] { color: #bce8d2; background: #28463b; }
+.runtime-gpu-mode button:focus-visible { outline: 2px solid #8fb4dd; outline-offset: -3px; }
+.runtime-gpu-field > span { display: block; }
+@media (max-width: 600px) {
+  .runtime-storage-summary { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .runtime-storage-summary > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .runtime-storage-summary dd { margin: 0; font-size: 16px; }
+  .runtime-storage-table thead { display: none; }
+  .runtime-storage-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 7px 0; border-bottom: 1px solid #363636; }
+  .runtime-storage-table th:first-child { grid-column: 1 / -1; width: auto; }
+  .runtime-storage-table td, .runtime-storage-table th { border: 0; text-align: left; padding: 5px; }
+  .runtime-storage-table td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #999; }
+}
 @media (max-width: 700px) { .runtime-row { grid-template-columns: minmax(0, 1fr) auto; } .runtime-progress { grid-column: 1 / -1; grid-row: 2; } .model-tabs { flex-wrap: wrap; } }
 
 .personas-panel .primary-button, .personas-panel .secondary-button, .model-form-footer .primary-button { display: inline-flex; align-items: center; gap: 7px; }
