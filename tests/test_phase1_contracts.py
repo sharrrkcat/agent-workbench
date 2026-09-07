@@ -10,14 +10,14 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ai_workbench.api.main import create_app
-from ai_workbench.core.chat_targets import ChatTargetCatalog
+from ai_workbench.core.personas import PersonaStore
+from ai_workbench.core.schema.persona import CHAT_PERSONA_ID, PersonaInput
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.retrieval import RetrievalCandidate, rrf_merge, search_knowledge
 from ai_workbench.core.network_policy import NetworkPolicy, NetworkPolicyError
 from ai_workbench.core.pet_service import PetService
 from ai_workbench.core.schema.message import MessageSchema
-from ai_workbench.core.schema.prompt_target import PromptTarget
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema
 from ai_workbench.core.settings import AppSettingsStore
 from tests.model_fixtures import MockOpenAI, configure_model
@@ -41,16 +41,14 @@ def create_session(client: TestClient) -> dict[str, Any]:
     return response.json()
 
 
-def test_static_prompt_targets_are_explicit_and_non_extensible() -> None:
-    catalog = ChatTargetCatalog()
-
-    assert catalog.ids() == ("chat", "translate")
-    assert catalog.ids(public_only=True) == ("chat",)
-    assert catalog.default.id == "chat"
+def test_persona_seeds_are_database_records_with_strict_input() -> None:
+    catalog = PersonaStore()
+    assert [p.name for p in catalog.list()] == ["Chat", "Translate"]
+    assert catalog.get(CHAT_PERSONA_ID).context_policy.mode == "session"
     with pytest.raises(KeyError):
         catalog.get("unknown")
     with pytest.raises(ValidationError):
-        PromptTarget(id="chat", name="Chat", unexpected=True)
+        PersonaInput(name="Chat", unexpected=True)
 
 
 def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: Path) -> None:
@@ -63,7 +61,8 @@ def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: P
         response = client.post(f"/api/sessions/{session_id}/messages", json={"content": text})
         assert response.status_code == 200, response.text
         payload = response.json()
-        assert payload["run"]["target"] == "chat"
+        assert payload["run"]["persona_id"] == CHAT_PERSONA_ID
+        assert "target" not in payload["run"]
         assert payload["messages"][0]["parts"][0]["text"] == text
         assert payload["messages"][1]["parts"][0]["text"] == "reply"
         assert set(payload["messages"][0]["metadata"]) <= {"attachments", "client_message_id", "input_source"}
@@ -74,29 +73,30 @@ def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: P
     assert all(call["messages"][-1]["content"] == text for call, text in zip(runtime.calls, ("/base64 hello", "@chat hi", "@chat:formal hi", ":formal hi")))
 
 
-def test_waiting_run_is_resumed_before_starting_a_new_chat(tmp_path: Path) -> None:
+def test_waiting_run_blocks_new_chat_until_explicit_resolution(tmp_path: Path) -> None:
     client, _runtime = make_client(tmp_path)
     configure_model(client)
     session = create_session(client)
     state = client.app.state.runtime_state
-    waiting = state.runs.create_run(kind="chat", target="chat", session_id=session["session_id"])
+    config = state.chat_service.resolve(state.sessions.get_session(session["session_id"]))
+    waiting = state.runs.create_run(kind="chat", persona_id=CHAT_PERSONA_ID, session_id=session["session_id"], config_snapshot=config.model_dump(mode="json"))
     state.runs.update_status(waiting.run_id, status=RunStatus.WAITING_FOR_USER, current_step="approval")
     state.sessions.set_waiting_run(session["session_id"], waiting.run_id)
 
     response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "approved"})
 
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["run"]["run_id"] == waiting.run_id
-    assert payload["run"]["kind"] == "chat"
-    assert payload["session"]["waiting_run_id"] is None
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "RUN_WAITING_FOR_APPROVAL"
+    assert state.sessions.get_session(session["session_id"]).waiting_run_id == waiting.run_id
+    assert state.messages.list_messages(session["session_id"]) == []
+    assert len(state.runs.list_runs(session["session_id"])) == 1
 
 
 def test_new_schemas_forbid_removed_fields_and_limit_step_kinds() -> None:
     with pytest.raises(ValidationError):
         MessageSchema(message_id="m", session_id="s", role="user", parts=[], **{"action" + "_id": "old"})
     with pytest.raises(ValidationError):
-        RunSchema(run_id="r", session_id="s", kind="chat", target="chat", **{"target" + "_id": "old"})
+        RunSchema(run_id="r", session_id="s", kind="chat", persona_id=CHAT_PERSONA_ID, **{"target" + "_id": "old"})
     with pytest.raises(ValidationError):
         RunStepSchema(step_id="st", run_id="r", kind="legacy")
 
@@ -198,7 +198,7 @@ def test_knowledge_rrf_is_deterministic_and_empty_rerank_is_not_reported_as_fail
 def test_context_builder_projects_generic_messages_without_extension_metadata() -> None:
     class Store:
         def list_messages(self, _session_id: str) -> list[MessageSchema]:
-            return [MessageSchema(message_id="m", session_id="s", role="user", parts=[{"type": "text", "text": "hello"}], metadata={"target": "chat"})]
+            return [MessageSchema(message_id="m", session_id="s", role="user", parts=[{"type": "text", "text": "hello"}])]
 
     result = ContextBuilder(Store()).build("s", "reply")
     assert result.messages[-1] == {"role": "user", "content": "reply"}

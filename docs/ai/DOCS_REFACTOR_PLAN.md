@@ -5,6 +5,6 @@ generated catalog, and core contracts now describe the compact ChatRunner
 architecture. Removed extension-specific guides and contracts were deleted;
 they are not maintained as historical APIs.
 
-Remaining documentation work belongs to later phases: persona editing,
-provider/runtime unification, harness tools, and public streaming/tool
-protocols. Keep those notes in the roadmap until implementation lands.
+Round 3 documentation now covers Persona editing, session members, speaker
+snapshots, and context binding modes. Remaining work belongs to later phases:
+harness tools and public streaming/tool protocol consolidation.

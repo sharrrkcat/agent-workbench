@@ -130,5 +130,52 @@ previousSessionRead.resolve([final]);
 await oldSessionRefresh;
 assert.deepEqual(workbench.getState().messages, []);
 assert.equal(workbench.getState().currentSession.session_id, 'other');
+const beforePersona = { ...session, current_persona_id: 'first', effective: { persona_name: 'First' } };
+const afterPersona = { ...beforePersona, current_persona_id: 'second', effective: { persona_name: 'Second' } };
+workbench.setState({ currentSession: beforePersona, sessions: [beforePersona], messages: [], runs: [] });
+const staleSession = deferred();
+mockApi.getSession = () => staleSession.promise;
+mockApi.listMessages = async () => [];
+mockApi.listRuns = async () => [];
+const staleRefresh = workbench.getState().refreshCurrent();
+workbench.getState().applyRuntimeEvent(event('session_updated', { session: afterPersona }));
+staleSession.resolve(beforePersona);
+await staleRefresh;
+assert.equal(workbench.getState().currentSession.current_persona_id, 'second');
+assert.equal(workbench.getState().sessions[0].effective.persona_name, 'Second');
+
+const speakerMessage = { ...message, speaker_id: 'first', speaker_name: 'First', metadata: { speaker_avatar_attachment_id: 'image.png' } };
+workbench.getState().applyRuntimeEvent(event('message_started', { message: speakerMessage }));
+workbench.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'response' }));
+assert.equal(workbench.getState().messages[0].speaker_name, 'First');
+assert.equal(workbench.getState().messages[0].metadata.speaker_avatar_attachment_id, 'image.png');
+workbench.getState().applyRuntimeEvent(event('run_cancelled', {}));
+assert.deepEqual(workbench.getState().messages, []);
+
+const sourceSession = { ...session, session_id: 'source' };
+workbench.setState({ currentSession: beforePersona, sessions: [beforePersona, sourceSession] });
+workbench.getState().setSourceMessageId('selected-history');
+mockApi.getSession = async (id) => ({ ...session, session_id: id });
+await workbench.getState().selectSession('source');
+assert.equal(workbench.getState().sourceMessageId, null);
+workbench.getState().setSourceMessageId('selected-history');
+let sendArguments;
+mockApi.sendMessage = async (...args) => {
+  sendArguments = args;
+  return { success: true, session: sourceSession, messages: [], run: { run_id: 'sent', session_id: 'source' } };
+};
+await workbench.getState().sendMessage('@role:literal');
+assert.equal(sendArguments[1], '@role:literal');
+assert.equal(sendArguments[4], 'selected-history');
+
+const lateRetry = deferred();
+mockApi.retryMessage = () => lateRetry.promise;
+const retry = workbench.getState().retryMessage('old-message');
+workbench.setState({ currentSession: beforePersona, messages: [] });
+lateRetry.resolve({ success: true, session: sourceSession, messages: [{ ...final, session_id: 'source' }] });
+await retry;
+assert.deepEqual(workbench.getState().messages, []);
+console.log('persona speaker identity, configuration refresh, selected context, cancellation and retry isolation: ok');
+
 delete globalThis.workbenchTestApi;
 console.log('model reload, live status, chat refresh and session isolation: ok');

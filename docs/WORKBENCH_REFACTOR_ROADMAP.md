@@ -1,6 +1,6 @@
 # Agent Workbench 架构精简与重构路线图
 
-> 状态：设计冻结，Phase 0、Phase 1、Phase 2a 与 Phase 2b 已完成（2026-09-06）
+> 状态：设计冻结，Phase 0、Phase 1、Phase 2a、Phase 2b、Phase 3 与 Phase 4 已完成（2026-09-07）
 > 冻结日期：2026-09-04
 > 用途：总路线图、进度检查表、后续 agent 的交接入口
 
@@ -213,7 +213,7 @@ Session 保留标题、消息、等待中的 run 和上下文模式；群聊保�
 3. ChatRunner 调用 core/models。
 4. delta、run step、最终 message 和标题状态通过现有 runs/events/WS 落库并发送。
 
-`@...`、`@...:...`、`:...` 和 `/...` 均按普通文本处理；新 UI 不生成命令或 action 调用。
+`@...`、`@...:...`、`:...` 和未知 `/...` 均按普通文本处理；Phase 4 仅识别已注册的 `/tool_name args`。新 UI 不生成旧 command/action 调用。
 
 ### 4.4 harness 与工具
 
@@ -360,14 +360,14 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：让对话对象从 YAML agent 变成可编辑数据。
 
-- [ ] 新增 personas 表及 Alembic 迁移。
-- [ ] 将 chat/translate 的必要初始内容转为默认 persona seed，不再读取 agent.yaml。
-- [ ] 将 session 关联扩展为 persona 语义（不保留旧字段）。
-- [ ] 为多角色 session 增加 session-persona 关联、当前 speaker 和 group transcript 配置。
-- [ ] 将 model/context/params/harness/tools/knowledge/worldbook 绑定落到 persona/session。
-- [ ] 删除 AgentRegistry、AgentConfig 双层覆盖、manifest viewer 和 agent YAML 依赖。
-- [ ] 前端 Agents 页改为 Persona 编辑器，不显示 Agent type、Action 或 capability 列表。
-- [ ] 明确普通前缀文本的稳定行为；新 UI 只生成普通文本和未来 `/tool`。
+- [x] 新增 personas 表及 Alembic 迁移。
+- [x] 将 chat/translate 的必要初始内容转为默认 persona seed，不再读取 agent.yaml。
+- [x] 将 session 关联扩展为 persona 语义（不保留旧字段）。
+- [x] 为多角色 session 增加 session-persona 关联、当前 speaker 和 group transcript 配置。
+- [x] 将 model/context/params/harness/tools/knowledge/worldbook 绑定落到 persona/session。
+- [x] 删除 AgentRegistry、AgentConfig 双层覆盖、manifest viewer 和 agent YAML 依赖。
+- [x] 前端 Agents 页改为 Persona 编辑器，不显示 Agent type、Action 或 capability 列表。
+- [x] 明确普通前缀文本的稳定行为；新 UI 只生成普通文本和未来 `/tool`。
 
 验收：
 
@@ -379,15 +379,15 @@ RunStep 增加稳定 kind，例如 context、model、tool、approval、save。Pe
 
 目标：在普通聊天稳定后加入可控、可见、可取消的工具循环。
 
-- [ ] 建立 ToolSpec、ToolRegistry、schema 校验和 allowlist。
-- [ ] 实现 AgentLoop 的最大迭代、超时、取消、错误回填和 tool_calls 流式处理。
-- [ ] 增加 tool_call、tool_result message parts 和前端 renderer。
-- [ ] 复用 WAITING_FOR_USER/waiting_run_id 实现 ApprovalGate 和恢复。
-- [ ] 实现 read_file、web_search、fetch_url、knowledge_search 和无副作用 codec 工具。
-- [ ] 实现 /tool-name args 直接调用，结果持久化为 tool_result 数据。
-- [ ] 为副作用工具定义风险等级、确认文案、允许目录和网络限制。
-- [ ] 将 RunStep.kind 接入 Pet 和运行面板。
-- [ ] 为 provider 能力差异、拒绝、超时、审批和多轮循环补齐测试。
+- [x] 建立 ToolSpec、ToolRegistry、schema 校验和 allowlist。
+- [x] 实现 AgentLoop 的最大迭代、超时、取消、错误回填和 tool_calls 流式处理。
+- [x] 增加 tool_call、tool_result message parts 和前端 renderer。
+- [x] 复用 WAITING_FOR_USER/waiting_run_id 实现 ApprovalGate 和恢复。
+- [x] 实现 read_file、web_search、fetch_url、knowledge_search 和无副作用 codec 工具。
+- [x] 实现 /tool-name args 直接调用，结果持久化为 tool_result 数据。
+- [x] 为副作用工具定义风险等级、确认文案、允许目录和网络限制。
+- [x] 将 RunStep.kind 接入 Pet 和运行面板。
+- [x] 为 provider 能力差异、拒绝、超时、审批和多轮循环补齐测试。
 
 验收：
 
@@ -530,9 +530,9 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 这些问题不改变产品方向，需在对应阶段定稿：
 
 - ModelProfile 参数与 capability 命名已在 Phase 2a 契约中冻结；Phase 2b 的 worker 参数、CPU 版本矩阵、动态回环端口、哈希来源和下载设置见 managed-runtime 契约。
-- /tool-name args 的多参数解析和工具名称命名空间。
-- 哪些工具默认需要审批、网络请求允许范围和读文件目录。
-- 群聊的 persona 轮次、当前 speaker 选择和 UI 交互。
+- `/tool_name args` 已在 Phase 4 冻结为小写 snake_case；单一必填字符串保留原文，其余必须为 JSON 对象，不支持 key=value。见 harness-tools 契约。
+- Phase 4 冻结每次文件/网络调用前审批、公网 HTTP(S)、三次重定向与 1 MiB 响应上限；文件只读 data/knowledge 和 data/attachments，见 harness-tools 契约。
+- 群聊已在 Phase 3 冻结为手动选择当前 speaker、每条输入只生成一位 Persona 的回复，见 persona-chat 契约。
 - 标题只使用显式选定的辅助模型；未配置或失败时保持标题不变（2026-09-05 已冻结）。
 - 公共 rerank 请求格式在开放该端点时确定；Phase 2a 不增加品牌专属连接协议。
 
@@ -540,7 +540,7 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 
 ## 12. 当前进度快照
 
-截至 2026-09-06：
+截至 2026-09-07：
 
 - [x] 完成只读架构调研和问题证据整理。
 - [x] 确认产品目标、减法范围、runtime worker 方向和 reranker 保留策略。
@@ -553,11 +553,34 @@ Phase 0 修复已知测试卫生问题后，才把全量 pytest 作为门槛。�
 - [x] Phase 1 实施：单一路径 Chat、显式核心服务、破坏性 prune migration、前端与文档契约收敛。
 - [x] Phase 2a 实施：统一 Models、ModelManager、外部协议、前端和测试库重建。
 - [x] Phase 2b 受管 runtime 与安装任务。
-- [ ] Phase 3 Persona 数据化。
-- [ ] Phase 4 harness。
+- [x] Phase 3 Persona 数据化。
+- [x] Phase 4 harness。
 - [ ] Phase 5 文档和前端收尾。
 
 Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2a 完成统一模型调用面；Phase 2b 完成受管 runtime 与安装任务。当前 API、设置和消息契约以 `docs/contracts/` 与代码为准，以下旧阶段记录只用于说明历史，不恢复旧兼容实现。
+
+### Phase 4 收尾与验收记录（2026-09-07）
+
+- 完成六个内置工具、严格 JSON/schema/allowlist、共享直接调用与模型循环。模型工具参数按 index 合并；重复调用 ID、能力缺失、模型拒绝、超时和取消产生明确错误。单次运行最多八个工具轮次，允许最后一次文本回答；30 秒工具超时与五分钟累计主动执行预算包含上下文构建，审批等待不占预算或模型 lease。
+- 私有 HarnessState 保存有序剩余调用、原始 transcript、Persona/搜索服务配置、轮次及主动耗时。批准/拒绝后先完成原轮剩余调用；有效待审批状态可在重启后恢复。删除普通消息隐式恢复路径与 resume run kind；新消息/直接调用在审批期间被阻断，三种执行入口共享取消和结果持久化。
+- 文件读取限制在允许目录，拒绝绝对路径、穿越、符号链接/junction 逃逸；DNS 校验结果绑定实际连接，逐跳校验重定向并限制流式读取。网络请求使用 identity encoding，拒绝压缩响应。参数/结果公开投影隐藏绝对路径与 URL 凭据，工具结果不会进入 system/developer 指令。
+- 前端 ToolsPanel 接通 catalog、直接 JSON 调用、结果和 SearXNG 设置；RunPanel 展示具体审批参数、风险及批准/拒绝/取消操作。MessageBubble 以数据渲染工具 parts，Pet 使用稳定 kind 双语标签。重复/乱序事件、微秒时间戳、旧刷新及跨会话响应均有状态测试；删除“执行未启用”的旧 Persona 文案。
+- 数据库：完成静态 `0006_phase4_tools`，重建 run kind 约束与私有 harness 状态，清理 disposable messages/run events/steps 和等待引用。实际库从 0005 升至 0006，integrity=ok、外键检查为空；迁移前后受保护目录内 **45,427** 个文件的路径、大小、mtime 一致，没有模型下载或目录删除。
+- 主要后端文件：`core/harness/{agent_loop,registry,schema,builtins,network,settings}.py`、`core/{chat_runner,runtime,context,network_policy,json_data,message_parts,stores}.py`、`core/schema/{message,run}.py`、`api/routes/{tools,runs,messages}.py`、`db/{models,stores}.py`、`alembic/versions/0006_phase4_tools.py`。
+- 主要前端文件：`types.ts`、`api/client.ts`、`store/{useWorkbenchStore,messageStream}.ts`、`components/{ChatInput,ChatView,MessageBubble,RunPanel,PetOverlay}.tsx`、`components/settings/{ToolsPanel,PersonasPanel}.tsx`、`components/personas/SessionSettingsDialog.tsx`、`styles.css`、中英文 `runs/settings/personas` locales。同步 README、AI_CONTEXT、runtime/data/task cards、harness/message/persona/settings/pet 契约与本路线图。
+- 测试文件：新增 `tests/{tool_fixtures,test_phase4_tools,test_phase4_harness}.py`，更新 Phase 1/3 契约测试；新增 `frontend/scripts/test-harness.mjs` 并接入 package.json，更新 Phase 1 frontend contracts。
+- 验证：`uv run --no-sync pytest -q --tb=short` 为 **233 passed**（含 98 个 Phase 4 专项用例）；`uv run --no-sync python -m compileall -q ai_workbench` 通过。前端 `npm run build`、`check:i18n`、`test:harness`、`test:model-stream`、`test:phase1-contracts`、`test:knowledge-citations`、`test:url` 通过；docs size、workspace audit 和 `git diff --check` 通过。
+- API/工作流：新增 `/api/tools` catalog/settings/call/approval/run 接口；调用/审批响应包含 run、steps、messages 和 session。直接调用不要求 Harness 开关，但要求白名单；失败/拒绝直接调用为 FAILED，取消为 CANCELLED。审批只能通过专用接口，不能发送普通聊天消息代替批准。公共 `/v1` 继续只透传工具，不执行工具。
+- 剩余限制：模型/SearXNG 交互通过 MockTransport 和本机 HTTP 测试服务验证，未使用真实模型权重或真实搜索服务；前端完成状态与 SSR 渲染测试，未宣称浏览器手工验收。Phase 5、MCP、图像生成、ComfyUI、公共 rerank 和模型下载均未提前实施。
+
+### Round 3 / Phase 3 实施记录（2026-09-06）
+
+- 新增 `0005_phase3_personas`，为 disposable SQLite 重建 Persona、session-persona、Persona Knowledge/Worldbook bindings、session overrides 和 run configuration snapshots；固定 seed 为可编辑 Chat 与 Translate，迁移不触碰模型、附件或 runtime 文件。
+- 新增严格 `Persona`/`SessionPersona`/resolved-config schemas、SQL/memory `PersonaStore` 与 `ChatService`。解析顺序为 session model > Persona model > global default；上下文、生成、harness/tools 采用 session override > Persona；资料采用当前 speaker Persona 默认或 session override/显式空列表。
+- ChatRunner 删除 `ChatTargetCatalog`/`PromptTarget` 依赖，群聊每次只回复手动选择的 speaker；assistant 消息保留 Persona id/name/avatar 快照，run 私有保存完整配置以抵抗中途编辑和切换。Harness/tools 本轮仅存储展示，不发送或执行。
+- 新增 `/api/personas/*`、session Persona/member/configuration API、头像引用保护与 Persona 默认资料绑定 API；前端新增 PersonasPanel、SessionSettingsDialog、当前 speaker、选定上下文、头像和双语文案。
+- 验证：`uv run --no-sync pytest -q`、`uv run --no-sync pytest tests/test_phase3_personas.py -q`、compileall、frontend build、i18n、model-stream、phase1 contracts、knowledge citations、URL helpers、docs size、workspace audit、git diff --check 均通过。Round 3 专项覆盖迁移、SQL/memory、优先级、群聊 speaker、资料继承/清空、头像引用、等待恢复、取消和 in-flight snapshot。
+- API/设置/工作流变化：Settings 增加 Personas；session 返回成员、current speaker 和 effective config；run 以 persona_id 取代 target；知识库/世界书返回 inherit/override 与 effective ids。公共 `/v1`、工具执行/审批、自动轮询、多 key、模型下载和其他后置边界未改变。
 
 ### Phase 2b 实施记录（2026-09-06）
 
@@ -616,3 +639,4 @@ Phase 0 建立迁移与卫生边界；Phase 1 完成旧扩展塔删除；Phase 2
 | 2026-09-05 | 完成 Phase 2a：统一模型层/表/接口/前端，补齐 OpenAI 兼容流式与工具/视觉/格式子集，删除旧进程内推理与配置栈，整体重建测试库；冻结 OpenAI Compatible 单协议、manual 默认释放、标题仅显式辅助模型。 |
 | 2026-09-05 | 永久确认测试阶段无用户/用户数据、允许长期停服、不做保活或旧结构兼容、不迁移数据和不考虑旧习惯；模型/附件/runtime 等文件不随 schema 删除。 |
 | 2026-09-06 | Phase 2b 完成：首批 CPU runtime、代码内锁定 catalog、动态回环 HTTP worker、SQLite 安装任务与全局事件；GPU 变体显式 unsupported，模型仍手动管理。 |
+| 2026-09-07 | Phase 4 完成：显式内置工具、八轮循环与主动预算、可恢复审批、共享取消、直接调用与双语前端；0006 schema、233 后端测试及前端质量门槛通过，Phase 5 待实施。 |

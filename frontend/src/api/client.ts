@@ -3,9 +3,11 @@ import type {
   KnowledgeSettings, KnowledgeSource, ModelKind, ModelProfile, ModelInput, ModelSettings,
   ProviderProfile, ProviderInput, ModelStatus, ModelInventoryItem, Message, PetListResponse, PetSettings,
   PetSettingsResponse, RuntimeEvent, RuntimeResponse, Run, RunEvent, Session,
-  SessionKnowledgeBinding, SessionWorldbooksResponse, Worldbook, WorldbookEntry,
+  SessionKnowledgeBindings, SessionWorldbooksResponse, Worldbook, WorldbookEntry,
+  Persona, PersonaInput, SessionPatch, BindingMode,
   WorldbookSettings,
   RuntimeCatalogEntry, RuntimeInstallation, RuntimeJob, RuntimeDownloadSettings,
+  HarnessTool, HarnessSettings, ToolRunResponse,
 } from '../types';
 import { API_BASE_URL, createWebSocketUrlFromBase, joinApiUrl } from './url';
 
@@ -58,16 +60,16 @@ export const api = {
   runtimeSettings: () => request<RuntimeDownloadSettings>('/api/models/runtime/settings'),
   patchRuntimeSettings: (settings: RuntimeDownloadSettings) => request<RuntimeDownloadSettings>('/api/models/runtime/settings', { method: 'PATCH', body: JSON.stringify(settings) }),
   listSessions: () => request<Session[]>('/api/sessions'),
-  createSession: (title = '', context_mode: Session['context_mode'] = 'single_assistant', model_profile_id: string | null = null) =>
-    request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify({ title, context_mode, model_profile_id }) }),
+  createSession: (values: SessionPatch = {}) =>
+    request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(values) }),
   getSession: (sessionId: string) => request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`),
-  updateSession: (sessionId: string, patch: Partial<Pick<Session, 'title' | 'context_mode' | 'model_profile_id'>>) =>
+  updateSession: (sessionId: string, patch: SessionPatch) =>
     request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteSession: (sessionId: string) => request<{ deleted: boolean; session_id: string }>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   listMessages: (sessionId: string) => request<Message[]>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`),
   getTimeline: (sessionId: string) => request<Array<{ kind: string; message?: Message; notification?: Record<string, unknown> }>>(`/api/sessions/${encodeURIComponent(sessionId)}/timeline`),
-  sendMessage: (sessionId: string, content: string, attachments: Record<string, unknown>[] = [], clientMessageId = '') =>
-    request<RuntimeResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, { method: 'POST', body: JSON.stringify({ content, attachments, client_message_id: clientMessageId }) }),
+  sendMessage: (sessionId: string, content: string, attachments: Record<string, unknown>[] = [], clientMessageId = '', sourceMessageId: string | null = null) =>
+    request<RuntimeResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, { method: 'POST', body: JSON.stringify({ content, attachments, client_message_id: clientMessageId, source_message_id: sourceMessageId }) }),
   deleteMessage: (messageId: string) => request<{ deleted: boolean; message_id: string }>(`/api/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
   retryMessage: (messageId: string) => request<RuntimeResponse>(`/api/messages/${encodeURIComponent(messageId)}/retry`, { method: 'POST' }),
   editMessage: (messageId: string, content: string, rerun = true) => request<RuntimeResponse>(`/api/messages/${encodeURIComponent(messageId)}/edit`, { method: 'POST', body: JSON.stringify({ content, rerun }) }),
@@ -76,6 +78,21 @@ export const api = {
   getRun: (runId: string) => request<Run>(`/api/runs/${encodeURIComponent(runId)}`),
   listRunEvents: (runId: string) => request<RunEvent[]>(`/api/runs/${encodeURIComponent(runId)}/events`),
   cancelRun: (runId: string) => request<{ run: Run; cancelled: boolean; reason: string }>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
+  listTools: () => request<HarnessTool[]>('/api/tools'),
+  getToolSettings: () => request<HarnessSettings>('/api/tools/settings'),
+  updateToolSettings: (patch: Partial<HarnessSettings>) => request<HarnessSettings>('/api/tools/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
+  callTool: (toolName: string, sessionId: string, arguments_: Record<string, unknown>) => request<ToolRunResponse>(`/api/tools/${encodeURIComponent(toolName)}/call`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, arguments: arguments_ }) }),
+  resolveToolApproval: (runId: string, decision: 'approve' | 'reject') => request<ToolRunResponse>(`/api/tools/approvals/${encodeURIComponent(runId)}`, { method: 'POST', body: JSON.stringify({ decision }) }),
+  getToolRun: (runId: string) => request<ToolRunResponse>(`/api/tools/runs/${encodeURIComponent(runId)}`),
+
+  listPersonas: () => request<Persona[]>('/api/personas'),
+  createPersona: (value: PersonaInput) => request<Persona>('/api/personas', { method: 'POST', body: JSON.stringify(value) }),
+  patchPersona: (id: string, value: Partial<PersonaInput>) => request<Persona>(`/api/personas/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(value) }),
+  deletePersona: (id: string) => request<{ deleted: boolean }>(`/api/personas/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getPersonaKnowledge: (id: string) => request<{ knowledge_base_ids: string[] }>(`/api/personas/${encodeURIComponent(id)}/knowledge-bases`),
+  patchPersonaKnowledge: (id: string, ids: string[]) => request<{ knowledge_base_ids: string[] }>(`/api/personas/${encodeURIComponent(id)}/knowledge-bases`, { method: 'PATCH', body: JSON.stringify({ knowledge_base_ids: ids }) }),
+  getPersonaWorldbooks: (id: string) => request<{ worldbook_ids: string[] }>(`/api/personas/${encodeURIComponent(id)}/worldbooks`),
+  patchPersonaWorldbooks: (id: string, ids: string[]) => request<{ worldbook_ids: string[] }>(`/api/personas/${encodeURIComponent(id)}/worldbooks`, { method: 'PATCH', body: JSON.stringify({ worldbook_ids: ids }) }),
 
   getGeneralSettings: () => request<GeneralSettings>('/api/settings/general'),
   updateGeneralSettings: (patch: Record<string, unknown>) => request<GeneralSettings>('/api/settings/general', { method: 'PATCH', body: JSON.stringify(patch) }),
@@ -109,8 +126,8 @@ export const api = {
   reindexKnowledgeBase: (id: string) => request<Record<string, unknown>>(`/api/knowledge/bases/${encodeURIComponent(id)}/reindex`, { method: 'POST' }),
   getKnowledgeSourcePreview: (id: string) => request<{ source_id: string; title: string; uri: string; content: string; truncated: boolean }>(`/api/knowledge/sources/${encodeURIComponent(id)}/preview`),
   searchKnowledge: (payload: { query: string; knowledge_base_ids?: string[]; session_id?: string; top_k?: number; max_context_chars?: number; debug?: boolean }) => request<KnowledgeSearchResponse>('/api/knowledge/search', { method: 'POST', body: JSON.stringify(payload) }),
-  listSessionKnowledgeBases: (sessionId: string) => request<SessionKnowledgeBinding[]>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`),
-  updateSessionKnowledgeBases: (sessionId: string, ids: string[]) => request<SessionKnowledgeBinding[]>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`, { method: 'PATCH', body: JSON.stringify({ knowledge_base_ids: ids }) }),
+  listSessionKnowledgeBases: (sessionId: string) => request<SessionKnowledgeBindings>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`),
+  updateSessionKnowledgeBases: (sessionId: string, mode: BindingMode, ids?: string[]) => request<SessionKnowledgeBindings>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`, { method: 'PATCH', body: JSON.stringify({ mode, knowledge_base_ids: ids }) }),
 
   getWorldbookSettings: () => request<WorldbookSettings>('/api/worldbook/settings'),
   updateWorldbookSettings: (patch: Record<string, unknown>) => request<WorldbookSettings>('/api/worldbook/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
@@ -123,7 +140,7 @@ export const api = {
   patchWorldbookEntry: (id: string, patch: Record<string, unknown>) => request<WorldbookEntry>(`/api/worldbook-entries/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteWorldbookEntry: (id: string) => request<{ deleted: boolean; entry_id: string }>(`/api/worldbook-entries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   getSessionWorldbooks: (sessionId: string) => request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`),
-  updateSessionWorldbooks: (sessionId: string, ids: string[]) => request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`, { method: 'PATCH', body: JSON.stringify({ worldbook_ids: ids }) }),
+  updateSessionWorldbooks: (sessionId: string, mode: BindingMode, ids?: string[]) => request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`, { method: 'PATCH', body: JSON.stringify({ mode, worldbook_ids: ids }) }),
 
   getPetSettings: () => request<PetSettingsResponse>('/api/pets/settings'),
   updatePetSettings: (values: Partial<PetSettings>) => request<PetSettingsResponse>('/api/pets/settings', { method: 'PATCH', body: JSON.stringify({ values }) }),
@@ -132,6 +149,7 @@ export const api = {
   importPet: (manifest: File, spritesheet: File) => { const form = new FormData(); form.append('pet_json', manifest, 'pet.json'); form.append('spritesheet', spritesheet, 'spritesheet.webp'); return requestForm<{ pets: PetListResponse['pets']; settings: PetSettings }>('/api/pets/import', form); },
   deletePet: (id: string) => request<{ deleted: boolean; pet_id: string; pets: PetListResponse['pets'] }>(`/api/pets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   uploadAttachment: (file: File) => { const form = new FormData(); form.append('file', file, file.name || 'attachment'); return requestForm<Attachment>('/api/attachments', form); },
+  deleteAttachment: (id: string) => request<{ deleted: boolean }>(`/api/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   getRuntimeResources: () => request<Record<string, unknown>>('/api/runtime/resources'),
   getHealthDetails: () => request<Record<string, unknown>>('/api/health/details'),

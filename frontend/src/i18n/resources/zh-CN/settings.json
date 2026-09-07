@@ -1,1 +1,43 @@
-{"title":"设置","general":"通用","models":"模型","knowledge":"知识库","worldbook":"世界书","pet":"宠物","saved":"已保存","failed":"保存失败"}
+{
+  "title": "设置",
+  "general": "通用",
+  "models": "模型",
+  "personas": "角色",
+  "knowledge": "知识库",
+  "worldbook": "世界书",
+  "tools": "工具",
+  "pet": "宠物",
+  "saved": "已保存",
+  "failed": "保存失败",
+  "toolCatalog": "工具目录",
+  "approvalRequired": "需要确认",
+  "noApproval": "无需确认",
+  "toolArguments": "工具参数（JSON）",
+  "callTool": "调用工具",
+  "toolCalled": "工具运行状态已更新",
+  "searxng": "网页搜索",
+  "searxngUrl": "SearXNG 服务地址",
+  "save": "保存",
+  "toolDirectHelp": "在当前会话中直接调用工具，不自动生成模型总结。每次读取文件或发起网络请求前都需要审批。",
+  "toolSchema": "参数结构",
+  "toolArgumentsObject": "工具参数必须是 JSON 对象。",
+  "toolSelectSession": "请先选择一个聊天会话。",
+  "toolNotAllowed": "请先在当前 Persona 或会话设置中允许此工具。",
+  "toolSession": "会话：{{name}}",
+  "toolCalling": "调用中…",
+  "toolResult": "工具结果",
+  "searxngHelp": "使用支持 JSON 的公网 HTTP(S) SearXNG 服务。留空则无法使用网页搜索。",
+  "toolRisk": {
+    "safe": "无副作用",
+    "file": "读取文件",
+    "network": "网络请求"
+  },
+  "toolDescriptions": {
+    "read_file": "读取 data/knowledge 或 data/attachments 下的 UTF-8 文件。",
+    "web_search": "调用已配置的 SearXNG JSON 服务进行搜索。",
+    "fetch_url": "获取公网 HTTP(S) 地址的文本内容。",
+    "knowledge_search": "搜索当前 Persona/会话绑定的知识库。",
+    "base64_encode": "将 UTF-8 文本编码为 Base64。",
+    "base64_decode": "将 Base64 解码为 UTF-8 文本。"
+  }
+}

@@ -35,3 +35,6 @@ active `RunStep.kind`: `approval` or `WAITING_FOR_USER` means waiting for user
 confirmation; pending/running uses the configured running prefix; terminal
 states map to done, failed, cancelled, or interrupted text. It does not match
 implementation-specific progress strings.
+Active context/model/save/approval/tool kinds use the shared bilingual run
+labels. Tool approval/resolution events update waiting/running immediately;
+rejected direct calls, cancellation and terminal runs retain stable states.

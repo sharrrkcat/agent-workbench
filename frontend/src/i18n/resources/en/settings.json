@@ -1,1 +1,43 @@
-{"title":"Settings","general":"General","models":"Models","knowledge":"Knowledge","worldbook":"Worldbook","pet":"Pet","saved":"Saved","failed":"Save failed"}
+{
+  "title": "Settings",
+  "general": "General",
+  "models": "Models",
+  "personas": "Personas",
+  "knowledge": "Knowledge",
+  "worldbook": "Worldbook",
+  "tools": "Tools",
+  "pet": "Pet",
+  "saved": "Saved",
+  "failed": "Save failed",
+  "toolCatalog": "Tool catalog",
+  "approvalRequired": "Approval required",
+  "noApproval": "No approval",
+  "toolArguments": "Tool arguments (JSON)",
+  "callTool": "Call tool",
+  "toolCalled": "Tool run updated",
+  "searxng": "Web search",
+  "searxngUrl": "SearXNG base URL",
+  "save": "Save",
+  "toolDirectHelp": "Call tools in the current session without a model summary. Files and network requests require approval each time.",
+  "toolSchema": "Parameter schema",
+  "toolArgumentsObject": "Tool arguments must be a JSON object.",
+  "toolSelectSession": "Select a chat session before calling a tool.",
+  "toolNotAllowed": "Allow this tool in the current Persona or session settings before calling it.",
+  "toolSession": "Session: {{name}}",
+  "toolCalling": "Calling…",
+  "toolResult": "Tool result",
+  "searxngHelp": "Use a public HTTP(S) SearXNG JSON service. Leave empty to disable web search.",
+  "toolRisk": {
+    "safe": "No side effects",
+    "file": "File read",
+    "network": "Network request"
+  },
+  "toolDescriptions": {
+    "read_file": "Read a UTF-8 file under data/knowledge or data/attachments.",
+    "web_search": "Search the configured SearXNG JSON service.",
+    "fetch_url": "Fetch text from a public HTTP(S) address.",
+    "knowledge_search": "Search the current Persona/session Knowledge bindings.",
+    "base64_encode": "Encode UTF-8 text as Base64.",
+    "base64_decode": "Decode Base64 to UTF-8 text."
+  }
+}

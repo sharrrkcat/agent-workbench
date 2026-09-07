@@ -42,6 +42,12 @@ reranker selection. KB records select unified embedding profiles. Model paths,
 connection timeouts, instructions, dimensions, batching and normalization
 belong to Models. Worldbook settings remain at /api/worldbook/settings.
 
-The Settings navigation remains General, Models, Knowledge, Worldbook, Pet.
+The Settings navigation remains General, Models, Personas, Knowledge, Worldbook,
+Tools, and Pet. Persona editing owns prompt, model, context, generation, active
+harness settings, and Persona Knowledge/Worldbook defaults. Tool settings own
+the optional SearXNG base URL through `/api/tools/settings`. ToolsPanel exposes
+the built-in catalog, direct JSON calls, results and explicit approval controls.
+The search URL is snapshotted for a run; editing it cannot change a pending
+approval's destination. See [harness-tools](harness-tools.md).
 There are no extension configs, old default-model routes, independent
 per-kind profile pages or old General inference-service settings.

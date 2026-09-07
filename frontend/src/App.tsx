@@ -18,6 +18,7 @@ export default function App() {
   const refreshCurrent = useWorkbenchStore((state) => state.refreshCurrent);
   const applyRuntimeEvent = useWorkbenchStore((state) => state.applyRuntimeEvent);
   const [, rerender] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   useEffect(() => { void initialize(); }, [initialize]);
   useEffect(() => {
     if (!currentSession) return;
@@ -36,5 +37,5 @@ export default function App() {
   }, [currentSession?.session_id, applyRuntimeEvent, refreshCurrent]);
   useEffect(() => { const onPop = () => rerender((value) => value + 1); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop); }, []);
   if (window.location.pathname === '/settings') return <SettingsPage onBack={() => { window.history.pushState({}, '', '/'); rerender((value) => value + 1); }} />;
-  return <div className="app-shell"><SessionSidebar onOpenSettings={() => { window.history.pushState({}, '', '/settings'); rerender((value) => value + 1); }} /><main className="workspace"><ChatHeader onOpenSettings={(section = "general") => { window.history.pushState({}, "", "/settings?tab=" + section); rerender((value) => value + 1); }} /><ErrorBanner /><ChatView /><PetOverlay /><ChatInput /><StatusBar /></main></div>;
+  return <div className="app-shell">{sidebarOpen ? <div className="mobile-sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}<SessionSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenSettings={() => { window.history.pushState({}, '', '/settings'); rerender((value) => value + 1); }} /><main className="workspace"><ChatHeader onToggleSidebar={() => setSidebarOpen((open) => !open)} onOpenSettings={(section = "general") => { window.history.pushState({}, "", "/settings?tab=" + section); rerender((value) => value + 1); }} /><ErrorBanner /><ChatView /><PetOverlay /><ChatInput key={currentSession?.session_id} /><StatusBar /></main></div>;
 }

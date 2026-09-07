@@ -10,9 +10,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
-from ai_workbench.api.routes import assets, attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook
+from ai_workbench.api.routes import assets, attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook, tools
 from ai_workbench.api.ws import router as ws_router
 from ai_workbench.api.routes import runtimes
+from ai_workbench.api.routes import personas
+from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.models.http import InferenceObservabilityMiddleware
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
@@ -65,6 +67,10 @@ def create_app(
         _record_inference_error_code(request, exc.payload())
         return JSONResponse(status_code=exc.status, content=exc.payload())
 
+    @app.exception_handler(ChatError)
+    async def chat_error_handler(request, exc: ChatError):
+        return JSONResponse(status_code=exc.status, content=exc.payload())
+
     @app.exception_handler(KeyError)
     async def missing_record_handler(request, exc):
         return JSONResponse(status_code=404, content={"error": {"code": "RECORD_NOT_FOUND", "message": "Record does not exist."}})
@@ -102,6 +108,8 @@ def create_app(
     app.include_router(settings.router)
     app.include_router(health.router)
     app.include_router(sessions.router)
+    app.include_router(personas.router)
+    app.include_router(tools.router)
     app.include_router(messages.router)
     app.include_router(messages.message_router)
     app.include_router(pets.router)

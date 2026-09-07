@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from ai_workbench.core.message_parts import validate_message_parts
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
@@ -27,6 +28,16 @@ class MessageSchema(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
 
+    @model_validator(mode="after")
+    def validate_parts_and_role(self):
+        self.parts = validate_message_parts(self.parts)
+        for part in self.parts:
+            if part["type"] == "tool_call" and self.role != "assistant":
+                raise ValueError("Tool calls must be assistant data")
+            if part["type"] == "tool_result" and self.role != "tool":
+                raise ValueError("Tool results must keep the tool role")
+        return self
+
     @field_serializer("created_at", when_used="json")
     def serialize_datetime(self, value: datetime) -> str:
         return isoformat_utc(value) or ""
@@ -45,7 +56,7 @@ def infer_speaker_identity(
     if role == "user":
         inferred = ("user", "local_user", "User", "user_message")
     elif role == "assistant":
-        inferred = ("assistant", str(metadata.get("target") or "chat"), str(metadata.get("speaker_name") or "Assistant"), "assistant_reply")
+        inferred = ("assistant", None, "Assistant", "assistant_reply")
     elif role == "tool":
         inferred = ("tool", str(metadata.get("tool") or "tool"), str(metadata.get("tool_name") or metadata.get("tool") or "Tool"), "tool_result")
     elif role == "system":

@@ -1,1 +1,43 @@
-{"queued":"Queued","running":"Running","waiting":"Waiting for confirmation","done":"Done","failed":"Failed","cancelled":"Cancelled","interrupted":"Interrupted"}
+{
+  "queued": "Queued",
+  "running": "Running",
+  "cancelling": "Cancelling",
+  "waiting": "Waiting for confirmation",
+  "done": "Done",
+  "failed": "Failed",
+  "cancelled": "Cancelled",
+  "interrupted": "Interrupted",
+  "approve": "Approve",
+  "reject": "Reject",
+  "cancel": "Cancel",
+  "resuming": "Resuming…",
+  "preparing": "Preparing…",
+  "toolCall": "Tool call",
+  "outputTruncated": "Output truncated",
+  "service": "Search service",
+  "stepKinds": {
+    "context": "Context",
+    "model": "Model",
+    "save": "Save",
+    "approval": "Approval",
+    "tool": "Tool"
+  },
+  "stepStatus": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "skipped": "Skipped"
+  },
+  "toolStatus": {
+    "success": "Succeeded",
+    "error": "Failed",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled"
+  },
+  "approvalRisk": {
+    "safe": "Allow this tool call with the displayed arguments.",
+    "file": "Read the displayed file from the allowed Knowledge or attachment directories.",
+    "network": "Allow a public HTTP(S) request with the displayed arguments."
+  }
+}

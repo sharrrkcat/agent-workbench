@@ -127,10 +127,8 @@ class OpenAIAdapter:
                             tool_ids[tool.index] = tool.id
                         if tool.function and tool.function.name:
                             tool_names[tool.index] = tool_names.get(tool.index, "") + tool.function.name
-                        if tool.index not in tool_ids:
-                            raise ValueError("tool fragment has no id")
                     finish = choice.get("finish_reason")
-                    if finish == "tool_calls" and (not tool_ids or set(tool_ids) != set(tool_names)):
+                    if finish == "tool_calls" and (not tool_ids or set(tool_ids) != set(tool_names) or any(not value for value in tool_ids.values())):
                         raise ValueError("incomplete tool call")
                     if tool_ids and finish and finish != "tool_calls":
                         raise ValueError("invalid tool finish reason")

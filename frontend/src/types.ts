@@ -1,6 +1,37 @@
 /** Shared transport types for the compact Phase 1 client. */
 
 export type ContextMode = 'single_assistant' | 'group_transcript';
+export type BindingMode = 'inherit' | 'override';
+export type ContextPolicy = {
+  mode: 'none' | 'current_message' | 'recent_messages' | 'session' | 'selected_message';
+  max_messages: number | null; max_chars: number | null;
+  include_system_prompt: boolean; include_attachments: 'none' | 'explicit';
+};
+export type GenerationParameters = {
+  temperature?: number | null; top_p?: number | null; max_tokens?: number | null;
+  presence_penalty?: number | null; frequency_penalty?: number | null; seed?: number | null;
+  stop?: string | string[] | null;
+};
+export type PersonaInput = {
+  name: string; avatar_attachment_id: string | null; system_prompt: string;
+  model_profile_id: string | null; context_policy: ContextPolicy; generation: GenerationParameters;
+  harness_enabled: boolean; tools_allowed: string[];
+};
+export type Persona = PersonaInput & { id: string; created_at: string; updated_at: string };
+export type SessionPersona = { persona_id: string; enabled: boolean; name: string; avatar_attachment_id: string | null };
+export type SessionPatch = Partial<{
+  title: string; context_mode: ContextMode; current_persona_id: string;
+  personas: Array<Pick<SessionPersona, 'persona_id' | 'enabled'>>;
+  model_profile_id: string | null; context_policy: ContextPolicy | null;
+  generation: GenerationParameters | null; harness_enabled: boolean | null; tools_allowed: string[] | null;
+  knowledge_binding_mode: BindingMode; worldbook_binding_mode: BindingMode;
+}>;
+export type EffectiveChatConfig = {
+  persona_id: string; persona_name: string; avatar_attachment_id: string | null;
+  model_profile_id: string | null; model_source: 'session' | 'persona' | 'global';
+  context_mode: ContextMode; context_policy: ContextPolicy; generation: GenerationParameters;
+  harness_enabled: boolean; tools_allowed: string[]; knowledge_base_ids: string[]; worldbook_ids: string[];
+};
 
 export type Session = {
   session_id: string;
@@ -8,6 +39,15 @@ export type Session = {
   context_mode: ContextMode;
   waiting_run_id: string | null;
   model_profile_id: string | null;
+  current_persona_id: string;
+  personas: SessionPersona[];
+  context_policy: ContextPolicy | null;
+  generation: GenerationParameters | null;
+  harness_enabled: boolean | null;
+  tools_allowed: string[] | null;
+  knowledge_binding_mode: BindingMode;
+  worldbook_binding_mode: BindingMode;
+  effective: EffectiveChatConfig;
   title_generation_state?: string;
   title_generation_metadata?: Record<string, unknown>;
   created_at: string;
@@ -36,8 +76,10 @@ export type AudioPart = { id: string; type: 'audio'; source?: 'attachment' | 'ur
 export type VideoPart = { id: string; type: 'video'; source?: 'attachment' | 'url'; attachment_id?: string; url: string; mime_type: string; filename?: string; title?: string; poster_url?: string };
 export type NoticePart = { id: string; type: 'notice'; level?: 'info' | 'warning' | 'success'; text: string };
 export type ErrorPart = { id: string; type: 'error'; code?: string; message: string };
+export type ToolCallPart = { id: string; type: 'tool_call'; tool_call_id: string; tool_name: string; arguments: Record<string, unknown> };
+export type ToolResultPart = { id: string; type: 'tool_result'; tool_call_id: string; tool_name: string; status: 'success' | 'error' | 'rejected' | 'cancelled'; data?: unknown; error_code?: string; error_message?: string; truncated?: boolean };
 export type MediaGroupPart = { id: string; type: 'media_group'; layout?: 'gallery'; items: Array<Pick<ImagePart, 'type' | 'url' | 'attachment_id' | 'alt' | 'title' | 'caption'>> };
-export type MessagePart = TextPart | JsonPart | FilePart | ImagePart | AudioPart | VideoPart | NoticePart | ErrorPart | MediaGroupPart;
+export type MessagePart = TextPart | JsonPart | FilePart | ImagePart | AudioPart | VideoPart | NoticePart | ErrorPart | MediaGroupPart | ToolCallPart | ToolResultPart;
 
 export type Message = {
   message_id: string;
@@ -57,7 +99,7 @@ export type Message = {
 };
 
 export type RunStatus = 'PENDING' | 'RUNNING' | 'CANCELLING' | 'WAITING_FOR_USER' | 'DONE' | 'FAILED' | 'CANCELLED' | 'INTERRUPTED';
-export type RunKind = 'chat' | 'resume';
+export type RunKind = 'chat' | 'tool';
 export type RunStepKind = 'context' | 'model' | 'save' | 'approval' | 'tool';
 export type RunStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 export type RunStep = {
@@ -82,7 +124,7 @@ export type Run = {
   session_id: string;
   kind: RunKind;
   status: RunStatus;
-  target: string;
+  persona_id: string;
   current_step?: string;
   stage?: string;
   progress_message?: string;
@@ -191,12 +233,15 @@ export type KnowledgeSettings = {
 };
 export type KnowledgeBase = { id: string; name: string; description: string; aliases_text: string; embedding_model_profile_id: string; enabled: boolean; index_status: string; index_error?: string | null; vector_candidate_k_override?: number | null; keyword_candidate_k_override?: number | null; final_top_k_override?: number | null; max_context_chars_override?: number | null; created_at: string; updated_at: string };
 export type KnowledgeSource = { id: string; knowledge_base_id: string; source_type: 'pasted_text' | 'attachment_text' | 'file'; uri: string; title: string; relative_path?: string; status: string; error?: string | null; chunks: number; indexed_at?: string | null; created_at: string; updated_at: string; [key: string]: unknown };
-export type SessionKnowledgeBinding = { id?: number | null; session_id: string; knowledge_base_id: string; enabled: boolean; sort_order: number; knowledge_base?: KnowledgeBase | null };
+export type SessionKnowledgeBindings = { session_id: string; mode: BindingMode; knowledge_base_ids: string[]; effective_knowledge_base_ids: string[] };
 export type KnowledgeSearchResponse = { query: string; results: Array<Record<string, unknown>>; metadata?: Record<string, unknown>; debug?: Record<string, unknown>; context_preview?: string };
 
 export type WorldbookSettings = { worldbook_enabled: boolean; worldbook_max_entries_per_call: number; worldbook_max_context_chars: number; worldbook_regex_case_insensitive: boolean; worldbook_recursion_depth: number; worldbook_case_sensitive: boolean; worldbook_whole_words: boolean };
 export type Worldbook = { id: string; name: string; description: string; enabled: boolean; entry_count?: number; active_binding_count?: number; created_at: string; updated_at: string };
 export type WorldbookEntry = { id: string; worldbook_id: string; name: string; keywords_text: string; content: string; activation_mode: string; enabled: boolean; sort_order: number; created_at: string; updated_at: string };
-export type SessionWorldbooksResponse = { session_id: string; enabled_worldbooks: Array<Record<string, unknown>>; available_worldbooks: Worldbook[]; warnings?: string[] };
+export type SessionWorldbooksResponse = { session_id: string; mode: BindingMode; worldbook_ids: string[]; effective_worldbook_ids: string[] };
 export type RuntimeEvent = { type: string; session_id: string; run_id?: string; message_id?: string; payload?: Record<string, unknown>; created_at?: string };
 export type SendMessageAttachment = Record<string, unknown>;
+export type HarnessTool = { name: string; description: string; parameters: Record<string, unknown>; risk: 'safe' | 'file' | 'network'; requires_approval: boolean; direct_callable: boolean };
+export type HarnessSettings = { searxng_base_url: string | null };
+export type ToolRunResponse = { run: Run; messages: Message[]; session: Session };

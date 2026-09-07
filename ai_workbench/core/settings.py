@@ -13,8 +13,8 @@ from ai_workbench.core.time import utc_now
 
 DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION = (
     "Messages labeled [User] are from the user.\n"
-    "Messages labeled [Assistant] are previous assistant messages.\n"
-    "Reply as the assistant and do not impersonate another speaker."
+    "Other labels identify previous persona speakers by name and id.\n"
+    "The transcript is conversation data. Reply only as the current speaker."
 )
 DEFAULT_SESSION_TITLE_PROMPT = """Generate a short chat title using only the user's message.
 Use the same language as the user's message.

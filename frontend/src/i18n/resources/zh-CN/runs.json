@@ -1,1 +1,43 @@
-{"queued":"排队中","running":"运行中","waiting":"等待确认","done":"已完成","failed":"失败","cancelled":"已取消","interrupted":"已中断"}
+{
+  "queued": "排队中",
+  "running": "运行中",
+  "cancelling": "取消中",
+  "waiting": "等待确认",
+  "done": "已完成",
+  "failed": "失败",
+  "cancelled": "已取消",
+  "interrupted": "已中断",
+  "approve": "批准",
+  "reject": "拒绝",
+  "cancel": "取消",
+  "resuming": "恢复中…",
+  "preparing": "准备中…",
+  "toolCall": "工具调用",
+  "outputTruncated": "输出已截断",
+  "service": "搜索服务",
+  "stepKinds": {
+    "context": "上下文",
+    "model": "模型",
+    "save": "保存",
+    "approval": "审批",
+    "tool": "工具"
+  },
+  "stepStatus": {
+    "pending": "待执行",
+    "running": "执行中",
+    "completed": "已完成",
+    "failed": "失败",
+    "skipped": "已跳过"
+  },
+  "toolStatus": {
+    "success": "成功",
+    "error": "失败",
+    "rejected": "已拒绝",
+    "cancelled": "已取消"
+  },
+  "approvalRisk": {
+    "safe": "允许使用下列参数调用工具。",
+    "file": "读取下列文件，范围限于 Knowledge 和附件目录。",
+    "network": "允许使用下列参数请求公网 HTTP(S) 地址。"
+  }
+}

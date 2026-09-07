@@ -15,8 +15,8 @@ source reindex operation.
 ## Retrieval
 
 Vector and keyword candidates are merged with reciprocal rank fusion (RRF).
-Session bindings define the Knowledge Bases searched by default; callers may
-provide an explicit list. Search can return compact debug metadata and a
+Persona defaults and session override bindings define the Knowledge Bases
+searched by default; callers may provide an explicit list. Search can return compact debug metadata and a
 rendered context preview. RRF ordering is deterministic for equal candidates.
 
 `KnowledgeSettings` retains `reranker_enabled`,
@@ -35,7 +35,8 @@ background-indexing workflows are not part of this contract.
 - `/api/knowledge/bases/{id}/sources` — direct source creation/listing.
 - `/api/knowledge/sources/{id}/reindex` — rebuild one source index.
 - `/api/knowledge/search` — explicit hybrid search.
-- `/api/sessions/{id}/knowledge-bases` — ordered session bindings.
+- `/api/sessions/{id}/knowledge-bases` — inherit/override mode and ordered session bindings.
+- `/api/personas/{id}/knowledge-bases` — ordered Persona defaults.
 - Model selection uses `/api/models/profiles?kind=embedding` or `reranker`.
 
 Indexing, query embedding and reranking are async calls to the app-scoped

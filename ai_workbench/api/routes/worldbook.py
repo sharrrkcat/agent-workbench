@@ -3,6 +3,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.core.schema.persona import BindingMode
 from ai_workbench.core.worldbook import (
     Worldbook,
     WorldbookCreate,
@@ -28,7 +29,8 @@ class EntryReorderRequest(BaseModel):
 class SessionWorldbooksPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    worldbook_ids: list[str]
+    mode: BindingMode = "override"
+    worldbook_ids: list[str] | None = Field(default=None, max_length=128)
 
 
 class MatchTestRequest(BaseModel):
@@ -93,6 +95,8 @@ def patch_worldbook(worldbook_id: str, payload: WorldbookPatch, state: RuntimeSt
 @router.delete("/worldbooks/{worldbook_id}")
 def delete_worldbook(worldbook_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
+    if state.personas.references_resource("worldbook", worldbook_id):
+        raise_error(409, "WORLDBOOK_IN_USE", "Remove persona bindings before deleting this Worldbook.")
     try:
         deleted = state.worldbooks.delete_worldbook(worldbook_id)
         return {"deleted": True, "worldbook_id": deleted.id}
@@ -171,24 +175,17 @@ def reorder_entries(worldbook_id: str, payload: EntryReorderRequest, state: Runt
 def get_session_worldbooks(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     _require_session(state, session_id)
-    bindings = state.worldbooks.list_session_bindings(session_id)
-    worldbooks = state.worldbooks.list_worldbooks()
-    return {
-        "session_id": session_id,
-        "enabled_worldbooks": [binding.model_dump() for binding in bindings if binding.enabled and binding.worldbook and binding.worldbook.enabled],
-        "available_worldbooks": [item.model_dump() for item in worldbooks],
-    }
+    return state.chat_service.binding_response(session_id, "worldbook")
 
 
 @router.patch("/sessions/{session_id}/worldbooks")
-def patch_session_worldbooks(session_id: str, payload: SessionWorldbooksPatch, state: RuntimeState = Depends(get_state)) -> dict:
+async def patch_session_worldbooks(session_id: str, payload: SessionWorldbooksPatch, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     _require_session(state, session_id)
-    try:
-        bindings, warnings = state.worldbooks.replace_session_bindings(session_id, payload.worldbook_ids)
-        return {"session_id": session_id, "enabled_worldbooks": [binding.model_dump() for binding in bindings], "available_worldbooks": [item.model_dump() for item in state.worldbooks.list_worldbooks()], "warnings": warnings}
-    except KeyError as exc:
-        raise_error(404, "WORLDBOOK_NOT_FOUND", str(exc))
+    state.chat_service.update_bindings(session_id, "worldbook", payload.mode, payload.worldbook_ids)
+    state.events.emit("session_updated", session_id=session_id,
+        payload={"session": state.chat_service.session_response(state.sessions.get_session(session_id))})
+    return state.chat_service.binding_response(session_id, "worldbook")
 
 
 @router.post("/worldbooks/match-test")
@@ -200,7 +197,7 @@ def match_test(payload: MatchTestRequest, state: RuntimeState = Depends(get_stat
         worldbook_ids = _dedupe(payload.worldbook_ids)
     elif payload.session_id:
         _require_session(state, payload.session_id)
-        worldbook_ids = [binding.worldbook_id for binding in state.worldbooks.list_session_bindings(payload.session_id) if binding.enabled and binding.worldbook and binding.worldbook.enabled]
+        worldbook_ids = state.chat_service.effective_binding_ids(state.sessions.get_session(payload.session_id), "worldbook")
     else:
         raise_error(422, "WORLDBOOK_MATCH_TARGET_REQUIRED", "worldbook_ids or session_id is required.")
 

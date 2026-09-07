@@ -7,9 +7,11 @@ export function applyMessageEvent(messages: Message[], event: RuntimeEvent): Mes
   const index = messages.findIndex((m) => m.message_id === id);
   if (event.type === 'message_started') {
     if (index !== -1 || !payload.message) return messages;
-    return [...messages, { ...payload.message as Message, metadata: { streaming: true, stream_seq: 0 } }];
+    const message = payload.message as Message;
+    if (message.message_id !== id || message.session_id !== event.session_id) return messages;
+    return [...messages, { ...message, metadata: { ...message.metadata, streaming: true, stream_seq: 0 } }];
   }
-  if (event.type === 'message_completed') {
+  if (['message_completed', 'tool_call_created', 'tool_result_created'].includes(event.type)) {
     if (!payload.message) return messages;
     const message = payload.message as Message;
     if (message.message_id !== id || message.session_id !== event.session_id) return messages;

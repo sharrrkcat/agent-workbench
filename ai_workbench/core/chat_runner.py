@@ -3,28 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 from uuid import uuid4
 from contextlib import aclosing
 
-from ai_workbench.core.chat_targets import ChatTargetCatalog
-from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.chat_service import ChatError
+from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
+from ai_workbench.core.context import ContextBuilder, LLMContextError
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_text, is_text_attachment
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
-from ai_workbench.core.settings import DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
 from ai_workbench.core.worldbook_context import build_session_worldbook_context
 
 
 class ChatRunner:
-    target_id = "chat"
-
     def __init__(
         self,
         *,
@@ -33,12 +32,16 @@ class ChatRunner:
         runs: Any,
         events: Any,
         model_manager: Any,
+        chat_service: Any,
         app_settings: Any = None,
         utility_llm: Any = None,
         knowledge_service: Any = None,
         worldbooks: Any = None,
         active_runs: Any = None,
-        target_catalog: ChatTargetCatalog | None = None,
+        tool_registry: Any = None,
+        harness_settings: Any = None,
+        network_policy: Any = None,
+        repo_root: Any = None,
     ) -> None:
         self.sessions = sessions
         self.messages = messages
@@ -50,7 +53,12 @@ class ChatRunner:
         self.knowledge_service = knowledge_service
         self.worldbooks = worldbooks
         self.active_runs = active_runs
-        self.targets = target_catalog or ChatTargetCatalog()
+        self.chat_service = chat_service
+        self.harness_loop = HarnessAgentLoop(
+            sessions=sessions, messages=messages, runs=runs, events=events, model_manager=model_manager,
+            registry=tool_registry, network_policy=network_policy, harness_settings=harness_settings,
+            repo_root=repo_root, knowledge_service=knowledge_service, active_runs=active_runs,
+        ) if tool_registry is not None else None
         self.context_builder = ContextBuilder(messages)
 
     async def run(
@@ -61,56 +69,32 @@ class ChatRunner:
         attachments: list[dict[str, Any]] | None = None,
         input_message_id: str | None = None,
         client_message_id: str | None = None,
-        run_id: str | None = None,
-        resume: bool = False,
+        persona_id: str | None = None,
+        source_message_id: str | None = None,
     ) -> RunResult:
         session = self.sessions.get_session(session_id)
         raw_text = str(text)
         attachments = list(attachments or [])
+        if input_message_id:
+            existing = self.messages.get_message(input_message_id)
+            if existing.session_id != session_id or existing.role != "user":
+                raise ChatError("MESSAGE_SESSION_MISMATCH", "Input must be a user message from this session.")
 
-        if run_id:
-            run = self.runs.get_run(run_id)
-            if run.session_id != session_id:
-                return RunResult(success=False, run_id=run_id, error="Run belongs to another session.", error_code="RUN_SESSION_MISMATCH")
-            if run.status in {RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.DONE, RunStatus.INTERRUPTED}:
-                return RunResult(success=False, run_id=run_id, error="Run is no longer resumable.", error_code="RUN_NOT_RESUMABLE")
-            if input_message_id:
-                user = self.messages.get_message(input_message_id)
-            else:
-                user = self.messages.add_message(
-                    session_id=session_id,
-                    role="user",
-                    content=raw_text,
-                    metadata={
-                        "attachments": attachments,
-                        "client_message_id": client_message_id or None,
-                        "input_source": "chat_resume",
-                    },
-                    run_id=run_id,
-                )
-                metadata = dict(run.metadata or {})
-                metadata["resume_message_id"] = user.message_id
-                self.runs.update_metadata(run_id, metadata)
+        self.chat_service.assert_idle(session_id)
+        config = self.chat_service.resolve(session, persona_id=persona_id)
+        if input_message_id:
+            user = self.messages.get_message(input_message_id)
         else:
-            if input_message_id:
-                user = self.messages.get_message(input_message_id)
-            else:
-                user = self.messages.add_message(
-                    session_id=session_id,
-                    role="user",
-                    content=raw_text,
-                    metadata={
-                        "attachments": attachments,
-                        "client_message_id": client_message_id or None,
-                        "input_source": "chat",
-                    },
-                )
-            run = self.runs.create_run(
-                kind="resume" if resume else "chat",
-                target=self.target_id,
-                session_id=session_id,
-                metadata={"input_message_id": user.message_id, "input_text": raw_text},
+            user = self.messages.add_message(
+                session_id=session_id, role="user", content=raw_text,
+                metadata={"attachments": attachments, "client_message_id": client_message_id or None, "input_source": "chat"},
             )
+        run = self.runs.create_run(
+            kind="chat", persona_id=config.persona_id, session_id=session_id,
+            metadata={"input_message_id": user.message_id, "context_source_message_id": source_message_id,
+                      "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed)},
+            config_snapshot=config.model_dump(mode="json"),
+        )
 
         self.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="context")
         self.events.emit(
@@ -123,6 +107,7 @@ class ChatRunner:
         if current_task is not None and self.active_runs is not None:
             self.active_runs.register(run.run_id, current_task)
         active_step_id: str | None = None
+        context_started = time.monotonic()
         try:
             context_step = self.runs.create_step(
                 run.run_id,
@@ -131,12 +116,21 @@ class ChatRunner:
                 status=RunStepStatus.RUNNING,
             )
             active_step_id = context_step.step_id
-            context, context_meta = await self._build_context(
+            build_context = self._build_context(
                 session,
+                config,
                 raw_text,
-                (run.metadata or {}).get("input_message_id"),
+                user.message_id,
                 attachments,
+                source_message_id,
             )
+            if config.harness_enabled and config.tools_allowed:
+                try:
+                    context, context_meta = await asyncio.wait_for(build_context, timeout=ACTIVE_BUDGET_SECONDS)
+                except asyncio.TimeoutError as exc:
+                    raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
+            else:
+                context, context_meta = await build_context
             self.runs.update_step(
                 context_step.step_id,
                 status=RunStepStatus.COMPLETED,
@@ -147,6 +141,13 @@ class ChatRunner:
             if self._cancelled(run.run_id):
                 return self._cancel_result(run.run_id, session_id)
 
+            if config.harness_enabled and config.tools_allowed and self.harness_loop is not None:
+                result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context,
+                                                     active_seconds=time.monotonic() - context_started)
+                if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
+                    await self.maybe_title(session_id, raw_text)
+                return result
+
             model_step = self.runs.create_step(
                 run.run_id,
                 kind="model",
@@ -154,16 +155,20 @@ class ChatRunner:
                 status=RunStepStatus.RUNNING,
             )
             active_step_id = model_step.step_id
-            profile = self.model_manager.chat_profile(session.model_profile_id)
+            if not config.model_profile_id:
+                raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session, persona or the global default.", 503)
+            profile = self.model_manager.profile(config.model_profile_id, "llm")
             resolution = {"model_profile_id": profile.id, "alias": profile.alias,
                           "provider_profile_id": profile.provider_profile_id, "model_ref": profile.model_ref}
             self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
             streamed = profile.capabilities.streaming
-            request = ChatRequest(model=profile.alias, messages=context, stream=streamed)
+            request = ChatRequest(model=profile.alias, messages=context, stream=streamed, **config.generation.model_dump(exclude_none=True))
             self.model_manager.validate_chat(profile, request)
             message_id = str(uuid4())
             pending = MessageSchema(message_id=message_id, session_id=session_id, role="assistant",
-                                    run_id=run.run_id, parts=[], metadata={"streaming": True})
+                                    speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
+                                    parent_message_id=user.message_id, run_id=run.run_id, parts=[],
+                                    metadata={"streaming": True, "speaker_avatar_attachment_id": config.avatar_attachment_id})
             self.events.emit("message_started", session_id=session_id, run_id=run.run_id,
                              message_id=message_id, payload={"message": pending.model_dump(mode="json"), "seq": 0})
             output = ""
@@ -207,9 +212,10 @@ class ChatRunner:
                 content=output,
                 message_id=message_id,
                 run_id=run.run_id,
-                parent_message_id=(self.runs.get_run(run.run_id).metadata or {}).get("input_message_id"),
+                parent_message_id=user.message_id,
+                speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
                 metadata={
-                    "target": self.target_id,
+                    "speaker_avatar_attachment_id": config.avatar_attachment_id,
                     "model_resolution": resolution,
                     "streamed": streamed,
                 },
@@ -232,9 +238,9 @@ class ChatRunner:
                 run_id=run.run_id,
                 payload={"run": final_run.model_dump(mode="json")},
             )
-            await self._maybe_title(session_id, raw_text)
+            await self.maybe_title(session_id, raw_text)
             return RunResult(success=True, run_id=run.run_id, data=output)
-        except ModelError as exc:
+        except (ModelError, ChatError, LLMContextError) as exc:
             self._fail_step(active_step_id, exc.code, exc.message)
             return self._fail(run.run_id, session_id, exc.code, exc.message)
         except asyncio.CancelledError:
@@ -249,53 +255,38 @@ class ChatRunner:
             if self.active_runs is not None:
                 self.active_runs.unregister(run.run_id)
 
-    async def resume_run(
-        self,
-        *,
-        session_id: str,
-        run_id: str,
-        text: str,
-        attachments: list[dict[str, Any]] | None = None,
-    ) -> RunResult:
-        self.sessions.set_waiting_run(session_id, None)
-        return await self.run(
-            session_id=session_id,
-            text=text,
-            attachments=attachments,
-            run_id=run_id,
-            resume=True,
-        )
-
     async def _build_context(
         self,
         session: Any,
+        config: ResolvedChatConfig,
         text: str,
         current_message_id: str | None,
         attachments: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-        target = self.targets.get(self.target_id)
-        policy = target.context_policy or ContextPolicy(mode="session")
+        source_message_id: str | None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        policy = config.context_policy
+        if policy.include_attachments == "none":
+            attachments = []
         current_text = _with_current_attachments(text, attachments, self.app_settings.get())
         result = self.context_builder.build(
             session.session_id,
             current_text,
             policy,
             current_message_id=current_message_id,
-            context_mode=session.context_mode,
+            source_message_id=source_message_id,
+            context_mode=config.context_mode,
+            group_instruction=config.group_transcript_instruction,
+            persona_id=config.persona_id, persona_name=config.persona_name,
         )
         messages = list(result.messages)
         metadata: dict[str, Any] = {
-            "context_mode": session.context_mode,
+            "context_mode": config.context_mode,
             "message_count": len(messages),
             "warnings": result.warnings,
-            "target": target.id,
+            "persona_id": config.persona_id,
         }
-        if target.system_prompt:
-            messages.insert(0, {"role": "system", "content": target.system_prompt})
-        if session.context_mode == "group_transcript" and self.app_settings is not None:
-            custom = self.app_settings.get().group_transcript_system_instruction
-            if custom:
-                messages.insert(0, {"role": "system", "content": custom})
+        if policy.include_system_prompt and config.system_prompt:
+            messages.insert(0, {"role": "system", "content": config.system_prompt})
         memory = build_core_memory_context(app_settings_store=self.app_settings, source="chat")
         messages = append_system_context(messages, memory.rendered_text)
         metadata["memory"] = memory.metadata
@@ -303,6 +294,7 @@ class ChatRunner:
             worldbook = build_session_worldbook_context(
                 worldbook_store=self.worldbooks,
                 session_id=session.session_id,
+                worldbook_ids=config.worldbook_ids,
                 user_text=text,
                 source="chat",
             )
@@ -311,6 +303,7 @@ class ChatRunner:
         if self.knowledge_service is not None:
             knowledge = await build_session_knowledge_context(
                 knowledge_service=self.knowledge_service, query=text, session_id=session.session_id, source="chat",
+                knowledge_base_ids=config.knowledge_base_ids,
             )
             messages = append_knowledge_to_system(messages, knowledge.rendered_text)
             metadata["knowledge"] = knowledge.metadata
@@ -323,7 +316,7 @@ class ChatRunner:
             ]
         return messages, metadata
 
-    async def _maybe_title(self, session_id: str, text: str) -> None:
+    async def maybe_title(self, session_id: str, text: str) -> None:
         settings = self.app_settings.get() if self.app_settings is not None else None
         if not settings or not settings.auto_generate_session_titles or self.utility_llm is None:
             return
@@ -337,7 +330,7 @@ class ChatRunner:
                 if current.title != session.title or current.title_generation_state == "manual":
                     return
                 updated = self.sessions.set_generated_title(session_id, title, {"source": "utility"})
-                self.events.emit("session_updated", session_id=session_id, payload={"session": updated.model_dump(mode="json")})
+                self.events.emit("session_updated", session_id=session_id, payload={"session": self.chat_service.session_response(updated)})
         except Exception:
             return
 
@@ -375,6 +368,8 @@ class ChatRunner:
             return False
 
     def _cancel_result(self, run_id: str, session_id: str) -> RunResult:
+        if self.runs.get_run(run_id).status in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
+            return RunResult(success=False, run_id=run_id, error="Run was cancelled.", error_code="RUN_CANCELLED")
         self.runs.update_status(
             run_id,
             RunStatus.CANCELLED,
@@ -383,7 +378,8 @@ class ChatRunner:
             error_code="RUN_CANCELLED",
             cancel_requested=True,
         )
-        self.events.emit("run_cancelled", session_id=session_id, run_id=run_id)
+        self.events.emit("run_cancelled", session_id=session_id, run_id=run_id,
+                         payload={"run": self.runs.get_run(run_id).model_dump(mode="json")})
         return RunResult(success=False, run_id=run_id, error="Run was cancelled.", error_code="RUN_CANCELLED")
 
     def _fail(self, run_id: str, session_id: str, code: str, message: str) -> RunResult:

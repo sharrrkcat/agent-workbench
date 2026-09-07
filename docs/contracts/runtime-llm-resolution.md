@@ -30,8 +30,11 @@ string clears it. Keys are stored locally and are not encrypted at rest.
 
 ## Resolution and parameters
 
+For a chat run, model selection is resolved in this order:
+
 1. `session.model_profile_id`, when set;
-2. `/api/models/settings.default_model_profile_id`.
+2. the current Persona's `model_profile_id`;
+3. `/api/models/settings.default_model_profile_id`.
 
 A missing selection returns `MODEL_NOT_CONFIGURED`; a disabled, missing or
 wrong-kind selection fails explicitly. There is no substitution from
@@ -65,5 +68,5 @@ rerank, image embedding and vision. Loading requires an installed runtime and
 manually placed weights. Crashes require explicit load; no automatic restart
 or model substitution occurs. See [managed-runtime](managed-runtime.md).
 
-See [provider-status](provider-status.md), [stateless-inference](stateless-inference.md)
-and [utility-llm](utility-llm.md).
+See [provider-status](provider-status.md), [stateless-inference](stateless-inference.md),
+[utility-llm](utility-llm.md) and [persona-chat](persona-chat.md).

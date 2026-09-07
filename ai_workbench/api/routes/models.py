@@ -80,6 +80,9 @@ async def profile(profile_id: str, state: RuntimeState = Depends(get_state)):
 
 @router.patch("/profiles/{profile_id}")
 async def update_profile(profile_id: str, payload: dict, state: RuntimeState = Depends(get_state)):
+    if any(state.runs.get_config_snapshot(r.run_id).get("model_profile_id") == profile_id
+           for r in state.runs.list_all_runs() if r.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"}):
+        raise ModelError("MODEL_BUSY", "An unfinished chat run uses this model configuration.", 409)
     current = state.model_profiles.get(profile_id)
     updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
     if updated.kind != current.kind:
@@ -108,9 +111,12 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
     references = [settings.default_model_profile_id, settings.utility_model_profile_id,
                   state.knowledge.get_settings().reranker_model_profile_id]
     references.extend(s.model_profile_id for s in state.sessions.list_sessions())
+    references.extend(p.model_profile_id for p in state.personas.list())
+    references.extend(state.runs.get_config_snapshot(r.run_id).get("model_profile_id")
+        for r in state.runs.list_all_runs() if r.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"})
     references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
     if profile_id in references:
-        raise ModelError("MODEL_IN_USE", "Remove session, default or Knowledge references before deleting this model.", 409)
+        raise ModelError("MODEL_IN_USE", "Remove persona, session, unfinished run, default or Knowledge references before deleting this model.", 409)
     await state.model_manager.invalidate(state.model_manager.backend_key(profile))
     state.model_profiles.delete(profile_id)
     return {"deleted": True}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from collections.abc import Callable
 
 from ai_workbench.core.knowledge_indexing import (
     KnowledgeIndexError,
@@ -20,8 +21,9 @@ from ai_workbench.core.retrieval import search_knowledge
 
 
 class KnowledgeService:
-    def __init__(self, *, store: Any, model_manager: Any, repo_root: Path | None = None) -> None:
+    def __init__(self, *, store: Any, model_manager: Any, repo_root: Path | None = None, session_binding_resolver: Callable[[str], list[str]] | None = None) -> None:
         self.store=store; self.model_manager=model_manager; self.repo_root=Path(repo_root or Path.cwd())
+        self.session_binding_resolver = session_binding_resolver
 
     async def search(
         self, *, query: str, knowledge_base_ids: list[str] | None = None,
@@ -30,6 +32,8 @@ class KnowledgeService:
         min_score_threshold: float | None = None, max_chunks_per_source: int | None = None,
         max_chunks_per_knowledge_base: int | None = None,
     ) -> dict[str, Any]:
+        if knowledge_base_ids is None and session_id and self.session_binding_resolver is not None:
+            knowledge_base_ids = self.session_binding_resolver(session_id)
         return await search_knowledge(
             engine=getattr(self.store, "engine", None), knowledge_store=self.store,
             model_manager=self.model_manager, query=query, knowledge_base_ids=knowledge_base_ids,

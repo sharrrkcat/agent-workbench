@@ -1,5 +1,6 @@
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
+from ai_workbench.core.schema.persona import CHAT_PERSONA_ID
 
 
 def test_session_store_keeps_context_and_model_overrides() -> None:
@@ -17,12 +18,12 @@ def test_session_store_keeps_context_and_model_overrides() -> None:
 def test_run_store_uses_generic_chat_contract() -> None:
     store = RunStore()
 
-    run = store.create_run(kind="chat", target="chat", session_id="session-1")
+    run = store.create_run(kind="chat", persona_id=CHAT_PERSONA_ID, session_id="session-1")
     running = store.update_status(run.run_id, RunStatus.RUNNING, current_step="context")
     done = store.update_status(run.run_id, RunStatus.DONE, current_step="done")
 
     assert run.kind == "chat"
-    assert run.target == "chat"
+    assert run.persona_id == CHAT_PERSONA_ID
     assert running.status is RunStatus.RUNNING
     assert done.status is RunStatus.DONE
     assert store.get_run(run.run_id).status is RunStatus.DONE
@@ -41,13 +42,14 @@ def test_message_store_persists_generic_speaker_parts_and_parent() -> None:
         content="reply",
         run_id="run-1",
         parent_message_id=first.message_id,
-        metadata={"target": "chat"},
+        speaker_id=CHAT_PERSONA_ID,
+        speaker_name="Chat",
     )
 
     messages = store.list_messages(session_id)
 
     assert [message.message_id for message in messages] == [first.message_id, second.message_id]
     assert messages[0].parts[0]["text"] == "hello"
-    assert messages[1].speaker_id == "chat"
+    assert messages[1].speaker_id == CHAT_PERSONA_ID
     assert messages[1].parent_message_id == first.message_id
-    assert messages[1].metadata == {"target": "chat"}
+    assert messages[1].speaker_name == "Chat"

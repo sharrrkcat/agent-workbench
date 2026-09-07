@@ -3,20 +3,22 @@
 There is no generated extension registry. The application starts from
 explicit code and does not scan manifests or plugin directories.
 
-## Prompt targets
+## Personas
 
 | id | visibility | purpose |
 | --- | --- | --- |
-| `chat` | public default | Normal conversation with session context and service injections. |
-| `translate` | internal | Small translation target reserved for tests and future persona seeds. |
+| `Chat` | public default | Editable normal conversation persona with session context and service injections. |
+| `Translate` | public | Editable translation persona using current-message context. |
 
-`ChatTargetCatalog` is the complete catalog. It is intentionally not extensible
-through YAML or a runtime registration API.
+Personas are database records managed through `/api/personas`; there is no YAML
+or runtime registration API.
 
 ## Explicit core services
 
 - `ChatRunner`: context construction, model call, persistence, streaming events,
-  title hook, and waiting-run resume.
+  title hook, and opt-in harness dispatch.
+- `ToolRegistry`/`HarnessAgentLoop`: six built-in tools, bounded model loops,
+  private approval continuations, direct calls and shared cancellation.
 - `ModelManager`: the shared adapter, provider queue, model status and
   lifecycle owner for all internal/external inference.
 - `ModelProfileStore`: five model kinds with internal UUIDs and public aliases.
@@ -25,11 +27,10 @@ through YAML or a runtime registration API.
 - `KnowledgeService`: source/index lifecycle, hybrid retrieval, RRF and optional
   fail-open post-retrieval reranking.
 - `PetService`: nested application settings and pet package lifecycle.
-- `NetworkPolicy`: pure URL/DNS/redirect/response-size validation for future
-  tools; it performs no requests itself.
+- `NetworkPolicy`: URL/DNS/redirect/response-size policy; network helpers connect
+  only to its validated public addresses.
 
 ## Generation
 
-This document is maintained as a static catalog. A future tool
-harness may add an explicit, schema-checked registry, but it will not restore
-manifest loading or extension discovery.
+This document is maintained as a static catalog. The tool registry is explicit
+and schema-checked; it does not restore manifest loading or extension discovery.

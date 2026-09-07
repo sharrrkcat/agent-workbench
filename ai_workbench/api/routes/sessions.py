@@ -4,15 +4,13 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.api.routes.knowledge import (
-    SessionKnowledgePatch,
-    list_session_knowledge_bases,
-    patch_session_knowledge_bases,
-)
+from ai_workbench.core.models.schema import GenerationParameters
+from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.persona import BindingMode, CHAT_PERSONA_ID, SessionPersona
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.time import ensure_utc, utc_now
@@ -28,6 +26,14 @@ class CreateSessionRequest(BaseModel):
     title: str = ""
     context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
     model_profile_id: str | None = None
+    current_persona_id: str = CHAT_PERSONA_ID
+    personas: list[SessionPersona] = Field(default_factory=lambda: [SessionPersona(persona_id=CHAT_PERSONA_ID)], min_length=1, max_length=64)
+    context_policy: ContextPolicy | None = None
+    generation: GenerationParameters | None = None
+    harness_enabled: StrictBool | None = None
+    tools_allowed: list[str] | None = None
+    knowledge_binding_mode: BindingMode = "inherit"
+    worldbook_binding_mode: BindingMode = "inherit"
 
 
 class UpdateSessionRequest(BaseModel):
@@ -36,35 +42,52 @@ class UpdateSessionRequest(BaseModel):
     title: str | None = None
     model_profile_id: str | None = None
     context_mode: Literal["single_assistant", "group_transcript"] | None = None
+    current_persona_id: str | None = None
+    personas: list[SessionPersona] | None = Field(default=None, min_length=1, max_length=64)
+    context_policy: ContextPolicy | None = None
+    generation: GenerationParameters | None = None
+    harness_enabled: StrictBool | None = None
+    tools_allowed: list[str] | None = None
+    knowledge_binding_mode: BindingMode | None = None
+    worldbook_binding_mode: BindingMode | None = None
+
+
+class SessionPersonasPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    personas: list[SessionPersona] = Field(min_length=1, max_length=64)
+    current_persona_id: str
+
+
+class SessionKnowledgePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: BindingMode = "override"
+    knowledge_base_ids: list[str] | None = Field(default=None, max_length=128)
 
 
 @router.post("")
-def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(get_state)) -> dict:
-    if payload.model_profile_id:
-        _validate_profile(state, payload.model_profile_id)
-    session = state.sessions.create_session(title=payload.title, context_mode=payload.context_mode)
-    if payload.model_profile_id:
-        session = state.sessions.set_model_profile(session.session_id, payload.model_profile_id)
-    return session.model_dump(mode="json")
+async def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(get_state)) -> dict:
+    session = state.chat_service.create_session(payload.model_dump())
+    return state.chat_service.session_response(session)
 
 
 @router.get("")
 def list_sessions(state: RuntimeState = Depends(get_state)) -> list[dict]:
-    return [session.model_dump(mode="json") for session in state.sessions.list_sessions()]
+    return [state.chat_service.session_response(session) for session in state.sessions.list_sessions()]
 
 
 @router.get("/{session_id}")
 def get_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    return _get_session_or_404(state, session_id).model_dump(mode="json")
+    return state.chat_service.session_response(_get_session_or_404(state, session_id))
 
 
 @router.patch("/{session_id}")
-def update_session(
+async def update_session(
     session_id: str,
     payload: UpdateSessionRequest,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
     session = _get_session_or_404(state, session_id)
+    values = payload.model_dump(exclude_unset=True)
     if payload.title is not None:
         title = payload.title.strip()
         if not title:
@@ -75,10 +98,10 @@ def update_session(
                 "SESSION_TITLE_TOO_LONG",
                 f"Session title must be {MAX_SESSION_TITLE_LENGTH} characters or fewer.",
             )
-        session = state.sessions.set_title(session_id, title)
+        values.update(title=title, title_generation_state="manual")
+    updated = state.chat_service.update_session(session_id, values)
     if payload.context_mode is not None and payload.context_mode != session.context_mode:
         previous = session.context_mode
-        session = state.sessions.set_context_mode(session_id, payload.context_mode)
         state.messages.add_message(
             session_id=session_id,
             role="system",
@@ -89,16 +112,26 @@ def update_session(
                 "previous_context_mode": previous,
             },
         )
-    if "model_profile_id" in payload.model_fields_set:
-        if payload.model_profile_id is not None:
-            _validate_profile(state, payload.model_profile_id)
-        session = state.sessions.set_model_profile(session_id, payload.model_profile_id)
-    return session.model_dump(mode="json")
+    response = state.chat_service.session_response(updated)
+    state.events.emit("session_updated", session_id=session_id, payload={"session": response})
+    return response
+
+
+@router.get("/{session_id}/personas")
+def get_session_personas(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    session = get_session(session_id, state)
+    return {"personas": session["personas"], "current_persona_id": session["current_persona_id"]}
+
+
+@router.patch("/{session_id}/personas")
+async def update_session_personas(session_id: str, payload: SessionPersonasPatch, state: RuntimeState = Depends(get_state)) -> dict:
+    return await update_session(session_id, UpdateSessionRequest(**payload.model_dump()), state)
 
 
 @router.delete("/{session_id}")
-def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+async def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     session = _get_session_or_404(state, session_id)
+    state.chat_service.assert_idle(session_id)
     state.sessions.set_waiting_run(session_id, None)
     messages = state.messages.list_messages(session_id)
     state.run_events.delete_session(session_id)
@@ -144,7 +177,7 @@ def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_stat
             "created_at": created,
             "metadata": {
                 "run_kind": run.kind,
-                "target": run.target,
+                "persona_id": run.persona_id,
                 "parent_message_id": parent_id,
             },
             "run": run.model_dump(mode="json"),
@@ -164,17 +197,22 @@ def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_stat
 
 
 @router.get("/{session_id}/knowledge-bases")
-def get_session_knowledge_bases(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
-    return list_session_knowledge_bases(session_id, state)
+def get_session_knowledge_bases(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    _get_session_or_404(state, session_id)
+    return state.chat_service.binding_response(session_id, "knowledge")
 
 
 @router.patch("/{session_id}/knowledge-bases")
-def update_session_knowledge_bases(
+async def update_session_knowledge_bases(
     session_id: str,
     payload: SessionKnowledgePatch,
     state: RuntimeState = Depends(get_state),
-) -> list[dict]:
-    return patch_session_knowledge_bases(session_id, payload, state)
+) -> dict:
+    _get_session_or_404(state, session_id)
+    state.chat_service.update_bindings(session_id, "knowledge", payload.mode, payload.knowledge_base_ids)
+    state.events.emit("session_updated", session_id=session_id,
+        payload={"session": state.chat_service.session_response(state.sessions.get_session(session_id))})
+    return state.chat_service.binding_response(session_id, "knowledge")
 
 
 @router.post("/{session_id}/notifications/{notification_id}/dismiss")
@@ -207,10 +245,6 @@ def _get_session_or_404(state: RuntimeState, session_id: str):
         raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
 
 
-def _validate_profile(state: RuntimeState, profile_id: str) -> None:
-    state.model_manager.profile(profile_id, "llm")
-
-
 def _message_payload(state: RuntimeState, message) -> dict:
     payload = message.model_dump(mode="json")
     if message.run_id:
@@ -230,7 +264,10 @@ def _cleanup_message_attachments(state: RuntimeState, message) -> None:
     if isinstance(attachments, list):
         for item in attachments:
             if isinstance(item, dict):
-                delete_attachment_if_unreferenced(item, state.messages, message.session_id)
+                delete_attachment_if_unreferenced(item, state.messages, message.session_id, persona_store=state.personas, run_store=state.runs)
+    avatar_id = (message.metadata or {}).get("speaker_avatar_attachment_id")
+    if avatar_id:
+        delete_attachment_if_unreferenced({"id": avatar_id, "uri": "local://attachments/" + avatar_id}, state.messages, persona_store=state.personas, run_store=state.runs)
 
 
 def _first_string(source: dict | None, keys: tuple[str, ...]) -> str | None:

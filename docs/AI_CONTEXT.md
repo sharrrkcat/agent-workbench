@@ -3,9 +3,11 @@
 This is the lightweight entry point for repository work. Read the roadmap and
 the smallest relevant contract before searching source broadly.
 
-Phase 2b is complete (2026-09-06); the next implementation phase is 3.
-Current schema head: `0004_phase2b_runtimes`. See the roadmap implementation
-record for changed modules, verification and the managed-runtime boundary.
+Phases 0–4 are complete (2026-09-07); current schema head is
+`0006_phase4_tools`. Phase 4 closes with 233 backend tests, frontend build and
+contract checks passing. See the roadmap implementation record,
+[persona-chat](contracts/persona-chat.md) and [harness-tools](contracts/harness-tools.md).
+Phase 5 remains pending.
 
 ## Fixed Refactor Constraints
 
@@ -30,7 +32,7 @@ explicitly selected auxiliary model and stay unchanged on absence or failure.
   context injection.
 - [Memory/Worldbook](ai/TASK_MEMORY_WORLDBOOK.md): deterministic context stores
   and matching.
-- [Settings](ai/TASK_SETTINGS.md): General, Models, Pet, and strict schemas.
+- [Settings](ai/TASK_SETTINGS.md): General, Models, Personas, Pet, and strict schemas.
 - [Frontend](ai/TASK_FRONTEND_UI.md): components, stores, i18n, and client
   contracts.
 
@@ -52,6 +54,8 @@ registry, route parser, or script SDK to modify.
 - `contracts/message-parts.md`
 - `contracts/utility-llm.md`
 - `contracts/stateless-inference.md`
+- `contracts/persona-chat.md`
+- `contracts/harness-tools.md`
 
 Interface, protocol, settings, metadata, or workflow changes update the owning
 contract in the same change. User-visible text changes update both locales.

@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "check:i18n": "node scripts/check-i18n.mjs",
     "test:model-stream": "node scripts/test-model-stream.mjs",
+    "test:harness": "node scripts/test-harness.mjs",
     "test:phase1-contracts": "node scripts/test-phase1-contracts.mjs",
     "test:knowledge-citations": "node scripts/test-knowledge-citations.mjs",
     "test:url": "node scripts/test-url-helpers.mjs"

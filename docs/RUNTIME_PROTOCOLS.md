@@ -5,17 +5,19 @@ Phase 2a shares all model calls through core/models. Detailed contracts are in
 
 ## Chat and runs
 
-Runtime dispatches to ChatRunner, with waiting-run resume first. Prefixes stay
-ordinary text. ContextBuilder projects the session/group transcript and
+Runtime dispatches ordinary text to ChatRunner and registered `/tool_name`
+inputs to the shared tool executor. Pending approval blocks new input until
+explicit approval, rejection or cancellation. ContextBuilder projects the session/group transcript and
 injects Memory, Worldbook, Knowledge and permitted attachment context.
 
-ChatRunner resolves session.model_profile_id then the global default and
-calls the shared manager. An explicitly selected auxiliary model may generate
+ChatRunner resolves session.model_profile_id, current Persona model, then the
+global default and calls the shared manager. Each run snapshots the resolved
+Persona privately; an explicitly selected auxiliary model may generate
 a title after the main lease is released. Missing auxiliary configuration
 leaves the title unchanged.
 
-Runs retain chat/resume kinds and context/model/save/approval steps; tool is
-reserved. See [run lifecycle](contracts/runtime-run-lifecycle.md).
+Runs use chat/tool kinds and context/model/save/approval/tool steps.
+Harness details are in [harness tools](contracts/harness-tools.md).
 
 ## Models and streams
 
@@ -42,8 +44,10 @@ executes tools or writes business rows. See
 
 ## Persistence
 
-Alembic is the only schema authority. Head 0004_phase2b_runtimes adds runtime
-configuration and jobs after Phase 2a's disposable database recreation.
+Alembic is the only schema authority. Head 0006_phase4_tools adds private
+harness continuations and the tool run kind after Persona/session snapshots.
+It discards disposable chat/run rows and clears waiting references without
+touching non-database files. Valid new pending approvals survive application restart.
 Model, attachment, runtime and other file directories are outside revision
 ownership. The project has no users/user data, permits prolonged downtime and
 retains no abandoned compatibility implementations.

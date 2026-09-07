@@ -1,4 +1,4 @@
-"""SQLModel persistence schema for the compact Phase 2a workbench."""
+"""SQLModel persistence schema for the workbench."""
 
 from __future__ import annotations
 
@@ -17,10 +17,54 @@ class SessionRecord(SQLModel, table=True):
     context_mode: str = "single_assistant"
     waiting_run_id: Optional[str] = None
     model_profile_id: Optional[str] = None
+    current_persona_id: str = Field(foreign_key="personas.id")
+    context_policy_json: Optional[str] = None
+    generation_json: Optional[str] = None
+    harness_enabled: Optional[bool] = None
+    tools_allowed_json: Optional[str] = None
+    knowledge_binding_mode: str = "inherit"
+    worldbook_binding_mode: str = "inherit"
     title_generation_state: str = "pending"
     title_generation_metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class PersonaRecord(SQLModel, table=True):
+    __tablename__ = "personas"
+    id: str = Field(primary_key=True)
+    name: str
+    avatar_attachment_id: Optional[str] = None
+    system_prompt: str = ""
+    model_profile_id: Optional[str] = Field(default=None, foreign_key="model_profiles.id", index=True)
+    context_policy_json: str
+    generation_json: str = "{}"
+    harness_enabled: bool = False
+    tools_allowed_json: str = "[]"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class SessionPersonaRecord(SQLModel, table=True):
+    __tablename__ = "session_personas"
+    session_id: str = Field(primary_key=True, foreign_key="sessionrecord.session_id")
+    persona_id: str = Field(primary_key=True, foreign_key="personas.id", index=True)
+    sort_order: int = 0
+    enabled: bool = True
+
+
+class PersonaKnowledgeBindingRecord(SQLModel, table=True):
+    __tablename__ = "persona_knowledge_bindings"
+    persona_id: str = Field(primary_key=True, foreign_key="personas.id")
+    knowledge_base_id: str = Field(primary_key=True, foreign_key="knowledge_bases.id", index=True)
+    sort_order: int = 0
+
+
+class PersonaWorldbookBindingRecord(SQLModel, table=True):
+    __tablename__ = "persona_worldbook_bindings"
+    persona_id: str = Field(primary_key=True, foreign_key="personas.id")
+    worldbook_id: str = Field(primary_key=True, foreign_key="worldbooks.id", index=True)
+    sort_order: int = 0
 
 
 class MessageRecord(SQLModel, table=True):
@@ -41,11 +85,13 @@ class MessageRecord(SQLModel, table=True):
 
 class RunRecord(SQLModel, table=True):
     __table_args__ = (
-        CheckConstraint("kind IN ('chat', 'resume')", name="ck_runrecord_kind"),
+        CheckConstraint("kind IN ('chat', 'tool')", name="ck_runrecord_kind"),
     )
     run_id: str = Field(primary_key=True)
     kind: str
-    target: str = "chat"
+    persona_id: str = Field(index=True)
+    config_snapshot_json: str = "{}"
+    harness_state_json: str = "{}"
     session_id: str = Field(index=True)
     status: str
     current_step: str = ""

@@ -16,6 +16,7 @@ from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identi
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
+from ai_workbench.core.schema.persona import SessionPersona
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.schema import ModelProfile
@@ -23,7 +24,7 @@ from ai_workbench.core.worldbook import SessionWorldbookBinding, Worldbook, Worl
 from ai_workbench.db.models import (
     AppMetadataRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
     KnowledgeSettingsRecord, KnowledgeSourceRecord, MessageRecord,
-    RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
+    RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord, SessionPersonaRecord,
     SessionWorldbookBindingRecord, WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord,
 )
 
@@ -43,25 +44,45 @@ class SqlSessionStore:
     def __init__(self, engine) -> None:
         self.engine = engine
 
-    def create_session(self, title: str = "", context_mode: str = "single_assistant") -> Session:
-        record = SessionRecord(session_id=str(uuid4()), title=title, context_mode=context_mode, title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual")
+    def create_session(self, title: str = "", context_mode: str = "single_assistant", **values: Any) -> Session:
+        session = Session(session_id=str(uuid4()), title=title, context_mode=context_mode,
+            title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual", **values)
         with DbSession(self.engine) as db:
-            db.add(record); db.commit(); db.refresh(record)
-        return _session(record)
+            db.add(SessionRecord(**_session_record_values(session)))
+            db.flush()
+            self._write_members(db, session)
+            db.commit()
+        return session
+
+    @staticmethod
+    def _write_members(db, session: Session) -> None:
+        db.exec(delete(SessionPersonaRecord).where(SessionPersonaRecord.session_id == session.session_id))
+        for index, member in enumerate(session.personas):
+            db.add(SessionPersonaRecord(session_id=session.session_id, sort_order=index, **member.model_dump()))
 
     def get_session(self, session_id: str) -> Session:
         with DbSession(self.engine) as db:
             record = db.get(SessionRecord, session_id)
             if record is None: raise KeyError(f"unknown session id: {session_id}")
-            return _session(record)
+            return _session(record, db)
 
     def _update(self, session_id: str, **values: Any) -> Session:
+        if "title_generation_metadata_json" in values:
+            values["title_generation_metadata"] = json.loads(values.pop("title_generation_metadata_json"))
+        return self.update_session(session_id, values)
+
+    def update_session(self, session_id: str, values: dict[str, Any]) -> Session:
         with DbSession(self.engine) as db:
             record = db.get(SessionRecord, session_id)
             if record is None: raise KeyError(f"unknown session id: {session_id}")
-            for key, value in values.items(): setattr(record, key, value)
-            record.updated_at = utc_now(); db.add(record); db.commit(); db.refresh(record)
-            return _session(record)
+            session = Session.model_validate({**_session(record, db).model_dump(), **values, "updated_at": utc_now()})
+            for key, value in _session_record_values(session).items():
+                setattr(record, key, value)
+            db.add(record)
+            if "personas" in values:
+                self._write_members(db, session)
+            db.commit()
+            return session
 
     def set_context_mode(self, session_id: str, context_mode: str) -> Session: return self._update(session_id, context_mode=context_mode)
     def set_title(self, session_id: str, title: str) -> Session: return self._update(session_id, title=title, title_generation_state="manual")
@@ -81,11 +102,12 @@ class SqlSessionStore:
         with DbSession(self.engine) as db:
             row = db.get(SessionRecord, session_id)
             if row is None: raise KeyError(f"unknown session id: {session_id}")
+            db.exec(delete(SessionPersonaRecord).where(SessionPersonaRecord.session_id == session_id))
             db.delete(row); db.commit()
 
     def list_sessions(self) -> list[Session]:
         with DbSession(self.engine) as db:
-            return [_session(row) for row in db.exec(select(SessionRecord).order_by(SessionRecord.updated_at.desc(), SessionRecord.created_at.desc())).all()]
+            return [_session(row, db) for row in db.exec(select(SessionRecord).order_by(SessionRecord.updated_at.desc(), SessionRecord.created_at.desc())).all()]
 
 
 class SqlMessageStore:
@@ -148,10 +170,34 @@ class SqlMessageStore:
 class SqlRunStore:
     def __init__(self, engine) -> None: self.engine = engine
 
-    def create_run(self, kind: str, target: str, session_id: str, metadata: dict[str, Any] | None = None) -> RunSchema:
-        row = RunRecord(run_id=str(uuid4()), kind=kind, target=target, session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
+    def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
+        row = RunRecord(run_id=str(uuid4()), kind=kind, persona_id=persona_id, config_snapshot_json=_dump(config_snapshot or {}), harness_state_json=_dump(harness_state or {}), session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
         with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
         return _run(row)
+
+    def get_config_snapshot(self, run_id: str) -> dict:
+        with DbSession(self.engine) as db:
+            row = db.get(RunRecord, run_id)
+            if row is None:
+                raise KeyError(run_id)
+            return json.loads(row.config_snapshot_json)
+
+    def get_harness_state(self, run_id: str) -> dict:
+        with DbSession(self.engine) as db:
+            row = db.get(RunRecord, run_id)
+            if row is None:
+                raise KeyError(run_id)
+            return _load(row.harness_state_json, {})
+
+    def update_harness_state(self, run_id: str, state: dict[str, Any]) -> None:
+        with DbSession(self.engine) as db:
+            row = db.get(RunRecord, run_id)
+            if row is None:
+                raise KeyError(run_id)
+            row.harness_state_json = _dump(state)
+            row.updated_at = utc_now()
+            db.add(row)
+            db.commit()
 
     def get_run(self, run_id: str) -> RunSchema:
         with DbSession(self.engine) as db:
@@ -163,6 +209,8 @@ class SqlRunStore:
         with DbSession(self.engine) as db:
             row = db.get(RunRecord, run_id)
             if row is None: raise KeyError(f"unknown run id: {run_id}")
+            if row.status in {item.value for item in (RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED)} and status != row.status:
+                raise ValueError("Terminal runs cannot change status")
             row.status = status.value if isinstance(status, RunStatus) else str(status); now = utc_now()
             if row.status == RunStatus.RUNNING.value and row.started_at is None: row.started_at = now
             if row.status in {item.value for item in (RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED)}: row.finished_at = now
@@ -194,7 +242,11 @@ class SqlRunStore:
     def list_all_runs(self) -> list[RunSchema]:
         with DbSession(self.engine) as db: return [_run(row) for row in db.exec(select(RunRecord).order_by(RunRecord.created_at)).all()]
     def delete_session(self, session_id: str) -> None:
-        with DbSession(self.engine) as db: db.exec(delete(RunRecord).where(RunRecord.session_id == session_id)); db.commit()
+        with DbSession(self.engine) as db:
+            run_ids = select(RunRecord.run_id).where(RunRecord.session_id == session_id)
+            db.exec(delete(RunStepRecord).where(RunStepRecord.run_id.in_(run_ids)))
+            db.exec(delete(RunRecord).where(RunRecord.session_id == session_id))
+            db.commit()
     def cancel_runs(self, run_ids: list[str], reason: str = "Run was cancelled.") -> list[RunSchema]:
         result = []
         for run_id in run_ids:
@@ -204,10 +256,19 @@ class SqlRunStore:
             result.append(self.update_status(run_id, RunStatus.CANCELLED, current_step="cancelled", error=reason, error_code="RUN_CANCELLED", cancel_requested=True))
         return result
     def interrupt_unfinished_runs(self) -> list[str]:
+        from ai_workbench.core.harness.schema import has_saved_approval
+
         result=[]
         for run in self.list_all_runs():
+            if run.status == RunStatus.WAITING_FOR_USER and not run.cancel_requested and has_saved_approval(self.get_harness_state(run.run_id)):
+                continue
             if run.status not in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
-                self.update_status(run.run_id, RunStatus.INTERRUPTED, current_step="interrupted"); result.append(run.run_id)
+                self.update_status(run.run_id, RunStatus.INTERRUPTED, current_step="interrupted", error_code="RUN_INTERRUPTED", error_message="Execution was interrupted by an application restart.")
+                self.update_harness_state(run.run_id, {})
+                for step in self.list_steps(run.run_id):
+                    if step.status in {RunStepStatus.PENDING, RunStepStatus.RUNNING}:
+                        self.update_step(step.step_id, status=RunStepStatus.FAILED, error_code="RUN_INTERRUPTED", error_message="Execution was interrupted by an application restart.")
+                result.append(run.run_id)
         return result
 
     def create_step(self, run_id: str, kind: RunStepKind, label: str = "", message: str | None = None, metadata: dict[str, Any] | None = None, status: RunStepStatus = RunStepStatus.RUNNING, parent_step_id: str | None = None) -> RunStepSchema:
@@ -473,12 +534,26 @@ class SqlKnowledgeStore:
         source=self.get_source(source_id); return {"source_id":source.id,"uri":source.uri,"title":source.title}
 
 
-def _session(row: SessionRecord) -> Session:
-    return Session(session_id=row.session_id,title=row.title,context_mode=row.context_mode,waiting_run_id=row.waiting_run_id,model_profile_id=row.model_profile_id,title_generation_state=row.title_generation_state,title_generation_metadata=_load(row.title_generation_metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
+def _session(row: SessionRecord, db: DbSession) -> Session:
+    values = row.model_dump()
+    for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
+        encoded = values.pop(key + "_json")
+        values[key] = json.loads(encoded) if encoded is not None else None
+    members = db.exec(select(SessionPersonaRecord).where(SessionPersonaRecord.session_id == row.session_id).order_by(SessionPersonaRecord.sort_order)).all()
+    values["personas"] = [SessionPersona(persona_id=m.persona_id, enabled=m.enabled) for m in members]
+    return Session.model_validate(values)
+
+
+def _session_record_values(session: Session) -> dict:
+    values = session.model_dump(exclude={"personas"})
+    for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
+        value = values.pop(key)
+        values[key + "_json"] = _dump(value) if value is not None else None
+    return values
 def _message(row: MessageRecord) -> MessageSchema:
     return MessageSchema(message_id=row.message_id,session_id=row.session_id,role=row.role,speaker_type=row.speaker_type,speaker_id=row.speaker_id,speaker_name=row.speaker_name,origin=row.origin,content_version=row.content_version,parts=_load(row.parts_json,[]),run_id=row.run_id,parent_message_id=row.parent_message_id,metadata=_load(row.metadata_json,{}),created_at=row.created_at)
 def _run(row: RunRecord) -> RunSchema:
-    return RunSchema(run_id=row.run_id,session_id=row.session_id,kind=row.kind,target=row.target,status=row.status,current_step=row.current_step,stage=row.stage,progress_message=row.progress_message,progress_current=row.progress_current,progress_total=row.progress_total,cancel_requested=row.cancel_requested,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,error=row.error,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
+    return RunSchema(run_id=row.run_id,session_id=row.session_id,kind=row.kind,persona_id=row.persona_id,status=row.status,current_step=row.current_step,stage=row.stage,progress_message=row.progress_message,progress_current=row.progress_current,progress_total=row.progress_total,cancel_requested=row.cancel_requested,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,error=row.error,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
 def _step(row: RunStepRecord) -> RunStepSchema:
     return RunStepSchema(step_id=row.step_id,run_id=row.run_id,kind=row.kind,parent_step_id=row.parent_step_id,label=row.label,status=row.status,message=row.message,order=row.order,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
 def _event(row: RunEventRecord) -> RunEventSchema:

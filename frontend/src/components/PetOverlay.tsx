@@ -3,6 +3,7 @@ import { API_BASE_URL, api, joinApiUrl } from '../api/client';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { PetBubbleTexts, PetItem, PetSettings, Run, RunStep } from '../types';
 import { PetSprite, type PetSpriteState } from './PetSprite';
+import { useTranslation } from 'react-i18next';
 
 const WIDTH = 192;
 const HEIGHT = 208;
@@ -20,6 +21,7 @@ const DEFAULT_SETTINGS: PetSettings = {
 type Drag = { id: number; px: number; py: number; x: number; y: number };
 
 export function PetOverlay() {
+  const { t } = useTranslation('runs');
   const [settings, setSettings] = useState<PetSettings>(DEFAULT_SETTINGS);
   const [pets, setPets] = useState<PetItem[]>([]);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -53,7 +55,7 @@ export function PetOverlay() {
   const current = useMemo(() => currentRun(runs, session?.session_id), [runs, session?.session_id]);
   const step = current ? ((stepsByRunId[current.run_id] || current.steps || []).find((item) => item.status === 'running') || null) : null;
   const spriteState = stateFor(current, step, hover, jumping);
-  const bubble = bubbleFor(settings, current, step);
+  const bubble = bubbleFor(settings, current, step, step ? t(`stepKinds.${step.kind}`) : '');
   if (!settings.pet_enabled || !pet?.spritesheet_url) return null;
 
   function startDrag(event: ReactPointerEvent<HTMLDivElement>) { if (event.button !== 0) return; event.preventDefault(); setDrag({ id: event.pointerId, px: event.clientX, py: event.clientY, x: position.x, y: position.y }); setHover(false); setJumping(false); }
@@ -69,4 +71,4 @@ function clampPosition(value: { x: number; y: number }, width: number, height: n
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
 function currentRun(runs: Run[], sessionId?: string): Run | null { return [...runs].filter((run) => run.session_id === sessionId).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)).find((run) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(run.status)) || [...runs].filter((run) => run.session_id === sessionId && ['DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(run.status)).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0] || null; }
 function stateFor(run: Run | null, step: RunStep | null, hover: boolean, jumping: boolean): PetSpriteState { if (jumping) return 'jumping'; if (hover) return 'idle'; if (!run) return 'idle'; if (run.status === 'WAITING_FOR_USER') return 'waiting'; if (['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)) return step?.kind === 'approval' ? 'waiting' : 'running'; if (run.status === 'DONE') return 'review'; if (['FAILED', 'CANCELLED', 'INTERRUPTED'].includes(run.status)) return 'failed'; return 'idle'; }
-function bubbleFor(settings: PetSettings, run: Run | null, step: RunStep | null): string { if (!run) return settings.bubble_texts.idle; if (run.status === 'WAITING_FOR_USER' || step?.kind === 'approval') return settings.bubble_texts.waiting; if (['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)) return `${settings.running_prefix}${step ? ` ${step.kind}` : ''}`; if (run.status === 'DONE') return settings.bubble_texts.done; if (run.status === 'FAILED') return settings.bubble_texts.failed; if (run.status === 'CANCELLED') return settings.bubble_texts.cancelled; if (run.status === 'INTERRUPTED') return settings.bubble_texts.interrupted; return settings.bubble_texts.status; }
+function bubbleFor(settings: PetSettings, run: Run | null, step: RunStep | null, stepLabel: string): string { if (!run) return settings.bubble_texts.idle; if (run.status === 'WAITING_FOR_USER' || step?.kind === 'approval') return settings.bubble_texts.waiting; if (['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)) return `${settings.running_prefix}${stepLabel ? ` ${stepLabel}` : ''}`; if (run.status === 'DONE') return settings.bubble_texts.done; if (run.status === 'FAILED') return settings.bubble_texts.failed; if (run.status === 'CANCELLED') return settings.bubble_texts.cancelled; if (run.status === 'INTERRUPTED') return settings.bubble_texts.interrupted; return settings.bubble_texts.status; }

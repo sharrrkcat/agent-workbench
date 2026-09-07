@@ -10,6 +10,9 @@ Streaming has one authoritative visible content path over WebSocket events.
   message_id/run_id as the started and completed events.
 - `message_completed` carries the final persisted `Message` and is authoritative.
 - `run_step_created`/`run_step_updated` expose generic step progress.
+- `tool_call_created`/`tool_result_created` carry persisted tool messages.
+- `approval_requested`/`approval_resolved` carry the current public run and
+  call identity; requested approvals include arguments, risk and a step id.
 
 The frontend tracks the greatest sequence per message, ignores late deltas,
 and replaces the draft with `message_completed.message.parts`. A completed
@@ -17,6 +20,10 @@ message is never overwritten by an older update. Gapped deltas are ignored
 until an authoritative completed message/refresh repairs the text. A refresh
 that began before incoming events must not overwrite newer streamed content.
 Session switches reject stale responses belonging to the previous session.
+Tool events merge by message id, including repeated message_completed events
+for an assistant tool call. Run/step timestamps retain microsecond ordering;
+older events and refreshes cannot restore resolved approvals or regress terminal
+states. Approval/direct-call REST responses follow the same session isolation.
 
 `model_status` uses an empty session_id and reaches all connected sessions.
 Its payload is `{model_profile_id, status}`. It has no run_id and is not

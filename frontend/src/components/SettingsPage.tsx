@@ -6,15 +6,18 @@ import { ModelsPanel } from './settings/ModelsPanel';
 import { api, ApiError } from '../api/client';
 import type { GeneralSettings, KnowledgeBase, KnowledgeSettings, PetSettings, Worldbook, WorldbookSettings } from '../types';
 import { PetSettingsPanel } from './settings/PetSettingsPanel';
+import { PersonasPanel } from './settings/PersonasPanel';
+import { ToolsPanel } from './settings/ToolsPanel';
 
-export type SettingsSection = 'general' | 'models' | 'knowledge' | 'worldbook' | 'pet';
+export type SettingsSection = 'general' | 'models' | 'personas' | 'knowledge' | 'worldbook' | 'tools' | 'pet';
 
 export function SettingsPage({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation('settings');
   const [section, setSection] = useState<SettingsSection>(readSection());
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   function run<T>(task: () => Promise<T>, success = 'Saved') { setError(''); void task().then(() => setMessage(success)).catch((reason) => setError(reason instanceof ApiError ? `${reason.code}: ${reason.message}` : String(reason))); }
-  return <div className="settings-page"><header className="settings-header"><button className="icon-button" type="button" onClick={onBack} title="Back"><ArrowLeft size={18} /></button><div><h1>Settings</h1></div><div className="settings-feedback">{message ? <span className="success-text">{message}</span> : null}{error ? <span className="error-text">{error}</span> : null}</div></header><div className="settings-layout"><nav className="settings-nav" aria-label="Settings sections">{(['general', 'models', 'knowledge', 'worldbook', 'pet'] as SettingsSection[]).map((item) => <button key={item} type="button" className={section === item ? 'active' : ''} onClick={() => { setSection(item); window.history.replaceState({}, '', `/settings?tab=${item}`); }}>{label(item)}</button>)}</nav><main className="settings-content">{section === 'general' ? <GeneralPanel save={(patch) => run(() => api.updateGeneralSettings(patch).then(() => undefined))} /> : null}{section === 'models' ? <ModelsPanel /> : null}{section === 'knowledge' ? <KnowledgePanel save={(task) => run(task)} /> : null}{section === 'worldbook' ? <WorldbookPanel save={(task) => run(task)} /> : null}{section === 'pet' ? <PetSettingsPanel /> : null}</main></div></div>;
+  return <div className="settings-page"><header className="settings-header"><button className="icon-button" type="button" onClick={onBack} title={t('common:back')}><ArrowLeft size={18} /></button><div><h1>{t('title')}</h1></div><div className="settings-feedback">{message ? <span className="success-text">{message}</span> : null}{error ? <span className="error-text">{error}</span> : null}</div></header><div className="settings-layout"><nav className="settings-nav" aria-label={t('title')}>{(['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools', 'pet'] as SettingsSection[]).map((item) => <button key={item} type="button" className={section === item ? 'active' : ''} onClick={() => { setSection(item); window.history.replaceState({}, '', `/settings?tab=${item}`); }}>{t(item)}</button>)}</nav><main className="settings-content">{section === 'general' ? <GeneralPanel save={(patch) => run(() => api.updateGeneralSettings(patch).then(() => undefined))} /> : null}{section === 'models' ? <ModelsPanel /> : null}{section === 'personas' ? <PersonasPanel /> : null}{section === 'knowledge' ? <KnowledgePanel save={(task) => run(task)} /> : null}{section === 'worldbook' ? <WorldbookPanel save={(task) => run(task)} /> : null}{section === 'tools' ? <ToolsPanel /> : null}{section === 'pet' ? <PetSettingsPanel /> : null}</main></div></div>;
 }
 
 function GeneralPanel({ save }: { save: (patch: Record<string, unknown>) => void }) {
@@ -55,5 +58,4 @@ export function Toggle({ label, checked, onChange }: { label: string; checked: b
 export function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <label className="settings-field"><span>{label}</span><input type="number" value={value} onChange={(event) => onChange(Number(event.currentTarget.value))} /></label>; }
 export function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="settings-field"><span>{label}</span><textarea value={value} onChange={(event) => onChange(event.currentTarget.value)} rows={4} /></label>; }
 function Loading() { return <div className="settings-loading">Loading…</div>; }
-function label(value: SettingsSection) { return value[0].toUpperCase() + value.slice(1); }
-function readSection(): SettingsSection { const value = new URLSearchParams(window.location.search).get('tab'); return (['general', 'models', 'knowledge', 'worldbook', 'pet'] as string[]).includes(value || '') ? value as SettingsSection : 'general'; }
+function readSection(): SettingsSection { const value = new URLSearchParams(window.location.search).get('tab'); return (['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools', 'pet'] as string[]).includes(value || '') ? value as SettingsSection : 'general'; }

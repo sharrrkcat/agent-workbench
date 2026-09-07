@@ -121,3 +121,81 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { cursor: no
 .runtime-history small { display: block; }
 .model-runtime-state { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .runtime-row { grid-template-columns: minmax(0, 1fr) auto; } .runtime-progress { grid-column: 1 / -1; grid-row: 2; } .model-tabs { flex-wrap: wrap; } }
+
+.personas-panel .primary-button, .personas-panel .secondary-button, .model-form-footer .primary-button { display: inline-flex; align-items: center; gap: 7px; }
+.persona-list { margin-top: 18px; }
+.persona-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 16px 0; border-bottom: 1px solid #343434; }
+.persona-avatar { display: inline-flex; flex: 0 0 34px; align-items: center; justify-content: center; width: 34px; height: 34px; overflow: hidden; border-radius: 7px; color: #a7d6c5; background: #283b35; }
+.persona-avatar img, .message-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.message-avatar { overflow: hidden; }
+.persona-identity { display: flex; min-width: 0; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.persona-identity small { color: #a4a4a4; font-size: 12px; }
+.persona-avatar-editor { display: flex; align-items: center; gap: 8px; margin: 18px 0 12px; }
+.persona-avatar-editor .persona-avatar { width: 64px; height: 64px; flex-basis: 64px; }
+.context-binding-list { margin-top: 12px; max-height: 340px; overflow-y: auto; }
+.context-binding-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #353535; min-height: 44px; }
+.context-binding-row .settings-toggle { min-width: 0; margin: 8px 0; }
+.context-binding-row .settings-toggle span { overflow-wrap: anywhere; }
+.context-binding-row .settings-toggle input { flex: 0 0 16px; }
+.context-binding-row .model-actions { flex: 0 0 auto; }
+.configuration-state { display: block; font-size: 12px; color: #a8b9b0; padding: 5px 0; }
+.session-member-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid #353535; }
+.session-member-row .settings-toggle { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.session-member-row .settings-toggle input { flex: 0 0 16px; }
+.session-member-row .model-actions { gap: 2px; }
+.persona-add-member { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 16px; }
+.persona-add-member .settings-field { flex: 1; min-width: 0; }
+.persona-add-member > button { margin-bottom: 14px; }
+.model-form select, .speaker-control select, .chat-model-select, .composer-context select { min-width: 0; border: 1px solid #484848; border-radius: 6px; padding: 7px 9px; color: #eee; background: #242424; }
+.app-modal-title h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.speaker-control { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.speaker-control select { width: 145px; max-width: 100%; }
+.topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
+.topbar-actions > .icon-button { flex: 0 0 32px; }
+.chat-model-select { width: 150px; }
+.chat-title-block { max-width: 250px; }
+.message-meta { flex-wrap: wrap; }
+.message-meta strong { min-width: 0; overflow-wrap: anywhere; }
+.message-meta time { white-space: nowrap; }
+.message-actions button[aria-pressed=true] { color: #a7e4c8; background: #283b35; }
+.session-select small { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-context { display: flex; gap: 8px; align-items: center; min-width: 0; margin-bottom: 8px; font-size: 12px; color: #aaa; }
+.composer-context > span { flex: 0 0 auto; }
+.composer-context select { flex: 1; max-width: 100%; }
+.mobile-sidebar-toggle, .mobile-sidebar-backdrop { display: none; }
+.app-modal-panel, .settings-field, .model-form { letter-spacing: 0; }
+@media (max-width: 1100px) {
+  .compact-topbar { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .topbar-left { flex: 1 0 100%; justify-content: space-between; }
+  .topbar-actions { flex: 1 0 100%; justify-content: flex-start; }
+}
+@media (max-width: 600px) {
+  .session-sidebar { display: none; position: fixed; inset: 0 auto 0 0; width: min(280px, 85%); z-index: 45; }
+  .session-sidebar.mobile-open { display: flex; }
+  .mobile-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 40; background: #0009; }
+  .mobile-sidebar-toggle { display: inline-flex; flex: 0 0 32px; }
+  .topbar-left { flex-wrap: nowrap; gap: 8px; }
+  .topbar-left .chat-title-block { flex: 1; }
+  .topbar-left .context-select { max-width: 130px; min-width: 0; }
+  .context-select select { max-width: 100%; }
+  .speaker-control { flex: 1; }
+  .speaker-control .persona-avatar { display: none; }
+  .speaker-control select { width: 100%; }
+  .chat-model-select { width: 100px; flex: 1; }
+  .topbar-actions { gap: 6px; flex-wrap: nowrap; }
+  .message-actions { opacity: 1; }
+  .session-member-row { gap: 6px; }
+  .session-member-row .persona-avatar { display: none; }
+  .session-member-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .context-binding-row { gap: 4px; }
+  .composer-context { flex-wrap: wrap; }
+  .composer-context select { flex-basis: 100%; }
+  .app-modal-title h2 { font-size: 17px; }
+}
+.run-panel-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.approval-details { padding: 0.75rem; border: 1px solid #444; border-radius: 8px; margin-bottom: 0.75rem; }
+.approval-details p { margin: 0.5rem 0; }
+.tool-call-form, .tool-output { display: grid; gap: 0.75rem; min-width: 0; }
+.tool-selector[aria-pressed="true"] { border-color: #6ea5d8; }
+.part-tool summary { cursor: pointer; overflow-wrap: anywhere; }
+.part-tool .part-json { max-height: 22rem; overflow: auto; }

@@ -1,8 +1,4 @@
-"""Pure URL/network safety checks.
-
-Phase 1 does not perform fetches.  This module only validates a URL and,
-when possible, verifies every resolved address before a future tool uses it.
-"""
+"""URL policy and public address resolution for built-in network tools."""
 
 from __future__ import annotations
 
@@ -26,7 +22,10 @@ class NetworkPolicy:
 
     def validate_url(self, url: str, *, resolve_dns: bool = True) -> str:
         value = str(url or "").strip()
-        parsed = urlparse(value)
+        try:
+            parsed = urlparse(value)
+        except ValueError as exc:
+            raise NetworkPolicyError("NETWORK_URL_HOST_FORBIDDEN", "URL contains an invalid host.") from exc
         if parsed.scheme not in {"http", "https"}:
             raise NetworkPolicyError("NETWORK_URL_SCHEME_FORBIDDEN", "Only http and https URLs are allowed.")
         if not parsed.hostname or parsed.username is not None or parsed.password is not None:
@@ -66,6 +65,31 @@ class NetworkPolicy:
                 except (ValueError, TypeError) as exc:
                     raise NetworkPolicyError("NETWORK_ADDRESS_FORBIDDEN", f"Resolved address for {host} is not public.") from exc
         return value
+
+    def resolve_url(self, url: str) -> tuple[str, list[str]]:
+        """Return validated addresses so HTTP connects to the same DNS answer."""
+        value = self.validate_url(url, resolve_dns=False)
+        parsed = urlparse(value)
+        host = parsed.hostname.rstrip(".")
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if address is not None:
+            return value, [str(address)]
+        try:
+            infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise NetworkPolicyError("NETWORK_DNS_FAILED", "DNS resolution failed.") from exc
+        addresses = list(dict.fromkeys(info[4][0] for info in infos if info and info[4]))
+        if not addresses:
+            raise NetworkPolicyError("NETWORK_DNS_FAILED", "DNS resolution returned no addresses.")
+        for resolved in addresses:
+            try:
+                self._validate_address(ipaddress.ip_address(resolved))
+            except (ValueError, TypeError) as exc:
+                raise NetworkPolicyError("NETWORK_ADDRESS_FORBIDDEN", "A resolved address is not public.") from exc
+        return value, addresses
 
     @staticmethod
     def _validate_address(address: ipaddress._BaseAddress) -> None:

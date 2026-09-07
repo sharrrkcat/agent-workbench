@@ -6,7 +6,7 @@ from starlette.datastructures import UploadFile
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.attachments import attachment_mime_type, resolve_attachment_uri, save_attachment_from_upload
+from ai_workbench.core.attachments import attachment_mime_type, resolve_attachment_uri, save_attachment_from_upload, delete_attachment_if_unreferenced
 
 
 router = APIRouter(prefix="/api/attachments", tags=["attachments"])
@@ -77,6 +77,21 @@ def get_attachment(attachment_id: str, request: Request) -> Response:
             "Content-Length": str(len(content)),
         },
     )
+
+
+@router.delete("/{attachment_id}")
+async def delete_attachment(attachment_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        path = resolve_attachment_uri(attachment_id)
+    except ValueError:
+        raise_error(404, "ATTACHMENT_NOT_FOUND", "Attachment not found.")
+    if not path.is_file():
+        raise_error(404, "ATTACHMENT_NOT_FOUND", "Attachment not found.")
+    removed = delete_attachment_if_unreferenced(
+        {"id": attachment_id, "uri": "local://attachments/" + attachment_id}, state.messages, persona_store=state.personas, run_store=state.runs)
+    if not removed:
+        raise_error(409, "ATTACHMENT_IN_USE", "Attachment is referenced or cannot be removed.")
+    return {"deleted": True, "attachment_id": attachment_id}
 
 
 def parse_byte_range(range_header: str, file_size: int) -> tuple[int, int] | None:

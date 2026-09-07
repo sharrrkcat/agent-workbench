@@ -11,6 +11,7 @@ import enKnowledge from './resources/en/knowledge.json';
 import enWorldbook from './resources/en/worldbook.json';
 import enPet from './resources/en/pet.json';
 import enRenderers from './resources/en/renderers.json';
+import enPersonas from './resources/en/personas.json';
 import zhCommon from './resources/zh-CN/common.json';
 import zhSettings from './resources/zh-CN/settings.json';
 import zhChat from './resources/zh-CN/chat.json';
@@ -22,14 +23,15 @@ import zhKnowledge from './resources/zh-CN/knowledge.json';
 import zhWorldbook from './resources/zh-CN/worldbook.json';
 import zhPet from './resources/zh-CN/pet.json';
 import zhRenderers from './resources/zh-CN/renderers.json';
+import zhPersonas from './resources/zh-CN/personas.json';
 
 export const LOCALE_STORAGE_KEY = 'agent-workbench.locale';
 export const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
 const resources = {
-  en: { common: enCommon, settings: enSettings, chat: enChat, errors: enErrors, status: enStatus, runs: enRuns, llm: enLlm, knowledge: enKnowledge, worldbook: enWorldbook, pet: enPet, renderers: enRenderers },
-  'zh-CN': { common: zhCommon, settings: zhSettings, chat: zhChat, errors: zhErrors, status: zhStatus, runs: zhRuns, llm: zhLlm, knowledge: zhKnowledge, worldbook: zhWorldbook, pet: zhPet, renderers: zhRenderers },
+  en: { common: enCommon, settings: enSettings, chat: enChat, errors: enErrors, status: enStatus, runs: enRuns, llm: enLlm, knowledge: enKnowledge, worldbook: enWorldbook, pet: enPet, renderers: enRenderers, personas: enPersonas },
+  'zh-CN': { common: zhCommon, settings: zhSettings, chat: zhChat, errors: zhErrors, status: zhStatus, runs: zhRuns, llm: zhLlm, knowledge: zhKnowledge, worldbook: zhWorldbook, pet: zhPet, renderers: zhRenderers, personas: zhPersonas },
 };
 const stored = typeof window === 'undefined' ? 'en' : window.localStorage.getItem(LOCALE_STORAGE_KEY);
 void i18n.use(initReactI18next).init({ resources, lng: SUPPORTED_LOCALES.includes(stored as SupportedLocale) ? stored || 'en' : 'en', fallbackLng: 'en', defaultNS: 'common', ns: Object.keys(resources.en), interpolation: { escapeValue: false }, returnNull: false });

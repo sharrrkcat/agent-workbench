@@ -43,7 +43,7 @@ def list_run_events(run_id: str, state: RuntimeState = Depends(get_state)) -> li
 
 
 @router.post("/api/runs/{run_id}/cancel")
-def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+async def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
         run = state.runs.get_run(run_id)
     except KeyError:
@@ -60,7 +60,10 @@ def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     )
     task_cancelled = state.active_runs.cancel(run_id)
     if not task_cancelled:
-        requested = state.runs.update_status(
+        if (run.metadata or {}).get("harness"):
+            state.chat_runner.harness_loop.cancel(requested)
+        else:
+            requested = state.runs.update_status(
             run_id,
             RunStatus.CANCELLED,
             current_step="cancelled",
@@ -68,8 +71,13 @@ def cancel_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
             error_code="RUN_CANCELLED",
             cancel_requested=True,
         )
-        state.events.emit("run_cancelled", session_id=requested.session_id, run_id=requested.run_id)
+            state.events.emit("run_cancelled", session_id=requested.session_id, run_id=requested.run_id,
+                              payload={"run": requested.model_dump(mode="json")})
     if was_waiting:
+        try:
+            state.runs.update_harness_state(requested.run_id, {})
+        except KeyError:
+            pass
         try:
             session = state.sessions.get_session(requested.session_id)
             if session.waiting_run_id == requested.run_id:

@@ -10,9 +10,9 @@ const settings = read('src/components/SettingsPage.tsx');
 const pet = read('src/components/PetOverlay.tsx');
 const client = read('src/api/client.ts');
 
-// The Phase 1 UI exposes only the compact settings sections.
-assert.match(settings, /export type SettingsSection = 'general' \| 'models' \| 'knowledge' \| 'worldbook' \| 'pet'/);
-assert.match(settings, /\['general', 'models', 'knowledge', 'worldbook', 'pet'\]/);
+// Persona data joins the compact settings sections without restoring extensions.
+assert.match(settings, /export type SettingsSection = 'general' \| 'models' \| 'personas' \| 'knowledge' \| 'worldbook' \| 'tools' \| 'pet'/);
+assert.match(settings, /\['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools', 'pet'\]/);
 for (const removed of ['agents', 'capabilities', 'intent', 'web', 'comfyui', 'image-generation']) {
   assert.doesNotMatch(settings.toLowerCase(), new RegExp(removed));
 }

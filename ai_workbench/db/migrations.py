@@ -21,7 +21,9 @@ BASELINE_REVISION = "0001_current_schema"
 PHASE1_REVISION = "0002_phase1_prune"
 PHASE2A_REVISION = "0003_phase2a_models"
 PHASE2B_REVISION = "0004_phase2b_runtimes"
-HEAD_REVISION = PHASE2B_REVISION
+PHASE3_REVISION = "0005_phase3_personas"
+PHASE4_REVISION = "0006_phase4_tools"
+HEAD_REVISION = PHASE4_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

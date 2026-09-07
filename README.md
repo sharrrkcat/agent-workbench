@@ -1,6 +1,6 @@
 # Agent Workbench
 
-A local-first chat workbench and OpenAI-compatible model gateway. Phase 2b
+A local-first chat workbench and OpenAI-compatible model gateway. Round 3
 uses one ModelManager for chat, auxiliary tasks, Knowledge and external
 requests, with optional catalog-pinned llama-server and Python worker
 backends outside the API process.
@@ -56,10 +56,16 @@ same connection/model share occupancy. No model files are downloaded.
 
 ## Chat and Knowledge
 
-Every message follows the ordinary ChatRunner path. Prefixes such as /base64,
-@chat or :formal remain text. Session/group transcript context, Memory,
-Worldbook and Knowledge injection remain available. Persona editing is Phase 3;
-harness and tool execution are Phase 4.
+Ordinary messages follow ChatRunner; registered `/tool_name` inputs invoke
+built-in tools directly. Other prefixes such as @chat or :formal remain text.
+Session/group transcript context, Memory,
+Worldbook and Knowledge injection remain available. Persona defaults and
+session overrides are resolved before each chat run; group sessions preserve
+speaker metadata and generate one selected speaker response at a time. Enable
+Harness in Persona/session settings and select allowed tools for a bounded
+model tool loop. Files and network requests require explicit approval;
+direct calls in Settings > Tools never trigger a model summary. See the
+[harness contract](docs/contracts/harness-tools.md) for tools, limits and APIs.
 
 Chat responses stream over WebSocket with stable message ids and sequenced
 deltas. The completed message is authoritative. Title generation uses only
@@ -105,8 +111,9 @@ Keys are omitted from management reads, with presence flags instead. Omitting
 a PATCH key retains it; an empty string clears it. Local key storage is not
 encrypted. Logs exclude credentials and request/model content.
 
-SQLite is managed solely by Alembic. Head 0004_phase2b_runtimes adds managed
-profile fields and runtime job/install records after Phase 2a's disposable
+SQLite is managed solely by Alembic. Head 0005_phase3_personas adds Persona,
+ordered session members, binding modes and private run snapshots after the
+runtime schema and disposable
 database recreation, without copying or converting records. Downgrade is
 unsupported.
 Empty databases upgrade to head; unversioned nonempty databases are rejected.

@@ -39,12 +39,6 @@ SOURCE_PREVIEW_MAX_CHARS = 20_000
 CHUNK_CONTENT_PREVIEW_MAX_CHARS = 2_000
 
 
-class SessionKnowledgePatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    knowledge_base_ids: list[str]
-
-
 class KnowledgeSourceCreate(BaseModel):
     """Create a source directly; ``path`` and ``uri`` are workspace-relative."""
 
@@ -211,6 +205,8 @@ def patch_knowledge_base(knowledge_base_id: str, payload: KnowledgeBasePatch, st
 
 @router.delete("/bases/{knowledge_base_id}")
 def delete_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
+    if state.personas.references_resource("knowledge", knowledge_base_id):
+        raise_error(409, "KNOWLEDGE_BASE_IN_USE", "Remove persona bindings before deleting this Knowledge Base.")
     try:
         base = state.knowledge.delete_knowledge_base(knowledge_base_id)
         return {"deleted": True, "knowledge_base_id": base.id}
@@ -280,29 +276,6 @@ async def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = D
         return {"knowledge_base_id": knowledge_base_id, "sources": results}
     except KeyError:
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
-
-
-@router.get("/sessions/{session_id}/bindings")
-def get_session_knowledge_bases(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
-    return list_session_knowledge_bases(session_id, state)
-
-
-@router.patch("/sessions/{session_id}/bindings")
-def update_session_knowledge_bases(session_id: str, payload: SessionKnowledgePatch, state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
-    return patch_session_knowledge_bases(session_id, payload, state)
-
-
-def list_session_knowledge_bases(session_id: str, state: RuntimeState) -> list[dict[str, Any]]:
-    _require_session(state, session_id)
-    return [item.model_dump(mode="json") for item in state.knowledge.list_session_bindings(session_id)]
-
-
-def patch_session_knowledge_bases(session_id: str, payload: SessionKnowledgePatch, state: RuntimeState) -> list[dict[str, Any]]:
-    _require_session(state, session_id)
-    try:
-        return [item.model_dump(mode="json") for item in state.knowledge.replace_session_bindings(session_id, payload.knowledge_base_ids)]
-    except KeyError as exc:
-        raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", str(exc))
 
 
 def _prepare_source(payload: KnowledgeSourceCreate, state: RuntimeState):

@@ -17,6 +17,7 @@ def build_session_worldbook_context(
     *,
     worldbook_store: Any,
     session_id: str,
+    worldbook_ids: list[str],
     user_text: str,
     source: str = "chat",
 ) -> WorldbookContextResult:
@@ -41,25 +42,17 @@ def build_session_worldbook_context(
 
     warnings: list[str] = []
     try:
-        bindings = [
-            binding
-            for binding in worldbook_store.list_session_bindings(session_id)
-            if getattr(binding, "enabled", False) and getattr(binding, "worldbook", None) is not None
-        ]
+        worldbooks = [worldbook_store.get_worldbook(value) for value in worldbook_ids]
+        worldbook_ids = [item.id for item in worldbooks if item.enabled]
     except Exception as exc:
         warning = f"Worldbook bindings unavailable: {exc}"
         return WorldbookContextResult(
             metadata={**_skipped("bindings_error", source=source, input_empty=input_empty), "warnings": [warning]},
             warnings=[warning],
         )
-    bindings.sort(key=lambda item: (getattr(item, "sort_order", 0), getattr(item, "created_at", None)))
-    bindings = [binding for binding in bindings if getattr(binding.worldbook, "enabled", False)]
-    if not bindings:
+    if not worldbook_ids:
         return WorldbookContextResult(metadata=_skipped("no_bound_worldbooks", source=source, input_empty=input_empty))
 
-    worldbook_ids: list[str] = []
-    for binding in bindings:
-        worldbook_ids.append(binding.worldbook.id)
     match_data = collect_worldbook_matches(
         worldbook_store=worldbook_store,
         worldbook_ids=worldbook_ids,

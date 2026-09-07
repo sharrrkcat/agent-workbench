@@ -17,6 +17,7 @@ def test_worldbook_context_applies_entry_and_context_limits() -> None:
     result = build_session_worldbook_context(
         worldbook_store=store,
         session_id="session-1",
+        worldbook_ids=[worldbook.id],
         user_text="dragon",
         source="chat",
     )
@@ -51,6 +52,7 @@ def test_worldbook_context_invalid_regex_warns_and_continues() -> None:
     result = build_session_worldbook_context(
         worldbook_store=store,
         session_id="session-1",
+        worldbook_ids=[worldbook.id],
         user_text="anything",
         source="chat",
     )

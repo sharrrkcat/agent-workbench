@@ -18,7 +18,8 @@ skip reason, and warnings.
 Worldbook settings live under `/api/worldbook/settings` and retain
 `worldbook_enabled`, entry/context limits, case sensitivity, whole-word
 matching, and recursion depth. Worldbooks and entries have explicit CRUD
-routes; sessions bind an ordered list through `/api/sessions/{id}/worldbooks`.
+routes. Personas own defaults, while sessions bind an ordered override list
+through `/api/sessions/{id}/worldbooks`.
 
 Matching is deterministic over the current user text and configured keywords.
 Only enabled entries within configured limits are rendered. Match-test is a
@@ -27,7 +28,8 @@ diagnostic operation and does not mutate a session or run.
 ## Context isolation
 
 The generic context builder supports `single_assistant` and
-`group_transcript` session modes plus recent/current/selected projections.
+`group_transcript` session modes plus recent/current/selected projections. The
+chat service resolves Persona/session binding ids before calling it.
 Speaker metadata is retained for transcript labeling. Memory, Worldbook,
 Knowledge, and attachments are injected as separate data blocks; no extension
 metadata or routing decision is accepted by the builder.

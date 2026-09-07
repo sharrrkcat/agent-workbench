@@ -5,7 +5,7 @@ from ai_workbench.core.schema.run import RunSchema, RunStepSchema
 
 
 def test_run_and_step_timestamp_serialization_is_utc() -> None:
-    run = RunSchema(run_id="run", session_id="session", kind="chat", target="chat")
+    run = RunSchema(run_id="run", session_id="session", kind="chat", persona_id="persona")
     step = RunStepSchema(step_id="step", run_id="run", kind="context")
 
     assert run.model_dump(mode="json")["created_at"].endswith("Z")
@@ -18,7 +18,7 @@ def test_naive_datetime_serializes_as_utc() -> None:
         run_id="run",
         session_id="session",
         kind="chat",
-        target="chat",
+        persona_id="persona",
         created_at=naive,
         updated_at=naive,
     )

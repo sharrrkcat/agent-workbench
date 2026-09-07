@@ -39,7 +39,7 @@ def rrf_merge(vector_candidates: list[RetrievalCandidate], keyword_candidates: l
 
 async def search_knowledge(*, engine: Any, knowledge_store: Any, model_manager: Any, query: str, knowledge_base_ids: list[str] | None = None, session_id: str | None = None, top_k: int | None = None, max_context_chars: int | None = None, include_debug: bool = False, min_score_threshold: float | None = None, max_chunks_per_source: int | None = None, max_chunks_per_knowledge_base: int | None = None) -> dict[str, Any]:
     settings=knowledge_store.get_settings(); warnings=[]
-    ids=list(dict.fromkeys(knowledge_base_ids or [b.knowledge_base_id for b in knowledge_store.list_session_bindings(session_id or "") if b.enabled]))
+    ids=list(dict.fromkeys(knowledge_base_ids if knowledge_base_ids is not None else [b.knowledge_base_id for b in knowledge_store.list_session_bindings(session_id or "") if b.enabled]))
     if not ids:
         return _response(
             query,

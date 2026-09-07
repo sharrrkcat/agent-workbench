@@ -6,7 +6,7 @@ schema revisions.
 
 | Path | Contents | Ownership |
 | --- | --- | --- |
-| data/agent_workbench.db | Sessions, messages, runs, settings, Knowledge, Worldbook, provider_profiles and model_profiles | Application test state; ignored by Git |
+| data/agent_workbench.db | Personas, session members, sessions, messages, runs, settings, Knowledge, Worldbook, provider_profiles and model_profiles | Application test state; ignored by Git |
 | data/attachments/ | Uploaded files referenced by message parts | Explicit orphan cleanup only |
 | data/knowledge/ | Source/index working data | Knowledge service |
 | data/models/ | Manually placed model files | No model download or schema-driven deletion |
@@ -19,9 +19,13 @@ only relative paths are returned. Inventory does not import/load runtimes.
 The frontend build lives at frontend/dist/. Root dist/ was an obsolete
 application snapshot and is not a supported runtime.
 
-Alembic head is 0004_phase2b_runtimes. Phase 2a recreated every SQLite
-business table and Knowledge FTS index. Phase 2b adds managed profile fields,
-runtime_installations and runtime_jobs without touching file directories.
+Alembic head is 0006_phase4_tools. Phase 2a recreated every SQLite business
+table and Knowledge FTS index; Phase 2b added managed profile fields,
+runtime_installations and runtime_jobs; Round 3 added Persona/session tables
+and recreated disposable chat rows without touching file directories.
+Phase 4 recreates the run kind constraint, adds private harness state, clears
+disposable messages/run events/steps and waiting references. Model, attachment,
+Knowledge and runtime files remain outside the migration's ownership.
 Revisions copy no rows and downgrade is unsupported. Empty databases
 upgrade to head. Nonempty unversioned databases are rejected instead of
 auto-stamped. Health reports schema_revision; there is no schema_version

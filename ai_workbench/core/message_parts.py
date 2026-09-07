@@ -12,9 +12,11 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator, field_validator
 
+from ai_workbench.core.json_data import validate_json_data
+
 
 TextFormat = Literal["plain", "markdown"]
-MessagePartType = Literal["text", "json", "file", "image", "audio", "video", "media_group", "notice", "error"]
+MessagePartType = Literal["text", "json", "file", "image", "audio", "video", "media_group", "notice", "error", "tool_call", "tool_result"]
 
 
 class MessagePartValidationError(ValueError):
@@ -176,6 +178,36 @@ class ErrorPart(_PartBase):
     code: str | None = None
 
 
+class ToolCallPart(_PartBase):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    type: Literal["tool_call"]
+    tool_call_id: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1, max_length=64)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("arguments")
+    @classmethod
+    def json_arguments(cls, value):
+        return validate_json_data(value)
+
+
+class ToolResultPart(_PartBase):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    type: Literal["tool_result"]
+    tool_call_id: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1, max_length=64)
+    status: Literal["success", "error", "rejected", "cancelled"]
+    data: Any = None
+    error_code: str | None = None
+    error_message: str | None = None
+    truncated: bool = False
+
+    @field_validator("data")
+    @classmethod
+    def json_result(cls, value):
+        return validate_json_data(value)
+
+
 _PART_ADAPTERS = {
     "text": TypeAdapter(TextPart),
     "json": TypeAdapter(JsonPart),
@@ -186,6 +218,8 @@ _PART_ADAPTERS = {
     "media_group": TypeAdapter(MediaGroupPart),
     "notice": TypeAdapter(NoticePart),
     "error": TypeAdapter(ErrorPart),
+    "tool_call": TypeAdapter(ToolCallPart),
+    "tool_result": TypeAdapter(ToolResultPart),
 }
 
 
@@ -223,6 +257,14 @@ def make_notice_part(text: str, *, level: Literal["info", "warning", "success"] 
 
 def make_error_part(message: str, *, code: str | None = None, part_id: str | None = None) -> dict[str, Any]:
     return validate_message_part(_drop_none({"id": part_id or "part_1", "type": "error", "message": message, "code": code}))
+
+
+def make_tool_call_part(tool_call_id: str, tool_name: str, arguments: dict[str, Any], *, part_id: str | None = None) -> dict[str, Any]:
+    return validate_message_part({"id": part_id or "part_1", "type": "tool_call", "tool_call_id": tool_call_id, "tool_name": tool_name, "arguments": arguments})
+
+
+def make_tool_result_part(tool_call_id: str, tool_name: str, status: Literal["success", "error", "rejected", "cancelled"], data: Any = None, *, error_code: str | None = None, error_message: str | None = None, truncated: bool = False, part_id: str | None = None) -> dict[str, Any]:
+    return validate_message_part(_drop_none({"id": part_id or "part_1", "type": "tool_result", "tool_call_id": tool_call_id, "tool_name": tool_name, "status": status, "data": data, "error_code": error_code, "error_message": error_message, "truncated": truncated}))
 
 
 def validate_message_part(part: Mapping[str, Any]) -> dict[str, Any]:

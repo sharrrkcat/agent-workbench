@@ -23,29 +23,47 @@ class LLMContextError(Exception):
 
 
 class ContextBuilder:
-    def __init__(self, message_store: Any) -> None: self.message_store=message_store
+    def __init__(self, message_store: Any) -> None:
+        self.message_store = message_store
 
-    def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *, source_message_id: str | None = None, current_message_id: str | None = None, context_mode: str = "single_assistant") -> ContextBuildResult:
-        policy=policy or ContextPolicy(mode="session"); current=self._current_text(text,current_message_id); warnings=[]
-        history=[item for item in self.message_store.list_messages(session_id) if item.message_id!=current_message_id and _eligible(item)]
-        if policy.mode in {"none","current_message"}: selected=[]
-        elif policy.mode=="selected_message":
-            selected=[]
-            if source_message_id:
-                try: selected=[self.message_store.get_message(source_message_id)]
-                except KeyError: warnings.append("selected message was not found")
-            else: warnings.append("selected message context requested without a source message")
+    def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *,
+              source_message_id: str | None = None, current_message_id: str | None = None,
+              context_mode: str = "single_assistant", group_instruction: str | None = None,
+              persona_name: str | None = None, persona_id: str | None = None) -> ContextBuildResult:
+        policy = policy or ContextPolicy(mode="session")
+        current = self._current_text(text, current_message_id)
+        history = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id and _eligible(m)]
+        if policy.mode in {"none", "current_message"}:
+            selected = []
+        elif policy.mode == "selected_message":
+            selected = [m for m in history if m.message_id == source_message_id]
+            if not selected:
+                raise LLMContextError("Select an eligible message from this session.", "CONTEXT_MESSAGE_REQUIRED")
         else:
-            selected=history
-            if policy.max_messages is not None: selected=selected[-policy.max_messages:]
-        if context_mode=="group_transcript":
-            transcript="\n".join(_transcript_line(item) for item in selected if _transcript_line(item)); content=f"<conversation_transcript>\n{transcript}\n</conversation_transcript>\n\n<current_user_message>\n{current}\n</current_user_message>"
-            messages=[{"role":"system","content":DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION},{"role":"user","content":content}]
+            count = policy.max_messages or (20 if policy.mode == "recent_messages" else None)
+            selected = history[-count:] if count else history
+
+        projected = [_project(m, include_attachments=policy.include_attachments == "explicit") for m in selected]
+        projected = [m for m in projected if m is not None]
+        if context_mode == "group_transcript":
+            projected = [{"role": "user", "content": _transcript_line(m, include_attachments=policy.include_attachments == "explicit")} for m in selected]
+        # Budget history before adding framing and persona instructions, retaining the current input.
+        warnings = []
+        if policy.max_chars is not None:
+            remaining = max(0, policy.max_chars - len(current))
+            projected = _limit_history(projected, remaining)
+            if len(current) > policy.max_chars:
+                warnings.append("Current message exceeds the history character budget; current input is retained.")
+        if context_mode == "group_transcript":
+            transcript = "\n".join(m["content"] for m in projected)
+            content = f"<conversation_transcript>\n{transcript}\n</conversation_transcript>\n\n<current_user_message>\n{current}\n</current_user_message>"
+            instruction = group_instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
+            if persona_id is not None:
+                instruction += "\nReply only as the current speaker: " + json.dumps({"persona_id": persona_id, "name": persona_name}, ensure_ascii=False) + "."
+            messages = [{"role": "system", "content": instruction}, {"role": "user", "content": content}]
         else:
-            messages=[item for item in (_project(message) for message in selected) if item is not None]
-            messages.append({"role":"user","content":current})
-        messages=_limit_chars(messages,policy.max_chars)
-        return ContextBuildResult(messages=validate_llm_context_messages(messages),warnings=warnings)
+            messages = [*projected, {"role": "user", "content": current}]
+        return ContextBuildResult(messages=validate_llm_context_messages(messages), warnings=warnings)
 
     def _current_text(self, text: str, message_id: str | None) -> str:
         if text: return text
@@ -62,14 +80,13 @@ def validate_llm_context_messages(messages: list[dict[str,Any]]) -> list[dict[st
     return messages
 
 
-def group_transcript_identity_instruction(instruction: str | None = None) -> str: return instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
-
-
-def message_text(message: Any) -> str:
+def message_text(message: Any, *, include_attachments: bool = True) -> str:
     rendered=[]
     for part in getattr(message,"parts",[]) or []:
         if not isinstance(part,dict): continue
         kind=part.get("type")
+        if not include_attachments and kind in {"file", "image", "audio", "video", "media_group"}:
+            continue
         if kind=="text": rendered.append(str(part.get("text") or ""))
         elif kind=="json": rendered.append(json.dumps(part.get("data"),ensure_ascii=False,indent=2,default=str))
         elif kind=="file": rendered.append(str(part.get("content") or part.get("filename") or "[file]"))
@@ -77,8 +94,10 @@ def message_text(message: Any) -> str:
         elif kind in {"audio","video"}: rendered.append(f"[{kind} attachment]")
         elif kind=="media_group": rendered.append(f"[image gallery: {len(part.get('items') or [])} image(s)]")
         elif kind=="notice": rendered.append(str(part.get("text") or ""))
+        elif kind in {"tool_call", "tool_result"}:
+            rendered.append("[Tool data] " + json.dumps({key: value for key, value in part.items() if key != "id"}, ensure_ascii=False))
     attachments=(getattr(message,"metadata",{}) or {}).get("attachments")
-    if isinstance(attachments,list):
+    if include_attachments and isinstance(attachments,list):
         for item in attachments:
             if not isinstance(item,dict): continue
             context_text=item.get("context_text") or item.get("text")
@@ -87,31 +106,37 @@ def message_text(message: Any) -> str:
     return "\n\n".join(part for part in rendered if part)
 
 
-def _project(message: Any) -> dict[str,str] | None:
+def _project(message: Any, *, include_attachments: bool = True) -> dict[str,str] | None:
     role=getattr(message,"role","")
-    if role not in {"system","user","assistant"}: return None
-    text=message_text(message)
+    if role not in {"system","user","assistant","tool"}: return None
+    text=message_text(message, include_attachments=include_attachments)
     if not text and role!="system": return None
-    return {"role":role,"content":text}
+    # A selected/truncated history may omit a call's partner. Historical tool
+    # parts are quoted user data; only the live harness transcript uses native
+    # assistant/tool protocol pairs. This also supports ordinary chat models.
+    return {"role":"user" if role == "tool" else role,"content":text}
 
 
 def _eligible(message: Any) -> bool:
-    if getattr(message,"role","") not in {"system","user","assistant"}: return False
+    if getattr(message,"role","") not in {"system","user","assistant","tool"}: return False
     if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
     metadata=getattr(message,"metadata",{}) or {}
     return not bool(metadata.get("event_type"))
 
 
-def _transcript_line(message: Any) -> str:
-    role=getattr(message,"role",""); label="User" if role=="user" else getattr(message,"speaker_name",None) or ("System" if role=="system" else "Assistant"); text=message_text(message)
-    return f"[{label}] {text}".rstrip()
+def _transcript_line(message: Any, *, include_attachments: bool = True) -> str:
+    role = getattr(message, "role", "")
+    label = "User" if role == "user" else getattr(message, "speaker_name", None) or ("System" if role == "system" else "Assistant")
+    label = str(label).replace("\r", " ").replace("\n", " ")
+    speaker_id = getattr(message, "speaker_id", None)
+    identity = f" ({speaker_id})" if role == "assistant" and speaker_id else ""
+    return f"[{label}{identity}] {message_text(message, include_attachments=include_attachments)}".rstrip()
 
 
-def _limit_chars(messages: list[dict[str,str]], limit: int | None) -> list[dict[str,str]]:
-    if limit is None: return messages
+def _limit_history(messages: list[dict[str,str]], limit: int) -> list[dict[str,str]]:
     kept=[]; used=0
     for item in reversed(messages):
         content=item["content"]
-        if kept and used+len(content)>limit: break
+        if used+len(content)>limit: break
         kept.append(item); used+=len(content)
     return list(reversed(kept))

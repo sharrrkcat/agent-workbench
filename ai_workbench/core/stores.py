@@ -8,6 +8,7 @@ SQLite application without any extension registry machinery.
 from __future__ import annotations
 
 from datetime import datetime
+from copy import deepcopy
 from typing import Any, Generic, Iterable, Optional, TypeVar
 from uuid import uuid4
 
@@ -23,19 +24,20 @@ class SessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
 
-    def create_session(self, title: str = "", context_mode: str = "single_assistant") -> Session:
+    def create_session(self, title: str = "", context_mode: str = "single_assistant", **values: Any) -> Session:
         session = Session(
             session_id=str(uuid4()),
             title=title,
             context_mode=context_mode,
             title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual",
+            **values,
         )
         self._sessions[session.session_id] = session
         return session
 
     def get_session(self, session_id: str) -> Session:
         try:
-            return self._sessions[session_id]
+            return self._sessions[session_id].model_copy(deep=True)
         except KeyError as exc:
             raise KeyError(f"unknown session id: {session_id}") from exc
 
@@ -57,6 +59,9 @@ class SessionStore:
     def set_model_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
         return self._replace(session_id, model_profile_id=profile_id)
 
+    def update_session(self, session_id: str, values: dict[str, Any]) -> Session:
+        return self._replace(session_id, **values)
+
     def clear_interrupted_waiting_runs(self, run_ids: list[str]) -> None:
         ids = set(run_ids)
         for session_id, session in list(self._sessions.items()):
@@ -75,7 +80,7 @@ class SessionStore:
 
     def _replace(self, session_id: str, **updates: Any) -> Session:
         current = self.get_session(session_id)
-        updated = current.model_copy(update={**updates, "updated_at": utc_now()})
+        updated = Session.model_validate({**current.model_dump(), **updates, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 
@@ -193,12 +198,28 @@ class RunStore:
         self._session_ids: dict[str, list[str]] = {}
         self._steps: dict[str, RunStepSchema] = {}
         self._step_ids: dict[str, list[str]] = {}
+        self._config_snapshots: dict[str, dict] = {}
+        self._harness_states: dict[str, dict] = {}
 
-    def create_run(self, kind: str, target: str, session_id: str, metadata: dict[str, Any] | None = None) -> RunSchema:
-        run = RunSchema(run_id=str(uuid4()), kind=kind, target=target, session_id=session_id, metadata=metadata or {})
+    def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
+        run = RunSchema(run_id=str(uuid4()), kind=kind, persona_id=persona_id, session_id=session_id, metadata=metadata or {})
         self._runs[run.run_id] = run
+        self._config_snapshots[run.run_id] = deepcopy(config_snapshot or {})
+        self._harness_states[run.run_id] = deepcopy(harness_state or {})
         self._session_ids.setdefault(session_id, []).append(run.run_id)
         return run
+
+    def get_config_snapshot(self, run_id: str) -> dict:
+        self.get_run(run_id)
+        return deepcopy(self._config_snapshots[run_id])
+
+    def get_harness_state(self, run_id: str) -> dict:
+        self.get_run(run_id)
+        return deepcopy(self._harness_states.get(run_id, {}))
+
+    def update_harness_state(self, run_id: str, state: dict[str, Any]) -> None:
+        self.get_run(run_id)
+        self._harness_states[run_id] = deepcopy(state)
 
     def get_run(self, run_id: str) -> RunSchema:
         try:
@@ -208,6 +229,8 @@ class RunStore:
 
     def update_status(self, run_id: str, status: RunStatus, current_step: str | None = None, error: str | None = None, error_code: str | None = None, error_message: str | None = None, cancel_requested: bool | None = None) -> RunSchema:
         run = self.get_run(run_id)
+        if run.status in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED} and status != run.status:
+            raise ValueError("Terminal runs cannot change status")
         now = utc_now()
         updates: dict[str, Any] = {"status": status, "updated_at": now}
         if status == RunStatus.RUNNING and run.started_at is None:
@@ -258,6 +281,8 @@ class RunStore:
     def delete_session(self, session_id: str) -> None:
         for run_id in self._session_ids.pop(session_id, []):
             self._runs.pop(run_id, None)
+            self._config_snapshots.pop(run_id, None)
+            self._harness_states.pop(run_id, None)
             for step_id in self._step_ids.pop(run_id, []):
                 self._steps.pop(step_id, None)
 
@@ -273,10 +298,18 @@ class RunStore:
         return result
 
     def interrupt_unfinished_runs(self) -> list[str]:
+        from ai_workbench.core.harness.schema import has_saved_approval
+
         ids: list[str] = []
         for run_id, run in list(self._runs.items()):
+            if run.status == RunStatus.WAITING_FOR_USER and not run.cancel_requested and has_saved_approval(self.get_harness_state(run_id)):
+                continue
             if run.status not in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
-                self._runs[run_id] = run.model_copy(update={"status": RunStatus.INTERRUPTED, "current_step": "interrupted", "finished_at": utc_now(), "updated_at": utc_now()})
+                self.update_status(run_id, RunStatus.INTERRUPTED, current_step="interrupted", error_code="RUN_INTERRUPTED", error_message="Execution was interrupted by an application restart.")
+                self.update_harness_state(run_id, {})
+                for step in self.list_steps(run_id):
+                    if step.status in {RunStepStatus.PENDING, RunStepStatus.RUNNING}:
+                        self.update_step(step.step_id, status=RunStepStatus.FAILED, error_code="RUN_INTERRUPTED", error_message="Execution was interrupted by an application restart.")
                 ids.append(run_id)
         return ids
 

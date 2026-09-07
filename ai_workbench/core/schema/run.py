@@ -26,7 +26,7 @@ class RunStepStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-RunKind = Literal["chat", "resume"]
+RunKind = Literal["chat", "tool"]
 RunStepKind = Literal["context", "model", "save", "approval", "tool"]
 
 
@@ -37,7 +37,7 @@ class RunSchema(BaseModel):
     session_id: str
     kind: RunKind
     status: RunStatus = RunStatus.PENDING
-    target: str = "chat"
+    persona_id: str
     current_step: str = ""
     stage: str = ""
     progress_message: str = ""
