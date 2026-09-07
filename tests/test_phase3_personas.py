@@ -181,7 +181,7 @@ def test_group_speakers_live_edits_retry_and_selected_context(chat_client):
     ok(client.patch(f"/api/personas/{first['id']}", json={"name": "Renamed", "system_prompt": "NEW_PROMPT"}))
     history = ok(client.get(path + "/messages"))
     assert history[1]["speaker_name"] == "First"
-    retried = ok(client.post(f"/api/messages/{original['message_id']}/retry"))
+    retried = ok(client.post(f"/api/runs/{original['run_id']}/retry"))
     assert len(retried["messages"]) == 1 and retried["messages"][0]["speaker_name"] == "Renamed"
     assert retried["run"]["persona_id"] == first["id"]
     assert len(ok(client.get(path + "/messages"))) == 2
@@ -248,7 +248,7 @@ def test_avatar_reference_shared_with_messages_and_personas(chat_client):
     ok(client.delete(f"/api/personas/{second['id']}"))
     assert client.get(attachment_path).content == png
     assert client.delete(attachment_path).status_code == 409
-    ok(client.delete(f"/api/messages/{message['message_id']}"))
+    ok(client.delete(f"/api/runs/{message['run_id']}"))
     assert client.get(attachment_path).status_code == 404
 
 
@@ -401,8 +401,7 @@ def test_running_snapshot_survives_persona_edit_and_speaker_switch(tmp_path):
             await asyncio.wait_for(entered.wait(), 5)
             cancelled_run = app.state.runtime_state.runs.list_runs(session["session_id"])[-1]
             ok(await client.post(f"/api/runs/{cancelled_run.run_id}/cancel"))
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(cancelled_request, 5)
+            assert ok(await asyncio.wait_for(cancelled_request, 5))["run"]["status"] == "CANCELLED"
             assert app.state.runtime_state.runs.get_run(cancelled_run.run_id).status == RunStatus.CANCELLED
             assert not any(m.run_id == cancelled_run.run_id and m.role == "assistant" for m in app.state.runtime_state.messages.list_messages(session["session_id"]))
             assert app.state.runtime_state.model_manager.status(model["id"]).active == 0

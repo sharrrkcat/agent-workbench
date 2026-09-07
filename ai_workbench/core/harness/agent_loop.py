@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.harness.registry import TOOL_NAME_RE, ToolRegistry, public_url
 from ai_workbench.core.harness.schema import HarnessState, ToolExecutionContext, ToolExecutionError, ToolOutcome
 from ai_workbench.core.harness.settings import HarnessSettings
@@ -71,7 +72,10 @@ class HarnessAgentLoop:
         state = HarnessState(direct=True, pending_calls=[call], searxng_base_url=self.harness_settings.get().searxng_base_url)
         self.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="tool")
         self._emit_run("run_started", run.run_id)
-        self._persist_calls(session, config, run, None, "", [call], str(uuid4()), False)
+        draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
+                               run_id=run.run_id, message_id=str(uuid4()), config=config,
+                               parent_message_id=None, streamed=False)
+        self._persist_calls(draft, [call], direct=True)
         self._save_state(run.run_id, state)
         return await self._drive(session=session, config=config, run=run, user=None, state=state)
 
@@ -159,7 +163,10 @@ class HarnessAgentLoop:
                 if self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     return RunResult(success=True, run_id=run.run_id, data=content)
         except asyncio.CancelledError:
-            self._terminate(run, state, RunStatus.CANCELLED, "RUN_CANCELLED", "Run was cancelled.")
+            requested = self.runs.get_run(run.run_id).cancel_requested
+            result = self._terminate(run, state, RunStatus.CANCELLED, "RUN_CANCELLED", "Run was cancelled.")
+            if requested:
+                return result
             raise
         except (ModelError, ToolExecutionError) as exc:
             return self._terminate(run, state, RunStatus.FAILED, exc.code, exc.message)
@@ -188,60 +195,56 @@ class HarnessAgentLoop:
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,
                       "provider_profile_id": profile.provider_profile_id, "model_ref": profile.model_ref}
         self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
-        message_id = str(uuid4())
-        draft = MessageSchema(message_id=message_id, session_id=session.session_id, role="assistant",
-                              speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
-                              parent_message_id=user.message_id, run_id=run.run_id, parts=[],
-                              metadata={"streaming": True, "speaker_avatar_attachment_id": config.avatar_attachment_id})
-        self.events.emit("message_started", session_id=session.session_id, run_id=run.run_id, message_id=message_id,
-                         payload={"message": draft.model_dump(mode="json"), "seq": 0})
+        draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
+                               run_id=run.run_id, message_id=str(uuid4()), config=config,
+                               parent_message_id=user.message_id, streamed=request.stream)
         try:
-            content, calls = await asyncio.wait_for(
-                self._model_turn(profile.id, request, session.session_id, run.run_id, message_id), timeout=budget.check())
-        except asyncio.TimeoutError as exc:
-            raise ToolExecutionError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.") from exc
-        self._check_cancelled(run.run_id)
-        budget.check()
-        self._validate_calls(calls, state)
-        if calls and state.rounds >= MAX_TOOL_ROUNDS:
-            raise ToolExecutionError("TOOL_LOOP_LIMIT", "Tool loop reached the maximum of 8 rounds.")
+            try:
+                calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft),
+                                               timeout=budget.check())
+            except asyncio.TimeoutError as exc:
+                raise ToolExecutionError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.") from exc
+            self._check_cancelled(run.run_id)
+            budget.check()
+            self._validate_calls(calls, state)
+            if calls and state.rounds >= MAX_TOOL_ROUNDS:
+                raise ToolExecutionError("TOOL_LOOP_LIMIT", "Tool loop reached the maximum of 8 rounds.")
+        except (Exception, asyncio.CancelledError):
+            draft.persist(incomplete=True)
+            raise
         self.runs.update_step(step.step_id, status=RunStepStatus.COMPLETED, message="Response generated",
                               metadata={"streamed": request.stream, "tool_calls": len(calls)})
         self._emit_step(run.run_id, step.step_id)
         if not calls:
-            self._save_final(session, config, run, user, content, request.stream, message_id)
-            return content
+            self._save_final(run, draft)
+            return draft.text
         state.rounds += 1
-        self._persist_calls(session, config, run, user, content, calls, message_id, request.stream)
-        state.transcript.append({"role": "assistant", "content": content or None,
+        self._persist_calls(draft, calls)
+        state.transcript.append({"role": "assistant", "content": draft.raw_content or None,
+                                 **({"reasoning_content": draft.reasoning_content} if draft.reasoning_content else {}),
                                  "tool_calls": [call.model_dump(mode="json") for call in calls]})
         state.pending_calls = calls
         self._save_state(run.run_id, state)
 
-    async def _model_turn(self, profile_id: str, request: ChatRequest, session_id: str,
-                          run_id: str, message_id: str) -> tuple[str, list[ToolCall]]:
+    async def _model_turn(self, profile_id: str, request: ChatRequest, run_id: str,
+                          draft: AssistantDraft) -> list[ToolCall]:
         if not request.stream:
             result = await self.model_manager.chat(profile_id, request)
-            if result.finish_reason == "content_filter":
-                raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
             if result.message.content is not None and not isinstance(result.message.content, str):
                 raise ModelError("MODEL_PROTOCOL_ERROR", "Model returned an invalid tool response.", 502)
+            draft.append(result.message.content, result.message.reasoning_content)
+            if result.finish_reason == "content_filter":
+                raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
             calls = list(result.message.tool_calls or [])
             if bool(calls) != (result.finish_reason == "tool_calls"):
                 raise ModelError("MODEL_PROTOCOL_ERROR", "Model returned an invalid tool finish reason.", 502)
-            return result.message.content or "", calls
-        content: list[str] = []
+            return calls
         calls: dict[int, dict[str, str]] = {}
         finish = None
-        seq = 0
         async with aclosing(self.model_manager.chat_stream(profile_id, request)) as stream:
             async for chunk in stream:
                 self._check_cancelled(run_id)
-                if chunk.delta.content:
-                    content.append(chunk.delta.content)
-                    seq += 1
-                    self.events.emit("message_delta", session_id=session_id, run_id=run_id, message_id=message_id,
-                                     payload={"delta": chunk.delta.content, "seq": seq})
+                draft.append(chunk.delta.content, chunk.delta.reasoning_content)
                 for delta in chunk.delta.tool_calls or []:
                     item = calls.setdefault(delta.index, {"id": "", "name": "", "arguments": ""})
                     if delta.id:
@@ -262,7 +265,7 @@ class HarnessAgentLoop:
                       for _, item in sorted(calls.items())]
         except ValidationError as exc:
             raise ModelError("MODEL_PROTOCOL_ERROR", "Model returned an incomplete tool call.", 502) from exc
-        return "".join(content), result
+        return result
 
     @staticmethod
     def _validate_calls(calls: list[ToolCall], state: HarnessState) -> None:
@@ -329,8 +332,8 @@ class HarnessAgentLoop:
                               metadata={"result_status": outcome.status})
         self._emit_step(run.run_id, step_id)
 
-    def _persist_calls(self, session, config, run, user, content, calls, message_id, streamed) -> None:
-        parts = [{"id": "text", "type": "text", "format": "markdown", "text": content}] if content else []
+    def _persist_calls(self, draft: AssistantDraft, calls: list[ToolCall], *, direct: bool = False) -> None:
+        parts = []
         for index, call in enumerate(calls):
             try:
                 arguments = self._arguments(call)
@@ -338,14 +341,9 @@ class HarnessAgentLoop:
                 arguments = {}
             parts.append(make_tool_call_part(call.id, call.function.name,
                          self.registry.public_arguments(call.function.name, arguments), part_id=f"call_{index}"))
-        message = self.messages.add_message(session.session_id, role="assistant", parts=parts, run_id=run.run_id,
-                                            message_id=message_id, parent_message_id=user.message_id if user else None,
-                                            speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
-                                            metadata={"tool_calls": True, "direct": user is None, "streamed": streamed,
-                                                      "speaker_avatar_attachment_id": config.avatar_attachment_id})
+        message = draft.persist(extra_parts=parts, metadata={"tool_calls": True, "direct": direct})
         payload = {"message": message.model_dump(mode="json")}
-        self.events.emit("message_completed", session_id=session.session_id, run_id=run.run_id, message_id=message_id, payload=payload)
-        self.events.emit("tool_call_created", session_id=session.session_id, run_id=run.run_id, message_id=message_id,
+        self.events.emit("tool_call_created", session_id=message.session_id, run_id=message.run_id, message_id=message.message_id,
                          payload={**payload, "tool_calls": [{"id": call.id, "name": call.function.name} for call in calls]})
 
     def _pause(self, session, run, state, call, arguments, risk) -> RunResult:
@@ -361,16 +359,11 @@ class HarnessAgentLoop:
                        "arguments": self.registry.public_arguments(call.function.name, arguments), "step_id": step.step_id, "risk": risk, **service})
         return RunResult(success=True, run_id=run.run_id)
 
-    def _save_final(self, session, config, run, user, content, streamed, message_id) -> None:
+    def _save_final(self, run, draft: AssistantDraft) -> None:
         step = self._start_step(run.run_id, "save", "Saving response")
-        assistant = self.messages.add_message(session.session_id, role="assistant", content=content, message_id=message_id,
-                                              run_id=run.run_id, parent_message_id=user.message_id,
-                                              speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
-                                              metadata={"speaker_avatar_attachment_id": config.avatar_attachment_id, "streamed": streamed})
+        draft.persist()
         self.runs.update_step(step.step_id, status=RunStepStatus.COMPLETED, message="Response saved")
         self._emit_step(run.run_id, step.step_id)
-        self.events.emit("message_completed", session_id=session.session_id, run_id=run.run_id, message_id=assistant.message_id,
-                         payload={"message": assistant.model_dump(mode="json")})
         self._complete(run.run_id)
 
     def cancel(self, run) -> RunResult:

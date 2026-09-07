@@ -16,7 +16,7 @@ from ai_workbench.core.json_data import validate_json_data
 
 
 TextFormat = Literal["plain", "markdown"]
-MessagePartType = Literal["text", "json", "file", "image", "audio", "video", "media_group", "notice", "error", "tool_call", "tool_result"]
+MessagePartType = Literal["text", "reasoning", "json", "file", "image", "audio", "video", "media_group", "notice", "error", "tool_call", "tool_result"]
 
 
 class MessagePartValidationError(ValueError):
@@ -32,6 +32,12 @@ class _PartBase(BaseModel):
 class TextPart(_PartBase):
     type: Literal["text"]
     format: TextFormat = "markdown"
+    text: str
+
+
+class ReasoningPart(_PartBase):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    type: Literal["reasoning"]
     text: str
 
 
@@ -210,6 +216,7 @@ class ToolResultPart(_PartBase):
 
 _PART_ADAPTERS = {
     "text": TypeAdapter(TextPart),
+    "reasoning": TypeAdapter(ReasoningPart),
     "json": TypeAdapter(JsonPart),
     "file": TypeAdapter(FilePart),
     "image": TypeAdapter(ImagePart),

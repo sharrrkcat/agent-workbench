@@ -1,5 +1,5 @@
 import type { WorkbenchSet, WorkbenchGet } from './state';
-import { mergeRuns, mergeSteps, older, terminal } from './mergeState';
+import { mergeRuns, mergeSteps, older, terminal, pruneHistoryState } from './mergeState';
 
 import { applyMessageEvent } from '../messageStream';
 
@@ -21,8 +21,18 @@ export function handleRuntimeEvent(set: WorkbenchSet, get: WorkbenchGet, event: 
   }
   if (event.session_id !== get().currentSession?.session_id) return;
   const payload = event.payload || {};
+  if (event.type === 'history_pruned') {
+    const messageIds = payload.deleted_message_ids;
+    const runIds = payload.deleted_run_ids;
+    if (Array.isArray(messageIds) && messageIds.every((id) => typeof id === 'string') &&
+        Array.isArray(runIds) && runIds.every((id) => typeof id === 'string')) {
+      set((state) => pruneHistoryState(state, { deleted_message_ids: messageIds, deleted_run_ids: runIds }));
+    }
+    return;
+  }
+  if (get().deletedMessageIds.includes(event.message_id || '') || get().deletedRunIds.includes(event.run_id || '')) return;
   if (
-    ['message_started', 'message_delta', 'message_completed', 'tool_call_created', 'tool_result_created'].includes(
+    ['message_updated', 'message_started', 'message_delta', 'message_completed', 'tool_call_created', 'tool_result_created'].includes(
       event.type,
     )
   ) {
@@ -44,7 +54,7 @@ export function handleRuntimeEvent(set: WorkbenchSet, get: WorkbenchGet, event: 
   }
   if (payload.run) {
     const incoming = payload.run as Run;
-    if (incoming.session_id !== event.session_id) return;
+    if (incoming.session_id !== event.session_id || get().deletedRunIds.includes(incoming.run_id)) return;
     set((state) => {
       const previous = state.runs.find((run) => run.run_id === incoming.run_id);
       if (
@@ -66,6 +76,7 @@ export function handleRuntimeEvent(set: WorkbenchSet, get: WorkbenchGet, event: 
         : null;
       return {
         runs: mergeRuns(state.runs, [incoming]),
+        runVersion: state.runVersion + 1,
         currentSession,
         sessionVersion: state.sessionVersion + 1,
         sessions: currentSession
@@ -76,8 +87,8 @@ export function handleRuntimeEvent(set: WorkbenchSet, get: WorkbenchGet, event: 
   }
   if (event.type === 'run_step_updated' || event.type === 'run_step_created') {
     const step = payload.step as RunStep | undefined;
-    if (!step) return;
-    set((state) => ({ stepsByRunId: mergeSteps(state.stepsByRunId, [step]) }));
+    if (!step || get().deletedRunIds.includes(step.run_id)) return;
+    set((state) => ({ stepsByRunId: mergeSteps(state.stepsByRunId, [step]), runVersion: state.runVersion + 1 }));
   }
   if (['run_started', 'run_completed', 'run_failed', 'run_cancelled'].includes(event.type)) void get().refreshCurrent();
 }

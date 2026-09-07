@@ -121,7 +121,7 @@ def _eligible(message: Any) -> bool:
     if getattr(message,"role","") not in {"system","user","assistant","tool"}: return False
     if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
     metadata=getattr(message,"metadata",{}) or {}
-    return not bool(metadata.get("event_type"))
+    return not bool(metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))
 
 
 def _transcript_line(message: Any, *, include_attachments: bool = True) -> str:

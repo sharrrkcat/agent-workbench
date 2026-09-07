@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
+from ai_workbench.api.routes.messages import _result_payload
 from ai_workbench.core.schema.run import RunStatus
 
 
@@ -22,6 +23,22 @@ def get_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
         return _run_payload(state, state.runs.get_run(run_id))
     except KeyError:
         raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
+
+
+@router.delete("/api/runs/{run_id}")
+async def delete_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    return state.history.delete_reply(run_id).model_dump()
+
+
+@router.post("/api/runs/{run_id}/retry")
+async def retry_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    run, source, change = state.history.retry(run_id)
+    session = state.sessions.get_session(run.session_id)
+    before = {item.message_id for item in state.messages.list_messages(run.session_id)}
+    result = await state.runtime.retry_chat_run(session, run, source)
+    if not result.success and not result.run_id:
+        raise_error(400, result.error_code or "RUN_RETRY_FAILED", result.error or "Reply retry failed.")
+    return {**_result_payload(state, run.session_id, result, before), **change.model_dump()}
 
 
 @router.get("/api/runs/{run_id}/steps")

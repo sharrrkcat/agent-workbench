@@ -41,6 +41,15 @@ Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
 `/api/sessions/{id}/runs`. Tool responses and explicit approvals are defined by
 the harness contract. Direct tool runs never create model summaries or titles.
 
+The chat view presents each run inside its reply, without a separate footer
+RunPanel or context/model/save step list. Elapsed seconds use started_at (or
+created_at) through finished_at, including approval waits; active clocks update
+locally and terminal clocks freeze. General show_full_processing controls initial
+active expansion. User toggles survive incoming deltas; entering a terminal state
+collapses the outer history, and reopened conversations start terminal histories
+collapsed. Final answers and approval controls stay outside that history.
+Scrolling follows new content only near the bottom, with an explicit latest button.
+
 ## WebSocket events
 
 Session clients connect to `/api/ws/{session_id}`, request `next_event`, and
@@ -52,12 +61,13 @@ Global model/runtime events are also available without a selected chat session.
 | session_updated | Persisted session configuration/title |
 | message_updated | Persisted user message or metadata |
 | message_started | Assistant draft with stable ids |
-| message_delta | Incremental text and seq=1,2,... |
+| message_delta | part_id, part_type=text/reasoning, delta and seq=1,2,... |
 | message_completed | Authoritative final persisted message |
 | run_started/completed/failed/cancelled | Public run lifecycle |
 | run_step_created/updated | Stable step progress |
 | tool_call_created/tool_result_created | Persisted tool messages |
 | approval_requested/resolved | Current public run and call identity |
+| history_pruned | deleted_message_ids/deleted_run_ids for the session |
 | model_status | Global model profile id and status |
 | runtime_job_updated/runtime_status | Global runtime progress/status |
 
@@ -68,11 +78,16 @@ Runtime jobs use their own store, not chat runs.
 
 ## Client reconciliation
 
-messageStream tracks sequence numbers, ignores duplicates/late/gapped deltas,
-and replaces drafts with completed parts. Gaps are repaired by completion or
+messageStream tracks one sequence per message across text and reasoning parts,
+ignores duplicates/late/gapped deltas, and replaces drafts with completed parts.
+Part ids remain stable and cannot change type. Gaps are repaired by completion or
 authoritative refresh. Tool events merge by message id, including repeated
-completion of an assistant tool-call message. Failure/cancellation discards
-transient streaming drafts while preserving persisted tool results.
+completion of an assistant tool-call message. Controlled cancellation and caught
+failure first publish a persisted message_completed with metadata.incomplete=true
+for any received output. Terminal handling discards only unsaved transient drafts,
+preserving these incomplete messages and tool results. User-requested cancellation
+returns the cancelled run through REST, without an HTTP failure; external task
+shutdown still propagates cancellation.
 
 useWorkbenchStore composes session, message and run actions into one Zustand
 store. Shared merge functions preserve atomic session/message/run/step updates.
@@ -81,6 +96,12 @@ Run/step timestamps retain microsecond ordering; old events cannot restore a
 resolved approval or regress terminal status. REST direct-call/approval results
 use the same reconciliation and session isolation. Concurrent approval submission
 is blocked by run id. Session switches reject previous-session results.
+
+Whole-reply/user history operations atomically remove messages, runs, steps and
+events. REST pruning responses and history_pruned share a frontend reducer.
+Deleted ids block late messages, steps, runs and REST results; session epochs
+reject requests from earlier visits even after switching back. Authoritative
+refresh removes records absent from the server without regressing newer events.
 
 Model/runtime stores reject stale refreshes and keep newer live occupancy/job
 revisions. UI state does not infer residency from a successful health check.
@@ -92,6 +113,11 @@ unless persist_streaming_message_deltas is enabled for local debugging. Steps,
 errors, warnings, final messages and lifecycle events persist. Terminal status
 is authoritative over partial drafts. Alembic owns schema revisions; see
 [data layout](../DATA_LAYOUT.md).
+
+Caught failure and controlled cancellation persist accumulated reasoning/text,
+independently of the debug delta-persistence setting. Hard process interruption
+can retain only already-persisted content. This presentation change uses existing
+JSON storage and content_version=2, with no old-record conversion or new migration.
 
 ## External SSE
 

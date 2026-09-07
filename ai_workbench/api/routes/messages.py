@@ -7,8 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.sessions import _get_session_or_404
-from ai_workbench.core.attachments import delete_attachment_if_unreferenced, validate_attachments
-from ai_workbench.core.message_parts import make_text_part
+from ai_workbench.core.attachments import validate_attachments
 from ai_workbench.core.schema.message import MessageSchema
 
 
@@ -67,33 +66,8 @@ async def create_message(
 
 @message_router.delete("/{message_id}")
 async def delete_message(message_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    message = _get_message_or_404(state, message_id)
-    state.chat_service.assert_idle(message.session_id)
-    try:
-        state.messages.delete_message(message_id)
-        _cleanup_message_attachments(state, message)
-    except KeyError:
-        raise_error(404, "MESSAGE_NOT_FOUND", f"Message not found: {message_id}")
-    return {"deleted": True, "message_id": message_id}
-
-
-@message_router.post("/{message_id}/retry")
-async def retry_message(message_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    message = _get_message_or_404(state, message_id)
-    if message.role != "assistant" or any(part.get("type") == "tool_call" for part in message.parts):
-        raise_error(400, "CANNOT_RETRY_MESSAGE", "Only assistant replies can be retried.")
-    source = _source_user_message_for_retry(state, message)
-    session = _get_session_or_404(state, message.session_id)
-    state.chat_service.assert_idle(session.session_id)
-    state.chat_service.resolve(session, persona_id=message.speaker_id)
-    deleted = state.messages.delete_messages_after(session.session_id, message.message_id, include_target=True)
-    for item in deleted:
-        _cleanup_message_attachments(state, item)
-    before = {item.message_id for item in state.messages.list_messages(session.session_id)}
-    result = await state.runtime.retry_assistant_message(session, message, source)
-    if not result.success and not result.run_id:
-        raise_error(400, result.error_code or "MESSAGE_RETRY_FAILED", result.error or "Message retry failed.")
-    return _result_payload(state, session.session_id, result, before)
+    _get_message_or_404(state, message_id)
+    return state.history.delete_user(message_id).model_dump()
 
 
 @message_router.post("/{message_id}/edit")
@@ -107,18 +81,20 @@ async def edit_message(
         raise_error(400, "CANNOT_EDIT_MESSAGE", "Only user messages can be edited.")
     session = _get_session_or_404(state, message.session_id)
     state.chat_service.assert_idle(session.session_id)
-    updated = message.model_copy(update={"parts": [make_text_part(payload.content, format="plain")]})
-    state.messages.update_message(updated)
-    deleted = state.messages.delete_messages_after(session.session_id, message.message_id, include_target=False)
-    for item in deleted:
-        _cleanup_message_attachments(state, item)
+    if payload.rerun:
+        state.chat_service.resolve(session)
+    updated, change = state.history.edit_user(message_id, payload.content)
     if not payload.rerun:
-        return {"success": True, "data": updated.model_dump(mode="json"), "error": None, "run": None, "session": state.chat_service.session_response(session), "messages": [updated.model_dump(mode="json")]}
+        return {"success": True, "data": updated.model_dump(mode="json"), "error": None, "run": None,
+                "session": state.chat_service.session_response(state.sessions.get_session(session.session_id)),
+                "messages": [updated.model_dump(mode="json")], **change.model_dump()}
     before = {item.message_id for item in state.messages.list_messages(session.session_id)}
     result = await state.runtime.rerun_user_message(session, updated)
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "MESSAGE_EDIT_FAILED", result.error or "Message edit failed.")
-    return _result_payload(state, session.session_id, result, before)
+    response = _result_payload(state, session.session_id, result, before)
+    response["messages"].insert(0, updated.model_dump(mode="json"))
+    return {**response, **change.model_dump()}
 
 
 def _get_message_or_404(state: RuntimeState, message_id: str) -> MessageSchema:
@@ -126,42 +102,6 @@ def _get_message_or_404(state: RuntimeState, message_id: str) -> MessageSchema:
         return state.messages.get_message(message_id)
     except KeyError:
         raise_error(404, "MESSAGE_NOT_FOUND", f"Message not found: {message_id}")
-
-
-def _source_user_message_for_retry(state: RuntimeState, message: MessageSchema) -> MessageSchema:
-    candidates = [message.parent_message_id, (message.metadata or {}).get("input_message_id")]
-    if message.run_id:
-        try:
-            candidates.append((state.runs.get_run(message.run_id).metadata or {}).get("input_message_id"))
-        except KeyError:
-            pass
-    for value in candidates:
-        if not value:
-            continue
-        try:
-            candidate = state.messages.get_message(str(value))
-        except KeyError:
-            continue
-        if candidate.role == "user" and candidate.session_id == message.session_id:
-            return candidate
-    # A linear history is a useful fallback for manually inserted messages.
-    messages = state.messages.list_messages(message.session_id)
-    index = next((i for i, item in enumerate(messages) if item.message_id == message.message_id), -1)
-    for candidate in reversed(messages[:max(index, 0)]):
-        if candidate.role == "user":
-            return candidate
-    raise_error(400, "CANNOT_RETRY_MESSAGE", "Could not find the user message that produced this response.")
-
-
-def _cleanup_message_attachments(state: RuntimeState, message: MessageSchema) -> None:
-    attachments = (message.metadata or {}).get("attachments")
-    if isinstance(attachments, list):
-        for item in attachments:
-            if isinstance(item, dict):
-                delete_attachment_if_unreferenced(item, state.messages, message.session_id, persona_store=state.personas, run_store=state.runs)
-    avatar_id = (message.metadata or {}).get("speaker_avatar_attachment_id")
-    if avatar_id:
-        delete_attachment_if_unreferenced({"id": avatar_id, "uri": "local://attachments/" + avatar_id}, state.messages, persona_store=state.personas, run_store=state.runs)
 
 
 def _result_payload(state: RuntimeState, session_id: str, result: Any, before: set[str]) -> dict:

@@ -15,10 +15,16 @@ prompts, ids, API fields and error codes retain their original values.
 
 GET/PATCH `/api/settings/general` owns attachment size/count and text-context
 limits, title behavior, Core Memory, group transcript instruction,
-streaming-delta persistence and nested PetSettings. Derived title/group prompt
+streaming-delta persistence, show_full_processing and nested PetSettings. Derived title/group prompt
 defaults/effective values are read-only; frontend General submissions contain
 only the editable fields shown in that form. Remaining limits/prompts are
 available through this API even when the current form has no dedicated control.
+
+show_full_processing is a strict boolean, default false, labeled Show full
+processing history in General. It controls initial expansion of active reply
+processing only; recording and final answers are identical in both modes. The
+saved value immediately updates Workbench state. Terminal replies always start
+collapsed, even with this preference enabled. PATCH null/non-booleans return 422.
 
 appearance_font_* and resource_status_* are removed; reads omit them and PATCH
 rejects them. Font asset routes and startup font scanning are removed.

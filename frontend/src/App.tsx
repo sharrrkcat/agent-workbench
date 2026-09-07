@@ -28,7 +28,7 @@ export default function App() {
       socket = new WebSocket(createWebSocketUrl(currentSession!.session_id));
       const next = () => { if (!closed && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'next_event' })); };
       socket.addEventListener('open', () => { void refreshCurrent(); next(); });
-      socket.addEventListener('message', (event) => { try { const value = JSON.parse(event.data) as { type?: string }; if (value.type && value.type !== 'pong') { applyRuntimeEvent(value as never); next(); } } catch { /* ignore malformed events */ } });
+      socket.addEventListener('message', (event) => { if (closed) return; try { const value = JSON.parse(event.data) as { type?: string }; if (value.type && value.type !== 'pong') { applyRuntimeEvent(value as never); next(); } } catch { /* ignore malformed events */ } });
       socket.addEventListener('close', () => { if (!closed) reconnect = setTimeout(connect, 1500); });
     }
     connect();

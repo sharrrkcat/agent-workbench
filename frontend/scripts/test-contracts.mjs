@@ -66,6 +66,7 @@ await assert.rejects(
 
 const { GeneralSettingsForm } = (await load('../src/components/settings/GeneralPanel.tsx')).exports;
 const settings = {
+  show_full_processing: false,
   core_memory_enabled: true,
   core_memory_content: 'Remember this',
   auto_generate_session_titles: false,
@@ -91,6 +92,7 @@ descendants(form)
   .find((node) => node.type === 'button')
   .props.onClick();
 assert.deepEqual(saved, {
+  show_full_processing: false,
   core_memory_enabled: true,
   core_memory_content: 'Remember this',
   auto_generate_session_titles: false,

@@ -73,6 +73,13 @@ class EventBus:
     def list_events(self) -> List[Event]:
         return list(self._events)
 
+    def prune_history(self, session_id: str, payload: dict[str, Any]) -> None:
+        messages = set(payload["deleted_message_ids"])
+        runs = set(payload["deleted_run_ids"])
+        self._events = [event for event in self._events
+                        if event.session_id != session_id or (event.message_id not in messages and event.run_id not in runs)]
+        self.emit("history_pruned", session_id=session_id, payload=payload)
+
     def subscriber_count(self) -> int:
         return len(self._subscribers)
 

@@ -12,6 +12,7 @@ from fastapi import Request
 from ai_workbench.core.chat_runner import ChatRunner
 from ai_workbench.core.harness import HarnessSettingsStore, ToolRegistry, register_builtin_tools
 from ai_workbench.core.chat_service import ChatService
+from ai_workbench.core.conversation_history import ConversationHistory, MemoryHistoryStore
 from ai_workbench.core.personas import PersonaStore
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.knowledge_service import KnowledgeService
@@ -32,7 +33,7 @@ from ai_workbench.core.worldbook import MemoryWorldbookStore
 from ai_workbench.db.database import get_engine, get_database_url, init_db
 from ai_workbench.db.stores import (
     SqlAppSettingsStore, SqlKnowledgeStore, SqlMessageStore,
-    SqlRunEventStore, SqlRunStore, SqlSessionStore, SqlWorldbookStore,
+    SqlRunEventStore, SqlRunStore, SqlSessionStore, SqlWorldbookStore, SqlHistoryStore,
 )
 
 
@@ -46,6 +47,7 @@ class RuntimeState:
     runtime: WorkbenchRuntime
     chat_runner: ChatRunner
     chat_service: ChatService
+    history: ConversationHistory
     personas: PersonaStore
     active_runs: ActiveRunRegistry
     model_manager: ModelManager
@@ -119,10 +121,14 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         tool_registry=tool_registry, harness_settings=harness_settings, network_policy=network_policy, repo_root=repo_root,
     )
     runtime = WorkbenchRuntime(chat_runner=chat_runner, active_runs=active_runs)
+    history = ConversationHistory(
+        store=MemoryHistoryStore(sessions, messages, runs, run_events) if use_memory else SqlHistoryStore(engine),
+        sessions=sessions, messages=messages, runs=runs, events=events, chat_service=chat_service, personas=personas,
+    )
     return RuntimeState(
         sessions=sessions, messages=messages, runs=runs, run_events=run_events, events=events,
         runtime=runtime, chat_runner=chat_runner, active_runs=active_runs,
-        chat_service=chat_service, personas=personas,
+        chat_service=chat_service, history=history, personas=personas,
         model_manager=manager, model_profiles=profiles, provider_profiles=providers,
         model_settings=model_settings, app_settings=app_settings, knowledge=knowledge,
         knowledge_service=knowledge_service, worldbooks=worldbooks,

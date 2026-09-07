@@ -1,10 +1,9 @@
-import { UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import type { Message, MessagePart } from '../types/messages';
-import { resolveAttachmentUrlFromBase } from '../api/url';
-import { API_BASE_URL } from '../api/url';
+import type { Message } from '../types/messages';
+import { MessageFrame } from './messages/MessageFrame';
+import { messageText } from './messages/messageContent';
 
 import { MessageParts } from './messages/MessageParts';
 import { MessageActions } from './messages/MessageActions';
@@ -12,7 +11,7 @@ import { MessageActions } from './messages/MessageActions';
 export function MessageBubble({ message }: { message: Message }) {
   const { t } = useTranslation('personas');
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(textOf(message));
+  const [value, setValue] = useState(messageText(message));
   const [busy, setBusy] = useState(false);
   const avatarId =
     typeof message.metadata?.speaker_avatar_attachment_id === 'string'
@@ -32,24 +31,8 @@ export function MessageBubble({ message }: { message: Message }) {
   }
 
   return (
-    <article className={`message-row ${message.role}`} data-message-id={message.message_id}>
-      <div className="message-avatar">
-        {avatarId ? (
-          <img
-            src={resolveAttachmentUrlFromBase(API_BASE_URL, `local://attachments/${avatarId}`)}
-            alt={message.speaker_name || ''}
-          />
-        ) : (
-          <UserRound size={17} />
-        )}
-      </div>
-      <div className="message-stack">
-        <div className="message-meta">
-          <strong>
-            {isUser ? t('you') : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')}
-          </strong>
-          <time>{formatTime(message.created_at)}</time>
-        </div>
+    <MessageFrame role={message.role} name={isUser ? t('you') : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')}
+      avatarId={avatarId} createdAt={message.created_at} messageId={message.message_id}>
         <div className="message">
           {editing ? (
             <textarea
@@ -62,26 +45,14 @@ export function MessageBubble({ message }: { message: Message }) {
           )}
           {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
-        <MessageActions
+        {isUser ? <MessageActions
           message={message}
           editing={editing}
           busy={busy}
           onEdit={() => setEditing(true)}
           onSave={saveEdit}
           onCancel={() => setEditing(false)}
-        />
-      </div>
-    </article>
+        /> : null}
+    </MessageFrame>
   );
-}
-
-function textOf(message: Message): string {
-  return message.parts
-    .filter((part): part is Extract<MessagePart, { type: 'text' }> => part.type === 'text')
-    .map((part) => part.text)
-    .join('\n\n');
-}
-function formatTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

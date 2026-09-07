@@ -160,20 +160,6 @@ class MessageStore:
             self.session_store.touch_session(message.session_id)
         return message
 
-    def delete_messages_after(self, session_id: str, message_id: str, include_target: bool = False) -> list[MessageSchema]:
-        messages = self.list_messages(session_id)
-        index = next((i for i, item in enumerate(messages) if item.message_id == message_id), None)
-        if index is None:
-            raise KeyError(f"unknown message id: {message_id}")
-        deleted = messages[index if include_target else index + 1 :]
-        for item in deleted:
-            self._messages.pop(item.message_id, None)
-        deleted_ids = {item.message_id for item in deleted}
-        self._session_ids[session_id] = [item for item in self._session_ids.get(session_id, []) if item not in deleted_ids]
-        if deleted and self.session_store is not None:
-            self.session_store.touch_session(session_id)
-        return deleted
-
     def list_messages(self, session_id: str) -> list[MessageSchema]:
         return [self._messages[item] for item in self._session_ids.get(session_id, []) if item in self._messages]
 
@@ -277,6 +263,15 @@ class RunStore:
     def list_all_runs(self) -> list[RunSchema]:
         return sorted(self._runs.values(), key=lambda item: item.created_at)
 
+    def delete_run(self, run_id: str) -> None:
+        run = self.get_run(run_id)
+        self._runs.pop(run_id)
+        self._session_ids[run.session_id] = [item for item in self._session_ids[run.session_id] if item != run_id]
+        self._config_snapshots.pop(run_id, None)
+        self._harness_states.pop(run_id, None)
+        for step_id in self._step_ids.pop(run_id, []):
+            self._steps.pop(step_id, None)
+
     def delete_session(self, session_id: str) -> None:
         for run_id in self._session_ids.pop(session_id, []):
             self._runs.pop(run_id, None)
@@ -367,6 +362,10 @@ class RunEventStore:
 
     def list_events(self, run_id: str) -> list[RunEventSchema]:
         return [self._events[item] for item in self._run_ids.get(run_id, []) if item in self._events]
+
+    def delete_run(self, run_id: str) -> None:
+        for event_id in self._run_ids.pop(run_id, []):
+            self._events.pop(event_id, None)
 
     def delete_session(self, session_id: str) -> None:
         for event_id, event in list(self._events.items()):

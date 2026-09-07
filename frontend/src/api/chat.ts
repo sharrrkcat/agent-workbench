@@ -1,6 +1,6 @@
 import type { Persona, PersonaInput, Session, SessionPatch } from '../types/chat';
 import type { Attachment, Message } from '../types/messages';
-import type { RuntimeResponse } from '../types/runs';
+import type { HistoryPruned, RuntimeResponse } from '../types/runs';
 import { request, requestForm } from './http';
 
 export const chatApi = {
@@ -39,11 +39,9 @@ export const chatApi = {
       }),
     }),
   deleteMessage: (messageId: string) =>
-    request<{ deleted: boolean; message_id: string }>(`/api/messages/${encodeURIComponent(messageId)}`, {
+    request<HistoryPruned>(`/api/messages/${encodeURIComponent(messageId)}`, {
       method: 'DELETE',
     }),
-  retryMessage: (messageId: string) =>
-    request<RuntimeResponse>(`/api/messages/${encodeURIComponent(messageId)}/retry`, { method: 'POST' }),
   editMessage: (messageId: string, content: string, rerun = true) =>
     request<RuntimeResponse>(`/api/messages/${encodeURIComponent(messageId)}/edit`, {
       method: 'POST',

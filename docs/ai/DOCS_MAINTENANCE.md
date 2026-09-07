@@ -2,6 +2,8 @@
 
 `README.md` owns installation and user-facing behavior. The simplification plan
 owns current decisions and round status; the refactor roadmap is historical.
+`docs/CHAT_PRESENTATION_PLAN.md` tracks the independent conversation presentation
+round and its verification. AI_CONTEXT links both plans.
 `docs/contracts/` contains one concise
 owner for each boundary: models, chat/context, harness/tools, Knowledge,
 runs/streaming and settings. `docs/ai/TASK_*.md` cards

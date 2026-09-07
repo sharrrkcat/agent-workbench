@@ -42,7 +42,7 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { cursor: no
 
 .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 20px 0; border: 1px solid #713b3b; border-radius: 7px; padding: 9px 12px; color: #fecaca; background: #321d1d; font-size: 13px; }
 .error-banner button { display: inline-flex; border: 0; color: inherit; background: transparent; }
-.chat-view { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 18px; overflow: auto; padding: 24px max(20px, calc((100% - 900px) / 2)); scroll-behavior: smooth; }
+.chat-view { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; padding: 24px max(20px, calc((100% - 900px) / 2)); }
 .chat-empty { display: grid; flex: 1; place-content: center; min-height: 240px; color: #aaa; text-align: center; }
 .chat-empty h2 { margin: 0 0 8px; color: #eee; font-size: 22px; }
 .chat-empty p { margin: 0; }
@@ -200,3 +200,71 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { cursor: no
 .tool-selector[aria-pressed="true"] { border-color: #6ea5d8; }
 .part-tool summary { cursor: pointer; overflow-wrap: anywhere; }
 .part-tool .part-json { max-height: 22rem; overflow: auto; }
+
+.chat-scroll-container { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.conversation-content { display: flex; flex-direction: column; flex: 0 0 auto; gap: 26px; min-width: 0; width: 100%; padding-bottom: 8px; letter-spacing: 0; }
+.message-row { flex-shrink: 0; }
+.message, .processing-content { overflow-wrap: anywhere; }
+.message-parts, .part-markdown { min-width: 0; }
+.part-markdown table { display: block; max-width: 100%; overflow: auto; }
+.part-markdown img, .message-parts video { max-width: 100%; }
+.part-markdown pre { overflow-wrap: normal; }
+.reply-processing-header { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-height: 30px; margin: 2px 0 9px; color: #9d9d9d; font-size: 12px; }
+.reply-processing-header > .icon-button { width: 28px; height: 28px; margin-left: auto; }
+.process-disclosure { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 28px; border: 0; padding: 4px 0; background: transparent; color: inherit; text-align: left; line-height: 1.5; }
+.process-disclosure > svg { flex: 0 0 auto; }
+.process-disclosure > span { min-width: 0; overflow-wrap: anywhere; }
+.process-disclosure:hover:not(:disabled) { color: #e3e3e3; }
+.process-disclosure:focus-visible, .message-actions button:focus-visible { outline: 2px solid #8baed4; outline-offset: 3px; }
+.process-disclosure .expanded { transform: rotate(90deg); }
+.processing-toggle:disabled { cursor: default; opacity: 1; }
+.reply-run-status { color: #c8b982; }
+.status-failed .reply-run-status, .status-interrupted .reply-run-status { color: #e6a6a6; }
+.processing-timeline { display: flex; flex-direction: column; gap: 13px; border-left: 1px solid #393939; margin: 3px 0 16px 6px; padding: 3px 0 3px 16px; min-width: 0; font-size: 13px; line-height: 1.6; }
+.processing-content { display: flex; align-items: flex-start; gap: 9px; color: #c1c1c1; }
+.processing-reasoning { color: #9eaaa5; }
+.processing-reasoning > svg { flex: 0 0 14px; margin-top: 4px; }
+.processing-content-body { flex: 1; min-width: 0; }
+.processing-content .part-markdown p { margin: 0 0 8px; }
+.processing-content .part-markdown p:last-child { margin-bottom: 0; }
+.processing-content .context-action { opacity: .5; }
+.tool-group { min-width: 0; color: #aab9c6; }
+.tool-group-toggle { flex-wrap: wrap; font-size: 12px; }
+.tool-group-errors { color: #dfb598; font-size: 11px; }
+.tool-group-list { margin: 5px 0 2px 20px; padding-left: 10px; border-left: 1px solid #353535; }
+.tool-command { min-width: 0; color: #aaa; }
+.tool-command-toggle { width: 100%; font-size: 12px; }
+.command-success .tool-command-toggle > svg:nth-child(2) { color: #97cdb0; }
+.command-error .tool-command-toggle, .command-rejected .tool-command-toggle { color: #e6a6a6; }
+.command-waiting .tool-command-toggle { color: #d8bf7c; }
+.tool-command-details { min-width: 0; margin: 7px 0 15px 21px; }
+.tool-detail-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; font-size: 11px; color: #9db3c6; }
+.tool-command-details .part-json, .approval-details .part-json { max-width: 100%; max-height: 320px; margin: 5px 0 12px; overflow: auto; overflow-wrap: normal; font-size: 12px; }
+.reply-answer { margin: 6px 0; }
+.reply-error { color: #e6a6a6; font-size: 13px; line-height: 1.5; margin: 6px 0 12px; overflow-wrap: anywhere; }
+.reply-incomplete { margin: 5px 0 9px; color: #b8aa92; font-size: 12px; }
+.reply-actions { min-height: 28px; margin-top: 10px; }
+.message-actions:focus-within { opacity: 1; }
+.reply-actions > button { width: 28px; height: 28px; justify-content: center; padding: 0; }
+.context-action[aria-pressed=true] { color: #a7e4c8; background: #283b35; }
+.approval-details { min-width: 0; margin: 10px 0 14px; border-color: #58503e; background: #22211e; font-size: 13px; overflow-wrap: anywhere; }
+.approval-heading { display: flex; align-items: center; gap: 8px; color: #dec994; }
+.approval-heading > svg { flex: 0 0 auto; }
+.approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.approval-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; font-size: 12px; }
+.run-panel > .approval-details { margin: 0 10px 10px; }
+.latest-message-button { position: absolute; bottom: 14px; right: 24px; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #505050; border-radius: 50%; background: #292929; color: #ddd; box-shadow: 0 2px 8px #0005; }
+.process-spinner { animation: process-rotate 1.5s linear infinite; }
+@keyframes process-rotate { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  .conversation-content { gap: 22px; }
+  .processing-timeline { padding-left: 10px; margin-left: 3px; }
+  .tool-group-list { margin-left: 10px; padding-left: 6px; }
+  .tool-command-details { margin-left: 6px; }
+  .tool-command-details .part-json, .approval-details .part-json { max-height: 240px; }
+  .latest-message-button { right: 14px; }
+  .reply-processing-header { column-gap: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .process-spinner, .streaming-cursor { animation: none; }
+}

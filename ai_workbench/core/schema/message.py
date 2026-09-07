@@ -32,6 +32,8 @@ class MessageSchema(BaseModel):
     def validate_parts_and_role(self):
         self.parts = validate_message_parts(self.parts)
         for part in self.parts:
+            if part["type"] == "reasoning" and self.role != "assistant":
+                raise ValueError("Reasoning must be assistant data")
             if part["type"] == "tool_call" and self.role != "assistant":
                 raise ValueError("Tool calls must be assistant data")
             if part["type"] == "tool_result" and self.role != "tool":

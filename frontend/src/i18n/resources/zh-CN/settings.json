@@ -40,6 +40,7 @@
     "base64_decode": "将 Base64 解码为 UTF-8 文本。"
   },
   "generalFields": {
+    "showFullProcessing": "显示完整处理过程",
     "memoryEnabled": "启用核心记忆",
     "memoryContent": "核心记忆",
     "titlesEnabled": "生成会话标题",

@@ -57,6 +57,7 @@ class AppSettings(BaseModel):
     max_total_file_context_per_message_kb: int = Field(default=500, ge=1, le=8192)
     send_text_file_attachments_to_llm: StrictBool = True
     persist_streaming_message_deltas: StrictBool = False
+    show_full_processing: StrictBool = False
     auto_generate_session_titles: StrictBool = True
     session_title_prompt: str = DEFAULT_SESSION_TITLE_PROMPT
     session_title_max_input_chars: int = Field(default=1200, ge=100, le=10000)
@@ -106,6 +107,7 @@ class AppSettingsPatch(BaseModel):
     max_total_file_context_per_message_kb: int | None = Field(default=None, ge=1, le=8192)
     send_text_file_attachments_to_llm: StrictBool | None = None
     persist_streaming_message_deltas: StrictBool | None = None
+    show_full_processing: StrictBool | None = None
     auto_generate_session_titles: StrictBool | None = None
     session_title_prompt: str | None = None
     session_title_max_input_chars: int | None = Field(default=None, ge=100, le=10000)

@@ -42,6 +42,8 @@ class ToolOpenAI(MockOpenAI):
         else:
             chunks = []
             message = turn["message"]
+            if message.get("reasoning_content"):
+                chunks.append({"reasoning_content": message["reasoning_content"]})
             content = message.get("content")
             if content:
                 chunks.extend([{"content": content[:2]}, {"content": content[2:]}])

@@ -13,7 +13,7 @@ const message = {
   run_id: 'r',
   created_at: '2026-09-05T00:00:00Z',
 };
-const event = (type, payload) => ({ type, message_id: 'm', session_id: 's', run_id: 'r', payload });
+const event = (type, payload) => ({ type, message_id: 'm', session_id: 's', run_id: 'r', payload: type === 'message_delta' ? { part_id: 'text', part_type: 'text', ...payload } : payload });
 let state = applyMessageEvent([], event('message_started', { message }));
 state = applyMessageEvent(state, event('message_delta', { seq: 1, delta: 'hello' }));
 assert.equal(state[0].parts[0].text, 'hello');
@@ -185,8 +185,8 @@ assert.equal(sendArguments[1], '@role:literal');
 assert.equal(sendArguments[4], 'selected-history');
 
 const lateRetry = deferred();
-mockApi.retryMessage = () => lateRetry.promise;
-const retry = workbench.getState().retryMessage('old-message');
+mockApi.retryRun = () => lateRetry.promise;
+const retry = workbench.getState().retryRun('old-run');
 workbench.setState({ currentSession: beforePersona, messages: [] });
 lateRetry.resolve({ success: true, session: sourceSession, messages: [{ ...final, session_id: 'source' }] });
 await retry;

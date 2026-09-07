@@ -1,7 +1,8 @@
-import { MessageSquareQuote, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { MessageSquareQuote, Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { Message } from '../../types/messages';
+import { isContextMessage } from './messageContent';
 
 export function MessageActions({
   message,
@@ -20,14 +21,8 @@ export function MessageActions({
 }) {
   const { t } = useTranslation('personas');
   const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
-  const retryMessage = useWorkbenchStore((state) => state.retryMessage);
-  const selectContext = useWorkbenchStore((state) => state.setSourceMessageId);
-  const selectedContext = useWorkbenchStore((state) => state.sourceMessageId);
-  const acceptsSelection = useWorkbenchStore(
-    (state) => state.currentSession?.effective.context_policy.mode === 'selected_message',
-  );
   const active = useWorkbenchStore((state) =>
-    state.runs.some((run) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(run.status)),
+    state.mutatingHistory || state.runs.some((run) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(run.status)),
   );
   const streaming = message.metadata?.streaming === true;
   const isUser = message.role === 'user';
@@ -49,32 +44,7 @@ export function MessageActions({
           </button>
         </>
       ) : null}
-      {message.role === 'assistant' && !message.parts.some((part) => part.type === 'tool_call') ? (
-        <button
-          type="button"
-          disabled={streaming || active}
-          onClick={() => void retryMessage(message.message_id)}
-          title={t('retry')}
-          aria-label={t('retry')}
-        >
-          <RefreshCw size={14} />
-        </button>
-      ) : null}
-      {acceptsSelection &&
-      ['user', 'assistant', 'tool'].includes(message.role) &&
-      !message.metadata?.event_type &&
-      !message.parts.some((part) => part.type === 'error') ? (
-        <button
-          type="button"
-          disabled={streaming}
-          aria-pressed={selectedContext === message.message_id}
-          title={t('selectContext')}
-          aria-label={t('selectContext')}
-          onClick={() => selectContext(selectedContext === message.message_id ? null : message.message_id)}
-        >
-          <MessageSquareQuote size={14} />
-        </button>
-      ) : null}
+      <MessageContextAction message={message} />
       <button
         type="button"
         disabled={streaming || active}
@@ -88,4 +58,15 @@ export function MessageActions({
       </button>
     </div>
   );
+}
+
+export function MessageContextAction({ message }: { message: Message }) {
+  const { t } = useTranslation('personas');
+  const selectContext = useWorkbenchStore((state) => state.setSourceMessageId);
+  const selected = useWorkbenchStore((state) => state.sourceMessageId);
+  const acceptsSelection = useWorkbenchStore((state) => state.currentSession?.effective.context_policy.mode === 'selected_message');
+  if (!acceptsSelection || !isContextMessage(message)) return null;
+  return <button type="button" className="icon-button context-action" aria-pressed={selected === message.message_id}
+    title={t('selectContext')} aria-label={t('selectContext')}
+    onClick={() => selectContext(selected === message.message_id ? null : message.message_id)}><MessageSquareQuote size={14} /></button>;
 }

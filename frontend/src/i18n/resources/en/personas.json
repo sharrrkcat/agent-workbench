@@ -79,7 +79,7 @@
   "editMessage": "Edit message",
   "retry": "Retry",
   "deleteMessage": "Delete message",
-  "deleteMessageConfirm": "Delete this message?",
+  "deleteMessageConfirm": "Delete this message and its replies?",
   "you": "You",
   "assistant": "Assistant",
   "system": "System",

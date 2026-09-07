@@ -205,17 +205,20 @@ class ToolCall(StrictModel):
 class ChatMessage(StrictModel):
     role: Literal["system", "developer", "user", "assistant", "tool"]
     content: str | list[TextPart | ImagePart] | None = None
+    reasoning_content: str | None = None
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
 
     @model_validator(mode="after")
     def valid_role_fields(self):
+        if self.reasoning_content is not None and self.role != "assistant":
+            raise ValueError("Only assistant messages may contain reasoning_content")
         if self.tool_calls and self.role != "assistant":
             raise ValueError("Only assistant messages may contain tool_calls")
         if (self.role == "tool") != bool(self.tool_call_id):
             raise ValueError("tool messages require tool_call_id; other roles must omit it")
-        if self.content is None and not self.tool_calls:
+        if self.content is None and not self.tool_calls and self.reasoning_content is None:
             raise ValueError("Message requires content or tool_calls")
         if isinstance(self.content, list) and (not self.content or any(isinstance(p, ImagePart) for p in self.content) and self.role != "user"):
             raise ValueError("Image content is supported only in user messages")
@@ -348,6 +351,7 @@ class ToolDelta(StrictModel):
 
 class ChatDelta(StrictModel):
     content: str | None = None
+    reasoning_content: str | None = None
     role: Literal["assistant"] | None = None
     tool_calls: list[ToolDelta] | None = None
 

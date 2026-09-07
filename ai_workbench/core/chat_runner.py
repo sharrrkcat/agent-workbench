@@ -8,13 +8,13 @@ from typing import Any
 from uuid import uuid4
 from contextlib import aclosing
 
+from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
 from ai_workbench.core.context import ContextBuilder, LLMContextError
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import ChatRequest
-from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_text, is_text_attachment
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
@@ -107,6 +107,7 @@ class ChatRunner:
         if current_task is not None and self.active_runs is not None:
             self.active_runs.register(run.run_id, current_task)
         active_step_id: str | None = None
+        draft: AssistantDraft | None = None
         context_started = time.monotonic()
         try:
             context_step = self.runs.create_step(
@@ -164,32 +165,30 @@ class ChatRunner:
             streamed = profile.capabilities.streaming
             request = ChatRequest(model=profile.alias, messages=context, stream=streamed, **config.generation.model_dump(exclude_none=True))
             self.model_manager.validate_chat(profile, request)
-            message_id = str(uuid4())
-            pending = MessageSchema(message_id=message_id, session_id=session_id, role="assistant",
-                                    speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
-                                    parent_message_id=user.message_id, run_id=run.run_id, parts=[],
-                                    metadata={"streaming": True, "speaker_avatar_attachment_id": config.avatar_attachment_id})
-            self.events.emit("message_started", session_id=session_id, run_id=run.run_id,
-                             message_id=message_id, payload={"message": pending.model_dump(mode="json"), "seq": 0})
-            output = ""
+            draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session_id,
+                                   run_id=run.run_id, message_id=str(uuid4()), config=config,
+                                   parent_message_id=user.message_id, streamed=streamed)
             if streamed:
-                seq = 0
                 async with aclosing(self.model_manager.chat_stream(profile.id, request)) as stream:
                     async for chunk in stream:
                         if self._cancelled(run.run_id):
-                            return self._cancel_result(run.run_id, session_id)
+                            raise asyncio.CancelledError()
+                        draft.append(chunk.delta.content, chunk.delta.reasoning_content)
+                        if chunk.finish_reason == "content_filter":
+                            raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
                         if chunk.delta.tool_calls:
                             raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat cannot execute tool calls.", 502)
-                        if chunk.delta.content:
-                            output += chunk.delta.content
-                            seq += 1
-                            self.events.emit("message_delta", session_id=session_id, run_id=run.run_id,
-                                             message_id=message_id, payload={"delta": chunk.delta.content, "seq": seq})
             else:
                 response = await self.model_manager.chat(profile.id, request)
-                if response.message.tool_calls or not isinstance(response.message.content, str):
+                if response.message.content is not None and not isinstance(response.message.content, str):
                     raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
-                output = response.message.content
+                draft.append(response.message.content, response.message.reasoning_content)
+                if response.finish_reason == "content_filter":
+                    raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
+                if response.message.tool_calls:
+                    raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
+            if self._cancelled(run.run_id):
+                raise asyncio.CancelledError()
             self.runs.update_step(
                 model_step.step_id,
                 status=RunStepStatus.COMPLETED,
@@ -206,32 +205,12 @@ class ChatRunner:
                 status=RunStepStatus.RUNNING,
             )
             active_step_id = save_step.step_id
-            assistant = self.messages.add_message(
-                session_id=session_id,
-                role="assistant",
-                content=output,
-                message_id=message_id,
-                run_id=run.run_id,
-                parent_message_id=user.message_id,
-                speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
-                metadata={
-                    "speaker_avatar_attachment_id": config.avatar_attachment_id,
-                    "model_resolution": resolution,
-                    "streamed": streamed,
-                },
-            )
+            draft.persist(metadata={"model_resolution": resolution})
             self.runs.update_step(save_step.step_id, status=RunStepStatus.COMPLETED, message="Response saved")
             self._emit_step(run.run_id, save_step.step_id)
             active_step_id = None
             self.runs.update_status(run.run_id, RunStatus.DONE, current_step="done")
             final_run = self.runs.get_run(run.run_id)
-            self.events.emit(
-                "message_completed",
-                session_id=session_id,
-                run_id=run.run_id,
-                message_id=assistant.message_id,
-                payload={"message": assistant.model_dump(mode="json")},
-            )
             self.events.emit(
                 "run_completed",
                 session_id=session_id,
@@ -239,15 +218,24 @@ class ChatRunner:
                 payload={"run": final_run.model_dump(mode="json")},
             )
             await self.maybe_title(session_id, raw_text)
-            return RunResult(success=True, run_id=run.run_id, data=output)
+            return RunResult(success=True, run_id=run.run_id, data=draft.text)
         except (ModelError, ChatError, LLMContextError) as exc:
+            if draft is not None:
+                draft.persist(incomplete=True)
             self._fail_step(active_step_id, exc.code, exc.message)
             return self._fail(run.run_id, session_id, exc.code, exc.message)
         except asyncio.CancelledError:
+            requested = self._cancelled(run.run_id)
+            if draft is not None:
+                draft.persist(incomplete=True)
             self._fail_step(active_step_id, "RUN_CANCELLED", "Run was cancelled.")
-            self._cancel_result(run.run_id, session_id)
+            result = self._cancel_result(run.run_id, session_id)
+            if requested:
+                return result
             raise
         except Exception as exc:
+            if draft is not None:
+                draft.persist(incomplete=True)
             message = str(exc) or "Chat generation failed."
             self._fail_step(active_step_id, "LLM_GENERATION_FAILED", message)
             return self._fail(run.run_id, session_id, "LLM_GENERATION_FAILED", message)

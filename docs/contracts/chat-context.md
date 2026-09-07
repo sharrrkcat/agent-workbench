@@ -56,7 +56,8 @@ Worldbook receive resolved ids explicitly.
 | `/api/sessions/{id}/personas` | Ordered members/current speaker |
 | `/api/sessions/{id}/knowledge-bases`, `/worldbooks` | Session additions, Persona ids and effective ids |
 | `/api/sessions/{id}/messages` | History and new input |
-| `/api/messages/{id}`, `/retry`, `/edit` | Message deletion, retry and user edit |
+| `/api/messages/{id}`, `/edit` | User-message deletion and edit |
+| `/api/runs/{id}`, `/{id}/retry` | Whole-reply deletion and chat retry |
 
 References are validated before persistence. Unknown/removed fields return
 422; missing or conflicting references return structured 404/409 errors.
@@ -74,8 +75,16 @@ Each run privately stores the resolved chat configuration in
 config_snapshot_json. Its prompt/generation/context remain stable through
 Persona edits, speaker switches and approval waits. Public metadata exposes
 only ids, names, model selection, context mode, limits and binding ids.
-Retry selects the original assistant speaker and resolves a new run's
-configuration; tool-call messages cannot be retried as assistant answers.
+Retry selects the original run's speaker and resolves a new configuration. It
+keeps the input user message and deletes the selected run plus all later
+conversation messages/runs. Tool runs cannot be retried as model answers.
+DELETE /api/runs/{id} deletes only that reply's messages, steps, events and
+private state, preserving its user input. User deletion also removes its
+associated replies; user edit removes later conversation and associated runs.
+History mutations require an idle session. SQLite pruning and user text edits
+commit in one transaction. Responses and history_pruned events return
+deleted_message_ids/deleted_run_ids. Message-level retry is removed; individual
+assistant/tool deletion is rejected. Referenced attachment cleanup follows commit.
 
 ContextBuilder supports single_assistant and group_transcript projection, with
 none/current_message/recent_messages/session/selected_message policies, message
@@ -107,7 +116,7 @@ and current-image handling follow the attachment rules below.
 
 Messages use content_version=2 and validated parts. The strict message schema
 owns role, speaker identity, run/parent references and compact metadata.
-Supported parts are text (plain/markdown), json, file (inline_text or
+Supported parts are text (plain/markdown), reasoning, json, file (inline_text or
 attachment_ref), image, audio, video, media_group image galleries, notice,
 error, tool_call and tool_result. Unknown types are rejected; there are no
 forms, actions, command buttons or diff parts.
@@ -135,6 +144,23 @@ truncation flag. Calls in one assistant message have distinct part ids.
 Live loops use native assistant/tool pairs. Historical tool parts are quoted
 as ordinary/group context data, allowing selected or truncated history without
 orphan protocol calls. They never become system/developer instructions.
+
+Reasoning is assistant-only strict {id,type:reasoning,text} data. The shared
+assistant output normalizer accepts reasoning_content and extracts model
+<think> markers incrementally, including split tags. Markdown inline/fenced/
+indented code and escaped markers remain literal. Only internal chat extracts
+markers; /v1 preserves model content. Reasoning never enters general historical
+context. The live tool transcript retains upstream content and structured
+reasoning where the provider needs it for continuation. Incomplete messages
+are not eligible historical context or selected-context sources.
+
+The frontend renders one reply per run with one historical Persona identity,
+processing timeline, final answer and action bar. Only the current model round's
+ordinary text appears as a provisional answer; tool-producing rounds move into
+processing. Adjacent tools share a collapsed command group, with individually
+collapsed arguments/results. Tool records have no separate avatars. Copy uses
+answer text only. Context selection uses real message ids, including tool details.
+Direct tool runs use this timeline without an invented model answer.
 
 The frontend renders parts without executing or routing text. Markdown remains
 content; edit/retry uses original text. MessageActions owns controls and

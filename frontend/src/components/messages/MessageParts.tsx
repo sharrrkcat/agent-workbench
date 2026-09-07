@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { MessagePart } from '../../types/messages';
 import { API_BASE_URL, resolveAttachmentUrlFromBase } from '../../api/url';
+import { ToolResultBody } from './ToolResultBody';
 
 export function MessageParts({ parts }: { parts: MessagePart[] }) {
   return (
@@ -16,8 +17,8 @@ export function MessageParts({ parts }: { parts: MessagePart[] }) {
 
 function Part({ part }: { part: MessagePart }) {
   const { t } = useTranslation('runs');
-  if (part.type === 'text')
-    return part.format === 'plain' ? (
+  if (part.type === 'text' || part.type === 'reasoning')
+    return part.type === 'text' && part.format === 'plain' ? (
       <p className="part-text">{part.text}</p>
     ) : (
       <div className="part-markdown">
@@ -40,14 +41,7 @@ function Part({ part }: { part: MessagePart }) {
         <summary>
           {part.tool_name} · {t(`toolStatus.${part.status}`)}
         </summary>
-        {part.error_message ? (
-          <p className="part-error">
-            {part.error_code ? `${part.error_code}: ` : ''}
-            {part.error_message}
-          </p>
-        ) : null}
-        {part.data !== undefined ? <pre className="part-json">{JSON.stringify(part.data, null, 2)}</pre> : null}
-        {part.truncated ? <small>{t('outputTruncated')}</small> : null}
+        <ToolResultBody part={part} />
       </details>
     );
   if (part.type === 'file')

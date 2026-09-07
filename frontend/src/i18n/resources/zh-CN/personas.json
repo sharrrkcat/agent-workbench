@@ -79,7 +79,7 @@
   "editMessage": "编辑消息",
   "retry": "重试",
   "deleteMessage": "删除消息",
-  "deleteMessageConfirm": "删除此消息？",
+  "deleteMessageConfirm": "删除此消息及其关联回复？",
   "you": "你",
   "assistant": "助手",
   "system": "系统",

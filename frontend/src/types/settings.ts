@@ -14,6 +14,7 @@ export type GeneralSettings = {
   max_total_file_context_per_message_kb: number;
   send_text_file_attachments_to_llm: boolean;
   persist_streaming_message_deltas: boolean;
+  show_full_processing: boolean;
   auto_generate_session_titles: boolean;
   session_title_prompt: string;
   session_title_max_input_chars: number;

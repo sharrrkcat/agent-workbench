@@ -120,20 +120,20 @@ class WorkbenchRuntime:
             raise ChatError(exc.code, exc.message, 404 if exc.code == "TOOL_NOT_FOUND" else 400) from exc
         run = self.chat_runner.runs.create_run(
             kind="tool", persona_id=config.persona_id, session_id=session.session_id,
-            metadata={"tool_name": name, "direct": True, "harness": True},
+            metadata={"tool_name": name, "direct": True, "harness": True, "configuration": config.public_summary()},
             config_snapshot=config.model_dump(mode="json"),
         )
         return await self.chat_runner.harness_loop.direct(
             session=session, config=config, run=run, tool_name=name, arguments=arguments)
 
-    async def retry_assistant_message(self, session: Any, message: Any, source_user_message: Any) -> RunResult:
+    async def retry_chat_run(self, session: Any, run: Any, source_user_message: Any) -> RunResult:
         return await self.chat_runner.run(
             session_id=session.session_id,
             text=_text(source_user_message),
             attachments=(source_user_message.metadata or {}).get("attachments") or [],
             input_message_id=source_user_message.message_id,
-            persona_id=message.speaker_id,
-            source_message_id=self.chat_runner.runs.get_run(message.run_id).metadata.get("context_source_message_id") if message.run_id else None,
+            persona_id=run.persona_id,
+            source_message_id=run.metadata.get("context_source_message_id"),
         )
 
     async def rerun_user_message(self, session: Any, message: Any) -> RunResult:

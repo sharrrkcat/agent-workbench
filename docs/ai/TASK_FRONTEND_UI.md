@@ -18,7 +18,12 @@ settings/models splits profile/connection lists and editors, external service,
 field controls and feedback; RuntimesPanel owns the runtime view. Shared fields
 must not import SettingsPage. Existing navigation and Models tab drafts persist.
 
-MessageBubble composes messages/MessageActions and MessageParts. Pet has no UI:
+ChatView projects messages/runs into one RunReply per run. MessageFrame shares
+identity layout with user MessageBubble; MessageParts renders content. Processing
+has two-level tool disclosure, preserved manual toggles, terminal collapse and
+visible approval controls. General show_full_processing defaults false. Reply
+actions delete/retry whole runs; context selection retains real message ids.
+history_pruned tombstones and session epochs prevent stale restoration. Pet has no UI:
 usePetPosition retains generic dragging and petState retains current-session
 run/step/progress selection. Neither depends on a sprite format or package list.
 Keep tool output as data and active approval/cancellation visibly actionable.
@@ -31,3 +36,6 @@ ids are not translated. Run `npm test` and `npm run build` in frontend. Tests
 load actual TypeScript module graphs through scripts/module-loader.mjs and
 mock API/component boundaries; do not match source formatting as behavior.
 Use desktop/mobile browser checks for layout or workflow changes.
+`npm run test:browser` uses Playwright and the isolated presentation fixture server;
+build first. The conversation implementation/verification is tracked in
+[conversation presentation](../CHAT_PRESENTATION_PLAN.md).

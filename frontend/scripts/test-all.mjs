@@ -9,6 +9,7 @@ for (const script of [
   'test-pet-foundation',
   'test-model-stream',
   'test-harness',
+  'test-chat-presentation',
   'test-knowledge-citations',
   'test-url-helpers',
 ]) {

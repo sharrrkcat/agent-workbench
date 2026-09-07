@@ -22,5 +22,9 @@ an empty tool list disables every tool. Pending approvals retain the
 original chat and search-service snapshots. Pet position PATCH is
 deep-merged through AppSettingsStore.
 
+General show_full_processing is a strict boolean defaulting false. Saving
+updates the shared Workbench settings immediately; it controls reply-history
+expansion only. Recording and final-answer content do not depend on the switch.
+
 Run affected schema/API/store tests, all backend tests and frontend tests/build.
 Update both locales, the owning contract and documentation checks.

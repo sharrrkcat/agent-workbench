@@ -4,6 +4,7 @@ import { settingsApi } from '../../api/settings';
 import type { GeneralSettings, GeneralSettingsPatch } from '../../types/settings';
 import { Loading, NumberField, Panel, TextArea, Toggle } from './fields';
 import type { SettingsTask } from './useSettingsFeedback';
+import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 
 export function GeneralPanel({ save }: { save: SettingsTask }) {
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
@@ -33,7 +34,11 @@ export function GeneralPanel({ save }: { save: SettingsTask }) {
     <GeneralSettingsForm
       settings={settings}
       onChange={setSettings}
-      onSave={(patch) => save(() => settingsApi.updateGeneralSettings(patch))}
+      onSave={(patch) => save(async () => {
+        const saved = await settingsApi.updateGeneralSettings(patch);
+        useWorkbenchStore.getState().setSettings(saved);
+        setSettings(saved);
+      })}
     />
   );
 }
@@ -53,6 +58,11 @@ export function GeneralSettingsForm({
   }
   return (
     <Panel title={t('general')}>
+      <Toggle
+        label={t('generalFields.showFullProcessing')}
+        checked={settings.show_full_processing}
+        onChange={(value) => patch('show_full_processing', value)}
+      />
       <Toggle
         label={t('generalFields.memoryEnabled')}
         checked={settings.core_memory_enabled}
@@ -83,6 +93,7 @@ export function GeneralSettingsForm({
         type="button"
         onClick={() =>
           onSave({
+            show_full_processing: settings.show_full_processing,
             core_memory_enabled: settings.core_memory_enabled,
             core_memory_content: settings.core_memory_content,
             auto_generate_session_titles: settings.auto_generate_session_titles,

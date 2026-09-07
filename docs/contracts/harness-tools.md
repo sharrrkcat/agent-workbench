@@ -112,9 +112,12 @@ a JSON object. There is no key=value parser. Unknown slash prefixes remain
 ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
 Tools settings show catalog, risk, JSON arguments, results and approval controls.
-RunPanel shows the current call's parameters and supports approval, rejection
-and cancellation, including while waiting. Tool call messages cannot be retried
-as assistant answers. Historical tool parts are quoted data in ordinary/group
+The chat reply shows the current call's parameters and supports approval, rejection
+and cancellation outside collapsed processing history. Tools settings retain
+RunPanel diagnostics and share the same approval controls. Adjacent calls render
+as one collapsed command group; command rows expand arguments and corresponding
+results without separate message avatars. Tool calls are retried only as part of
+their whole chat run, never as standalone assistant answers. Historical tool parts are quoted data in ordinary/group
 context (including selected-message context); live loop results use native tool
 roles. Tool data is never promoted to a system/developer instruction.
 

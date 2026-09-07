@@ -139,23 +139,6 @@ class SqlMessageStore:
             db.add(row); db.commit(); db.refresh(row)
             return _message(row)
 
-    def delete_message(self, message_id: str) -> MessageSchema:
-        with DbSession(self.engine) as db:
-            row = db.get(MessageRecord, message_id)
-            if row is None: raise KeyError(f"unknown message id: {message_id}")
-            result = _message(row); db.delete(row); db.commit(); return result
-
-    def delete_messages_after(self, session_id: str, message_id: str, include_target: bool = False) -> list[MessageSchema]:
-        rows = self.list_messages(session_id); index = next((i for i, item in enumerate(rows) if item.message_id == message_id), None)
-        if index is None: raise KeyError(f"unknown message id: {message_id}")
-        deleted = rows[index if include_target else index + 1:]
-        with DbSession(self.engine) as db:
-            for item in deleted:
-                row = db.get(MessageRecord, item.message_id)
-                if row is not None: db.delete(row)
-            db.commit()
-        return deleted
-
     def list_messages(self, session_id: str) -> list[MessageSchema]:
         with DbSession(self.engine) as db: return [_message(row) for row in db.exec(select(MessageRecord).where(MessageRecord.session_id == session_id).order_by(MessageRecord.created_at)).all()]
     def list_all_messages(self) -> list[MessageSchema]:
@@ -164,6 +147,36 @@ class SqlMessageStore:
         with DbSession(self.engine) as db: db.exec(delete(MessageRecord).where(MessageRecord.session_id == session_id)); db.commit()
     def find_latest_assistant_message(self, session_id: str) -> MessageSchema | None:
         return next((item for item in reversed(self.list_messages(session_id)) if item.role == "assistant"), None)
+
+
+class SqlHistoryStore:
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    def prune(self, session_id, change, updated: MessageSchema | None = None) -> None:
+        with DbSession(self.engine) as db:
+            session = db.get(SessionRecord, session_id)
+            if session is None:
+                raise KeyError(session_id)
+            for model, ids in ((MessageRecord, change.deleted_message_ids), (RunRecord, change.deleted_run_ids)):
+                for record_id in ids:
+                    row = db.get(model, record_id)
+                    if row is None or row.session_id != session_id:
+                        raise ValueError("History record belongs to another session or no longer exists")
+                    db.delete(row)
+            if change.deleted_run_ids:
+                db.exec(delete(RunStepRecord).where(RunStepRecord.run_id.in_(change.deleted_run_ids)))
+                db.exec(delete(RunEventRecord).where(RunEventRecord.run_id.in_(change.deleted_run_ids)))
+            if updated is not None:
+                updated = MessageSchema.model_validate(updated.model_dump())
+                row = db.get(MessageRecord, updated.message_id)
+                if row is None or row.session_id != session_id:
+                    raise ValueError("Edited message belongs to another session or no longer exists")
+                row.parts_json = _dump(updated.parts)
+                db.add(row)
+            session.updated_at = utc_now()
+            db.add(session)
+            db.commit()
 
 
 class SqlRunStore:

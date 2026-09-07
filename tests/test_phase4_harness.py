@@ -310,8 +310,7 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
                     assert (await client.post(f"/api/tools/approvals/{run.run_id}", json={"decision": "approve"})).status_code == 409
                 assert (await client.post("/api/tools/blocking/call", json={"session_id": session["session_id"]})).status_code == 409
                 ok(await client.post(f"/api/runs/{run.run_id}/cancel"))
-                with pytest.raises(asyncio.CancelledError):
-                    await asyncio.wait_for(task, 3)
+                assert ok(await asyncio.wait_for(task, 3))["run"]["status"] == "CANCELLED"
                 assert state.runs.get_run(run.run_id).status == RunStatus.CANCELLED
                 assert state.runs.get_harness_state(run.run_id) == {}
                 assert state.active_runs.active_count() == 0 and calls == ["handler"]
@@ -458,8 +457,7 @@ def test_harness_stream_is_visible_before_completion_and_cancels_model(tmp_path)
                 assert delta.payload["delta"] == "live"
                 assert not any(m.message_id == delta.message_id for m in state.messages.list_messages(session["session_id"]))
                 ok(await client.post(f"/api/runs/{delta.run_id}/cancel"))
-                with pytest.raises(asyncio.CancelledError):
-                    await asyncio.wait_for(task, 3)
+                assert ok(await asyncio.wait_for(task, 3))["run"]["status"] == "CANCELLED"
                 assert state.model_manager.status(profile["id"]).active == 0
                 assert state.runs.get_run(delta.run_id).status == RunStatus.CANCELLED
             finally:

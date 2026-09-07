@@ -104,6 +104,19 @@ a model summary or title. Multi-parameter tools require a JSON object, such as
 prefixes are ordinary text. Tool results are rendered as data.
 See [harness/tools](docs/contracts/harness-tools.md) for limits and APIs.
 
+Each run appears as one reply with a collapsed processing history and its final
+answer. Expand its time row to inspect reasoning and grouped commands, then expand
+a command for arguments/results. General's **Show full processing history** opens
+active processing by default; completed processing is collapsed in either mode.
+Approvals remain visible. Cancellation/failure preserves incomplete output.
+Delete/retry applies to the whole reply; retry replaces its later conversation.
+The [presentation plan](docs/CHAT_PRESENTATION_PLAN.md) records this independent update.
+
+Conversation browser checks run with `npm run test:browser` in frontend after a
+build. Install Chromium once with `npx playwright install chromium`. Tests start
+and stop an isolated fixture server on port 18767; WORKBENCH_BROWSER_PORT can
+select a free port. Screenshots and failure traces are under frontend/test-results.
+
 ## External API
 
 In **Models > External service**, configure a key and enable the service. Mark

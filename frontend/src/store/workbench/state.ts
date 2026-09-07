@@ -14,7 +14,13 @@ export type WorkbenchState = {
   stepsByRunId: Record<string, RunStep[]>;
   settings: GeneralSettings | null;
   messageVersion: number;
+  runVersion: number;
   sessionVersion: number;
+  sessionEpoch: number;
+  settingsVersion: number;
+  deletedMessageIds: string[];
+  deletedRunIds: string[];
+  mutatingHistory: boolean;
   sourceMessageId: string | null;
   composerDraftText: string;
   loading: boolean;
@@ -30,7 +36,8 @@ export type WorkbenchState = {
   updateSession: (patch: SessionPatch) => Promise<void>;
   sendMessage: (content: string, attachments?: Record<string, unknown>[]) => Promise<RuntimeEvent | undefined>;
   deleteMessage: (messageId: string) => Promise<void>;
-  retryMessage: (messageId: string) => Promise<void>;
+  deleteRun: (runId: string) => Promise<void>;
+  retryRun: (runId: string) => Promise<void>;
   editMessage: (messageId: string, content: string, rerun?: boolean) => Promise<void>;
   cancelRun: (runId: string) => Promise<void>;
   resolveApproval: (runId: string, decision: 'approve' | 'reject') => Promise<void>;
@@ -39,6 +46,7 @@ export type WorkbenchState = {
   setComposerDraftText: (text: string) => void;
   setSourceMessageId: (id: string | null) => void;
   setError: (error: string | null) => void;
+  setSettings: (settings: GeneralSettings) => void;
 };
 
 export type WorkbenchActions<K extends keyof WorkbenchState> = StateCreator<

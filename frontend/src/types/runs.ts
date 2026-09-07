@@ -68,7 +68,9 @@ export type RunEvent = {
   created_at: string;
 };
 
-export type RuntimeResponse = {
+export type HistoryPruned = { deleted_message_ids: string[]; deleted_run_ids: string[] };
+
+export type RuntimeResponse = Partial<HistoryPruned> & {
   success: boolean;
   data?: unknown;
   error?: string | null;

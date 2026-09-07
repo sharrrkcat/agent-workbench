@@ -191,6 +191,12 @@ Tool definitions/calls/results are forwarded as data and never executed by
 Non-streaming tool-only messages have content=null. SSE framing, error timing
 and disconnect cleanup are owned by [runs/streaming](runs-streaming.md#external-sse).
 
+Assistant messages and streaming deltas accept optional string reasoning_content
+through the shared OpenAI-compatible adapter. /v1 forwards that field and preserves
+literal content, without interpreting <think> markers. Internal ChatRunner/Harness
+normalize reasoning separately for the conversation view. Structured reasoning
+may accompany native tool continuations; other message roles reject the field.
+
 Embeddings accept a string or nonempty string array. encoding_format is float
 or base64 (little-endian float32), with optional dimensions. The manager applies
 the profile's document instruction, batching, dimension validation and
