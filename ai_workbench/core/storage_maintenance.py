@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ai_workbench.core.attachments import attachments_root
+from ai_workbench.core.attachments import attachments_root, referenced_attachment_filenames, delete_attachment_if_unreferenced
 from ai_workbench.core.time import isoformat_utc, utc_now
 from ai_workbench.db.database import get_database_url
 from ai_workbench.db.migrations import HEAD_REVISION
@@ -19,7 +19,7 @@ def sqlite_database_path(database_url: str | None = None) -> Path | None:
     return Path(value).resolve()
 
 
-def storage_stats(message_store: Any, database_url: str | None = None) -> dict[str, Any]:
+def storage_stats(message_store: Any, database_url: str | None = None, *, persona_store=None, run_store=None, knowledge_store=None) -> dict[str, Any]:
     warnings: list[str] = []
     db_path = sqlite_database_path(database_url)
     db_size = 0
@@ -32,7 +32,7 @@ def storage_stats(message_store: Any, database_url: str | None = None) -> dict[s
             warnings.append(f"database size unavailable: {exc}")
 
     try:
-        scan = scan_orphan_attachments(message_store)
+        scan = scan_orphan_attachments(message_store, persona_store=persona_store, run_store=run_store, knowledge_store=knowledge_store)
         attachment_count = scan["attachment_count"]
         attachment_size = scan["attachment_total_size_bytes"]
         orphan_count = scan["orphan_count"]
@@ -65,10 +65,10 @@ def storage_stats(message_store: Any, database_url: str | None = None) -> dict[s
     return payload
 
 
-def scan_orphan_attachments(message_store: Any) -> dict[str, Any]:
+def scan_orphan_attachments(message_store: Any, *, persona_store=None, run_store=None, knowledge_store=None) -> dict[str, Any]:
     root = attachments_root()
     files = _attachment_files(root)
-    referenced = referenced_attachment_filenames(message_store)
+    referenced = referenced_attachment_filenames(message_store, persona_store=persona_store, run_store=run_store, knowledge_store=knowledge_store)
     orphans = []
     total_size = 0
     for path in files:
@@ -86,9 +86,9 @@ def scan_orphan_attachments(message_store: Any) -> dict[str, Any]:
     }
 
 
-def cleanup_orphan_attachments(message_store: Any) -> dict[str, Any]:
+def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, run_store=None, knowledge_store=None) -> dict[str, Any]:
     root = attachments_root().resolve()
-    scan = scan_orphan_attachments(message_store)
+    scan = scan_orphan_attachments(message_store, persona_store=persona_store, run_store=run_store, knowledge_store=knowledge_store)
     deleted_count = 0
     deleted_size = 0
     errors: list[dict[str, str]] = []
@@ -103,31 +103,14 @@ def cleanup_orphan_attachments(message_store: Any) -> dict[str, Any]:
             if not path.is_file():
                 continue
             size = path.stat().st_size
-            path.unlink()
-            deleted_count += 1
-            deleted_size += size
+            removed = delete_attachment_if_unreferenced({"uri": "local://attachments/" + path.name}, message_store,
+                persona_store=persona_store, run_store=run_store, knowledge_store=knowledge_store)
+            if removed:
+                deleted_count += 1
+                deleted_size += size
         except OSError as exc:
             errors.append({"path": str(path), "error": str(exc)})
     return {"deleted_count": deleted_count, "deleted_size_bytes": deleted_size, "errors": errors}
-
-
-def referenced_attachment_filenames(message_store: Any) -> set[str]:
-    try:
-        messages = message_store.list_all_messages()
-    except Exception:
-        return set()
-    referenced: set[str] = set()
-    for message in messages:
-        attachments = (getattr(message, "metadata", {}) or {}).get("attachments")
-        if not isinstance(attachments, list):
-            continue
-        for attachment in attachments:
-            if not isinstance(attachment, dict):
-                continue
-            uri = attachment.get("uri")
-            if isinstance(uri, str) and uri.startswith("local://attachments/"):
-                referenced.add(uri.removeprefix("local://attachments/"))
-    return referenced
 
 
 def _attachment_files(root: Path) -> list[Path]:

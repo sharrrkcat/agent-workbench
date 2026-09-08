@@ -167,6 +167,8 @@ def reorder_entries(worldbook_id: str, payload: EntryReorderRequest, state: Runt
         return {"worldbook_id": worldbook_id, "entries": [entry.model_dump() for entry in entries]}
     except ValueError:
         raise_error(422, "WORLDBOOK_REORDER_IDS_MISMATCH", "Reorder ids must exactly match entries in this worldbook.")
+    except KeyError:
+        raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
 @router.get("/sessions/{session_id}/worldbooks")

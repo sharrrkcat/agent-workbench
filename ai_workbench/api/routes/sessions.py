@@ -259,10 +259,10 @@ def _cleanup_message_attachments(state: RuntimeState, message) -> None:
     if isinstance(attachments, list):
         for item in attachments:
             if isinstance(item, dict):
-                delete_attachment_if_unreferenced(item, state.messages, message.session_id, persona_store=state.personas, run_store=state.runs)
+                delete_attachment_if_unreferenced(item, state.messages, message.session_id, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
     avatar_id = (message.metadata or {}).get("speaker_avatar_attachment_id")
     if avatar_id:
-        delete_attachment_if_unreferenced({"id": avatar_id, "uri": "local://attachments/" + avatar_id}, state.messages, persona_store=state.personas, run_store=state.runs)
+        delete_attachment_if_unreferenced({"id": avatar_id, "uri": "local://attachments/" + avatar_id}, state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
 
 
 def _first_string(source: dict | None, keys: tuple[str, ...]) -> str | None:

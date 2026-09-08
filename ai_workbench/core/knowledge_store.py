@@ -35,6 +35,18 @@ KnowledgeSourceStatus = Literal["pending", "indexing", "indexed", "needs_reindex
 KnowledgeSourceType = Literal["pasted_text", "attachment_text", "file"]
 
 
+def base_index_status(statuses: list[str]) -> KnowledgeIndexStatus:
+    if not statuses:
+        return "empty"
+    if "needs_reindex" in statuses:
+        return "needs_reindex"
+    if "failed" in statuses:
+        return "failed"
+    if any(status != "indexed" for status in statuses):
+        return "indexing"
+    return "ready"
+
+
 class KnowledgeBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -198,12 +210,22 @@ class MemoryKnowledgeStore(KnowledgeStore):
         if source_id not in self._sources: raise KeyError(f"unknown knowledge source: {source_id}")
         return self._sources[source_id]
     def upsert_indexed_source(self, *, source: KnowledgeSource, chunks: list[Any], vectors: list[list[float]], embedding_model_profile: ModelProfile, embedding_dimension: int, search_texts: list[str]) -> KnowledgeSourceIndexResult:
-        self.update_knowledge_base(source.knowledge_base_id, {"index_status": "ready", "index_error": None})
-        indexed=source.model_copy(update={"status":"indexed","chunks":len(chunks),"indexed_at":utc_now(),"error":None}); self._sources[source.id]=indexed; self._chunks[source.id]=list(chunks); self._vectors[source.id]=list(vectors); self._search_texts[source.id]=list(search_texts); return KnowledgeSourceIndexResult(source_id=source.id,status="indexed",chunks=len(chunks),embedding_model_profile_id=embedding_model_profile.id,embedding_dimension=embedding_dimension,indexed_at=indexed.indexed_at)
+        indexed=source.model_copy(update={"status":"indexed","chunks":len(chunks),"indexed_at":utc_now(),"error":None})
+        self._sources[source.id]=indexed; self._chunks[source.id]=list(chunks); self._vectors[source.id]=list(vectors); self._search_texts[source.id]=list(search_texts)
+        self._refresh_base_status(source.knowledge_base_id)
+        return KnowledgeSourceIndexResult(source_id=source.id,status="indexed",chunks=len(chunks),embedding_model_profile_id=embedding_model_profile.id,embedding_dimension=embedding_dimension,indexed_at=indexed.indexed_at)
     def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
         self._sources[source.id]=source.model_copy(update={"status":"failed","error":error}); return KnowledgeSourceIndexResult(source_id=source.id,status="failed",chunks=0,error=error)
     def delete_source(self, source_id: str) -> KnowledgeSource:
-        current=self.get_source(source_id); del self._sources[source_id]; self._chunks.pop(source_id,None); self._vectors.pop(source_id,None); self._search_texts.pop(source_id,None); return current
+        current=self.get_source(source_id); del self._sources[source_id]; self._chunks.pop(source_id,None); self._vectors.pop(source_id,None); self._search_texts.pop(source_id,None)
+        self._refresh_base_status(current.knowledge_base_id)
+        return current
+    def _refresh_base_status(self, base_id: str) -> None:
+        sources = self.list_sources(base_id)
+        self.update_knowledge_base(base_id, {"index_status": base_index_status([source.status for source in sources]),
+                                           "index_error": next((source.error for source in sources if source.error), None)})
+    def referenced_attachment_ids(self) -> set[str]:
+        return {source.uri.removeprefix("local://attachments/") for source in self._sources.values() if source.source_type == "attachment_text"}
     def source_text_reference(self, source_id: str) -> dict[str, Any]:
         source=self.get_source(source_id); return {"source_id":source.id,"uri":source.uri,"title":source.title}
     def list_chunks(self, source_id: str) -> list[Any]: return list(self._chunks.get(source_id, []))

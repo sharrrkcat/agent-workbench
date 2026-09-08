@@ -4,17 +4,19 @@ import type {
   KnowledgeSettings,
   KnowledgeSource,
   SessionKnowledgeBindings,
+  KnowledgeBaseInput, KnowledgeSettingsInput, KnowledgeSourceIndexResult, KnowledgeSourcePreview, KnowledgeSourceChunk, KnowledgeSearchInput,
 } from '../types/knowledge';
 import { request } from './http';
 
 export const knowledgeApi = {
   getKnowledgeSettings: () => request<KnowledgeSettings>('/api/knowledge/settings'),
-  updateKnowledgeSettings: (patch: Record<string, unknown>) =>
+  updateKnowledgeSettings: (patch: Partial<KnowledgeSettingsInput>) =>
     request<KnowledgeSettings>('/api/knowledge/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
   listKnowledgeBases: () => request<KnowledgeBase[]>('/api/knowledge/bases'),
-  createKnowledgeBase: (value: Record<string, unknown>) =>
+  getKnowledgeBase: (id: string) => request<KnowledgeBase>(`/api/knowledge/bases/${encodeURIComponent(id)}`),
+  createKnowledgeBase: (value: KnowledgeBaseInput) =>
     request<KnowledgeBase>('/api/knowledge/bases', { method: 'POST', body: JSON.stringify(value) }),
-  patchKnowledgeBase: (id: string, patch: Record<string, unknown>) =>
+  patchKnowledgeBase: (id: string, patch: Partial<KnowledgeBaseInput>) =>
     request<KnowledgeBase>(`/api/knowledge/bases/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
@@ -26,35 +28,34 @@ export const knowledgeApi = {
   listKnowledgeSources: (baseId: string) =>
     request<KnowledgeSource[]>(`/api/knowledge/bases/${encodeURIComponent(baseId)}/sources`),
   createPastedKnowledgeSource: (baseId: string, title: string, text: string) =>
-    request<KnowledgeSource>(`/api/knowledge/bases/${encodeURIComponent(baseId)}/sources`, {
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${encodeURIComponent(baseId)}/sources`, {
       method: 'POST',
       body: JSON.stringify({ source_type: 'pasted_text', title, text }),
     }),
   createFileKnowledgeSource: (baseId: string, path: string, title?: string) =>
-    request<KnowledgeSource>(`/api/knowledge/bases/${encodeURIComponent(baseId)}/sources`, {
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${encodeURIComponent(baseId)}/sources`, {
       method: 'POST',
       body: JSON.stringify({ source_type: 'file', path, title }),
+    }),
+  createAttachmentKnowledgeSource: (baseId: string, attachmentId: string, title: string) =>
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/bases/${encodeURIComponent(baseId)}/sources`, {
+      method: 'POST', body: JSON.stringify({ source_type: 'attachment_text', attachment_id: attachmentId, title }),
     }),
   deleteKnowledgeSource: (id: string) =>
     request<{ deleted: boolean; source_id: string }>(`/api/knowledge/sources/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
   reindexKnowledgeSource: (id: string) =>
-    request<Record<string, unknown>>(`/api/knowledge/sources/${encodeURIComponent(id)}/reindex`, { method: 'POST' }),
+    request<KnowledgeSourceIndexResult>(`/api/knowledge/sources/${encodeURIComponent(id)}/reindex`, { method: 'POST' }),
   reindexKnowledgeBase: (id: string) =>
-    request<Record<string, unknown>>(`/api/knowledge/bases/${encodeURIComponent(id)}/reindex`, { method: 'POST' }),
+    request<{ knowledge_base_id: string; sources: KnowledgeSourceIndexResult[] }>(`/api/knowledge/bases/${encodeURIComponent(id)}/reindex`, { method: 'POST' }),
   getKnowledgeSourcePreview: (id: string) =>
-    request<{ source_id: string; title: string; uri: string; content: string; truncated: boolean }>(
+    request<KnowledgeSourcePreview>(
       `/api/knowledge/sources/${encodeURIComponent(id)}/preview`,
     ),
-  searchKnowledge: (payload: {
-    query: string;
-    knowledge_base_ids?: string[];
-    session_id?: string;
-    top_k?: number;
-    max_context_chars?: number;
-    debug?: boolean;
-  }) => request<KnowledgeSearchResponse>('/api/knowledge/search', { method: 'POST', body: JSON.stringify(payload) }),
+  listKnowledgeSourceChunks: (id: string) =>
+    request<{ source_id: string; chunks: KnowledgeSourceChunk[] }>(`/api/knowledge/sources/${encodeURIComponent(id)}/chunks`),
+  searchKnowledge: (payload: KnowledgeSearchInput) => request<KnowledgeSearchResponse>('/api/knowledge/search', { method: 'POST', body: JSON.stringify(payload) }),
   listSessionKnowledgeBases: (sessionId: string) =>
     request<SessionKnowledgeBindings>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`),
   updateSessionKnowledgeBases: (sessionId: string, ids: string[]) =>

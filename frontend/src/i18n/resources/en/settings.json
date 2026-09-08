@@ -1,4 +1,13 @@
 {
+  "resources": {
+    "list": "Resources",
+    "settings": "Global settings",
+    "sections": "Sections",
+    "advanced": "Advanced",
+    "refresh": "Refresh",
+    "manageNamed": "Manage {{name}}",
+    "discardConfirm": "Discard unsaved changes?"
+  },
   "title": "Settings",
   "general": "General",
   "models": "Models",

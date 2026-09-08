@@ -9,7 +9,7 @@ from uuid import uuid4
 from sqlmodel import Session as DbSession, delete, select
 
 from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
-from ai_workbench.core.knowledge_store import KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, SessionKnowledgeBinding
+from ai_workbench.core.knowledge_store import KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, SessionKnowledgeBinding, base_index_status
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunStepSchema, RunStepStatus
@@ -367,10 +367,12 @@ class SqlWorldbookStore:
             if row is None: raise KeyError(f"unknown worldbook: {worldbook_id}")
             return _worldbook(row,db)
     def update_worldbook(self, worldbook_id: str, values: dict[str, Any]) -> Worldbook:
+        current = self.get_worldbook(worldbook_id)
+        validated = Worldbook.model_validate({**current.model_dump(), **values})
         with DbSession(self.engine) as db:
             row=db.get(WorldbookRecord,worldbook_id)
             if row is None: raise KeyError(f"unknown worldbook: {worldbook_id}")
-            for key,val in values.items(): setattr(row,key,val)
+            for key in values: setattr(row, key, getattr(validated, key))
             row.updated_at=utc_now(); db.add(row); db.commit(); db.refresh(row); return _worldbook(row,db)
     def delete_worldbook(self, worldbook_id: str) -> Worldbook:
         current=self.get_worldbook(worldbook_id)
@@ -378,8 +380,10 @@ class SqlWorldbookStore:
             db.exec(delete(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id==worldbook_id)); db.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.worldbook_id==worldbook_id)); row=db.get(WorldbookRecord,worldbook_id); db.delete(row); db.commit()
         return current
     def list_entries(self, worldbook_id: str) -> list[WorldbookEntry]:
+        self.get_worldbook(worldbook_id)
         with DbSession(self.engine) as db: return [_entry(row) for row in db.exec(select(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id==worldbook_id).order_by(WorldbookEntryRecord.sort_order,WorldbookEntryRecord.created_at)).all()]
     def create_entry(self, entry: WorldbookEntry) -> WorldbookEntry:
+        self.get_worldbook(entry.worldbook_id)
         row=WorldbookEntryRecord(id=entry.id,worldbook_id=entry.worldbook_id,name=entry.name,keywords_text=entry.keywords_text,content=entry.content,activation_mode=entry.activation_mode,enabled=entry.enabled,sort_order=entry.sort_order,created_at=entry.created_at,updated_at=entry.updated_at)
         with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row); return _entry(row)
     def get_entry(self, entry_id: str) -> WorldbookEntry:
@@ -388,10 +392,12 @@ class SqlWorldbookStore:
             if row is None: raise KeyError(f"unknown worldbook entry: {entry_id}")
             return _entry(row)
     def update_entry(self, entry_id: str, values: dict[str, Any]) -> WorldbookEntry:
+        current = self.get_entry(entry_id)
+        validated = WorldbookEntry.model_validate({**current.model_dump(), **values})
         with DbSession(self.engine) as db:
             row=db.get(WorldbookEntryRecord,entry_id)
             if row is None: raise KeyError(f"unknown worldbook entry: {entry_id}")
-            for key,val in values.items(): setattr(row,key,val)
+            for key in values: setattr(row, key, getattr(validated, key))
             row.updated_at=utc_now(); db.add(row); db.commit(); db.refresh(row); return _entry(row)
     def delete_entry(self, entry_id: str) -> WorldbookEntry:
         current=self.get_entry(entry_id)
@@ -399,7 +405,7 @@ class SqlWorldbookStore:
         return current
     def reorder_entries(self, worldbook_id: str, entry_ids: list[str]) -> list[WorldbookEntry]:
         current=self.list_entries(worldbook_id)
-        if {item.id for item in current} != set(entry_ids): raise ValueError("Reorder ids must exactly match entries in this worldbook.")
+        if len(entry_ids) != len(current) or {item.id for item in current} != set(entry_ids): raise ValueError("Reorder ids must exactly match entries in this worldbook.")
         with DbSession(self.engine) as db:
             for index,item_id in enumerate(entry_ids):
                 row=db.get(WorldbookEntryRecord,item_id); row.sort_order=(index+1)*10; row.updated_at=utc_now(); db.add(row)
@@ -475,6 +481,8 @@ class SqlKnowledgeStore:
             sources=db.exec(select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id==knowledge_base_id)).all()
             for source in sources:
                 db.exec(delete(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id==source.id)); db.exec(delete(KnowledgeEmbeddingRecord).where(KnowledgeEmbeddingRecord.source_id==source.id))
+            if self.engine.dialect.name == "sqlite":
+                db.connection().exec_driver_sql("DELETE FROM kb_chunk_fts WHERE knowledge_base_id = ?", (knowledge_base_id,))
             db.exec(delete(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id==knowledge_base_id)); db.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.knowledge_base_id==knowledge_base_id)); db.delete(db.get(KnowledgeBaseRecord,knowledge_base_id)); db.commit()
         return current
     def list_session_bindings(self, session_id: str) -> list[SessionKnowledgeBinding]:
@@ -519,9 +527,8 @@ class SqlKnowledgeStore:
                 if self.engine.dialect.name == "sqlite":
                     search_text = search_texts[index] if index < len(search_texts) else chunk.content
                     db.connection().exec_driver_sql("INSERT INTO kb_chunk_fts (chunk_id, knowledge_base_id, source_id, title, heading_path, content, search_text) VALUES (?, ?, ?, ?, ?, ?, ?)", (chunk_id, source.knowledge_base_id, source.id, source.title, chunk.heading_path, chunk.content, search_text))
-            kb = db.get(KnowledgeBaseRecord, source.knowledge_base_id)
-            if kb is not None:
-                kb.index_status = "ready"; kb.index_error = None; kb.updated_at = utc_now(); db.add(kb)
+            db.flush()
+            self._refresh_base_status(db, source.knowledge_base_id)
             db.commit()
         return KnowledgeSourceIndexResult(source_id=source.id,status="indexed",chunks=len(chunks),embedding_model_profile_id=embedding_model_profile.id,embedding_dimension=embedding_dimension,indexed_at=utc_now())
     def mark_source_failed(self, source: KnowledgeSource, error: str) -> KnowledgeSourceIndexResult:
@@ -536,8 +543,22 @@ class SqlKnowledgeStore:
         with DbSession(self.engine) as db:
             db.exec(delete(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id==source_id)); db.exec(delete(KnowledgeEmbeddingRecord).where(KnowledgeEmbeddingRecord.source_id==source_id))
             if self.engine.dialect.name == "sqlite": db.connection().exec_driver_sql("DELETE FROM kb_chunk_fts WHERE source_id = ?", (source_id,))
-            db.delete(db.get(KnowledgeSourceRecord,source_id)); db.commit()
+            db.delete(db.get(KnowledgeSourceRecord,source_id)); db.flush()
+            self._refresh_base_status(db, current.knowledge_base_id)
+            db.commit()
         return current
+    def _refresh_base_status(self, db: DbSession, base_id: str) -> None:
+        base = db.get(KnowledgeBaseRecord, base_id)
+        sources = db.exec(select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id == base_id)).all()
+        if base is not None:
+            base.index_status = base_index_status([source.status for source in sources])
+            base.index_error = next((source.error for source in sources if source.error), None)
+            base.updated_at = utc_now()
+            db.add(base)
+    def referenced_attachment_ids(self) -> set[str]:
+        with DbSession(self.engine) as db:
+            sources = db.exec(select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.source_type == "attachment_text")).all()
+            return {source.uri.removeprefix("local://attachments/") for source in sources}
     def source_text_reference(self, source_id: str) -> dict[str, Any]:
         source=self.get_source(source_id); return {"source_id":source.id,"uri":source.uri,"title":source.title}
 

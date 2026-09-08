@@ -22,7 +22,9 @@ from ai_workbench.core.knowledge_indexing import (
     prepare_attachment_text_source,
     prepare_file_source,
     prepare_pasted_text_source,
+    validate_source_limits,
 )
+from ai_workbench.core.attachments import resolve_attachment_uri
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.knowledge_settings import KnowledgeSettingsPatch
 from ai_workbench.core.knowledge_store import (
@@ -154,7 +156,11 @@ def list_knowledge_source_chunks(source_id: str, state: RuntimeState = Depends(g
     engine = getattr(state.knowledge, "engine", None)
     if engine is None:
         chunks = [
-            {"chunk_index": item.chunk_index, "heading_path": item.heading_path, "content": item.content}
+            {"chunk_id": f"{source_id}:{item.chunk_index}", "chunk_index": item.chunk_index,
+             "heading_path": item.heading_path, "content": item.content, "char_start": item.char_start,
+             "char_end": item.char_end, "metadata": item.metadata,
+             "content_preview": item.content[:CHUNK_CONTENT_PREVIEW_MAX_CHARS],
+             "truncated": len(item.content) > CHUNK_CONTENT_PREVIEW_MAX_CHARS}
             for item in state.knowledge.list_chunks(source_id)
         ]
         return {"source_id": source.id, "chunks": chunks}
@@ -282,11 +288,12 @@ def _prepare_source(payload: KnowledgeSourceCreate, state: RuntimeState):
     if payload.source_type == "pasted_text":
         if not payload.text or not payload.text.strip():
             raise KnowledgeIndexError("KNOWLEDGE_EMPTY_INPUT", "Pasted text must not be empty.")
+        validate_source_limits(payload.text, len(payload.text.encode("utf-8")), state.knowledge.get_settings())
         return prepare_pasted_text_source(root=state.repo_root, title=payload.title or "Pasted text", text=payload.text)
     if payload.source_type == "attachment_text":
         if not payload.attachment_id:
             raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND", "attachment_id is required.")
-        source = prepare_attachment_text_source(attachment_id=payload.attachment_id)
+        source = prepare_attachment_text_source(attachment_id=payload.attachment_id, settings=state.knowledge.get_settings())
         if payload.title:
             source = source.__class__(**{**source.__dict__, "title": payload.title.strip()})
         return source
@@ -321,16 +328,23 @@ def _source_or_404(state: RuntimeState, source_id: str) -> KnowledgeSource:
 
 
 def _read_source_text(source: KnowledgeSource, state: RuntimeState) -> str:
+    if source.source_type == "attachment_text":
+        try:
+            path = resolve_attachment_uri(source.uri)
+            with path.open(encoding="utf-8-sig") as stream:
+                return stream.read(SOURCE_PREVIEW_MAX_CHARS + 1)
+        except (OSError, ValueError):
+            raise_error(422, "KNOWLEDGE_SOURCE_NOT_READABLE", "Source cannot be read.")
     if source.source_type in {"pasted_text", "file"} and source.uri:
         path = (state.repo_root / source.uri).resolve()
-        if source.source_type == "pasted_text":
-            root = (state.repo_root / "data" / "knowledge" / "sources").resolve()
-            try:
-                path.relative_to(root)
-            except ValueError:
-                raise_error(422, "KNOWLEDGE_SOURCE_NOT_READABLE", "Source path is invalid.")
+        root = (state.repo_root / "data" / "knowledge" / "sources").resolve() if source.source_type == "pasted_text" else state.repo_root.resolve()
         try:
-            return path.read_text(encoding="utf-8")
+            path.relative_to(root)
+        except ValueError:
+            raise_error(422, "KNOWLEDGE_SOURCE_NOT_READABLE", "Source path is invalid.")
+        try:
+            with path.open(encoding="utf-8-sig") as stream:
+                return stream.read(SOURCE_PREVIEW_MAX_CHARS + 1)
         except (OSError, UnicodeError):
             raise_error(422, "KNOWLEDGE_SOURCE_NOT_READABLE", "Source cannot be read.")
     return str((source.metadata or {}).get("text") or "")

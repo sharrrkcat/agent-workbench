@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 
 DEFAULT_KNOWLEDGE_CONTEXT_INSTRUCTION = """The following snippets were retrieved from active session knowledge bases.
@@ -39,6 +39,12 @@ class KnowledgeSettings(BaseModel):
     max_total_index_chars_per_source: int = Field(default=200000, ge=1000, le=10000000)
     knowledge_context_instruction: str = DEFAULT_KNOWLEDGE_CONTEXT_INSTRUCTION
     knowledge_context_snippet_template: str = DEFAULT_KNOWLEDGE_CONTEXT_SNIPPET_TEMPLATE
+
+    @model_validator(mode="after")
+    def valid_chunking(self):
+        if self.default_chunk_overlap >= self.default_chunk_size:
+            raise ValueError("Chunk overlap must be smaller than chunk size.")
+        return self
 
     @field_validator("reranker_model_profile_id", mode="before")
     @classmethod

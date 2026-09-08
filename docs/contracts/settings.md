@@ -96,6 +96,25 @@ Worldbook settings stay at `/api/worldbook/settings`; its matching/context
 rules are owned by chat/context. There are no independent per-kind model pages,
 extension configuration objects or old General inference-service settings.
 
+Knowledge and Worldbook default to resource lists, with a separate Global
+settings tab and inline resource details. Selection is local to the panel;
+refresh returns to the list, with no extra URL parameters. Internal detail-tab
+switches preserve drafts. Leaving a resource with edits asks before discarding;
+settings navigation/back and browser unload also protect unsaved work. Busy
+mutations prevent departure, and stale detail reads cannot replace a new selection.
+
+Worldbook submits only editable settings, omitting id and timestamps. One
+case-sensitive control synchronizes its inverse regex field. Advanced context,
+matching and recursion controls start collapsed. Knowledge exposes all retained
+retrieval, chunk, source-limit and context fields; advanced items start collapsed.
+Its optional score threshold precedes default_min_score; both empty means no
+score filtering. Chunk overlap must be smaller than chunk size. Model kinds,
+paths and backend settings remain under Models. Both forms retain advanced drafts
+when collapsed and preserve nullable override semantics.
+
+Implementation and verification are recorded in
+[resource management](../RESOURCE_MANAGEMENT_PLAN.md).
+
 ## Pet foundations
 
 The Codex Pet overlay, sprite format, package service, settings page and all

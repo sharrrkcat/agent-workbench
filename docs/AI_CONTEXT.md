@@ -10,6 +10,9 @@ manual cache cleanup and Windows llama CUDA; its verification is recorded there.
 The independent [conversation presentation plan](CHAT_PRESENTATION_PLAN.md)
 adds one visible reply per run, collapsible processing and whole-reply actions.
 Its verification is recorded separately from the completed roadmap.
+Worldbook and Knowledge management restoration and verification are recorded in
+[resource management](RESOURCE_MANAGEMENT_PLAN.md); Worldbook keeps the old entry
+card structure while Knowledge retains only direct source workflows.
 
 ## Fixed constraints
 

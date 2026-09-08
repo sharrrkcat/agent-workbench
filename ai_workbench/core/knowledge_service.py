@@ -44,6 +44,7 @@ class KnowledgeService:
         )
 
     async def add_text(self, *, knowledge_base_id: str, title: str, text: str, uri: str | None = None) -> Any:
+        validate_source_limits(text, len(text.encode("utf-8")), self.store.get_settings())
         prepared=prepare_pasted_text_source(root=self.repo_root,title=title,text=text); return await self.index_source(knowledge_base_id,prepared,uri=uri)
 
     async def add_file(self, *, knowledge_base_id: str, path: str) -> Any:
@@ -53,18 +54,24 @@ class KnowledgeService:
         source=self.store.get_source(source_id)
         if source.source_type == "attachment_text":
             attachment_id = str((source.metadata or {}).get("attachment_id") or source.uri)
-            prepared = prepare_attachment_text_source(attachment_id=attachment_id)
+            prepared = prepare_attachment_text_source(attachment_id=attachment_id, settings=self.store.get_settings())
             prepared = SourceText(**{**prepared.__dict__, "source_id": source.id, "title": source.title})
         elif source.source_type == "file":
             path=(self.repo_root / source.uri).resolve()
             prepared=prepare_file_source(path=path,root=self.repo_root,source_id=source.id)
+            prepared = SourceText(**{**prepared.__dict__, "title": source.title})
         else:
             path=(self.repo_root / source.uri).resolve()
             root=(self.repo_root / "data" / "knowledge" / "sources").resolve()
             try: path.relative_to(root)
             except ValueError as exc: raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Source path is invalid.") from exc
             if not path.is_file(): raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Source file was not found.")
-            prepared=prepare_pasted_text_source(root=self.repo_root,title=source.title,text=path.read_text(encoding="utf-8"),source_id=source.id)
+            try:
+                text = path.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeError) as exc:
+                raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Source must be a readable UTF-8 text file.") from exc
+            validate_source_limits(text, len(text.encode("utf-8")), self.store.get_settings())
+            prepared=prepare_pasted_text_source(root=self.repo_root,title=source.title,text=text,source_id=source.id)
         return await self.index_source(source.knowledge_base_id,prepared,uri=source.uri)
 
     async def index_source(self, knowledge_base_id: str, prepared: Any, *, uri: str | None = None) -> Any:

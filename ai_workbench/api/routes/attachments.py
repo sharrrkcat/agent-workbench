@@ -88,7 +88,7 @@ async def delete_attachment(attachment_id: str, state: RuntimeState = Depends(ge
     if not path.is_file():
         raise_error(404, "ATTACHMENT_NOT_FOUND", "Attachment not found.")
     removed = delete_attachment_if_unreferenced(
-        {"id": attachment_id, "uri": "local://attachments/" + attachment_id}, state.messages, persona_store=state.personas, run_store=state.runs)
+        {"id": attachment_id, "uri": "local://attachments/" + attachment_id}, state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
     if not removed:
         raise_error(409, "ATTACHMENT_IN_USE", "Attachment is referenced or cannot be removed.")
     return {"deleted": True, "attachment_id": attachment_id}

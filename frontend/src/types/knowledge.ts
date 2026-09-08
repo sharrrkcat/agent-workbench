@@ -23,6 +23,21 @@ export type KnowledgeSettings = {
   knowledge_context_snippet_template: string;
 };
 
+export type KnowledgeSettingsInput = Omit<KnowledgeSettings, 'id'>;
+export type KnowledgeIndexStatus = 'empty' | 'ready' | 'indexing' | 'failed' | 'needs_reindex';
+export type KnowledgeSourceStatus = 'pending' | 'indexing' | 'indexed' | 'needs_reindex' | 'failed' | 'deleted';
+export type KnowledgeBaseInput = {
+  name: string;
+  embedding_model_profile_id: string;
+  description?: string;
+  aliases_text?: string;
+  enabled?: boolean;
+  vector_candidate_k_override?: number | null;
+  keyword_candidate_k_override?: number | null;
+  final_top_k_override?: number | null;
+  max_context_chars_override?: number | null;
+};
+
 export type KnowledgeBase = {
   id: string;
   name: string;
@@ -30,7 +45,7 @@ export type KnowledgeBase = {
   aliases_text: string;
   embedding_model_profile_id: string;
   enabled: boolean;
-  index_status: string;
+  index_status: KnowledgeIndexStatus;
   index_error?: string | null;
   vector_candidate_k_override?: number | null;
   keyword_candidate_k_override?: number | null;
@@ -47,13 +62,38 @@ export type KnowledgeSource = {
   uri: string;
   title: string;
   relative_path?: string;
-  status: string;
+  status: KnowledgeSourceStatus;
   error?: string | null;
   chunks: number;
   indexed_at?: string | null;
   created_at: string;
   updated_at: string;
-  [key: string]: unknown;
+  size_bytes: number;
+  content_hash: string;
+  metadata: Record<string, unknown>;
+};
+
+export type KnowledgeSourceIndexResult = {
+  source_id: string;
+  status: KnowledgeSourceStatus;
+  chunks: number;
+  embedding_model_profile_id?: string | null;
+  embedding_dimension?: number | null;
+  indexed_at?: string | null;
+  error?: string | null;
+  skipped?: boolean;
+};
+
+export type KnowledgeSourcePreview = { source_id: string; title: string; uri: string; content: string; truncated: boolean };
+export type KnowledgeSourceChunk = {
+  chunk_id: string; chunk_index: number; heading_path: string; char_start: number; char_end: number;
+  content: string; content_preview: string; truncated: boolean; embedding_dimension?: number | null;
+  metadata: Record<string, unknown>;
+};
+
+export type KnowledgeSearchInput = {
+  query: string; knowledge_base_ids?: string[]; session_id?: string; top_k?: number; max_context_chars?: number;
+  min_score_threshold?: number; max_chunks_per_source?: number; max_chunks_per_knowledge_base?: number; debug?: boolean;
 };
 
 export type SessionKnowledgeBindings = {
@@ -65,8 +105,12 @@ export type SessionKnowledgeBindings = {
 
 export type KnowledgeSearchResponse = {
   query: string;
-  results: Array<Record<string, unknown>>;
-  metadata?: Record<string, unknown>;
-  debug?: Record<string, unknown>;
+  results: Array<{
+    chunk_id: string; knowledge_base_id: string; source_id: string; title: string; heading_path: string;
+    content: string; truncated: boolean; vector_score: number | null; vector_rank: number | null;
+    keyword_score: number | null; keyword_rank: number | null; rrf_score: number; rerank_score: number | null;
+  }>;
+  metadata?: { rerank_fallback: boolean; reranker_enabled: boolean; reranker_used: boolean };
+  debug?: { warnings: string[]; merged_candidate_count: number; reranker_failed: boolean; [key: string]: unknown };
   context_preview?: string;
 };

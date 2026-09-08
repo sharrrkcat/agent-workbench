@@ -328,7 +328,7 @@ class MemoryWorldbookStore:
     def patch_settings(self, values: dict[str, Any]) -> WorldbookSettings:
         patch = WorldbookSettingsPatch.model_validate(values)
         updates = sync_worldbook_settings_patch(patch.model_dump(exclude_unset=True))
-        self._settings = self._settings.model_copy(update={**updates, "updated_at": utc_now()})
+        self._settings = WorldbookSettings.model_validate({**self._settings.model_dump(), **updates, "updated_at": utc_now()})
         return self._settings
 
     def list_worldbooks(self) -> list[Worldbook]:
@@ -387,7 +387,7 @@ class MemoryWorldbookStore:
 
     def reorder_entries(self, worldbook_id: str, entry_ids: list[str]) -> list[WorldbookEntry]:
         existing = self.list_entries(worldbook_id)
-        if {entry.id for entry in existing} != set(entry_ids):
+        if len(entry_ids) != len(existing) or {entry.id for entry in existing} != set(entry_ids):
             raise ValueError("Reorder ids must exactly match entries in this worldbook.")
         for index, entry_id in enumerate(entry_ids):
             self._entries[entry_id] = self._entries[entry_id].model_copy(update={"sort_order": (index + 1) * 10, "updated_at": utc_now()})

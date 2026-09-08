@@ -1,137 +1,57 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Database, ChevronRight, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../api/knowledge';
-import type { KnowledgeBase, KnowledgeSettings } from '../../types/knowledge';
-import { Loading, NumberField, Panel, Toggle } from './fields';
-import type { SettingsTask } from './useSettingsFeedback';
+import type { KnowledgeBase } from '../../types/knowledge';
 import { useModelsStore } from '../../store/useModelsStore';
+import { KnowledgeDetail } from './knowledge/KnowledgeDetail';
+import { KnowledgeDefaults } from './knowledge/KnowledgeDefaults';
+import { errorText, Feedback, ResourceIcon, ResourceLoading, ResourceTabs, useResourceGuard, useResourceTask, revealInvalidField } from './resources/ResourceUI';
 
-export function KnowledgePanel({ save }: { save: SettingsTask }) {
-  const [settings, setSettings] = useState<KnowledgeSettings | null>(null);
-  const [bases, setBases] = useState<KnowledgeBase[]>([]);
+export function KnowledgePanel() {
   const { t } = useTranslation('knowledge');
-  const models = useModelsStore((state) => state.profiles);
+  const [bases, setBases] = useState<KnowledgeBase[]>([]);
+  const [selected, setSelected] = useState('');
+  const [tab, setTab] = useState<'list' | 'settings'>('list');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [detailState, setDetailState] = useState({ dirty: false, busy: false });
+  const [settingsState, setSettingsState] = useState({ dirty: false, busy: false });
+  const modelsError = useModelsStore((state) => state.error);
   const reloadModels = useModelsStore((state) => state.reload);
-  const embeddings = models.filter((p) => p.kind === 'embedding' && p.enabled);
-  const [newBase, setNewBase] = useState({ name: '', embedding_model_profile_id: '' });
-  const reload = () =>
-    Promise.all([knowledgeApi.getKnowledgeSettings(), knowledgeApi.listKnowledgeBases(), reloadModels()]).then(
-      ([s, b]) => {
-        setSettings(s);
-        setBases(b);
-      },
-    );
+  const task = useResourceTask();
+  useResourceGuard(detailState.dirty || settingsState.dirty, detailState.busy || settingsState.busy || !!task.busy);
+  useEffect(() => { void reloadModels().catch(() => undefined); }, [reloadModels]);
   useEffect(() => {
-    void reload();
+    let live = true;
+    void knowledgeApi.listKnowledgeBases().then((values) => { if (live) { setBases(values); setLoading(false); } })
+      .catch((reason) => { if (live) { setLoadError(errorText(reason)); setLoading(false); } });
+    return () => { live = false; };
   }, []);
-  if (!settings) return <Loading />;
-  const patch = (key: string, value: unknown) => setSettings({ ...settings, [key]: value } as KnowledgeSettings);
-  return (
-    <Panel title={t('title')}>
-      <Toggle
-        label={t('hybrid')}
-        checked={settings.hybrid_search_enabled}
-        onChange={(value) => patch('hybrid_search_enabled', value)}
-      />
-      <Toggle
-        label={t('reranker')}
-        checked={settings.reranker_enabled}
-        onChange={(value) => patch('reranker_enabled', value)}
-      />
-      <label className="settings-field">
-        <span>{t('llm:kinds.reranker')}</span>
-        <select
-          value={settings.reranker_model_profile_id || ''}
-          onChange={(e) => patch('reranker_model_profile_id', e.currentTarget.value || null)}
-        >
-          <option value="">{t('llm:unconfigured')}</option>
-          {models
-            .filter((p) => p.kind === 'reranker' && p.enabled)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-        </select>
-      </label>
-      <NumberField
-        label={t('chunkSize')}
-        value={settings.default_chunk_size}
-        onChange={(value) => patch('default_chunk_size', value)}
-      />
-      <NumberField
-        label={t('chunkOverlap')}
-        value={settings.default_chunk_overlap}
-        onChange={(value) => patch('default_chunk_overlap', value)}
-      />
-      <NumberField
-        label={t('finalResults')}
-        value={settings.default_final_top_k}
-        onChange={(value) => patch('default_final_top_k', value)}
-      />
-      <button
-        className="primary-button"
-        type="button"
-        onClick={() =>
-          save(() =>
-            knowledgeApi
-              .updateKnowledgeSettings(Object.fromEntries(Object.entries(settings).filter(([key]) => key !== 'id')))
-              .then(() => undefined),
-          )
-        }
-      >
-        {t('save')}
-      </button>
-      <h3>{t('bases')}</h3>
-      <div className="settings-list">
-        {bases.map((base) => (
-          <div className="settings-list-row" key={base.id}>
-            <span>
-              {base.name}
-              <small>{base.index_status}</small>
-            </span>
-            <button
-              type="button"
-              onClick={() => save(() => knowledgeApi.deleteKnowledgeBase(base.id).then(() => reload()))}
-            >
-              {t('common:delete')}
-            </button>
-          </div>
-        ))}
+  function back() { if (!detailState.busy && (!detailState.dirty || window.confirm(t('settings:resources.discardConfirm')))) { setSelected(''); setDetailState({ dirty: false, busy: false }); } }
+  const saved = useCallback((base: KnowledgeBase, created: boolean) => {
+    setBases((current) => current.some((item) => item.id === base.id) ? current.map((item) => item.id === base.id ? base : item) : [...current, base]);
+    if (created) { setSelected(base.id); setDetailState({ dirty: false, busy: false }); }
+  }, []);
+  async function refresh() { setBases(await knowledgeApi.listKnowledgeBases()); setLoadError(''); }
+  return <section className="settings-panel resource-panel" onInvalidCapture={revealInvalidField}>
+    {modelsError ? <ResourceLoading error={modelsError} retry={() => void reloadModels().catch(() => undefined)} /> : null}
+    {selected ? <KnowledgeDetail key={selected} id={selected} onBack={back} onState={setDetailState} onSaved={saved}
+      onDeleted={() => { setBases((current) => current.filter((item) => item.id !== selected)); setSelected(''); setDetailState({ dirty: false, busy: false }); }} /> : <>
+      <div className="resource-heading"><Database size={22} /><h2>{t('title')}</h2></div>
+      <ResourceTabs value={tab} onChange={setTab} tabs={[{ id: 'list', label: t('settings:resources.list') }, { id: 'settings', label: t('settings:resources.settings') }]} />
+      <div hidden={tab !== 'list'}>
+        <div className="resource-toolbar"><span>{t('baseCount', { count: bases.length })}</span><div className="resource-actions">
+          <ResourceIcon label={t('settings:resources.refresh')} disabled={!!task.busy} onClick={() => void task.run('load', refresh)}><RefreshCw size={16} /></ResourceIcon>
+          <button type="button" className="secondary-button" disabled={!!task.busy} onClick={() => setSelected('new')}><Plus size={16} />{t('addBase')}</button>
+        </div></div><Feedback {...task} />
+        {loading || loadError ? <ResourceLoading error={loadError} retry={() => void task.run('load', refresh)} /> : bases.length ? <div className="resource-list">{bases.map((base) => <div className="resource-row" key={base.id}>
+          <div className="resource-identity"><strong>{base.name}</strong><small>{t(base.enabled ? 'enabled' : 'disabled')} · {t('statuses.' + base.index_status)}</small></div>
+          <div className="resource-actions"><ResourceIcon label={t('settings:resources.manageNamed', { name: base.name })} disabled={!!task.busy} onClick={() => setSelected(base.id)}><ChevronRight size={18} /></ResourceIcon>
+            <ResourceIcon label={t('common:delete')} danger disabled={!!task.busy} onClick={() => { if (window.confirm(t('deleteBaseConfirm', { name: base.name }))) void task.run('delete', async () => { await knowledgeApi.deleteKnowledgeBase(base.id); setBases((current) => current.filter((item) => item.id !== base.id)); }); }}><Trash2 size={16} /></ResourceIcon></div>
+        </div>)}</div> : <p className="resource-empty">{t('noBases')}</p>}
       </div>
-      <div className="inline-form">
-        <input
-          placeholder={t('baseName')}
-          value={newBase.name}
-          onChange={(event) => setNewBase({ ...newBase, name: event.currentTarget.value })}
-        />
-        <select
-          value={newBase.embedding_model_profile_id}
-          onChange={(event) => setNewBase({ ...newBase, embedding_model_profile_id: event.currentTarget.value })}
-        >
-          <option value="">{t('embeddingProfile')}</option>
-          {embeddings.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-        <button
-          className="secondary-button"
-          type="button"
-          disabled={!newBase.name || !newBase.embedding_model_profile_id}
-          onClick={() =>
-            save(() =>
-              knowledgeApi.createKnowledgeBase(newBase).then(() => {
-                setNewBase({ name: '', embedding_model_profile_id: newBase.embedding_model_profile_id });
-                return reload();
-              }),
-            )
-          }
-        >
-          {t('addBase')}
-        </button>
-      </div>
-    </Panel>
-  );
+    </>}
+    <div hidden={!!selected || tab !== 'settings'}><KnowledgeDefaults onState={setSettingsState} /></div>
+  </section>;
 }

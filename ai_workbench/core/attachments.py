@@ -617,21 +617,19 @@ def language_for_filename(name: str | None) -> str:
     }.get(suffix, "text")
 
 
-def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, run_store: Any = None) -> bool:
+def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, run_store: Any = None, knowledge_store: Any = None) -> bool:
     if not isinstance(attachment, dict) or not isinstance(attachment.get("uri"), str):
         return False
     try:
         path = resolve_attachment_uri(attachment["uri"])
     except ValueError:
         return False
-    if persona_store is not None and persona_store.references_attachment(path.name):
+    try:
+        referenced = referenced_attachment_filenames(message_store, session_id=session_id, persona_store=persona_store,
+                                                    run_store=run_store, knowledge_store=knowledge_store)
+    except Exception:
         return False
-    if run_store is not None and any(
-        run_store.get_config_snapshot(run.run_id).get("avatar_attachment_id") == path.name
-        for run in run_store.list_all_runs() if run.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"}
-    ):
-        return False
-    if _attachment_is_referenced(attachment.get("id"), attachment.get("uri"), message_store, session_id):
+    if path.name in referenced:
         return False
     try:
         path.unlink(missing_ok=True)
@@ -857,45 +855,45 @@ def _validate_attachment_size(size: int, attachment_type: str, settings: Any = N
         raise ValueError(f"Attachment file is too large. Maximum size is {max_mb} MB.")
 
 
-def _attachment_is_referenced(attachment_id: Any, uri: Any, message_store: Any, session_id: str | None) -> bool:
-    try:
-        if hasattr(message_store, "list_all_messages"):
-            messages = message_store.list_all_messages()
-        elif session_id and hasattr(message_store, "list_messages"):
-            messages = message_store.list_messages(session_id)
-        else:
-            return False
-    except Exception:
-        return True
+def referenced_attachment_filenames(message_store: Any, *, session_id: str | None = None,
+                                   persona_store: Any = None, run_store: Any = None, knowledge_store: Any = None) -> set[str]:
+    messages = message_store.list_all_messages() if hasattr(message_store, "list_all_messages") else message_store.list_messages(session_id)
+    referenced: set[str] = set()
+
+    def add(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        filename = value.removeprefix("local://attachments/").removeprefix("/api/attachments/")
+        if _ATTACHMENT_NAME_RE.fullmatch(filename):
+            referenced.add(filename)
+
+    def parts(items: list) -> None:
+        for part in items:
+            if not isinstance(part, dict):
+                continue
+            for key in ("attachment_id", "uri", "url"):
+                add(part.get(key))
+            if part.get("type") == "media_group":
+                parts(part.get("items") or [])
+
     for message in messages:
-        avatar = (message.metadata or {}).get("speaker_avatar_attachment_id")
-        if avatar and (avatar == attachment_id or "local://attachments/" + avatar == uri):
-            return True
-        if _parts_reference_attachment(getattr(message, "parts", []), attachment_id, uri):
-            return True
+        add((message.metadata or {}).get("speaker_avatar_attachment_id"))
+        parts(getattr(message, "parts", []))
         attachments = (message.metadata or {}).get("attachments")
         if not isinstance(attachments, list):
             continue
         for item in attachments:
             if not isinstance(item, dict):
                 continue
-            if attachment_id and item.get("id") == attachment_id:
-                return True
-            if uri and item.get("uri") == uri:
-                return True
-    return False
-
-
-def _parts_reference_attachment(parts: list, attachment_id: Any, uri: Any) -> bool:
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        if attachment_id and part.get("attachment_id") == attachment_id:
-            return True
-        if uri and part.get("uri") == uri:
-            return True
-        if attachment_id and part.get("url") == "/api/attachments/" + str(attachment_id):
-            return True
-        if part.get("type") == "media_group" and _parts_reference_attachment(part.get("items") or [], attachment_id, uri):
-            return True
-    return False
+            add(item.get("id"))
+            add(item.get("uri"))
+    if persona_store is not None:
+        for persona in persona_store.list():
+            add(persona.avatar_attachment_id)
+    if run_store is not None:
+        for run in run_store.list_all_runs():
+            if run.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"}:
+                add(run_store.get_config_snapshot(run.run_id).get("avatar_attachment_id"))
+    if knowledge_store is not None:
+        referenced.update(knowledge_store.referenced_attachment_ids())
+    return referenced

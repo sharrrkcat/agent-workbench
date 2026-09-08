@@ -66,12 +66,24 @@ def with_source_overrides(source: SourceText, *, folder_path: str = "") -> Sourc
     return SourceText(**{**source.__dict__,"folder_path":folder,"file_name":name,"virtual_path":virtual,"path_depth":len([p for p in virtual.split("/") if p]),"metadata":{**source.metadata,"virtual_path":virtual,"folder_path":folder,"file_name":name}})
 
 
-def prepare_attachment_text_source(*, attachment_id: str) -> SourceText:
+def prepare_attachment_text_source(*, attachment_id: str, settings: KnowledgeSettings) -> SourceText:
     try: path=resolve_attachment_uri(attachment_id)
     except ValueError as exc: raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND","Attachment was not found.") from exc
     if not path.is_file(): raise KnowledgeIndexError("KNOWLEDGE_ATTACHMENT_NOT_FOUND","Attachment file was not found.")
-    mime=mimetypes.guess_type(path.name)[0] or "text/plain"; payload=read_attachment_text({"id":path.stem,"type":"file","mime_type":mime,"name":path.name,"size":path.stat().st_size,"uri":f"local://attachments/{path.name}"}); text=str(payload["content"])
-    return SourceText(source_id=str(uuid4()),source_type="attachment_text",title=path.name,text=text,uri=f"local://attachments/{path.name}",mime_type=mime,size_bytes=len(text.encode()),content_hash=source_content_hash(text),metadata={"attachment_id":attachment_id})
+    size = path.stat().st_size
+    if size > settings.max_source_size_bytes:
+        raise KnowledgeIndexError("KNOWLEDGE_SOURCE_TOO_LARGE", "Source exceeds the configured size limit.")
+    mime = mimetypes.guess_type(path.name)[0] or "text/plain"
+    try:
+        payload = read_attachment_text({"id": path.stem, "type": "file", "mime_type": mime, "name": path.name,
+                                       "size": size, "uri": f"local://attachments/{path.name}"}, limit=settings.max_source_size_bytes)
+    except (OSError, ValueError) as exc:
+        raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Source must be a readable UTF-8 text file.") from exc
+    if payload["truncated"]:
+        raise KnowledgeIndexError("KNOWLEDGE_SOURCE_TOO_LARGE", "Source exceeds the configured size limit.")
+    text = str(payload["content"])
+    validate_source_limits(text, int(payload["size"]), settings)
+    return SourceText(source_id=str(uuid4()),source_type="attachment_text",title=path.name,text=text,uri=f"local://attachments/{path.name}",mime_type=mime,size_bytes=int(payload["size"]),content_hash=source_content_hash(text),metadata={"attachment_id":path.name})
 
 
 def prepare_file_source(*, path: Path, root: Path, source_id: str | None = None) -> SourceText:
@@ -79,11 +91,15 @@ def prepare_file_source(*, path: Path, root: Path, source_id: str | None = None)
     try: relative=resolved.relative_to(base)
     except ValueError as exc: raise KnowledgeIndexError("KNOWLEDGE_FILE_PATH_INVALID","Source path must stay inside the workspace.") from exc
     if not resolved.is_file(): raise KnowledgeIndexError("KNOWLEDGE_FILE_NOT_FOUND","Source file was not found.")
-    text=resolved.read_text(encoding="utf-8"); stat=resolved.stat(); rel=relative.as_posix()
+    try:
+        text=resolved.read_text(encoding="utf-8-sig"); stat=resolved.stat(); rel=relative.as_posix()
+    except (OSError, UnicodeError) as exc:
+        raise KnowledgeIndexError("KNOWLEDGE_SOURCE_NOT_READABLE", "Source must be a readable UTF-8 text file.") from exc
     return SourceText(source_id=source_id or str(uuid4()),source_type="file",title=rel,text=text,uri=rel,mime_type=mimetypes.guess_type(resolved.name)[0] or "text/plain",size_bytes=stat.st_size,content_hash=source_content_hash(text),metadata={},relative_path=rel,virtual_path=rel,file_name=resolved.name,folder_path=relative.parent.as_posix() if str(relative.parent)!="." else "",extension=resolved.suffix.lower(),path_depth=len(relative.parts),source_mtime=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc))
 
 
 def validate_source_limits(text: str, size_bytes: int, settings: KnowledgeSettings) -> None:
+    if not text.strip(): raise KnowledgeIndexError("KNOWLEDGE_EMPTY_INPUT", "Source text must not be empty.")
     if size_bytes > settings.max_source_size_bytes: raise KnowledgeIndexError("KNOWLEDGE_SOURCE_TOO_LARGE","Source exceeds the configured size limit.")
     if len(text) > settings.max_total_index_chars_per_source: raise KnowledgeIndexError("KNOWLEDGE_SOURCE_TOO_LARGE","Source exceeds the configured character limit.")
 

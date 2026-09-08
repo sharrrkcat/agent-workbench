@@ -1,5 +1,5 @@
 
-export type WorldbookSettings = {
+export type WorldbookSettingsInput = {
   worldbook_enabled: boolean;
   worldbook_max_entries_per_call: number;
   worldbook_max_context_chars: number;
@@ -7,6 +7,17 @@ export type WorldbookSettings = {
   worldbook_recursion_depth: number;
   worldbook_case_sensitive: boolean;
   worldbook_whole_words: boolean;
+};
+
+export type WorldbookSettings = WorldbookSettingsInput & { id: number; created_at: string; updated_at: string };
+export type WorldbookInput = { name: string; description?: string; enabled?: boolean };
+export type ActivationMode = 'keyword' | 'always';
+export type WorldbookEntryInput = {
+  name: string;
+  keywords_text: string;
+  content: string;
+  activation_mode: ActivationMode;
+  enabled: boolean;
 };
 
 export type Worldbook = {
@@ -26,11 +37,27 @@ export type WorldbookEntry = {
   name: string;
   keywords_text: string;
   content: string;
-  activation_mode: string;
+  activation_mode: ActivationMode;
   enabled: boolean;
   sort_order: number;
   created_at: string;
   updated_at: string;
+};
+
+export type WorldbookMatchResponse = {
+  matched_count: number;
+  included_count: number;
+  truncated: boolean;
+  recursion_depth: number;
+  recursion_rounds_used: number;
+  case_sensitive: boolean;
+  whole_words: boolean;
+  warnings: Array<{ code: string; message: string; entry_id?: string; worldbook_id?: string }>;
+  results: Array<{
+    worldbook_id: string; worldbook_name: string; entry_id: string; entry_name: string;
+    activation_mode: ActivationMode; matched_keywords: string[]; matched_by_recursion: boolean;
+    recursion_depth: number; sort_order: number; content_preview: string;
+  }>;
 };
 
 export type SessionWorldbooksResponse = {

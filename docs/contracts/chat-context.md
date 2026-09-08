@@ -108,6 +108,21 @@ match-test is diagnostic and changes no session/run. Persona/session bindings
 use the resolution above. Memory, Worldbook, Knowledge and attachment content
 are data, never runtime instructions or routing decisions.
 
+Worldbook management opens inside its settings panel, with Configuration,
+Entries and Match test tabs. Existing books and newly saved books open Entries.
+The entry UI preserves the 768b335d card hierarchy: handle, disclosure, enabled
+switch, name, dirty marker, mode and delete; the body has name/mode, keywords,
+content, then save/reset/delete. Multiple cards and their drafts are independent.
+Existing-entry switches PATCH only enabled and roll back on failure without
+discarding other edits. Explicit save/reset affects one draft. Pointer/touch and
+keyboard reordering share the handle and PATCH the full ordered id list, with
+rollback on failure. Duplicate or mismatching reorder ids return 422.
+Worldbook and entry PATCH validate the complete object before committing in both
+stores; invalid regex/name/content never persists despite a rejected request.
+Entry CRUD uses /api/worldbooks/{id}/entries and /api/worldbook-entries/{id};
+ordering uses PATCH /api/worldbooks/{id}/entries/reorder. POST
+/api/worldbooks/match-test returns counts, triggers, recursion and bounded previews.
+
 [Knowledge](knowledge.md) owns indexing, hybrid retrieval, RRF and optional
 rerank. Its context injection uses the run's resolved bindings. File context
 and current-image handling follow the attachment rules below.

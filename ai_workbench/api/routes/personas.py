@@ -86,7 +86,7 @@ async def set_worldbook_bindings(persona_id: str, payload: WorldbookBindingsPatc
 def _cleanup_avatar(state, attachment_id):
     if attachment_id:
         delete_attachment_if_unreferenced({"id": attachment_id, "uri": "local://attachments/" + attachment_id},
-            state.messages, persona_store=state.personas, run_store=state.runs)
+            state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
 
 
 def _notify_sessions(state, persona_id):

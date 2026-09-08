@@ -117,9 +117,9 @@ class ConversationHistory:
         for message in deleted:
             attachments = message.metadata.get("attachments")
             for attachment in attachments if isinstance(attachments, list) else []:
-                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, run_store=self.runs)
+                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, run_store=self.runs, knowledge_store=self.chat_service.knowledge)
             avatar_id = message.metadata.get("speaker_avatar_attachment_id")
             if avatar_id:
                 delete_attachment_if_unreferenced({"id": avatar_id, "uri": "local://attachments/" + avatar_id},
-                                                 self.messages, persona_store=self.personas, run_store=self.runs)
+                                                 self.messages, persona_store=self.personas, run_store=self.runs, knowledge_store=self.chat_service.knowledge)
         return change
